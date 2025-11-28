@@ -10,7 +10,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-MergeTreeReaderIndex::MergeTreeReaderIndex(const IMergeTreeReader * main_reader_, MergeTreeIndexReadResultPtr index_read_result_, std::optional<PaddedPODArray<UInt64>> lazy_materializing_rows_)
+MergeTreeReaderIndex::MergeTreeReaderIndex(const IMergeTreeReader * main_reader_, MergeTreeIndexReadResultPtr index_read_result_, const PaddedPODArray<UInt64> * lazy_materializing_rows_)
     : IMergeTreeReader(
           main_reader_->data_part_info_for_read,
           {},
@@ -23,7 +23,7 @@ MergeTreeReaderIndex::MergeTreeReaderIndex(const IMergeTreeReader * main_reader_
           main_reader_->settings)
     , main_reader(main_reader_)
     , index_read_result(std::move(index_read_result_))
-    , lazy_materializing_rows(std::move(lazy_materializing_rows_))
+    , lazy_materializing_rows(lazy_materializing_rows_)
 {
     chassert(lazy_materializing_rows || index_read_result);
     chassert(lazy_materializing_rows || index_read_result->skip_index_read_result || index_read_result->projection_index_read_result);
@@ -58,7 +58,14 @@ size_t MergeTreeReaderIndex::readRows(
     size_t starting_row = current_row + rows_offset;
 
     if (!continue_reading && lazy_materializing_rows)
+    {
+        // std::cerr << "looking for " << starting_row << "\n";
         next_lazy_row_it = std::lower_bound(lazy_materializing_rows->begin(), lazy_materializing_rows->end(), starting_row);
+        // if (next_lazy_row_it != lazy_materializing_rows->end())
+        //     std::cerr << "found " << *next_lazy_row_it << "\n";
+        // else
+        //     std::cerr << "not found\n";
+    }
 
     /// Clamp max_rows_to_read.
     size_t total_rows = data_part_info_for_read->getIndexGranularity().getTotalRows();
@@ -120,10 +127,10 @@ size_t MergeTreeReaderIndex::readRows(
             filter_data.resize(old_size + max_rows_to_read);
             memset(filter_data.begin() + old_size, 0, max_rows_to_read);
 
-            auto * it = std::lower_bound(lazy_materializing_rows->begin(), lazy_materializing_rows->end(), starting_row);
+            const auto * it = std::lower_bound(lazy_materializing_rows->begin(), lazy_materializing_rows->end(), starting_row);
             if (it != next_lazy_row_it)
             {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Lol {} {}", reinterpret_cast<void*>(next_lazy_row_it), reinterpret_cast<void*>(it));
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Lol {} {}", reinterpret_cast<const void*>(next_lazy_row_it), reinterpret_cast<const void*>(it));
             }
 
             if (next_lazy_row_it != lazy_materializing_rows->end())

@@ -277,15 +277,15 @@ void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContextPt
     if (index_build_context)
         index_read_result = index_build_context->getPreparedIndexReadResult(*this);
 
-    std::optional<PaddedPODArray<UInt64>> part_rows;
+    const PaddedPODArray<UInt64> * part_rows = nullptr;
     if (lazy_materializing_rows)
     {
-        part_rows = std::move(lazy_materializing_rows->rows_in_parts[getInfo().part_index_in_query]);
+        part_rows = &lazy_materializing_rows->rows_in_parts[getInfo().part_index_in_query];
         // std::cerr << "Initialized index for part " << getInfo().part_index_in_query << " with " << part_rows->size() << " rows\n";
     }
 
     if (index_read_result || lazy_materializing_rows)
-        readers.prepared_index = std::make_unique<MergeTreeReaderIndex>(readers.main.get(), std::move(index_read_result), std::move(part_rows));
+        readers.prepared_index = std::make_unique<MergeTreeReaderIndex>(readers.main.get(), std::move(index_read_result), part_rows);
 }
 
 UInt64 MergeTreeReadTask::estimateNumRows() const

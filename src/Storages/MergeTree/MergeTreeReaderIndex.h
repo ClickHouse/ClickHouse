@@ -20,7 +20,7 @@ class MergeTreeReaderIndex : public IMergeTreeReader
 public:
     using MatchingMarks = std::vector<bool>;
 
-    MergeTreeReaderIndex(const IMergeTreeReader * main_reader_, MergeTreeIndexReadResultPtr index_read_result_, std::optional<PaddedPODArray<UInt64>> lazy_materializing_rows_);
+    MergeTreeReaderIndex(const IMergeTreeReader * main_reader_, MergeTreeIndexReadResultPtr index_read_result_, const PaddedPODArray<UInt64> * lazy_materializing_rows_);
 
     size_t readRows(
         size_t from_mark,
@@ -37,7 +37,7 @@ public:
     size_t getResultColumnCount() const override { return 1; }
 
     bool producesFilterOnly() const override { return true; }
-    bool mustApplyFilter() const override { return lazy_materializing_rows != std::nullopt; }
+    bool mustApplyFilter() const override { return lazy_materializing_rows != nullptr; }
 
 private:
     /// Delegates to the main reader to determine if reading incomplete index granules is supported.
@@ -46,11 +46,11 @@ private:
     /// Used to filter data during merge tree reading.
     MergeTreeIndexReadResultPtr index_read_result;
 
-    std::optional<PaddedPODArray<UInt64>> lazy_materializing_rows;
+    const PaddedPODArray<UInt64> * lazy_materializing_rows = nullptr;
 
     /// Current row position used when continuing reads across multiple calls.
     size_t current_row = 0;
-    UInt64 * next_lazy_row_it = nullptr;
+    const UInt64 * next_lazy_row_it = nullptr;
 };
 
 }
