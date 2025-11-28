@@ -43,7 +43,7 @@ ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumn
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnNullable cannot have constant null map");
 }
 
-StringRef ColumnNullable::getDataAt(size_t n) const
+std::string_view ColumnNullable::getDataAt(size_t n) const
 {
     if (!isNullAt(n))
         return getNestedColumn().getDataAt(n);
@@ -171,7 +171,7 @@ void ColumnNullable::insertData(const char * pos, size_t length)
     }
 }
 
-StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     const auto & arr = getNullMapData();
 
@@ -181,16 +181,16 @@ StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char 
 
     /// If the value is NULL, that's it.
     if (arr[n])
-        return StringRef(pos, 1);
+        return std::string_view(pos, 1);
 
     /// Now serialize the nested value. Note that it also uses allocContinue so that the memory range remains contiguous.
     auto nested_ref = getNestedColumn().serializeValueIntoArena(n, arena, begin);
 
     /// serializeValueIntoArena may reallocate memory. Have to use ptr from nested_ref.data and move it back.
-    return StringRef(nested_ref.data - 1, nested_ref.size + 1);
+    return std::string_view(nested_ref.data() - 1, nested_ref.size() + 1);
 }
 
-StringRef ColumnNullable::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnNullable::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     const auto & arr = getNullMapData();
 
@@ -200,13 +200,13 @@ StringRef ColumnNullable::serializeAggregationStateValueIntoArena(size_t n, Aren
 
     /// If the value is NULL, that's it.
     if (arr[n])
-        return StringRef(pos, 1);
+        return std::string_view(pos, 1);
 
     /// Now serialize the nested value. Note that it also uses allocContinue so that the memory range remains contiguous.
     auto nested_ref = getNestedColumn().serializeAggregationStateValueIntoArena(n, arena, begin);
 
     /// serializeAggregationStateValueIntoArena may reallocate memory. Have to use ptr from nested_ref.data and move it back.
-    return StringRef(nested_ref.data - 1, nested_ref.size + 1);
+    return std::string_view(nested_ref.data() - 1, nested_ref.size() + 1);
 }
 
 char * ColumnNullable::serializeValueIntoMemory(size_t n, char * memory) const
@@ -230,45 +230,39 @@ std::optional<size_t> ColumnNullable::getSerializedValueSize(size_t n) const
     return 1 + *nested_size; /// +1 for null mask byte.
 }
 
-const char * ColumnNullable::deserializeAndInsertFromArena(const char * pos)
+void ColumnNullable::deserializeAndInsertFromArena(ReadBuffer & in)
 {
-    UInt8 val = unalignedLoad<UInt8>(pos);
-    pos += sizeof(val);
+    UInt8 val;
+    readBinaryLittleEndian<UInt8>(val, in);
 
     getNullMapData().push_back(val);
 
     if (val == 0)
-        pos = getNestedColumn().deserializeAndInsertFromArena(pos);
+        getNestedColumn().deserializeAndInsertFromArena(in);
     else
         getNestedColumn().insertDefault();
-
-    return pos;
 }
 
-const char * ColumnNullable::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+void ColumnNullable::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
 {
-    UInt8 val = unalignedLoad<UInt8>(pos);
-    pos += sizeof(val);
+    UInt8 val;
+    readBinaryLittleEndian<UInt8>(val, in);
 
     getNullMapData().push_back(val);
 
     if (val == 0)
-        pos = getNestedColumn().deserializeAndInsertAggregationStateValueFromArena(pos);
+        getNestedColumn().deserializeAndInsertAggregationStateValueFromArena(in);
     else
         getNestedColumn().insertDefault();
-
-    return pos;
 }
 
-const char * ColumnNullable::skipSerializedInArena(const char * pos) const
+void ColumnNullable::skipSerializedInArena(ReadBuffer & in) const
 {
-    UInt8 val = unalignedLoad<UInt8>(pos);
-    pos += sizeof(val);
+    UInt8 val;
+    readBinaryLittleEndian<UInt8>(val, in);
 
     if (val == 0)
-        return getNestedColumn().skipSerializedInArena(pos);
-
-    return pos;
+        getNestedColumn().skipSerializedInArena(in);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -765,7 +759,7 @@ size_t ColumnNullable::estimateCardinalityInPermutedRange(const Permutation & pe
         }
         else
         {
-            StringRef value = getDataAt(permuted_i);
+            auto value = getDataAt(permuted_i);
             elements.emplace(value, inserted);
         }
     }

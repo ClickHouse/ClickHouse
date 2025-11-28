@@ -45,7 +45,7 @@ public:
     bool tryInsert(const Field &) override { return false; }
     bool isDefaultAt(size_t) const override;
 
-    StringRef getDataAt(size_t) const override
+    std::string_view getDataAt(size_t) const override
     {
         return {};
     }
@@ -55,11 +55,11 @@ public:
         ++s;
     }
 
-    StringRef serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin) const override;
+    std::string_view serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin) const override;
 
-    const char * deserializeAndInsertFromArena(const char * pos) override;
+    void deserializeAndInsertFromArena(ReadBuffer & in) override;
 
-    const char * skipSerializedInArena(const char * pos) const override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
 
     void updateHashWithValue(size_t /*n*/, SipHash & /*hash*/) const override
     {

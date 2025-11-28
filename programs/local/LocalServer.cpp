@@ -105,6 +105,14 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 text_index_dictionary_block_cache_size;
     extern const ServerSettingsUInt64 text_index_dictionary_block_cache_max_entries;
     extern const ServerSettingsDouble text_index_dictionary_block_cache_size_ratio;
+    extern const ServerSettingsString text_index_header_cache_policy;
+    extern const ServerSettingsUInt64 text_index_header_cache_size;
+    extern const ServerSettingsUInt64 text_index_header_cache_max_entries;
+    extern const ServerSettingsDouble text_index_header_cache_size_ratio;
+    extern const ServerSettingsString text_index_postings_cache_policy;
+    extern const ServerSettingsUInt64 text_index_postings_cache_size;
+    extern const ServerSettingsUInt64 text_index_postings_cache_max_entries;
+    extern const ServerSettingsDouble text_index_postings_cache_size_ratio;
     extern const ServerSettingsUInt64 io_thread_pool_queue_size;
     extern const ServerSettingsString mark_cache_policy;
     extern const ServerSettingsUInt64 mark_cache_size;
@@ -326,8 +334,8 @@ static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, Co
     else
         default_database_uuid = UUIDHelpers::generateV4();
 
-    fs::path default_database_metadata_path = fs::weakly_canonical(context->getPath()) / "store"
-        / DatabaseCatalog::getPathForUUID(default_database_uuid);
+    fs::path default_database_metadata_path = fs::weakly_canonical(context->getPath()) /
+        DatabaseCatalog::getStoreDirPath(default_database_uuid);
 
     overlay->registerNextDatabase(std::make_shared<DatabaseAtomic>(name_, default_database_metadata_path, default_database_uuid, context));
     overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context));
@@ -896,6 +904,28 @@ void LocalServer::processConfig()
         LOG_INFO(log, "Lowered text index dictionary block cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(text_index_dictionary_block_cache_size));
     }
     global_context->setTextIndexDictionaryBlockCache(text_index_dictionary_block_cache_policy, text_index_dictionary_block_cache_size, text_index_dictionary_block_cache_max_count, text_index_dictionary_block_cache_size_ratio);
+
+    String text_index_header_cache_policy = server_settings[ServerSetting::text_index_header_cache_policy];
+    size_t text_index_header_cache_size = server_settings[ServerSetting::text_index_header_cache_size];
+    size_t text_index_header_cache_max_count = server_settings[ServerSetting::text_index_header_cache_max_entries];
+    double text_index_header_cache_size_ratio = server_settings[ServerSetting::text_index_header_cache_size_ratio];
+    if (text_index_header_cache_size > max_cache_size)
+    {
+        text_index_header_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered text index header cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(text_index_header_cache_size));
+    }
+    global_context->setTextIndexHeaderCache(text_index_header_cache_policy, text_index_header_cache_size, text_index_header_cache_max_count, text_index_header_cache_size_ratio);
+
+    String text_index_postings_cache_policy = server_settings[ServerSetting::text_index_postings_cache_policy];
+    size_t text_index_postings_cache_size = server_settings[ServerSetting::text_index_postings_cache_size];
+    size_t text_index_postings_cache_max_count = server_settings[ServerSetting::text_index_postings_cache_max_entries];
+    double text_index_postings_cache_size_ratio = server_settings[ServerSetting::text_index_postings_cache_size_ratio];
+    if (text_index_postings_cache_size > max_cache_size)
+    {
+        text_index_postings_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered text index posting list cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(text_index_postings_cache_size));
+    }
+    global_context->setTextIndexPostingsCache(text_index_postings_cache_policy, text_index_postings_cache_size, text_index_postings_cache_max_count, text_index_postings_cache_size_ratio);
 
     size_t mmap_cache_size = server_settings[ServerSetting::mmap_cache_size];
     if (mmap_cache_size > max_cache_size)

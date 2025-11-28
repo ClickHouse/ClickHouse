@@ -14,7 +14,6 @@
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnsCommon.h>
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
-#include <DataTypes/ObjectUtils.h>
 #include <base/sort.h>
 
 
@@ -187,7 +186,7 @@ bool ColumnTuple::isDefaultAt(size_t n) const
     return true;
 }
 
-StringRef ColumnTuple::getDataAt(size_t) const
+std::string_view ColumnTuple::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
 }
@@ -330,7 +329,7 @@ void ColumnTuple::rollback(const ColumnCheckpoint & checkpoint)
         columns[i]->rollback(*checkpoints[i]);
 }
 
-StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     if (columns.empty())
     {
@@ -340,18 +339,17 @@ StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char con
         return { res, 1 };
     }
 
-    StringRef res(begin, 0);
+    std::string_view res;
     for (const auto & column : columns)
     {
         auto value_ref = column->serializeValueIntoArena(n, arena, begin);
-        res.data = value_ref.data - res.size;
-        res.size += value_ref.size;
+        res = std::string_view{value_ref.data() - res.size(), res.size() + value_ref.size()};
     }
 
     return res;
 }
 
-StringRef ColumnTuple::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnTuple::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     if (columns.empty())
     {
@@ -361,12 +359,11 @@ StringRef ColumnTuple::serializeAggregationStateValueIntoArena(size_t n, Arena &
         return { res, 1 };
     }
 
-    StringRef res(begin, 0);
+    std::string_view res;
     for (const auto & column : columns)
     {
         auto value_ref = column->serializeAggregationStateValueIntoArena(n, arena, begin);
-        res.data = value_ref.data - res.size;
-        res.size += value_ref.size;
+        res = std::string_view{value_ref.data() - res.size(), res.size() + value_ref.size()};
     }
 
     return res;
@@ -374,6 +371,12 @@ StringRef ColumnTuple::serializeAggregationStateValueIntoArena(size_t n, Arena &
 
 char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory) const
 {
+    if (columns.empty())
+    {
+        *memory = 0;
+        return memory + 1;
+    }
+
     for (const auto & column : columns)
         memory = column->serializeValueIntoMemory(n, memory);
 
@@ -382,6 +385,9 @@ char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory) const
 
 std::optional<size_t> ColumnTuple::getSerializedValueSize(size_t n) const
 {
+    if (columns.empty())
+        return 1;
+
     size_t res = 0;
     for (const auto & column : columns)
     {
@@ -395,38 +401,44 @@ std::optional<size_t> ColumnTuple::getSerializedValueSize(size_t n) const
 }
 
 
-const char * ColumnTuple::deserializeAndInsertFromArena(const char * pos)
+void ColumnTuple::deserializeAndInsertFromArena(ReadBuffer & in)
 {
     ++column_length;
 
     if (columns.empty())
-        return pos + 1;
+    {
+        in.ignore(1);
+        return;
+    }
 
     for (auto & column : columns)
-        pos = column->deserializeAndInsertFromArena(pos);
-
-    return pos;
+        column->deserializeAndInsertFromArena(in);
 }
 
-const char * ColumnTuple::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+void ColumnTuple::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
 {
     ++column_length;
 
     if (columns.empty())
-        return pos + 1;
+    {
+        in.ignore(1);
+        return;
+    }
 
     for (auto & column : columns)
-        pos = column->deserializeAndInsertAggregationStateValueFromArena(pos);
-
-    return pos;
+        column->deserializeAndInsertAggregationStateValueFromArena(in);
 }
 
-const char * ColumnTuple::skipSerializedInArena(const char * pos) const
+void ColumnTuple::skipSerializedInArena(ReadBuffer & in) const
 {
+    if (columns.empty())
+    {
+        in.ignore(1);
+        return;
+    }
+
     for (const auto & column : columns)
-        pos = column->skipSerializedInArena(pos);
-
-    return pos;
+        column->skipSerializedInArena(in);
 }
 
 void ColumnTuple::updateHashWithValue(size_t n, SipHash & hash) const

@@ -14,7 +14,6 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
-#include <Columns/ColumnObjectDeprecated.h>
 #include <Columns/ColumnQBit.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnReplicated.h>
@@ -155,7 +154,7 @@ bool IColumn::getBool(size_t /*n*/) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getBool is not supported for {}", getName());
 }
 
-StringRef IColumn::serializeValueIntoArena(size_t /* n */, Arena & /* arena */, char const *& /* begin */) const
+std::string_view IColumn::serializeValueIntoArena(size_t /* n */, Arena & /* arena */, char const *& /* begin */) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoArena is not supported for {}", getName());
 }
@@ -170,7 +169,7 @@ void IColumn::batchSerializeValueIntoMemory(std::vector<char *> & /* memories */
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method batchSerializeValueIntoMemory is not supported for {}", getName());
 }
 
-StringRef
+std::string_view
 IColumn::serializeValueIntoArenaWithNull(size_t /* n */, Arena & /* arena */, char const *& /* begin */, const UInt8 * /* is_null */) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoArenaWithNull is not supported for {}", getName());
@@ -568,9 +567,11 @@ void IColumnHelper<Derived, Parent>::fillFromRowRefs(const DataTypePtr & type, s
 /// Fills column values from list of blocks and row numbers
 /// Implementation with concrete column type allows to de-virtualize col->insertFrom() calls
 template <typename ColumnType>
-static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const ColumnsInfo *> & columns, const std::vector<UInt32> & row_nums)
+static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePtr & type, size_t source_column_index_in_block, ColumnsWithRowNumbers columns_with_row_numbers)
 {
-    chassert(columns.size() == row_nums.size());
+    const auto & columns = columns_with_row_numbers.columns;
+    const auto & row_numbers = columns_with_row_numbers.row_numbers;
+    chassert(columns.size() == row_numbers.size());
 
     col->reserve(col->size() + columns.size());
     for (size_t j = 0; j < columns.size(); ++j)
@@ -578,9 +579,9 @@ static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePt
         if (columns[j])
         {
             if (const auto * source_replicated = columns[j]->replicated_columns[source_column_index_in_block])
-                col->insertFrom(*source_replicated->getNestedColumn(), source_replicated->getIndexes().getIndexAt(row_nums[j]));
+                col->insertFrom(*source_replicated->getNestedColumn(), source_replicated->getIndexes().getIndexAt(row_numbers[j]));
             else
-                col->insertFrom(*columns[j]->columns[source_column_index_in_block], row_nums[j]);
+                col->insertFrom(*columns[j]->columns[source_column_index_in_block], row_numbers[j]);
         }
         else
         {
@@ -590,21 +591,21 @@ static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePt
 }
 
 /// Fills column values from list of blocks and row numbers
-void IColumn::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const ColumnsInfo *> & columns, const std::vector<UInt32> & row_nums)
+void IColumn::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, ColumnsWithRowNumbers columns_with_row_numbers)
 {
-    fillColumnFromBlocksAndRowNumbers(this, type, source_column_index_in_block, columns, row_nums);
+    fillColumnFromBlocksAndRowNumbers(this, type, source_column_index_in_block, columns_with_row_numbers);
 }
 
 /// Fills column values from list of blocks and row numbers
 template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const ColumnsInfo *> & columns, const std::vector<UInt32> & row_nums)
+void IColumnHelper<Derived, Parent>::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, ColumnsWithRowNumbers columns_with_row_numbers)
 {
     auto & self = static_cast<Derived &>(*this);
-    fillColumnFromBlocksAndRowNumbers(&self, type, source_column_index_in_block, columns, row_nums);
+    fillColumnFromBlocksAndRowNumbers(&self, type, source_column_index_in_block, columns_with_row_numbers);
 }
 
 template <typename Derived, typename Parent>
-StringRef
+std::string_view
 IColumnHelper<Derived, Parent>::serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null) const
 {
     const auto & self = static_cast<const Derived &>(*this);
@@ -631,14 +632,14 @@ IColumnHelper<Derived, Parent>::serializeValueIntoArenaWithNull(size_t n, Arena 
         memory = arena.allocContinue(1, begin);
         *memory = 0;
         auto res = self.serializeValueIntoArena(n, arena, begin);
-        return StringRef(res.data - 1, res.size + 1);
+        return std::string_view(res.data() - 1, res.size() + 1);
     }
 
     return self.serializeValueIntoArena(n, arena, begin);
 }
 
 template <typename Derived, typename Parent>
-StringRef IColumnHelper<Derived, Parent>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view IColumnHelper<Derived, Parent>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     if constexpr (!std::is_base_of_v<ColumnFixedSizeHelper, Derived>)
         return IColumn::serializeValueIntoArena(n, arena, begin);
@@ -695,8 +696,8 @@ ALWAYS_INLINE char * IColumnHelper<Derived, Parent>::serializeValueIntoMemory(si
 
     const auto & self = static_cast<const Derived &>(*this);
     auto raw_data = self.getDataAt(n);
-    memcpy(memory, raw_data.data, raw_data.size);
-    return memory + raw_data.size;
+    memcpy(memory, raw_data.data(), raw_data.size());
+    return memory + raw_data.size();
 }
 
 template <typename Derived, typename Parent>
@@ -890,7 +891,6 @@ template class IColumnHelper<ColumnQBit, IColumn>;
 template class IColumnHelper<ColumnMap, IColumn>;
 template class IColumnHelper<ColumnSparse, IColumn>;
 template class IColumnHelper<ColumnReplicated, IColumn>;
-template class IColumnHelper<ColumnObjectDeprecated, IColumn>;
 template class IColumnHelper<ColumnAggregateFunction, IColumn>;
 template class IColumnHelper<ColumnFunction, IColumn>;
 template class IColumnHelper<ColumnCompressed, IColumn>;

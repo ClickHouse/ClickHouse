@@ -23,7 +23,6 @@ formatQuery
 formatQueryOrNull
 formatQuerySingleLine
 formatQuerySingleLineOrNull
-generateSerialID
 getMaxTableNameLengthForDatabase
 getSubcolumn
 globalIn
@@ -78,7 +77,6 @@ readWKTMultiPolygon
 readWKTPoint
 readWKTPolygon
 readWKTRing
-regexpExtract
 sigmoid
 sin
 structureToCapnProtoSchema

@@ -2,7 +2,7 @@
 #include <Columns/IColumn.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
-#include <Disks/ObjectStorages/StoredObject.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Formats/FormatFactory.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Cache/FileSegment.h>
@@ -16,6 +16,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <fmt/format.h>
@@ -180,7 +181,7 @@ Plan getPlan(
                 if (plan.partitions.size() <= partition_index)
                     plan.partitions.push_back({});
 
-                IcebergDataObjectInfoPtr data_object_info = std::make_shared<IcebergDataObjectInfo>(data_file);
+                IcebergDataObjectInfoPtr data_object_info = std::make_shared<IcebergDataObjectInfo>(data_file, 0);
                 std::shared_ptr<DataFilePlan> data_file_ptr;
                 if (!plan.path_to_data_file.contains(manifest_file.manifest_file_path))
                 {
@@ -209,7 +210,7 @@ Plan getPlan(
         std::vector<Iceberg::ManifestFileEntry> result_delete_files;
         for (auto & data_file : plan.partitions[partition_index])
         {
-            if (data_file->data_object_info->sequence_number <= delete_file.added_sequence_number)
+            if (data_file->data_object_info->info.sequence_number <= delete_file.added_sequence_number)
                 data_file->data_object_info->addPositionDeleteObject(delete_file);
         }
     }
@@ -296,7 +297,7 @@ void writeMetadataFiles(
     auto log = getLogger("IcebergCompaction");
 
     ColumnsDescription columns_description = ColumnsDescription::fromNamesAndTypes(sample_block_->getNamesAndTypes());
-    auto [metadata_object, metadata_object_str] = createEmptyMetadataFile(configuration->getRawPath().path, columns_description, nullptr);
+    auto [metadata_object, metadata_object_str] = createEmptyMetadataFile(configuration->getRawPath().path, columns_description, nullptr, nullptr, context);
 
     auto current_schema_id = metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
     Poco::JSON::Object::Ptr current_schema;

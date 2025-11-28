@@ -139,6 +139,11 @@ StoragePtr StorageBuffer::getDestinationTable() const
 }
 
 
+std::string StorageBuffer::Thresholds::toString() const
+{
+    return fmt::format("time={}, rows={}, bytes={}", time, rows, bytes);
+}
+
 StorageBuffer::StorageBuffer(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
@@ -183,6 +188,8 @@ StorageBuffer::StorageBuffer(
             num_shards, 0, num_shards);
     }
     flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ backgroundFlush(); });
+
+    LOG_TRACE(log, "Buffer(flush: ({}), min: ({}), max: ({}))", flush_thresholds.toString(), min_thresholds.toString(), max_thresholds.toString());
 }
 
 
@@ -354,7 +361,8 @@ void StorageBuffer::read(
                     converting_dag = ActionsDAG::makeConvertingActions(
                         header_after_adding_defaults.getColumnsWithTypeAndName(),
                         header.getColumnsWithTypeAndName(),
-                        ActionsDAG::MatchColumnsMode::Name);
+                        ActionsDAG::MatchColumnsMode::Name,
+                        local_context);
                 }
 
                 if (src_table_query_info.row_level_filter)
@@ -410,7 +418,8 @@ void StorageBuffer::read(
                     auto actions_dag = ActionsDAG::makeConvertingActions(
                             query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
                             header.getColumnsWithTypeAndName(),
-                            ActionsDAG::MatchColumnsMode::Name);
+                            ActionsDAG::MatchColumnsMode::Name,
+                            local_context);
 
                     auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(actions_dag));
 
@@ -531,7 +540,8 @@ void StorageBuffer::read(
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
                 query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
                 result_header->getColumnsWithTypeAndName(),
-                ActionsDAG::MatchColumnsMode::Name);
+                ActionsDAG::MatchColumnsMode::Name,
+                local_context);
 
         auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(convert_actions_dag));
         query_plan.addStep(std::move(converting));
@@ -924,7 +934,7 @@ void StorageBuffer::flushAllBuffers(bool check_thresholds)
 {
     std::optional<ThreadPoolCallbackRunnerLocal<void>> runner;
     if (flush_pool)
-        runner.emplace(*flush_pool, "BufferFlush");
+        runner.emplace(*flush_pool, ThreadName::BACKGROUND_BUFFER_FLUSH_SCHEDULE_POOL);
     for (auto & buf : buffers)
     {
         if (runner)
@@ -1116,7 +1126,8 @@ void StorageBuffer::backgroundFlush()
 void StorageBuffer::reschedule()
 {
     time_t min_first_write_time = std::numeric_limits<time_t>::max();
-    time_t rows = 0;
+    size_t rows = 0;
+    size_t processed_buffers = 0;
 
     for (auto & buffer : buffers)
     {
@@ -1132,6 +1143,7 @@ void StorageBuffer::reschedule()
         std::unique_lock lock(buffer.tryLock());
         if (lock.owns_lock())
         {
+            ++processed_buffers;
             if (!buffer.data.empty())
             {
                 min_first_write_time = std::min(min_first_write_time, buffer.first_write_time);
@@ -1142,15 +1154,32 @@ void StorageBuffer::reschedule()
 
     /// will be rescheduled via INSERT
     if (!rows)
+    {
+        LOG_TRACE(log, "Skipping reschedule (processed buffers: {})", processed_buffers);
         return;
+    }
 
     time_t current_time = time(nullptr);
     time_t time_passed = current_time - min_first_write_time;
 
-    size_t min = std::max<ssize_t>(min_thresholds.time - time_passed, 1);
-    size_t max = std::max<ssize_t>(max_thresholds.time - time_passed, 1);
-    size_t flush = std::max<ssize_t>(flush_thresholds.time - time_passed, 1);
-    flush_handle->scheduleAfter(std::min({min, max, flush}) * 1000);
+    size_t min = std::max<ssize_t>(min_thresholds.time - time_passed, 0);
+    size_t max = std::max<ssize_t>(max_thresholds.time - time_passed, 0);
+    size_t reschedule_sec = 0;
+    if (flush_thresholds.time)
+    {
+        size_t flush = std::max<ssize_t>(flush_thresholds.time - time_passed, 0);
+        reschedule_sec = std::min({min, max, flush});
+    }
+    else
+    {
+        reschedule_sec = std::min({min, max});
+    }
+    /// Schedule flush in background immediately, otherwise in case of frequent INSERTs we will never schedule the background flush
+    if (reschedule_sec == 0)
+        flush_handle->schedule();
+    else
+        flush_handle->scheduleAfter(reschedule_sec * 1000);
+    LOG_TRACE(log, "Reschedule in {} sec (processed buffers: {}, rows in processed buffers: {}, time passed: {})", reschedule_sec, processed_buffers, rows, time_passed);
 }
 
 void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const

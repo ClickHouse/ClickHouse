@@ -15,7 +15,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Disks/ObjectStorages/ObjectStorageIterator.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 
@@ -114,7 +114,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     }
 
     const auto globbed_key = reading_path.path;
-    object_storage_iterator = object_storage->iterate(reading_path.cutGlobs(configuration->supportsPartialPathPrefix()), list_objects_batch_size_);
+    object_storage_iterator = object_storage->iterate(reading_path.cutGlobs(configuration->supportsPartialPathPrefix()), list_objects_batch_size_, /*with_tags=*/ false);
 
     matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_key));
     if (!matcher->ok())
@@ -126,7 +126,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     }
 
     recursive = globbed_key == "/**";
-    if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate_, virtual_columns))
+    if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate_, virtual_columns, context_))
     {
         VirtualColumnUtils::buildSetsForDAG(*filter_dag, context_);
         filter_expr = std::make_shared<ExpressionActions>(std::move(*filter_dag));
@@ -780,6 +780,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     const std::optional<FormatSettings> & format_settings_,
     FormatParserSharedResourcesPtr parser_shared_resources_,
     const CommitSettings & commit_settings_,
+    const AfterProcessingSettings & after_processing_settings_,
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
     ContextPtr context_,
     size_t max_block_size_,
@@ -801,6 +802,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , format_settings(format_settings_)
     , parser_shared_resources(std::move(parser_shared_resources_))
     , commit_settings(commit_settings_)
+    , after_processing_settings(after_processing_settings_)
     , files_metadata(files_metadata_)
     , max_block_size(max_block_size_)
     , mode(files_metadata->getTableMetadata().getMode())
@@ -1304,11 +1306,16 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
     prepareCommitRequests(requests, insert_succeeded, successful_objects, exception_message);
 
     if (!successful_objects.empty()
-        && files_metadata->getTableMetadata().after_processing == ObjectStorageQueueAction::DELETE)
+        && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
     {
-        /// We do need to apply after-processing action before committing requests to keeper.
-        /// See explanation in ObjectStorageQueueSource::FileIterator::nextImpl().
-        object_storage->removeObjectsIfExist(successful_objects);
+        auto postProcessor = ObjectStorageQueuePostProcessor(
+            getContext(),
+            configuration->getType(),
+            object_storage,
+            getName(),
+            files_metadata->getTableMetadata(),
+            after_processing_settings);
+        postProcessor.process(successful_objects);
     }
 
     auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);

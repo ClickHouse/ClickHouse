@@ -133,7 +133,12 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElem
         return element.name;
     const auto & map = column_mapper->getFieldIdToClickHouseName();
     if (!element.__isset.field_id)
-        throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Missing field_id for column {}", element.name);
+    {
+        /// Does iceberg require that parquet files have field ids?
+        /// Our iceberg writer currently doesn't write them.
+        //throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Missing field_id for column {}", element.name);
+        return element.name;
+    }
     auto it = map.find(element.field_id);
     if (it == map.end())
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Parquet file has column {} with field_id {} that is not in datalake metadata", element.name, element.field_id);
@@ -270,15 +275,19 @@ void SchemaConverter::processSubtree(TraversalNode & node)
     }
 }
 
-bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
+static bool isPrimitiveNode(const parq::SchemaElement & elem)
 {
     /// `parquet.thrift` says "[num_children] is not set when the element is a primitive type".
-    /// If it's set but has value 0, logically it would make sense to interpret it as empty tuple/struct.
+    /// If it's set but has value 0, logically it should be an empty tuple/struct.
     /// But in practice some writers are sloppy about it and set this field to 0 (rather than unset)
     /// for primitive columns. E.g.
     /// tests/queries/0_stateless/data_hive/partitioning/non_existing_column=Elizabeth/sample.parquet
-    bool is_primitive = !node.element->__isset.num_children || (node.element->num_children == 0 && node.element->__isset.type);
-    if (!is_primitive)
+    return !elem.__isset.num_children || (elem.num_children == 0 && elem.__isset.type);
+}
+
+bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
+{
+    if (!isPrimitiveNode(*node.element))
         return false;
 
     primitive_column_idx += 1;
@@ -468,13 +477,18 @@ bool SchemaConverter::processSubtreeMap(TraversalNode & node)
 bool SchemaConverter::processSubtreeArrayOuter(TraversalNode & node)
 {
     /// Array:
-    ///   required group `name` (List):
+    ///   required/optional group `name` (List):
     ///     repeated group "list":
     ///       <recurse> "element"
     ///
     /// I.e. it's a double-wrapped burrito. To unwrap it into one Array, we have to coordinate
     /// across two levels of recursion: processSubtreeArrayOuter for the outer wrapper,
     /// processSubtreeArrayInner for the inner wrapper.
+    ///
+    /// But hudi writes arrays differently, without the inner group:
+    ///   required/optional group `name` (List):
+    ///     repeated <recurse> "array"
+    /// This probably makes it indinsinguishable from a single-element tuple.
 
     if (node.element->converted_type != parq::ConvertedType::LIST && !node.element->logicalType.__isset.LIST)
         return false;
@@ -483,10 +497,12 @@ bool SchemaConverter::processSubtreeArrayOuter(TraversalNode & node)
     if (node.element->num_children != 1)
         return false;
     const parq::SchemaElement & child = file_metadata.schema.at(schema_idx);
-    if (child.repetition_type != parq::FieldRepetitionType::REPEATED || child.num_children != 1)
+    if (child.repetition_type != parq::FieldRepetitionType::REPEATED)
         return false;
 
-    TraversalNode subnode = node.prepareToRecurse(SchemaContext::ListTuple, node.type_hint);
+    bool has_inner_group = child.num_children == 1;
+
+    TraversalNode subnode = node.prepareToRecurse(has_inner_group ? SchemaContext::ListTuple : SchemaContext::ListElement, node.type_hint);
     processSubtree(subnode);
 
     if (!node.requested || !subnode.output_idx.has_value())

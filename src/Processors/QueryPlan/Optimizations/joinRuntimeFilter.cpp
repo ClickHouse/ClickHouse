@@ -24,7 +24,11 @@ namespace DB
 namespace QueryPlanOptimizations
 {
 
-const ActionsDAG::Node & createRuntimeFilterCondition(ActionsDAG & actions_dag, const String & filter_name, const ColumnWithTypeAndName & key_column, const DataTypePtr & filter_element_type)
+const ActionsDAG::Node & createRuntimeFilterCondition(
+    ActionsDAG & actions_dag,
+    const String & filter_name,
+    const ColumnWithTypeAndName & key_column,
+    const DataTypePtr & filter_element_type)
 {
     const auto & filter_name_node = actions_dag.addColumn(
         ColumnWithTypeAndName(
@@ -32,16 +36,25 @@ const ActionsDAG::Node & createRuntimeFilterCondition(ActionsDAG & actions_dag, 
             std::make_shared<DataTypeString>(),
             filter_name));
 
-    const auto & key_column_node = actions_dag. findInOutputs(key_column.name);
+    const auto & key_column_node = actions_dag.findInOutputs(key_column.name);
     const auto * filter_argument = &key_column_node;
 
     /// Cast to the type of filter element if needed
     if (!key_column.type->equals(*filter_element_type))
-        filter_argument = &actions_dag.addCast(key_column_node, filter_element_type, {});
+        filter_argument = &actions_dag.addCast(key_column_node, filter_element_type, {}, nullptr);
 
-    auto filter_function = FunctionFactory::instance().get("__filterContains", /*query_context*/nullptr);
+    auto filter_function = FunctionFactory::instance().get("__applyFilter", /*query_context*/nullptr);
     const auto & condition = actions_dag.addFunction(filter_function, {&filter_name_node, filter_argument}, {});
+
     return condition;
+}
+
+static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm)
+{
+    /// Runtime filter can only be applied to join algorithms that first read the right side and only after that read the left side.
+    return
+        join_algorithm == JoinAlgorithm::HASH ||
+        join_algorithm == JoinAlgorithm::PARALLEL_HASH;
 }
 
 bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
@@ -57,15 +70,22 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
     /// Check if join can do runtime filtering on left table
     const auto & join_operator = join_step->getJoinOperator();
+    auto & join_algorithms = join_step->getJoinSettings().join_algorithms;
     const bool can_use_runtime_filter =
         (
-            (join_operator.kind == JoinKind::Inner && (join_operator.strictness == JoinStrictness::All || join_operator.strictness == JoinStrictness::Any)) ||
-            ((join_operator.kind == JoinKind::Left || join_operator.kind == JoinKind::Right) && join_operator.strictness == JoinStrictness::Semi)
+            (join_operator.kind == JoinKind::Inner && (join_operator.strictness == JoinStrictness::All || join_operator.strictness == JoinStrictness::Any))
+            || ((join_operator.kind == JoinKind::Left || join_operator.kind == JoinKind::Right) && join_operator.strictness == JoinStrictness::Semi)
+            || ((join_operator.kind == JoinKind::Left || join_operator.kind == JoinKind::Right) && join_operator.strictness == JoinStrictness::Anti)
         ) &&
-        (join_operator.locality == JoinLocality::Unspecified || join_operator.locality == JoinLocality::Local);
+        (join_operator.locality == JoinLocality::Unspecified || join_operator.locality == JoinLocality::Local) &&
+        std::find_if(join_algorithms.begin(), join_algorithms.end(), supportsRuntimeFilter) != join_algorithms.end();
 
     if (!can_use_runtime_filter)
         return false;
+
+    /// In the case of LEFT ANTI JOIN we need to add a filter that filters out rows
+    /// that would have matches in the right table. This means we need to add something like NOT IN filter.
+    const bool check_left_does_not_contain = (join_operator.kind == JoinKind::Left && join_operator.strictness == JoinStrictness::Anti);
 
     QueryPlan::Node * apply_filter_node = node.children[0];
     QueryPlan::Node * build_filter_node = node.children[1];
@@ -96,7 +116,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         }
     }
 
-    const String filter_name_prefix = fmt::format("_runtime_filter_{}", thread_local_rng());
+    const String filter_name_prefix = fmt::format("{}_runtime_filter_{}", check_left_does_not_contain ? "_exclusion_" : "", thread_local_rng());
 
     {
         ActionsDAG filter_dag;
@@ -151,7 +171,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                     filter_name,
                     optimization_settings.join_runtime_filter_exact_values_limit,
                     optimization_settings.join_runtime_bloom_filter_bytes,
-                    optimization_settings.join_runtime_bloom_filter_hash_functions);
+                    optimization_settings.join_runtime_bloom_filter_hash_functions,
+                    /*allow_to_use_not_exact_filter_=*/!check_left_does_not_contain);
                 new_build_filter_node->step->setStepDescription(fmt::format("Build runtime join filter on {} ({})", join_key_build_side.name, filter_name), 200);
                 new_build_filter_node->children = {build_filter_node};
 
@@ -182,6 +203,9 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     }
 
     node.children = {apply_filter_node, build_filter_node};
+
+    /// Remove algorithms that are not compatible with runtime filters
+    std::erase_if(join_algorithms, [](auto join_algorithm) { return !supportsRuntimeFilter(join_algorithm); });
 
     return true;
 }
