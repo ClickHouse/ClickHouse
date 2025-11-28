@@ -170,7 +170,7 @@ class JobConfigs:
         ],
     ).parametrize(
         Job.ParamSet(
-            parameter=BuildTypes.MY_COVERAGE,
+            parameter=BuildTypes.LLVM_COVERAGE_BUILD,
             provides=[ArtifactNames.CH_AMD_LLVM_COVERAGE, ArtifactNames.UNITTEST_LLVM_COVERAGE],
             runs_on=RunnerLabels.AMD_LARGE,
         ),
@@ -584,6 +584,18 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ]
     )
+    # functional_tests_jobs_llvm_coverage = common_ft_job_config.parametrize(
+    #     *[
+    #         Job.ParamSet(
+    #             parameter=f"{BuildTypes.LLVM_COVERAGE_BUILD}, {batch}/{total_batches}",
+    #             runs_on=RunnerLabels.AMD_SMALL,
+    #             requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE],
+    #             provides=[ArtifactNames.AMD_LLVM_COVERAGE_FILE + f"_{batch}_of_{total_batches}"],
+    #         )
+    #         for total_batches in (8,)
+    #         for batch in range(1, total_batches + 1)
+    #     ]
+    # )
     functional_tests_jobs_azure_master_only = (
         common_ft_job_config.set_allow_merge_on_failure(True).parametrize(
             Job.ParamSet(
@@ -634,7 +646,7 @@ class JobConfigs:
             runs_on=RunnerLabels.AMD_LARGE,
             requires=[ArtifactNames.UNITTEST_AMD_UBSAN],
         ),
-        Job.ParamSet(
+        Job.ParamSet( # Probably this should be in a separate job, but for now keep it here
             parameter="llvm coverage",
             runs_on=RunnerLabels.AMD_LARGE,
             requires=[ArtifactNames.UNITTEST_LLVM_COVERAGE],
