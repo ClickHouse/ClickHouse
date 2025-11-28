@@ -1,0 +1,53 @@
+services:
+    hashicorpvault:
+        image: hashicorp/vault:1.16.0
+        hostname: hashicorpvault
+        environment:
+            VAULT_DEV_ROOT_TOKEN_ID: "foobar"
+            VAULT_TOKEN: "foobar"
+            VAULT_ADDR: "http://localhost:8200"
+            VAULT_TLS_DISABLE: 0
+            VAULT_LOCAL_CONFIG: |
+                {
+                    "listener": [
+                    {
+                        "tcp": {
+                            "address": "0.0.0.0:8210",
+                            "tls_disable": false,
+                            "tls_disable_client_certs": false,
+                            "tls_require_and_verify_client_cert": true,
+                            "tls_cert_file": "/vault/certs/server.crt",
+                            "tls_key_file": "/vault/certs/server.key",
+                            "tls_client_ca_file": "/vault/certs/ca.crt"
+                        },
+                        "tcp": {
+                            "address": "0.0.0.0:8220",
+                            "tls_disable": false,
+                            "tls_disable_client_certs": true,
+                            "tls_require_and_verify_client_cert": false,
+                            "tls_cert_file": "/vault/certs/server.crt",
+                            "tls_key_file": "/vault/certs/server.key"
+                        }
+                    }
+                    ],
+                    "storage": {
+                        "file": {
+                        "path": "/vault/data"
+                        }
+                    },
+                    "ui": true,
+                    "log_level": "TRACE",
+                    "log_format": "json",
+                    "log_rotate_duration": "24h",
+                    "log_rotate_bytes": 104857600,
+                    "log_file": "/vault/logs/vault.log"
+                }
+        expose:
+          - 8200 # Listener for 8200 is created automatically
+          - 8210
+          - 8220
+        volumes:
+          - ${HASHICORP_VAULT_CERT_DIR}:/vault/certs
+          - ${HASHICORP_VAULT_LOGS_DIR}:/vault/logs
+        cap_add:
+        - IPC_LOCK
