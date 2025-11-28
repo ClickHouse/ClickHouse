@@ -162,13 +162,13 @@ namespace
             }
             else
             {
-                if (!can_show_table && !can_show_dict)
+                if (!can_show_table)
                     return false;
             }
 
             /// Column-level hints for tables require SHOW COLUMNS, but if SHOW DICTIONARIES
             /// already allows listing this object (e.g. dictionary table wrapper), do not block on columns.
-            if (!can_show_dict && has_specific_columns)
+            if (!is_dictionary_scope && has_specific_columns)
             {
                 if (!explicit_rights.isGranted(AccessType::SHOW_COLUMNS, required.database, required.table)
                     && !explicit_rights.isGranted(AccessType::SHOW_COLUMNS))
