@@ -211,7 +211,7 @@ cmake --build build
 You can run any build locally in an environment similar to CI using:
 
 ```bash
-python -m ci.praktika "BUILD_JOB_NAME"
+python -m ci.praktika run "BUILD_JOB_NAME"
 ```
 where BUILD_JOB_NAME is the job name as shown in the CI report, e.g., "Build (arm_release)", "Build (amd_debug)"
 
@@ -220,4 +220,4 @@ and runs the build script inside it: `./ci/jobs/build_clickhouse.py`
 
 The build output will be placed in `./ci/tmp/`.
 
-It works on both AMD and ARM architectures and requires no additional dependencies other than Docker.
+It works on both AMD and ARM architectures and requires no additional dependencies other than Python with `requests` module available and Docker.
