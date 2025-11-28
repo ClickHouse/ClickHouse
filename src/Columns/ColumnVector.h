@@ -1,8 +1,8 @@
 #pragma once
 
+#include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
-#include <Columns/NewColumnFixedSizeHelper.h>
 #include <Core/CompareHelper.h>
 #include <Core/Field.h>
 #include <Core/TypeId.h>
@@ -26,13 +26,13 @@ namespace ErrorCodes
 /** A template for columns that use a simple array to store.
  */
 template <typename T>
-class ColumnVector final : public COWHelper<IColumnHelper<ColumnVector<T>, NewShinyColumnFixedSizeHelper>, ColumnVector<T>>
+class ColumnVector final : public COWHelper<IColumnHelper<ColumnVector<T>, ColumnFixedSizeHelper>, ColumnVector<T>>
 {
     static_assert(!is_decimal<T>);
 
 private:
     using Self = ColumnVector;
-    friend class COWHelper<IColumnHelper<Self, NewShinyColumnFixedSizeHelper>, Self>;
+    friend class COWHelper<IColumnHelper<Self, ColumnFixedSizeHelper>, Self>;
 
     struct less;
     struct less_stable;
@@ -45,37 +45,37 @@ public:
     using Container = PaddedPODArray<ValueType>;
 
 private:
-    ColumnVector() { NewShinyColumnFixedSizeHelper::setFixedSize(sizeof(ValueType)); }
+    ColumnVector() { ColumnFixedSizeHelper::setFixedSize(sizeof(ValueType)); }
 
     explicit ColumnVector(const size_t n)
         : data(n)
     {
-        NewShinyColumnFixedSizeHelper::setFixedSize(sizeof(ValueType));
+        ColumnFixedSizeHelper::setFixedSize(sizeof(ValueType));
     }
 
     ColumnVector(const size_t n, const ValueType x)
         : data(n, x)
     {
-        NewShinyColumnFixedSizeHelper::setFixedSize(sizeof(ValueType));
+        ColumnFixedSizeHelper::setFixedSize(sizeof(ValueType));
     }
 
     ColumnVector(const ColumnVector & src)
         : data(src.data.begin(), src.data.end())
     {
-        NewShinyColumnFixedSizeHelper::setFixedSize(sizeof(ValueType));
+        ColumnFixedSizeHelper::setFixedSize(sizeof(ValueType));
     }
 
     ColumnVector(Container::const_iterator begin, Container::const_iterator end)
         : data(begin, end)
     {
-        NewShinyColumnFixedSizeHelper::setFixedSize(sizeof(ValueType));
+        ColumnFixedSizeHelper::setFixedSize(sizeof(ValueType));
     }
 
     /// Sugar constructor.
     ColumnVector(std::initializer_list<T> il)
         : data{il}
     {
-        NewShinyColumnFixedSizeHelper::setFixedSize(sizeof(ValueType));
+        ColumnFixedSizeHelper::setFixedSize(sizeof(ValueType));
     }
 
 public:

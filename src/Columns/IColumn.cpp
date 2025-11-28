@@ -630,7 +630,7 @@ void IColumnHelper<Derived, Parent>::fillFromBlocksAndRowNumbers(const DataTypeP
 template <typename Derived, typename Parent>
 void IColumnHelper<Derived, Parent>::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const
 {
-    if constexpr (!std::is_base_of_v<NewShinyColumnFixedSizeHelper, Derived>)
+    if constexpr (!std::is_base_of_v<ColumnFixedSizeHelper, Derived>)
         return IColumn::collectSerializedValueSizes(sizes, is_null);
 
     const auto & self = static_cast<const Derived &>(*this);

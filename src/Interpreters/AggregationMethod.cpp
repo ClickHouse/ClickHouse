@@ -1,4 +1,4 @@
-#include <Columns/NewColumnFixedSizeHelper.h>
+#include <Columns/ColumnFixedSizeHelper.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/AggregatedData.h>
 #include <Interpreters/AggregationMethod.h>
@@ -9,17 +9,17 @@ template <typename FieldType, typename TData, bool consecutive_keys_optimization
 void AggregationMethodOneNumber<FieldType, TData, consecutive_keys_optimization, nullable>::insertKeyIntoColumns(
     const AggregationMethodOneNumber::Key & key, std::vector<IColumn *> & key_columns, const Sizes & /*key_sizes*/)
 {
-    NewShinyColumnFixedSizeHelper * column;
+    ColumnFixedSizeHelper * column;
     if constexpr (nullable)
     {
         ColumnNullable & nullable_col = assert_cast<ColumnNullable &>(*key_columns[0]);
         ColumnUInt8 * null_map = assert_cast<ColumnUInt8 *>(&nullable_col.getNullMapColumn());
         null_map->insertDefault();
-        column = static_cast<NewShinyColumnFixedSizeHelper *>(&nullable_col.getNestedColumn());
+        column = static_cast<ColumnFixedSizeHelper *>(&nullable_col.getNestedColumn());
     }
     else
     {
-        column = static_cast<NewShinyColumnFixedSizeHelper *>(key_columns[0]);
+        column = static_cast<ColumnFixedSizeHelper *>(key_columns[0]);
     }
     static_assert(sizeof(FieldType) <= sizeof(Key));
     const auto * key_holder = reinterpret_cast<const char *>(&key);

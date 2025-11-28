@@ -24,7 +24,7 @@ namespace DB
   * To allow functional tests to work under UBSan we have to separate some base class that will present the memory layout in explicit way,
   *  and we will do static_cast to this class.
   */
-class NewShinyColumnFixedSizeHelper : public IColumn
+class ColumnFixedSizeHelper : public IColumn
 {
     template <size_t element_size>
     using PODArrayBaseClass = PODArrayBase<element_size, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;

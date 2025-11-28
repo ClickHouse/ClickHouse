@@ -1,8 +1,8 @@
 #pragma once
 
+#include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
-#include <Columns/NewColumnFixedSizeHelper.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/Field.h>
 #include <Core/TypeId.h>
@@ -19,11 +19,11 @@ namespace DB
 
 /// A ColumnVector for Decimals
 template <is_decimal T>
-class ColumnDecimal final : public COWHelper<IColumnHelper<ColumnDecimal<T>, NewShinyColumnFixedSizeHelper>, ColumnDecimal<T>>
+class ColumnDecimal final : public COWHelper<IColumnHelper<ColumnDecimal<T>, ColumnFixedSizeHelper>, ColumnDecimal<T>>
 {
 private:
     using Self = ColumnDecimal;
-    friend class COWHelper<IColumnHelper<Self, NewShinyColumnFixedSizeHelper>, Self>;
+    friend class COWHelper<IColumnHelper<Self, ColumnFixedSizeHelper>, Self>;
 
 public:
     using ValueType = T;
@@ -35,14 +35,14 @@ private:
     :   data(n),
         scale(scale_)
     {
-        NewShinyColumnFixedSizeHelper::setFixedSize(sizeof(ValueType));
+        ColumnFixedSizeHelper::setFixedSize(sizeof(ValueType));
     }
 
     ColumnDecimal(const ColumnDecimal & src)
     :   data(src.data.begin(), src.data.end()),
         scale(src.scale)
     {
-        NewShinyColumnFixedSizeHelper::setFixedSize(sizeof(ValueType));
+        ColumnFixedSizeHelper::setFixedSize(sizeof(ValueType));
     }
 
 public:

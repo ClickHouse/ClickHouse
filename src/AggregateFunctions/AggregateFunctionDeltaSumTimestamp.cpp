@@ -10,6 +10,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
+
 namespace DB
 {
 
@@ -177,7 +178,7 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        static_cast<NewShinyColumnFixedSizeHelper &>(to).template insertRawData<sizeof(ValueType)>(
+        static_cast<ColumnFixedSizeHelper &>(to).template insertRawData<sizeof(ValueType)>(
             reinterpret_cast<const char *>(&this->data(place).sum));
     }
 };

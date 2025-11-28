@@ -1,8 +1,8 @@
 #pragma once
 
+#include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
-#include <Columns/NewColumnFixedSizeHelper.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteBufferFromString.h>
@@ -19,10 +19,10 @@ namespace DB
 /** A column of values of "fixed-length string" type.
   * If you insert a smaller string, it will be padded with zero bytes.
   */
-class ColumnFixedString final : public COWHelper<IColumnHelper<ColumnFixedString, NewShinyColumnFixedSizeHelper>, ColumnFixedString>
+class ColumnFixedString final : public COWHelper<IColumnHelper<ColumnFixedString, ColumnFixedSizeHelper>, ColumnFixedString>
 {
 public:
-    friend class COWHelper<IColumnHelper<ColumnFixedString, NewShinyColumnFixedSizeHelper>, ColumnFixedString>;
+    friend class COWHelper<IColumnHelper<ColumnFixedString, ColumnFixedSizeHelper>, ColumnFixedString>;
 
     using Chars = PaddedPODArray<UInt8>;
 
@@ -47,14 +47,14 @@ private:
     explicit ColumnFixedString(size_t n_)
         : n(n_)
     {
-        NewShinyColumnFixedSizeHelper::setFixedSize(n);
+        ColumnFixedSizeHelper::setFixedSize(n);
     }
 
     ColumnFixedString(const ColumnFixedString & src)
         : chars(src.chars.begin(), src.chars.end())
         , n(src.n)
     {
-        NewShinyColumnFixedSizeHelper::setFixedSize(n);
+        ColumnFixedSizeHelper::setFixedSize(n);
     }
 
 public:
