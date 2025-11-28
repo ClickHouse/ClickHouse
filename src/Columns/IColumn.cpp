@@ -771,33 +771,33 @@ void IColumnHelper<Derived, Parent>::updateInplaceFrom(const IColumn::Patch & pa
         updateInplaceFrom<false>(dst, patch);
 }
 
-template class IColumnHelper<ColumnVector<UInt8>, NewShinyColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnVector<UInt16>, NewShinyColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnVector<UInt32>, NewShinyColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnVector<UInt64>, NewShinyColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnVector<UInt128>, NewShinyColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnVector<UInt256>, NewShinyColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnVector<Int8>, NewShinyColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnVector<Int16>, NewShinyColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnVector<Int32>, NewShinyColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnVector<Int64>, NewShinyColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnVector<Int128>, NewShinyColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnVector<Int256>, NewShinyColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnVector<BFloat16>, NewShinyColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnVector<Float32>, NewShinyColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnVector<Float64>, NewShinyColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnVector<UUID>, NewShinyColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnVector<IPv4>, NewShinyColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnVector<IPv6>, NewShinyColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnVector<UInt8>, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnVector<UInt16>, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnVector<UInt32>, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnVector<UInt64>, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnVector<UInt128>, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnVector<UInt256>, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnVector<Int8>, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnVector<Int16>, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnVector<Int32>, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnVector<Int64>, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnVector<Int128>, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnVector<Int256>, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnVector<BFloat16>, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnVector<Float32>, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnVector<Float64>, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnVector<UUID>, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnVector<IPv4>, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnVector<IPv6>, ColumnFixedSizeHelper>;
 
-template class IColumnHelper<ColumnDecimal<Decimal32>, NewShinyColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnDecimal<Decimal64>, NewShinyColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnDecimal<Decimal128>, NewShinyColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnDecimal<Decimal256>, NewShinyColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnDecimal<DateTime64>, NewShinyColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnDecimal<Time64>, NewShinyColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnDecimal<Decimal32>, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnDecimal<Decimal64>, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnDecimal<Decimal128>, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnDecimal<Decimal256>, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnDecimal<DateTime64>, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnDecimal<Time64>, ColumnFixedSizeHelper>;
 
-template class IColumnHelper<ColumnFixedString, NewShinyColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnFixedString, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnString, IColumn>;
 
 template class IColumnHelper<ColumnLowCardinality, IColumn>;

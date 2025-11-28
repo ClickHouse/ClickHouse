@@ -1,7 +1,6 @@
-#include <Columns/ColumnFixedSizeHelper.h>
-#include <IO/ReadBufferFromString.h>
 #include <Interpreters/AggregatedData.h>
 #include <Interpreters/AggregationMethod.h>
+#include <IO/ReadBufferFromString.h>
 
 namespace DB
 {

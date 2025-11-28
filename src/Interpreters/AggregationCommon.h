@@ -1,11 +1,10 @@
 #pragma once
 
-#include <Columns/ColumnFixedSizeHelper.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/IColumn.h>
-#include <Core/Defines.h>
-#include <Interpreters/KeysNullMap.h>
 #include <Common/assert_cast.h>
+#include <Core/Defines.h>
+#include <Columns/IColumn.h>
+#include <Columns/ColumnsNumber.h>
+#include <Interpreters/KeysNullMap.h>
 
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
 #include <tmmintrin.h>
@@ -123,8 +122,8 @@ static inline T ALWAYS_INLINE packFixed(
         {
             case 1:
                 {
-                memcpy(bytes + offset, static_cast<const ColumnFixedSizeHelper *>(column)->getRawDataBegin<1>() + index, 1);
-                offset += 1;
+                    memcpy(bytes + offset, static_cast<const ColumnFixedSizeHelper *>(column)->getRawDataBegin<1>() + index, 1);
+                    offset += 1;
                 }
                 break;
             case 2:
@@ -149,10 +148,7 @@ static inline T ALWAYS_INLINE packFixed(
                 }
                 break;
             default:
-                memcpy(
-                    bytes + offset,
-                    static_cast<const ColumnFixedSizeHelper *>(column)->getRawDataBegin<1>() + index * key_sizes[j],
-                    key_sizes[j]);
+                memcpy(bytes + offset, static_cast<const ColumnFixedSizeHelper *>(column)->getRawDataBegin<1>() + index * key_sizes[j], key_sizes[j]);
                 offset += key_sizes[j];
         }
     }
@@ -218,10 +214,7 @@ static inline T ALWAYS_INLINE packFixed(
                 offset += 8;
                 break;
             default:
-                memcpy(
-                    bytes + offset,
-                    static_cast<const ColumnFixedSizeHelper *>(key_columns[j])->getRawDataBegin<1>() + i * key_sizes[j],
-                    key_sizes[j]);
+                memcpy(bytes + offset, static_cast<const ColumnFixedSizeHelper *>(key_columns[j])->getRawDataBegin<1>() + i * key_sizes[j], key_sizes[j]);
                 offset += key_sizes[j];
         }
     }
