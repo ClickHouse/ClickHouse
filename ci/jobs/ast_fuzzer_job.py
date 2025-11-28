@@ -36,7 +36,7 @@ def get_run_command(
         # For sysctl
         "--privileged "
         "--network=host "
-        "--tmpfs /tmp/clickhouse "
+        "--tmpfs /tmp/clickhouse:mode=1777 "
         f"--volume={workspace_path}:/workspace "
         f"--volume={cwd}:/repo "
         f"{env_str} "
@@ -177,6 +177,8 @@ def run_fuzz_job(check_name: str):
     result = Result.create_from(results=results, status=True if not results else None)
 
     if not result.is_ok():
+        # generate fatal log
+        Shell.check(f"rg --text '\s<Fatal>\s' {server_log} > {fatal_log}")
         for file in paths:
             if file.exists():
                 result.set_files(file)

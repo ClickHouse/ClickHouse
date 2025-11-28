@@ -143,7 +143,7 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
         {
             std::string path{shared_data_paths->getDataAt(i)};
             auto value = shared_data_values->getDataAt(i);
-            ReadBufferFromMemory buf(value.data(), value.size());
+            ReadBufferFromMemory buf(value);
             auto type = decodeDataType(buf);
             /// We should not have Nulls here but let's check just in case.
             chassert(!isNothing(type));
@@ -169,7 +169,7 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
         {
             std::string path{shared_data_paths->getDataAt(i)};
             auto value = shared_data_values->getDataAt(i);
-            ReadBufferFromMemory buf(value.data(), value.size());
+            ReadBufferFromMemory buf(value);
             auto type = decodeDataType(buf);
             /// We should not have Nulls here but let's check just in case.
             chassert(!isNothing(type));
