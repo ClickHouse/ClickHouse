@@ -314,7 +314,6 @@ private:
                 missing_bucket_ids.push_back(bucket_id);
         }
 
-
         /// Step 3
         const auto key_types = structure.getKeyTypes();
         chassert(!key_types.empty());
