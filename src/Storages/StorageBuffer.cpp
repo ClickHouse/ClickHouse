@@ -749,7 +749,7 @@ public:
         insertIntoBuffer(block, *least_busy_buffer, metadata_snapshot->metadata_version);
         least_busy_lock.unlock();
 
-        storage.reschedule();
+        storage.reschedule(0);
     }
 private:
     StorageBuffer & storage;
@@ -1120,10 +1120,10 @@ void StorageBuffer::backgroundFlush()
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    reschedule();
+    reschedule(BACKGROUND_RESCHEDULE_MIN_DELAY);
 }
 
-void StorageBuffer::reschedule()
+void StorageBuffer::reschedule(size_t min_delay)
 {
     time_t min_first_write_time = std::numeric_limits<time_t>::max();
     size_t rows = 0;
@@ -1162,12 +1162,14 @@ void StorageBuffer::reschedule()
     time_t current_time = time(nullptr);
     time_t time_passed = current_time - min_first_write_time;
 
+    /// For minimal threshold min_delay is ignored, since otherwise it will be triggered too frequently, once it is reached
+    /// (while the Buffer cannot be flushed due to other min thresholds).
     size_t min = std::max<ssize_t>(min_thresholds.time - time_passed, 1);
-    size_t max = std::max<ssize_t>(max_thresholds.time - time_passed, 0);
+    size_t max = std::max<ssize_t>(max_thresholds.time - time_passed, min_delay);
     size_t reschedule_sec = 0;
     if (flush_thresholds.time)
     {
-        size_t flush = std::max<ssize_t>(flush_thresholds.time - time_passed, 0);
+        size_t flush = std::max<ssize_t>(flush_thresholds.time - time_passed, min_delay);
         reschedule_sec = std::min({min, max, flush});
     }
     else
