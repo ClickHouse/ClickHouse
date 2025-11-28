@@ -333,7 +333,7 @@ SELECT dictGetChildren('hierarchy_flat_dictionary', number) FROM system.numbers 
 └──────────────────────────────────────────────────────┘
 ```
 
-## dictGetDescendant {#dictgetdescendant}
+## dictGetDescendants {#dictgetdescendants}
 
 Returns all descendants as if [dictGetChildren](#dictgetchildren) function was applied `level` times recursively.
 
