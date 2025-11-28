@@ -487,7 +487,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         auto concurrent_right_filling_transform = [&](OutputPortRawPtrs outports)
         {
             Processors processors;
-            if (min_block_size_rows > 1 || min_block_size_bytes > 1)
+            if (min_block_size_rows > 0 || min_block_size_bytes > 0)
             {
                 for (auto & outport : outports)
                 {
@@ -561,7 +561,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     for (size_t i = 0; i < num_streams; ++i)
     {
         OutputPort * left_port = *lit;
-        if (min_block_size_rows > 1 || min_block_size_bytes > 1)
+        if (min_block_size_rows > 0 || min_block_size_bytes > 0)
         {
             auto squashing = std::make_shared<SimpleSquashingChunksTransform>(left->getSharedHeader(), min_block_size_rows, min_block_size_bytes);
             connect(*left_port, squashing->getInputs().front());
