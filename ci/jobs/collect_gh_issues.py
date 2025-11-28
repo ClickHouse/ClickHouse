@@ -62,6 +62,8 @@ def fetch_github_issues(
     Returns:
         List of issue dictionaries
     """
+    if isinstance(label, str):
+        label = [label]
     all_issues = []
     limit_per_request = 1000  # Maximum we'll fetch per request
 
@@ -70,13 +72,15 @@ def fetch_github_issues(
         date_threshold = (datetime.now() - timedelta(days=days_back)).strftime(
             "%Y-%m-%d"
         )
-        search_query = f'label:"{label}" is:closed closed:>{date_threshold}'
+        label_query = " ".join([f'label:"{lbl}"' for lbl in label])
+        search_query = f"{label_query} is:closed closed:>{date_threshold}"
         base_cmd = f"gh issue list --search '{search_query}' --json number,title,body,closedAt --limit {limit_per_request}"
         print(
             f"Fetching {state} issues with label '{label}' closed in last {days_back} days (since {date_threshold})..."
         )
     else:
-        base_cmd = f'gh issue list --label "{label}" --state {state} --json number,title,body,closedAt --limit {limit_per_request}'
+        label_args = " ".join([f'--label "{lbl}"' for lbl in label])
+        base_cmd = f"gh issue list {label_args} --state {state} --json number,title,body,closedAt --limit {limit_per_request}"
         print(f"Fetching {state} issues with label '{label}'...")
 
     try:
@@ -109,7 +113,9 @@ def fetch_github_issues(
         return []
 
 
-def process_issues(issues: List[dict], is_closed: bool = False) -> List[TestCaseIssue]:
+def process_issues(
+    issues: List[dict], is_closed: bool = False, is_test_issue: bool = False
+) -> List[TestCaseIssue]:
     """
     Process raw GitHub issues into TestCaseIssue objects.
 
@@ -128,14 +134,17 @@ def process_issues(issues: List[dict], is_closed: bool = False) -> List[TestCase
         body = issue.get("body", "")
         closed_at = issue.get("closedAt", "")
 
-        # Extract test name from title or body
-        test_name = extract_test_name(title, body)
+        if is_test_issue:
+            # Extract test name from title or body
+            test_name = extract_test_name(title, body)
 
-        if not test_name:
-            print(
-                f"  Warning: Could not extract test name from issue #{number}: {title}"
-            )
-            test_name = "unknown"
+            if not test_name:
+                print(
+                    f"  Warning: Could not extract test name from issue #{number}: {title}"
+                )
+                test_name = "unknown"
+        else:
+            test_name = title
 
         # Construct GitHub issue URL
         issue_url = f"https://github.com/ClickHouse/ClickHouse/issues/{number}"
@@ -165,15 +174,26 @@ def fetch_flaky_test_catalog() -> TestCaseIssueCatalog:
     # Fetch open issues with label "flaky"
     print("\n--- Fetching active flaky test issues ---")
     open_issues = fetch_github_issues(label="flaky test", state="open")
-    catalog.active_test_issues = process_issues(open_issues, is_closed=False)
+    catalog.active_test_issues = process_issues(
+        open_issues, is_closed=False, is_test_issue=True
+    )
     print(f"Processed {len(catalog.active_test_issues)} active issues\n")
+
+    # Fetch open issues with label "fuzz" and "testing": Logical errors, sanitizer errors, etc
+    print("\n--- Fetching active fuzz issues ---")
+    open_issues = fetch_github_issues(label=["fuzz", "testing"], state="open")
+    issues = process_issues(open_issues, is_closed=False)
+    catalog.active_test_issues.extend(issues)
+    print(f"Processed {len(issues)} active issues\n")
 
     # Fetch closed issues with label "flaky test" from the last 30 days
     print("--- Fetching resolved flaky test issues ---")
     closed_issues = fetch_github_issues(
         label="flaky test", state="closed", days_back=30
     )
-    catalog.resolved_test_issues = process_issues(closed_issues, is_closed=True)
+    catalog.resolved_test_issues = process_issues(
+        closed_issues, is_closed=True, is_test_issue=True
+    )
     print(f"Processed {len(catalog.resolved_test_issues)} resolved issues\n")
 
     return catalog
@@ -195,13 +215,13 @@ if __name__ == "__main__":
 
     if results[-1].is_ok() and catalog is not None:
         # Print summary
-        print("\n=== Flaky Test Issues Summary ===")
-        print(f"Active issues: {len(catalog.active_test_issues)}")
-        print(f"Resolved issues: {len(catalog.resolved_test_issues)}")
+        print("\n=== Test Issues Summary ===")
+        print(f"Active test_case issues: {len(catalog.active_test_issues)}")
+        # print(f"Resolved test_case issues: {len(catalog.resolved_test_issues)}")
 
         # Print sample of active issues
         if catalog.active_test_issues:
-            print("\n--- Sample Active Issues ---")
+            print("\n--- Sample Active Test Issues ---")
             for issue in catalog.active_test_issues[:5]:
                 print(f"  Issue #{issue.issue}: {issue.test_name} - {issue.title}")
 

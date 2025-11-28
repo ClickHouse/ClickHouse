@@ -9,86 +9,97 @@ class TC:
 
 
 TEST_CONFIGS = [
-    TC("test_atomic_drop_table/", True, "no idea why i'm sequential"),
-    TC("test_attach_without_fetching/", True, "no idea why i'm sequential"),
-    TC(
-        "test_cleanup_dir_after_bad_zk_conn/",
-        True,
-        "no idea why i'm sequential",
-    ),
-    TC(
-        "test_consistent_parts_after_clone_replica/",
-        True,
-        "no idea why i'm sequential",
-    ),
+    # TC("test_atomic_drop_table/", True, "no idea why i'm sequential"),
+    # TC("test_attach_without_fetching/", True, "no idea why i'm sequential"),
+    # TC(
+    #     "test_cleanup_dir_after_bad_zk_conn/",
+    #     True,
+    #     "no idea why i'm sequential",
+    # ),
+    # TC(
+    #     "test_consistent_parts_after_clone_replica/",
+    #     True,
+    #     "no idea why i'm sequential",
+    # ),
+    # TC("test_cross_replication/", True, "no idea why i'm sequential"),
+    # TC("test_ddl_worker_non_leader/", True, "no idea why i'm sequential"),
+    # TC("test_delayed_replica_failover/", True, "no idea why i'm sequential"),
+    # TC("test_disabled_mysql_server/", True, "no idea why i'm sequential"),
+
+    # 1
+    # TC("test_system_metrics/", True, "no idea why i'm sequential"),
+    # TC("test_ttl_move/", True, "no idea why i'm sequential"),
+
+    # TC(
+    #     "test_zookeeper_config_load_balancing/",
+    #     True,
+    #     "no idea why i'm sequential",
+    # ),
+    # TC("test_zookeeper_fallback_session/", True, "no idea why i'm sequential"),
+    # TC("test_keeper_map/", True, "no idea why i'm sequential"),
+    # TC("test_keeper_multinode_simple/", True, "no idea why i'm sequential"),
+    # TC("test_keeper_two_nodes_cluster/", True, "no idea why i'm sequential"),
+    # TC("test_mysql_database_engine/", True, "no idea why i'm sequential"),
+    # TC("test_replace_partition/", True, "no idea why i'm sequential"),
+    # TC("test_replicated_fetches_timeouts/", True, "no idea why i'm sequential"),
+    # TC(
+    #     "test_replicated_merge_tree_wait_on_shutdown/",
+    #     True,
+    #     "no idea why i'm sequential",
+    # ),
+
+    # 2
+
+    # TC("test_distributed_respect_user_timeouts/", True, "no idea why i'm sequential"),
+    # TC("test_limited_replicated_fetches/", True, "no idea why i'm sequential"),
+    # TC("test_parts_delete_zookeeper/", True, "no idea why i'm sequential"),
+
+    # TC("test_insert_into_distributed/", True, "no idea why i'm sequential"),
+    # TC(
+    #     "test_insert_into_distributed_through_materialized_view/",
+    #     True,
+    #     "no idea why i'm sequential",
+    # ),
+    # TC(
+    #     "test_postgresql_replica_database_engine/",
+    #     True,
+    #     "no idea why i'm sequential",
+    # ),
+
+    # 3 not a problem
+    # TC("test_quorum_inserts_parallel/", True, "no idea why i'm sequential"),
+    # TC("test_storage_s3/", True, "no idea why i'm sequential"),
+
+    # Sequential
     TC("test_crash_log/", True, "no idea why i'm sequential"),
-    TC("test_cross_replication/", True, "no idea why i'm sequential"),
-    TC("test_ddl_worker_non_leader/", True, "no idea why i'm sequential"),
-    TC("test_delayed_replica_failover/", True, "no idea why i'm sequential"),
     TC(
         "test_dictionary_allow_read_expired_keys/",
         True,
         "no idea why i'm sequential",
     ),
-    TC("test_disabled_mysql_server/", True, "no idea why i'm sequential"),
-    TC("test_distributed_respect_user_timeouts/", True, "no idea why i'm sequential"),
     TC("test_dns_cache/", True, "no idea why i'm sequential"),
     TC("test_global_overcommit_tracker/", True, "no idea why i'm sequential"),
     TC("test_grpc_protocol/", True, "no idea why i'm sequential"),
     TC("test_host_regexp_multiple_ptr_records/", True, "no idea why i'm sequential"),
     TC("test_http_failover/", True, "no idea why i'm sequential"),
     TC("test_https_replication/", True, "no idea why i'm sequential"),
-    TC("test_insert_into_distributed/", True, "no idea why i'm sequential"),
-    TC(
-        "test_insert_into_distributed_through_materialized_view/",
-        True,
-        "no idea why i'm sequential",
-    ),
-    TC("test_keeper_map/", True, "no idea why i'm sequential"),
-    TC("test_keeper_multinode_simple/", True, "no idea why i'm sequential"),
-    TC("test_keeper_two_nodes_cluster/", True, "no idea why i'm sequential"),
-    TC("test_limited_replicated_fetches/", True, "no idea why i'm sequential"),
     TC("test_merge_tree_s3/", True, "no idea why i'm sequential"),
-    TC("test_mysql_database_engine/", True, "no idea why i'm sequential"),
-    TC("test_parts_delete_zookeeper/", True, "no idea why i'm sequential"),
-    TC(
-        "test_postgresql_replica_database_engine/",
-        True,
-        "no idea why i'm sequential",
-    ),
     TC(
         "test_profile_max_sessions_for_user/",
         True,
         "no idea why i'm sequential",
     ),
-    TC("test_quorum_inserts_parallel/", True, "no idea why i'm sequential"),
     TC("test_random_inserts/", True, "no idea why i'm sequential"),
-    TC("test_replace_partition/", True, "no idea why i'm sequential"),
     TC("test_replicated_database/", True, "no idea why i'm sequential"),
-    TC("test_replicated_fetches_timeouts/", True, "no idea why i'm sequential"),
-    TC(
-        "test_replicated_merge_tree_wait_on_shutdown/",
-        True,
-        "no idea why i'm sequential",
-    ),
     TC("test_server_overload/", True, "no idea why i'm sequential"),
     TC("test_server_reload/", True, "no idea why i'm sequential"),
     TC("test_storage_kafka/", True, "no idea why i'm sequential"),
     TC("test_storage_kerberized_kafka/", True, "no idea why i'm sequential"),
     TC("test_storage_rabbitmq/", True, "no idea why i'm sequential"),
-    TC("test_storage_s3/", True, "no idea why i'm sequential"),
     TC("test_storage_s3_queue/", True, "no idea why i'm sequential"),
     TC("test_system_flush_logs/", True, "no idea why i'm sequential"),
     TC("test_system_logs/", True, "no idea why i'm sequential"),
-    TC("test_system_metrics/", True, "no idea why i'm sequential"),
-    TC("test_ttl_move/", True, "no idea why i'm sequential"),
     TC("test_user_ip_restrictions/", True, "no idea why i'm sequential"),
-    TC(
-        "test_zookeeper_config_load_balancing/",
-        True,
-        "no idea why i'm sequential",
-    ),
-    TC("test_zookeeper_fallback_session/", True, "no idea why i'm sequential"),
     TC(
         "test_backup_restore_on_cluster/test_concurrency.py",
         True,
@@ -98,6 +109,7 @@ TEST_CONFIGS = [
     TC("test_keeper_ipv4_fallback/test.py", True, "no idea why i'm sequential"),
     TC("test_storage_iceberg_no_spark/", True, "no idea why i'm sequential"),
     TC("test_storage_iceberg_with_spark/", True, "no idea why i'm sequential"),
+    TC("test_storage_iceberg_with_spark_cache/", True, "no idea why i'm sequential"),
     TC(
         "test_storage_iceberg_schema_evolution/",
         True,
@@ -114,6 +126,8 @@ IMAGES_ENV = {
     "clickhouse/integration-helper": "DOCKER_HELPER_TAG",
     "clickhouse/integration-test": "DOCKER_BASE_TAG",
     "clickhouse/kerberos-kdc": "DOCKER_KERBEROS_KDC_TAG",
+    "clickhouse/test-mysql80": "DOCKER_TEST_MYSQL80_TAG",
+    "clickhouse/test-mysql57": "DOCKER_TEST_MYSQL57_TAG",
     "clickhouse/mysql-golang-client": "DOCKER_MYSQL_GOLANG_CLIENT_TAG",
     "clickhouse/mysql-java-client": "DOCKER_MYSQL_JAVA_CLIENT_TAG",
     "clickhouse/mysql-js-client": "DOCKER_MYSQL_JS_CLIENT_TAG",
