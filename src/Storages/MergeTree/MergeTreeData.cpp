@@ -10346,7 +10346,7 @@ size_t MergeTreeData::NamesAndTypesListHash::operator()(const NamesAndTypesList 
 {
     size_t hash = 0;
     for (const auto & name_type : list)
-        boost::hash_combine(hash, StringRefHash{}(std::string_view(name_type.name)));
+        boost::hash_combine(hash, StringViewHash{}(name_type.name));
     return hash;
 }
 

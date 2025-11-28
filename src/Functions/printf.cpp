@@ -104,7 +104,7 @@ private:
             size_t curr_offset = 0;
             for (size_t i = 0; i < concrete_column->size(); ++i)
             {
-                auto a = concrete_column->getDataAt(i).toView();
+                auto a = concrete_column->getDataAt(i);
                 s = fmt::sprintf(format, a);
 
                 res_chars.resize(curr_offset + s.size());
