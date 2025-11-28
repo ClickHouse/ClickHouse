@@ -77,8 +77,8 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
 
     /// In compatibility mode, we want to treat pre-signed URLs like plain ones,
     /// so we fold their query into the key (like make '?' behave as wildcard)
-    /// Do it by unmarking presigned here
-    if (!keep_presigned_query_parameters)
+    /// Do it by unmarking presigned here, but if it actually looks like a presigned URL
+    if (!keep_presigned_query_parameters && looks_like_presigned)
         looks_like_presigned = false;
 
     std::unordered_map<std::string, std::string> mapper;

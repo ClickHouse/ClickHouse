@@ -52,6 +52,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_time_time64_type", false, true, "Enable Time and Time64 type by default"},
             {"delta_lake_snapshot_start_version", -1, -1, "New setting."},
             {"delta_lake_snapshot_end_version", -1, -1, "New setting."},
+            {"compatibility_s3_presigned_url_query_in_path", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
