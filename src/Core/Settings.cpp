@@ -7368,7 +7368,7 @@ Allow to create table with the Alias engine.
     DECLARE(Bool, use_paimon_partition_pruning, false, R"(
 Use Paimon partition pruning for Paimon table functions
 )", EXPERIMENTAL) \
-DECLARE(JoinOrderAlgorithm, query_plan_optimize_join_order_algorithm, "dpsize", R"(
+DECLARE(JoinOrderAlgorithm, query_plan_optimize_join_order_algorithm, "dpsize,greedy", R"(
     Specifies which JOIN order algorithms to attempt during query plan optimization. E.g. 'dpsize,greedy'
 )", EXPERIMENTAL) \
     \
