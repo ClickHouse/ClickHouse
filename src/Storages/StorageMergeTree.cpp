@@ -1430,11 +1430,13 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         }
         else
         {
-            /// Do not mutate parts in an active transaction.
+            /// Mutate visible parts only (similar to mutation with transaction)
+            /// NOTE Do not mutate parts in an active transaction.
             /// Mutation without transaction should wait for the transaction to commit or rollback.
-            if (part->isInvolvedInTransaction())
+            if (!part->version.isVisible(Tx::MaxCommittedCSN, Tx::EmptyTID))
             {
-                LOG_DEBUG(log, "Cannot mutate part {} because it's created or removed by an active transaction, mutation {} will wait for the transaction to commit or rollback.",
+                LOG_DEBUG(log, "Cannot mutate part {} because it's not visible (outdated, being created or removed "
+                          "in an active transaction) to mutation {}.",
                           part->name, mutations_begin_it->second.file_name);
                 continue;
             }
