@@ -19,12 +19,12 @@ using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasRe
 
 /** Interprets the INSERT query.
   */
-class InterpreterInsertQuery : public IInterpreter, WithMutableContext
+class InterpreterInsertQuery : public IInterpreter, WithContext
 {
 public:
     InterpreterInsertQuery(
         const ASTPtr & query_ptr_,
-        ContextMutablePtr context_,
+        ContextPtr context_,
         bool allow_materialized_,
         bool no_squash_,
         bool no_destination,
@@ -38,6 +38,10 @@ public:
     BlockIO execute() override;
 
     StorageID getDatabaseTable() const;
+
+    /// Return explicitly specified column names to insert.
+    /// If none explicit names were specified, returns nullopt.
+    std::optional<Names> getInsertColumnNames() const;
 
     static void extendQueryLogElemImpl(QueryLogElement & elem, ContextPtr context_);
 
@@ -86,8 +90,6 @@ private:
     // if applicable, build pipeline for replicated MergeTree from cluster storage
     std::optional<QueryPipeline>
     distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(const ASTInsertQuery & query, ContextPtr local_context);
-
-    void setInsertContextValues(StoragePtr table);
 };
 
 }

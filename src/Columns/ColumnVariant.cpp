@@ -1395,8 +1395,19 @@ size_t ColumnVariant::capacity() const
     return local_discriminators->capacity();
 }
 
+void ColumnVariant::shrinkToFit()
+{
+    offsets->shrinkToFit();
+    local_discriminators->shrinkToFit();
+    const size_t num_variants = variants.size();
+    for (size_t i = 0; i < num_variants; ++i)
+        getVariantByLocalDiscriminator(i).shrinkToFit();
+}
+
 void ColumnVariant::ensureOwnership()
 {
+    offsets->ensureOwnership();
+    local_discriminators->ensureOwnership();
     const size_t num_variants = variants.size();
     for (size_t i = 0; i < num_variants; ++i)
         getVariantByLocalDiscriminator(i).ensureOwnership();

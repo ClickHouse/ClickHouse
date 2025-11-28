@@ -52,6 +52,8 @@ public:
         time_t time = 0;  /// The number of seconds from the insertion of the first row into the block.
         size_t rows = 0;  /// The number of rows in the block.
         size_t bytes = 0; /// The number of (uncompressed) bytes in the block.
+
+        std::string toString() const;
     };
 
     /** num_shards - the level of internal parallelism (the number of independent buffers)
