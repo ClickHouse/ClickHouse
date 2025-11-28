@@ -396,7 +396,8 @@ class FuzzerLogParser:
                 keyword_pos = query_command.find(keyword)
                 min_pos = min(min_pos, keyword_pos)
         if min_pos == len(query_command):
-            raise Exception("No SQL keyword found in query command")
+            print(f"No SQL keyword found in query command [{query_command}]")
+            return None
         query_command = query_command[min_pos:]
         return query_command
 
