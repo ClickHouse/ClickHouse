@@ -220,31 +220,35 @@ void MergeTreePrefetchedReadPool::startPrefetches()
 MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t task_idx, MergeTreeReadTask * previous_task)
 {
     OpenTelemetry::SpanHolder span("MergeTreePrefetchedReadPool::getTask");
+    ThreadTaskPtr thread_task;
 
-    std::lock_guard lock(mutex);
-
-    if (per_thread_tasks.empty())
-        return nullptr;
-
-    if (!started_prefetches)
     {
-        started_prefetches = true;
-        startPrefetches();
+        std::lock_guard lock(mutex);
+
+        if (per_thread_tasks.empty())
+            return nullptr;
+
+        if (!started_prefetches)
+        {
+            started_prefetches = true;
+            startPrefetches();
+        }
+
+        auto it = per_thread_tasks.find(task_idx);
+        if (it == per_thread_tasks.end())
+            return stealTask(task_idx, previous_task);
+
+        auto & thread_tasks = it->second;
+        assert(!thread_tasks.empty());
+
+        thread_task = std::move(thread_tasks.front());
+        thread_tasks.pop_front();
+
+        if (thread_tasks.empty())
+            per_thread_tasks.erase(it);
     }
 
-    auto it = per_thread_tasks.find(task_idx);
-    if (it == per_thread_tasks.end())
-        return stealTask(task_idx, previous_task);
-
-    auto & thread_tasks = it->second;
-    assert(!thread_tasks.empty());
-
-    auto thread_task = std::move(thread_tasks.front());
-    thread_tasks.pop_front();
-
-    if (thread_tasks.empty())
-        per_thread_tasks.erase(it);
-
+    /// createTask() is costly and doesn't require locking the mutex.
     return createTask(*thread_task, previous_task);
 }
 
