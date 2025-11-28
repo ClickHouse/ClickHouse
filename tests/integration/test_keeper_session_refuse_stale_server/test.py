@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import pytest
+import random
+import string
 
 from helpers.cluster import ClickHouseCluster, ZOOKEEPER_CONTAINERS
 
