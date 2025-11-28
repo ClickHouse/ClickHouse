@@ -478,9 +478,7 @@ SSHPtyHandler::~SSHPtyHandler()
 void SSHPtyHandler::run()
 {
     ::ssh::SSHEvent event;
-    auto peer_addr = socket().peerAddress();
-    socket().close();
-    SessionCallback sdata(session, server, peer_addr, options);
+    SessionCallback sdata(session, server, socket().peerAddress(), options);
     session.handleKeyExchange();
     event.addSession(session);
     int max_iterations = options.auth_timeout_seconds * 1000 / options.event_poll_interval_milliseconds;

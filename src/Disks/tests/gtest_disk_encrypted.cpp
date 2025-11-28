@@ -9,9 +9,9 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
-#include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
-#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
 #include <Poco/TemporaryFile.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <boost/algorithm/string/join.hpp>

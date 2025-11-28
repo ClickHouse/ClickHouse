@@ -177,7 +177,7 @@ public:
 
     bool isDefaultAt(size_t n) const override;
     bool isNullAt(size_t n) const override;
-    StringRef getDataAt(size_t n) const override;
+    std::string_view getDataAt(size_t n) const override;
 
     void insertData(const char * pos, size_t length) override;
     void insert(const Field & x) override;
@@ -213,8 +213,8 @@ public:
     void insertManyDefaults(size_t length) override;
 
     void popBack(size_t n) override;
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    std::string_view serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     void deserializeAndInsertFromArena(ReadBuffer & in) override;
     void deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in) override;
     void skipSerializedInArena(ReadBuffer & in) const override;
@@ -248,6 +248,7 @@ public:
     void reserve(size_t n) override;
     size_t capacity() const override;
     void prepareForSquashing(const Columns & source_columns, size_t factor) override;
+    void shrinkToFit() override;
     void ensureOwnership() override;
     size_t byteSize() const override;
     size_t byteSizeAt(size_t n) const override;
