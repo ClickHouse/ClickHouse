@@ -1021,7 +1021,7 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
 
         if (order_info.input_order)
         {
-            bool can_read = object_storage_step->requestReadingInOrder(order_info.input_order);
+            bool can_read = object_storage_step->requestReadingInOrder();
             if (!can_read)
             {
                 return nullptr;
@@ -1095,7 +1095,7 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
 
         if (order_info.input_order)
         {
-            bool can_read = object_storage_step->requestReadingInOrder(order_info.input_order);
+            bool can_read = object_storage_step->requestReadingInOrder();
             if (!can_read)
                 return {};
         }
@@ -1199,7 +1199,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node)
         if (!canImproveOrderForDistinct(order_info, object_storage_step->getDataOrder()))
             return {};
 
-        if (!object_storage_step->requestReadingInOrder(order_info.input_order))
+        if (!object_storage_step->requestReadingInOrder())
             return {};
 
         return order_info;
