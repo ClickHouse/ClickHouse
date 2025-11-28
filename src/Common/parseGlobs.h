@@ -1,6 +1,8 @@
 #pragma once
 
+#include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 
@@ -17,4 +19,70 @@ namespace DB
     /// Don't match it against regex, but generate a,b,c strings instead and process each of them separately.
     /// E.g. for a string like `file{1,2,3}.csv` return vector of strings: {`file1.csv`,`file2.csv`,`file3.csv`}
     std::vector<std::string> expandSelectionGlob(const std::string & path);
+
+namespace BetterGlob
+{
+
+/// fixme more clever range:
+/// select start and end depending on which is higher or lower
+/// calculate necessary padding to match values
+struct Range
+{
+    size_t start = 0;
+    size_t end = 0;
+};
+
+enum class ExpressionType {
+    RANGE,
+    CONSTANT,
+    ENUM,
+};
+
+using ExpressionData = std::variant<
+    Range,
+    std::string_view,
+    std::vector<std::string_view>
+>;
+
+class Expression
+{
+public:
+    explicit Expression (ExpressionData input): data(input) {}
+
+    ExpressionType type() const {
+        return static_cast<ExpressionType>(data.index());
+    }
+
+    // const ExpressionData& getData() const { return data; }
+
+private:
+    ExpressionData data;
+};
+
+class GlobString
+{
+public:
+    explicit GlobString(std::string input): input_data(std::move(input)) {}
+
+    void parse();
+    const std::vector<Expression> & getExpressions() const { return expressions; }
+
+private:
+    std::string_view consumeConstantExpression(const std::string_view & input) const;
+    std::string_view consumeMatcher(const std::string_view & input) const;
+
+    std::vector<std::string_view> tryParseEnumMatcher(const std::string_view & input) const;
+    std::optional<Range> tryParseRangeMatcher(const std::string_view & input) const;
+
+    std::vector<Expression> expressions;
+
+    std::string input_data;
+
+    // bool has_globs = false;
+    // bool has_ranges = false;
+    // bool has_enums = false;
+    // bool has_question_or_asterisk = false;
+};
+
+}
 }
