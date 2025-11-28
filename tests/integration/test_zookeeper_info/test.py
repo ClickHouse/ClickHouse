@@ -8,17 +8,17 @@ cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/keeper.xml", "configs/keeper_usage.xml"],
+    main_configs=["configs/use_keeper.xml", "configs/enable_keeper1.xml"],
     stay_alive=True,
 )
 node2 = cluster.add_instance(
     "node2",
-    main_configs=["configs/keeper.xml", "configs/keeper_usage.xml"],
+    main_configs=["configs/use_keeper.xml", "configs/enable_keeper2.xml"],
     stay_alive=True,
 )
 node3 = cluster.add_instance(
     "node3",
-    main_configs=["configs/keeper.xml", "configs/keeper_usage.xml"],
+    main_configs=["configs/use_keeper.xml", "configs/enable_keeper3c.xml"],
     stay_alive=True,
 )
 
