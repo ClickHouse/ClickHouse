@@ -22,9 +22,11 @@ if (BUILTINS_LIBRARY STREQUAL "libclang_rt.builtins-${system_processor}.a")
         COMMAND_ERROR_IS_FATAL ANY
         OUTPUT_STRIP_TRAILING_WHITESPACE)
 endif()
-if (BUILTINS_LIBRARY STREQUAL "libclang_rt.builtins.a")
-    message(FATAL_ERROR "libclang_rt.builtins had not been found")
-endif()
+
+if (NOT EXISTS "${BUILTINS_LIBRARY}")
+    include (cmake/build_clang_builtin.cmake)
+    build_clang_builtin(${CMAKE_CXX_COMPILER_TARGET} BUILTINS_LIBRARY)
+endif ()
 
 set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -lrt -lpthread")
 
