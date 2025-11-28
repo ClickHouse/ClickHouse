@@ -7,6 +7,28 @@ using namespace DB;
 
 TEST(Common, makeRegexpPatternFromGlobs)
 {
+    auto s = BetterGlob::GlobString("123");
+    s.parse();
+
+    EXPECT_EQ(s.getExpressions().size(), 1);
+    EXPECT_EQ(s.getExpressions().front().type(), BetterGlob::ExpressionType::CONSTANT);
+
+    s = BetterGlob::GlobString("123{123}{12..23}");
+    s.parse();
+
+    EXPECT_EQ(s.getExpressions().size(), 3);
+    EXPECT_EQ(s.getExpressions().front().type(), BetterGlob::ExpressionType::CONSTANT);
+    EXPECT_EQ(s.getExpressions().back().type(), BetterGlob::ExpressionType::RANGE);
+
+    s = BetterGlob::GlobString("123{12..23}{1223}");
+    s.parse();
+
+    EXPECT_EQ(s.getExpressions().size(), 3);
+    EXPECT_EQ(s.getExpressions().front().type(), BetterGlob::ExpressionType::CONSTANT);
+    EXPECT_EQ(s.getExpressions().back().type(), BetterGlob::ExpressionType::ENUM);
+
+    EXPECT_EQ(makeRegexpPatternFromGlobs("?"), "[^/]");
+
     EXPECT_EQ(makeRegexpPatternFromGlobs("?"), "[^/]");
     EXPECT_EQ(makeRegexpPatternFromGlobs("*"), "[^/]*");
     EXPECT_EQ(makeRegexpPatternFromGlobs("/?"), "/[^/]");
