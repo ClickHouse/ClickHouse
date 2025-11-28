@@ -115,6 +115,11 @@ namespace
                         || explicit_rights.isGranted(AccessType::SHOW_NAMED_COLLECTIONS)
                         || explicit_rights.isGranted(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS);
                 }
+                case AccessFlags::SOURCE:
+                case AccessFlags::TABLE_ENGINE:
+                    /// For source/table-engine parameters we don't have SHOW-equivalent;
+                    /// revealing the required grant is acceptable.
+                    return true;
                 default:
                     return false;
             }
@@ -132,12 +137,12 @@ namespace
                 | AccessType::ALTER_QUOTA
                 | AccessType::DROP_QUOTA;
 
+            if (static_cast<bool>(flags & quotas_flags))
+                return explicit_rights.isGranted(AccessType::SHOW_QUOTAS);
+
             static const AccessFlags profiles_flags = AccessType::CREATE_SETTINGS_PROFILE
                 | AccessType::ALTER_SETTINGS_PROFILE
                 | AccessType::DROP_SETTINGS_PROFILE;
-
-            if (static_cast<bool>(flags & quotas_flags))
-                return explicit_rights.isGranted(AccessType::SHOW_QUOTAS);
 
             if (static_cast<bool>(flags & profiles_flags))
                 return explicit_rights.isGranted(AccessType::SHOW_SETTINGS_PROFILES);
@@ -150,32 +155,30 @@ namespace
         {
             const bool is_dictionary_scope = static_cast<bool>(flags & AccessFlags::allDictionaryFlags());
 
-            const bool can_show_table = explicit_rights.isGranted(AccessType::SHOW_TABLES, required.database, required.table)
-                || explicit_rights.isGranted(AccessType::SHOW_TABLES);
-            const bool can_show_dict = explicit_rights.isGranted(AccessType::SHOW_DICTIONARIES, required.database, required.table)
-                || explicit_rights.isGranted(AccessType::SHOW_DICTIONARIES);
-
             if (is_dictionary_scope)
             {
-                if (!can_show_dict)
-                    return false;
+                const bool can_show_dict = explicit_rights.isGranted(AccessType::SHOW_DICTIONARIES, required.database, required.table)
+                    || explicit_rights.isGranted(AccessType::SHOW_DICTIONARIES);
+
+                return can_show_dict;
             }
             else
             {
+                const bool can_show_table = explicit_rights.isGranted(AccessType::SHOW_TABLES, required.database, required.table)
+                    || explicit_rights.isGranted(AccessType::SHOW_TABLES);
+
                 if (!can_show_table)
                     return false;
-            }
 
-            /// Column-level hints for tables require SHOW COLUMNS, but if SHOW DICTIONARIES
-            /// already allows listing this object (e.g. dictionary table wrapper), do not block on columns.
-            if (!is_dictionary_scope && has_specific_columns)
-            {
-                if (!explicit_rights.isGranted(AccessType::SHOW_COLUMNS, required.database, required.table)
-                    && !explicit_rights.isGranted(AccessType::SHOW_COLUMNS))
-                    return false;
+                /// Column-level hints for tables require SHOW COLUMNS.
+                if (has_specific_columns)
+                {
+                    if (!explicit_rights.isGranted(AccessType::SHOW_COLUMNS, required.database, required.table)
+                        && !explicit_rights.isGranted(AccessType::SHOW_COLUMNS))
+                        return false;
+                }
+                return true;
             }
-
-            return true;
         }
 
         /// Database-only scope (no table): require SHOW DATABASES on that db.

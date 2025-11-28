@@ -79,6 +79,9 @@ def test_require_show_requires_show_privilege_for_dictionary_hints():
 
     node_require.query("GRANT SHOW DATABASES ON *.* TO u_dict")
     node_require.query("GRANT SHOW DICTIONARIES ON default.dict_require TO u_dict")
+    node_require.query("GRANT SHOW TABLES ON default.dict_require TO u_dict")
+    node_require.query("GRANT SHOW COLUMNS ON default.dict_require TO u_dict")
+
     err = node_require.query_and_get_error("SELECT * FROM dict_require", user="u_dict")
     assert "necessary to have the grant SELECT" in err
 
@@ -248,6 +251,8 @@ def test_require_show_for_table_like_dictionary_columns():
 
     node_require.query("GRANT SHOW DATABASES ON *.* TO u_dict_cols")
     node_require.query("GRANT SHOW DICTIONARIES ON default.dict_cols TO u_dict_cols")
+    node_require.query("GRANT SHOW TABLES ON *.* TO u_dict_cols")
+    node_require.query("GRANT SHOW COLUMNS ON default.dict_cols TO u_dict_cols")
 
     err = node_require.query_and_get_error("SELECT id FROM dict_cols", user="u_dict_cols")
     assert "necessary to have the grant SELECT" in err
