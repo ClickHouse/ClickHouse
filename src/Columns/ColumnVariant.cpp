@@ -846,14 +846,14 @@ char * ColumnVariant::serializeValueIntoMemory(size_t n, char * memory, const IC
     return variants[localDiscriminatorByGlobal(global_discr)]->serializeValueIntoMemory(offsetAt(n), memory, settings);
 }
 
-std::optional<size_t> ColumnVariant::getSerializedValueSize(size_t n) const
+std::optional<size_t> ColumnVariant::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
     size_t res = sizeof(Discriminator);
     Discriminator global_discr = globalDiscriminatorAt(n);
     if (global_discr == NULL_DISCRIMINATOR)
         return res;
 
-    auto variant_size = variants[localDiscriminatorByGlobal(global_discr)]->getSerializedValueSize(offsetAt(n));
+    auto variant_size = variants[localDiscriminatorByGlobal(global_discr)]->getSerializedValueSize(offsetAt(n), settings);
     if (!variant_size)
         return std::nullopt;
 

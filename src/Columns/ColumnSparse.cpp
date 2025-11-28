@@ -169,9 +169,9 @@ char * ColumnSparse::serializeValueIntoMemory(size_t n, char * memory, const ICo
     return values->serializeValueIntoMemory(getValueIndex(n), memory, settings);
 }
 
-std::optional<size_t> ColumnSparse::getSerializedValueSize(size_t n) const
+std::optional<size_t> ColumnSparse::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
-    return values->getSerializedValueSize(getValueIndex(n));
+    return values->getSerializedValueSize(getValueIndex(n), settings);
 }
 
 void ColumnSparse::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)

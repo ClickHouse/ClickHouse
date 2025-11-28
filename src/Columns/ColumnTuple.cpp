@@ -363,7 +363,7 @@ char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory, const ICol
     return memory;
 }
 
-std::optional<size_t> ColumnTuple::getSerializedValueSize(size_t n) const
+std::optional<size_t> ColumnTuple::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
     if (columns.empty())
         return 1;
@@ -371,7 +371,7 @@ std::optional<size_t> ColumnTuple::getSerializedValueSize(size_t n) const
     size_t res = 0;
     for (const auto & column : columns)
     {
-        auto element_size = column->getSerializedValueSize(n);
+        auto element_size = column->getSerializedValueSize(n, settings);
         if (!element_size)
             return std::nullopt;
         res += *element_size;

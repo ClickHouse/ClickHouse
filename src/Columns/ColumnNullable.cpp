@@ -203,9 +203,9 @@ char * ColumnNullable::serializeValueIntoMemory(size_t n, char * memory, const I
     return getNestedColumn().serializeValueIntoMemory(n, memory, settings);
 }
 
-std::optional<size_t> ColumnNullable::getSerializedValueSize(size_t n) const
+std::optional<size_t> ColumnNullable::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
-    auto nested_size = getNestedColumn().getSerializedValueSize(n);
+    auto nested_size = getNestedColumn().getSerializedValueSize(n, settings);
     if (!nested_size)
         return std::nullopt;
     return 1 + *nested_size; /// +1 for null mask byte.

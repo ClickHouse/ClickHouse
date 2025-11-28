@@ -625,7 +625,7 @@ std::string_view IColumnHelper<Derived, Parent>::serializeValueIntoArenaWithNull
             return {memory, 1};
         }
 
-        auto serialized_value_size = self.getSerializedValueSize(n);
+        auto serialized_value_size = self.getSerializedValueSize(n, settings);
         if (serialized_value_size)
         {
             size_t total_size = *serialized_value_size + 1 /* null map byte */;

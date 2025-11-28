@@ -143,9 +143,9 @@ char * ColumnReplicated::serializeValueIntoMemory(size_t n, char * memory, const
     return nested_column->serializeValueIntoMemory(indexes.getIndexAt(n), memory, settings);
 }
 
-std::optional<size_t> ColumnReplicated::getSerializedValueSize(size_t n) const
+std::optional<size_t> ColumnReplicated::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
-    return nested_column->getSerializedValueSize(indexes.getIndexAt(n));
+    return nested_column->getSerializedValueSize(indexes.getIndexAt(n), settings);
 }
 
 void ColumnReplicated::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)

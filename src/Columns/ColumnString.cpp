@@ -257,6 +257,11 @@ void ColumnString::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, c
     }
 }
 
+std::optional<size_t> ColumnString::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
+{
+    bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
+    return byteSizeAt(n) + serialize_string_with_zero_byte;
+}
 
 std::string_view ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {

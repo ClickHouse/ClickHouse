@@ -316,7 +316,7 @@ public:
     /// Returns size in bytes required to serialize value into memory using the previous method.
     /// If size cannot be calculated in advance, return nullopt. In this case serializeValueIntoMemory
     /// cannot be used and serializeValueIntoArena should be used instead,
-    virtual std::optional<size_t> getSerializedValueSize(size_t n) const { return byteSizeAt(n); }
+    virtual std::optional<size_t> getSerializedValueSize(size_t n, const SerializationSettings *) const { return byteSizeAt(n); }
 
     virtual void batchSerializeValueIntoMemory(std::vector<char *> & /* memories */, const SerializationSettings * settings) const;
 

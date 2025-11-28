@@ -257,7 +257,7 @@ char * ColumnArray::serializeValueIntoMemory(size_t n, char * memory, const ICol
     return memory;
 }
 
-std::optional<size_t> ColumnArray::getSerializedValueSize(size_t n) const
+std::optional<size_t> ColumnArray::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
     const auto & offsets_data = getOffsets();
 
@@ -267,7 +267,7 @@ std::optional<size_t> ColumnArray::getSerializedValueSize(size_t n) const
     size_t res = sizeof(offsets_data[0]);
     for (; pos < end; ++pos)
     {
-        auto element_size = getData().getSerializedValueSize(pos);
+        auto element_size = getData().getSerializedValueSize(pos, settings);
         if (!element_size)
             return std::nullopt;
         res += *element_size;
