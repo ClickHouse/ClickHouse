@@ -250,13 +250,13 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
                     avro::StringSchema(),
                     [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
                     {
-                        const std::string_view & s = assert_cast<const ColumnString &>(column).getDataAt(row_num);
+                        const std::string_view & s = assert_cast<const ColumnString &>(column).getDataAt(row_num).toView();
                         encoder.encodeString(std::string(s));
                     }};
             else
                 return {avro::BytesSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
                     {
-                        const std::string_view & s = assert_cast<const ColumnString &>(column).getDataAt(row_num);
+                        const std::string_view & s = assert_cast<const ColumnString &>(column).getDataAt(row_num).toView();
                         encoder.encodeBytes(reinterpret_cast<const uint8_t *>(s.data()), s.size());
                     }
                 };
@@ -266,7 +266,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             auto schema = avro::FixedSchema(static_cast<int>(size), "fixed_" + toString(type_name_increment));
             return {schema, [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
-                const std::string_view & s = assert_cast<const ColumnFixedString &>(column).getDataAt(row_num);
+                const std::string_view & s = assert_cast<const ColumnFixedString &>(column).getDataAt(row_num).toView();
                 encoder.encodeFixed(reinterpret_cast<const uint8_t *>(s.data()), s.size());
             }};
         }
@@ -275,7 +275,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             auto schema = avro::FixedSchema(sizeof(IPv6), "ipv6_" + toString(type_name_increment));
             return {schema, [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
-                const std::string_view & s = assert_cast<const ColumnIPv6 &>(column).getDataAt(row_num);
+                const std::string_view & s = assert_cast<const ColumnIPv6 &>(column).getDataAt(row_num).toView();
                 encoder.encodeFixed(reinterpret_cast<const uint8_t *>(s.data()), s.size());
             }};
         }

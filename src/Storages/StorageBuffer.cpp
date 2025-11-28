@@ -361,8 +361,7 @@ void StorageBuffer::read(
                     converting_dag = ActionsDAG::makeConvertingActions(
                         header_after_adding_defaults.getColumnsWithTypeAndName(),
                         header.getColumnsWithTypeAndName(),
-                        ActionsDAG::MatchColumnsMode::Name,
-                        local_context);
+                        ActionsDAG::MatchColumnsMode::Name);
                 }
 
                 if (src_table_query_info.row_level_filter)
@@ -418,8 +417,7 @@ void StorageBuffer::read(
                     auto actions_dag = ActionsDAG::makeConvertingActions(
                             query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
                             header.getColumnsWithTypeAndName(),
-                            ActionsDAG::MatchColumnsMode::Name,
-                            local_context);
+                            ActionsDAG::MatchColumnsMode::Name);
 
                     auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(actions_dag));
 
@@ -540,8 +538,7 @@ void StorageBuffer::read(
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
                 query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
                 result_header->getColumnsWithTypeAndName(),
-                ActionsDAG::MatchColumnsMode::Name,
-                local_context);
+                ActionsDAG::MatchColumnsMode::Name);
 
         auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(convert_actions_dag));
         query_plan.addStep(std::move(converting));
@@ -934,7 +931,7 @@ void StorageBuffer::flushAllBuffers(bool check_thresholds)
 {
     std::optional<ThreadPoolCallbackRunnerLocal<void>> runner;
     if (flush_pool)
-        runner.emplace(*flush_pool, ThreadName::BACKGROUND_BUFFER_FLUSH_SCHEDULE_POOL);
+        runner.emplace(*flush_pool, "BufferFlush");
     for (auto & buf : buffers)
     {
         if (runner)

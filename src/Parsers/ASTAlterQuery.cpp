@@ -228,12 +228,7 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     {
         ostr << (clear_statistics ? "CLEAR " : "DROP ") << "STATISTICS "
                       << (if_exists ? "IF EXISTS " : "");
-
-        if (statistics_decl)
-            statistics_decl->format(ostr, settings, state, frame);
-        else
-            ostr << " ALL";
-
+        statistics_decl->format(ostr, settings, state, frame);
         if (partition)
         {
             ostr << " IN PARTITION ";
@@ -469,15 +464,6 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     else if (type == ASTAlterCommand::MATERIALIZE_TTL)
     {
         ostr << "MATERIALIZE TTL";
-        if (partition)
-        {
-            ostr << " IN PARTITION ";
-            partition->format(ostr, settings, state, frame);
-        }
-    }
-    else if (type == ASTAlterCommand::REWRITE_PARTS)
-    {
-        ostr << "REWRITE PARTS";
         if (partition)
         {
             ostr << " IN PARTITION ";
