@@ -956,6 +956,10 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
         in_second_argument_node_type == QueryTreeNodeType::UNION ||
         in_second_argument_node_type == QueryTreeNodeType::TABLE;
 
+    bool in_second_is_deterministic = false;
+    if (const auto * const_node = in_second_argument->as<const ConstantNode>())
+        in_second_is_deterministic = const_node->isDeterministic();
+
     FutureSetPtr set;
     auto set_key = in_second_argument->getTreeHash({ .ignore_cte = true });
 
@@ -996,7 +1000,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     else
         column.column = std::move(column_set);
 
-    actions_stack[0].addConstantIfNecessary(column.name, column, /*is_deterministic=*/ true);
+    actions_stack[0].addConstantIfNecessary(column.name, column, in_second_is_deterministic);
 
     size_t actions_stack_size = actions_stack.size();
     for (size_t i = 1; i < actions_stack_size; ++i)
