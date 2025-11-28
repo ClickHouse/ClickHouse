@@ -674,13 +674,16 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         node = node->children.front();
     }
 
+    auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(node->step.get());
+    if (!read_from_merge_tree)
+        return false;
+
+    if (read_from_merge_tree->getPrewhereInfo() || read_from_merge_tree->getRowLevelFilter())
+        has_filter = true;
+
     /// Disable the case with read-in-order and no filter.
     /// It's not likely we can optimize it more.
     if (reading_in_order && !has_filter)
-        return false;
-
-    auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(node->step.get());
-    if (!read_from_merge_tree)
         return false;
 
     auto lazy_reading = removeUnusedColumnsFromReadingStep(*read_from_merge_tree, required_columns);
