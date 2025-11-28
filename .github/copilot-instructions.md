@@ -55,6 +55,7 @@ WHAT TO REVIEW VS WHAT TO IGNORE
 
 **Explicitly ignore (do not comment on these unless they indicate a bug):**
 - Typos in comments, variable names, or commit messages.
+- Trivial grammar corrections (e.g., "Corrected "it's" to "its" (possessive form without apostrophe).").
 - Pure formatting (whitespace, brace style, minor naming preferences).
 - “Nice to have” refactors or micro-optimizations without clear benefit.
 - Python/Ruby/CI config nitpicks such as:
@@ -114,8 +115,9 @@ CLICKHOUSE-SPECIFIC RULES (MANDATORY)
   Any format (columns, aggregates, protocol, settings serialization, replication metadata) must be versioned. Check upgrade/downgrade resilience and the impact on existing clusters.
 - **Core areas**  
   Apply stricter scrutiny to query execution, storage engines, replication, Keeper/coordination, system tables, and MergeTree internals.
-- **Tests policy**  
+- **Tests policy**
   Do **not** delete or relax existing tests. New behavior requires **new tests**.
+  Tests replace random database names with `default` in output normalization. Do **not** flag hardcoded `default.` or `default_` prefixes in expected test output as incorrect or suggest using `${CLICKHOUSE_DATABASE}` – this is by design.
 - **Feature rollout**  
   New features/behaviors must be gated behind an **experimental** setting (e.g. `allow_experimental_simd_acceleration`) until proven safe. The gate can later be made ineffective at GA.
 - **Configurability**  

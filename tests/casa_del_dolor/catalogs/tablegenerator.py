@@ -620,7 +620,7 @@ class IcebergTableGenerator(LakeTableGenerator):
         spark: SparkSession,
         table: SparkTable,
     ) -> str:
-        next_option = random.randint(1, 14)
+        next_option = random.randint(1, 15)
 
         if next_option == 1:
             res = f"CALL `{table.catalog_name}`.system.remove_orphan_files(table => '{table.get_namespace_path()}'"
@@ -644,7 +644,7 @@ class IcebergTableGenerator(LakeTableGenerator):
                     "partial-progress.enabled": true_false_lambda,
                     "partial-progress.max-commits": lambda: random.randint(0, 20),
                     "use-starting-sequence-number": true_false_lambda,
-                    "rewrite-job-order": random.choice(
+                    "rewrite-job-order": lambda: random.choice(
                         ["bytes-asc", "bytes-desc", "files-asc", "files-desc", "none"]
                     ),
                     "target-file-size-bytes": lambda: random.choice(
@@ -695,112 +695,112 @@ class IcebergTableGenerator(LakeTableGenerator):
                 res += f", clean_expired_metadata => {random.choice(["true", "false"])}"
             res += ")"
             return res
-        if next_option == 5:
-            res = f"CALL `{table.catalog_name}`.system.compute_table_stats(table => '{table.get_namespace_path()}'"
+        if next_option in (5, 6, 7, 8):
+            calls = [
+                "ancestors_of",
+                "compute_partition_stats",
+                "compute_table_stats",
+                "set_current_snapshot",
+            ]
+            res = f"CALL `{table.catalog_name}`.system.{random.choice(calls)}(table => '{table.get_namespace_path()}'"
             snapshots = self.get_snapshots(spark, table)
             if len(snapshots) > 0 and random.randint(1, 2) == 1:
-                res += f", snapshot_id => '{random.choice(snapshots)}'"
+                res += f", snapshot_id => {random.choice(snapshots)}"
             res += ")"
             return res
-        if next_option == 6:
-            res = f"CALL `{table.catalog_name}`.system.compute_partition_stats(table => '{table.get_namespace_path()}'"
-            snapshots = self.get_snapshots(spark, table)
-            if len(snapshots) > 0 and random.randint(1, 2) == 1:
-                res += f", snapshot_id => '{random.choice(snapshots)}'"
-            res += ")"
-            return res
-        if next_option == 7:
-            return f"CALL `{table.catalog_name}`.system.ancestors_of('{table.get_namespace_path()}')"
-        if next_option in (8, 9):
-            zorder = False
-            next_strategy = random.choice(["sort", "binpack"])
-
-            res = f"CALL `{table.catalog_name}`.system.rewrite_data_files(table => '{table.get_namespace_path()}', strategy => '{next_strategy}'"
-            if next_strategy == "sort" and random.randint(1, 4) != 4:
-                zorder = random.randint(1, 2) == 1
-                res += ", sort_order => '"
-                if zorder:
-                    res += "zorder("
-                res += self.random_ordered_columns(table, not zorder)
-                if zorder:
-                    res += ")"
-                res += "'"
-            if random.randint(1, 3) == 1:
-                # Add options
-                options = {
-                    "max-concurrent-file-group-rewrites": lambda: random.randint(0, 10),
-                    "partial-progress.enabled": true_false_lambda,
-                    "partial-progress.max-commits": lambda: random.randint(0, 20),
-                    "use-starting-sequence-number": true_false_lambda,
-                    "rewrite-job-order": random.choice(
-                        ["bytes-asc", "bytes-desc", "files-asc", "files-desc", "none"]
-                    ),
-                    "target-file-size-bytes": lambda: random.choice(
-                        [
-                            1048576,  # 1MB
-                            2097152,  # 2MB
-                            134217728,  # 128MB
-                            268435456,  # 256MB
-                            536870912,  # 512MB
-                            1073741824,  # 1GB
-                        ]
-                    ),
-                    "min-input-files": lambda: random.randint(0, 20),
-                    "rewrite-all": true_false_lambda,
-                    "max-file-group-size-bytes": lambda: random.choice(
-                        [
-                            1048576,  # 1MB
-                            2097152,  # 2MB
-                            134217728,  # 128MB
-                            268435456,  # 256MB
-                            536870912,  # 512MB
-                            1073741824,  # 1GB
-                        ]
-                    ),
-                    "delete-file-threshold": lambda: random.randint(0, 10000),
-                    "delete-ratio-threshold": lambda: random.uniform(0, 1),
-                    "remove-dangling-deletes": true_false_lambda,
-                }
-                if next_strategy == "sort":
-                    options.update(
-                        {
-                            "compression-factor": lambda: random.uniform(0, 1),
-                            "shuffle-partitions-per-file": lambda: random.randint(
-                                0, 20
-                            ),
-                        }
-                    )
-                if zorder:
-                    options.update(
-                        {
-                            "var-length-contribution": lambda: random.randint(0, 100),
-                            "max-output-size": lambda: random.choice(
-                                [
-                                    1048576,  # 1MB
-                                    2097152,  # 2MB
-                                    134217728,  # 128MB
-                                    268435456,  # 256MB
-                                    536870912,  # 512MB
-                                    1073741824,  # 1GB
-                                ]
-                            ),
-                        }
-                    )
-                res += self.add_options(options)
+        if next_option == 9:
+            res = f"CALL `{table.catalog_name}`.system.create_changelog_view(table => '{table.get_namespace_path()}'"
+            if random.randint(1, 2) == 1:
+                res += f", net_changes => {random.choice(["true", "false"])}"
+            if random.randint(1, 2) == 1:
+                res += f", compute_updates => {random.choice(["true", "false"])}"
             res += ")"
             return res
         snapshots = self.get_snapshots(spark, table)
-        if len(snapshots) > 0 and next_option in (10, 11, 12):
+        if len(snapshots) > 0 and next_option in (10, 11):
             calls = [
-                "rollback_to_snapshot",
-                "set_current_snapshot",
                 "cherrypick_snapshot",
+                "rollback_to_snapshot",
             ]
             return f"CALL `{table.catalog_name}`.system.{random.choice(calls)}(table => '{table.get_namespace_path()}', snapshot_id => {random.choice(snapshots)})"
         timestamps = self.get_timestamps(spark, table)
-        if len(timestamps) > 0 and next_option in (13, 14):
+        if len(timestamps) > 0 and next_option in (12, 13):
             return f"CALL `{table.catalog_name}`.system.rollback_to_timestamp(table => '{table.get_namespace_path()}', timestamp => TIMESTAMP '{random.choice(timestamps)}')"
-        return ""
+        # Call rewrite_data_files when there is no other option
+        zorder = False
+        next_strategy = random.choice(["sort", "binpack"])
+        res = f"CALL `{table.catalog_name}`.system.rewrite_data_files(table => '{table.get_namespace_path()}', strategy => '{next_strategy}'"
+        if next_strategy == "sort" and random.randint(1, 4) != 4:
+            zorder = random.randint(1, 2) == 1
+            res += ", sort_order => '"
+            if zorder:
+                res += "zorder("
+            res += self.random_ordered_columns(table, not zorder)
+            if zorder:
+                res += ")"
+            res += "'"
+        if random.randint(1, 3) == 1:
+            # Add options
+            options = {
+                "max-concurrent-file-group-rewrites": lambda: random.randint(0, 10),
+                "partial-progress.enabled": true_false_lambda,
+                "partial-progress.max-commits": lambda: random.randint(0, 20),
+                "use-starting-sequence-number": true_false_lambda,
+                "rewrite-job-order": lambda: random.choice(
+                    ["bytes-asc", "bytes-desc", "files-asc", "files-desc", "none"]
+                ),
+                "target-file-size-bytes": lambda: random.choice(
+                    [
+                        1048576,  # 1MB
+                        2097152,  # 2MB
+                        134217728,  # 128MB
+                        268435456,  # 256MB
+                        536870912,  # 512MB
+                        1073741824,  # 1GB
+                    ]
+                ),
+                "min-input-files": lambda: random.randint(0, 20),
+                "rewrite-all": true_false_lambda,
+                "max-file-group-size-bytes": lambda: random.choice(
+                    [
+                        1048576,  # 1MB
+                        2097152,  # 2MB
+                        134217728,  # 128MB
+                        268435456,  # 256MB
+                        536870912,  # 512MB
+                        1073741824,  # 1GB
+                    ]
+                ),
+                "delete-file-threshold": lambda: random.randint(0, 10000),
+                "delete-ratio-threshold": lambda: random.uniform(0, 1),
+                "remove-dangling-deletes": true_false_lambda,
+            }
+            if next_strategy == "sort":
+                options.update(
+                    {
+                        "compression-factor": lambda: random.uniform(0, 1),
+                        "shuffle-partitions-per-file": lambda: random.randint(0, 20),
+                    }
+                )
+            if zorder:
+                options.update(
+                    {
+                        "var-length-contribution": lambda: random.randint(0, 100),
+                        "max-output-size": lambda: random.choice(
+                            [
+                                1048576,  # 1MB
+                                2097152,  # 2MB
+                                134217728,  # 128MB
+                                268435456,  # 256MB
+                                536870912,  # 512MB
+                                1073741824,  # 1GB
+                            ]
+                        ),
+                    }
+                )
+            res += self.add_options(options)
+        res += ")"
+        return res
 
 
 class DeltaLakePropertiesGenerator(LakeTableGenerator):
