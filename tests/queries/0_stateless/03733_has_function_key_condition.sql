@@ -1,3 +1,7 @@
+-- Tags: no-replicated-database, no-parallel-replicas
+-- no-replicated-database: EXPLAIN output differs for replicated database.
+-- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
+
 -- { echoOn }
 
 DROP TABLE IF EXISTS test_has_idx_simple;
