@@ -1162,7 +1162,7 @@ void StorageBuffer::reschedule(size_t min_delay)
     time_t time_passed = current_time - min_first_write_time;
 
     /// checkThresholdsImpl() uses strict comparison (> not >=), so we need to add offset to original time values
-    static constexpr size_t THRESHOLD_COMPARISON_OFFSET = 1;
+    static constexpr time_t THRESHOLD_COMPARISON_OFFSET = 1;
 
     /// For minimal threshold min_delay is ignored, since otherwise it will be triggered too frequently, once it is reached
     /// (while the Buffer cannot be flushed due to other min thresholds).
