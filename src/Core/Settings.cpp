@@ -1439,7 +1439,7 @@ Split parts ranges into intersecting and non intersecting during FINAL optimizat
 Split intersecting parts ranges into layers during FINAL optimization
 )", 0) \
     DECLARE(Bool, apply_row_policy_after_final, false, R"(
-When enabled, row policies are applied after FINAL processing for *MergeTree tables. (Especially for ReplacingMergeTree)
+When enabled, row policies and PREWHERE are applied after FINAL processing for *MergeTree tables. (Especially for ReplacingMergeTree)
 When disabled, row policies are applied before FINAL, which can cause different results when the policy
 filters out rows that should be used for deduplication in ReplacingMergeTree or similar engines.
 
@@ -1448,8 +1448,8 @@ since such filtering cannot affect the deduplication result.
 
 Possible values:
 
-- 0 — Row-level filter is applied before FINAL (default).
-- 1 — Row-level filter is applied after FINAL.
+- 0 — Row policy and PREWHERE are applied before FINAL (default).
+- 1 — Row policy and PREWHERE are applied after FINAL.
 )", 0) \
     \
     DECLARE(UInt64, mysql_max_rows_to_insert, 65536, R"(

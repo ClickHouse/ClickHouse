@@ -2676,9 +2676,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     const auto & local_settings = context->getSettingsRef();
 
-    /// Check if we should apply row policy after FINAL instead of during reading
+    /// Check if we should apply row policy and prewhere after FINAL instead of during reading
     /// (for correct behavior with ReplacingMergeTree where row policy should not affect which row "wins" during deduplication)
+    /// also PREWHERE must always be executed after row policy, so if row policy is deferred, prewhere must be too
     FilterDAGInfoPtr deferred_row_level_filter;
+    PrewhereInfoPtr deferred_prewhere_info;
     if (local_settings[Setting::apply_row_policy_after_final]
         && isQueryWithFinal()
         && query_info.row_level_filter)
@@ -2703,16 +2705,20 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
         if (!all_columns_in_sorting_key)
         {
-            /// save the filter and clear it from query_info so it won't be applied before final
+            /// save the filters and clear it from query_info so it won't be applied before final
             deferred_row_level_filter = query_info.row_level_filter;
+            deferred_prewhere_info = query_info.prewhere_info;
             query_info.row_level_filter = nullptr;
+            query_info.prewhere_info = nullptr;
 
-            /// update output_header since row_level_filter was part of its calculation
+            /// update output_header since row_level_filter and prewhere was part of its calculation
             output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
                 storage_snapshot->getSampleBlockForColumns(all_column_names),
                 lazily_read_info,
-                nullptr, /// <-- row_level_filter
-                query_info.prewhere_info));
+                nullptr, // <-- row_level_filter
+                nullptr); // <-- prewhere
+
+            LOG_DEBUG(log, "Deferring row policy filter and prewhere to after FINAL");
         }
     }
 
@@ -2921,7 +2927,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         });
     }
 
-    /// apply row policy after FINAL if needed
+    /// apply row policy after FINAL if needed (must be aplied before prewhere)
     if (deferred_row_level_filter)
     {
         auto row_level_filter_actions = std::make_shared<ExpressionActions>(deferred_row_level_filter->actions.clone());
@@ -2932,6 +2938,20 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
                 row_level_filter_actions,
                 deferred_row_level_filter->column_name,
                 deferred_row_level_filter->do_remove_column);
+        });
+    }
+
+    /// apply deferred PREWHERE after row policy
+    if (deferred_prewhere_info)
+    {
+        auto prewhere_actions = std::make_shared<ExpressionActions>(deferred_prewhere_info->prewhere_actions.clone());
+        pipe.addSimpleTransform([&](const SharedHeader & header)
+        {
+            return std::make_shared<FilterTransform>(
+                header,
+                prewhere_actions,
+                deferred_prewhere_info->prewhere_column_name,
+                deferred_prewhere_info->remove_prewhere_column);
         });
     }
 

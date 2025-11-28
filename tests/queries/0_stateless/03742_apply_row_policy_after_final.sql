@@ -58,3 +58,34 @@ SELECT * FROM tab2 FINAL ORDER BY x;
 
 DROP ROW POLICY pol2 ON tab2;
 DROP TABLE tab2;
+
+-- test that PREWHERE is also deferred when row policy is deferred
+SELECT '';
+SELECT '= PREWHERE should be deferred together with row policy =';
+
+DROP TABLE IF EXISTS tab3;
+DROP ROW POLICY IF EXISTS pol3 ON tab3;
+
+CREATE TABLE tab3 (x UInt32, y String, z UInt32, version UInt32) ENGINE = ReplacingMergeTree(version) ORDER BY x;
+
+INSERT INTO tab3 VALUES (1, 'aaa', 100, 1), (2, 'bbb', 200, 1);
+INSERT INTO tab3 VALUES (1, 'ccc', 300, 2), (2, 'ddd', 300, 2);
+
+CREATE ROW POLICY pol3 ON tab3 USING y != 'ccc' TO ALL;
+
+SELECT '--- without setting';
+SET apply_row_policy_after_final = 0;
+
+-- PREWHERE z < 250 filters (1, 'ccc', 300, 2) and (2, 'ddd', 300, 2)
+-- FINAL gets (1, 'aaa', 100, 1) and (2, 'bbb', 200, 1)
+SELECT * FROM tab3 FINAL PREWHERE z < 250 ORDER BY x;
+
+SELECT '--- with setting';
+SET apply_row_policy_after_final = 1;
+-- FINAL first: (1, 'ccc', 300, 2) and (2, 'ddd', 300, 2)
+-- row policy removes (1, 'ccc', 300, 2)
+-- PREWHERE z < 250: (2, 'ddd', 300, 2) does not pass, so nothing
+SELECT * FROM tab3 FINAL PREWHERE z < 250 ORDER BY x;
+
+DROP ROW POLICY pol3 ON tab3;
+DROP TABLE tab3;
