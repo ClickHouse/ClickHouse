@@ -184,7 +184,7 @@ void QueryTreePassManager::addPass(QueryTreePassPtr pass)
     passes.push_back(std::move(pass));
 }
 
-void QueryTreePassManager::run(QueryTreeNodePtr query_tree_node)
+void QueryTreePassManager::run(QueryTreeNodePtr & query_tree_node)
 {
     auto current_context = getContext();
     size_t passes_size = passes.size();
@@ -198,7 +198,7 @@ void QueryTreePassManager::run(QueryTreeNodePtr query_tree_node)
     }
 }
 
-void QueryTreePassManager::runOnlyResolve(QueryTreeNodePtr query_tree_node)
+void QueryTreePassManager::runOnlyResolve(QueryTreeNodePtr & query_tree_node)
 {
     // Run only query tree passes that doesn't affect output header:
     // 1. QueryAnalysisPass
@@ -208,7 +208,7 @@ void QueryTreePassManager::runOnlyResolve(QueryTreeNodePtr query_tree_node)
     run(query_tree_node, 4);
 }
 
-void QueryTreePassManager::run(QueryTreeNodePtr query_tree_node, size_t up_to_pass_index)
+void QueryTreePassManager::run(QueryTreeNodePtr & query_tree_node, size_t up_to_pass_index)
 {
     size_t passes_size = passes.size();
     if (up_to_pass_index > passes_size)

@@ -3,11 +3,16 @@
 namespace BuzzHouse
 {
 
+String SQLColumn::getColumnName() const
+{
+    return "c" + std::to_string(cname);
+}
+
 void SQLDatabase::finishDatabaseSpecification(DatabaseEngine * de, const bool add_params)
 {
-    if (add_params && isReplicatedOrSharedDatabase())
+    if (add_params && isReplicatedDatabase())
     {
-        chassert(de->params_size() == 0 && this->nparams == 0);
+        chassert(de->params_size() == 0);
         de->add_params()->set_svalue("/clickhouse/path/" + this->getName());
         de->add_params()->set_svalue("{shard}");
         de->add_params()->set_svalue("{replica}");
@@ -107,7 +112,19 @@ String SQLBase::getTableName(const bool full) const
     {
         res += "test.";
     }
-    res += "t" + std::to_string(tname);
+    res += this->prefix + std::to_string(tname);
+    return res;
+}
+
+String SQLBase::getFullName(const bool setdbname) const
+{
+    String res;
+
+    if (db || setdbname)
+    {
+        res += getDatabaseName() + ".";
+    }
+    res += getTableName();
     return res;
 }
 
@@ -131,7 +148,8 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
         && !partition_columns_in_data_file.has_value() && !storage_class_name.has_value());
     has_partition_by = (isRedisEngine() || isKeeperMapEngine() || isMaterializedPostgreSQLEngine() || isAnyIcebergEngine()
                         || isAzureEngine() || isS3Engine())
-        && rg.nextSmallNumber() < 5;
+        && rg.nextSmallNumber() < 4;
+    has_order_by = isAnyIcebergEngine() && rg.nextSmallNumber() < 4;
     if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
     {
         /// Set bucket path first if possible
@@ -356,32 +374,20 @@ String SQLBase::getMetadataPath(const FuzzConfig & fc) const
     return has_metadata ? fmt::format("{}/metadatat{}", fc.server_file_path.generic_string(), tname) : "";
 }
 
-size_t SQLTable::numberOfInsertableColumns() const
+size_t SQLTable::numberOfInsertableColumns(const bool all) const
 {
     size_t res = 0;
 
     for (const auto & entry : cols)
     {
-        res += entry.second.canBeInserted() ? 1 : 0;
+        res += entry.second.canBeInserted() || all ? 1 : 0;
     }
     return res;
 }
 
-String SQLTable::getFullName(const bool setdbname) const
+String ColumnPathChain::columnPathRef(const String & quote) const
 {
-    String res;
-
-    if (db || setdbname)
-    {
-        res += getDatabaseName() + ".";
-    }
-    res += getTableName();
-    return res;
-}
-
-String ColumnPathChain::columnPathRef() const
-{
-    String res = "`";
+    String res = quote;
 
     for (size_t i = 0; i < path.size(); i++)
     {
@@ -391,7 +397,7 @@ String ColumnPathChain::columnPathRef() const
         }
         res += path[i].cname;
     }
-    res += "`";
+    res += quote;
     return res;
 }
 

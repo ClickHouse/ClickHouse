@@ -66,17 +66,10 @@ struct GetColumnsOptions
         return *this;
     }
 
-    GetColumnsOptions & withExtendedObjects(bool value = true)
-    {
-        with_extended_objects = value;
-        return *this;
-    }
-
     Kind kind;
     VirtualsKind virtuals_kind = VirtualsKind::None;
 
     bool with_subcolumns = false;
-    bool with_extended_objects = false;
 };
 
 /// Description of a single table column (in CREATE TABLE for example).
@@ -266,6 +259,8 @@ private:
 
     void addSubcolumns(const String & name_in_storage, const DataTypePtr & type_in_storage);
     void removeSubcolumns(const String & name_in_storage);
+
+    std::optional<NameAndTypePair> tryGetDynamicSubcolumn(const String & column_name) const;
 };
 
 class ASTColumnDeclaration;

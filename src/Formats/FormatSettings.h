@@ -53,6 +53,15 @@ struct FormatSettings
     inline static const String FORMAT_SCHEMA_SOURCE_STRING = "string";
     inline static const String FORMAT_SCHEMA_SOURCE_QUERY = "query";
 
+    enum class AggregateFunctionInputFormat : uint8_t
+    {
+        State,
+        Value,
+        Array,
+    };
+
+    AggregateFunctionInputFormat aggregate_function_input_format = AggregateFunctionInputFormat::State;
+
     enum class DateTimeInputFormat : uint8_t
     {
         Basic,        /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
@@ -239,7 +248,6 @@ struct FormatSettings
         bool try_infer_numbers_from_strings = false;
         bool validate_types_from_metadata = true;
         bool validate_utf8 = false;
-        bool allow_deprecated_object_type = false;
         bool valid_output_on_exception = false;
         bool compact_allow_variable_number_of_columns = false;
         bool try_infer_objects_as_tuples = false;
@@ -546,6 +554,7 @@ struct FormatSettings
     {
         bool escape_special_characters = false;
     } markdown{};
+
 };
 
 }

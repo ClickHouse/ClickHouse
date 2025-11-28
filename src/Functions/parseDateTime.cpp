@@ -773,9 +773,9 @@ namespace
                 if constexpr (return_type == ReturnType::DateTime64)
                     datetime.setScale(scale, parse_syntax);
 
-                StringRef str_ref = col_str->getDataAt(i);
-                Pos cur = str_ref.data;
-                Pos end = str_ref.data + str_ref.size;
+                std::string_view str_ref = col_str->getDataAt(i);
+                Pos cur = str_ref.data();
+                Pos end = str_ref.data() + str_ref.size();
                 bool error = false;
 
                 for (const auto & instruction : instructions)
@@ -818,7 +818,7 @@ namespace
                     result = std::unexpected(ErrorCodeAndMessage(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Invalid format input {} is malformed at {}",
-                        str_ref.toView(),
+                        str_ref,
                         std::string_view(cur, end - cur)));
                 }
 

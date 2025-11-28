@@ -75,7 +75,7 @@ public:
         if (!arg_string)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must be constant String", getName());
 
-        return result_type->createColumnConst(input_rows_count, macros->getValue(arg_string->getDataAt(0).toString()));
+        return result_type->createColumnConst(input_rows_count, macros->getValue(arg_string->getDataAt(0)));
     }
 };
 

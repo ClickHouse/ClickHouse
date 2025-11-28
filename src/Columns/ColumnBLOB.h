@@ -6,7 +6,6 @@
 #include <Compression/ICompressionCodec.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Field.h>
-#include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
@@ -148,7 +147,7 @@ public:
     Field operator[](size_t) const override { throwInapplicable(); }
     void get(size_t, Field &) const override { throwInapplicable(); }
     DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const override { throwInapplicable(); }
-    StringRef getDataAt(size_t) const override { throwInapplicable(); }
+    std::string_view getDataAt(size_t) const override { throwInapplicable(); }
     bool isDefaultAt(size_t) const override { throwInapplicable(); }
     void insert(const Field &) override { throwInapplicable(); }
     bool tryInsert(const Field &) override { throwInapplicable(); }
@@ -160,10 +159,10 @@ public:
     void insertData(const char *, size_t) override { throwInapplicable(); }
     void insertDefault() override { throwInapplicable(); }
     void popBack(size_t) override { throwInapplicable(); }
-    StringRef serializeValueIntoArena(size_t, Arena &, char const *&) const override { throwInapplicable(); }
+    std::string_view serializeValueIntoArena(size_t, Arena &, char const *&) const override { throwInapplicable(); }
     char * serializeValueIntoMemory(size_t, char *) const override { throwInapplicable(); }
-    const char * deserializeAndInsertFromArena(const char *) override { throwInapplicable(); }
-    const char * skipSerializedInArena(const char *) const override { throwInapplicable(); }
+    void deserializeAndInsertFromArena(ReadBuffer &) override { throwInapplicable(); }
+    void skipSerializedInArena(ReadBuffer &) const override { throwInapplicable(); }
     void updateHashWithValue(size_t, SipHash &) const override { throwInapplicable(); }
     WeakHash32 getWeakHash32() const override { throwInapplicable(); }
     void updateHashFast(SipHash &) const override { throwInapplicable(); }

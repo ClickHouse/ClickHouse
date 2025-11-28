@@ -34,6 +34,7 @@
 #include <IO/ReadHelpers.h>
 #include <Common/FieldBinaryEncoding.h>
 #include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
 
 namespace DB
 {
@@ -237,9 +238,6 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
             return BinaryTypeIndex::LowCardinality;
         case TypeIndex::Map:
             return BinaryTypeIndex::Map;
-        case TypeIndex::ObjectDeprecated:
-            /// Object type will be deprecated and replaced by new implementation. No need to support it here.
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Binary encoding of type Object is not supported");
         case TypeIndex::IPv4:
             return BinaryTypeIndex::IPv4;
         case TypeIndex::IPv6:
@@ -610,6 +608,8 @@ String encodeDataType(const DataTypePtr & type)
 
 DataTypePtr decodeDataType(ReadBuffer & buf)
 {
+    checkStackSize();
+
     UInt8 type;
     readBinary(type, buf);
     switch (BinaryTypeIndex(type))
@@ -902,6 +902,12 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
 }
 
 DataTypePtr decodeDataType(const String & data)
+{
+    ReadBufferFromString buf(data);
+    return decodeDataType(buf);
+}
+
+DataTypePtr decodeDataType(std::string_view data)
 {
     ReadBufferFromString buf(data);
     return decodeDataType(buf);

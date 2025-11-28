@@ -258,7 +258,15 @@ void buildJoinCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
     std::string function_name;
     const auto * function_node = node->as<FunctionNode>();
     if (function_node)
-        function_name = function_node->getFunction()->getName();
+    {
+        function_name = function_node->getFunctionName();
+        if (!function_node->isOrdinaryFunction())
+        {
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                "Unexpected function '{}' in JOIN ON section, only ordinary functions are supported, in expression: {}",
+                function_name, function_node->formatASTForErrorMessage());
+        }
+    }
 
     if (function_name == "and")
     {
@@ -278,7 +286,7 @@ void buildDisjunctiveJoinConditions(const QueryTreeNodePtr & node, JoinOperatorB
             "JOIN {} join expression expected function",
             node->formatASTForErrorMessage());
 
-    const auto & function_name = function_node->getFunction()->getName();
+    const auto & function_name = function_node->getFunctionName();
 
     if (function_name == "or")
     {
@@ -540,7 +548,7 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
             auto nothing_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
             ColumnWithTypeAndName null_column(nothing_type->createColumnConstWithDefaultValue(1), nothing_type, "NULL");
             JoinActionRef null_action(&actions_dag->addColumn(null_column), build_context.expression_actions);
-            null_action.setSourceRelations(BitSet().set(0).set(1));
+            null_action.setSourceRelations(BitSet());
             build_context.join_operator.expression.push_back(null_action);
         }
     }

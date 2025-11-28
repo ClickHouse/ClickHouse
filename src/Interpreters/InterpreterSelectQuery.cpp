@@ -596,7 +596,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (options.only_analyze)
             storage_snapshot = storage->getStorageSnapshotWithoutData(metadata_snapshot, context);
         else
-            storage_snapshot = storage->getStorageSnapshotForQuery(metadata_snapshot, query_ptr, context);
+            storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
     }
 
     if (has_input || !joined_tables.resolveTables())
@@ -813,10 +813,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 Names queried_columns = syntax_analyzer_result->requiredSourceColumns();
                 const auto & supported_prewhere_columns = storage->supportedPrewhereColumns();
 
+                const auto parts = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).parts;
+
                 MergeTreeWhereOptimizer where_optimizer{
                     std::move(column_compressed_sizes),
                     storage_snapshot,
-                    storage->getConditionSelectivityEstimator(assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).parts, context),
+                    storage->getConditionSelectivityEstimator(parts ? *parts : RangesInDataParts{}, context),
                     queried_columns,
                     supported_prewhere_columns,
                     log};
