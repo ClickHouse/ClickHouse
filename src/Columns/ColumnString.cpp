@@ -257,32 +257,38 @@ void ColumnString::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, c
 }
 
 
-std::string_view ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     size_t string_size = sizeAt(n);
     size_t offset = offsetAt(n);
 
-    auto result_size = sizeof(string_size) + string_size;
-    char * pos = arena.allocContinue(result_size, begin);
+    StringRef res;
+    res.size = sizeof(string_size) + string_size;
+    char * pos = arena.allocContinue(res.size, begin);
     memcpy(pos, &string_size, sizeof(string_size));
     memcpy(pos + sizeof(string_size), &chars[offset], string_size);
-    return {pos, result_size};
+    res.data = pos;
+
+    return res;
 }
 
-std::string_view ColumnString::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnString::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     /// Serialize string values with 0 byte at the end for compatibility
     /// with old versions where we stored 0 byte at the end of each string value.
     size_t string_size_with_zero_byte = sizeAt(n) + 1;
     size_t offset = offsetAt(n);
 
-    auto res_size = sizeof(string_size_with_zero_byte) + string_size_with_zero_byte;
-    char * pos = arena.allocContinue(res_size, begin);
+    StringRef res;
+    res.size = sizeof(string_size_with_zero_byte) + string_size_with_zero_byte;
+    char * pos = arena.allocContinue(res.size, begin);
     memcpy(pos, &string_size_with_zero_byte, sizeof(string_size_with_zero_byte));
     memcpy(pos + sizeof(string_size_with_zero_byte), &chars[offset], string_size_with_zero_byte - 1);
     /// Add 0 byte at the end.
     *(pos + sizeof(string_size_with_zero_byte) + string_size_with_zero_byte - 1) = 0;
-    return std::string_view{pos, res_size};
+    res.data = pos;
+
+    return res;
 }
 
 
@@ -523,7 +529,7 @@ size_t ColumnString::estimateCardinalityInPermutedRange(const Permutation & perm
     for (size_t i = equal_range.from; i < equal_range.to; ++i)
     {
         size_t permuted_i = permutation[i];
-        auto value = getDataAt(permuted_i);
+        StringRef value = getDataAt(permuted_i);
         elements.emplace(value, inserted);
     }
     return elements.size();

@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 # Data types binary encoding specification
 
-This specification describes the binary format that can be used for binary encoding and decoding of ClickHouse data types. This format is used in `Dynamic` column [binary serialization](dynamic.md#binary-output-format) and can be used in input/output formats [RowBinaryWithNamesAndTypes](/interfaces/formats/RowBinaryWithNamesAndTypes) and [Native](/interfaces/formats/Native) under corresponding settings.
+This specification describes the binary format that can be used for binary encoding and decoding of ClickHouse data types. This format is used in `Dynamic` column [binary serialization](dynamic.md#binary-output-format) and can be used in input/output formats [RowBinaryWithNamesAndTypes](../../interfaces/formats.md#rowbinarywithnamesandtypes) and [Native](../../interfaces/formats.md#native) under corresponding settings.
 
 The table below describes how each data type is represented in binary format. Each data type encoding consist of 1 byte that indicates the type and some optional additional information.
 `var_uint` in the binary encoding means that the size is encoded using Variable-Length Quantity compression.
@@ -102,8 +102,8 @@ The encoding of a parameter consists of 1 byte indicating the type of the parame
 | `Int64`                  | `0x02<var_int_value>`                                                                                                          |
 | `UInt128`                | `0x03<uint128_little_endian_value>`                                                                                            |
 | `Int128`                 | `0x04<int128_little_endian_value>`                                                                                             |
-| `UInt256`                | `0x05<uint256_little_endian_value>`                                                                                            |
-| `Int256`                 | `0x06<int256_little_endian_value>`                                                                                             |
+| `UInt128`                | `0x05<uint128_little_endian_value>`                                                                                            |
+| `Int128`                 | `0x06<int128_little_endian_value>`                                                                                             |
 | `Float64`                | `0x07<float64_little_endian_value>`                                                                                            |
 | `Decimal32`              | `0x08<var_uint_scale><int32_little_endian_value>`                                                                              |
 | `Decimal64`              | `0x09<var_uint_scale><int64_little_endian_value>`                                                                              |

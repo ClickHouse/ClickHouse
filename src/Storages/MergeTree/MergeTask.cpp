@@ -9,6 +9,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/Settings.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/ReadBufferFromEmptyFile.h>
@@ -61,7 +62,7 @@
 
 #if CLICKHOUSE_CLOUD
     #include <Interpreters/Cache/FileCacheFactory.h>
-    #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+    #include <Disks/ObjectStorages/DiskObjectStorage.h>
     #include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>
     #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #endif
@@ -126,7 +127,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_merge_delayed_streams_for_parallel_write;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsBool vertical_merge_optimize_lightweight_delete;
-    extern const MergeTreeSettingsUInt64Auto merge_max_dynamic_subcolumns_in_wide_part;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
 }
@@ -278,7 +278,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
             key_columns.insert(name);
         /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
         else
-            key_columns.insert(String(Nested::getColumnFromSubcolumn(name, storage_columns)));
+            key_columns.insert(Nested::splitName(name).first);
     }
 
     /// Force sign column for Collapsing mode
@@ -323,9 +323,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
             const auto & column_name = index_columns.front();
             if (storage_columns.contains(column_name))
                 global_ctx->skip_indexes_by_column[column_name].push_back(index);
-            /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
             else
-                global_ctx->skip_indexes_by_column[String(Nested::getColumnFromSubcolumn(column_name, storage_columns))].push_back(index);
+                global_ctx->skip_indexes_by_column[Nested::splitName(column_name).first].push_back(index);
         }
         else
         {
@@ -335,7 +334,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
                     key_columns.insert(index_column);
                 /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
                 else
-                    key_columns.insert(String(Nested::getColumnFromSubcolumn(index_column, storage_columns)));
+                    key_columns.insert(Nested::splitName(index_column).first);
             }
 
             global_ctx->merging_skip_indexes.push_back(index);
@@ -445,7 +444,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->temporary_directory_lock = global_ctx->data->getTemporaryPartDirectoryHolder(local_tmp_part_basename);
 
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
-    global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot);
+
+    auto object_columns = MergeTreeData::getConcreteObjectColumns(global_ctx->future_part->parts, global_ctx->metadata_snapshot->getColumns());
+    extendObjectColumns(global_ctx->storage_columns, object_columns, false);
+    global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot, std::move(object_columns));
 
     ctx->need_remove_expired_values = false;
     ctx->force_ttl = false;
@@ -1121,13 +1123,11 @@ public:
         const String & rows_sources_temporary_file_name_,
         UInt64 merge_block_size_rows_,
         UInt64 merge_block_size_bytes_,
-        std::optional<size_t> max_dynamic_subcolumns_,
         bool is_result_sparse_)
         : ITransformingStep(input_header_, input_header_, getTraits())
         , rows_sources_temporary_file_name(rows_sources_temporary_file_name_)
         , merge_block_size_rows(merge_block_size_rows_)
         , merge_block_size_bytes(merge_block_size_bytes_)
-        , max_dynamic_subcolumns(max_dynamic_subcolumns_)
         , is_result_sparse(is_result_sparse_)
     {}
 
@@ -1149,7 +1149,6 @@ public:
             std::move(rows_sources_read_buf),
             merge_block_size_rows,
             merge_block_size_bytes,
-            max_dynamic_subcolumns,
             is_result_sparse);
 
         pipeline.addTransform(std::move(transform));
@@ -1180,7 +1179,6 @@ private:
     const String rows_sources_temporary_file_name;
     const UInt64 merge_block_size_rows;
     const UInt64 merge_block_size_bytes;
-    const std::optional<size_t> max_dynamic_subcolumns;
     const bool is_result_sparse;
 };
 
@@ -1232,18 +1230,13 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
 
     /// Add column gatherer step
     {
-        const auto merge_tree_settings = global_ctx->data->getSettings();
-        std::optional<size_t> max_dynamic_subcolumns = std::nullopt;
-        if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Wide)
-            max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_wide_part].valueOrNullopt();
-
         bool is_result_sparse = ISerialization::hasKind(global_ctx->new_data_part->getSerialization(column_name)->getKindStack(), ISerialization::Kind::SPARSE);
+        const auto merge_tree_settings = global_ctx->data->getSettings();
         auto merge_step = std::make_unique<ColumnGathererStep>(
             merge_column_query_plan.getCurrentHeader(),
             RowsSourcesTemporaryFile::FILE_ID,
             (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size],
             (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size_bytes],
-            max_dynamic_subcolumns,
             is_result_sparse);
         merge_step->setStepDescription("Gather column");
         merge_column_query_plan.addStep(std::move(merge_step));
@@ -1717,7 +1710,6 @@ public:
         const std::optional<String> & filter_column_name_,
         UInt64 merge_block_size_rows_,
         UInt64 merge_block_size_bytes_,
-        std::optional<size_t> max_dynamic_subcolumns_,
         bool blocks_are_granules_size_,
         bool cleanup_,
         time_t time_of_merge_)
@@ -1729,7 +1721,6 @@ public:
         , filter_column_name(filter_column_name_)
         , merge_block_size_rows(merge_block_size_rows_)
         , merge_block_size_bytes(merge_block_size_bytes_)
-        , max_dynamic_subcolumns(max_dynamic_subcolumns_)
         , blocks_are_granules_size(blocks_are_granules_size_)
         , cleanup(cleanup_)
         , time_of_merge(time_of_merge_)
@@ -1764,7 +1755,6 @@ public:
                     sort_description,
                     merge_block_size_rows,
                     merge_block_size_bytes,
-                    max_dynamic_subcolumns,
                     SortingQueueStrategy::Default,
                     /* limit_= */0,
                     /* always_read_till_end_= */false,
@@ -1776,40 +1766,40 @@ public:
             case MergeTreeData::MergingParams::Collapsing:
                 merged_transform = std::make_shared<CollapsingSortedTransform>(
                     header, input_streams_count, sort_description, merging_params.sign_column, false,
-                    merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns, rows_sources_write_buf, blocks_are_granules_size);
+                    merge_block_size_rows, merge_block_size_bytes, rows_sources_write_buf, blocks_are_granules_size);
                 break;
 
             case MergeTreeData::MergingParams::Summing:
                 merged_transform = std::make_shared<SummingSortedTransform>(
-                    header, input_streams_count, sort_description, merging_params.columns_to_sum, partition_and_sorting_required_columns, merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns);
+                    header, input_streams_count, sort_description, merging_params.columns_to_sum, partition_and_sorting_required_columns, merge_block_size_rows, merge_block_size_bytes);
                 break;
 
             case MergeTreeData::MergingParams::Aggregating:
-                merged_transform = std::make_shared<AggregatingSortedTransform>(header, input_streams_count, sort_description, merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns);
+                merged_transform = std::make_shared<AggregatingSortedTransform>(header, input_streams_count, sort_description, merge_block_size_rows, merge_block_size_bytes);
                 break;
 
             case MergeTreeData::MergingParams::Replacing:
                 merged_transform = std::make_shared<ReplacingSortedTransform>(
                     header, input_streams_count, sort_description, merging_params.is_deleted_column, merging_params.version_column,
-                    merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns, rows_sources_write_buf, blocks_are_granules_size,
+                    merge_block_size_rows, merge_block_size_bytes, rows_sources_write_buf, blocks_are_granules_size,
                     cleanup);
                 break;
 
             case MergeTreeData::MergingParams::Coalescing:
                 merged_transform = std::make_shared<CoalescingSortedTransform>(
-                    header, input_streams_count, sort_description, merging_params.columns_to_sum, partition_and_sorting_required_columns, merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns);
+                    header, input_streams_count, sort_description, merging_params.columns_to_sum, partition_and_sorting_required_columns, merge_block_size_rows, merge_block_size_bytes);
                 break;
 
             case MergeTreeData::MergingParams::Graphite:
                 merged_transform = std::make_shared<GraphiteRollupSortedTransform>(
-                    header, input_streams_count, sort_description, merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns,
+                    header, input_streams_count, sort_description, merge_block_size_rows, merge_block_size_bytes,
                     merging_params.graphite_params, time_of_merge);
                 break;
 
             case MergeTreeData::MergingParams::VersionedCollapsing:
                 merged_transform = std::make_shared<VersionedCollapsingTransform>(
                     header, input_streams_count, sort_description, merging_params.sign_column,
-                    merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns, rows_sources_write_buf, blocks_are_granules_size);
+                    merge_block_size_rows, merge_block_size_bytes, rows_sources_write_buf, blocks_are_granules_size);
                 break;
         }
 
@@ -1855,7 +1845,6 @@ private:
     const std::optional<String> filter_column_name;
     const UInt64 merge_block_size_rows;
     const UInt64 merge_block_size_bytes;
-    const std::optional<size_t> max_dynamic_subcolumns;
     const bool blocks_are_granules_size;
     const bool cleanup{false};
     const time_t time_of_merge{0};
@@ -2063,10 +2052,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         bool cleanup = global_ctx->cleanup && global_ctx->future_part->final;
         std::optional<String> filter_column_name = global_ctx->vertical_lightweight_delete ? std::make_optional(RowExistsColumn::name) : std::nullopt;
 
-        std::optional<size_t> max_dynamic_subcolumns = std::nullopt;
-        if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Wide)
-            max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_wide_part].valueOrNullopt();
-
         auto merge_step = std::make_unique<MergePartsStep>(
             merge_parts_query_plan.getCurrentHeader(),
             sort_description,
@@ -2076,7 +2061,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             filter_column_name,
             (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size],
             (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size_bytes],
-            max_dynamic_subcolumns,
             ctx->blocks_are_granules_size,
             cleanup,
             global_ctx->time_of_merge);
