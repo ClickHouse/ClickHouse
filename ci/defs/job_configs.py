@@ -160,7 +160,7 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.AMD_TIDY,
             provides=[],
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
     build_jobs = common_build_job_config.set_post_hooks(

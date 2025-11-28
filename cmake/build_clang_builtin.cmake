@@ -87,6 +87,8 @@ function (build_clang_builtin target_triple OUT_VARIABLE)
 
         message (NOTICE "Building builtins for target ${CMAKE_CXX_COMPILER_TARGET} from source")
 
+        disable_dummy_launchers_if_needed()
+
         # We use our llvm sources to build the builtins for the architecture that we need
         execute_process(
                 COMMAND ${CMAKE_COMMAND}
@@ -105,6 +107,8 @@ function (build_clang_builtin target_triple OUT_VARIABLE)
                 COMMAND_ECHO STDOUT
                 COMMAND_ERROR_IS_FATAL ANY
         )
+
+        enable_dummy_launchers_if_needed()
 
         execute_process(
                 COMMAND ${CMAKE_COMMAND} --build ${BUILTINS_BINARY_DIR} --target ${BUILTINS_TARGET} ${EXTRA_TARGETS}
