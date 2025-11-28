@@ -290,7 +290,7 @@ Memory reservation scheduling is not supported for merges and mutations yet.
 
 Only queries with the `reserve_memory` setting greater than zero are subject to blocking while waiting for memory reservation. However, queries with zero `reserve_memory` are also accounted for in their workload memory footprint, and they can be evicted if necessary to free memory for other pending or increasing allocations. Queries without proper workload markup are not subject to memory reservation scheduling and cannot be evicted by the scheduler.
 
-To provide non-elastic memory reservation for a query, set both `reserve_memory` and `max_memory_usage` query settings to the same value. In this case, the query will reserve fixed amount of memory and will not be able to increase its allocation dynamically.
+To provide non-elastic memory reservation for a query, set both `reserve_memory` and `max_memory_usage` query settings to the same value. In this case, the query will reserve fixed amount of memory and will not be able to increase its allocation dynamically. Note that elastic memory reservation can be increased above `reserve_memory` up to `max_memory_usage` without being killed unless there is memory pressure. But it cannot be decreased below `reserve_memory` even when actual consumption is lower.
 
 Let's consider an example of configuration:
 
