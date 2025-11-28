@@ -1,3 +1,5 @@
+#include <optional>
+
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -70,29 +72,33 @@ bool isSupportedDictGetFunction(const String & name)
     return supported_functions.contains(name);
 }
 
-bool tryParseDictFunctionCall(const QueryTreeNodePtr & node, DictGetFunctionInfo & out)
+std::optional<DictGetFunctionInfo> tryParseDictFunctionCall(const QueryTreeNodePtr & node)
 {
     const auto * function_node = node->as<FunctionNode>();
+
     if (!function_node || !isSupportedDictGetFunction(function_node->getFunctionName()))
-        return false;
+        return std::nullopt;
 
     const auto & arguments = function_node->getArguments().getNodes();
 
     if (arguments.size() != 3)
-        return false;
+        return std::nullopt;
 
-    out.dict_name_node = typeid_cast<ConstantNodePtr>(arguments[0]);
-    out.attr_col_name_node = typeid_cast<ConstantNodePtr>(arguments[1]);
-    if (!out.dict_name_node || !out.attr_col_name_node)
-        return false;
+    DictGetFunctionInfo func_info;
+    func_info.dict_name_node = typeid_cast<ConstantNodePtr>(arguments[0]);
+    func_info.attr_col_name_node = typeid_cast<ConstantNodePtr>(arguments[1]);
+
+    if (!func_info.dict_name_node || !func_info.attr_col_name_node)
+        return std::nullopt;
 
     /// Check if both constants hold String values
-    if (!isConstantString(out.dict_name_node) || !isConstantString(out.attr_col_name_node))
-        return false;
+    if (!isConstantString(func_info.dict_name_node) || !isConstantString(func_info.attr_col_name_node))
+        return std::nullopt;
 
-    out.key_expr_node = arguments[2];
-    out.return_type = function_node->getResultType();
-    return true;
+    func_info.key_expr_node = arguments[2];
+    func_info.return_type = function_node->getResultType();
+
+    return func_info;
 }
 
 bool isInMemoryLayout(const String & type_name)
@@ -158,15 +164,17 @@ public:
         };
 
         Side dict_side = Side::NONE;
-        DictGetFunctionInfo dictget_function_info{};
+        DictGetFunctionInfo dictget_function_info;
 
-        if (tryParseDictFunctionCall(arguments[0], dictget_function_info) && arguments[1]->as<ConstantNode>())
+        if (auto info_lhs = tryParseDictFunctionCall(arguments[0]); info_lhs && arguments[1]->as<ConstantNode>())
         {
             dict_side = Side::LHS;
+            dictget_function_info = std::move(*info_lhs);
         }
-        else if (tryParseDictFunctionCall(arguments[1], dictget_function_info) && arguments[0]->as<ConstantNode>())
+        else if (auto info_rhs = tryParseDictFunctionCall(arguments[1]); info_rhs && arguments[0]->as<ConstantNode>())
         {
             dict_side = Side::RHS;
+            dictget_function_info = std::move(*info_rhs);
         }
         else
         {
