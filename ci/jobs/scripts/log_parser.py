@@ -432,24 +432,30 @@ class FuzzerLogParser:
                 table_finctions.add(match)
             else:
                 tables.add(match)
-        assert (
-            tables or table_files or table_finctions
-        ), "No tables found in query command"
 
-        # get all write commands for found tables
+        if not (tables or table_files or table_finctions):
+            print("WARNING: No tables found in query command")
+            return [failed_query]
+
+        # Get all write commands for found tables
         commands_to_reproduce = []
         for table in list(tables) + list(table_files):
             for command in all_fuzzer_commands:
+                if command.endswith("FORMAT Values"):
+                    # meaningless empty INSERT: "INSERT INTO test FORMAT Values"
+                    continue
                 if any(
                     command.startswith(write_command)
                     for write_command in self.WRITE_SQL_COMMANDS
                 ) and (f" {table} " in command or f"'{table}'" in command):
                     commands_to_reproduce.append(command)
+
         commands_to_reproduce.append(failed_query)
 
-        # add table drop commands
-        for table in tables:
-            commands_to_reproduce.append(f"DROP TABLE IF EXISTS {table}")
+        if tables:
+            # Add table drop commands
+            for table in tables:
+                commands_to_reproduce.append(f"DROP TABLE IF EXISTS {table}")
 
         return commands_to_reproduce
 
