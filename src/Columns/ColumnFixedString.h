@@ -50,7 +50,12 @@ private:
         the_fixed_size = n;
     }
 
-    ColumnFixedString(const ColumnFixedString & src) : chars(src.chars.begin(), src.chars.end()), n(src.n) {} /// NOLINT
+    ColumnFixedString(const ColumnFixedString & src)
+        : chars(src.chars.begin(), src.chars.end())
+        , n(src.n)
+    {
+        the_fixed_size = n;
+    }
 
 public:
     std::string getName() const override { return "FixedString(" + std::to_string(n) + ")"; }
