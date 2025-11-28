@@ -281,7 +281,7 @@ Every workload with a `max_memory` limit ensures that the total memory allocated
 If eviction is prevented or does not free enough memory, the new allocation is blocked until enough memory is freed. These rules allow queueing of excessive queries based on memory pressure and provide a convenient way to avoid MEMORY_LIMIT_EXCEEDED errors.
 
 :::note
-Workload limits are independent from other ways to limit memory consumption like [max_memory_usage](/operations/settings/settings.md#max_memory_usage) query setting or [memory_overcommit_ratio](/operations/settings/settings.md#memory_overcommit_ratio) server setting. They could be used together to achieve better control over memory consumption.
+Workload limits are independent from other ways to limit memory consumption like [max_memory_usage](/operations/settings/settings.md#max_memory_usage) query setting. They could be used together to achieve better control over memory consumption. It is possible to set independent memory limits based on users (not workloads). This is less flexible and does not provide features like memory reservation and queueing of pending queries. See [Memory overcommit](settings/memory-overcommit.md)
 :::
 
 Workload setting `max_waiting_queries` limits the number of pending allocations for the workload. When the limit is reached, the server returns an error `SERVER_OVERLOADED`.
@@ -291,10 +291,6 @@ Memory reservation scheduling is not supported for merges and mutations yet.
 Only queries with the `reserve_memory` setting greater than zero are subject to blocking while waiting for memory reservation. However, queries with zero `reserve_memory` are also accounted for in their workload memory footprint, and they can be evicted if necessary to free memory for other pending or increasing allocations. Queries without proper workload markup are not subject to memory reservation scheduling and cannot be evicted by the scheduler.
 
 To provide non-elastic memory reservation for a query, set both `reserve_memory` and `max_memory_usage` query settings to the same value. In this case, the query will reserve fixed amount of memory and will not be able to increase its allocation dynamically.
-
-:::note
-It is possible to set independent memory limits based on users (not workloads). This is less flexible and does not provide features like memory reservation and queueing of pending queries. See [Memory overcommit](settings/memory-overcommit.md)
-:::
 
 Let's consider an example of configuration:
 
