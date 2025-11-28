@@ -1,0 +1,25 @@
+-- insert in the explicit merge table
+1
+2
+-- insert in the latest auto table
+3
+-- insert into the materialized view with security context
+7
+-- insert in chain of merges
+1
+-- views permissions check
+default_view_user_2
+default.complex_merge_3
+default.complex_merge_4
+default_view_user_5
+default_view_user_4
+default_view_user_3
+default_view_user_1
+default.complex_merge_2
+-- check data written
+complex_table_1	7
+complex_table_2	7
+complex_table_3	7
+complex_table_4	7
+complex_table_5	7
+7

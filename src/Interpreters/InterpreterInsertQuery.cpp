@@ -24,7 +24,6 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTConstraintDeclaration.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Interpreters/InsertDependenciesBuilder.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -35,7 +34,6 @@
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
-#include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/Transforms/ApplySquashingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
