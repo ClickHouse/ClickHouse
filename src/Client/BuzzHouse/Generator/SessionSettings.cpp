@@ -1206,6 +1206,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          {},
          false)},
     /// {"wait_for_async_insert", trueOrFalseSettingNoOracle},
+    {"enable_uuids_for_columns", trueOrFalseSettingNoOracle},
     {"write_full_path_in_iceberg_metadata", trueOrFalseSettingNoOracle},
     /// ClickHouse cloud setting
     {"write_through_distributed_cache", trueOrFalseSettingNoOracle},
