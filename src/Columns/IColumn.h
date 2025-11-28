@@ -916,14 +916,6 @@ private:
 
     /// Fills column values from list of columns and row numbers
     void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, ColumnsWithRowNumbers columns_with_row_numbers) override;
-
-    /// Move common implementations into the same translation unit to ensure they are properly inlined.
-    char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const override;
-
-    char * serializeValueIntoMemory(size_t n, char * memory) const override;
-
-    std::string_view serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null) const override;
-    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
 };
 
 }
