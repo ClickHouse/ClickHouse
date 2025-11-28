@@ -1,16 +1,16 @@
 #pragma once
 
-#include <DataTypes/DataTypeString.h>
-#include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromString.h>
-#include <Common/PODArray.h>
-#include <base/memcmpSmall.h>
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
-#include <Columns/ColumnFixedSizeHelper.h>
+#include <Columns/NewColumnFixedSizeHelper.h>
 #include <Core/Field.h>
+#include <DataTypes/DataTypeString.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <base/memcmpSmall.h>
+#include <Common/PODArray.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -19,10 +19,10 @@ namespace DB
 /** A column of values of "fixed-length string" type.
   * If you insert a smaller string, it will be padded with zero bytes.
   */
-class ColumnFixedString final : public COWHelper<IColumnHelper<ColumnFixedString, ColumnFixedSizeHelper>, ColumnFixedString>
+class ColumnFixedString final : public COWHelper<IColumnHelper<ColumnFixedString, NewShinyColumnFixedSizeHelper>, ColumnFixedString>
 {
 public:
-    friend class COWHelper<IColumnHelper<ColumnFixedString, ColumnFixedSizeHelper>, ColumnFixedString>;
+    friend class COWHelper<IColumnHelper<ColumnFixedString, NewShinyColumnFixedSizeHelper>, ColumnFixedString>;
 
     using Chars = PaddedPODArray<UInt8>;
 

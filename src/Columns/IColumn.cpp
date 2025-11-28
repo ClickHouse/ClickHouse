@@ -631,7 +631,7 @@ IColumnHelper<Derived, Parent>::serializeValueIntoArenaWithNull(size_t n, Arena 
 template <typename Derived, typename Parent>
 std::string_view IColumnHelper<Derived, Parent>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
-    if constexpr (!std::is_base_of_v<ColumnFixedSizeHelper, Derived>)
+    if constexpr (!std::is_base_of_v<ColumnFixedSizeHelper, Derived> && !std::is_base_of_v<NewShinyColumnFixedSizeHelper, Derived>)
         return IColumn::serializeValueIntoArena(n, arena, begin);
 
     const auto & self = static_cast<const Derived &>(*this);
@@ -659,7 +659,7 @@ char * IColumnHelper<Derived, Parent>::serializeValueIntoMemoryWithNull(size_t n
 template <typename Derived, typename Parent>
 char * IColumnHelper<Derived, Parent>::serializeValueIntoMemory(size_t n, char * memory) const
 {
-    if constexpr (!std::is_base_of_v<ColumnFixedSizeHelper, Derived>)
+    if constexpr (!std::is_base_of_v<ColumnFixedSizeHelper, Derived> && !std::is_base_of_v<NewShinyColumnFixedSizeHelper, Derived>)
         return IColumn::serializeValueIntoMemory(n, memory);
 
     const auto & self = static_cast<const Derived &>(*this);
@@ -671,7 +671,7 @@ char * IColumnHelper<Derived, Parent>::serializeValueIntoMemory(size_t n, char *
 template <typename Derived, typename Parent>
 void IColumnHelper<Derived, Parent>::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const
 {
-    if constexpr (!std::is_base_of_v<ColumnFixedSizeHelper, Derived>)
+    if constexpr (!std::is_base_of_v<ColumnFixedSizeHelper, Derived> && !std::is_base_of_v<NewShinyColumnFixedSizeHelper, Derived>)
         return IColumn::collectSerializedValueSizes(sizes, is_null);
 
     const auto & self = static_cast<const Derived &>(*this);
@@ -838,7 +838,7 @@ template class IColumnHelper<ColumnDecimal<Decimal256>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnDecimal<DateTime64>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnDecimal<Time64>, ColumnFixedSizeHelper>;
 
-template class IColumnHelper<ColumnFixedString, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnFixedString, NewShinyColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnString, IColumn>;
 
 template class IColumnHelper<ColumnLowCardinality, IColumn>;
