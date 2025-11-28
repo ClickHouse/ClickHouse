@@ -16,7 +16,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
