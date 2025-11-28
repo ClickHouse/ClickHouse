@@ -86,7 +86,19 @@ For tuple subtraction: [tupleMinus](../../sql-reference/functions/tuple-function
 ### is not distinct from operator (`<=>`) {#is-not-distinct-from}
 
 :::note
-Introduced in version 25.10
+From 25.10 you can use `<=>` in the same way as any other operator.
+Before 25.10 it could only be used in JOIN expressions, for example:
+
+```
+CREATE TABLE a (x String) ENGINE = Memory;
+INSERT INTO a VALUES ('ClickHouse');
+
+SELECT * FROM a AS a1 JOIN a AS a2 ON a1.x <=> a2.x;
+
+┌─x──────────┬─a2.x───────┐
+│ ClickHouse │ ClickHouse │
+└────────────┴────────────┘
+```
 :::
 
 The `<=>` operator is the `NULL`-safe equality operator, equivalent to `IS NOT DISTINCT FROM`.
