@@ -23,7 +23,8 @@ public:
     MergeTreeReaderTextIndex(
         const IMergeTreeReader * main_reader_,
         MergeTreeIndexWithCondition index_,
-        NamesAndTypesList columns_);
+        NamesAndTypesList columns_,
+        bool can_skip_mark_);
 
     size_t readRows(
         size_t from_mark,
@@ -59,6 +60,7 @@ private:
     double estimateCardinality(const TextSearchQuery & query, const TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const;
 
     MergeTreeIndexWithCondition index;
+    bool can_skip_mark;
     MarkRanges all_index_ranges;
     std::optional<MergeTreeIndexReader> index_reader;
 
@@ -82,7 +84,6 @@ private:
     absl::flat_hash_map<size_t, RemainingMarks> remaining_marks;
     PaddedPODArray<UInt32> indices_buffer;
     roaring::Roaring analyzed_granules;
-    MergeTreeData::MergingParams::Mode merging_param_mode;
 };
 
 }

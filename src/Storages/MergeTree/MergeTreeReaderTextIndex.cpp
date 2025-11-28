@@ -35,7 +35,8 @@ namespace ErrorCodes
 MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     const IMergeTreeReader * main_reader_,
     MergeTreeIndexWithCondition index_,
-    NamesAndTypesList columns_)
+    NamesAndTypesList columns_,
+    bool can_skip_mark_)
     : IMergeTreeReader(
         main_reader_->data_part_info_for_read,
         columns_,
@@ -47,6 +48,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         main_reader_->all_mark_ranges,
         main_reader_->settings)
     , index(std::move(index_))
+    , can_skip_mark(can_skip_mark_)
 {
     for (const auto & column : columns_)
     {
@@ -77,8 +79,6 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         uncompressed_cache,
         /*vector_similarity_index_cache=*/ nullptr,
         settings);
-
-    merging_param_mode = data_part->storage.merging_params.mode;
 }
 
 void MergeTreeReaderTextIndex::updateAllMarkRanges(const MarkRanges & ranges)
@@ -149,22 +149,7 @@ bool MergeTreeReaderTextIndex::canSkipMark(size_t mark, size_t current_task_last
         analyzed_granules.add(index_mark);
     }
 
-    /// This condition only applies to a FINAL query.
-    switch (merging_param_mode)
-    {
-        case MergeTreeData::MergingParams::Replacing:
-        case MergeTreeData::MergingParams::Coalescing:
-            /**
-             * When a text index created on a table with the ReplacingMergeTree or CoalescingMergeTree engine, marks cannot
-             * be directly skipped due to search terms might exist only on the old parts but does not exist in new parts.
-             * Replacing and Coalescing merge strategies would handle such cases but it still needs the range marks to operate.
-             */
-            return false;
-        default:
-            break;
-    }
-
-    return !it->second.may_be_true;
+    return can_skip_mark && !it->second.may_be_true;
 }
 
 size_t MergeTreeReaderTextIndex::readRows(
@@ -576,9 +561,10 @@ bool MergeTreeReaderTextIndex::RemainingMarks::finished(size_t granularity) cons
 MergeTreeReaderPtr createMergeTreeReaderTextIndex(
     const IMergeTreeReader * main_reader,
     const MergeTreeIndexWithCondition & index,
-    const NamesAndTypesList & columns_to_read)
+    const NamesAndTypesList & columns_to_read,
+    bool can_skip_mark)
 {
-    return std::make_unique<MergeTreeReaderTextIndex>(main_reader, index, columns_to_read);
+    return std::make_unique<MergeTreeReaderTextIndex>(main_reader, index, columns_to_read, can_skip_mark);
 }
 
 }
