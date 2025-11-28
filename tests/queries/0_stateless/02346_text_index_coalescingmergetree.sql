@@ -1,6 +1,6 @@
 SET allow_experimental_full_text_index = 1;
 
--- Tests text index with the 'ReplacingMergeTree' engine
+-- Tests text index with the 'CoalescingMergeTree' engine
 
 DROP TABLE IF EXISTS tab;
 
@@ -8,23 +8,23 @@ CREATE TABLE tab
 (
     id UInt32,
     key String,
-    value String,
+    value Nullable(String),
     INDEX idx_key(key) TYPE text(tokenizer = 'splitByNonAlpha')
 )
-ENGINE = ReplacingMergeTree()
+ENGINE = CoalescingMergeTree()
 ORDER BY id;
 
 SYSTEM STOP MERGES tab;
 
 INSERT INTO tab VALUES
     (1, 'foo', 'foo'),
-    (2, 'bar', 'bar');
+    (2, 'bar', NULL);
 
 INSERT INTO tab VALUES
-    (1, 'foo', 'foo updated'),
-    (2, 'baz', 'baz');
+    (1, 'foo', NULL),
+    (2, 'bar', 'bar');
 
-SELECT 'Updated: foo';
+SELECT 'Take value from the first part';
 
 SELECT '-- direct read disabled';
 
@@ -40,42 +40,20 @@ SET use_skip_indexes_on_data_read = 1;
 SELECT value FROM tab WHERE hasToken(key, 'foo') ORDER BY value;
 SELECT value FROM tab FINAL WHERE hasToken(key, 'foo') ORDER BY value;
 
-SELECT 'Removed: bar';
+SELECT 'Take value from the second part';
 
 SELECT '-- direct read disabled';
 
 SET use_skip_indexes_on_data_read = 0;
 
-SELECT '-- -- value exists without FINAL';
 SELECT value FROM tab WHERE hasToken(key, 'bar') ORDER BY value;
-
-SELECT '-- -- value does not exist with FINAL';
 SELECT value FROM tab FINAL WHERE hasToken(key, 'bar') ORDER BY value;
 
 SELECT '-- direct read enabled';
 
 SET use_skip_indexes_on_data_read = 1;
 
-SELECT '-- -- value exists without FINAL';
 SELECT value FROM tab WHERE hasToken(key, 'bar') ORDER BY value;
-
-SELECT '-- -- value does not exist with FINAL';
 SELECT value FROM tab FINAL WHERE hasToken(key, 'bar') ORDER BY value;
-
-SELECT 'New: baz';
-
-SELECT '-- direct read disabled';
-
-SET use_skip_indexes_on_data_read = 0;
-
-SELECT value FROM tab WHERE hasToken(key, 'baz') ORDER BY value;
-SELECT value FROM tab FINAL WHERE hasToken(key, 'baz') ORDER BY value;
-
-SELECT '-- direct read enabled';
-
-SET use_skip_indexes_on_data_read = 1;
-
-SELECT value FROM tab WHERE hasToken(key, 'baz') ORDER BY value;
-SELECT value FROM tab FINAL WHERE hasToken(key, 'baz') ORDER BY value;
 
 DROP TABLE tab;

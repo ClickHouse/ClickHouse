@@ -77,6 +77,8 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         uncompressed_cache,
         /*vector_similarity_index_cache=*/ nullptr,
         settings);
+
+    merging_param_mode = data_part->storage.merging_params.mode;
 }
 
 void MergeTreeReaderTextIndex::updateAllMarkRanges(const MarkRanges & ranges)
@@ -147,16 +149,19 @@ bool MergeTreeReaderTextIndex::canSkipMark(size_t mark, size_t current_task_last
         analyzed_granules.add(index_mark);
     }
 
-    // This condition only applies to a FINAL query.
-    if (const auto * data_part = typeid_cast<const LoadedMergeTreeDataPartInfoForReader *>(data_part_info_for_read.get());
-        data_part->getDataPart()->storage.merging_params.mode == MergeTreeData::MergingParams::Replacing)
+    /// This condition only applies to a FINAL query.
+    switch (merging_param_mode)
     {
-        /*
-         * When a text index created on a table with the ReplacingMergeTree engine, marks cannot be directly skipped
-         * due to search terms might exist only on the old parts but does not exist in new parts.
-         * The Replacing merge strategy would handle such cases but it still needs the range marks to operate.
-        */
-        return false;
+        case MergeTreeData::MergingParams::Replacing:
+        case MergeTreeData::MergingParams::Coalescing:
+            /**
+             * When a text index created on a table with the ReplacingMergeTree or CoalescingMergeTree engine, marks cannot
+             * be directly skipped due to search terms might exist only on the old parts but does not exist in new parts.
+             * Replacing and Coalescing merge strategies would handle such cases but it still needs the range marks to operate.
+             */
+            return false;
+        default:
+            break;
     }
 
     return !it->second.may_be_true;

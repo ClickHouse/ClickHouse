@@ -82,6 +82,7 @@ private:
     absl::flat_hash_map<size_t, RemainingMarks> remaining_marks;
     PaddedPODArray<UInt32> indices_buffer;
     roaring::Roaring analyzed_granules;
+    MergeTreeData::MergingParams::Mode merging_param_mode;
 };
 
 }
