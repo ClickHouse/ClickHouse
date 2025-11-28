@@ -363,7 +363,7 @@ class ToolSet:
 
 class ArtifactNames:
     CH_AMD_DEBUG = "CH_AMD_DEBUG"
-    CH_AMD_LLVM_COVERAGE = "CH_AMD_LLVM_COVERAGE" # this is llvm coverage!!
+    CH_AMD_LLVM_COVERAGE_BUILD = "CH_AMD_LLVM_COVERAGE_BUILD" # this is llvm coverage!!
     AMD_LLVM_COVERAGE_FILE = "AMD_LLVM_COVERAGE_FILE"  # this is llvm coverage!!
     CH_AMD_RELEASE = "CH_AMD_RELEASE"
     CH_AMD_ASAN = "CH_AMD_ASAN"
@@ -423,7 +423,7 @@ class ArtifactConfigs:
     ).parametrize(
         names=[
             ArtifactNames.CH_AMD_DEBUG,
-            ArtifactNames.CH_AMD_LLVM_COVERAGE,
+            ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD,
             ArtifactNames.CH_AMD_RELEASE,
             ArtifactNames.CH_AMD_ASAN,
             ArtifactNames.CH_AMD_TSAN,
@@ -449,13 +449,20 @@ class ArtifactConfigs:
         ]
     )
     llvm_cov_file = Artifact.Config(
-        name=ArtifactNames.AMD_LLVM_COVERAGE_FILE,
+        name="...",
         type=Artifact.Type.S3,
         path=[
-            f"./*.profraw",
             f"./build/*.profraw",
             f"./build/programs*.profraw",
             f"./build/src/unit_tests_dbms/*.profraw",
+        ]
+    ).parametrize(
+        names=[
+            ArtifactNames.AMD_LLVM_COVERAGE_FILE,
+        ] + [
+            ArtifactNames.AMD_LLVM_COVERAGE_FILE + f"_{batch}_of_{total_batches}"
+            for total_batches in (8,)
+            for batch in range(1, total_batches + 1)
         ]
     )
     clickhouse_debians = Artifact.Config(

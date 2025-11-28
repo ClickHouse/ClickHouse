@@ -71,7 +71,7 @@ workflow = Workflow.Config(
             )
             for j in JobConfigs.functional_tests_jobs
         ],
-        # *JobConfigs.functional_tests_jobs_llvm_coverage,
+        *JobConfigs.functional_tests_jobs_llvm_coverage,
         *[
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.integration_test_jobs_required[:]
@@ -124,7 +124,7 @@ workflow = Workflow.Config(
         *ArtifactConfigs.clickhouse_tgzs,
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
-        ArtifactConfigs.llvm_cov_file
+        *ArtifactConfigs.llvm_cov_file
     ],
     dockers=DOCKERS,
     enable_dockers_manifest_merge=True,
