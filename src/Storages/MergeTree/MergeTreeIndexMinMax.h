@@ -29,9 +29,6 @@ struct MergeTreeIndexGranuleMinMax final : public IMergeTreeIndexGranule
     const Block & index_sample_block;
 
     std::vector<Range> hyperrectangle;
-    Serializations serializations;
-    DataTypes datatypes;
-    FormatSettings format_settings;
 };
 
 

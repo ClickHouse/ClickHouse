@@ -190,7 +190,7 @@ StorageKafka::StorageKafka(
     , thread_per_consumer((*kafka_settings)[KafkaSetting::kafka_thread_per_consumer].value)
     , collection_name(collection_name_)
 {
-    kafka_settings->sanityCheck(getContext());
+    kafka_settings->sanityCheck();
 
     if (auto mode = getStreamingHandleErrorMode();
         mode == StreamingHandleErrorMode::STREAM || mode == StreamingHandleErrorMode::DEAD_LETTER_QUEUE)

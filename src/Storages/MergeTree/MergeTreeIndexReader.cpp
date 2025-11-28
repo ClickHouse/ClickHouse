@@ -148,8 +148,8 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
         {
             .version = version,
             .condition = condition,
-            .part = *part,
-            .index = *index,
+            .path_to_data_part = part->getDataPartStorage().getFullPath(),
+            .index_name = index->getFileName(),
             .index_mark = mark
         };
 

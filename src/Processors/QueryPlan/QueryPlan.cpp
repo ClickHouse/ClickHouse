@@ -344,15 +344,15 @@ static void explainStep(
     IQueryPlanStep & step,
     IQueryPlanStep::FormatSettings & settings,
     const ExplainPlanOptions & options,
-    size_t max_description_length)
+    size_t max_description_lengs)
 {
-    const std::string prefix(settings.offset, ' ');
+    std::string prefix(settings.offset, ' ');
     settings.out << prefix;
     settings.out << step.getName();
 
     auto description = step.getStepDescription();
-    if (max_description_length)
-        description = description.substr(0, max_description_length);
+    if (max_description_lengs)
+        description = description.substr(0, max_description_lengs);
     if (options.description && !description.empty())
         settings.out <<" (" << description << ')';
 
@@ -462,15 +462,7 @@ std::string debugExplainStep(IQueryPlanStep & step)
     return out.str();
 }
 
-std::string debugExplainPlan(const QueryPlan & plan)
-{
-    WriteBufferFromOwnString out;
-    ExplainPlanOptions options{.header = true, .actions = true};
-    plan.explainPlan(out, options);
-    return out.str();
-}
-
-void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent, size_t max_description_length) const
+void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent, size_t max_description_lengs) const
 {
     checkInitialized();
 
@@ -493,7 +485,7 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
         if (!frame.is_description_printed)
         {
             settings.offset = (indent + stack.size() - 1) * settings.indent;
-            explainStep(*frame.node->step, settings, options, max_description_length);
+            explainStep(*frame.node->step, settings, options, max_description_lengs);
             frame.is_description_printed = true;
         }
 

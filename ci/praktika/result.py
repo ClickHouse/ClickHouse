@@ -60,8 +60,6 @@ class Result(MetaClasses.Serializable):
         NOT_REQUIRED = "not required"
         FLAKY = "flaky"
         BROKEN = "broken"
-        OK_ON_RETRY = "retry_ok"
-        FAILED_ON_RETRY = "retry_failed"
 
     name: str
     status: str
@@ -323,13 +321,7 @@ class Result(MetaClasses.Serializable):
 
     @classmethod
     def from_pytest_run(
-        cls,
-        command,
-        cwd=None,
-        name="Tests",
-        env=None,
-        pytest_report_file=None,
-        logfile=None,
+        cls, command, cwd=None, name="Tests", env=None, pytest_report_file=None
     ):
         """
         Runs a pytest command, captures results in jsonl format, and creates a Result object.
@@ -339,26 +331,21 @@ class Result(MetaClasses.Serializable):
             cwd (str, optional): Working directory to run the command in
             name (str, optional): Name for the root Result object
             env (dict, optional): Environment variables for the pytest command
-            pytest_report_file (str, optional): Path to write the pytest jsonl report
-            logfile (str, optional): Path to write pytest output logs
+            verbose (bool, optional): Whether to print pytest output to console
 
         Returns:
             Result: A Result object with test cases as sub-Results
         """
         sw = Utils.Stopwatch()
-        files = []
         if pytest_report_file:
-            files.append(pytest_report_file)
+            files = [pytest_report_file]
         else:
+            files = []
             pytest_report_file = ResultTranslator.PYTEST_RESULT_FILE
-        if logfile:
-            files.append(logfile)
 
         with ContextManager.cd(cwd):
             # Construct the full pytest command with jsonl report
             full_command = f"pytest {command} --report-log={pytest_report_file}"
-            if logfile:
-                full_command += f" --log-file={logfile}"
 
             # Apply environment
             for key, value in (env or {}).items():
@@ -671,21 +658,12 @@ class Result(MetaClasses.Serializable):
         return self.ext.get("do_not_block_pipeline_on_failure", False)
 
     def complete_job(
-        self,
-        with_job_summary_in_info=True,
-        do_not_block_pipeline_on_failure=False,
-        disable_attached_files_sorting=False,
+        self, with_job_summary_in_info=True, do_not_block_pipeline_on_failure=False
     ):
         if with_job_summary_in_info:
             self._add_job_summary_to_info()
         if do_not_block_pipeline_on_failure and not self.is_ok():
             self.ext["do_not_block_pipeline_on_failure"] = True
-        if not disable_attached_files_sorting:
-            try:
-                # Normalize to string and sort by filename case-insensitively
-                self.files.sort(key=lambda f: Path(str(f)).name.lower())
-            except Exception as e:
-                print(f"WARNING: Failed to sort attached files: {e}")
         self.dump()
         print(self.to_stdout_formatted())
         if not self.is_ok():
@@ -1141,13 +1119,13 @@ class ResultTranslator:
         )
 
     @classmethod
-    def from_pytest_jsonl(cls, pytest_report_file, enable_capture_output_to_info=False):
+    def from_pytest_jsonl(cls, pytest_report_file):
         """
         Parses a pytest jsonl report file and creates a hierarchical Result object.
 
         Args:
-            pytest_report_file (str): Path to the pytest jsonl report file
-            enable_capture_output_to_info (bool): Whether to capture test output in Result.info
+            jsonl_path (str): Path to the pytest jsonl report file
+            name (str): Name for the root Result object
 
         Returns:
             List[Result]: A list of Result objects representing individual test cases
@@ -1251,22 +1229,21 @@ class ResultTranslator:
                                             info_parts.append(lr_txt)
                                     except Exception:
                                         pass
-                                if enable_capture_output_to_info:
-                                    # Sections (captured output) if any
-                                    sections = entry.get("sections", [])
-                                    try:
-                                        sec_chunks = []
-                                        for sec in sections:
-                                            if isinstance(sec, list) and len(sec) == 2:
-                                                title, content = sec
-                                                if content:
-                                                    sec_chunks.append(
-                                                        f"===== {title} =====\n{content}"
-                                                    )
-                                        if sec_chunks:
-                                            info_parts.append("\n".join(sec_chunks))
-                                    except Exception:
-                                        pass
+                                # Sections (captured output) if any
+                                sections = entry.get("sections", [])
+                                try:
+                                    sec_chunks = []
+                                    for sec in sections:
+                                        if isinstance(sec, list) and len(sec) == 2:
+                                            title, content = sec
+                                            if content:
+                                                sec_chunks.append(
+                                                    f"===== {title} =====\n{content}"
+                                                )
+                                    if sec_chunks:
+                                        info_parts.append("\n".join(sec_chunks))
+                                except Exception:
+                                    pass
 
                                 # Create a result for the module/node that failed to collect
                                 test_results[node_id or "<collection>"] = Result(
@@ -1443,11 +1420,7 @@ class ResultTranslator:
                                 test_failures[node_id][when] = status
 
                             # Include captured sections (stdout/stderr) for failures to help debugging
-                            if (
-                                outcome in ("failed", "error")
-                                and entry.get("sections")
-                                and enable_capture_output_to_info
-                            ):
+                            if outcome in ("failed", "error") and entry.get("sections"):
                                 try:
                                     sec_chunks = []
                                     for sec in entry.get("sections", []):
@@ -1500,7 +1473,11 @@ class ResultTranslator:
                                     Result.StatusExtended.ERROR,
                                 ):
                                     # For non-failures, prefer 'call' phase over others
-                                    if when == "call":
+                                    if (
+                                        when == "call"
+                                        or test_results[node_id].ext.get("when")
+                                        != "call"
+                                    ):
                                         test_results[node_id].status = status
                                         test_results[node_id].duration = duration
 
