@@ -154,9 +154,8 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::initialize(const DB::Blo
 
     for (const auto & desc : def.columns_to_simple_aggregate)
     {
-        const auto & type = desc.nested_type ? desc.nested_type
-                                             : desc.real_type;
-        columns[desc.column_number] = type->createColumn();
+        if (desc.nested_type)
+            columns[desc.column_number] = recursiveRemoveLowCardinality(std::move(columns[desc.column_number]))->assumeMutable();
     }
 
     initAggregateDescription();

@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -613,8 +614,10 @@ void SummingSortedAlgorithm::SummingMergedData::initialize(const DB::Block & hea
         }
         else
         {
-            const auto & type = desc.nested_type ? desc.nested_type : desc.real_type;
-            new_columns.emplace_back(type->createColumn());
+            if (desc.nested_type)
+                new_columns.emplace_back(recursiveRemoveLowCardinality(std::move(columns[desc.column_numbers[0]]))->assumeMutable());
+            else
+                new_columns.emplace_back(std::move(columns[desc.column_numbers[0]]));
         }
     }
 
