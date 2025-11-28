@@ -429,7 +429,7 @@ std::optional<std::pair<char, String>> ParserCompoundIdentifier::splitSpecialDel
         return std::nullopt;
 
     String identifier;
-    ReadBufferFromMemory buf(std::string_view{name}.substr(1));
+    ReadBufferFromMemory buf(name.data() + 1, name.size() - 1);
     readBackQuotedString(identifier, buf);
     return std::make_pair(name[0], identifier);
 }

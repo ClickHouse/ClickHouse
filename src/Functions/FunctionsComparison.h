@@ -4,7 +4,6 @@
 #include <Common/TargetSpecific.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
-#include <Common/quoteString.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
@@ -44,11 +43,13 @@
 #include <IO/ReadHelpers.h>
 
 #include <type_traits>
+
 namespace DB
 {
 
 namespace Setting
 {
+    extern const SettingsBool allow_not_comparable_types_in_comparison_functions;
     extern const SettingsBool validate_enum_literals_in_operators;
 }
 
@@ -653,16 +654,18 @@ struct ComparisonParams
 {
     bool check_decimal_overflow = false;
     bool validate_enum_literals_in_operators = false;
+    bool allow_not_comparable_types = false;
 
     explicit ComparisonParams(const ContextPtr & context)
         : check_decimal_overflow(decimalCheckComparisonOverflow(context))
         , validate_enum_literals_in_operators(context->getSettingsRef()[Setting::validate_enum_literals_in_operators])
+        , allow_not_comparable_types(context->getSettingsRef()[Setting::allow_not_comparable_types_in_comparison_functions])
     {}
 
     ComparisonParams() = default;
 };
 
-template <template <typename, typename> class Op, typename Name, bool is_null_safe_cmp_mode = false>
+template <template <typename, typename> class Op, typename Name>
 class FunctionComparison : public IFunction
 {
 public:
@@ -672,7 +675,6 @@ public:
 
     explicit FunctionComparison(ComparisonParams params_) : params(std::move(params_)) {}
 
-    bool ALWAYS_INLINE  useDefaultImplementationForNulls() const override { return is_null_safe_cmp_mode ? false : true; }
 private:
     const ComparisonParams params;
 
@@ -806,7 +808,7 @@ private:
             if (c0_const_string)
             {
                 c0_const_chars = &c0_const_string->getChars();
-                c0_const_size = c0_const_string->getDataAt(0).size();
+                c0_const_size = c0_const_string->getDataAt(0).size;
             }
             else if (c0_const_fixed_string)
             {
@@ -825,7 +827,7 @@ private:
             if (c1_const_string)
             {
                 c1_const_chars = &c1_const_string->getChars();
-                c1_const_size = c1_const_string->getDataAt(0).size();
+                c1_const_size = c1_const_string->getDataAt(0).size;
             }
             else if (c1_const_fixed_string)
             {
@@ -964,6 +966,7 @@ private:
           *
           * x >= y:  x1 > y1 || (x1 == y1 && (x2 > y2 || (x2 == y2 ... && xn >= yn))
           */
+
         const size_t tuple_size = typeid_cast<const DataTypeTuple &>(*c0.type).getElements().size();
 
         if (0 == tuple_size)
@@ -1153,6 +1156,7 @@ private:
     ColumnPtr executeGeneric(const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1) const
     {
         DataTypePtr common_type = getLeastSupertype(DataTypes{c0.type, c1.type});
+
         ColumnPtr c0_converted = castColumn(c0, common_type);
         ColumnPtr c1_converted = castColumn(c1, common_type);
 
@@ -1172,24 +1176,29 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if ((name == NameEquals::name || name == NameNotEquals::name))
+        if (!params.allow_not_comparable_types)
         {
-            if (!arguments[0]->isComparableForEquality() || !arguments[1]->isComparableForEquality())
+            if ((name == NameEquals::name || name == NameNotEquals::name))
+            {
+                if (!arguments[0]->isComparableForEquality() || !arguments[1]->isComparableForEquality())
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable for equality."
+                        "Set setting allow_not_comparable_types_in_comparison_functions = 1 in order to allow it",
+                        arguments[0]->getName(),
+                        arguments[1]->getName(),
+                        getName());
+            }
+            else if (!arguments[0]->isComparable() || !arguments[1]->isComparable())
+            {
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable for equality",
-                    backQuote(arguments[0]->getName()),
-                    backQuote(arguments[1]->getName()),
-                    backQuote(getName()));
-        }
-        else if (!arguments[0]->isComparable() || !arguments[1]->isComparable())
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable",
-                backQuote(arguments[0]->getName()),
-                backQuote(arguments[1]->getName()),
-                backQuote(getName()));
+                    "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable."
+                    "Set setting allow_not_comparable_types_in_comparison_functions = 1 in order to allow it",
+                    arguments[0]->getName(),
+                    arguments[1]->getName(),
+                    getName());
+            }
         }
 
         WhichDataType left(arguments[0].get());
@@ -1213,7 +1222,7 @@ public:
         {
             if (!tryGetLeastSupertype(arguments))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments ({}, {})"
-                    " of function {}", backQuote(arguments[0]->getName()), backQuote(arguments[1]->getName()), backQuote(getName()));
+                    " of function {}", arguments[0]->getName(), arguments[1]->getName(), getName());
         }
 
         bool both_tuples = left_tuple && right_tuple;
@@ -1248,9 +1257,6 @@ public:
             if (has_nothing)
                 return std::make_shared<DataTypeNothing>();
 
-            // In null-safe cmp mode, return DataTypeUInt8
-            if (is_null_safe_cmp_mode)
-                return std::make_shared<DataTypeUInt8>();
             /// If any element comparison is nullable, return type will also be nullable.
             /// We useDefaultImplementationForNulls, but it doesn't work for tuples.
             if (has_null)
@@ -1441,22 +1447,6 @@ public:
         }
 
         return executeGeneric(col_with_type_and_name_left, col_with_type_and_name_right);
-    }
-
-    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
-    {
-        for (const auto & argument : arguments)
-        {
-            ColumnPtr column = argument.column;
-
-            if (!column || !isColumnConst(*column))
-                continue;
-
-            if (column->isNullAt(0))
-                return result_type->createColumnConst(1, Null());
-        }
-
-        return nullptr;
     }
 };
 

@@ -27,8 +27,6 @@ struct QueryResultDetails
     std::optional<String> content_type = {};
     std::optional<String> format = {};
     std::optional<String> timezone = {};
-    std::optional<std::chrono::time_point<std::chrono::system_clock>> query_cache_entry_created_at = {};
-    std::optional<std::chrono::time_point<std::chrono::system_clock>> query_cache_entry_expires_at = {};
     std::unordered_map<String, String> additional_headers = {};
 };
 
@@ -42,6 +40,7 @@ using HTTPContinueCallback = std::function<void()>;
 void executeQuery(
     ReadBufferUniquePtr istr,                  /// Where to read query from (and data for INSERT, if present).
     WriteBuffer & ostr,                 /// Where to write query output to.
+    bool allow_into_outfile,            /// If true and the query contains INTO OUTFILE section, redirect output to that file.
     ContextMutablePtr context,          /// DB, tables, data types, storage engines, functions, aggregate functions...
     SetResultDetailsFunc set_result_details, /// If a non-empty callback is passed, it will be called with the query id, the content-type, the format, and the timezone, as well as additional headers.
     QueryFlags flags = {},
@@ -55,6 +54,7 @@ void executeQuery(
 void executeQuery(
     ReadBuffer & istr,                  /// Where to read query from (and data for INSERT, if present).
     WriteBuffer & ostr,                 /// Where to write query output to.
+    bool allow_into_outfile,            /// If true and the query contains INTO OUTFILE section, redirect output to that file.
     ContextMutablePtr context,          /// DB, tables, data types, storage engines, functions, aggregate functions...
     SetResultDetailsFunc set_result_details, /// If a non-empty callback is passed, it will be called with the query id, the content-type, the format, and the timezone, as well as additional headers.
     QueryFlags flags = {},
@@ -89,7 +89,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
 
 /// Executes BlockIO returned from executeQuery(...)
 /// if built pipeline does not require any input and does not produce any output.
-void executeTrivialBlockIO(BlockIO & streams, ContextPtr context, bool with_interactive_cancel = false);
+void executeTrivialBlockIO(BlockIO & streams, ContextPtr context);
 
 /// Prepares a QueryLogElement and, if enabled, logs it to system.query_log
 QueryLogElement logQueryStart(
@@ -130,6 +130,5 @@ void logExceptionBeforeStart(
     ContextPtr context,
     ASTPtr ast,
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
-    UInt64 elapsed_milliseconds,
-    bool internal);
+    UInt64 elapsed_milliseconds);
 }

@@ -1,57 +1,12 @@
 #pragma once
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Processors/ISimpleTransform.h>
-#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
-#include <Common/Logger.h>
-#include <Common/Macros.h>
-#include <Formats/FormatSettings.h>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
-
-struct ObjectInfo
-{
-    RelativePathWithMetadata relative_path_with_metadata;
-    std::optional<DataLakeObjectMetadata> data_lake_metadata;
-
-    ObjectInfo() = default;
-
-    explicit ObjectInfo(const String & relative_path_)
-        : relative_path_with_metadata(RelativePathWithMetadata(relative_path_))
-    {
-    }
-    explicit ObjectInfo(RelativePathWithMetadata relative_path_with_metadata_)
-        : relative_path_with_metadata(relative_path_with_metadata_)
-    {
-    }
-
-    ObjectInfo(const ObjectInfo & other) = default;
-
-    virtual ~ObjectInfo() = default;
-
-    virtual std::string getFileName() const { return relative_path_with_metadata.getFileName(); }
-    virtual std::string getPath() const { return relative_path_with_metadata.relative_path; }
-    virtual bool isArchive() const { return false; }
-    virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
-    virtual size_t fileSizeInArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
-    virtual std::string getPathOrPathToArchiveIfArchive() const;
-    virtual std::optional<std::string> getFileFormat() const { return std::nullopt; }
-
-    std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
-    void setObjectMetadata(const ObjectMetadata & metadata) { relative_path_with_metadata.metadata = metadata; }
-
-    FileBucketInfoPtr file_bucket_info;
-
-    String getIdentifier() const;
-};
-
-using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
-using ObjectInfos = std::vector<ObjectInfoPtr>;
+using ObjectInfo = RelativePathWithMetadata;
+using ObjectInfoPtr = std::shared_ptr<RelativePathWithMetadata>;
 class ExpressionActions;
 
 struct IObjectIterator
@@ -86,29 +41,4 @@ private:
     const NamesAndTypesList hive_partition_columns;
     const std::shared_ptr<ExpressionActions> filter_actions;
 };
-
-class ObjectIteratorSplitByBuckets : public IObjectIterator, private WithContext
-{
-public:
-    ObjectIteratorSplitByBuckets(
-        ObjectIterator iterator_,
-        const String & format_,
-        ObjectStoragePtr object_storage_,
-        const ContextPtr & context_);
-
-    ObjectInfoPtr next(size_t) override;
-    size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
-    std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
-
-private:
-    const ObjectIterator iterator;
-    String format;
-    ObjectStoragePtr object_storage;
-    FormatSettings format_settings;
-
-    std::queue<ObjectInfoPtr> pending_objects_info;
-    const LoggerPtr log = getLogger("GlobIterator");
-};
-
-
 }

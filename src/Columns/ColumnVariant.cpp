@@ -407,17 +407,13 @@ void ColumnVariant::get(size_t n, Field & res) const
         variants[discr]->get(offsetAt(n), res);
 }
 
-DataTypePtr ColumnVariant::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+std::pair<String, DataTypePtr> ColumnVariant::getValueNameAndType(size_t n) const
 {
     Discriminator discr = localDiscriminatorAt(n);
     if (discr == NULL_DISCRIMINATOR)
-    {
-        if (options.notFull(name_buf))
-            name_buf << "NULL";
-        return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
-    }
+        return {"NULL", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())};
 
-    return variants[discr]->getValueNameAndTypeImpl(name_buf, offsetAt(n), options);
+    return variants[discr]->getValueNameAndType(offsetAt(n));
 }
 
 bool ColumnVariant::isDefaultAt(size_t n) const
@@ -430,7 +426,7 @@ bool ColumnVariant::isNullAt(size_t n) const
     return localDiscriminatorAt(n) == NULL_DISCRIMINATOR;
 }
 
-std::string_view ColumnVariant::getDataAt(size_t) const
+StringRef ColumnVariant::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
 }
@@ -791,34 +787,40 @@ void ColumnVariant::rollback(const ColumnCheckpoint & checkpoint)
         variants[i]->rollback(*checkpoints[i]);
 }
 
-std::string_view ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     /// During any serialization/deserialization we should always use global discriminators.
     Discriminator global_discr = globalDiscriminatorAt(n);
     char * pos = arena.allocContinue(sizeof(global_discr), begin);
     memcpy(pos, &global_discr, sizeof(global_discr));
-    std::string_view res(pos, sizeof(global_discr));
+    StringRef res(pos, sizeof(global_discr));
 
     if (global_discr == NULL_DISCRIMINATOR)
         return res;
 
     auto value_ref = variants[localDiscriminatorByGlobal(global_discr)]->serializeValueIntoArena(offsetAt(n), arena, begin);
-    return {value_ref.data() - res.size(), res.size() + value_ref.size()};
+    res.data = value_ref.data - res.size;
+    res.size += value_ref.size;
+
+    return res;
 }
 
-std::string_view ColumnVariant::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnVariant::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     /// During any serialization/deserialization we should always use global discriminators.
     Discriminator global_discr = globalDiscriminatorAt(n);
     char * pos = arena.allocContinue(sizeof(global_discr), begin);
     memcpy(pos, &global_discr, sizeof(global_discr));
-    std::string_view res(pos, sizeof(global_discr));
+    StringRef res(pos, sizeof(global_discr));
 
     if (global_discr == NULL_DISCRIMINATOR)
         return res;
 
     auto value_ref = variants[localDiscriminatorByGlobal(global_discr)]->serializeAggregationStateValueIntoArena(offsetAt(n), arena, begin);
-    return std::string_view{value_ref.data() - res.size(), res.size() + value_ref.size()};
+    res.data = value_ref.data - res.size;
+    res.size += value_ref.size;
+
+    return res;
 }
 
 void ColumnVariant::deserializeAndInsertFromArena(ReadBuffer & in)
@@ -1395,19 +1397,8 @@ size_t ColumnVariant::capacity() const
     return local_discriminators->capacity();
 }
 
-void ColumnVariant::shrinkToFit()
-{
-    offsets->shrinkToFit();
-    local_discriminators->shrinkToFit();
-    const size_t num_variants = variants.size();
-    for (size_t i = 0; i < num_variants; ++i)
-        getVariantByLocalDiscriminator(i).shrinkToFit();
-}
-
 void ColumnVariant::ensureOwnership()
 {
-    offsets->ensureOwnership();
-    local_discriminators->ensureOwnership();
     const size_t num_variants = variants.size();
     for (size_t i = 0; i < num_variants; ++i)
         getVariantByLocalDiscriminator(i).ensureOwnership();
@@ -1765,7 +1756,7 @@ bool ColumnVariant::hasDynamicStructure() const
     return false;
 }
 
-void ColumnVariant::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnVariant::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
 {
     /// List of source columns for each variant. In global order.
     std::vector<Columns> variants_source_columns;
@@ -1782,7 +1773,7 @@ void ColumnVariant::takeDynamicStructureFromSourceColumns(const Columns & source
     }
 
     for (size_t i = 0; i != num_variants; ++i)
-        getVariantByGlobalDiscriminator(i).takeDynamicStructureFromSourceColumns(variants_source_columns[i], max_dynamic_subcolumns);
+        getVariantByGlobalDiscriminator(i).takeDynamicStructureFromSourceColumns(variants_source_columns[i]);
 }
 
 void ColumnVariant::takeDynamicStructureFromColumn(const ColumnPtr & source_column)

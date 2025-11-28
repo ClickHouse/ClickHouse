@@ -4,7 +4,6 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionFactory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/convertFieldToType.h>
@@ -28,6 +27,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CORRUPTED_DATA;
     extern const int ILLEGAL_STATISTICS;
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
@@ -37,7 +37,6 @@ namespace ErrorCodes
 enum StatisticsFileVersion : UInt16
 {
     V0 = 0,
-    V1 = 1, /// modify the format of uniq, https://github.com/ClickHouse/ClickHouse/pull/90311
 };
 
 std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value, const DataTypePtr & data_type)
@@ -45,14 +44,19 @@ std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value,
     if (!data_type->isValueRepresentedByNumber())
         return {};
 
-    auto column = data_type->createColumn();
-    column->insert(value);
-    ColumnsWithTypeAndName arguments({ColumnWithTypeAndName(std::move(column), data_type, "stats_const")});
+    Field value_converted;
+    if (isInteger(data_type) && !isBool(data_type))
+        /// For case val_int32 < 10.5 or val_int32 < '10.5' we should convert 10.5 to Float64.
+        value_converted = convertFieldToType(value, DataTypeFloat64());
+    else
+        /// We should convert value to the real column data type and then translate it to Float64.
+        /// For example for expression col_date > '2024-08-07', if we directly convert '2024-08-07' to Float64, we will get null.
+        value_converted = convertFieldToType(value, *data_type);
 
-    auto cast_resolver = FunctionFactory::instance().get("toFloat64", nullptr);
-    auto cast_function = cast_resolver->build(arguments);
-    ColumnPtr result = cast_function->execute(arguments, std::make_shared<DataTypeFloat64>(), 1, false);
-    return result->getFloat64(0);
+    if (value_converted.isNull())
+        return {};
+
+    return applyVisitor(FieldVisitorConvertToNumber<Float64>(), value_converted);
 }
 
 IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
@@ -231,7 +235,7 @@ Estimate ColumnStatistics::getEstimate() const
 
 void ColumnStatistics::serialize(WriteBuffer & buf)
 {
-    writeIntBinary(V1, buf);
+    writeIntBinary(V0, buf);
 
     UInt64 stat_types_mask = 0;
     for (const auto & [type, _]: stats)
@@ -250,9 +254,8 @@ void ColumnStatistics::deserialize(ReadBuffer &buf)
 {
     UInt16 version;
     readIntBinary(version, buf);
-    /// TODO: we should check the version of statistics format when we start clickhouse server, and do materialize statistics automatically.
-    if (version != V1)
-        throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "We try to read stale file format version: {}. Please run `ALTER TABLE [db.]table MATERIALIZE STATISTICS ALL` to regenerate the statistics", version);
+    if (version != V0)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown file format version: {}", version);
 
     UInt64 stat_types_mask = 0;
     readIntBinary(stat_types_mask, buf);

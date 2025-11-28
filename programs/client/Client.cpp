@@ -258,8 +258,8 @@ void Client::initialize(Poco::Util::Application & self)
         if (overrides.history_file.has_value())
         {
             auto history_file = overrides.history_file.value();
-            if (history_file.starts_with("~/") && !home_path.empty())
-                history_file = home_path / history_file.substr(2);
+            if (history_file.starts_with("~") && !home_path.empty())
+                history_file = home_path / history_file.substr(1);
             configuration.setString("history_file", history_file);
         }
         if (overrides.history_max_entries.has_value())
@@ -319,10 +319,6 @@ void Client::initialize(Poco::Util::Application & self)
     /// Set the path for google proto files
     if (config().has("google_protos_path"))
         client_context->setGoogleProtosPath(fs::weakly_canonical(config().getString("google_protos_path")));
-
-    /// Use <server_client_version_message/> unless --server-client-version-message is specified
-    if (!config().has("no-server-client-version-message") && !config().getBool("server_client_version_message", true))
-        config().setBool("no-server-client-version-message", true);
 }
 
 
@@ -513,23 +509,20 @@ void Client::connect()
         output_stream << "Connected to " << server_name << " server version " << server_version << "." << std::endl << std::endl;
 
 #if not CLICKHOUSE_CLOUD
-        if (!config().has("no-server-client-version-message"))
-        {
-            auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
-            auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
+        auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
+        auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
 
-            if (client_version_tuple < server_version_tuple)
-            {
-                output_stream << "ClickHouse client version is older than ClickHouse server. "
-                          << "It may lack support for new features." << std::endl
-                          << std::endl;
-            }
-            else if (client_version_tuple > server_version_tuple && server_display_name != "clickhouse-cloud")
-            {
-                output_stream << "ClickHouse server version is older than ClickHouse client. "
-                          << "It may indicate that the server is out of date and can be upgraded." << std::endl
-                          << std::endl;
-            }
+        if (client_version_tuple < server_version_tuple)
+        {
+            output_stream << "ClickHouse client version is older than ClickHouse server. "
+                      << "It may lack support for new features." << std::endl
+                      << std::endl;
+        }
+        else if (client_version_tuple > server_version_tuple && server_display_name != "clickhouse-cloud")
+        {
+            output_stream << "ClickHouse server version is older than ClickHouse client. "
+                      << "It may indicate that the server is out of date and can be upgraded." << std::endl
+                      << std::endl;
         }
 #endif
     }
@@ -688,7 +681,6 @@ void Client::addExtraOptions(OptionsDescription & options_description)
             po::value<std::string>(),
             "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
         ("no-warnings", "disable warnings when client connects to server")
-        ("no-server-client-version-message", "suppress server-client version mismatch message")
         /// TODO: Left for compatibility as it's used in upgrade check, remove after next release and use server setting ignore_drop_queries_probability
         ("fake-drop", "Ignore all DROP queries, should be used only for testing")
         ("accept-invalid-certificate",
@@ -779,49 +771,47 @@ void Client::processOptions(
     /// TODO: Is this code necessary?
     global_context->getSettingsRef().addToClientOptions(config(), options, allow_repeated_settings);
 
-    if (options.contains("config-file") && options.contains("config"))
+    if (options.count("config-file") && options.count("config"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Two or more configuration files referenced in arguments");
 
-    if (options.contains("config"))
+    if (options.count("config"))
         config().setString("config-file", options["config"].as<std::string>());
-    if (options.contains("connection"))
+    if (options.count("connection"))
         config().setString("connection", options["connection"].as<std::string>());
-    if (options.contains("interleave-queries-file"))
+    if (options.count("interleave-queries-file"))
         interleave_queries_files = options["interleave-queries-file"].as<std::vector<std::string>>();
-    if (options.contains("secure"))
+    if (options.count("secure"))
         config().setBool("secure", true);
-    if (options.contains("no-secure"))
+    if (options.count("no-secure"))
         config().setBool("no-secure", true);
-    if (options.contains("user") && !options["user"].defaulted())
+    if (options.count("user") && !options["user"].defaulted())
         config().setString("user", options["user"].as<std::string>());
-    if (options.contains("password"))
+    if (options.count("password"))
         config().setString("password", options["password"].as<std::string>());
-    if (options.contains("ask-password"))
+    if (options.count("ask-password"))
         config().setBool("ask-password", true);
-    if (options.contains("ssh-key-file"))
+    if (options.count("ssh-key-file"))
         config().setString("ssh-key-file", options["ssh-key-file"].as<std::string>());
-    if (options.contains("ssh-key-passphrase"))
+    if (options.count("ssh-key-passphrase"))
         config().setString("ssh-key-passphrase", options["ssh-key-passphrase"].as<std::string>());
-    if (options.contains("quota_key"))
+    if (options.count("quota_key"))
         config().setString("quota_key", options["quota_key"].as<std::string>());
-    if (options.contains("max_client_network_bandwidth"))
+    if (options.count("max_client_network_bandwidth"))
         max_client_network_bandwidth = options["max_client_network_bandwidth"].as<int>();
-    if (options.contains("compression"))
+    if (options.count("compression"))
         config().setBool("compression", options["compression"].as<bool>());
-    if (options.contains("no-warnings"))
+    if (options.count("no-warnings"))
         config().setBool("no-warnings", true);
-    if (options.contains("no-server-client-version-message"))
-        config().setBool("no-server-client-version-message", true);
-    if (options.contains("fake-drop"))
+    if (options.count("fake-drop"))
         config().setString("ignore_drop_queries_probability", "1");
-    if (options.contains("jwt"))
+    if (options.count("jwt"))
     {
         if (!options["user"].defaulted())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "User and JWT flags can't be specified together");
         config().setString("jwt", options["jwt"].as<std::string>());
         config().setString("user", "");
     }
-    if (options.contains("accept-invalid-certificate"))
+    if (options.count("accept-invalid-certificate"))
     {
         config().setString("openSSL.client.invalidCertificateHandler.name", "AcceptCertificateHandler");
         config().setString("openSSL.client.verificationMode", "none");
@@ -830,7 +820,7 @@ void Client::processOptions(
         config().setString("openSSL.client.invalidCertificateHandler.name", "RejectCertificateHandler");
 
     query_fuzzer_runs = options["query-fuzzer-runs"].as<int>();
-    buzz_house_options_path = options.contains("buzz-house-config") ? options["buzz-house-config"].as<std::string>() : "";
+    buzz_house_options_path = options.count("buzz-house-config") ? options["buzz-house-config"].as<std::string>() : "";
     buzz_house = !query_fuzzer_runs && !buzz_house_options_path.empty();
     if (query_fuzzer_runs || !buzz_house_options_path.empty())
     {
@@ -864,7 +854,7 @@ void Client::processOptions(
         ignore_error = true;
     }
 
-    if (options.contains("opentelemetry-traceparent"))
+    if (options.count("opentelemetry-traceparent"))
     {
         String traceparent = options["opentelemetry-traceparent"].as<std::string>();
         String error;
@@ -872,7 +862,7 @@ void Client::processOptions(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse OpenTelemetry traceparent '{}': {}", traceparent, error);
     }
 
-    if (options.contains("opentelemetry-tracestate"))
+    if (options.count("opentelemetry-tracestate"))
         global_context->getClientTraceContext().tracestate = options["opentelemetry-tracestate"].as<std::string>();
 
     initClientContext(Context::createCopy(global_context));

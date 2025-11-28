@@ -228,7 +228,6 @@ public:
         {
             /// Remove stale entries
             for (auto it = cache.begin(); it != cache.end();)
-            {
                 if (is_stale_function(it->first))
                 {
                     size_t sz = weight_function(*it->second);
@@ -239,7 +238,6 @@ public:
                 }
                 else
                     ++it;
-            }
         }
 
         if (sufficient_space_in_cache() && sufficient_space_in_cache_for_user())

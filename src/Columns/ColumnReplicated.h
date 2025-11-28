@@ -67,20 +67,20 @@ public:
     bool isNullAt(size_t n) const override;
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options & options) const override;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
     bool getBool(size_t n) const override;
     Float64 getFloat64(size_t n) const override;
     Float32 getFloat32(size_t n) const override;
     UInt64 getUInt(size_t n) const override;
     Int64 getInt(size_t n) const override;
     UInt64 get64(size_t n) const override;
-    std::string_view getDataAt(size_t n) const override;
+    StringRef getDataAt(size_t n) const override;
 
     ColumnPtr convertToFullColumnIfReplicated() const override;
 
     void insertData(const char * pos, size_t length) override;
-    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    std::string_view serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
     std::optional<size_t> getSerializedValueSize(size_t n) const override;
     void deserializeAndInsertFromArena(ReadBuffer & in) override;
@@ -184,7 +184,7 @@ public:
     bool isCollationSupported() const override { return nested_column->isCollationSupported(); }
 
     bool hasDynamicStructure() const override { return nested_column->hasDynamicStructure(); }
-    void takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
+    void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
     void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
 
     const ColumnIndex & getIndexes() const { return indexes; }
