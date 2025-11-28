@@ -49,7 +49,6 @@ namespace ErrorCodes
     DECLARE(UInt64, max_processed_rows_before_commit, 0, "Number of rows which can be processed before being committed to keeper (in case of parallel_inserts=true, works on a per-thread basis)", 0) \
     DECLARE(UInt64, max_processed_bytes_before_commit, 0, "Number of bytes which can be processed before being committed to keeper (in case of parallel_inserts=true, works on a per-thread basis)", 0) \
     DECLARE(UInt64, max_processing_time_sec_before_commit, 0, "Timeout in seconds after which to commit files committed to keeper (in case of parallel_inserts=true, works on a per-thread basis)", 0) \
-    DECLARE(Bool, use_hive_partitioning, true, "Whether path contains hive partitioning and this engine should process such files with a separate processed files tracking per partition.", 0) \
     DECLARE(UInt32, after_processing_retries, 10, "Number of retries for the after_processing action before giving up", 0) \
     DECLARE(String, after_processing_move_uri, "", "S3 bucket URL to move processed files to", 0) \
     DECLARE(String, after_processing_move_prefix, "", "Path prefix to move processed files to", 0) \
@@ -59,6 +58,8 @@ namespace ErrorCodes
     DECLARE(String, after_processing_move_secret_access_key, "", "S3 Secret Access Key accompanying after_processing_move_uri", 0) \
     DECLARE(String, after_processing_move_connection_string, "", "Azure connection string to move processed files to", 0) \
     DECLARE(String, after_processing_move_container, "", "Azure container accompanying after_processing_move_connection_string", 0) \
+    \
+    DECLARE(Bool, allow_experimental_s3_queue_hive_partitioning, false, "Whether path contains hive partitioning and this engine should process such files with a separate processed files tracking per partition.", EXPERIMENTAL) \
 
 #define LIST_OF_OBJECT_STORAGE_QUEUE_SETTINGS(M, ALIAS) \
     OBJECT_STORAGE_QUEUE_RELATED_SETTINGS(M, ALIAS) \

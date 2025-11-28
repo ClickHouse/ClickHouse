@@ -103,7 +103,6 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsObjectStorageQueueAction after_processing;
     extern const ObjectStorageQueueSettingsUInt64 list_objects_batch_size;
     extern const ObjectStorageQueueSettingsBool enable_hash_ring_filtering;
-    extern const ObjectStorageQueueSettingsBool use_hive_partitioning;
     extern const ObjectStorageQueueSettingsUInt64 min_insert_block_size_rows_for_materialized_views;
     extern const ObjectStorageQueueSettingsUInt64 min_insert_block_size_bytes_for_materialized_views;
     extern const ObjectStorageQueueSettingsBool use_persistent_processing_nodes;
@@ -117,6 +116,8 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsString after_processing_move_container;
     extern const ObjectStorageQueueSettingsString after_processing_tag_key;
     extern const ObjectStorageQueueSettingsString after_processing_tag_value;
+
+    extern const ObjectStorageQueueSettingsBool allow_experimental_s3_queue_hive_partitioning;
 }
 
 namespace ErrorCodes
@@ -307,7 +308,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context_);
     configuration->check(context_);
 
-    if ((*queue_settings_)[ObjectStorageQueueSetting::use_hive_partitioning])
+    if ((*queue_settings_)[ObjectStorageQueueSetting::allow_experimental_s3_queue_hive_partitioning])
     {
         hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(
             columns, configuration->getRawPath().path, format_settings, context_);
