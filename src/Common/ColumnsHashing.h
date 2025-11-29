@@ -463,6 +463,7 @@ struct HashMethodSerialized
                 else
                     sum_size += key_column->serializeValueIntoArena(row, pool, begin).size();
             }
+
             return SerializedKeyHolder{{begin, sum_size}, pool};
         }
     }

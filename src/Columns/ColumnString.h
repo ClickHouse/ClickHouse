@@ -2,15 +2,16 @@
 
 #include <cstring>
 
-#include <DataTypes/DataTypeString.h>
-#include <IO/WriteHelpers.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
-#include <Common/PODArray.h>
-#include <Common/memcpySmall.h>
-#include <base/memcmpSmall.h>
-#include <Common/assert_cast.h>
 #include <Core/Field.h>
+#include <DataTypes/DataTypeString.h>
+#include <IO/WriteHelpers.h>
+#include <base/memcmpSmall.h>
+#include <Common/Arena.h>
+#include <Common/PODArray.h>
+#include <Common/assert_cast.h>
+#include <Common/memcpySmall.h>
 
 #include <base/defines.h>
 
@@ -207,9 +208,30 @@ public:
 
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
 
-    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
+    {
+        size_t string_size = sizeAt(n);
+        size_t offset = offsetAt(n);
+
+        auto result_size = sizeof(string_size) + string_size;
+        char * pos = arena.allocContinue(result_size, begin);
+        memcpy(pos, &string_size, sizeof(string_size));
+        memcpy(pos + sizeof(string_size), &chars[offset], string_size);
+        return {pos, result_size};
+    }
+
     std::string_view serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    ALWAYS_INLINE char * serializeValueIntoMemory(size_t n, char * memory) const override;
+
+    ALWAYS_INLINE char * serializeValueIntoMemory(size_t n, char * memory) const override
+    {
+        size_t string_size = sizeAt(n);
+        size_t offset = offsetAt(n);
+
+        memcpy(memory, &string_size, sizeof(string_size));
+        memory += sizeof(string_size);
+        memcpy(memory, &chars[offset], string_size);
+        return memory + string_size;
+    }
 
     void deserializeAndInsertFromArena(ReadBuffer & in) override;
     void deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in) override;
