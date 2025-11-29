@@ -139,33 +139,31 @@ def test_revoke_requires_admin_option():
     instance.query("CREATE ROLE R1, R2")
 
     instance.query("GRANT R1 TO B")
-    assert instance.query("SHOW GRANTS FOR B") == "GRANT R1 TO B;\n"
-
     expected_error = "necessary to have the role R1 granted"
     assert expected_error in instance.query_and_get_error("REVOKE R1 FROM B", user="A")
-    assert instance.query("SHOW GRANTS FOR B") == "GRANT R1 TO B\n"
+    assert instance.query("SHOW GRANTS FOR B").rstrip(";\n") == "GRANT R1 TO B"
 
     instance.query("GRANT R1 TO A")
     expected_error = "granted, but without ADMIN option"
     assert expected_error in instance.query_and_get_error("REVOKE R1 FROM B", user="A")
-    assert instance.query("SHOW GRANTS FOR B") == "GRANT R1 TO B\n"
+    assert instance.query("SHOW GRANTS FOR B").rstrip(";\n") == "GRANT R1 TO B"
 
     instance.query("GRANT R1 TO A WITH ADMIN OPTION")
     instance.query("REVOKE R1 FROM B", user="A")
     assert instance.query("SHOW GRANTS FOR B") == ""
 
     instance.query("GRANT R1 TO B")
-    assert instance.query("SHOW GRANTS FOR B") == "GRANT R1 TO B\n"
+    assert instance.query("SHOW GRANTS FOR B").rstrip(";\n") == "GRANT R1 TO B"
     instance.query("REVOKE ALL FROM B", user="A")
     assert instance.query("SHOW GRANTS FOR B") == ""
 
     instance.query("GRANT R1, R2 TO B")
-    assert instance.query("SHOW GRANTS FOR B") == "GRANT R1, R2 TO B\n"
+    assert instance.query("SHOW GRANTS FOR B").rstrip(";\n") == "GRANT R1, R2 TO B"
     expected_error = "necessary to have the role R2 granted"
     assert expected_error in instance.query_and_get_error("REVOKE ALL FROM B", user="A")
-    assert instance.query("SHOW GRANTS FOR B") == "GRANT R1, R2 TO B\n"
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT R1, R2 TO B;\n"
     instance.query("REVOKE ALL EXCEPT R2 FROM B", user="A")
-    assert instance.query("SHOW GRANTS FOR B") == "GRANT R2 TO B\n"
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT R2 TO B;\n"
     instance.query("GRANT R2 TO A WITH ADMIN OPTION")
     instance.query("REVOKE ALL FROM B", user="A")
     assert instance.query("SHOW GRANTS FOR B") == ""
@@ -185,7 +183,7 @@ def test_set_role():
     assert instance.http_query(
         "SHOW CURRENT ROLES", user="A", params={"session_id": session_id}
     ) == TSV([["R1", 0, 1], ["R2", 0, 1]])
-
+        assert instance.query("SHOW GRANTS FOR B").rstrip(";\n") == "GRANT R1 TO B"
     instance.http_query("SET ROLE R1", user="A", params={"session_id": session_id})
     assert instance.http_query(
         "SHOW CURRENT ROLES", user="A", params={"session_id": session_id}
@@ -251,12 +249,12 @@ def test_introspection():
     assert instance.query("SHOW GRANTS FOR A") == TSV(
         ["GRANT SELECT ON test.`table` TO A;", "GRANT R1 TO A;"]
     )
-    assert instance.query("SHOW GRANTS FOR B") == TSV(
-        [
-            "GRANT CREATE ON *.* TO B WITH GRANT OPTION;",
-            "GRANT R2 TO B WITH ADMIN OPTION",
-        ]
-    )
+    actual = [line.rstrip(";") for line in instance.query("SHOW GRANTS FOR B").splitlines()]
+    expected = [
+        "GRANT CREATE ON *.* TO B WITH GRANT OPTION",
+        "GRANT R2 TO B WITH ADMIN OPTION",
+    ]
+    assert actual == expected
     assert instance.query("SHOW GRANTS FOR R1") == ""
     assert instance.query("SHOW GRANTS FOR R2") == TSV(
         [

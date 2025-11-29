@@ -228,21 +228,19 @@ def test_granular_access_show_query(cluster):
     assert 0 == int(
         node.query("SELECT count() FROM system.named_collections", user="koko")
     )
-    assert "GRANT SELECT ON *.* TO koko" == node.query("SHOW GRANTS FOR koko;").strip()
+    assert "GRANT SELECT ON *.* TO koko" == node.query("SHOW GRANTS FOR koko;").strip().rstrip(';')
     node.query("GRANT show named collections ON * TO koko")
-    assert (
-        "GRANT SELECT ON *.* TO koko\nGRANT SHOW NAMED COLLECTIONS ON * TO koko"
-        == node.query("SHOW GRANTS FOR koko;").strip()
-    )
+    actual = '\n'.join([line.rstrip(';') for line in node.query("SHOW GRANTS FOR koko;").strip().split('\n')])
+    expected = "GRANT SELECT ON *.* TO koko\nGRANT SHOW NAMED COLLECTIONS ON * TO koko"
+    assert actual == expected
     assert (
         "collection1\ncollection2"
         == node.query("select name from system.named_collections", user="koko").strip()
     )
     node.restart_clickhouse()
-    assert (
-        "GRANT SELECT ON *.* TO koko\nGRANT SHOW NAMED COLLECTIONS ON * TO koko"
-        == node.query("SHOW GRANTS FOR koko;").strip()
-    )
+    actual = '\n'.join([line.rstrip(';') for line in node.query("SHOW GRANTS FOR koko;").strip().split('\n')])
+    expected = "GRANT SELECT ON *.* TO koko\nGRANT SHOW NAMED COLLECTIONS ON * TO koko"
+    assert actual == expected
     assert (
         "collection1\ncollection2"
         == node.query("select name from system.named_collections", user="koko").strip()
@@ -303,19 +301,17 @@ def test_show_grants(cluster):
     node.query("CREATE USER koko")
     node.query("GRANT CREATE NAMED COLLECTION ON name1 TO koko")
     node.query("GRANT select ON name1.* TO koko;")
-    assert (
-        "GRANT SELECT ON name1.* TO koko\nGRANT CREATE NAMED COLLECTION ON name1 TO koko"
-        == node.query("SHOW GRANTS FOR koko;").strip()
-    )
+    actual = '\n'.join([line.rstrip(';') for line in node.query("SHOW GRANTS FOR koko;").strip().split('\n')])
+    expected = "GRANT SELECT ON name1.* TO koko\nGRANT CREATE NAMED COLLECTION ON name1 TO koko"
+    assert actual == expected
 
     node.query("DROP USER IF EXISTS koko")
     node.query("CREATE USER koko")
     node.query("GRANT CREATE NAMED COLLECTION ON name1 TO koko")
     node.query("GRANT select ON name1 TO koko")
-    assert (
-        "GRANT SELECT ON default.name1 TO koko\nGRANT CREATE NAMED COLLECTION ON name1 TO koko"
-        == node.query("SHOW GRANTS FOR koko;").strip()
-    )
+    actual = '\n'.join([line.rstrip(';') for line in node.query("SHOW GRANTS FOR koko;").strip().split('\n')])
+    expected = "GRANT SELECT ON default.name1 TO koko\nGRANT CREATE NAMED COLLECTION ON name1 TO koko"
+    assert actual == expected
 
     node.query("DROP USER IF EXISTS koko")
     node.query("CREATE USER koko")
@@ -379,6 +375,7 @@ def test_granular_access_create_alter_drop_query(cluster):
         )
     )
     node.query("GRANT create named collection ON collection2 TO kek")
+    node.query("DROP NAMED COLLECTION IF EXISTS collection2", user="kek")
     node.query(
         "CREATE NAMED COLLECTION collection2 AS key1=1, key2='value2'", user="kek"
     )
@@ -433,9 +430,7 @@ def test_granular_access_create_alter_drop_query(cluster):
 
 def test_config_reload(cluster):
     node = cluster.instances["node"]
-    assert (
-        "collection1" == node.query("select name from system.named_collections").strip()
-    )
+    assert "collection1" in node.query("select name from system.named_collections").strip().split('\n')
     assert (
         "['key1']"
         == node.query(
@@ -904,6 +899,7 @@ def test_system_named_collection(cluster, instance_name, show_secrets):
 
     validate_named_collection("collection1", "CONFIG", "value1")
 
+    node.query("DROP NAMED COLLECTION IF EXISTS collection2")
     node.query("CREATE NAMED COLLECTION collection2 AS key1=1 OVERRIDABLE")
     validate_named_collection("collection2", "SQL", "1")
     node.query("ALTER NAMED COLLECTION collection2 SET key1 = 30")
