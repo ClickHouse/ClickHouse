@@ -37,13 +37,13 @@ ORDER BY id;
 SELECT *
 FROM buf_simple
 ORDER BY id
-INTO OUTFILE 'buffers_simple.bin' TRUNCATE
+INTO OUTFILE '03743_buffers_simple.bin' TRUNCATE
 FORMAT Buffers;
 
 TRUNCATE TABLE buf_simple;
 
 INSERT INTO buf_simple
-FROM INFILE 'buffers_simple.bin'
+FROM INFILE '03743_buffers_simple.bin'
 FORMAT Buffers;
 
 SELECT * FROM buf_simple FORMAT HASH;
@@ -61,7 +61,7 @@ SELECT
     number AS id,
     number % 3 AS k
 FROM numbers(100000)
-INTO OUTFILE 'buffers_numbers.bin' TRUNCATE
+INTO OUTFILE '03743_buffers_numbers.bin' TRUNCATE
 FORMAT Buffers;
 
 SELECT
@@ -69,7 +69,7 @@ SELECT
     sum(id) AS sum_id,
     sum(k) AS sum_k
 FROM file(
-    'buffers_numbers.bin',
+    '03743_buffers_numbers.bin',
     'Buffers',
     'id UInt64, k UInt8'
 );
@@ -77,7 +77,7 @@ FROM file(
 SELECT
     *
 FROM file(
-    'buffers_numbers.bin',
+    '03743_buffers_numbers.bin',
     'Buffers',
     'id UInt64, k UInt8'
 ) LIMIT -5;
@@ -90,7 +90,7 @@ SELECT
     [number, number + 1] AS arr,
     (number, toString(number)) AS tup
 FROM numbers(100)
-INTO OUTFILE 'buffers_complex.bin' TRUNCATE
+INTO OUTFILE '03743_buffers_complex.bin' TRUNCATE
 FORMAT Buffers;
 
 SELECT
@@ -100,7 +100,7 @@ SELECT
     sum(length(s))                     AS sum_len_s,
     sum(length(arr))                   AS sum_len_arr
 FROM file(
-    'buffers_complex.bin',
+    '03743_buffers_complex.bin',
     'Buffers',
     'id UInt64, s String, n_nullable Nullable(UInt64), arr Array(UInt64), tup Tuple(UInt64, String)'
 );
@@ -109,7 +109,7 @@ SELECT
     sum(tupleElement(tup, 1))                  AS sum_tup_1,
     sum(length(tupleElement(tup, 2)))          AS sum_len_tup_2
 FROM file(
-    'buffers_complex.bin',
+    '03743_buffers_complex.bin',
     'Buffers',
     'id UInt64, s String, n_nullable Nullable(UInt64), arr Array(UInt64), tup Tuple(UInt64, String)'
 );
@@ -121,11 +121,11 @@ CREATE TABLE buf_empty (id UInt64) ENGINE = Memory;
 SELECT *
 FROM buf_empty
 WHERE 0
-INTO OUTFILE 'buffers_zero_rows.bin' TRUNCATE
+INTO OUTFILE '03743_buffers_zero_rows.bin' TRUNCATE
 FORMAT Buffers;
 
 SELECT count()
-FROM file('buffers_zero_rows.bin', 'Buffers', 'id UInt64');
+FROM file('03743_buffers_zero_rows.bin', 'Buffers', 'id UInt64');
 
 
 SELECT 'Constant columns';
@@ -133,21 +133,21 @@ SELECT
     number AS k,
     'x'    AS s
 FROM numbers(10)
-INTO OUTFILE 'buffers_const.bin' TRUNCATE
+INTO OUTFILE '03743_buffers_const.bin' TRUNCATE
 FORMAT Buffers;
 
 SELECT
     sum(k)       AS sum_k,
     groupArray(s) AS arr_s
 FROM file(
-    'buffers_const.bin',
+    '03743_buffers_const.bin',
     'Buffers',
     'k UInt64, s String'
 );
 
 SELECT 'Buffers via file() source and INSERT';
 INSERT INTO TABLE FUNCTION
-    file('buffers_via_file.bin', 'Buffers', 'id UInt64, name String')
+    file('03743_buffers_via_file.bin', 'Buffers', 'id UInt64, name String')
 SELECT
     number AS id,
     concat('name_', toString(number)) AS name
@@ -155,7 +155,7 @@ FROM numbers(10);
 
 SELECT *
 FROM file(
-    'buffers_via_file.bin',
+    '03743_buffers_via_file.bin',
     'Buffers',
     'id UInt64, name String'
 )
@@ -197,7 +197,7 @@ INSERT INTO buf_json_variant_dynamic VALUES
 SELECT *
 FROM buf_json_variant_dynamic
 ORDER BY id
-INTO OUTFILE 'buffers_json_variant_dynamic.bin' TRUNCATE
+INTO OUTFILE '03743_buffers_json_variant_dynamic.bin' TRUNCATE
 FORMAT Buffers;
 
 SELECT * FROM buf_json_variant_dynamic FORMAT HASH;
@@ -207,7 +207,7 @@ SELECT * FROM buf_json_variant_dynamic;
 TRUNCATE TABLE buf_json_variant_dynamic;
 
 INSERT INTO buf_json_variant_dynamic
-FROM INFILE 'buffers_json_variant_dynamic.bin'
+FROM INFILE '03743_buffers_json_variant_dynamic.bin'
 FORMAT Buffers;
 
 SELECT * FROM buf_json_variant_dynamic FORMAT HASH;
@@ -241,7 +241,7 @@ SELECT
     arraySort(groupUniqArray(dynamicType(d)))        AS d_types,
     arraySort(groupUniqArray(JSONAllPathsWithTypes(j))) AS json_paths_and_types
 FROM file(
-    'buffers_json_variant_dynamic.bin',
+    '03743_buffers_json_variant_dynamic.bin',
     'Buffers',
     'id UInt8, j JSON(a.b UInt32, SKIP a.e), v Variant(UInt64, String, Array(UInt64)), d Dynamic'
 );
@@ -268,7 +268,7 @@ INSERT INTO buf_lc VALUES
 SELECT *
 FROM buf_lc
 ORDER BY id
-INTO OUTFILE 'buffers_lc.bin' TRUNCATE
+INTO OUTFILE '03743_buffers_lc.bin' TRUNCATE
 FORMAT Buffers;
 
 SELECT * FROM buf_lc FORMAT HASH;
@@ -276,7 +276,7 @@ SELECT * FROM buf_lc FORMAT HASH;
 TRUNCATE TABLE buf_lc;
 
 INSERT INTO buf_lc
-FROM INFILE 'buffers_lc.bin'
+FROM INFILE '03743_buffers_lc.bin'
 FORMAT Buffers;
 
 SELECT * FROM buf_lc FORMAT HASH;
@@ -311,7 +311,7 @@ INSERT INTO buf_decimal_datetime VALUES
 SELECT *
 FROM buf_decimal_datetime
 ORDER BY id
-INTO OUTFILE 'buffers_decimal_datetime.bin' TRUNCATE
+INTO OUTFILE '03743_buffers_decimal_datetime.bin' TRUNCATE
 FORMAT Buffers;
 
 SELECT * FROM buf_decimal_datetime FORMAT HASH;
@@ -319,7 +319,7 @@ SELECT * FROM buf_decimal_datetime FORMAT HASH;
 TRUNCATE TABLE buf_decimal_datetime;
 
 INSERT INTO buf_decimal_datetime
-FROM INFILE 'buffers_decimal_datetime.bin'
+FROM INFILE '03743_buffers_decimal_datetime.bin'
 FORMAT Buffers;
 
 SELECT * FROM buf_decimal_datetime FORMAT HASH;
@@ -365,7 +365,7 @@ INSERT INTO buf_nested VALUES
 SELECT *
 FROM buf_nested
 ORDER BY id
-INTO OUTFILE 'buffers_nested.bin' TRUNCATE
+INTO OUTFILE '03743_buffers_nested.bin' TRUNCATE
 FORMAT Buffers;
 
 SELECT * FROM buf_nested FORMAT HASH;
@@ -373,7 +373,7 @@ SELECT * FROM buf_nested FORMAT HASH;
 TRUNCATE TABLE buf_nested;
 
 INSERT INTO buf_nested
-FROM INFILE 'buffers_nested.bin'
+FROM INFILE '03743_buffers_nested.bin'
 FORMAT Buffers;
 
 SELECT * FROM buf_nested FORMAT HASH;
@@ -388,14 +388,4 @@ SELECT
 FROM buf_nested;
 SQL
 
-rm -f \
-  buffers_simple.bin \
-  buffers_numbers.bin \
-  buffers_complex.bin \
-  buffers_zero_rows.bin \
-  buffers_const.bin \
-  buffers_via_file.bin \
-  buffers_json_variant_dynamic.bin \
-  buffers_lc.bin \
-  buffers_decimal_datetime.bin \
-  buffers_nested.bin
+rm -f 03743_buffers_*.bin
