@@ -7152,6 +7152,10 @@ Possible values:
     DECLARE(Bool, serialize_string_in_memory_with_zero_byte, true, R"(
 Serialize String values during aggregation with zero byte at the end. Enable to keep compatibility when querying cluster of incompatible versions.
 )", 0) \
+    DECLARE(UInt64, s3_path_filter_limit, 1000, R"(
+Maximum number of `_path` values that can be extracted from query filters to use for file iteration
+instead of glob listing. 0 means disabled.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
