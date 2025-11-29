@@ -888,6 +888,7 @@ void Aggregator::executeOnBlockSmall(
 {
     /// `result` will destroy the states of aggregate functions in the destructor
     result.aggregator = this;
+    aggregation_in_order = true;
 
     /// How to perform the aggregation?
     if (result.empty())
@@ -2136,7 +2137,7 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
                 }
             }
 
-            shuffled_key_sizes = method.shuffleKeyColumns(out_cols->raw_key_columns, key_sizes);
+            shuffled_key_sizes = method.shuffleKeyColumns(out_cols->raw_key_columns, key_sizes, aggregation_in_order);
         };
 
         init_out_cols();
@@ -2397,7 +2398,7 @@ Aggregator::ConvertToBlockResVariant Aggregator::convertToBlockImplFinal(
             }
         }
 
-        shuffled_key_sizes = method.shuffleKeyColumns(out_cols->raw_key_columns, key_sizes);
+        shuffled_key_sizes = method.shuffleKeyColumns(out_cols->raw_key_columns, key_sizes, aggregation_in_order);
 
         places.reserve(max_block_size);
     };
@@ -2473,7 +2474,7 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
             }
         }
 
-        shuffled_key_sizes = method.shuffleKeyColumns(out_cols->raw_key_columns, key_sizes);
+        shuffled_key_sizes = method.shuffleKeyColumns(out_cols->raw_key_columns, key_sizes, aggregation_in_order);
     };
 
     // should be invoked at least once, because null data might be the only content of the `data`

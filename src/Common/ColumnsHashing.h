@@ -372,8 +372,8 @@ struct HashMethodSerialized
                     }
                 }
 
-                if (key_column->lowCardinality())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "LowCardinality column is not supported in HashMethodSerialized");
+                // if (key_column->lowCardinality())
+                //     throw Exception(ErrorCodes::LOGICAL_ERROR, "LowCardinality column is not supported in HashMethodSerialized");
 
                 if (typeid_cast<const ColumnString *>(key_column))
                     string_key_columns.emplace_back(static_cast<const ColumnString *>(key_column), null_map, pos++);
@@ -504,14 +504,14 @@ struct HashMethodSerialized
         }
     }
 
-    static std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns_, const Sizes & sizes)
+    static std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns_, const Sizes & sizes, bool aggregation_in_order)
     {
         ColumnRawPtrs key_columns_copy;
         key_columns_copy.reserve(key_columns_.size());
         std::vector<ColumnPtr> holders;
         for (const auto * key_column : key_columns_)
         {
-            if (key_column->lowCardinality())
+            if (!aggregation_in_order && key_column->lowCardinality())
             {
                 holders.push_back(recursiveRemoveLowCardinality(key_column->getPtr()));
                 key_column = holders.back().get();
