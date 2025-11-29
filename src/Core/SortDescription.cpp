@@ -41,6 +41,9 @@ void dumpSortDescription(const SortDescription & description, WriteBuffer & out)
         else
             out << " DESC";
 
+        if (desc.is_natural)
+            out << " NATURAL";
+
         if (desc.with_fill)
             out << " WITH FILL";
     }
@@ -51,6 +54,7 @@ void SortColumnDescription::explain(JSONBuilder::JSONMap & map) const
     map.add("Column", column_name);
     map.add("Ascending", direction > 0);
     map.add("With Fill", with_fill);
+    map.add("Natural", is_natural);
 }
 
 bool SortDescription::hasPrefix(const SortDescription & prefix) const
