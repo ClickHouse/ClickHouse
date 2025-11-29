@@ -55,12 +55,12 @@ ORDER BY id;
 
 SELECT 'Simple table with many blocks';
 
-SET max_block_size = 10;
+SET max_block_size = 1000;
 
 SELECT
     number AS id,
     number % 3 AS k
-FROM numbers(100000)
+FROM numbers(1000000)
 INTO OUTFILE '03743_buffers_numbers.bin' TRUNCATE
 FORMAT Buffers;
 
@@ -84,12 +84,12 @@ FROM file(
 
 SELECT 'Complex types';
 SELECT
+    if(number % 3 = 0, NULL, number) AS n_nullable,
     number AS id,
     toString(number) AS s,
-    if(number % 3 = 0, NULL, number) AS n_nullable,
     [number, number + 1] AS arr,
     (number, toString(number)) AS tup
-FROM numbers(100)
+FROM numbers(1000000)
 INTO OUTFILE '03743_buffers_complex.bin' TRUNCATE
 FORMAT Buffers;
 
@@ -102,7 +102,7 @@ SELECT
 FROM file(
     '03743_buffers_complex.bin',
     'Buffers',
-    'id UInt64, s String, n_nullable Nullable(UInt64), arr Array(UInt64), tup Tuple(UInt64, String)'
+    'n_nullable Nullable(UInt64), id UInt64, s String, arr Array(UInt64), tup Tuple(UInt64, String)'
 );
 
 SELECT
@@ -111,7 +111,7 @@ SELECT
 FROM file(
     '03743_buffers_complex.bin',
     'Buffers',
-    'id UInt64, s String, n_nullable Nullable(UInt64), arr Array(UInt64), tup Tuple(UInt64, String)'
+    'n_nullable Nullable(UInt64), id UInt64, s String, arr Array(UInt64), tup Tuple(UInt64, String)'
 );
 
 SELECT 'Empty table';
@@ -130,8 +130,8 @@ FROM file('03743_buffers_zero_rows.bin', 'Buffers', 'id UInt64');
 
 SELECT 'Constant columns';
 SELECT
-    number AS k,
-    'x'    AS s
+    'x'    AS s,
+    number AS k
 FROM numbers(10)
 INTO OUTFILE '03743_buffers_const.bin' TRUNCATE
 FORMAT Buffers;
@@ -142,7 +142,7 @@ SELECT
 FROM file(
     '03743_buffers_const.bin',
     'Buffers',
-    'k UInt64, s String'
+    's String, k UInt64'
 );
 
 SELECT 'Buffers via file() source and INSERT';
@@ -166,7 +166,6 @@ DROP TABLE IF EXISTS buf_json_variant_dynamic;
 
 CREATE TABLE buf_json_variant_dynamic
 (
-    id UInt8,
     j  JSON(a.b UInt32, SKIP a.e),
     v  Variant(UInt64, String, Array(UInt64)),
     d  Dynamic
@@ -176,19 +175,16 @@ ORDER BY tuple();
 
 INSERT INTO buf_json_variant_dynamic VALUES
 (
-    1,
     '{"a" : {"b" : 42, "g" : 42.42}, "c" : [1, 2, 3], "d" : "2025-01-01"}',
     42,
     42
 ),
 (
-    2,
     '{"f" : "Hello", "d" : "2025-01-02"}',
     'Hello, World!',
     'Hello, World!'
 ),
 (
-    3,
     '{"a" : {"b" : 43, "e" : 10, "g" : 43.43}, "c" : [4, 5, 6]}',
     [1, 2, 3],
     [1, 2, 3]
@@ -196,7 +192,7 @@ INSERT INTO buf_json_variant_dynamic VALUES
 
 SELECT *
 FROM buf_json_variant_dynamic
-ORDER BY id
+ORDER BY tuple()
 INTO OUTFILE '03743_buffers_json_variant_dynamic.bin' TRUNCATE
 FORMAT Buffers;
 
@@ -243,7 +239,7 @@ SELECT
 FROM file(
     '03743_buffers_json_variant_dynamic.bin',
     'Buffers',
-    'id UInt8, j JSON(a.b UInt32, SKIP a.e), v Variant(UInt64, String, Array(UInt64)), d Dynamic'
+    'j JSON(a.b UInt32, SKIP a.e), v Variant(UInt64, String, Array(UInt64)), d Dynamic'
 );
 
 
@@ -253,7 +249,6 @@ DROP TABLE IF EXISTS buf_lc;
 
 CREATE TABLE buf_lc
 (
-    id UInt8,
     lc_str LowCardinality(String),
     lc_nullable LowCardinality(Nullable(String)),
     lc_arr Array(LowCardinality(String))
@@ -261,13 +256,13 @@ CREATE TABLE buf_lc
 ENGINE = Memory;
 
 INSERT INTO buf_lc VALUES
-    (1, 'a', 'a', ['a', 'b']),
-    (2, 'b', NULL, ['b', 'c']),
-    (3, 'a', 'c', ['a', 'c']);
+    ('a', 'a', ['a', 'b']),
+    ('b', NULL, ['b', 'c']),
+    ('a', 'c', ['a', 'c']);
 
 SELECT *
 FROM buf_lc
-ORDER BY id
+ORDER BY tuple()
 INTO OUTFILE '03743_buffers_lc.bin' TRUNCATE
 FORMAT Buffers;
 
@@ -295,7 +290,6 @@ DROP TABLE IF EXISTS buf_decimal_datetime;
 
 CREATE TABLE buf_decimal_datetime
 (
-    id UInt8,
     d10  Decimal(10, 3),
     d18  Decimal(18, 6),
     dt32 Date,
@@ -304,13 +298,13 @@ CREATE TABLE buf_decimal_datetime
 ENGINE = Memory;
 
 INSERT INTO buf_decimal_datetime VALUES
-(1, 123.456,  1.000001, toDate('2025-01-01'), toDateTime64('2025-01-01 00:00:00.123', 3, 'UTC')),
-(2, -7.500,   0.000001, toDate('2025-01-02'), toDateTime64('2025-01-02 12:34:56.789', 3, 'UTC')),
-(3, 0.000,    42.424242, toDate('2025-01-03'), toDateTime64('2025-01-03 23:59:59.000', 3, 'UTC'));
+(123.456,  1.000001, toDate('2025-01-01'), toDateTime64('2025-01-01 00:00:00.123', 3, 'UTC')),
+(-7.500,   0.000001, toDate('2025-01-02'), toDateTime64('2025-01-02 12:34:56.789', 3, 'UTC')),
+(0.000,    42.424242, toDate('2025-01-03'), toDateTime64('2025-01-03 23:59:59.000', 3, 'UTC'));
 
 SELECT *
 FROM buf_decimal_datetime
-ORDER BY id
+ORDER BY tuple()
 INTO OUTFILE '03743_buffers_decimal_datetime.bin' TRUNCATE
 FORMAT Buffers;
 
@@ -340,7 +334,6 @@ DROP TABLE IF EXISTS buf_nested;
 
 CREATE TABLE buf_nested
 (
-    id UInt8,
     n Nested
     (
         k UInt8,
@@ -352,19 +345,17 @@ ENGINE = Memory;
 
 INSERT INTO buf_nested VALUES
 (
-    1,
     [1, 2], ['a', 'b'],
     map('x', 10, 'y', 20)
 ),
 (
-    2,
     [3], ['c'],
     map('y', 5, 'z', 7)
 );
 
 SELECT *
 FROM buf_nested
-ORDER BY id
+ORDER BY tuple()
 INTO OUTFILE '03743_buffers_nested.bin' TRUNCATE
 FORMAT Buffers;
 
