@@ -188,7 +188,7 @@ def test_allowed_grantees():
 
 def test_grant_all_on_table():
     instance.query("CREATE USER A, B")
-    instance.query("GRANT ALL ON test.table TO A WITH GRANT OPTION";)
+    instance.query("GRANT ALL ON test.table TO A WITH GRANT OPTION")
     instance.query("GRANT ALL ON test.table TO B;", user="A")
     assert (
         instance.query("SHOW GRANTS FOR B")
