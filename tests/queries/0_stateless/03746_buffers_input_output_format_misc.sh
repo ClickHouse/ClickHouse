@@ -98,9 +98,58 @@ ORDER BY s
 FORMAT TSV;
 "
 
+# AggregateFunction columns
+
+$CLICKHOUSE_CLIENT -n <<SQL
+DROP TABLE IF EXISTS buf_agg;
+
+CREATE TABLE buf_agg
+(
+    key UInt8,
+    s   AggregateFunction(groupArray, UInt64)
+)
+ENGINE = Memory;
+
+-- Build aggregate states
+INSERT INTO buf_agg
+SELECT
+    number % 3 AS key,
+    groupArrayState(number) AS s
+FROM numbers(10)
+GROUP BY key;
+
+SELECT 'AggregateFunction(Buffers) round-trip';
+
+-- Write states as Buffers
+SELECT *
+FROM buf_agg
+ORDER BY key
+INTO OUTFILE '03746_buffers_agg_states.buffers' TRUNCATE
+FORMAT Buffers;
+
+SELECT * FROM buf_agg FORMAT HASH;
+
+TRUNCATE TABLE buf_agg;
+
+INSERT INTO buf_agg
+FROM INFILE '03746_buffers_agg_states.buffers'
+FORMAT Buffers;
+
+SELECT * FROM buf_agg FORMAT HASH;
+
+SELECT
+    key,
+    arraySort(groupArrayMerge(s)) AS merged
+FROM buf_agg
+GROUP BY key
+ORDER BY key;
+SQL
+
+# Cleanup
 $CLICKHOUSE_CLIENT -q "
 DROP TABLE IF EXISTS test;
 DROP TABLE IF EXISTS file_buffers_simple;
 DROP TABLE IF EXISTS file_buffers_simple_clone;
 DROP TABLE IF EXISTS file_buffers_two_cols;
+DROP TABLE IF EXISTS buf_agg;
 "
