@@ -6305,6 +6305,9 @@ SELECT * FROM test_table
     DECLARE(Bool, count_distinct_optimization, false, R"(
 Rewrite count distinct to subquery of group by
 )", 0) \
+    DECLARE(Bool, optimize_inverse_dictionary_lookup, true, R"(
+Avoid repeated inverse dictionary lookup by doing faster lookups into a precomputed set of possible key values.
+)", 0) \
     DECLARE(Bool, throw_if_no_data_to_insert, true, R"(
 Allows or forbids empty INSERTs, enabled by default (throws an error on an empty insert). Only applies to INSERTs using [`clickhouse-client`](/interfaces/cli) or using the [gRPC interface](/interfaces/grpc).
 )", 0) \
