@@ -56,10 +56,6 @@ class Result(MetaClasses.Serializable):
         ERROR = "ERROR"
 
     class Label:
-        REQUIRED = "required"
-        NOT_REQUIRED = "not required"
-        FLAKY = "flaky"
-        BROKEN = "broken"
         OK_ON_RETRY = "retry_ok"
         FAILED_ON_RETRY = "retry_failed"
 
@@ -258,12 +254,6 @@ class Result(MetaClasses.Serializable):
                 total += 1
             self.set_info(f"Failures: {fail_cnt}/{total}")
 
-        if not self.is_ok():
-            # Suggest local command to rerun
-            command_info = f'To run locally: python -m ci.praktika run "{self.name}"'
-            command_info += f" --test TEST_NAME_1..TEST_NAME_N"
-            self.set_info(command_info)
-
         return self
 
     @classmethod
@@ -325,10 +315,15 @@ class Result(MetaClasses.Serializable):
     def set_clickable_label(self, label, link):
         if not self.ext.get("hlabels", None):
             self.ext["hlabels"] = []
+        for i, (existing_label, existing_link) in enumerate(self.ext["hlabels"]):
+            if existing_label == label:
+                if existing_link != link:
+                    print(
+                        f"WARNING: Updating hlabel '{label}' from '{existing_link}' to '{link}'"
+                    )
+                    self.ext["hlabels"][i] = (label, link)
+                return
         self.ext["hlabels"].append((label, link))
-
-    def set_required_label(self):
-        self.set_label(self.Label.REQUIRED)
 
     def get_hlabel_link(self, label):
         if not self.ext.get("hlabels", None):
