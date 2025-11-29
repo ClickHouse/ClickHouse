@@ -36,6 +36,15 @@ FROM numbers(10)
 INTO OUTFILE '03744_buffers_neg_const.bin' TRUNCATE
 FORMAT Buffers;
 
+SELECT 'Buffers: Schema missing';
+SELECT *
+FROM file(
+    '03744_buffers_neg_three_cols.bin',
+    'Buffers'
+); -- { serverError BAD_ARGUMENTS }
+
+DESCRIBE file('03744_buffers_neg_three_cols.bin', Buffers); -- { serverError BAD_ARGUMENTS }
+
 SELECT 'Buffers: fewer columns in header than in file';
 
 -- File has 3 buffers (a,b,c) but structure only has 2 columns -> column-count mismatch
