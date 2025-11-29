@@ -926,8 +926,8 @@ void ColumnTuple::takeDynamicStructureFromColumn(const ColumnPtr & source_column
 
 void ColumnTuple::fixDynamicStructure()
 {
-    for (size_t i = 0; i != columns.size(); ++i)
-        columns[i]->fixDynamicStructure();
+    for (auto & column : columns)
+        column->fixDynamicStructure();
 }
 
 ColumnPtr ColumnTuple::compress(bool force_compression) const
