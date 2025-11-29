@@ -1633,6 +1633,44 @@ query_area.onkeydown = (e) => {
 
         e.preventDefault();
         return false;
+    } else if ((e.ctrlKey || e.metaKey) && e.key === '/' && !e.shiftKey) {
+        // Comment/uncomment selected lines on Ctrl+/ or Cmd+/
+        const elem = e.target;
+        const start = elem.selectionStart;
+        const end = elem.selectionEnd;
+        const value = elem.value;
+
+        let lineStart = value.lastIndexOf('\n', start - 1) + 1;
+        let lineEnd = value.indexOf('\n', end);
+        if (lineEnd === -1) lineEnd = value.length;
+
+        let selectedText = value.substring(lineStart, lineEnd);
+        let lines = selectedText.split('\n');
+
+        // Comment out each line, or uncomment if all lines are already commented
+        const allCommented = lines.every(line => /^\s*--/.test(line));
+
+        // If all lines are commented out, uncomment them
+        if (allCommented) {
+            lines = lines.map(line => line.replace(/^(\s*)-- ?/, '$1'));
+        } else {
+            lines = lines.map(line => {
+                if (/^\s*$/.test(line)) {
+                    return line;
+                }
+                return line.replace(/^(\s*)/, '$1-- ');
+            });
+        }
+
+        const replacedText = lines.join('\n');
+        elem.value = value.slice(0, lineStart) + replacedText + value.slice(lineEnd);
+
+        // Adjust selection to keep the user in flow and enable quick reversal 
+        elem.selectionStart = lineStart;
+        elem.selectionEnd = lineStart + replacedText.length;
+
+        e.preventDefault();
+        return false;
     }
 };
 
