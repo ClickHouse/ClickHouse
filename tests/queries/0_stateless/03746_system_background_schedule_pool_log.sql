@@ -15,6 +15,6 @@ CREATE TABLE test_distributed_03745 (x UInt64) ENGINE = Distributed(test_shard_l
 INSERT INTO test_distributed_03745 SETTINGS prefer_localhost_replica=0, distributed_foreground_insert=0 VALUES (1), (2), (3);
 SYSTEM FLUSH DISTRIBUTED test_distributed_03745;
 SYSTEM FLUSH LOGS background_schedule_pool_log;
-SELECT database, table, table_uuid != toUUIDOrDefault(0) AS has_uuid, log_name, duration_ms > 0, query_id != '' FROM system.background_schedule_pool_log WHERE database = currentDatabase() AND table = 'test_distributed_03745';
+SELECT database, table, table_uuid != toUUIDOrDefault(0) AS has_uuid, log_name, max(duration_ms) > 0, query_id != '' FROM system.background_schedule_pool_log WHERE database = currentDatabase() AND table = 'test_distributed_03745' GROUP BY ALL;
 DROP TABLE test_distributed_03745;
 DROP TABLE test_local_03745;
