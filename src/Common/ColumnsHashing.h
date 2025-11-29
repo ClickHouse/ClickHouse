@@ -1,16 +1,19 @@
 #pragma once
 
-#include <Common/HashTable/HashTable.h>
-#include <Common/HashTable/HashTableKeyHolder.h>
-#include <Common/ColumnsHashing/HashMethod.h>
-#include <Common/ColumnsHashingImpl.h>
-#include <Common/Arena.h>
-#include <Common/CacheBase.h>
-#include <Common/SipHash.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/assert_cast.h>
+#include <Columns/IColumn_fwd.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/AggregationCommon.h>
 #include <base/unaligned.h>
+#include <Common/Arena.h>
+#include <Common/CacheBase.h>
+#include <Common/ColumnsHashing/HashMethod.h>
+#include <Common/ColumnsHashingImpl.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/HashTable/HashTable.h>
+#include <Common/HashTable/HashTableKeyHolder.h>
+#include <Common/SipHash.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -19,6 +22,9 @@
 #include <Core/Defines.h>
 #include <memory>
 #include <cassert>
+
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -346,32 +352,91 @@ struct HashMethodSerialized
 
     static constexpr bool has_cheap_key_calculation = false;
 
-    ColumnRawPtrs key_columns;
-    size_t keys_size;
-    std::vector<const UInt8 *> null_maps;
-    PaddedPODArray<UInt64> row_sizes;
-
-    HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
-        : key_columns(key_columns_), keys_size(key_columns_.size())
+    struct Columns
     {
-        if constexpr (nullable)
+        template <typename ColT>
+        using ColumnWithNullMap = std::tuple<const ColT *, const UInt8 *, size_t>;
+
+        explicit Columns(const ColumnRawPtrs & key_columns_)
         {
-            null_maps.resize(keys_size);
-            for (size_t i = 0; i < keys_size; ++i)
+            size_t pos = 0;
+            for (const auto * key_column : key_columns_)
             {
-                if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(key_columns[i]))
+                const UInt8 * null_map = nullptr;
+                if constexpr (nullable)
                 {
-                    null_maps[i] = nullable_column->getNullMapData().data();
-                    key_columns[i] = nullable_column->getNestedColumnPtr().get();
+                    if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(key_column))
+                    {
+                        key_column = nullable_column->getNestedColumnPtr().get();
+                        null_map = nullable_column->getNullMapData().data();
+                    }
                 }
+
+                if (key_column->lowCardinality())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "LowCardinality column is not supported in HashMethodSerialized");
+
+                if (typeid_cast<const ColumnString *>(key_column))
+                    string_key_columns.emplace_back(static_cast<const ColumnString *>(key_column), null_map, pos++);
+                else if (const auto * ptr = dynamic_cast<const ColumnFixedSizeHelper *>(key_column))
+                    fixed_size_key_columns.emplace_back(ptr, null_map, pos++);
+                else
+                    other_key_columns.emplace_back(key_column, null_map, pos++);
+            }
+
+            for (const auto & [key_column, null_map, original_pos] : string_key_columns)
+            {
+                LOG_DEBUG(
+                    &Poco::Logger::get("debug"),
+                    "__PRETTY_FUNCTION__={}, __LINE__={}, col={}, name={}, original_pos={}",
+                    __PRETTY_FUNCTION__,
+                    __LINE__,
+                    static_cast<const void *>(key_columns_[original_pos]),
+                    key_columns_[original_pos]->getName(),
+                    original_pos);
+            }
+            for (const auto & [key_column, null_map, original_pos] : fixed_size_key_columns)
+            {
+                LOG_DEBUG(
+                    &Poco::Logger::get("debug"),
+                    "__PRETTY_FUNCTION__={}, __LINE__={}, col={}, name={}, original_pos={}",
+                    __PRETTY_FUNCTION__,
+                    __LINE__,
+                    static_cast<const void *>(key_columns_[original_pos]),
+                    key_columns_[original_pos]->getName(),
+                    original_pos);
+            }
+            for (const auto & [key_column, null_map, original_pos] : other_key_columns)
+            {
+                LOG_DEBUG(
+                    &Poco::Logger::get("debug"),
+                    "__PRETTY_FUNCTION__={}, __LINE__={}, col={}, name={}, original_pos={}",
+                    __PRETTY_FUNCTION__,
+                    __LINE__,
+                    static_cast<const void *>(key_columns_[original_pos]),
+                    key_columns_[original_pos]->getName(),
+                    original_pos);
             }
         }
 
+        std::vector<ColumnWithNullMap<ColumnString>> string_key_columns;
+        std::vector<ColumnWithNullMap<ColumnFixedSizeHelper>> fixed_size_key_columns;
+        std::vector<ColumnWithNullMap<IColumn>> other_key_columns;
+    };
+
+    PaddedPODArray<UInt64> row_sizes;
+    Columns key_columns;
+
+    HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
+        : key_columns(key_columns_)
+    {
         if constexpr (prealloc)
         {
-            null_maps.resize(keys_size);
-            for (size_t i = 0; i < keys_size; ++i)
-                key_columns[i]->collectSerializedValueSizes(row_sizes, null_maps[i]);
+            for (const auto & [key_column, null_map, _] : key_columns.string_key_columns)
+                key_column->collectSerializedValueSizes(row_sizes, null_map);
+            for (const auto & [key_column, null_map, _] : key_columns.fixed_size_key_columns)
+                key_column->collectSerializedValueSizes(row_sizes, null_map);
+            for (const auto & [key_column, null_map, _] : key_columns.other_key_columns)
+                key_column->collectSerializedValueSizes(row_sizes, null_map);
         }
     }
 
@@ -385,30 +450,120 @@ struct HashMethodSerialized
 
             char * memory = pool.allocContinue(row_sizes[row], begin);
             std::string_view key(memory, row_sizes[row]);
-            for (size_t j = 0; j < keys_size; ++j)
+            for (const auto & [key_column, null_map, _] : key_columns.string_key_columns)
             {
                 if constexpr (nullable)
-                    memory = key_columns[j]->serializeValueIntoMemoryWithNull(row, memory, null_maps[j]);
+                    memory = key_column->serializeValueIntoMemoryWithNull(row, memory, null_map);
                 else
-                    memory = key_columns[j]->serializeValueIntoMemory(row, memory);
+                    memory = key_column->serializeValueIntoMemory(row, memory);
+            }
+            for (const auto & [key_column, null_map, _] : key_columns.fixed_size_key_columns)
+            {
+                if constexpr (nullable)
+                    memory = key_column->serializeValueIntoMemoryWithNull(row, memory, null_map);
+                else
+                    memory = key_column->serializeValueIntoMemory(row, memory);
+            }
+            for (const auto & [key_column, null_map, _] : key_columns.other_key_columns)
+            {
+                if constexpr (nullable)
+                    memory = key_column->serializeValueIntoMemoryWithNull(row, memory, null_map);
+                else
+                    memory = key_column->serializeValueIntoMemory(row, memory);
             }
 
             return SerializedKeyHolder{key, pool};
         }
-        else if constexpr (nullable)
+        else
         {
             const char * begin = nullptr;
 
             size_t sum_size = 0;
-            for (size_t j = 0; j < keys_size; ++j)
-                sum_size += key_columns[j]->serializeValueIntoArenaWithNull(row, pool, begin, null_maps[j]).size();
-
+            for (const auto & [key_column, null_map, _] : key_columns.string_key_columns)
+            {
+                if constexpr (nullable)
+                    sum_size += key_column->serializeValueIntoArenaWithNull(row, pool, begin, null_map).size();
+                else
+                    sum_size += key_column->serializeValueIntoArena(row, pool, begin).size();
+            }
+            for (const auto & [key_column, null_map, _] : key_columns.fixed_size_key_columns)
+            {
+                if constexpr (nullable)
+                    sum_size += key_column->serializeValueIntoArenaWithNull(row, pool, begin, null_map).size();
+                else
+                    sum_size += key_column->serializeValueIntoArena(row, pool, begin).size();
+            }
+            for (const auto & [key_column, null_map, _] : key_columns.other_key_columns)
+            {
+                if constexpr (nullable)
+                    sum_size += key_column->serializeValueIntoArenaWithNull(row, pool, begin, null_map).size();
+                else
+                    sum_size += key_column->serializeValueIntoArena(row, pool, begin).size();
+            }
             return SerializedKeyHolder{{begin, sum_size}, pool};
         }
+    }
 
-        return SerializedKeyHolder{
-            serializeKeysToPoolContiguous(row, keys_size, key_columns, pool),
-            pool};
+    static std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns_, const Sizes & sizes)
+    {
+        ColumnRawPtrs key_columns_copy;
+        key_columns_copy.reserve(key_columns_.size());
+        std::vector<ColumnPtr> holders;
+        for (const auto * key_column : key_columns_)
+        {
+            if (key_column->lowCardinality())
+            {
+                holders.push_back(recursiveRemoveLowCardinality(key_column->getPtr()));
+                key_column = holders.back().get();
+            }
+            key_columns_copy.push_back(key_column);
+        }
+        Columns new_columns(key_columns_copy);
+
+        std::vector<IColumn *> new_key_columns;
+        new_key_columns.reserve(key_columns_.size());
+        Sizes new_key_sizes;
+        for (const auto & [key_column, null_map, original_pos] : new_columns.string_key_columns)
+        {
+            LOG_DEBUG(
+                &Poco::Logger::get("debug"),
+                "__PRETTY_FUNCTION__={}, __LINE__={}, col={}, name={}, original_pos={}",
+                __PRETTY_FUNCTION__,
+                __LINE__,
+                static_cast<const void *>(key_columns_[original_pos]),
+                key_columns_[original_pos]->getName(),
+                original_pos);
+            new_key_columns.push_back(key_columns_[original_pos]);
+            new_key_sizes.push_back(sizes[original_pos]);
+        }
+        for (const auto & [key_column, null_map, original_pos] : new_columns.fixed_size_key_columns)
+        {
+            LOG_DEBUG(
+                &Poco::Logger::get("debug"),
+                "__PRETTY_FUNCTION__={}, __LINE__={}, col={}, name={}, original_pos={}",
+                __PRETTY_FUNCTION__,
+                __LINE__,
+                static_cast<const void *>(key_columns_[original_pos]),
+                key_columns_[original_pos]->getName(),
+                original_pos);
+            new_key_columns.push_back(key_columns_[original_pos]);
+            new_key_sizes.push_back(sizes[original_pos]);
+        }
+        for (const auto & [key_column, null_map, original_pos] : new_columns.other_key_columns)
+        {
+            LOG_DEBUG(
+                &Poco::Logger::get("debug"),
+                "__PRETTY_FUNCTION__={}, __LINE__={}, col={}, name={}, original_pos={}",
+                __PRETTY_FUNCTION__,
+                __LINE__,
+                static_cast<const void *>(key_columns_[original_pos]),
+                key_columns_[original_pos]->getName(),
+                original_pos);
+            new_key_columns.push_back(key_columns_[original_pos]);
+            new_key_sizes.push_back(sizes[original_pos]);
+        }
+        key_columns_ = std::move(new_key_columns);
+        return new_key_sizes;
     }
 };
 

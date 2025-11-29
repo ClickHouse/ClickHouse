@@ -296,7 +296,10 @@ struct AggregationMethodSerialized
     static const bool low_cardinality_optimization = false;
     static const bool one_key_nullable_optimization = false;
 
-    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
+    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns, const Sizes & sizes)
+    {
+        return State::shuffleKeyColumns(key_columns, sizes);
+    }
 
     static void insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &);
 };
