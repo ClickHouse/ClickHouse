@@ -125,6 +125,7 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
     struct {
         std::optional<Float64> weight;
         std::optional<Priority> priority;
+        std::optional<Priority> precedence;
         std::optional<Float64> max_bytes_per_second;
         std::optional<Float64> max_burst_bytes;
         std::optional<Float64> max_cpus;
@@ -194,6 +195,8 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
                 weight = getNotNegativeFloat64(name, value);
             else if (name == "priority")
                 priority = Priority{value.safeGet<Priority::Value>()};
+            else if (name == "precedence")
+                precedence = Priority{value.safeGet<Priority::Value>()};
             else if (name == "max_bytes_per_second" || name == "max_speed")
                 max_bytes_per_second = getNotNegativeFloat64(name, value);
             else if (name == "max_burst_bytes" || name == "max_burst")
@@ -250,13 +253,15 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
     {
         SchedulerNodeInfo validating_node(
             get_value(specific.weight, regular.weight, weight),
-            get_value(specific.priority, regular.priority, priority));
+            get_value(specific.priority, regular.priority, priority),
+            get_value(specific.precedence, regular.precedence, precedence));
     }
 
     // Choose values for given resource.
     // NOTE: previous values contain defaults.
     weight = get_value(specific.weight, regular.weight, weight);
     priority = get_value(specific.priority, regular.priority, priority);
+    precedence = get_value(specific.precedence, regular.precedence, precedence);
 
     // IO throttling
     if (specific.max_bytes_per_second || regular.max_bytes_per_second)

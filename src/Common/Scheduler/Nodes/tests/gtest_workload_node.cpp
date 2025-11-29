@@ -29,8 +29,8 @@ TEST(TimeSharedWorkloadNode, FairnessWeight)
     ResourceTest t;
 
     auto all = t.createUnifiedNode("all");
-    auto a = t.createUnifiedNode("A", all, {.weight = 1.0, .priority = Priority{}});
-    auto b = t.createUnifiedNode("B", all, {.weight = 3.0, .priority = Priority{}});
+    auto a = t.createUnifiedNode("A", all, {.weight = 1.0, .priority = Priority{}, .precedence = Priority{}});
+    auto b = t.createUnifiedNode("B", all, {.weight = 3.0, .priority = Priority{}, .precedence = Priority{}});
 
     t.enqueue(a, {10, 10, 10, 10, 10, 10, 10, 10});
     t.enqueue(b, {10, 10, 10, 10, 10, 10, 10, 10});
@@ -199,9 +199,9 @@ TEST(TimeSharedWorkloadNode, Priority)
     ResourceTest t;
 
     auto all = t.createUnifiedNode("all");
-    auto a = t.createUnifiedNode("A", all, {.priority = Priority{3}});
-    auto b = t.createUnifiedNode("B", all, {.priority = Priority{2}});
-    auto c = t.createUnifiedNode("C", all, {.priority = Priority{1}});
+    auto a = t.createUnifiedNode("A", all, {.priority = Priority{3}, .precedence = Priority{}});
+    auto b = t.createUnifiedNode("B", all, {.priority = Priority{2}, .precedence = Priority{}});
+    auto c = t.createUnifiedNode("C", all, {.priority = Priority{1}, .precedence = Priority{}});
 
     t.enqueue(a, {10, 10, 10});
     t.enqueue(b, {10, 10, 10});
@@ -233,9 +233,9 @@ TEST(TimeSharedWorkloadNode, PriorityActivation)
     ResourceTest t;
 
     auto all = t.createUnifiedNode("all");
-    auto a = t.createUnifiedNode("A", all, {.priority = Priority{3}});
-    auto b = t.createUnifiedNode("B", all, {.priority = Priority{2}});
-    auto c = t.createUnifiedNode("C", all, {.priority = Priority{1}});
+    auto a = t.createUnifiedNode("A", all, {.priority = Priority{3}, .precedence = Priority{}});
+    auto b = t.createUnifiedNode("B", all, {.priority = Priority{2}, .precedence = Priority{}});
+    auto c = t.createUnifiedNode("C", all, {.priority = Priority{1}, .precedence = Priority{}});
 
     t.enqueue(a, {10, 10, 10, 10, 10, 10});
     t.enqueue(b, {10});
@@ -310,7 +310,7 @@ TEST(TimeSharedWorkloadNode, ThrottlerLeakyBucket)
     EventQueue::TimePoint start = std::chrono::system_clock::now();
     t.process(start, 0);
 
-    auto all = t.createUnifiedNode("all", {.priority = Priority{}, .max_bytes_per_second = 10.0, .max_burst_bytes = 20.0});
+    auto all = t.createUnifiedNode("all", {.priority = Priority{}, .precedence = Priority{}, .max_bytes_per_second = 10.0, .max_burst_bytes = 20.0});
 
     t.enqueue(all, {10, 10, 10, 10, 10, 10, 10, 10});
 
@@ -341,7 +341,7 @@ TEST(TimeSharedWorkloadNode, ThrottlerPacing)
 
     // Zero burst allows you to send one request of any `size` and than throttle for `size/max_bytes_per_second` seconds.
     // Useful if outgoing traffic should be "paced", i.e. have the least possible burstiness.
-    auto all = t.createUnifiedNode("all", {.priority = Priority{}, .max_bytes_per_second = 1.0, .max_burst_bytes = 0.0});
+    auto all = t.createUnifiedNode("all", {.priority = Priority{}, .precedence = Priority{}, .max_bytes_per_second = 1.0, .max_burst_bytes = 0.0});
 
     t.enqueue(all, {1, 2, 3, 1, 2, 1});
     int output[] = {1, 2, 0, 3, 0, 0, 1, 2, 0, 1, 0};
@@ -358,7 +358,7 @@ TEST(TimeSharedWorkloadNode, ThrottlerBucketFilling)
     EventQueue::TimePoint start = std::chrono::system_clock::now();
     t.process(start, 0);
 
-    auto all = t.createUnifiedNode("all", {.priority = Priority{}, .max_bytes_per_second = 10.0, .max_burst_bytes = 100.0});
+    auto all = t.createUnifiedNode("all", {.priority = Priority{}, .precedence = Priority{}, .max_bytes_per_second = 10.0, .max_burst_bytes = 100.0});
 
     t.enqueue(all, {100});
 
@@ -391,9 +391,9 @@ TEST(TimeSharedWorkloadNode, ThrottlerAndFairness)
     EventQueue::TimePoint start = std::chrono::system_clock::now();
     t.process(start, 0);
 
-    auto all = t.createUnifiedNode("all", {.priority = Priority{}, .max_bytes_per_second = 10.0, .max_burst_bytes = 100.0});
-    auto a = t.createUnifiedNode("A", all, {.weight = 10.0, .priority = Priority{}});
-    auto b = t.createUnifiedNode("B", all, {.weight = 90.0, .priority = Priority{}});
+    auto all = t.createUnifiedNode("all", {.priority = Priority{}, .precedence = Priority{}, .max_bytes_per_second = 10.0, .max_burst_bytes = 100.0});
+    auto a = t.createUnifiedNode("A", all, {.weight = 10.0, .priority = Priority{}, .precedence = Priority{}});
+    auto b = t.createUnifiedNode("B", all, {.weight = 90.0, .priority = Priority{}, .precedence = Priority{}});
 
     ResourceCost req_cost = 1;
     ResourceCost total_cost = 2000;
@@ -499,8 +499,8 @@ TEST(TimeSharedWorkloadNode, UpdateWeight)
     ResourceTest t;
 
     auto all = t.createUnifiedNode("all");
-    auto a = t.createUnifiedNode("A", all, {.weight = 1.0, .priority = Priority{}});
-    auto b = t.createUnifiedNode("B", all, {.weight = 3.0, .priority = Priority{}});
+    auto a = t.createUnifiedNode("A", all, {.weight = 1.0, .priority = Priority{}, .precedence = Priority{}});
+    auto b = t.createUnifiedNode("B", all, {.weight = 3.0, .priority = Priority{}, .precedence = Priority{}});
 
     t.enqueue(a, {10, 10, 10, 10, 10, 10, 10, 10});
     t.enqueue(b, {10, 10, 10, 10, 10, 10, 10, 10});
@@ -509,7 +509,7 @@ TEST(TimeSharedWorkloadNode, UpdateWeight)
     t.consumed("A", 10);
     t.consumed("B", 30);
 
-    t.updateUnifiedNode(b, all, all, {.weight = 1.0, .priority = Priority{}});
+    t.updateUnifiedNode(b, all, all, {.weight = 1.0, .priority = Priority{}, .precedence = Priority{}});
 
     t.dequeue(4);
     t.consumed("A", 20);
@@ -525,8 +525,8 @@ TEST(TimeSharedWorkloadNode, UpdatePriority)
     ResourceTest t;
 
     auto all = t.createUnifiedNode("all");
-    auto a = t.createUnifiedNode("A", all, {.weight = 1.0, .priority = Priority{}});
-    auto b = t.createUnifiedNode("B", all, {.weight = 1.0, .priority = Priority{}});
+    auto a = t.createUnifiedNode("A", all, {.weight = 1.0, .priority = Priority{}, .precedence = Priority{}});
+    auto b = t.createUnifiedNode("B", all, {.weight = 1.0, .priority = Priority{}, .precedence = Priority{}});
 
     t.enqueue(a, {10, 10, 10, 10, 10, 10, 10, 10});
     t.enqueue(b, {10, 10, 10, 10, 10, 10, 10, 10});
@@ -535,19 +535,19 @@ TEST(TimeSharedWorkloadNode, UpdatePriority)
     t.consumed("A", 10);
     t.consumed("B", 10);
 
-    t.updateUnifiedNode(a, all, all, {.weight = 1.0, .priority = Priority{-1}});
+    t.updateUnifiedNode(a, all, all, {.weight = 1.0, .priority = Priority{-1}, .precedence = Priority{}});
 
     t.dequeue(2);
     t.consumed("A", 20);
     t.consumed("B", 0);
 
-    t.updateUnifiedNode(b, all, all, {.weight = 1.0, .priority = Priority{-2}});
+    t.updateUnifiedNode(b, all, all, {.weight = 1.0, .priority = Priority{-2}, .precedence = Priority{}});
 
     t.dequeue(2);
     t.consumed("A", 0);
     t.consumed("B", 20);
 
-    t.updateUnifiedNode(a, all, all, {.weight = 1.0, .priority = Priority{-2}});
+    t.updateUnifiedNode(a, all, all, {.weight = 1.0, .priority = Priority{-2}, .precedence = Priority{}});
 
     t.dequeue(2);
     t.consumed("A", 10);
@@ -559,8 +559,8 @@ TEST(TimeSharedWorkloadNode, UpdateParentOfLeafNode)
     ResourceTest t;
 
     auto all = t.createUnifiedNode("all");
-    auto a = t.createUnifiedNode("A", all, {.weight = 1.0, .priority = Priority{1}});
-    auto b = t.createUnifiedNode("B", all, {.weight = 1.0, .priority = Priority{2}});
+    auto a = t.createUnifiedNode("A", all, {.weight = 1.0, .priority = Priority{1}, .precedence = Priority{}});
+    auto b = t.createUnifiedNode("B", all, {.weight = 1.0, .priority = Priority{2}, .precedence = Priority{}});
     auto x = t.createUnifiedNode("X", a, {});
     auto y = t.createUnifiedNode("Y", b, {});
 
@@ -596,8 +596,8 @@ TEST(TimeSharedWorkloadNode, UpdatePriorityOfIntermediateNode)
     ResourceTest t;
 
     auto all = t.createUnifiedNode("all");
-    auto a = t.createUnifiedNode("A", all, {.weight = 1.0, .priority = Priority{1}});
-    auto b = t.createUnifiedNode("B", all, {.weight = 1.0, .priority = Priority{2}});
+    auto a = t.createUnifiedNode("A", all, {.weight = 1.0, .priority = Priority{1}, .precedence = Priority{}});
+    auto b = t.createUnifiedNode("B", all, {.weight = 1.0, .priority = Priority{2}, .precedence = Priority{}});
     auto x1 = t.createUnifiedNode("X1", a, {});
     auto y1 = t.createUnifiedNode("Y1", b, {});
     auto x2 = t.createUnifiedNode("X2", a, {});
@@ -614,7 +614,7 @@ TEST(TimeSharedWorkloadNode, UpdatePriorityOfIntermediateNode)
     t.consumed("X2", 20);
     t.consumed("Y2", 0);
 
-    t.updateUnifiedNode(a, all, all, {.weight = 1.0, .priority = Priority{2}});
+    t.updateUnifiedNode(a, all, all, {.weight = 1.0, .priority = Priority{2}, .precedence = Priority{}});
 
     t.dequeue(4);
     t.consumed("X1", 10);
@@ -622,7 +622,7 @@ TEST(TimeSharedWorkloadNode, UpdatePriorityOfIntermediateNode)
     t.consumed("X2", 10);
     t.consumed("Y2", 10);
 
-    t.updateUnifiedNode(b, all, all, {.weight = 1.0, .priority = Priority{1}});
+    t.updateUnifiedNode(b, all, all, {.weight = 1.0, .priority = Priority{1}, .precedence = Priority{}});
 
     t.dequeue(4);
     t.consumed("X1", 0);
@@ -636,8 +636,8 @@ TEST(TimeSharedWorkloadNode, UpdateParentOfIntermediateNode)
     ResourceTest t;
 
     auto all = t.createUnifiedNode("all");
-    auto a = t.createUnifiedNode("A", all, {.weight = 1.0, .priority = Priority{1}});
-    auto b = t.createUnifiedNode("B", all, {.weight = 1.0, .priority = Priority{2}});
+    auto a = t.createUnifiedNode("A", all, {.weight = 1.0, .priority = Priority{1}, .precedence = Priority{}});
+    auto b = t.createUnifiedNode("B", all, {.weight = 1.0, .priority = Priority{2}, .precedence = Priority{}});
     auto c = t.createUnifiedNode("C", a, {});
     auto d = t.createUnifiedNode("D", b, {});
     auto x1 = t.createUnifiedNode("X1", c, {});
@@ -679,7 +679,7 @@ TEST(TimeSharedWorkloadNode, UpdateThrottlerMaxSpeed)
     EventQueue::TimePoint start = std::chrono::system_clock::now();
     t.process(start, 0);
 
-    auto all = t.createUnifiedNode("all", {.priority = Priority{}, .max_bytes_per_second = 10.0, .max_burst_bytes = 20.0});
+    auto all = t.createUnifiedNode("all", {.priority = Priority{}, .precedence = Priority{}, .max_bytes_per_second = 10.0, .max_burst_bytes = 20.0});
 
     t.enqueue(all, {10, 10, 10, 10, 10, 10, 10, 10});
 
@@ -692,7 +692,7 @@ TEST(TimeSharedWorkloadNode, UpdateThrottlerMaxSpeed)
     t.process(start + std::chrono::seconds(2));
     t.consumed("all", 10);
 
-    t.updateUnifiedNode(all, {}, {}, {.priority = Priority{}, .max_bytes_per_second = 1.0, .max_burst_bytes = 20.0});
+    t.updateUnifiedNode(all, {}, {}, {.priority = Priority{}, .precedence = Priority{}, .max_bytes_per_second = 1.0, .max_burst_bytes = 20.0});
 
     t.process(start + std::chrono::seconds(12));
     t.consumed("all", 10);
@@ -710,7 +710,7 @@ TEST(TimeSharedWorkloadNode, UpdateThrottlerMaxBurst)
     EventQueue::TimePoint start = std::chrono::system_clock::now();
     t.process(start, 0);
 
-    auto all = t.createUnifiedNode("all", {.priority = Priority{}, .max_bytes_per_second = 10.0, .max_burst_bytes = 100.0});
+    auto all = t.createUnifiedNode("all", {.priority = Priority{}, .precedence = Priority{}, .max_bytes_per_second = 10.0, .max_burst_bytes = 100.0});
 
     t.enqueue(all, {100});
 
@@ -719,7 +719,7 @@ TEST(TimeSharedWorkloadNode, UpdateThrottlerMaxBurst)
 
     t.process(start + std::chrono::seconds(2));
     t.consumed("all", 0); // There was nothing to consume
-    t.updateUnifiedNode(all, {}, {}, {.priority = Priority{}, .max_bytes_per_second = 10.0, .max_burst_bytes = 30.0});
+    t.updateUnifiedNode(all, {}, {}, {.priority = Priority{}, .precedence = Priority{}, .max_bytes_per_second = 10.0, .max_burst_bytes = 30.0});
 
     t.process(start + std::chrono::seconds(5));
     t.consumed("all", 0); // There was nothing to consume
@@ -728,13 +728,13 @@ TEST(TimeSharedWorkloadNode, UpdateThrottlerMaxBurst)
     t.process(start + std::chrono::seconds(5));
     t.consumed("all", 40); // min(30 tokens, 5 sec * 10 tokens/sec) = 30 tokens + 1 extra request to go below zero
 
-    t.updateUnifiedNode(all, {}, {}, {.priority = Priority{}, .max_bytes_per_second = 10.0, .max_burst_bytes = 100.0});
+    t.updateUnifiedNode(all, {}, {}, {.priority = Priority{}, .precedence = Priority{}, .max_bytes_per_second = 10.0, .max_burst_bytes = 100.0});
 
     t.process(start + std::chrono::seconds(100));
     t.consumed("all", 60); // Consume rest
 
     t.process(start + std::chrono::seconds(150));
-    t.updateUnifiedNode(all, {}, {}, {.priority = Priority{}, .max_bytes_per_second = 100.0, .max_burst_bytes = 200.0});
+    t.updateUnifiedNode(all, {}, {}, {.priority = Priority{}, .precedence = Priority{}, .max_bytes_per_second = 100.0, .max_burst_bytes = 200.0});
 
     t.process(start + std::chrono::seconds(200));
 

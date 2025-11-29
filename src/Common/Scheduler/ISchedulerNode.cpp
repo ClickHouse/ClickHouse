@@ -12,19 +12,25 @@ namespace ErrorCodes
     extern const int INVALID_SCHEDULER_NODE;
 }
 
-SchedulerNodeInfo::SchedulerNodeInfo(double weight_, Priority priority_)
+SchedulerNodeInfo::SchedulerNodeInfo(double weight_, Priority priority_, Priority precedence_)
 {
     setWeight(weight_);
     setPriority(priority_);
+    setPrecedence(precedence_);
 }
 
+SchedulerNodeInfo::SchedulerNodeInfo(const WorkloadSettings & settings)
+    : SchedulerNodeInfo(settings.weight, settings.priority, settings.precedence)
+{}
+
+// TODO(serxa): this is legacy, get rid of it together with CustomResourceManager
 SchedulerNodeInfo::SchedulerNodeInfo(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
     setWeight(config.getDouble(config_prefix + ".weight", weight));
     setPriority(config.getInt64(config_prefix + ".priority", priority));
 }
 
-void SchedulerNodeInfo::setWeight(double value)
+SchedulerNodeInfo & SchedulerNodeInfo::setWeight(double value)
 {
     if (value <= 0 || !isfinite(value))
         throw Exception(
@@ -32,22 +38,44 @@ void SchedulerNodeInfo::setWeight(double value)
             "Zero, negative and non-finite node weights are not allowed: {}",
             value);
     weight = value;
+    return *this;
 }
 
-void SchedulerNodeInfo::setPriority(Int64 value)
+SchedulerNodeInfo & SchedulerNodeInfo::setPriority(Int64 value)
 {
     priority.value = value;
+    return *this;
 }
 
-void SchedulerNodeInfo::setPriority(Priority value)
+SchedulerNodeInfo & SchedulerNodeInfo::setPriority(Priority value)
 {
     priority = value;
+    return *this;
+}
+
+SchedulerNodeInfo & SchedulerNodeInfo::setPrecedence(Int64 value)
+{
+    precedence.value = value;
+    return *this;
+}
+
+SchedulerNodeInfo & SchedulerNodeInfo::setPrecedence(Priority value)
+{
+    precedence = value;
+    return *this;
+}
+
+void SchedulerNodeInfo::update(const WorkloadSettings & new_settings)
+{
+    setWeight(new_settings.weight);
+    setPriority(new_settings.priority);
+    setPrecedence(new_settings.precedence);
 }
 
 bool SchedulerNodeInfo::equals(const SchedulerNodeInfo & o) const
 {
     // `parent` data is not compared intentionally (it is not part of configuration settings)
-    return weight == o.weight && priority == o.priority;
+    return weight == o.weight && priority == o.priority && precedence == o.precedence;
 }
 
 ISchedulerNode::ISchedulerNode(EventQueue & event_queue_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)

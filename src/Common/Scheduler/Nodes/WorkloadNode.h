@@ -11,7 +11,7 @@
 #include <Common/Scheduler/Nodes/SpaceShared/AllocationLimit.h>
 #include <Common/Scheduler/Nodes/SpaceShared/AllocationQueue.h>
 #include <Common/Scheduler/Nodes/SpaceShared/FairAllocation.h>
-#include <Common/Scheduler/Nodes/SpaceShared/PriorityAllocation.h>
+#include <Common/Scheduler/Nodes/SpaceShared/PrecedenceAllocation.h>
 #include <Common/Scheduler/Nodes/TimeShared/FairPolicy.h>
 #include <Common/Scheduler/Nodes/TimeShared/FifoQueue.h>
 #include <Common/Scheduler/Nodes/TimeShared/PriorityPolicy.h>
@@ -72,6 +72,11 @@ struct WorkloadNodeTraits<ITimeSharedNode>
         result->info.setPriority(priority);
         result->basename = fmt::format("p{}_fair", priority.value);
         return result;
+    }
+
+    static Priority getPriority(const SchedulerNodeInfo & info)
+    {
+        return info.priority; // time-shared nodes use priority directly
     }
 
     static NodePtr makePriorityPolicy(EventQueue & event_queue_)
@@ -163,17 +168,22 @@ struct WorkloadNodeTraits<ISpaceSharedNode>
         static_cast<AllocationQueue &>(*node).purgeQueue();
     }
 
-    static NodePtr makeFairPolicy(EventQueue & event_queue_, Priority priority)
+    static NodePtr makeFairPolicy(EventQueue & event_queue_, Priority precedence)
     {
         NodePtr result = std::make_shared<FairAllocation>(event_queue_, SchedulerNodeInfo{});
-        result->info.setPriority(priority);
-        result->basename = fmt::format("p{}_fair", priority.value);
+        result->info.setPrecedence(precedence);
+        result->basename = fmt::format("p{}_fair", precedence.value);
         return result;
+    }
+
+    static Priority getPriority(const SchedulerNodeInfo & info)
+    {
+        return info.precedence; // space-shared nodes use precedence for ordering instead of priority
     }
 
     static NodePtr makePriorityPolicy(EventQueue & event_queue_)
     {
-        NodePtr result = std::make_shared<PriorityAllocation>(event_queue_, SchedulerNodeInfo{});
+        NodePtr result = std::make_shared<PrecedenceAllocation>(event_queue_, SchedulerNodeInfo{});
         result->basename = "prio";
         return result;
     }
@@ -284,7 +294,7 @@ protected:
             {
                 // Insert fair node if we have just added the second child
                 chassert(!root);
-                root = Traits::makeFairPolicy(event_queue_, child->info.priority);
+                root = Traits::makeFairPolicy(event_queue_, Traits::getPriority(child->info));
                 for (auto & [_, node] : children)
                     reparent(node, root);
                 return root; // New root has been created
@@ -343,7 +353,7 @@ protected:
         /// Returns root node if it has been changed to a different node, otherwise returns null.
         [[nodiscard]] NodePtr attachWorkloadChild(EventQueue & event_queue_, const SelfPtr & child)
         {
-            auto [it, new_branch]  = branches.try_emplace(child->info.priority);
+            auto [it, new_branch]  = branches.try_emplace(Traits::getPriority(child->info));
             auto & child_branch = it->second;
             auto branch_root = child_branch.attachWorkloadChild(event_queue_, child);
             if (!new_branch)
@@ -382,7 +392,7 @@ protected:
         /// NOTE: It could also return null if `empty()` after detaching
         [[nodiscard]] NodePtr detachWorkloadChild(EventQueue & event_queue_, const SelfPtr & child)
         {
-            auto it = branches.find(child->info.priority);
+            auto it = branches.find(Traits::getPriority(child->info));
             if (it == branches.end())
                 return {}; // unknown child
 
@@ -596,7 +606,7 @@ protected:
 
 public:
     WorkloadNodeCommon(EventQueue & event_queue_, const WorkloadSettings & settings)
-        : BaseNode(event_queue_, SchedulerNodeInfo(settings.weight, settings.priority))
+        : BaseNode(event_queue_, SchedulerNodeInfo(settings))
     {}
 
     void attachWorkloadChild(const WorkloadNodePtr & child) final
@@ -613,8 +623,7 @@ public:
 
     void updateSchedulingSettings(const WorkloadSettings & new_settings) final
     {
-        this->info.setPriority(new_settings.priority);
-        this->info.setWeight(new_settings.weight);
+        this->info.update(new_settings);
         propagateUpdateSchedulingSettings();
         if (auto new_child = impl.updateSchedulingSettings(this->event_queue, new_settings))
             reparent(new_child, this);

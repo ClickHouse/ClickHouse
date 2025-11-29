@@ -2431,7 +2431,7 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationKillOrderFairnessBetween
     t.query("CREATE WORKLOAD all SETTINGS max_memory = 213");
     t.query("CREATE WORKLOAD dev IN all");
     t.query("CREATE WORKLOAD prd IN all");
-    t.query("CREATE WORKLOAD vip IN all SETTINGS priority = -1");
+    t.query("CREATE WORKLOAD vip IN all SETTINGS precedence = -1");
 
     for (int i = 0; i < 3; i++)
     {
@@ -2505,8 +2505,8 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreasePriorityBetweenW
 
     t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
     t.query("CREATE WORKLOAD all");
-    t.query("CREATE WORKLOAD dev IN all SETTINGS priority = 2");
-    t.query("CREATE WORKLOAD prd IN all SETTINGS priority = 1");
+    t.query("CREATE WORKLOAD dev IN all SETTINGS precedence = 2");
+    t.query("CREATE WORKLOAD prd IN all SETTINGS precedence = 1");
 
     for (int i = 0; i < 3; i++)
     {
@@ -2516,7 +2516,7 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreasePriorityBetweenW
         a.insert({ 50, 40, 20, 20, 50, 30, 10, 15 });
 
         // Workloads `dev` and `prd` orders their pending allocation by arrival order (FIFO).
-        // Workload `all` orders its children by their priority
+        // Workload `all` orders its children by their precedence
         // dev: 50 20 50 10         FIFO order
         // prd: 40 20 30 15         FIFO order
         a.assertApproveOrder("40 20 30 15 50 20 50 10");
@@ -2529,8 +2529,8 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreasePriorityBetweenW
 
     t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
     t.query("CREATE WORKLOAD all");
-    t.query("CREATE WORKLOAD dev IN all SETTINGS priority = 2");
-    t.query("CREATE WORKLOAD prd IN all SETTINGS priority = 1");
+    t.query("CREATE WORKLOAD dev IN all SETTINGS precedence = 2");
+    t.query("CREATE WORKLOAD prd IN all SETTINGS precedence = 1");
 
     for (int i = 0; i < 3; i++)
     {
@@ -2542,7 +2542,7 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreasePriorityBetweenW
 
 
         // Workloads `dev` and `prd` orders their running allocation increases by fair_key (resulting allocation size).
-        // Workload `all` orders its children by their priority
+        // Workload `all` orders its children by their precedence
         // dev: 10 20 50 50            ~ fair_key
         // prd: 15 20 30 40            ~ fair_key
         a.assertApproveOrder("15 20 30 40 10 20 50 50");
@@ -2555,9 +2555,9 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationKillOrderPriorityBetween
 
     t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
     t.query("CREATE WORKLOAD all SETTINGS max_memory = 213");
-    t.query("CREATE WORKLOAD dev IN all SETTINGS priority = 2");
-    t.query("CREATE WORKLOAD prd IN all SETTINGS priority = 1");
-    t.query("CREATE WORKLOAD vip IN all SETTINGS priority = -1");
+    t.query("CREATE WORKLOAD dev IN all SETTINGS precedence = 2");
+    t.query("CREATE WORKLOAD prd IN all SETTINGS precedence = 1");
+    t.query("CREATE WORKLOAD vip IN all SETTINGS precedence = -1");
 
     for (int i = 0; i < 3; i++)
     {
@@ -2593,8 +2593,8 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationPendingKillRunningDueToW
 
     t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
     t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
-    t.query("CREATE WORKLOAD dev IN all SETTINGS priority = 2");
-    t.query("CREATE WORKLOAD prd IN all SETTINGS priority = 1");
+    t.query("CREATE WORKLOAD dev IN all SETTINGS precedence = 2");
+    t.query("CREATE WORKLOAD prd IN all SETTINGS precedence = 1");
 
     ClassifierPtr c_dev = t.manager->acquire("dev");
     ClassifierPtr c_prd = t.manager->acquire("prd");
@@ -2610,10 +2610,10 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationPendingKillRunningDueToW
         a2.waitSync();
         a3.waitSync();
 
-        // Workload `dev` has lower priority and should not kill `prd` allocations
+        // Workload `dev` has lower precedence and should not kill `prd` allocations
         TestAllocation a4(l_dev, "D4-pending", 40);
 
-        // Workload `prd` has higher priority, so P5 kills allocation in dev.
+        // Workload `prd` has higher precedence, so P5 kills allocation in dev.
         TestAllocation a5(l_prd, "P5-pending", 40);
 
         a1.waitKilled();

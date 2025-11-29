@@ -168,7 +168,8 @@ public:
             old_parent ? old_parent->basename : "",
             new_parent ? new_parent->basename : "",
             node->getSettings(),
-            new_settings))
+            new_settings,
+            SharingMode::TimeShared))
         {
             if (old_parent)
                 old_parent->detachWorkloadChild(node);

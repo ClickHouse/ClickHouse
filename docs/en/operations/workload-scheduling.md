@@ -419,7 +419,7 @@ graph TD
 **Space-shared node types:**
 * `limit` - makes sure child total allocation never exceeds a limit, initiates eviction procedure in a subtree if necessary; must have a single child.
 * `fair_allocation` - enforces eviction according to max-min fairness; pending allocation never evict running; children nodes may specify `weight` (default is 1).
-* `priority_allocation` - enforces eviction according to static priorities (lower value means higher precedence); pending allocation of higher precedence evicts lower precedence allocations; children nodes should specify `precedence` (default is 0).
+* `precedence_allocation` - enforces eviction according to static precedences (lower value means higher precedence); pending allocation of higher precedence evicts lower precedence allocations; children nodes should specify `precedence` (default is 0).
 * `queue` - leaf of the hierarchy capable of holding running and pending allocations.
 
 ## Deprecated XML configuration {#deprecated_configuration}

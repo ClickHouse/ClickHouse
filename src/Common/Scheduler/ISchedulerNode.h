@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Scheduler/ResourceRequest.h>
+#include <Common/Scheduler/WorkloadSettings.h>
 
 #include <Common/Priority.h>
 
@@ -33,16 +34,22 @@ inline const Poco::Util::AbstractConfiguration & emptyConfig()
 struct SchedulerNodeInfo
 {
     double weight = 1.0; /// Weight of this node among its siblings
-    Priority priority; /// Priority of this node among its siblings (lower value means higher priority)
+    Priority priority; /// Priority of this node among its siblings (lower value means higher priority) for time-shared resources
+    Priority precedence; /// Precedence of this node among its siblings (lower value means higher precedence) for space-shared resources
 
     SchedulerNodeInfo() = default;
 
-    explicit SchedulerNodeInfo(double weight_, Priority priority_ = {});
+    explicit SchedulerNodeInfo(double weight_, Priority priority_ = {}, Priority precedence_ = {});
+    explicit SchedulerNodeInfo(const WorkloadSettings & settings);
     explicit SchedulerNodeInfo(const Poco::Util::AbstractConfiguration & config, const String & config_prefix = {});
 
-    void setWeight(double value);
-    void setPriority(Int64 value);
-    void setPriority(Priority value);
+    SchedulerNodeInfo & setWeight(double value);
+    SchedulerNodeInfo & setPriority(Int64 value);
+    SchedulerNodeInfo & setPriority(Priority value);
+    SchedulerNodeInfo & setPrecedence(Int64 value);
+    SchedulerNodeInfo & setPrecedence(Priority value);
+
+    void update(const WorkloadSettings & new_settings);
 
     // To check if configuration update required
     bool equals(const SchedulerNodeInfo & o) const;

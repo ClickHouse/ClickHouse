@@ -18,9 +18,10 @@ struct WorkloadSettings
     static constexpr Int64 unlimited = std::numeric_limits<Int64>::max();
     static constexpr Float64 default_burst_seconds = 1.0;
 
-    /// Priority and weight among siblings
+    /// Weight, priority and precedence among siblings
     Float64 weight = 1.0;
     Priority priority;
+    Priority precedence;
 
     /// IO throttling constraints
     Float64 max_bytes_per_second = 0; // Zero means unlimited

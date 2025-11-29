@@ -1,4 +1,4 @@
-#include <Common/Scheduler/Nodes/SpaceShared/PriorityAllocation.h>
+#include <Common/Scheduler/Nodes/SpaceShared/PrecedenceAllocation.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -9,19 +9,19 @@ namespace ErrorCodes
     extern const int INVALID_SCHEDULER_NODE;
 }
 
-PriorityAllocation::PriorityAllocation(EventQueue & event_queue_, const SchedulerNodeInfo & info_)
+PrecedenceAllocation::PrecedenceAllocation(EventQueue & event_queue_, const SchedulerNodeInfo & info_)
     : ISpaceSharedNode(event_queue_, info_)
 {}
 
-PriorityAllocation::~PriorityAllocation() = default;
+PrecedenceAllocation::~PrecedenceAllocation() = default;
 
-const String & PriorityAllocation::getTypeName() const
+const String & PrecedenceAllocation::getTypeName() const
 {
-    static String type_name("priority_allocation");
+    static String type_name("precedence_allocation");
     return type_name;
 }
 
-void PriorityAllocation::attachChild(const std::shared_ptr<ISchedulerNode> & child_base)
+void PrecedenceAllocation::attachChild(const std::shared_ptr<ISchedulerNode> & child_base)
 {
     SpaceSharedNodePtr child = std::static_pointer_cast<ISpaceSharedNode>(child_base);
     if (auto [it, inserted] = children.emplace(child->basename, child); !inserted)
@@ -36,7 +36,7 @@ void PriorityAllocation::attachChild(const std::shared_ptr<ISchedulerNode> & chi
         .setDecrease(child->decrease));
 }
 
-void PriorityAllocation::removeChild(ISchedulerNode * child_base)
+void PrecedenceAllocation::removeChild(ISchedulerNode * child_base)
 {
     if (auto iter = children.find(child_base->basename); iter != children.end())
     {
@@ -50,33 +50,33 @@ void PriorityAllocation::removeChild(ISchedulerNode * child_base)
     }
 }
 
-ISchedulerNode * PriorityAllocation::getChild(const String & child_name)
+ISchedulerNode * PrecedenceAllocation::getChild(const String & child_name)
 {
     if (auto iter = children.find(child_name); iter != children.end())
         return iter->second.get();
     return nullptr;
 }
 
-ResourceAllocation * PriorityAllocation::selectAllocationToKill(IncreaseRequest * killer, ResourceCost limit)
+ResourceAllocation * PrecedenceAllocation::selectAllocationToKill(IncreaseRequest * killer, ResourceCost limit)
 {
     // Cases to consider:
     // 1. Killer is not part of this node:
     //    - decision to kill was already taken by the parent.
-    //    - propagate down to the least prioritized child (victim).
+    //    - propagate down to the least precedence child (victim).
     // 2. Killer is part of this node but from a different child than the victim child.
     //    - this node is the least common ancestor of killer and victim.
-    //    - enforce priority rules: running allocation kills victims of equal and lower priority.
-    // 3. Killer is part of the victim child (thus, they have equal priority).
+    //    - enforce precedence rules: running allocation kills victims of equal and lower precedence.
+    // 3. Killer is part of the victim child (thus, they have equal precedence).
     //    - we are above the least common ancestor of killer and victim.
     //    - propagate down, decision will be taken lower in the tree.
-    // NOTE: All cases are automagically handled by picking the least priority running child as victim.
+    // NOTE: All cases are automagically handled by picking the least precedence running child as victim.
     if (running_children.empty())
         return nullptr;
     ISpaceSharedNode & victim_child = *running_children.rbegin();
     return victim_child.selectAllocationToKill(killer, limit);
 }
 
-void PriorityAllocation::approveIncrease()
+void PrecedenceAllocation::approveIncrease()
 {
     chassert(increase);
     allocated += increase->size;
@@ -88,7 +88,7 @@ void PriorityAllocation::approveIncrease()
     setIncrease(*increase_child, increase_child->increase);
 }
 
-void PriorityAllocation::approveDecrease()
+void PrecedenceAllocation::approveDecrease()
 {
     chassert(decrease);
     allocated -= decrease->size;
@@ -100,7 +100,7 @@ void PriorityAllocation::approveDecrease()
     setDecrease(*decrease_child, decrease_child->decrease);
 }
 
-void PriorityAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update && update)
+void PrecedenceAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update && update)
 {
     if (update.attached)
     {
@@ -132,7 +132,7 @@ void PriorityAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update &
         propagate(std::move(update));
 }
 
-bool PriorityAllocation::setIncrease(ISpaceSharedNode & from_child, IncreaseRequest * new_increase)
+bool PrecedenceAllocation::setIncrease(ISpaceSharedNode & from_child, IncreaseRequest * new_increase)
 {
     // Update intrusive sets of increasing children
     if (from_child.isIncreasing())
@@ -150,7 +150,7 @@ bool PriorityAllocation::setIncrease(ISpaceSharedNode & from_child, IncreaseRequ
     return old_increase != increase;
 }
 
-bool PriorityAllocation::setDecrease(ISpaceSharedNode & from_child, DecreaseRequest * new_decrease)
+bool PrecedenceAllocation::setDecrease(ISpaceSharedNode & from_child, DecreaseRequest * new_decrease)
 {
     // Update intrusive list of decreasing children
     if (from_child.isDecreasing())

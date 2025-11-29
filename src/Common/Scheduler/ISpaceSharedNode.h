@@ -130,16 +130,16 @@ private:
     /// Keys and comparators for intrusive sets
     std::pair<double, size_t> usage_key{-1, 0};  /// (allocated + increase.size) / weight and tie breaker
     struct ByUsage { bool operator()(const ISpaceSharedNode & lhs, const ISpaceSharedNode & rhs) const noexcept { return lhs.usage_key < rhs.usage_key; } };
-    struct ByPriority { bool operator()(const ISpaceSharedNode & lhs, const ISpaceSharedNode & rhs) const noexcept { return lhs.info.priority < rhs.info.priority; } };
+    struct ByPrecedence { bool operator()(const ISpaceSharedNode & lhs, const ISpaceSharedNode & rhs) const noexcept { return lhs.info.precedence < rhs.info.precedence; } };
 
 protected:
-    /// Intrusive data structures for managing sets of nodes for parent nodes (e.g. PriorityAllocation and FairAllocation)
+    /// Intrusive data structures for managing sets of nodes for parent nodes (e.g. PrecedenceAllocation and FairAllocation)
     /// We use intrusive structures to avoid allocations during scheduling (we might be under memory pressure)
     using RunningSetByUsage = boost::intrusive::set<ISpaceSharedNode, RunningHook, boost::intrusive::compare<ByUsage>>;
     using PendingSetByUsage = boost::intrusive::set<ISpaceSharedNode, PendingHook, boost::intrusive::compare<ByUsage>>;
-    using RunningSetByPriority = boost::intrusive::set<ISpaceSharedNode, RunningHook, boost::intrusive::compare<ByPriority>>;
+    using RunningSetByPrecedence = boost::intrusive::set<ISpaceSharedNode, RunningHook, boost::intrusive::compare<ByPrecedence>>;
     using IncreasingSetByUsage = boost::intrusive::set<ISpaceSharedNode, IncreasingHook, boost::intrusive::compare<ByUsage>>;
-    using IncreasingSetByPriority = boost::intrusive::set<ISpaceSharedNode, IncreasingHook, boost::intrusive::compare<ByPriority>>;
+    using IncreasingSetByPrecedence = boost::intrusive::set<ISpaceSharedNode, IncreasingHook, boost::intrusive::compare<ByPrecedence>>;
     using DecreasingList = boost::intrusive::list<ISpaceSharedNode, DecreasingHook>;
 
     ISpaceSharedNode & castParent() const

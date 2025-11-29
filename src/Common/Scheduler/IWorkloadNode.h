@@ -20,7 +20,7 @@ using WorkloadNodePtr = std::shared_ptr<IWorkloadNode>;
 /// There are two implementation: for time-shared and space-shared resources.
 ///
 /// Workload node is capable of updating its internal structure based on:
-/// 1. Number of children (fifo if =0 or fairness/priority if >0).
+/// 1. Number of children (fifo if =0 or fairness/priority/precedence if >0).
 /// 2. Priorities of its children (for subtree structure).
 /// 3. `WorkloadSettings` associated with workload node (for throttler and semaphore constraints).
 ///
@@ -32,7 +32,7 @@ using WorkloadNodePtr = std::shared_ptr<IWorkloadNode>;
 ///                              |
 ///   [If no children]------ SEMAPHORE        <-- [Optional] Semaphore constraint (or limit for space-shared resource)
 ///           |                  |
-///         FIFO             PRIORITY         <-- [Optional] Scheduling policy distinguishing priorities
+///         FIFO             PRIORITY         <-- [Optional] Scheduling policy distinguishing priorities or precedences
 ///                 .-------'        '-------.
 ///       FAIRNESS[p1]          ...         FAIRNESS[pN] <-- [Optional] Policies for fairness if priorities are equal
 ///        /        \                        /        \
@@ -65,9 +65,14 @@ public:
         const String & old_parent,
         const String & new_parent,
         const WorkloadSettings & old_settings,
-        const WorkloadSettings & new_settings)
+        const WorkloadSettings & new_settings,
+        SharingMode sharing_mode)
     {
-        return old_parent != new_parent || old_settings.priority != new_settings.priority;
+        switch (sharing_mode)
+        {
+            case SharingMode::TimeShared: return old_parent != new_parent || old_settings.priority != new_settings.priority;
+            case SharingMode::SpaceShared: return old_parent != new_parent || old_settings.precedence != new_settings.precedence;
+        }
     }
 
     /// Returns current settings of this workload node

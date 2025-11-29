@@ -185,7 +185,8 @@ void WorkloadResourceManager::Resource::updateNode(const NodeInfo & old_info, co
             old_info.parent,
             new_info.parent,
             old_info.settings,
-            new_info.settings))
+            new_info.settings,
+            getSharingMode(getUnit())))
         {
             if (!old_info.parent.empty())
                 node_for_workload[old_info.parent]->detachWorkloadChild(node);
