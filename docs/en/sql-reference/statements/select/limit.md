@@ -18,7 +18,17 @@ The `LIMIT` clause controls how many rows are returned from your query results.
 LIMIT m
 ```
 
-Returns the first `m` rows from the result.
+Returns the first `m` rows from the result, or all records when there are fewer than `m`.
+
+**Alternative TOP syntax (MS SQL Server compatible):**
+
+```sql
+-- SELECT TOP number|percent column_name(s) FROM table_name
+SELECT TOP 10 * FROM numbers(100);
+SELECT TOP 0.1 * FROM numbers(100);
+```
+
+This is equivalent to `LIMIT m` and can be used for compatibility with Microsoft SQL Server queries.
 
 **Select with offset:**
 
@@ -40,6 +50,8 @@ Select rows from the *end* of the result set using negative values:
 |--------|--------|
 | `LIMIT -m` | Last `m` rows |
 | `LIMIT -m OFFSET -n` | Last `m` rows after skipping the last `n` rows |
+| `LIMIT m OFFSET -n` | First `m` rows after skipping the last `n` rows |
+| `LIMIT -m OFFSET n` | Last `m` rows after skipping the first `n` rows |
 
 The `LIMIT -n, -m` syntax is equivalent to `LIMIT -m OFFSET -n`.
 
@@ -55,7 +67,7 @@ Use decimal values between 0 and 1 to select a percentage of rows:
 
 :::note
 - Fractions must be [Float64](../../data-types/float.md) values greater than 0 and less than 1.
-- Fractional row counts are rounded up to the nearest whole number.
+- Fractional row counts are rounded to the nearest whole number.
 :::
 
 ## Combining limit types {#combining-limit-types}
@@ -119,3 +131,7 @@ This modifier can be combined with the [`ORDER BY ... WITH FILL`](/sql-reference
 **Non-deterministic results:** Without an [`ORDER BY`](../../../sql-reference/statements/select/order-by.md) clause, the rows returned may be arbitrary and vary between query executions.
 
 **Server-side limit:** The number of rows returned can also be affected by the [limit](../../../operations/settings/settings.md#limit) setting.
+
+## See also {#see-also}
+
+- [LIMIT BY](/sql-reference/statements/select/limit-by) — Limits rows per group of values, useful for getting top N results within each category.
