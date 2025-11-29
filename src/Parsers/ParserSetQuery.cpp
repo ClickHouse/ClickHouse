@@ -212,12 +212,20 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
         return false;
 
     /// for SETTINGS disk=disk(type='s3', path='', ...)
-    if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
     {
-        tryGetIdentifierNameInto(name, change.name);
-        change.value = createFieldFromAST(function_ast);
+        auto old_pos = pos;
+        if (function_p.parse(pos, function_ast, expected))
+        {
+            if (auto * func = function_ast->as<ASTFunction>(); func && func->name == "disk")
+            {
+                tryGetIdentifierNameInto(name, change.name);
+                change.value = createFieldFromAST(function_ast);
 
-        return true;
+                return true;
+            }
+            /// Not a supported special function here, rollback and continue with literal parsing.
+            pos = old_pos;
+        }
     }
     if (!literal_or_map_p.parse(pos, value, expected))
         return false;
@@ -229,12 +237,13 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
 }
 
 bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
-    SettingChange & change, String & default_settings, ParserSetQuery::Parameter & parameter, IParser::Pos & pos, Expected & expected, bool enable_shorthand_syntax)
+    SettingChange & change, String & default_settings, ParserSetQuery::Parameter & parameter, IParser::Pos & pos, Expected & expected, bool enable_shorthand_syntax, bool allow_expressions, ASTPtr & value_expression)
 {
     ParserCompoundIdentifier name_p;
     ParserLiteralOrMap value_p;
     ParserToken s_eq(TokenType::Equals);
     ParserFunction function_p;
+    ParserExpressionWithOptionalAlias expression_p(false);
 
     ASTPtr node;
     String name;
@@ -273,6 +282,7 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
 
     if (have_eq)
     {
+        node.reset();
         /// Default
         if (ParserKeyword(Keyword::DEFAULT).ignore(pos, expected))
         {
@@ -281,16 +291,46 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
         }
 
         /// Setting
-        if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
         {
-            change.name = name;
-            change.value = createFieldFromAST(function_ast);
+            auto old_pos = pos;
+            if (function_p.parse(pos, function_ast, expected))
+            {
+                if (auto * func = function_ast->as<ASTFunction>(); func && func->name == "disk")
+                {
+                    change.name = name;
+                    change.value = createFieldFromAST(function_ast);
 
-            return true;
+                    return true;
+                }
+                /// Not the 'disk' special-case: rollback to allow general expression or literal parsing.
+                pos = old_pos;
+            }
         }
 
-        if (!value_p.parse(pos, node, expected))
-            return false;
+        if (allow_expressions)
+        {
+            /// If value starts with '{', treat it as a collection of literals (e.g. Map) to
+            /// avoid mis-parsing as a substitution. This preserves existing SETTINGS map syntax.
+            if (pos->type == TokenType::OpeningCurlyBrace)
+            {
+                /// Parse Map in SET/SETTINGS as array of tuples (key, value).
+                /// Use the local literal-or-map parser that constructs Map of Tuple properly.
+                if (!value_p.parse(pos, node, expected))
+                    return false;
+            }
+            else
+            {
+                ASTPtr expr_node;
+                if (!expression_p.parse(pos, expr_node, expected))
+                    return false;
+                node = expr_node;
+            }
+        }
+        else
+        {
+            if (!value_p.parse(pos, node, expected))
+                return false;
+        }
     }
     else
     {
@@ -309,7 +349,15 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
     }
 
     change.name = name;
-    change.value = node->as<ASTLiteral &>().value;
+    if (node && node->as<ASTLiteral>())
+    {
+        change.value = node->as<ASTLiteral &>().value;
+    }
+    else
+    {
+        /// Non-literal expression: return it via value_expression, caller will handle it.
+        value_expression = node;
+    }
 
     return true;
 }
@@ -334,23 +382,27 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     SettingsChanges changes;
     NameToNameVector query_parameters;
     std::vector<String> default_settings;
+    std::vector<std::pair<String, ASTPtr>> changes_expressions;
 
     while (true)
     {
-        if ((!changes.empty() || !query_parameters.empty() || !default_settings.empty()) && !s_comma.ignore(pos))
+        if ((!changes.empty() || !query_parameters.empty() || !default_settings.empty() || !changes_expressions.empty()) && !s_comma.ignore(pos))
             break;
 
         SettingChange setting;
         String name_of_default_setting;
         Parameter parameter;
+        ASTPtr value_expression;
 
-        if (!parseNameValuePairWithParameterOrDefault(setting, name_of_default_setting, parameter, pos, expected, shorthand_syntax))
+        if (!parseNameValuePairWithParameterOrDefault(setting, name_of_default_setting, parameter, pos, expected, shorthand_syntax, allow_expressions, value_expression))
             return false;
 
         if (!parameter.first.empty())
             query_parameters.emplace_back(std::move(parameter));
         else if (!name_of_default_setting.empty())
             default_settings.emplace_back(std::move(name_of_default_setting));
+        else if (value_expression)
+            changes_expressions.emplace_back(setting.name, std::move(value_expression));
         else
             changes.push_back(std::move(setting));
     }
@@ -362,6 +414,7 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->changes = std::move(changes);
     query->query_parameters = std::move(query_parameters);
     query->default_settings = std::move(default_settings);
+    query->changes_expressions = std::move(changes_expressions);
 
     return true;
 }
