@@ -372,49 +372,12 @@ struct HashMethodSerialized
                     }
                 }
 
-                // if (key_column->lowCardinality())
-                //     throw Exception(ErrorCodes::LOGICAL_ERROR, "LowCardinality column is not supported in HashMethodSerialized");
-
                 if (typeid_cast<const ColumnString *>(key_column))
                     string_key_columns.emplace_back(static_cast<const ColumnString *>(key_column), null_map, pos++);
                 else if (const auto * ptr = dynamic_cast<const ColumnFixedSizeHelper *>(key_column))
                     fixed_size_key_columns.emplace_back(ptr, null_map, pos++);
                 else
                     other_key_columns.emplace_back(key_column, null_map, pos++);
-            }
-
-            for (const auto & [key_column, null_map, original_pos] : string_key_columns)
-            {
-                LOG_DEBUG(
-                    &Poco::Logger::get("debug"),
-                    "__PRETTY_FUNCTION__={}, __LINE__={}, col={}, name={}, original_pos={}",
-                    __PRETTY_FUNCTION__,
-                    __LINE__,
-                    static_cast<const void *>(key_columns_[original_pos]),
-                    key_columns_[original_pos]->getName(),
-                    original_pos);
-            }
-            for (const auto & [key_column, null_map, original_pos] : fixed_size_key_columns)
-            {
-                LOG_DEBUG(
-                    &Poco::Logger::get("debug"),
-                    "__PRETTY_FUNCTION__={}, __LINE__={}, col={}, name={}, original_pos={}",
-                    __PRETTY_FUNCTION__,
-                    __LINE__,
-                    static_cast<const void *>(key_columns_[original_pos]),
-                    key_columns_[original_pos]->getName(),
-                    original_pos);
-            }
-            for (const auto & [key_column, null_map, original_pos] : other_key_columns)
-            {
-                LOG_DEBUG(
-                    &Poco::Logger::get("debug"),
-                    "__PRETTY_FUNCTION__={}, __LINE__={}, col={}, name={}, original_pos={}",
-                    __PRETTY_FUNCTION__,
-                    __LINE__,
-                    static_cast<const void *>(key_columns_[original_pos]),
-                    key_columns_[original_pos]->getName(),
-                    original_pos);
             }
         }
 
@@ -525,40 +488,16 @@ struct HashMethodSerialized
         Sizes new_key_sizes;
         for (const auto & [key_column, null_map, original_pos] : new_columns.string_key_columns)
         {
-            LOG_DEBUG(
-                &Poco::Logger::get("debug"),
-                "__PRETTY_FUNCTION__={}, __LINE__={}, col={}, name={}, original_pos={}",
-                __PRETTY_FUNCTION__,
-                __LINE__,
-                static_cast<const void *>(key_columns_[original_pos]),
-                key_columns_[original_pos]->getName(),
-                original_pos);
             new_key_columns.push_back(key_columns_[original_pos]);
             new_key_sizes.push_back(sizes[original_pos]);
         }
         for (const auto & [key_column, null_map, original_pos] : new_columns.fixed_size_key_columns)
         {
-            LOG_DEBUG(
-                &Poco::Logger::get("debug"),
-                "__PRETTY_FUNCTION__={}, __LINE__={}, col={}, name={}, original_pos={}",
-                __PRETTY_FUNCTION__,
-                __LINE__,
-                static_cast<const void *>(key_columns_[original_pos]),
-                key_columns_[original_pos]->getName(),
-                original_pos);
             new_key_columns.push_back(key_columns_[original_pos]);
             new_key_sizes.push_back(sizes[original_pos]);
         }
         for (const auto & [key_column, null_map, original_pos] : new_columns.other_key_columns)
         {
-            LOG_DEBUG(
-                &Poco::Logger::get("debug"),
-                "__PRETTY_FUNCTION__={}, __LINE__={}, col={}, name={}, original_pos={}",
-                __PRETTY_FUNCTION__,
-                __LINE__,
-                static_cast<const void *>(key_columns_[original_pos]),
-                key_columns_[original_pos]->getName(),
-                original_pos);
             new_key_columns.push_back(key_columns_[original_pos]);
             new_key_sizes.push_back(sizes[original_pos]);
         }
