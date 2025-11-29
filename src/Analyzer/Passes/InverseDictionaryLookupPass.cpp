@@ -115,16 +115,6 @@ bool isInMemoryLayout(const String & type_name)
     return supported_layouts.contains(type_name);
 }
 
-template <typename Node>
-void resolveNode(const Node & node, const ContextPtr & context)
-{
-    if (node->isResolved())
-        return;
-
-    QueryTreeNodePtr querytree_node = node;
-    QueryAnalysisPass(/*only_analyze*/ false).run(querytree_node, context);
-}
-
 
 class InverseDictionaryLookupVisitor : public InDepthQueryTreeVisitorWithContext<InverseDictionaryLookupVisitor>
 {
@@ -220,9 +210,96 @@ public:
 
         DataTypePtr dict_attr_col_type = dict_structure.getAttribute(attr_col_name).type;
 
+        /// Attempt to use dictGetKeys when semantics match:
+        ///   - only for equals
+        ///   - and 'dictGet' function
+        ///
+        /// This guarantees that
+        ///   dictGet(dict, attr, key) = const
+        /// is equivalent to
+        ///   key IN dictGetKeys(dict, attr, const)
+        /// (for both single and composite keys).
+        const String dictget_function_name = dict_side == Side::LHS
+            ? static_cast<FunctionNode *>(arguments[0].get())->getFunctionName()
+            : static_cast<FunctionNode *>(arguments[1].get())->getFunctionName();
+
+        if (attr_comparison_function_name == "equals" && dictget_function_name == "dictGet")
+        {
+            /// Build dictGetKeys('dict_name', 'attr_name', value_expr)
+            auto dict_get_keys_fn = std::make_shared<FunctionNode>("dictGetKeys");
+            auto & dict_get_keys_args = dict_get_keys_fn->getArguments().getNodes();
+
+            dict_get_keys_args.push_back(dictget_function_info.dict_name_node);
+            dict_get_keys_args.push_back(dictget_function_info.attr_col_name_node);
+            dict_get_keys_args.push_back(dict_side == Side::LHS ? arguments[1] : arguments[0]);
+
+            resolveOrdinaryFunctionNodeByName(*dict_get_keys_fn, "dictGetKeys", getContext());
+
+            QueryTreeNodePtr node_function_ptr = dict_get_keys_fn;
+            QueryAnalysisPass(/*only_analyze*/ false).run(node_function_ptr, getContext());
+
+            auto * keys_constant = node_function_ptr->as<ConstantNode>();
+
+            if (keys_constant == nullptr)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "InverseDictionaryLookupPass: dictGetKeys did not resolve to ConstantNode as expected");
+
+            const Field & keys_field = keys_constant->getValue();
+
+            if (keys_field.getType() != Field::Types::Array)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "InverseDictionaryLookupPass: dictGetKeys expected to return Array field. Actual type: {}",
+                    keys_field.getType());
+
+            const auto & keys_array = keys_field.safeGet<Array>();
+            const size_t keys_size = keys_array.size();
+
+            /// No keys -> WHERE 0
+            if (keys_size == 0)
+            {
+                auto zero_type = std::make_shared<DataTypeUInt8>();
+                auto zero_node = std::make_shared<ConstantNode>(Field(UInt8(0)), zero_type);
+                node = zero_node;
+                return;
+            }
+
+            DataTypePtr key_expr_type = dictget_function_info.key_expr_node->getResultType();
+
+            /// Single key -> key_expr = <that key>
+            if (keys_size == 1)
+            {
+                const Field & single_key_field = keys_array.front();
+
+                auto single_key_const = std::make_shared<ConstantNode>(single_key_field, key_expr_type);
+
+                auto equals_node = std::make_shared<FunctionNode>("equals");
+                equals_node->markAsOperator();
+                equals_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, single_key_const};
+                resolveOrdinaryFunctionNodeByName(*equals_node, "equals", getContext());
+
+                node = equals_node;
+                return;
+            }
+
+            /// Multiple keys -> key_expr IN <constant array-of-keys>
+            /// keys_constant->getResultType() is Array(T) or Array(Tuple(...))
+            auto keys_const_node = std::make_shared<ConstantNode>(keys_field, keys_constant->getResultType());
+
+            auto in_function_node = std::make_shared<FunctionNode>("in");
+            in_function_node->markAsOperator();
+            in_function_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, keys_const_node};
+            resolveOrdinaryFunctionNodeByName(*in_function_node, "in", getContext());
+
+            node = in_function_node;
+            return;
+        }
+
         auto dict_table_function = std::make_shared<TableFunctionNode>("dictionary");
         dict_table_function->getArguments().getNodes().push_back(dictget_function_info.dict_name_node);
-        resolveNode(dict_table_function, getContext());
+
+        QueryTreeNodePtr dict_table_function_ptr = dict_table_function;
+        QueryAnalysisPass(/*only_analyze*/ false).run(dict_table_function_ptr, getContext());
 
         NameAndTypePair attr_col{attr_col_name, dict_attr_col_type};
         auto attr_col_node = std::make_shared<ColumnNode>(attr_col, dict_table_function);
