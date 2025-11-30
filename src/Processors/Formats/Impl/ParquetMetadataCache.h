@@ -16,7 +16,7 @@
 
 #if USE_AWS_S3
 #include <IO/ReadBufferFromS3.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #endif
 
 namespace ProfileEvents
@@ -25,7 +25,7 @@ namespace ProfileEvents
     extern const Event ParquetMetadataCacheHits;
     extern const Event ParquetMetadataCacheWeightLost;
 }
-
+#
 namespace CurrentMetrics
 {
     extern const Metric ParquetMetadataCacheBytes;
