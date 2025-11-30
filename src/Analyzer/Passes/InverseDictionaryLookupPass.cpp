@@ -314,11 +314,11 @@ public:
 
         if (dict_side == Side::LHS)
         {
-            attr_comparison_function_node->getArguments().getNodes() = {attr_col_node_casted, arguments[1]};
+            attr_comparison_function_node->getArguments().getNodes() = { attr_col_node_casted, arguments[1] };
         }
         else
         {
-            attr_comparison_function_node->getArguments().getNodes() = {arguments[0], attr_col_node_casted};
+            attr_comparison_function_node->getArguments().getNodes() = { arguments[0], attr_col_node_casted };
         }
         resolveOrdinaryFunctionNodeByName(*attr_comparison_function_node, attr_comparison_function_name, getContext());
 
