@@ -1,10 +1,11 @@
 #include <gtest/gtest.h>
 
-#include "Common/setThreadName.h"
-#include <Common/Scheduler/Nodes/SemaphoreConstraint.h>
+#include <Common/Scheduler/Nodes/SpaceShared/SpaceSharedScheduler.h>
+#include <Common/Scheduler/Nodes/TimeShared/SemaphoreConstraint.h>
+#include <Common/Scheduler/Nodes/TimeShared/ThrottlerConstraint.h>
+#include <Common/Scheduler/Nodes/TimeShared/TimeSharedScheduler.h>
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 
-#include <Common/Scheduler/SchedulerRoot.h>
 #include <Common/randomSeed.h>
 
 #include <barrier>
@@ -15,7 +16,7 @@ using namespace DB;
 
 struct ResourceTest : public ResourceTestBase
 {
-    SchedulerRoot scheduler;
+    TimeSharedScheduler scheduler;
 
     ResourceTest()
     {
@@ -68,7 +69,7 @@ struct ResourceHolder
     {
         std::promise<void> p;
         auto f = p.get_future();
-        t.scheduler.event_queue->enqueue([this, &p]
+        t.scheduler.event_queue.enqueue([this, &p]
         {
             t.scheduler.attachChild(root_node);
             p.set_value();
@@ -80,7 +81,7 @@ struct ResourceHolder
     {
         std::promise<void> p;
         auto f = p.get_future();
-        t.scheduler.event_queue->enqueue([this, &p]
+        t.scheduler.event_queue.enqueue([this, &p]
         {
             t.scheduler.removeChild(root_node.get());
             p.set_value();
@@ -110,7 +111,7 @@ struct MyRequest : public ResourceRequest
     }
 };
 
-TEST(SchedulerRoot, Smoke)
+TEST(TimeSharedScheduler, Smoke)
 {
     ResourceTest t;
 
@@ -153,7 +154,7 @@ TEST(SchedulerRoot, Smoke)
     }
 }
 
-TEST(SchedulerRoot, Budget)
+TEST(TimeSharedScheduler, Budget)
 {
     ResourceTest t;
 
@@ -178,7 +179,7 @@ TEST(SchedulerRoot, Budget)
     EXPECT_EQ(total_real_cost, a.queue->dequeued_cost - a.queue->getBudget());
 }
 
-TEST(SchedulerRoot, Cancel)
+TEST(TimeSharedScheduler, Cancel)
 {
     // This barrier is used in the scheduler thread, so we should not destroy it before thread in ~ResourceTest
     std::barrier<std::__empty_completion> destruct_sync(2);

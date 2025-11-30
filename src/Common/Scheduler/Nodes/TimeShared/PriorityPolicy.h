@@ -1,8 +1,10 @@
 #pragma once
 
-#include <Common/Scheduler/ISchedulerNode.h>
+#include <Common/Scheduler/ITimeSharedNode.h>
+#include <Common/Exception.h>
 
 #include <algorithm>
+#include <memory>
 #include <unordered_map>
 #include <vector>
 
@@ -19,12 +21,12 @@ namespace ErrorCodes
  * Scheduler node that implements priority scheduling policy.
  * Requests are scheduled in order of priorities.
  */
-class PriorityPolicy final : public ISchedulerNode
+class PriorityPolicy final : public ITimeSharedNode
 {
     /// Scheduling state of a child
     struct Item
     {
-        ISchedulerNode * child = nullptr;
+        ITimeSharedNode * child = nullptr;
         Priority priority; // lower value means higher priority
 
         /// For max-heap by priority
@@ -35,12 +37,12 @@ class PriorityPolicy final : public ISchedulerNode
     };
 
 public:
-    explicit PriorityPolicy(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
-        : ISchedulerNode(event_queue_, config, config_prefix)
+    explicit PriorityPolicy(EventQueue & event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
+        : ITimeSharedNode(event_queue_, config, config_prefix)
     {}
 
-    explicit PriorityPolicy(EventQueue * event_queue_, const SchedulerNodeInfo & node_info)
-        : ISchedulerNode(event_queue_, node_info)
+    explicit PriorityPolicy(EventQueue & event_queue_, const SchedulerNodeInfo & node_info)
+        : ITimeSharedNode(event_queue_, node_info)
     {}
 
     ~PriorityPolicy() override
@@ -65,8 +67,10 @@ public:
         return false;
     }
 
-    void attachChild(const SchedulerNodePtr & child) override
+    void attachChild(const SchedulerNodePtr & child_base) override
     {
+        TimeSharedNodePtr child = std::static_pointer_cast<ITimeSharedNode>(child_base);
+
         // Take ownership
         chassert(child->parent == nullptr);
         if (auto [it, inserted] = children.emplace(child->basename, child); !inserted)
@@ -76,11 +80,11 @@ public:
                 it->second->getPath());
 
         // Attach
-        child->setParent(this);
+        child->setParentNode(this);
 
         // Activate child if it is not empty
         if (child->isActive())
-            activateChild(child.get());
+            activateChild(*child);
     }
 
     void removeChild(ISchedulerNode * child) override
@@ -102,7 +106,7 @@ public:
             }
 
             // Detach
-            removed->setParent(nullptr);
+            removed->setParentNode(nullptr);
 
             // Get rid of ownership
             children.erase(iter);
@@ -139,7 +143,7 @@ public:
             if (request)
             {
                 incrementDequeued(request->cost);
-                return {request, !items.empty()};
+                return {request, isActive()};
             }
         }
     }
@@ -154,13 +158,13 @@ public:
         return items.size();
     }
 
-    void activateChild(ISchedulerNode * child) override
+    void activateChild(ITimeSharedNode & child) override
     {
         bool activate_parent = items.empty();
-        items.emplace_back(Item{child, child->info.priority});
+        items.emplace_back(Item{&static_cast<ITimeSharedNode &>(child), child.info.priority});
         std::push_heap(items.begin(), items.end());
         if (activate_parent && parent)
-            parent->activateChild(this);
+            castParent().activateChild(*this);
     }
 
 private:
@@ -168,7 +172,7 @@ private:
     std::vector<Item> items;
 
     /// All children with ownership
-    std::unordered_map<String, SchedulerNodePtr> children; // basename -> child
+    std::unordered_map<String, TimeSharedNodePtr> children; // basename -> child
 };
 
 }

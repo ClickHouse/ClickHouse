@@ -50,6 +50,7 @@ public:
     String getMasterThreadResourceName() override;
     String getWorkerThreadResourceName() override;
     String getQueryResourceName() override;
+    String getMemoryReservationResourceName() override;
 
 protected:
     enum class OperationResult
@@ -128,6 +129,7 @@ private:
     String master_thread_resource; /// current resource name for worker threads
     String worker_thread_resource; /// current resource name for master threads
     String query_resource; /// current resource name for queries
+    String memory_reservation_resource; /// current resource name for memory reservations
 
     // Chain of storages
     std::unique_ptr<IWorkloadEntityStorage> next_storage; /// Next storage in the chain (e.g. `disk -> config` or `keeper -> config`)

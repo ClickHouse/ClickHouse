@@ -3,6 +3,7 @@
 #include <Common/Scheduler/ISchedulerNode.h>
 #include <Common/Scheduler/ISchedulerConstraint.h>
 
+#include <memory>
 #include <mutex>
 #include <limits>
 #include <utility>
@@ -19,13 +20,13 @@ class SemaphoreConstraint final : public ISchedulerConstraint
     static constexpr Int64 default_max_requests = std::numeric_limits<Int64>::max();
     static constexpr Int64 default_max_cost = std::numeric_limits<Int64>::max();
 public:
-    explicit SemaphoreConstraint(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
+    explicit SemaphoreConstraint(EventQueue & event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
         : ISchedulerConstraint(event_queue_, config, config_prefix)
         , max_requests(config.getInt64(config_prefix + ".max_requests", default_max_requests))
         , max_cost(config.getInt64(config_prefix + ".max_cost", config.getInt64(config_prefix + ".max_bytes", default_max_cost)))
     {}
 
-    SemaphoreConstraint(EventQueue * event_queue_, const SchedulerNodeInfo & info_, Int64 max_requests_, Int64 max_cost_)
+    SemaphoreConstraint(EventQueue & event_queue_, const SchedulerNodeInfo & info_, Int64 max_requests_, Int64 max_cost_)
         : ISchedulerConstraint(event_queue_, info_)
         , max_requests(max_requests_)
         , max_cost(max_cost_)
@@ -56,12 +57,12 @@ public:
     void attachChild(const std::shared_ptr<ISchedulerNode> & child_) override
     {
         // Take ownership
-        child = child_;
-        child->setParent(this);
+        child = std::static_pointer_cast<ITimeSharedNode>(child_);
+        child->setParentNode(this);
 
         // Activate if required
         if (child->isActive())
-            activateChild(child.get());
+            activateChild(*child);
     }
 
     void removeChild(ISchedulerNode * child_) override
@@ -69,7 +70,7 @@ public:
         if (child.get() == child_)
         {
             child_active = false; // deactivate
-            child->setParent(nullptr); // detach
+            child->setParentNode(nullptr); // detach
             child.reset();
         }
     }
@@ -120,12 +121,12 @@ public:
             scheduleActivation();
     }
 
-    void activateChild(ISchedulerNode * child_) override
+    void activateChild(ITimeSharedNode & child_) override
     {
         std::unique_lock lock(mutex);
-        if (child_ == child.get())
+        if (&child_ == child.get())
             if (!std::exchange(child_active, true) && satisfied() && parent)
-                parent->activateChild(this);
+                castParent().activateChild(*this);
     }
 
     /// Update limits.
@@ -141,7 +142,7 @@ public:
         {
             // Activate on transition from inactive state
             if (!was_active && active())
-                parent->activateChild(this);
+                castParent().activateChild(*this);
             // Deactivate on transition into inactive state
             else if (was_active && !active())
             {
@@ -203,7 +204,7 @@ private:
     Int64 cost = 0;
     bool child_active = false;
 
-    SchedulerNodePtr child;
+    TimeSharedNodePtr child;
 };
 
 }

@@ -1,4 +1,4 @@
-#include <Common/Scheduler/Nodes/PriorityPolicy.h>
+#include <Common/Scheduler/Nodes/TimeShared/PriorityPolicy.h>
 
 #include <Common/Scheduler/Nodes/SchedulerNodeFactory.h>
 

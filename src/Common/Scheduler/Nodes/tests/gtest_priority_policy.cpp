@@ -2,7 +2,7 @@
 
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 
-#include <Common/Scheduler/Nodes/PriorityPolicy.h>
+#include <Common/Scheduler/Nodes/TimeShared/PriorityPolicy.h>
 
 using namespace DB;
 
@@ -14,7 +14,7 @@ TEST(SchedulerPriorityPolicy, Factory)
 
     Poco::AutoPtr<Poco::Util::XMLConfiguration> cfg = new Poco::Util::XMLConfiguration();
     EventQueue event_queue;
-    SchedulerNodePtr prio = SchedulerNodeFactory::instance().get("priority", &event_queue, *cfg, "");
+    SchedulerNodePtr prio = SchedulerNodeFactory::instance().get("priority", event_queue, *cfg, "");
     EXPECT_TRUE(dynamic_cast<PriorityPolicy *>(prio.get()) != nullptr);
 }
 

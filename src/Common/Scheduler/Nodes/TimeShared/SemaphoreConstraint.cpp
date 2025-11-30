@@ -1,4 +1,4 @@
-#include <Common/Scheduler/Nodes/SemaphoreConstraint.h>
+#include <Common/Scheduler/Nodes/TimeShared/SemaphoreConstraint.h>
 
 #include <Common/Scheduler/Nodes/SchedulerNodeFactory.h>
 

@@ -1,10 +1,12 @@
 #pragma once
 
-#include <Common/Scheduler/ISchedulerNode.h>
+#include <Common/Scheduler/ITimeSharedNode.h>
+#include <Common/Exception.h>
 
 #include <Common/Stopwatch.h>
 
 #include <algorithm>
+#include <memory>
 #include <optional>
 #include <unordered_map>
 #include <vector>
@@ -28,12 +30,12 @@ namespace ErrorCodes
  * of a child is set to vruntime of "start" of the last request. This guarantees immediate processing
  * of at least single request of newly activated children and thus best isolation and scheduling latency.
  */
-class FairPolicy final : public ISchedulerNode
+class FairPolicy final : public ITimeSharedNode
 {
     /// Scheduling state of a child
     struct Item
     {
-        ISchedulerNode * child = nullptr;
+        ITimeSharedNode * child = nullptr;
         double vruntime = 0; /// total consumed cost divided by child weight
 
         /// For min-heap by vruntime
@@ -44,12 +46,12 @@ class FairPolicy final : public ISchedulerNode
     };
 
 public:
-    explicit FairPolicy(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
-        : ISchedulerNode(event_queue_, config, config_prefix)
+    explicit FairPolicy(EventQueue & event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
+        : ITimeSharedNode(event_queue_, config, config_prefix)
     {}
 
-    FairPolicy(EventQueue * event_queue_, const SchedulerNodeInfo & info_)
-        : ISchedulerNode(event_queue_, info_)
+    FairPolicy(EventQueue & event_queue_, const SchedulerNodeInfo & info_)
+        : ITimeSharedNode(event_queue_, info_)
     {}
 
     ~FairPolicy() override
@@ -74,8 +76,10 @@ public:
         return false;
     }
 
-    void attachChild(const SchedulerNodePtr & child) override
+    void attachChild(const SchedulerNodePtr & child_base) override
     {
+        TimeSharedNodePtr child = std::static_pointer_cast<ITimeSharedNode>(child_base);
+
         // Take ownership
         if (auto [it, inserted] = children.emplace(child->basename, child); !inserted)
             throw Exception(
@@ -84,14 +88,14 @@ public:
                 it->second->getPath());
 
         // Attach
-        child->setParent(this);
+        child->setParentNode(this);
 
         // At first attach as inactive child.
-        // Inactive attached child must have `info.parent.idx` equal it's index inside `items` array.
+        // Inactive attached child must have `parent_data.idx` equal it's index inside `items` array.
         // This is needed to avoid later scanning through inactive `items` in O(N). Important optimization.
         // NOTE: vruntime must be equal to `system_vruntime` for fairness.
-        child->info.parent.idx = items.size();
-        items.emplace_back(Item{child.get(), system_vruntime});
+        child->parent_data.idx = items.size();
+        items.emplace_back(Item{static_cast<ITimeSharedNode *>(child.get()), system_vruntime});
 
         // Activate child if it is not empty
         if (child->isActive())
@@ -129,12 +133,12 @@ public:
             if (child_idx != items.size() - 1)
             {
                 std::swap(items[child_idx], items.back());
-                items[child_idx].child->info.parent.idx = child_idx;
+                items[child_idx].child->parent_data.idx = child_idx;
             }
             items.pop_back();
 
             // Detach
-            removed->setParent(nullptr);
+            removed->setParentNode(nullptr);
 
             // Get rid of ownership
             children.erase(iter);
@@ -182,7 +186,7 @@ public:
 
                 // Store index of this inactive child in `parent.idx`
                 // This enables O(1) search of inactive children instead of O(n)
-                current.child->info.parent.idx = heap_size;
+                current.child->parent_data.idx = heap_size;
             }
 
             // Reset any difference between children on busy period end
@@ -220,10 +224,10 @@ public:
         return heap_size;
     }
 
-    void activateChild(ISchedulerNode * child) override
+    void activateChild(ITimeSharedNode & child) override
     {
         // Find this child; this is O(1), thanks to inactive index we hold in `parent.idx`
-        activateChildImpl(child->info.parent.idx);
+        activateChildImpl(child.parent_data.idx);
     }
 
     // For introspection
@@ -250,7 +254,7 @@ private:
         if (heap_size != inactive_idx)
         {
             std::swap(items[heap_size], items[inactive_idx]);
-            items[inactive_idx].child->info.parent.idx = inactive_idx;
+            items[inactive_idx].child->parent_data.idx = inactive_idx;
         }
 
         // Newly activated child should have at least `system_vruntime` to keep fairness
@@ -260,7 +264,7 @@ private:
 
         // Recursive activation
         if (activate_parent && parent)
-            parent->activateChild(this);
+            castParent().activateChild(*this);
     }
 
     /// Beginning of `items` vector is heap of active children: [0; `heap_size`).
@@ -275,7 +279,7 @@ private:
     UInt64 last_reset_ns = 0;
 
     /// All children with ownership
-    std::unordered_map<String, SchedulerNodePtr> children; // basename -> child
+    std::unordered_map<String, TimeSharedNodePtr> children; // basename -> child
 };
 
 }

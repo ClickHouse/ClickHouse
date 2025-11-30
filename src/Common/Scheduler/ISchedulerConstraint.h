@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Scheduler/ISchedulerNode.h>
+#include <Common/Scheduler/ITimeSharedNode.h>
 
 namespace DB
 {
@@ -17,15 +18,15 @@ namespace DB
  * Derived class behaviour requirements:
  *  - dequeueRequest() must call `request->addConstraint()`.
  */
-class ISchedulerConstraint : public ISchedulerNode
+class ISchedulerConstraint : public ITimeSharedNode
 {
 public:
-    explicit ISchedulerConstraint(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
-        : ISchedulerNode(event_queue_, config, config_prefix)
+    explicit ISchedulerConstraint(EventQueue & event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
+        : ITimeSharedNode(event_queue_, config, config_prefix)
     {}
 
-    ISchedulerConstraint(EventQueue * event_queue_, const SchedulerNodeInfo & info_)
-        : ISchedulerNode(event_queue_, info_)
+    ISchedulerConstraint(EventQueue & event_queue_, const SchedulerNodeInfo & info_)
+        : ITimeSharedNode(event_queue_, info_)
     {}
 
     /// Resource consumption by `request` is finished.

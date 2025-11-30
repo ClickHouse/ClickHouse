@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Scheduler/ISchedulerConstraint.h>
+#include <Common/Scheduler/EventQueue.h>
 
 #include <chrono>
 #include <utility>
@@ -18,26 +19,26 @@ class ThrottlerConstraint final : public ISchedulerConstraint
 public:
     static constexpr double default_burst_seconds = 1.0;
 
-    explicit ThrottlerConstraint(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
+    explicit ThrottlerConstraint(EventQueue & event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
         : ISchedulerConstraint(event_queue_, config, config_prefix)
         , max_speed(config.getDouble(config_prefix + ".max_speed", 0))
         , max_burst(config.getDouble(config_prefix + ".max_burst", default_burst_seconds * max_speed))
-        , last_update(event_queue_->now())
+        , last_update(event_queue_.now())
         , tokens(max_burst)
     {}
 
-    ThrottlerConstraint(EventQueue * event_queue_, const SchedulerNodeInfo & info_, double max_speed_, double max_burst_)
+    ThrottlerConstraint(EventQueue & event_queue_, const SchedulerNodeInfo & info_, double max_speed_, double max_burst_)
         : ISchedulerConstraint(event_queue_, info_)
         , max_speed(max_speed_)
         , max_burst(max_burst_)
-        , last_update(event_queue_->now())
+        , last_update(event_queue_.now())
         , tokens(max_burst)
     {}
 
     ~ThrottlerConstraint() override
     {
         // We should cancel event on destruction to avoid dangling references from event queue
-        event_queue->cancelPostponed(postponed);
+        event_queue.cancelPostponed(postponed);
 
         // We need to clear `parent` in child to avoid dangling reference
         if (child)
@@ -62,12 +63,12 @@ public:
     void attachChild(const std::shared_ptr<ISchedulerNode> & child_) override
     {
         // Take ownership
-        child = child_;
-        child->setParent(this);
+        child = std::static_pointer_cast<ITimeSharedNode>(child_);
+        child->setParentNode(this);
 
         // Activate if required
         if (child->isActive())
-            activateChild(child.get());
+            activateChild(*child);
     }
 
     void removeChild(ISchedulerNode * child_) override
@@ -75,7 +76,7 @@ public:
         if (child.get() == child_)
         {
             child_active = false; // deactivate
-            child->setParent(nullptr); // detach
+            child->setParentNode(nullptr); // detach
             child.reset();
         }
     }
@@ -113,18 +114,18 @@ public:
         // NOTE: Token-bucket constraint does not require any action when consumption ends
     }
 
-    void activateChild(ISchedulerNode * child_) override
+    void activateChild(ITimeSharedNode & child_) override
     {
-        if (child_ == child.get())
+        if (&child_ == child.get())
             if (!std::exchange(child_active, true) && satisfied() && parent)
-                parent->activateChild(this);
+                castParent().activateChild(*this);
     }
 
     /// Update limits.
     /// Should be called from the scheduler thread because it could lead to activation
     void updateConstraints(double new_max_speed, double new_max_burst)
     {
-        event_queue->cancelPostponed(postponed);
+        event_queue.cancelPostponed(postponed);
         postponed = EventQueue::not_postponed;
         bool was_active = active();
         updateBucket(0, true); // To apply previous params for duration since `last_update`
@@ -132,7 +133,7 @@ public:
         max_burst = new_max_burst;
         updateBucket(0, false); // To postpone (if needed) using new params
         if (!was_active && active() && parent)
-            parent->activateChild(this);
+            castParent().activateChild(*this);
     }
 
     bool isActive() override
@@ -152,7 +153,7 @@ public:
 
     double getTokens() const
     {
-        auto now = event_queue->now();
+        auto now = event_queue.now();
         double elapsed = std::chrono::nanoseconds(now - last_update).count() / 1e9;
         return std::min(tokens + max_speed * elapsed, max_burst);
     }
@@ -174,12 +175,12 @@ private:
         bool was_active = active();
         updateBucket();
         if (!was_active && active() && parent)
-            parent->activateChild(this);
+            castParent().activateChild(*this);
     }
 
     void updateBucket(ResourceCost use = 0, bool do_not_postpone = false)
     {
-        auto now = event_queue->now();
+        auto now = event_queue.now();
         if (max_speed > 0.0)
         {
             double elapsed = std::chrono::nanoseconds(now - last_update).count() / 1e9;
@@ -192,7 +193,7 @@ private:
                 auto delay_ns = std::chrono::nanoseconds(static_cast<Int64>(-tokens / max_speed * 1e9));
                 if (postponed == EventQueue::not_postponed)
                 {
-                    postponed = event_queue->postpone(std::chrono::time_point_cast<EventQueue::Duration>(now + delay_ns),
+                    postponed = event_queue.postpone(std::chrono::time_point_cast<EventQueue::Duration>(now + delay_ns),
                         [this] { onPostponed(); });
                     throttling_duration += delay_ns;
                 }
@@ -221,7 +222,7 @@ private:
 
     std::chrono::nanoseconds throttling_duration{0};
 
-    SchedulerNodePtr child;
+    TimeSharedNodePtr child;
 };
 
 }

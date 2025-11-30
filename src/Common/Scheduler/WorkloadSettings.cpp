@@ -14,72 +14,118 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-bool WorkloadSettings::hasThrottler() const
+bool WorkloadSettings::hasThrottler(CostUnit unit) const
 {
     switch (unit) {
         case CostUnit::IOByte: return max_bytes_per_second != 0;
         case CostUnit::CPUNanosecond: return max_cpus != 0;
         case CostUnit::QuerySlot: return max_queries_per_second != 0;
+        case CostUnit::MemoryByte: chassert(false); return false;
     }
 }
 
-Float64 WorkloadSettings::getThrottlerMaxSpeed() const
+Float64 WorkloadSettings::getThrottlerMaxSpeed(CostUnit unit) const
 {
     switch (unit) {
         case CostUnit::IOByte: return max_bytes_per_second;
         case CostUnit::CPUNanosecond: return max_cpus * 1'000'000'000; // Convert CPU count to CPU * nanoseconds / sec
         case CostUnit::QuerySlot: return max_queries_per_second;
+        case CostUnit::MemoryByte: chassert(false); return 0;
     }
 }
 
-Float64 WorkloadSettings::getThrottlerMaxBurst() const
+Float64 WorkloadSettings::getThrottlerMaxBurst(CostUnit unit) const
 {
     switch (unit) {
         case CostUnit::IOByte: return max_burst_bytes;
         case CostUnit::CPUNanosecond: return max_burst_cpu_seconds * 1'000'000'000; // Convert seconds to nanoseconds
         case CostUnit::QuerySlot: return max_burst_queries;
+        case CostUnit::MemoryByte: chassert(false); return 0;
     }
 }
 
-bool WorkloadSettings::hasSemaphore() const
+bool WorkloadSettings::hasSemaphore(CostUnit unit) const
 {
     switch (unit) {
         case CostUnit::IOByte: return max_io_requests != unlimited || max_bytes_inflight != unlimited;
         case CostUnit::CPUNanosecond: return max_concurrent_threads != unlimited;
         case CostUnit::QuerySlot: return max_concurrent_queries != unlimited;
+        case CostUnit::MemoryByte: chassert(false); return false;
     }
 }
 
-Int64 WorkloadSettings::getSemaphoreMaxRequests() const
+Int64 WorkloadSettings::getSemaphoreMaxRequests(CostUnit unit) const
 {
     switch (unit) {
         case CostUnit::IOByte: return max_io_requests;
         case CostUnit::CPUNanosecond: return max_concurrent_threads;
         case CostUnit::QuerySlot: return max_concurrent_queries;
+        case CostUnit::MemoryByte: chassert(false); return 0;
     }
 }
 
-Int64 WorkloadSettings::getSemaphoreMaxCost() const
+Int64 WorkloadSettings::getSemaphoreMaxCost(CostUnit unit) const
 {
     switch (unit) {
         case CostUnit::IOByte: return max_bytes_inflight;
         case CostUnit::CPUNanosecond: return unlimited;
         case CostUnit::QuerySlot: return unlimited;
+        case CostUnit::MemoryByte: chassert(false); return 0;
     }
 }
 
-Int64 WorkloadSettings::getQueueSize() const {
-    return max_waiting_queries;
+bool WorkloadSettings::hasQueueLimit(CostUnit unit) const
+{
+    switch (unit) {
+        // These requests are executed in the middle of query processing - queue is unlimited
+        case CostUnit::IOByte:
+        case CostUnit::CPUNanosecond:
+            return false;
+        case CostUnit::QuerySlot: return max_waiting_queries != unlimited;
+        case CostUnit::MemoryByte: return max_waiting_queries != unlimited;
+    }
 }
 
-void WorkloadSettings::initFromChanges(CostUnit unit_, const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name, bool throw_on_unknown_setting)
+Int64 WorkloadSettings::getQueueLimit(CostUnit unit) const
 {
-    // Set resource unit
-    unit = unit_;
+    switch (unit) {
+        // These requests are executed in the middle of query processing - queue is unlimited
+        case CostUnit::IOByte:
+        case CostUnit::CPUNanosecond:
+            return unlimited;
+        case CostUnit::QuerySlot: return max_waiting_queries;
+        case CostUnit::MemoryByte: return max_waiting_queries;
+    }
+}
 
+bool WorkloadSettings::hasAllocationLimit(CostUnit unit) const
+{
+    switch (unit) {
+        case CostUnit::IOByte:
+        case CostUnit::CPUNanosecond:
+        case CostUnit::QuerySlot:
+        case CostUnit::MemoryByte: return max_memory != unlimited;
+    }
+}
+
+Int64 WorkloadSettings::getAllocationLimit(CostUnit unit) const
+{
+    switch (unit) {
+        case CostUnit::IOByte:
+        case CostUnit::CPUNanosecond:
+        case CostUnit::QuerySlot:
+            chassert(false); return 0;
+        case CostUnit::MemoryByte: return max_memory;
+    }
+}
+
+
+void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name, bool throw_on_unknown_setting)
+{
     struct {
         std::optional<Float64> weight;
         std::optional<Priority> priority;
+        std::optional<Priority> precedence;
         std::optional<Float64> max_bytes_per_second;
         std::optional<Float64> max_burst_bytes;
         std::optional<Float64> max_cpus;
@@ -93,6 +139,7 @@ void WorkloadSettings::initFromChanges(CostUnit unit_, const ASTCreateWorkloadQu
         std::optional<Float64> max_concurrent_threads_ratio_to_cores;
         std::optional<Int64> max_concurrent_queries;
         std::optional<Int64> max_waiting_queries;
+        std::optional<Int64> max_memory;
 
         static Float64 getNotNegativeFloat64(const String & name, const Field & field)
         {
@@ -148,6 +195,8 @@ void WorkloadSettings::initFromChanges(CostUnit unit_, const ASTCreateWorkloadQu
                 weight = getNotNegativeFloat64(name, value);
             else if (name == "priority")
                 priority = Priority{value.safeGet<Priority::Value>()};
+            else if (name == "precedence")
+                precedence = Priority{value.safeGet<Priority::Value>()};
             else if (name == "max_bytes_per_second" || name == "max_speed")
                 max_bytes_per_second = getNotNegativeFloat64(name, value);
             else if (name == "max_burst_bytes" || name == "max_burst")
@@ -174,6 +223,8 @@ void WorkloadSettings::initFromChanges(CostUnit unit_, const ASTCreateWorkloadQu
                 max_concurrent_queries = getNotNegativeInt64(name, value);
             else if (name == "max_waiting_queries")
                 max_waiting_queries = getNotNegativeInt64(name, value);
+            else if (name == "max_memory")
+                max_memory = getNotNegativeInt64(name, value);
             else if (throw_on_unknown_setting)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown workload setting '{}'", name);
         }
@@ -202,13 +253,15 @@ void WorkloadSettings::initFromChanges(CostUnit unit_, const ASTCreateWorkloadQu
     {
         SchedulerNodeInfo validating_node(
             get_value(specific.weight, regular.weight, weight),
-            get_value(specific.priority, regular.priority, priority));
+            get_value(specific.priority, regular.priority, priority),
+            get_value(specific.precedence, regular.precedence, precedence));
     }
 
     // Choose values for given resource.
     // NOTE: previous values contain defaults.
     weight = get_value(specific.weight, regular.weight, weight);
     priority = get_value(specific.priority, regular.priority, priority);
+    precedence = get_value(specific.precedence, regular.precedence, precedence);
 
     // IO throttling
     if (specific.max_bytes_per_second || regular.max_bytes_per_second)
@@ -276,6 +329,9 @@ void WorkloadSettings::initFromChanges(CostUnit unit_, const ASTCreateWorkloadQu
 
     // Concurrent query queue size limit
     max_waiting_queries = get_value(specific.max_waiting_queries, regular.max_waiting_queries, max_waiting_queries, unlimited);
+
+    // Total memory reservation limit
+    max_memory = get_value(specific.max_memory, regular.max_memory, max_memory, unlimited);
 }
 
 }

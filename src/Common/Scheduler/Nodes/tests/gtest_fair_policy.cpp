@@ -2,7 +2,7 @@
 
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 
-#include <Common/Scheduler/Nodes/FairPolicy.h>
+#include <Common/Scheduler/Nodes/TimeShared/FairPolicy.h>
 
 using namespace DB;
 
@@ -14,7 +14,7 @@ TEST(SchedulerFairPolicy, Factory)
 
     Poco::AutoPtr<Poco::Util::XMLConfiguration> cfg = new Poco::Util::XMLConfiguration();
     EventQueue event_queue;
-    SchedulerNodePtr fair = SchedulerNodeFactory::instance().get("fair", &event_queue, *cfg, "");
+    SchedulerNodePtr fair = SchedulerNodeFactory::instance().get("fair", event_queue, *cfg, "");
     EXPECT_TRUE(dynamic_cast<FairPolicy *>(fair.get()) != nullptr);
 }
 
