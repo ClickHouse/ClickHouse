@@ -3,7 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/DateLUT.h>
-#include <DataTypes/DataTypeDateTime.h>
+#include <Core/Block.h>
 
 
 namespace DB
@@ -39,14 +39,15 @@ static GraphiteRollupSortedAlgorithm::ColumnsDefinition defineColumns(
 }
 
 GraphiteRollupSortedAlgorithm::GraphiteRollupSortedAlgorithm(
-    const Block & header_,
+    SharedHeader header_,
     size_t num_inputs,
     SortDescription description_,
     size_t max_block_size_rows_,
     size_t max_block_size_bytes_,
+    std::optional<size_t> max_dynamic_subcolumns_,
     Graphite::Params params_,
     time_t time_of_merge_)
-    : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), nullptr, max_row_refs, std::make_unique<GraphiteRollupMergedData>(false, max_block_size_rows_, max_block_size_bytes_))
+    : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), nullptr, max_row_refs, std::make_unique<GraphiteRollupMergedData>(false, max_block_size_rows_, max_block_size_bytes_, max_dynamic_subcolumns_))
     , graphite_rollup_merged_data(assert_cast<GraphiteRollupMergedData &>(*merged_data))
     , params(std::move(params_))
     , time_of_merge(time_of_merge_)
@@ -64,7 +65,7 @@ GraphiteRollupSortedAlgorithm::GraphiteRollupSortedAlgorithm(
     }
 
     graphite_rollup_merged_data.allocMemForAggregates(max_size_of_aggregate_state, max_alignment_of_aggregate_state);
-    columns_definition = defineColumns(header_, params);
+    columns_definition = defineColumns(*header_, params);
 }
 
 UInt32 GraphiteRollupSortedAlgorithm::selectPrecision(const Graphite::Retentions & retentions, time_t time) const
@@ -128,7 +129,7 @@ IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
             return Status(current.impl->order);
         }
 
-        std::string_view next_path = current->all_columns[columns_definition.path_column_num]->getDataAt(current->getRow()).toView();
+        std::string_view next_path = current->all_columns[columns_definition.path_column_num]->getDataAt(current->getRow());
         bool new_path = is_first || next_path != current_group_path;
 
         is_first = false;

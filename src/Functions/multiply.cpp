@@ -57,10 +57,12 @@ REGISTER_FUNCTION(Multiply)
 {
     FunctionDocumentation::Description description = "Calculates the product of two values `x` and `y`.";
     FunctionDocumentation::Syntax syntax = "multiply(x, y)";
-    FunctionDocumentation::Argument argument1 = {"x", "factor"};
-    FunctionDocumentation::Argument argument2 = {"y", "factor"};
-    FunctionDocumentation::Arguments arguments = {argument1, argument2};
-    FunctionDocumentation::ReturnedValue returned_value = "The product of x and y";
+    FunctionDocumentation::Arguments arguments =
+    {
+        {"x", "factor.", {"(U)Int*", "Float*", "Decimal"}},
+        {"y", "factor.", {"(U)Int*", "Float*", "Decimal"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the product of x and y"};
     FunctionDocumentation::Examples examples = {{"Multiplying two numbers", "SELECT multiply(5,5)", "25"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;

@@ -17,7 +17,7 @@ namespace ErrorCodes
 class PushingSource : public ISource
 {
 public:
-    explicit PushingSource(const Block & header, std::atomic_bool & input_wait_flag_)
+    explicit PushingSource(SharedHeader header, std::atomic_bool & input_wait_flag_)
         : ISource(header)
         , input_wait_flag(input_wait_flag_)
     {}
@@ -57,7 +57,7 @@ PushingPipelineExecutor::PushingPipelineExecutor(QueryPipeline & pipeline_) : pi
     if (!pipeline.pushing())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for PushingPipelineExecutor must be pushing");
 
-    pushing_source = std::make_shared<PushingSource>(pipeline.input->getHeader(), input_wait_flag);
+    pushing_source = std::make_shared<PushingSource>(pipeline.input->getSharedHeader(), input_wait_flag);
     connect(pushing_source->getPort(), *pipeline.input);
     pipeline.processors->emplace_back(pushing_source);
 }

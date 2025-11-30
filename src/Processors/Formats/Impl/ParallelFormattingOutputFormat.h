@@ -75,7 +75,7 @@ public:
     struct Params
     {
         WriteBuffer & out;
-        const Block & header;
+        SharedHeader header;
         InternalFormatterCreator internal_formatter_creator;
         const size_t max_threads_for_parallel_formatting;
     };
@@ -91,7 +91,9 @@ public:
         LOG_TEST(getLogger("ParallelFormattingOutputFormat"), "Parallel formatting is being used");
 
         NullWriteBuffer buf;
-        save_totals_and_extremes_in_statistics = internal_formatter_creator(buf)->areTotalsAndExtremesUsedInFinalize();
+        auto internal_formatter = internal_formatter_creator(buf);
+        save_totals_and_extremes_in_statistics = internal_formatter->areTotalsAndExtremesUsedInFinalize();
+        supports_non_default_serialization_kinds = internal_formatter->supportsSpecialSerializationKinds();
         buf.finalize();
 
         /// Just heuristic. We need one thread for collecting, one thread for receiving chunks
@@ -117,7 +119,8 @@ public:
 
     void flushImpl() override
     {
-        need_flush = true;
+        if (!auto_flush)
+            need_flush = true;
     }
 
     void writePrefix() override
@@ -137,12 +140,6 @@ public:
         started_suffix = true;
     }
 
-    String getContentType() const override
-    {
-        NullWriteBuffer buffer;
-        return internal_formatter_creator(buffer)->getContentType();
-    }
-
     bool supportsWritingException() const override
     {
         NullWriteBuffer buffer;
@@ -150,6 +147,8 @@ public:
     }
 
     void setException(const String & exception_message_) override { exception_message = exception_message_; }
+
+    bool supportsSpecialSerializationKinds() const override { return supports_non_default_serialization_kinds; }
 
 private:
     void consume(Chunk chunk) final
@@ -257,6 +256,7 @@ private:
     /// We change statistics in onProgress() which can be called from different threads.
     std::mutex statistics_mutex;
     bool save_totals_and_extremes_in_statistics;
+    bool supports_non_default_serialization_kinds;
 
     String exception_message;
     bool exception_is_rethrown = false;

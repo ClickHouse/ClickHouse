@@ -130,7 +130,7 @@ class ZooKeeperSink : public SinkToStorage
     ZkNodeCache cache;
 
 public:
-    ZooKeeperSink(const Block & header, ContextPtr context)
+    ZooKeeperSink(SharedHeader header, ContextPtr context)
         : SinkToStorage(header), zookeeper(context->getZooKeeper())
     {}
 
@@ -147,9 +147,9 @@ public:
         size_t rows = block.rows();
         for (size_t i = 0; i < rows; i++)
         {
-            String name = name_column->getDataAt(i).toString();
-            String value = value_column->getDataAt(i).toString();
-            String path = path_column->getDataAt(i).toString();
+            String name{name_column->getDataAt(i)};
+            String value{value_column->getDataAt(i)};
+            String path{path_column->getDataAt(i)};
 
             /// We don't expect a "name" contains a path.
             if (name.contains('/'))
@@ -229,7 +229,7 @@ public:
     SystemZooKeeperSource(
         String && zookeeper_name_,
         Paths && paths_,
-        Block header_,
+        SharedHeader header_,
         UInt64 max_block_size_,
         ContextPtr context_)
         : ISource(header_)
@@ -290,7 +290,7 @@ SinkToStoragePtr StorageSystemZooKeeper::write(const ASTPtr &, const StorageMeta
     if (!context->getConfigRef().getBool("allow_zookeeper_write", false))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prohibit writing to system.zookeeper, unless config `allow_zookeeper_write` as true");
 
-    return std::make_shared<ZooKeeperSink>(metadata->getSampleBlock(), context);
+    return std::make_shared<ZooKeeperSink>(std::make_shared<const Block>(metadata->getSampleBlock()), context);
 }
 
 ColumnsDescription StorageSystemZooKeeper::getColumnsDescription()
@@ -398,7 +398,7 @@ static void extractNameImpl(const ActionsDAG::Node & node, String & res, Context
             return;
 
         /// Only inserted if the key doesn't exists already
-        res = value->column->getDataAt(0).toString();
+        res = value->column->getDataAt(0);
     }
 }
 
@@ -454,7 +454,7 @@ static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextP
 
         for (size_t row = 0; row < size; ++row)
             /// Only inserted if the key doesn't exists already
-            res.insert({values->getDataAt(row).toString(), ZkPathType::Exact});
+            res.insert({std::string{values->getDataAt(row)}, ZkPathType::Exact});
     }
     else if (function_name == "equals")
     {
@@ -475,7 +475,7 @@ static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextP
             return;
 
         /// Only inserted if the key doesn't exists already
-        res.insert({value->column->getDataAt(0).toString(), ZkPathType::Exact});
+        res.insert({std::string{value->column->getDataAt(0)}, ZkPathType::Exact});
     }
     else if (allow_unrestricted && function_name == "like")
     {
@@ -492,7 +492,7 @@ static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextP
         if (value->column->size() != 1)
             return;
 
-        String pattern = value->column->getDataAt(0).toString();
+        String pattern{value->column->getDataAt(0)};
         bool has_metasymbol = false;
         String prefix{}; // pattern prefix before the first metasymbol occurrence
         for (size_t i = 0; i < pattern.size(); i++)
@@ -794,7 +794,7 @@ ReadFromSystemZooKeeper::ReadFromSystemZooKeeper(
     const Block & header,
     UInt64 max_block_size_)
     : SourceStepWithFilter(
-        header,
+        std::make_shared<const Block>(header),
         column_names_,
         query_info_,
         storage_snapshot_,

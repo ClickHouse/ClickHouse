@@ -21,24 +21,37 @@ all-non-const arguments. This is supposed to make the programmer's life a bit ea
 all-const arguments are usually only used during testing (but the behavior can be surprising). For example, with three arguments, this leads
 to 2 x 2 x 2 - 1 = 8 - 1 = 7 cases to take care of.
 
-For new functions, please provide in-source documentation in `registerFunction`, e.g.
+For new functions, please provide in-source documentation which is used by `registerFunction`, e.g.
 
 ```cpp
-factory.registerFunction(
-    "formatQuery",
-    [](ContextPtr context) { return std::make_shared<FunctionFormatQuery>(context, "formatQuery", OutputFormatting::MultiLine, ErrorHandling::Exception); },
-    FunctionDocumentation{
-        .description = "Returns a formatted, possibly multi-line, version of the given SQL query. Throws in case of a parsing error.\n[example:multiline]",
-        .syntax = "formatQuery(query)",
-        .arguments = {{"query", "The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)"}},
-        .returned_value = "The formatted query. [String](../../sql-reference/data-types/string.md).",
-        .examples{
-            {"multiline",
-             "SELECT formatQuery('select a,    b FRom tab WHERE a > 3 and  b < 3');",
-             "SELECT\n"
-             "    a,\n"
-             "    b\n"
-             "FROM tab\n"
-             "WHERE (a > 3) AND (b < 3)"}},
-        .category = FunctionDocumentation::Category::Other);
+    FunctionDocumentation::Description description = R"(
+Returns the greatest common divisor of two values a and b.
+
+An exception is thrown when dividing by zero or when dividing a minimal
+negative number by minus one.
+    )";
+    FunctionDocumentation::Syntax syntax = "functionName(x, y)";
+    FunctionDocumentation::Arguments arguments =
+    {
+        {"x", "First integer", {"(U)Int*"}},
+        {"y", "Second integer", {"(U)Int*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the greatest common divisor of `x` and `y`.", {"(U)Int*"}};
+    FunctionDocumentation::Examples examples =
+    {
+        {"Usage example", "SELECT gcd(12, 18)", "6"};
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
+
+    factory.registerFunction<FunctionGCD>(documentation);
 ```
+
+**Notes**:
+
+- Use `R"(...)"` for long multiline strings and examples
+- Begin `returned_value` with "Returns ..."
+- If an argument is optional, then begin the description with "Optional.". Do not include "(optional)" as part of the argument name.
+- Include argument and return types whenever possible. For a list see [FunctionDocumentation.cpp](../Common/FunctionDocumentation.cpp).
+- If multiple types are possible you can generalize them. For example instead of `UInt8`, `Int8` prefer `(U)Int8` or `(U)Int*` for all integer types.

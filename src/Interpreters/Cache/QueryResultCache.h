@@ -4,7 +4,6 @@
 #include <Common/logger_useful.h>
 #include <Interpreters/Cache/QueryResultCacheUsage.h>
 #include <Interpreters/Context_fwd.h>
-#include <Core/Block.h>
 #include <Parsers/IASTHash.h>
 #include <Processors/Chunk.h>
 #include <Processors/Sources/SourceFromChunks.h>
@@ -45,7 +44,6 @@ public:
         /// ----------------------------------------------------
         /// The actual key (data which gets hashed):
 
-
         /// The hash of the query AST.
         /// Unlike the query string, the AST is agnostic to lower/upper case (SELECT vs. select).
         IASTHash ast_hash;
@@ -58,7 +56,7 @@ public:
         /// Additional stuff data stored in the key, not hashed:
 
         /// Result metadata for constructing the pipe.
-        const Block header;
+        SharedHeader header;
 
         /// The id and current roles of the user who executed the query.
         /// These members are necessary to ensure that a (non-shared, see below) entry can only be written and read by the same user with
@@ -74,6 +72,9 @@ public:
         /// users pose the same queries. Second, sharing potentially breaches security. E.g. User A should not be able to bypass row
         /// policies on some table by running the same queries as user B for whom no row policies exist.
         const bool is_shared;
+
+        /// When was the entry created?
+        const std::chrono::time_point<std::chrono::system_clock> created_at;
 
         /// When does the entry expire?
         const std::chrono::time_point<std::chrono::system_clock> expires_at;
@@ -99,10 +100,11 @@ public:
         Key(ASTPtr ast_,
             const String & current_database,
             const Settings & settings,
-            Block header_,
+            SharedHeader header_,
             const String & query_id_,
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
             bool is_shared_,
+            std::chrono::time_point<std::chrono::system_clock> created_at_,
             std::chrono::time_point<std::chrono::system_clock> expires_at_,
             bool is_compressed);
 
@@ -129,7 +131,7 @@ private:
         size_t operator()(const Key & key) const;
     };
 
-    struct QueryResultCacheEntryWeight
+    struct EntryWeight
     {
         size_t operator()(const Entry & entry) const;
     };
@@ -141,7 +143,7 @@ private:
 
 public:
     /// query --> query result
-    using Cache = CacheBase<Key, Entry, KeyHasher, QueryResultCacheEntryWeight>;
+    using Cache = CacheBase<Key, Entry, KeyHasher, EntryWeight>;
 
     QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
 
@@ -244,20 +246,32 @@ private:
 class QueryResultCacheReader
 {
 public:
-    bool hasCacheEntryForKey() const;
-    /// getSource*() moves source processors out of the Reader. Call each of these method just once.
-    std::unique_ptr<SourceFromChunks> getSource();
-    std::unique_ptr<SourceFromChunks> getSourceTotals();
-    std::unique_ptr<SourceFromChunks> getSourceExtremes();
-private:
     using Cache = QueryResultCache::Cache;
 
+    bool hasCacheEntryForKey(bool update_profile_events = true) const;
+
+    /// Must only be called if hasCacheEntryForKey is true
+    std::chrono::time_point<std::chrono::system_clock> entryCreatedAt();
+    std::chrono::time_point<std::chrono::system_clock> entryExpiresAt();
+
+    /// getSource*() moves source processors out of the Reader. Call each of these method just once.
+    std::unique_ptr<SourceFromChunks> getSource();
+    std::unique_ptr<SourceFromChunks> getSourceExtremes();
+    std::unique_ptr<SourceFromChunks> getSourceTotals();
+
+private:
     QueryResultCacheReader(Cache & cache_, const Cache::Key & key, const std::lock_guard<std::mutex> &);
-    void buildSourceFromChunks(Block header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
+    void buildSourceFromChunks(SharedHeader header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
+
     std::unique_ptr<SourceFromChunks> source_from_chunks;
     std::unique_ptr<SourceFromChunks> source_from_chunks_totals;
     std::unique_ptr<SourceFromChunks> source_from_chunks_extremes;
+
+    std::chrono::time_point<std::chrono::system_clock> created_at;
+    std::chrono::time_point<std::chrono::system_clock> expires_at;
+
     LoggerPtr logger = getLogger("QueryResultCache");
+
     friend class QueryResultCache; /// for createReader()
 };
 

@@ -7,7 +7,7 @@ namespace DB
 {
 
 BufferChunksTransform::BufferChunksTransform(
-    const Block & header_,
+    SharedHeader header_,
     size_t max_rows_to_buffer_,
     size_t max_bytes_to_buffer_,
     size_t limit_)

@@ -336,13 +336,10 @@ public:
 
             res_offset += extract(
                 reinterpret_cast<const char *>(&src_chars[src_offset]),
-                next_src_offset - src_offset - 1,
+                next_src_offset - src_offset,
                 reinterpret_cast<char *>(&res_chars[res_offset]));
 
-            res_chars[res_offset] = 0;
-            ++res_offset;
             res_offsets[i] = res_offset;
-
             src_offset = next_src_offset;
         }
 
@@ -353,7 +350,50 @@ public:
 
 REGISTER_FUNCTION(ExtractTextFromHTML)
 {
-    factory.registerFunction<FunctionExtractTextFromHTML>();
+    FunctionDocumentation::Description description = R"(
+Extracts text content from HTML or XHTML.
+
+This function removes HTML tags, comments, and script/style elements, leaving only the text content. It handles:
+- Removal of all HTML/XML tags
+- Removal of comments (`<!-- -->`)
+- Removal of script and style elements with their content
+- Processing of CDATA sections (copied verbatim)
+- Proper whitespace handling and normalization
+
+Note: HTML entities are not decoded and should be processed with a separate function if needed.
+)";
+    FunctionDocumentation::Syntax syntax = "extractTextFromHTML(html)";
+    FunctionDocumentation::Arguments arguments = {
+        {"html", "String containing HTML content to extract text from.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the extracted text content with normalized whitespace.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT extractTextFromHTML('
+<html>
+    <head><title>Page Title</title></head>
+    <body>
+        <p>Hello <b>World</b>!</p>
+        <script>alert("test");</script>
+        <!-- comment -->
+    </body>
+</html>
+');
+        )",
+        R"(
+┌─extractTextFromHTML('<html><head>...')─┐
+│ Page Title Hello World!                │
+└────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 3};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionExtractTextFromHTML>(documentation);
 }
 
 }

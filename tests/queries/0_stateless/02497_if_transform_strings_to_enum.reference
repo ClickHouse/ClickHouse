@@ -8,7 +8,7 @@ yahoo
 other
 other
 other
-SELECT transform(number, [2, 4, 6], _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4))\'), _CAST(\'other\', \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\'))
+SELECT transform(number, _CAST([2, 4, 6], \'Array(UInt8)\'), _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(String)\'), \'other\')
 FROM system.numbers
 LIMIT 10
 QUERY id: 0
@@ -48,7 +48,7 @@ censor.net
 censor.net
 censor.net
 censor.net
-SELECT if(number > 5, _CAST(\'censor.net\', \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\'), _CAST(\'google\', \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\'))
+SELECT if(number > 5, \'censor.net\', \'google\')
 FROM system.numbers
 LIMIT 10
 QUERY id: 0
@@ -91,7 +91,7 @@ yahoo1
 other1
 other1
 other1
-SELECT concat(transform(number, [2, 4, 6], [\'google\', \'censor.net\', \'yahoo\'], \'other\'), \'1\')
+SELECT CONCAT(transform(number, _CAST([2, 4, 6], \'Array(UInt8)\'), _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(String)\'), \'other\'), \'1\')
 FROM system.numbers
 LIMIT 10
 QUERY id: 0
@@ -135,7 +135,7 @@ censor.net1
 censor.net1
 censor.net1
 censor.net1
-SELECT concat(if(number > 5, \'censor.net\', \'google\'), \'1\')
+SELECT CONCAT(if(number > 5, \'censor.net\', \'google\'), \'1\')
 FROM system.numbers
 LIMIT 10
 QUERY id: 0
@@ -182,10 +182,10 @@ censor.net
 censor.net
 censor.net
 censor.net
-SELECT value
+SELECT t1.value
 FROM
 (
-    SELECT if(number > 5, _CAST(\'censor.net\', \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\'), _CAST(\'google\', \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\')) AS value
+    SELECT if(number > 5, \'censor.net\', \'google\') AS value
     FROM system.numbers
     LIMIT 10
 ) AS t1
@@ -236,10 +236,10 @@ yahoo
 other
 other
 other
-SELECT value
+SELECT t1.value
 FROM
 (
-    SELECT transform(number, [2, 4, 6], _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4))\'), _CAST(\'other\', \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\')) AS value
+    SELECT transform(number, _CAST([2, 4, 6], \'Array(UInt8)\'), _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(String)\'), \'other\') AS value
     FROM system.numbers
     LIMIT 10
 ) AS t1
@@ -288,7 +288,7 @@ censor.net	censor.net
 censor.net	censor.net
 censor.net	censor.net
 SELECT
-    if(number > 5, _CAST(\'censor.net\', \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\'), _CAST(\'google\', \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\')) AS value,
+    if(number > 5, \'censor.net\', \'google\') AS value,
     value
 FROM system.numbers
 LIMIT 10
@@ -355,7 +355,7 @@ other	other
 other	other
 other	other
 SELECT
-    transform(number, [2, 4, 6], _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4))\'), _CAST(\'other\', \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\')) AS value,
+    transform(number, _CAST([2, 4, 6], \'Array(UInt8)\'), _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(String)\'), \'other\') AS value,
     value
 FROM system.numbers
 LIMIT 10
@@ -415,10 +415,10 @@ other
 other
 other
 other
-SELECT transform(number, [NULL], _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4))\'), _CAST(\'other\', \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\'))
+SELECT transform(number, _CAST([NULL], \'Array(Nullable(Nothing))\'), _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(String)\'), \'other\')
 FROM
 (
-    SELECT NULL AS number
+    SELECT _CAST(NULL, \'Nullable(Nothing)\') AS number
     FROM system.numbers
     LIMIT 10
 )
@@ -466,7 +466,7 @@ yahoo
 other
 other
 other
-SELECT transform(number, [2, 4, 6], [\'google\', \'censor.net\', \'yahoo\'], \'other\')
+SELECT transform(number, _CAST([2, 4, 6], \'Array(UInt8)\'), _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(String)\'), \'other\')
 FROM system.numbers
 LIMIT 10
 QUERY id: 0

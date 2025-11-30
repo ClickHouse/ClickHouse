@@ -120,14 +120,17 @@ void QueryMetricLog::collectMetric(const ProcessList & process_list, String quer
     }
 
     auto & query_status = it->second;
-    if (!query_status.mutex)
+    UniqueLock query_lock(query_status.getMutex());
+
+    /// query_status.finished needs to be written/read while holding the global_lock because there's
+    /// a data race between collectMetric and finishQuery. Due to the order in which we need to
+    /// unlock mutexes to ensure there's no mutex lock-order-inversion, after getting the
+    /// query_status.mutex we need this extra check to ensure the query is still alive.
+    if (getQueryFinished(query_status))
     {
-        global_lock.unlock();
         LOG_TEST(logger, "Query {} finished while this collecting task was running", query_id);
         return;
     }
-
-    UniqueLock query_lock(query_status.getMutex());
     global_lock.unlock();
 
     auto elem = query_status.createLogMetricElement(query_id, *query_info, current_time);
@@ -137,8 +140,7 @@ void QueryMetricLog::collectMetric(const ProcessList & process_list, String quer
 
 /// We use TSA_NO_THREAD_SAFETY_ANALYSIS to prevent TSA complaining that we're modifying the query_status fields
 /// without locking the mutex. Since we're building it from scratch, there's no harm in not holding it.
-/// If we locked it to make TSA happy, TSAN build would falsely complain about
-///     lock-order-inversion (potential deadlock)
+/// If we locked it to make TSA happy, TSAN build would falsely complain about `lock-order-inversion (potential deadlock)`
 /// which is not a real issue since QueryMetricLogStatus's mutex cannot be locked by anything else
 /// until we add it to the queries map.
 void QueryMetricLog::startQuery(const String & query_id, TimePoint start_time, UInt64 interval_milliseconds) TSA_NO_THREAD_SAFETY_ANALYSIS
@@ -170,13 +172,25 @@ void QueryMetricLog::finishQuery(const String & query_id, TimePoint finish_time,
         return;
 
     auto & query_status = it->second;
-    decltype(query_status.mutex) query_mutex;
+
+    /// Get a refcounted reference to the mutex to ensure it's not destroyed until the query is
+    /// removed from queries. Otherwise, query_lock would attempt to unlock a non-existing mutex.
+    auto mutex = query_status.mutex;
     UniqueLock query_lock(query_status.getMutex());
 
-    /// Move the query mutex here so that we hold it until the end, after removing the query from queries.
-    query_mutex = std::move(query_status.mutex);
-    query_status.mutex = {};
+    /// finishQuery may be called twice for the same query_id if a new query with the same query_id
+    /// is attempted to run in case replace_running_query=0 (the default). Make sure we only execute
+    /// the finishQuery once.
+    auto thread_id = CurrentThread::get().thread_id;
+    if (thread_id != query_status.thread_id || query_status.finished)
+    {
+        LOG_TEST(logger, "Query {} finished from a different thread_id than the one it started it: "
+                         "original was {}, this one is {}. Ignoring this finishQuery",
+                         query_id, query_status.thread_id, thread_id);
+        return;
+    }
 
+    setQueryFinished(query_status);
     global_lock.unlock();
 
     if (query_info)
@@ -189,15 +203,17 @@ void QueryMetricLog::finishQuery(const String & query_id, TimePoint finish_time,
     /// The task has an `exec_mutex` locked while being executed. This same mutex is locked when
     /// deactivating the task, which happens automatically on its destructor. Thus, we cannot
     /// deactivate/destroy the task while it's running. Now, the task locks `queries_mutex` to
-    /// prevent concurrent edition of the queries. In short, the mutex order is: exec_mutex ->
-    /// queries_mutex. So, to prevent a deadblock we need to make sure that we always lock them in
-    /// that order.
+    /// prevent concurrent edition of the `queries`. In short, the mutex order is: `exec_mutex` ->
+    /// `queries_mutex` -> `query_status.mutex`. So, to prevent a deadlock we need to make sure that
+    /// we always lock them in that order.
     {
         /// Take ownership of the task so that we can destroy it in this scope after unlocking `queries_mutex`.
         auto task = std::move(query_status.info.task);
 
         /// Build an empty task for the old task to make sure it does not lock any mutex on its destruction.
         query_status.info.task = {};
+
+        /// Unlock `query_status.mutex` before locking `queries_mutex` to prevent lock-order-inversion.
         query_lock.unlock();
 
         global_lock.lock();
@@ -207,6 +223,16 @@ void QueryMetricLog::finishQuery(const String & query_id, TimePoint finish_time,
         /// scope which will lock `exec_mutex`.
         global_lock.unlock();
     }
+}
+
+void QueryMetricLog::setQueryFinished(QueryMetricLogStatus & status)
+{
+    status.finished = true;
+}
+
+bool QueryMetricLog::getQueryFinished(QueryMetricLogStatus & status)
+{
+    return status.finished;
 }
 
 void QueryMetricLogStatus::scheduleNext(String query_id)

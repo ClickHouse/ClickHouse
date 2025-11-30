@@ -4,6 +4,7 @@ sidebar_label: 'rank'
 sidebar_position: 6
 slug: /sql-reference/window-functions/rank
 title: 'rank'
+doc_type: 'reference'
 ---
 
 # rank

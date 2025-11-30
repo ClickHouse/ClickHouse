@@ -195,7 +195,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         if (data.only_analyze)
         {
             /// If query is only analyzed, then constants are not correct.
-            block = interpreter->getSampleBlock();
+            block = *interpreter->getSampleBlock();
             for (auto & column : block)
             {
                 if (column.column->empty())
@@ -219,7 +219,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 
             if (block.rows() == 0)
             {
-                auto types = interpreter->getSampleBlock().getDataTypes();
+                auto types = interpreter->getSampleBlock()->getDataTypes();
                 if (types.size() != 1)
                     types = {std::make_shared<DataTypeTuple>(types)};
 
@@ -241,7 +241,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
                 ast = std::move(ast_new);
 
                 /// Empty subquery result is equivalent to NULL
-                block = interpreter->getSampleBlock().cloneEmpty();
+                block = interpreter->getSampleBlock()->cloneEmpty();
                 String column_name = block.columns() > 0 ?  block.safeGetByPosition(0).name : "dummy";
                 block = Block({
                     ColumnWithTypeAndName(type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(), type, column_name)

@@ -18,6 +18,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTSQLSecurity.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
 
@@ -55,6 +56,7 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , sql_security_type(other.sql_security_type)
     , comment(other.comment)
     , metadata_version(other.metadata_version)
+    , datalake_table_state(other.datalake_table_state)
 {
 }
 
@@ -87,6 +89,8 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     sql_security_type = other.sql_security_type;
     comment = other.comment;
     metadata_version = other.metadata_version;
+    datalake_table_state = other.datalake_table_state;
+
     return *this;
 }
 
@@ -135,7 +139,7 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     new_context->makeQueryContext();
 
     const auto & database = context->getCurrentDatabase();
-    if (!database.empty())
+    if (!database.empty() && database != new_context->getCurrentDatabase())
         new_context->setCurrentDatabase(database);
 
     new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames());
@@ -159,6 +163,7 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     auto changed_settings = context->getSettingsRef().changes();
     new_context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
     new_context->applySettingsChanges(changed_settings);
+    new_context->setSetting("allow_ddl", 1);
 
     return new_context;
 }
@@ -216,6 +221,11 @@ void StorageInMemoryMetadata::setRefresh(ASTPtr refresh_)
 void StorageInMemoryMetadata::setMetadataVersion(int32_t metadata_version_)
 {
     metadata_version = metadata_version_;
+}
+
+void StorageInMemoryMetadata::setDataLakeTableState(const DataLakeTableStateSnapshot & datalake_table_state_)
+{
+    datalake_table_state = datalake_table_state_;
 }
 
 StorageInMemoryMetadata StorageInMemoryMetadata::withMetadataVersion(int32_t metadata_version_) const
@@ -592,6 +602,17 @@ ASTPtr StorageInMemoryMetadata::getSettingsChanges() const
         return settings_changes->clone();
     return nullptr;
 }
+
+Field StorageInMemoryMetadata::getSettingChange(const String & setting_name) const
+{
+    if (!settings_changes)
+        return Field();
+
+    const auto & changes = settings_changes->as<const ASTSetQuery &>().changes;
+    auto it = std::ranges::find_if(changes, [&setting_name](const SettingChange & change) { return change.name == setting_name; });
+    return it != changes.end() ? it->value : Field();
+}
+
 const SelectQueryDescription & StorageInMemoryMetadata::getSelectQuery() const
 {
     return select;
@@ -604,8 +625,8 @@ bool StorageInMemoryMetadata::hasSelectQuery() const
 
 namespace
 {
-    using NamesAndTypesMap = HashMapWithSavedHash<StringRef, const IDataType *, StringRefHash>;
-    using UniqueStrings = HashSetWithSavedHash<StringRef, StringRefHash>;
+    using NamesAndTypesMap = HashMapWithSavedHash<std::string_view, const IDataType *, StringViewHash>;
+    using UniqueStrings = HashSetWithSavedHash<std::string_view, StringViewHash>;
 
     NamesAndTypesMap getColumnsMap(const NamesAndTypesList & columns)
     {
@@ -666,8 +687,7 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns) 
 
         const auto * available_type = it->getMapped();
 
-        if (!available_type->hasDynamicSubcolumnsDeprecated()
-            && !column.type->equals(*available_type)
+        if (!column.type->equals(*available_type)
             && !isCompatibleEnumTypes(available_type, column.type.get()))
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
@@ -676,7 +696,7 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns) 
                 available_type->getName(),
                 column.type->getName());
 
-        if (unique_names.end() != unique_names.find(column.name))
+        if (unique_names.contains(column.name))
             throw Exception(ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE,
                 "Column {} queried more than once",
                 column.name);
@@ -714,8 +734,7 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns, 
         const auto * provided_column_type = it->getMapped();
         const auto * available_column_type = jt->getMapped();
 
-        if (!provided_column_type->hasDynamicSubcolumnsDeprecated()
-            && !provided_column_type->equals(*available_column_type)
+        if (!provided_column_type->equals(*available_column_type)
             && !isCompatibleEnumTypes(available_column_type, provided_column_type))
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
@@ -724,7 +743,7 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns, 
                 available_column_type->getName(),
                 provided_column_type->getName());
 
-        if (unique_names.end() != unique_names.find(name))
+        if (unique_names.contains(name))
             throw Exception(ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE,
                 "Column {} queried more than once",
                 name);
@@ -758,8 +777,7 @@ void StorageInMemoryMetadata::check(const Block & block, bool need_all) const
                 listOfColumns(available_columns));
 
         const auto * available_type = it->getMapped();
-        if (!available_type->hasDynamicSubcolumnsDeprecated()
-            && !column.type->equals(*available_type)
+        if (!column.type->equals(*available_type)
             && !isCompatibleEnumTypes(available_type, column.type.get()))
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
@@ -779,5 +797,22 @@ void StorageInMemoryMetadata::check(const Block & block, bool need_all) const
     }
 }
 
+std::unordered_map<std::string, ColumnSize> StorageInMemoryMetadata::getFakeColumnSizes() const
+{
+    std::unordered_map<std::string, ColumnSize> sizes;
+    for (const auto & col : columns)
+        sizes[col.name] = ColumnSize {.marks = 1000, .data_compressed = 100000000, .data_uncompressed = 1000000000};
+    return sizes;
+}
+
+NameSet StorageInMemoryMetadata::getColumnsWithoutDefaultExpressions(const NamesAndTypesList & exclude) const
+{
+    auto exclude_map = exclude.getNameToTypeMap();
+    NameSet names;
+    for (const auto & col : columns)
+        if (!col.default_desc.expression && !exclude_map.contains(col.name))
+            names.insert(col.name);
+    return names;
+}
 
 }

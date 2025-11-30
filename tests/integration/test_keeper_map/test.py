@@ -1,7 +1,7 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.network import PartitionManager, _NetworkManager
+from helpers.network import PartitionManager
 
 test_recover_staled_replica_run = 1
 
@@ -40,10 +40,6 @@ def remove_children(client, path):
         client.delete(child_path)
 
 
-def print_iptables_rules():
-    print(f"iptables rules: {_NetworkManager.get().dump_rules()}")
-
-
 def assert_keeper_exception_after_partition(query):
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(node)
@@ -54,7 +50,6 @@ def assert_keeper_exception_after_partition(query):
             )
             assert "Coordination::Exception" in error
         except:
-            print_iptables_rules()
             raise
 
 
@@ -63,7 +58,6 @@ def run_query(query):
         result = node.query_with_retry(query, sleep_time=1)
         return result
     except:
-        print_iptables_rules()
         raise
 
 
@@ -95,7 +89,6 @@ def test_keeper_map_without_zk(started_cluster):
             )
             assert "Failed to activate table because of connection issues" in error
         except:
-            print_iptables_rules()
             raise
 
     run_query("SELECT * FROM test_keeper_map_without_zk")
@@ -131,4 +124,23 @@ def test_keeper_map_with_failed_drop(started_cluster):
     run_query("SYSTEM DISABLE FAILPOINT keepermap_fail_drop_data")
     run_query(
         "CREATE TABLE test_keeper_map_with_failed_drop_another (key UInt64, value UInt64) ENGINE = KeeperMap('/test_keeper_map_with_failed_drop') PRIMARY KEY(key);"
+    )
+
+def test_keeper_drop_after_update(started_cluster):
+    run_query("DROP TABLE IF EXISTS test_keeper_drop_after_update SYNC")
+    run_query(
+        "CREATE TABLE test_keeper_drop_after_update (key UInt64, value UInt64) ENGINE = KeeperMap('/test_keeper_drop_after_update') PRIMARY KEY(key);"
+    )
+
+    zk_client = get_genuine_zk()
+    assert (
+        zk_client.delete("/test_keeper_map/test_keeper_drop_after_update/metadata/drop_lock_version")
+        is not None
+    )
+
+    run_query("DROP TABLE test_keeper_drop_after_update SYNC")
+
+    assert (
+        zk_client.exists("/test_keeper_map/test_keeper_drop_after_update/data")
+        is None
     )

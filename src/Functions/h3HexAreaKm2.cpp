@@ -100,7 +100,32 @@ public:
 
 REGISTER_FUNCTION(H3HexAreaKm2)
 {
-    factory.registerFunction<FunctionH3HexAreaKm2>();
+    FunctionDocumentation::Description description = R"(
+Returns average hexagon area in square kilometers at the given [H3](#h3-index) resolution.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3HexAreaKm2(resolution)";
+    FunctionDocumentation::Arguments arguments = {
+        {"resolution", "Index resolution with range `[0, 15]`.", {"UInt8"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the average area of an H3 hexagon in square kilometers for the given resolution.",
+        {"Float64"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get hexagon area at resolution 13",
+            "SELECT h3HexAreaKm2(13) AS area",
+            R"(
+┌──────area─┐
+│ 0.0000439 │
+└───────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3HexAreaKm2>(documentation);
 }
 
 }

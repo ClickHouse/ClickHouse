@@ -6,6 +6,7 @@
 #include <IO/ReadHelpers.h>
 #include <base/types.h>
 #include <Common/Exception.h>
+#include <Functions/geometryConverters.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -18,178 +19,83 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int LOGICAL_ERROR;
 }
 
 #if USE_ARROW
-std::optional<Poco::JSON::Object::Ptr> extractGeoMetadata(std::shared_ptr<const arrow::KeyValueMetadata> metadata)
+const std::string * extractGeoMetadata(std::shared_ptr<const arrow::KeyValueMetadata> metadata)
 {
     if (!metadata)
-        return std::nullopt;
+        return nullptr;
 
     for (Int64 i = 0; i < metadata->size(); ++i)
-    {
         if (metadata->key(i) == "geo")
-        {
-            const auto & value = metadata->value(i);
-            Poco::JSON::Parser parser;
-            Poco::Dynamic::Var result = parser.parse(value);
-            Poco::JSON::Object::Ptr obj = result.extract<Poco::JSON::Object::Ptr>();
-            return obj;
-        }
-    }
-    return std::nullopt;
+            return &metadata->value(i);
+
+    return nullptr;
 }
 #endif
 
-std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(std::optional<Poco::JSON::Object::Ptr> geo_json)
+std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std::string * geo_json_str)
 {
+    if (!geo_json_str)
+        return {};
+
+    Poco::JSON::Parser parser;
+    Poco::Dynamic::Var result = parser.parse(*geo_json_str);
+    const Poco::JSON::Object::Ptr & obj = result.extract<Poco::JSON::Object::Ptr>();
+
+    if (!obj->has("columns"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect geo json metadata: missing \"columns\"");
+    const Poco::JSON::Object::Ptr & columns = obj->getObject("columns");
+
     std::unordered_map<String, GeoColumnMetadata> geo_columns;
 
-    if (geo_json.has_value())
+    for (const auto & column_entry : *columns)
     {
-        const Poco::JSON::Object::Ptr & obj = geo_json.value();
-        if (!obj->has("columns"))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect geo json metadata");
+        const std::string & column_name = column_entry.first;
+        Poco::JSON::Object::Ptr column_obj = column_entry.second.extract<Poco::JSON::Object::Ptr>();
 
-        const Poco::JSON::Object::Ptr & columns = obj->getObject("columns");
-        for (const auto & column_entry : *columns)
-        {
-            const std::string & column_name = column_entry.first;
-            Poco::JSON::Object::Ptr column_obj = column_entry.second.extract<Poco::JSON::Object::Ptr>();
+        String encoding_name = column_obj->getValue<std::string>("encoding");
+        GeoEncoding geo_encoding;
 
-            String encoding_name = column_obj->getValue<std::string>("encoding");
-            GeoEncoding geo_encoding;
+        if (encoding_name == "WKB")
+            geo_encoding = GeoEncoding::WKB;
+        else if (encoding_name == "WKT")
+            geo_encoding = GeoEncoding::WKT;
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect encoding name in geo json metadata: {}", encoding_name);
 
-            if (encoding_name == "WKB")
-                geo_encoding = GeoEncoding::WKB;
-            else if (encoding_name == "WKT")
-                geo_encoding = GeoEncoding::WKT;
-            else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect encoding name in geo json metadata: {}", encoding_name);
+        Poco::JSON::Array::Ptr types = column_obj->getArray("geometry_types");
+        if (types->size() != 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse does not support multiple geo types in one column");
 
-            Poco::JSON::Array::Ptr types = column_obj->getArray("geometry_types");
-            if (types->size() != 1)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse does not support different types in one column");
+        String type = types->getElement<std::string>(0);
+        GeoType result_type;
 
-            String type = types->getElement<std::string>(0);
-            GeoType result_type;
+        if (type == "Point")
+            result_type = GeoType::Point;
+        else if (type == "LineString")
+            result_type = GeoType::LineString;
+        else if (type == "Polygon")
+            result_type = GeoType::Polygon;
+        else if (type == "MultiLineString")
+            result_type = GeoType::MultiLineString;
+        else if (type == "MultiPolygon")
+            result_type = GeoType::MultiPolygon;
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown geo type {}", type);
 
-            if (type == "Point")
-                result_type = GeoType::Point;
-            else if (type == "LineString")
-                result_type = GeoType::LineString;
-            else if (type == "Polygon")
-                result_type = GeoType::Polygon;
-            else if (type == "MultiLineString")
-                result_type = GeoType::MultiLineString;
-            else if (type == "MultiPolygon")
-                result_type = GeoType::MultiPolygon;
-            else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown geo type {}", type);
-
-            geo_columns[column_name] = GeoColumnMetadata{.encoding = geo_encoding, .type = result_type};
-        }
+        geo_columns[column_name] = GeoColumnMetadata{.encoding = geo_encoding, .type = result_type};
     }
 
     return geo_columns;
 }
 
-inline ArrowPoint readPointWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
+inline CartesianPoint parseWKTPoint(ReadBuffer & in_buffer)
 {
-    double x;
-    double y;
-    readBinaryEndian(x, in_buffer, endian_to_read);
-    readBinaryEndian(y, in_buffer, endian_to_read);
-    return ArrowPoint{.x = x, .y = y};
-}
-
-inline ArrowLineString readLineWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
-{
-    int num_points;
-    readBinaryEndian(num_points, in_buffer, endian_to_read);
-
-    ArrowLineString line;
-    for (int i = 0; i < num_points; ++i)
-    {
-        line.push_back(readPointWKB(in_buffer, endian_to_read));
-    }
-    return line;
-}
-
-inline ArrowPolygon readPolygonWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
-{
-    int num_lines;
-    readBinaryEndian(num_lines, in_buffer, endian_to_read);
-
-    ArrowPolygon polygon;
-    for (int i = 0; i < num_lines; ++i)
-    {
-        auto parsed_points = readLineWKB(in_buffer, endian_to_read);
-        polygon.push_back(std::move(parsed_points));
-    }
-    return polygon;
-}
-
-ArrowGeometricObject parseWKBFormat(ReadBuffer & in_buffer);
-
-ArrowMultiLineString readMultiLineStringWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
-{
-    ArrowMultiLineString multiline;
-
-    int num_lines;
-    readBinaryEndian(num_lines, in_buffer, endian_to_read);
-
-    for (int i = 0; i < num_lines; ++i)
-        multiline.push_back(std::get<ArrowLineString>(parseWKBFormat(in_buffer)));
-
-    return multiline;
-}
-
-ArrowMultiPolygon readMultiPolygonWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
-{
-    ArrowMultiPolygon multipolygon;
-
-    int num_polygons;
-    readBinaryEndian(num_polygons, in_buffer, endian_to_read);
-
-    for (int i = 0; i < num_polygons; ++i)
-        multipolygon.push_back(std::get<ArrowPolygon>(parseWKBFormat(in_buffer)));
-
-    return multipolygon;
-}
-
-ArrowGeometricObject parseWKBFormat(ReadBuffer & in_buffer)
-{
-    char little_endian;
-    if (!in_buffer.read(little_endian))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKB format: Incorrect first flag");
-
-    std::endian endian_to_read = little_endian ? std::endian::little : std::endian::big;
-    int geom_type;
-
-    readBinaryEndian(geom_type, in_buffer, endian_to_read);
-
-    switch (geom_type)
-    {
-        case 1:
-            return readPointWKB(in_buffer, endian_to_read);
-        case 2:
-            return readLineWKB(in_buffer, endian_to_read);
-        case 3:
-            return readPolygonWKB(in_buffer, endian_to_read);
-        case 5:
-            return readMultiLineStringWKB(in_buffer, endian_to_read);
-        case 6:
-            return readMultiPolygonWKB(in_buffer, endian_to_read);
-        default:
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKB format: Incorrect geometry type");
-    }
-}
-
-inline ArrowPoint parseWKTPoint(ReadBuffer & in_buffer)
-{
-    double x;
-    double y;
+    Float64 x;
+    Float64 y;
     char ch;
     while (true)
     {
@@ -230,9 +136,9 @@ inline bool readItemEnding(ReadBuffer & in_buffer)
     }
 }
 
-inline ArrowLineString parseWKTLine(ReadBuffer & in_buffer)
+inline LineString<CartesianPoint> parseWKTLine(ReadBuffer & in_buffer)
 {
-    ArrowLineString ls;
+    LineString<CartesianPoint> ls;
     readOpenBracket(in_buffer);
     while (true)
     {
@@ -243,22 +149,45 @@ inline ArrowLineString parseWKTLine(ReadBuffer & in_buffer)
     return ls;
 }
 
-inline ArrowPolygon parseWKTPolygon(ReadBuffer & in_buffer)
+inline Ring<CartesianPoint> parseWKTRing(ReadBuffer & in_buffer)
 {
-    ArrowPolygon poly;
+    Ring<CartesianPoint> ring;
     readOpenBracket(in_buffer);
     while (true)
     {
-        poly.push_back(parseWKTLine(in_buffer));
+        ring.push_back(parseWKTPoint(in_buffer));
+        if (readItemEnding(in_buffer))
+            break;
+    }
+    return ring;
+}
+
+inline Polygon<CartesianPoint> parseWKTPolygon(ReadBuffer & in_buffer)
+{
+    Polygon<CartesianPoint> poly;
+    readOpenBracket(in_buffer);
+    bool should_complete_outer = true;
+    while (true)
+    {
+        auto parsed_line = parseWKTRing(in_buffer);
+        if (should_complete_outer)
+        {
+            should_complete_outer = false;
+            poly.outer() = std::move(parsed_line);
+        }
+        else
+        {
+            poly.inners().push_back(std::move(parsed_line));
+        }
         if (readItemEnding(in_buffer))
             break;
     }
     return poly;
 }
 
-inline ArrowMultiPolygon parseWKTMultiPolygon(ReadBuffer & in_buffer)
+inline MultiPolygon<CartesianPoint> parseWKTMultiPolygon(ReadBuffer & in_buffer)
 {
-    ArrowMultiPolygon poly;
+    MultiPolygon<CartesianPoint> poly;
     readOpenBracket(in_buffer);
     while (true)
     {
@@ -269,7 +198,7 @@ inline ArrowMultiPolygon parseWKTMultiPolygon(ReadBuffer & in_buffer)
     return poly;
 }
 
-ArrowGeometricObject parseWKTFormat(ReadBuffer & in_buffer)
+GeometricObject parseWKTFormat(ReadBuffer & in_buffer)
 {
     std::string type;
     while (true)
@@ -303,218 +232,103 @@ ArrowGeometricObject parseWKTFormat(ReadBuffer & in_buffer)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKT format: type {}", type);
 }
 
-PointColumnBuilder::PointColumnBuilder(const String & name_)
-    : point_column_x(ColumnFloat64::create())
-    , point_column_y(ColumnFloat64::create())
-    , point_column_data_x(point_column_x->getData())
-    , point_column_data_y(point_column_y->getData())
-    , name(name_)
+DataTypePtr getGeoDataType(GeoType type)
 {
-}
-
-void PointColumnBuilder::appendObject(const ArrowGeometricObject & object)
-{
-    if (!std::holds_alternative<ArrowPoint>(object))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected point");
-
-    const auto & point = std::get<ArrowPoint>(object);
-    point_column_data_x.push_back(point.x);
-    point_column_data_y.push_back(point.y);
-}
-
-void PointColumnBuilder::appendDefault()
-{
-    point_column_data_x.push_back(0);
-    point_column_data_y.push_back(0);
-}
-
-ColumnWithTypeAndName PointColumnBuilder::getResultColumn()
-{
-    ColumnPtr result_x = point_column_x->getPtr();
-    ColumnPtr result_y = point_column_y->getPtr();
-    auto column = ColumnTuple::create(Columns{result_x, result_y});
-
-    auto tuple_type = DataTypeFactory::instance().get("Point");
-    return {std::move(column), tuple_type, name};
-}
-
-LineColumnBuilder::LineColumnBuilder(const String & name_)
-    : offsets_column(ColumnVector<ColumnArray::Offset>::create())
-    , offsets(offsets_column->getData())
-    , point_column_builder("")
-    , name(name_)
-{
-}
-
-void LineColumnBuilder::appendObject(const ArrowGeometricObject & object)
-{
-    if (!std::holds_alternative<ArrowLineString>(object))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected line string");
-
-    const auto & line = std::get<ArrowLineString>(object);
-    for (const auto & point : line)
+    switch (type)
     {
-        point_column_builder.appendObject(point);
+        case GeoType::Point: return DataTypeFactory::instance().get("Point");
+        case GeoType::LineString: return DataTypeFactory::instance().get("LineString");
+        case GeoType::Polygon: return DataTypeFactory::instance().get("Polygon");
+        case GeoType::MultiLineString: return DataTypeFactory::instance().get("MultiLineString");
+        case GeoType::MultiPolygon: return DataTypeFactory::instance().get("MultiPolygon");
     }
-    offset += line.size();
-    offsets.push_back(offset);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid GeoType: {}", uint8_t(type));
 }
 
-void LineColumnBuilder::appendDefault()
+static void appendPointToGeoColumn(const CartesianPoint & point, IColumn & col)
 {
-    offsets.push_back(offset);
+    auto & tuple = assert_cast<ColumnTuple &>(col);
+    assert_cast<ColumnFloat64 &>(tuple.getColumn(0)).getData().push_back(point.x());
+    assert_cast<ColumnFloat64 &>(tuple.getColumn(1)).getData().push_back(point.y());
 }
 
-ColumnWithTypeAndName LineColumnBuilder::getResultColumn()
+static void appendLineStringToGeoColumn(const LineString<CartesianPoint> & line, IColumn & col)
 {
-    auto all_points_column = point_column_builder.getResultColumn();
-    auto array_column = ColumnArray::create(all_points_column.column, offsets_column->getPtr());
+    auto & array = assert_cast<ColumnArray &>(col);
 
-    auto array_type = DataTypeFactory::instance().get("LineString");
-    return {std::move(array_column), array_type, name};
+    for (const auto & point : line)
+        appendPointToGeoColumn(point, array.getData());
+
+    auto & offsets = array.getOffsets();
+    offsets.push_back(offsets.back() + line.size());
 }
 
-PolygonColumnBuilder::PolygonColumnBuilder(const String & name_)
-    : offsets_column(ColumnVector<ColumnArray::Offset>::create())
-    , offsets(offsets_column->getData())
-    , line_column_builder("")
-    , name(name_)
+static void appendPolygonToGeoColumn(const Polygon<CartesianPoint> & polygon, IColumn & col)
 {
+    auto & array = assert_cast<ColumnArray &>(col);
+
+    appendLineStringToGeoColumn(LineString<CartesianPoint>(polygon.outer().begin(), polygon.outer().end()), array.getData());
+
+    for (const auto & inner_circle : polygon.inners())
+        appendLineStringToGeoColumn(LineString<CartesianPoint>(inner_circle.begin(), inner_circle.end()), array.getData());
+
+    auto & offsets = array.getOffsets();
+    offsets.push_back(offsets.back() + polygon.inners().size() + 1);
 }
 
-void PolygonColumnBuilder::appendObject(const ArrowGeometricObject & object)
+static void appendMultiLineStringToGeoColumn(const MultiLineString<CartesianPoint> & multilinestring, IColumn & col)
 {
-    if (!std::holds_alternative<ArrowPolygon>(object))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected polygon");
+    auto & array = assert_cast<ColumnArray &>(col);
 
-    const auto & polygon = std::get<ArrowPolygon>(object);
-    for (const auto & inner_circle : polygon)
-        line_column_builder.appendObject(inner_circle);
-    offset += polygon.size();
-    offsets.push_back(offset);
-}
-
-void PolygonColumnBuilder::appendDefault()
-{
-    offsets.push_back(offset);
-}
-
-ColumnWithTypeAndName PolygonColumnBuilder::getResultColumn()
-{
-    auto all_points_column = line_column_builder.getResultColumn();
-    auto array_column = ColumnArray::create(all_points_column.column, offsets_column->getPtr());
-
-    auto array_type = DataTypeFactory::instance().get("Polygon");
-    return {std::move(array_column), array_type, name};
-}
-
-MultiLineStringColumnBuilder::MultiLineStringColumnBuilder(const String & name_)
-    : offsets_column(ColumnVector<ColumnArray::Offset>::create())
-    , offsets(offsets_column->getData())
-    , line_column_builder("")
-    , name(name_)
-{
-}
-
-void MultiLineStringColumnBuilder::appendObject(const ArrowGeometricObject & object)
-{
-    if (!std::holds_alternative<ArrowMultiLineString>(object))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected multiline");
-
-    const auto & multilinestring = std::get<ArrowMultiLineString>(object);
     for (const auto & line : multilinestring)
-        line_column_builder.appendObject(line);
+        appendLineStringToGeoColumn(line, array.getData());
 
-    offset += multilinestring.size();
-    offsets.push_back(offset);
+    auto & offsets = array.getOffsets();
+    offsets.push_back(offsets.back() + multilinestring.size());
 }
 
-void MultiLineStringColumnBuilder::appendDefault()
+static void appendMultiPolygonToGeoColumn(const MultiPolygon<CartesianPoint> & multipolygon, IColumn & col)
 {
-    offsets.push_back(offset);
-}
+    auto & array = assert_cast<ColumnArray &>(col);
 
-ColumnWithTypeAndName MultiLineStringColumnBuilder::getResultColumn()
-{
-    auto all_points_column = line_column_builder.getResultColumn();
-    auto array_column = ColumnArray::create(all_points_column.column, offsets_column->getPtr());
-
-    auto array_type = DataTypeFactory::instance().get("MultiLineString");
-    return {std::move(array_column), array_type, name};
-}
-
-MultiPolygonColumnBuilder::MultiPolygonColumnBuilder(const String & name_)
-    : offsets_column(ColumnVector<ColumnArray::Offset>::create())
-    , offsets(offsets_column->getData())
-    , polygon_column_builder("")
-    , name(name_)
-{
-}
-
-void MultiPolygonColumnBuilder::appendObject(const ArrowGeometricObject & object)
-{
-    if (!std::holds_alternative<ArrowMultiPolygon>(object))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected multi polygon");
-
-    const auto & multipolygon = std::get<ArrowMultiPolygon>(object);
     for (const auto & polygon : multipolygon)
-        polygon_column_builder.appendObject(polygon);
+        appendPolygonToGeoColumn(polygon, array.getData());
 
-    offset += multipolygon.size();
-    offsets.push_back(offset);
+    auto & offsets = array.getOffsets();
+    offsets.push_back(offsets.back() + multipolygon.size());
 }
 
-void MultiPolygonColumnBuilder::appendDefault()
+void appendObjectToGeoColumn(const GeometricObject & object, GeoType type, IColumn & col)
 {
-    offsets.push_back(offset);
-}
-
-ColumnWithTypeAndName MultiPolygonColumnBuilder::getResultColumn()
-{
-    auto all_points_column = polygon_column_builder.getResultColumn();
-    auto array_column = ColumnArray::create(all_points_column.column, offsets_column->getPtr());
-
-    auto array_type = DataTypeFactory::instance().get("MultiPolygon");
-    return {std::move(array_column), array_type, name};
-}
-
-GeoColumnBuilder::GeoColumnBuilder(const String & name_, GeoType type_)
-    : name(name_)
-{
-    switch (type_)
+    switch (type)
     {
         case GeoType::Point:
-            geomery_column_builder = std::make_unique<PointColumnBuilder>(name);
-            break;
+            if (!std::holds_alternative<CartesianPoint>(object))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected point");
+            appendPointToGeoColumn(std::get<CartesianPoint>(object), col);
+            return;
         case GeoType::LineString:
-            geomery_column_builder = std::make_unique<LineColumnBuilder>(name);
-            break;
+            if (!std::holds_alternative<LineString<CartesianPoint>>(object))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected line string");
+            appendLineStringToGeoColumn(std::get<LineString<CartesianPoint>>(object), col);
+            return;
         case GeoType::Polygon:
-            geomery_column_builder = std::make_unique<PolygonColumnBuilder>(name);
-            break;
+            if (!std::holds_alternative<Polygon<CartesianPoint>>(object))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected multiline");
+            appendPolygonToGeoColumn(std::get<Polygon<CartesianPoint>>(object), col);
+            return;
         case GeoType::MultiLineString:
-            geomery_column_builder = std::make_unique<MultiLineStringColumnBuilder>(name);
-            break;
+            if (!std::holds_alternative<MultiLineString<CartesianPoint>>(object))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected multiline");
+            appendMultiLineStringToGeoColumn(std::get<MultiLineString<CartesianPoint>>(object), col);
+            return;
         case GeoType::MultiPolygon:
-            geomery_column_builder = std::make_unique<MultiPolygonColumnBuilder>(name);
-            break;
+            if (!std::holds_alternative<MultiPolygon<CartesianPoint>>(object))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected multi polygon");
+            appendMultiPolygonToGeoColumn(std::get<MultiPolygon<CartesianPoint>>(object), col);
+            return;
     }
-}
-
-void GeoColumnBuilder::appendObject(const ArrowGeometricObject & object)
-{
-    geomery_column_builder->appendObject(object);
-}
-
-void GeoColumnBuilder::appendDefault()
-{
-    geomery_column_builder->appendDefault();
-}
-
-
-ColumnWithTypeAndName GeoColumnBuilder::getResultColumn()
-{
-    return geomery_column_builder->getResultColumn();
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid GeoType: {}", uint8_t(type));
 }
 
 }

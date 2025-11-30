@@ -5,12 +5,13 @@ description: 'This engine provides integration with the Apache Hadoop ecosystem 
 sidebar_label: 'HDFS'
 sidebar_position: 80
 slug: /engines/table-engines/integrations/hdfs
-title: 'HDFS'
+title: 'HDFS table engine'
+doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# HDFS
+# HDFS table engine
 
 <CloudNotSupportedBadge/>
 
@@ -66,13 +67,13 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 └──────┴───────┘
 ```
 
-## Implementation Details {#implementation-details}
+## Implementation details {#implementation-details}
 
 - Reads and writes can be parallel.
 - Not supported:
-    - `ALTER` and `SELECT...SAMPLE` operations.
-    - Indexes.
-    - [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is possible, but not recommended.
+  - `ALTER` and `SELECT...SAMPLE` operations.
+  - Indexes.
+  - [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is possible, but not recommended.
 
   :::note Zero-copy replication is not ready for production
   Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
@@ -149,10 +150,9 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 </hdfs_root>
 ```
 
-### Configuration Options {#configuration-options}
+### Configuration options {#configuration-options}
 
 #### Supported by libhdfs3 {#supported-by-libhdfs3}
-
 
 | **parameter**                                         | **default value**       |
 | -                                                  | -                    |
@@ -198,9 +198,7 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 | dfs\_client\_log\_severity                            | "INFO"                  |
 | dfs\_domain\_socket\_path                             | ""                      |
 
-
 [HDFS Configuration Reference](https://hawq.apache.org/docs/userguide/2.3.0.0-incubating/reference/HDFSConfigurationParameterReference.html) might explain some parameters.
-
 
 #### ClickHouse extras {#clickhouse-extras}
 
@@ -237,15 +235,14 @@ libhdfs3 support HDFS namenode HA.
 
 - Then use `dfs.nameservices` tag value of `hdfs-site.xml` as the namenode address in the HDFS URI. For example, replace `hdfs://appadmin@192.168.101.11:8020/abc/` with `hdfs://appadmin@my_nameservice/abc/`.
 
-
-## Virtual Columns {#virtual-columns}
+## Virtual columns {#virtual-columns}
 
 - `_path` — Path to the file. Type: `LowCardinality(String)`.
 - `_file` — Name of the file. Type: `LowCardinality(String)`.
 - `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 
-## Storage Settings {#storage-settings}
+## Storage settings {#storage-settings}
 
 - [hdfs_truncate_on_insert](/operations/settings/settings.md#hdfs_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
 - [hdfs_create_new_file_on_insert](/operations/settings/settings.md#hdfs_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.

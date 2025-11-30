@@ -1,14 +1,15 @@
-#include "UserDefinedSQLFunctionVisitor.h"
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
 #include <stack>
 #include <unordered_map>
 #include <unordered_set>
 
+#include <Core/Settings.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryNormalizer.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
@@ -88,7 +89,7 @@ bool isVariadic(const ASTPtr & arg)
 
 ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & function, std::unordered_set<std::string> & udf_in_replace_process, ContextPtr context_)
 {
-    if (udf_in_replace_process.find(function.name) != udf_in_replace_process.end())
+    if (udf_in_replace_process.contains(function.name))
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Recursive function call detected during function call {}",
             function.name);
@@ -155,7 +156,7 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
         MarkTableIdentifiersVisitor(identifiers_data).visit(function_body_to_update);
 
         /// Common subexpression elimination. Rewrite rules.
-        QueryNormalizer::Data normalizer_data(aliases, {}, true, context_->getSettingsRef(), true, false);
+        QueryNormalizer::Data normalizer_data(aliases, {}, true, QueryNormalizer::ExtractedSettings(context_->getSettingsRef()), true, false);
         QueryNormalizer(normalizer_data).visit(function_body_to_update);
     }
 

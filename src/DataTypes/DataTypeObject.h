@@ -3,7 +3,6 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <Core/Field.h>
-#include <Columns/ColumnObjectDeprecated.h>
 #include <Common/re2.h>
 
 
@@ -49,6 +48,8 @@ public:
 
     bool equals(const IDataType & rhs) const override;
 
+    void updateHashImpl(SipHash & hash) const override;
+
     void forEachChild(const ChildCallback &) const override;
 
     bool hasDynamicSubcolumnsData() const override { return true; }
@@ -65,6 +66,7 @@ public:
     size_t getMaxDynamicPaths() const { return max_dynamic_paths; }
 
     DataTypePtr getTypeOfNestedObjects() const;
+    DataTypePtr getDynamicType() const;
 
     /// Shared data has type Array(Tuple(String, String)).
     static const DataTypePtr & getTypeOfSharedData();

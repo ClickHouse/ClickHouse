@@ -1,0 +1,107 @@
+Expression ((Project names + Projection))
+Actions: INPUT :: 0 -> count() UInt64 : 0
+Positions: 0
+  Aggregating
+  Keys:
+  Aggregates:
+      count()
+        Function: count() → UInt64
+        Arguments: none
+  Skip merging: 0
+    Expression
+    Actions: INPUT :: 0 -> __join_result_dummy UInt8 : 0
+    Positions:
+      Join (JOIN FillRightFirst)
+      Type: RIGHT
+      Strictness: ANTI
+      Algorithm: HashJoin
+      Clauses: [(exists(__table2).__table1.c_nationkey) = (__table1.c_nationkey)]
+        Expression (Left Pre Join Actions)
+        Actions: INPUT :: 0 -> exists(__table2).__table1.c_nationkey Int32 : 0
+                 COLUMN Const(UInt8) -> __join_result_dummy UInt8 : 1
+        Positions: 0 1
+          Filter
+          AND column: equals(__table1.c_nationkey, __table4.n_nationkey)
+          Actions: INPUT : 0 -> n_nationkey Int32 : 0
+                   FUNCTION equals(n_nationkey : 0, n_nationkey : 0) -> equals(__table1.c_nationkey, __table4.n_nationkey) UInt8 : 1
+          Positions: 1 0 1
+          Filter column: and(equals(__table1.c_nationkey, __table4.n_nationkey), __applyFilter(_runtime_filter_UNIQ_ID_0, exists(__table2).__table1.c_nationkey)) (removed)
+          Actions: INPUT : 1 -> n_nationkey Int32 : 0
+                   COLUMN Const(String) -> _runtime_filter_UNIQ_ID_0 String : 1
+                   INPUT : 0 -> equals(__table1.c_nationkey, __table4.n_nationkey) UInt8 : 2
+                   ALIAS n_nationkey : 0 -> __table4.n_nationkey Int32 : 3
+                   FUNCTION __applyFilter(_runtime_filter_UNIQ_ID_0 :: 1, n_nationkey :: 0) -> __applyFilter(_runtime_filter_UNIQ_ID_0, exists(__table2).__table1.c_nationkey) UInt8 : 4
+                   ALIAS __table4.n_nationkey :: 3 -> __table1.c_nationkey Int32 : 0
+                   FUNCTION and(equals(__table1.c_nationkey, __table4.n_nationkey) :: 2, __applyFilter(_runtime_filter_UNIQ_ID_0, exists(__table2).__table1.c_nationkey) :: 4) -> and(equals(__table1.c_nationkey, __table4.n_nationkey), __applyFilter(_runtime_filter_UNIQ_ID... UInt8 : 3
+                   ALIAS __table1.c_nationkey :: 0 -> exists(__table2).__table1.c_nationkey Int32 : 4
+          Positions: 3 4
+            ReadFromMergeTree (default.nation)
+            ReadType: Default
+            Parts: 1
+            Granules: 1
+        Expression (Right Pre Join Actions)
+        Actions: INPUT :: 0 -> __table1.c_nationkey Int32 : 0
+        Positions: 0
+          BuildRuntimeFilter (Build runtime join filter on __table1.c_nationkey (_runtime_filter_UNIQ_ID_0))
+            Expression (Change column names to column identifiers)
+            Actions: INPUT : 0 -> c_nationkey Int32 : 0
+                     ALIAS c_nationkey :: 0 -> __table1.c_nationkey Int32 : 1
+            Positions: 1
+              ReadFromMergeTree (default.customer)
+              ReadType: Default
+              Parts: 1
+              Granules: 1
+250
+Expression ((Project names + Projection))
+Actions: INPUT :: 0 -> count() UInt64 : 0
+Positions: 0
+  Aggregating
+  Keys:
+  Aggregates:
+      count()
+        Function: count() → UInt64
+        Arguments: none
+  Skip merging: 0
+    Expression
+    Actions: INPUT :: 0 -> __join_result_dummy UInt8 : 0
+    Positions:
+      Join (JOIN FillRightFirst)
+      Type: LEFT
+      Strictness: ANTI
+      Algorithm: HashJoin
+      Clauses: [(__table1.c_nationkey) = (exists(__table2).__table1.c_nationkey)]
+        Expression (Left Pre Join Actions)
+        Actions: INPUT :: 0 -> __table1.c_nationkey Int32 : 0
+                 COLUMN Const(UInt8) -> __join_result_dummy UInt8 : 1
+        Positions: 0 1
+          Filter
+          Filter column: __applyFilter(_exclusion__runtime_filter_UNIQ_ID_0, __table1.c_nationkey) (removed)
+          Actions: INPUT : 0 -> c_nationkey Int32 : 0
+                   COLUMN Const(String) -> _exclusion__runtime_filter_UNIQ_ID_0 String : 1
+                   ALIAS c_nationkey : 0 -> __table1.c_nationkey Int32 : 2
+                   FUNCTION __applyFilter(_exclusion__runtime_filter_UNIQ_ID_0 :: 1, c_nationkey :: 0) -> __applyFilter(_exclusion__runtime_filter_UNIQ_ID_0, __table1.c_nationkey) UInt8 : 3
+          Positions: 2 3
+            ReadFromMergeTree (default.customer)
+            ReadType: Default
+            Parts: 1
+            Granules: 1
+        Expression (Right Pre Join Actions)
+        Actions: INPUT :: 0 -> exists(__table2).__table1.c_nationkey Int32 : 0
+        Positions: 0
+          BuildRuntimeFilter (Build runtime join filter on exists(__table2).__table1.c_nationkey (_exclusion__runtime_filter_UNIQ_ID_0))
+            Expression (Create result for always true EXISTS expression)
+            Actions: INPUT : 0 -> __table1.c_nationkey Int32 : 0
+                     ALIAS __table1.c_nationkey :: 0 -> exists(__table2).__table1.c_nationkey Int32 : 1
+            Positions: 1
+              Filter ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
+              Filter column: equals(__table1.c_nationkey, __table4.n_nationkey) (removed)
+              Actions: INPUT : 0 -> n_nationkey Int32 : 0
+                       ALIAS n_nationkey : 0 -> __table4.n_nationkey Int32 : 1
+                       FUNCTION equals(n_nationkey : 0, n_nationkey :: 0) -> equals(__table1.c_nationkey, __table4.n_nationkey) UInt8 : 2
+                       ALIAS __table4.n_nationkey :: 1 -> __table1.c_nationkey Int32 : 0
+              Positions: 2 0
+                ReadFromMergeTree (default.nation)
+                ReadType: Default
+                Parts: 1
+                Granules: 1
+250

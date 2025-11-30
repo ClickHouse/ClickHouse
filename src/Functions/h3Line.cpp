@@ -135,7 +135,33 @@ public:
 
 REGISTER_FUNCTION(H3Line)
 {
-    factory.registerFunction<FunctionH3Line>();
+    FunctionDocumentation::Description description = R"(
+Returns the line of [H3](#h3-index) indices between the two provided indices.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3Line(start, end)";
+    FunctionDocumentation::Arguments arguments = {
+        {"start", "Hexagon index number that represents the starting point.", {"UInt64"}},
+        {"end", "Hexagon index number that represents the ending point.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns an array of H3 indices representing the line between the start and end indices.",
+        {"Array(UInt64)"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get line of H3 indices between two points",
+            "SELECT h3Line(590080540275638271, 590103561300344831) AS indexes",
+            R"(
+┌─indexes────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [590080540275638271,590080471556161535,590080883873021951,590106516237844479,590104385934065663,590103630019821567,590103561300344831] │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3Line>(documentation);
 }
 
 }

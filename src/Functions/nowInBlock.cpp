@@ -1,10 +1,12 @@
-#include <Functions/IFunction.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/extractTimeZoneFromFunctionArguments.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsDateTime.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/IDataType.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
+#include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Interpreters/Context.h>
 
 
@@ -13,12 +15,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_nonconst_timezone_arguments;
-}
-
-namespace ErrorCodes
-{
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -39,46 +35,25 @@ public:
         : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
     {}
 
-    String getName() const override
-    {
-        return name;
-    }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
-    {
-        return false;
-    }
-
-    /// Optional timezone argument.
-    bool isVariadic() const override { return true; }
-
+    String getName() const override { return name; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isVariadic() const override { return true; } /// Optional timezone argument.
     size_t getNumberOfArguments() const override { return 0; }
-
-    bool isDeterministic() const override
-    {
-        return false;
-    }
-
-    bool isDeterministicInScopeOfQuery() const override
-    {
-        return false;
-    }
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() > 1)
-        {
-            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Arguments size of function {} should be 0 or 1", getName());
-        }
-        if (arguments.size() == 1 && !isStringOrFixedString(arguments[0].type))
-        {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of function {} should be String or FixedString",
-                getName());
-        }
+        FunctionArgumentDescriptors mandatory_args{};
+        FunctionArgumentDescriptors optional_args{
+            {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
         if (arguments.size() == 1)
-        {
             return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0, allow_nonconst_timezone_arguments));
-        }
+
         return std::make_shared<DataTypeDateTime>();
     }
 
@@ -86,6 +61,7 @@ public:
     {
         return ColumnDateTime::create(input_rows_count, static_cast<UInt32>(time(nullptr)));
     }
+
 private:
     const bool allow_nonconst_timezone_arguments;
 };
@@ -94,7 +70,41 @@ private:
 
 REGISTER_FUNCTION(NowInBlock)
 {
-    factory.registerFunction<FunctionNowInBlock>();
+    FunctionDocumentation::Description description = R"(
+Returns the current date and time at the moment of processing of each block of data. In contrast to the function [`now`](#now), it is not a constant expression, and the returned value will be different in different blocks for long-running queries.
+
+It makes sense to use this function to generate the current time in long-running `INSERT SELECT` queries.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+nowInBlock([timezone])
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"timezone", "Optional. Timezone name for the returned value.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the current date and time at the moment of processing of each block of data.", {"DateTime"}};
+    FunctionDocumentation::Examples examples = {
+        {"Difference with the now() function", R"(
+SELECT
+    now(),
+    nowInBlock(),
+    sleep(1)
+FROM numbers(3)
+SETTINGS max_block_size = 1
+FORMAT PrettyCompactMonoBlock
+        )",
+        R"(
+┌───────────────now()─┬────────nowInBlock()─┬─sleep(1)─┐
+│ 2022-08-21 19:41:19 │ 2022-08-21 19:41:19 │        0 │
+│ 2022-08-21 19:41:19 │ 2022-08-21 19:41:20 │        0 │
+│ 2022-08-21 19:41:19 │ 2022-08-21 19:41:21 │        0 │
+└─────────────────────┴─────────────────────┴──────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 8};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionNowInBlock>(documentation);
 }
 
 }

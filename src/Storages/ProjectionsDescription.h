@@ -20,6 +20,8 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 using IColumnPermutation = PaddedPODArray<size_t>;
 
+struct KeyDescription;
+
 /// Description of projections for Storage
 struct ProjectionDescription
 {
@@ -60,13 +62,13 @@ struct ProjectionDescription
     /// If a primary key expression is used in the minmax_count projection, store the name of max expression.
     String primary_key_max_column_name;
 
-    bool with_parent_part_offset = false;
-
     /// Stores partition value indices of partition value row. It's needed because identical
     /// partition columns will appear only once in projection block, but every column will have a
     /// value in the partition value row. This vector holds the biggest value index of give
     /// partition columns.
     std::vector<size_t> partition_value_indices;
+
+    bool with_parent_part_offset = false;
 
     /// Parse projection from definition AST
     static ProjectionDescription
@@ -76,7 +78,7 @@ struct ProjectionDescription
         const ColumnsDescription & columns,
         ASTPtr partition_columns,
         const Names & minmax_columns,
-        const ASTs & primary_key_asts,
+        const KeyDescription & primary_key,
         ContextPtr query_context);
 
     ProjectionDescription() = default;

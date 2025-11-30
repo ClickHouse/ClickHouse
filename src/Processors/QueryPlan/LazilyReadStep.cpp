@@ -26,8 +26,8 @@ static ITransformingStep::Traits getTraits()
 }
 
 LazilyReadStep::LazilyReadStep(
-    const Header & input_header_, const LazilyReadInfoPtr & lazily_read_info_, MergeTreeLazilyReaderPtr lazy_column_reader_)
-    : ITransformingStep(input_header_, ColumnLazyTransform::transformHeader(input_header_), getTraits())
+    const SharedHeader & input_header_, const LazilyReadInfoPtr & lazily_read_info_, MergeTreeLazilyReaderPtr lazy_column_reader_)
+    : ITransformingStep(input_header_, std::make_shared<const Block>(ColumnLazyTransform::transformHeader(*input_header_)), getTraits())
     , lazily_read_info(lazily_read_info_)
     , lazy_column_reader(std::move(lazy_column_reader_))
 {
@@ -35,7 +35,7 @@ LazilyReadStep::LazilyReadStep(
 
 void LazilyReadStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    pipeline.addSimpleTransform([&](const Block & header)
+    pipeline.addSimpleTransform([&](const SharedHeader & header)
     {
         return std::make_shared<ColumnLazyTransform>(header, std::move(lazy_column_reader));
     });
@@ -72,7 +72,7 @@ void LazilyReadStep::describeActions(JSONBuilder::JSONMap & map) const
 
 void LazilyReadStep::updateOutputHeader()
 {
-    output_header = ColumnLazyTransform::transformHeader(input_headers.front());
+    output_header = std::make_shared<const Block>(ColumnLazyTransform::transformHeader(*input_headers.front()));
 }
 
 }

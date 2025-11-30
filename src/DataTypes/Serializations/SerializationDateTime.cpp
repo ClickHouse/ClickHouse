@@ -1,6 +1,7 @@
 #include <DataTypes/Serializations/SerializationDateTime.h>
 
 #include <Columns/ColumnVector.h>
+#include <DataTypes/DataTypeTime.h>
 #include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
@@ -15,13 +16,14 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
+extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 }
 
 namespace
 {
 
-inline void readText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
+inline void
+readText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
 {
     switch (settings.date_time_input_format)
     {
@@ -45,7 +47,8 @@ inline void readAsIntText(time_t & x, ReadBuffer & istr)
     x = std::max<time_t>(0, x);
 }
 
-inline bool tryReadText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
+inline bool tryReadText(
+    time_t & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
 {
     bool res;
     switch (settings.date_time_input_format)
@@ -97,7 +100,8 @@ void SerializationDateTime::serializeText(const IColumn & column, size_t row_num
     }
 }
 
-void SerializationDateTime::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationDateTime::serializeTextEscaped(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     serializeText(column, row_num, ostr, settings);
 }
@@ -135,7 +139,8 @@ bool SerializationDateTime::tryDeserializeTextEscaped(IColumn & column, ReadBuff
     return true;
 }
 
-void SerializationDateTime::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationDateTime::serializeTextQuoted(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('\'', ostr);
     serializeText(column, row_num, ostr, settings);
@@ -178,7 +183,8 @@ bool SerializationDateTime::tryDeserializeTextQuoted(IColumn & column, ReadBuffe
     return true;
 }
 
-void SerializationDateTime::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationDateTime::serializeTextJSON(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('"', ostr);
     serializeText(column, row_num, ostr, settings);
@@ -219,7 +225,8 @@ bool SerializationDateTime::tryDeserializeTextJSON(IColumn & column, ReadBuffer 
     return true;
 }
 
-void SerializationDateTime::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationDateTime::serializeTextCSV(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('"', ostr);
     serializeText(column, row_num, ostr, settings);

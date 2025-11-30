@@ -3,6 +3,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/SipHash.h>
+#include <Formats/FormatSettings.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -672,7 +673,7 @@ ColumnPtr ConstantExpressionTemplate::evaluateAll(BlockMissingValues & nulls, si
         evaluated.insert({ColumnConst::create(ColumnUInt8::create(1, 0), rows_count), std::make_shared<DataTypeUInt8>(), "_dummy"});
     structure->actions_on_literals->execute(evaluated);
 
-    if (!evaluated || evaluated.rows() != rows_count)
+    if (evaluated.empty() || evaluated.rows() != rows_count)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of rows mismatch after evaluation of batch of constant expressions: "
                         "got {} rows for {} expressions", evaluated.rows(), rows_count);
 

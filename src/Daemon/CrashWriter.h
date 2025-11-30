@@ -25,14 +25,14 @@ public:
     /// Can't be called from a signal handler. Call from a separate thread when a signal happens.
     static void onSignal(
         int sig,
-        const std::string & error_message,
+        std::string_view error_message,
         const FramePointers & frame_pointers,
         size_t offset,
         size_t size);
 
     static void onException(
         int code,
-        const std::string & error_message,
+        std::string_view format_string,
         const FramePointers & frame_pointers,
         size_t offset,
         size_t size);
@@ -54,7 +54,7 @@ private:
     void sendError(
         Type type,
         int sig_or_error,
-        const std::string & error_message,
+        std::string_view error_message,
         const FramePointers & frame_pointers,
         size_t offset,
         size_t size);

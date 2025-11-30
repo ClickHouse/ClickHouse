@@ -7,6 +7,7 @@
 #include <Common/Arena.h>
 #include <Common/CacheBase.h>
 #include <Common/SipHash.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/assert_cast.h>
 #include <Interpreters/AggregationCommon.h>
 #include <base/unaligned.h>
@@ -64,7 +65,9 @@ public:
 
     using CachedValuesPtr = std::shared_ptr<CachedValues>;
 
-    explicit LowCardinalityDictionaryCache(const HashMethodContextSettings & settings) : cache(settings.max_threads) {}
+    explicit LowCardinalityDictionaryCache(const HashMethodContextSettings & settings)
+        : cache(CurrentMetrics::end(), CurrentMetrics::end(), settings.max_threads)
+    {}
 
     CachedValuesPtr get(const DictionaryKey & key) { return cache.get(key); }
     void set(const DictionaryKey & key, const CachedValuesPtr & mapped) { cache.set(key, mapped); }
@@ -346,17 +349,23 @@ struct HashMethodSerialized
     ColumnRawPtrs key_columns;
     size_t keys_size;
     std::vector<const UInt8 *> null_maps;
+
+    /// Only used if prealloc is true.
     PaddedPODArray<UInt64> row_sizes;
+    size_t total_size = 0;
+    bool use_batch_serialize = false;
+    PaddedPODArray<char> serialized_buffer;
+    std::vector<std::string_view> serialized_keys;
 
     HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
         : key_columns(key_columns_), keys_size(key_columns_.size())
     {
         if constexpr (nullable)
         {
-            null_maps.resize(keys_size);
+            null_maps.resize(keys_size, nullptr);
             for (size_t i = 0; i < keys_size; ++i)
             {
-                if (const auto * nullable_column = dynamic_cast<const ColumnNullable *>(key_columns[i]))
+                if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(key_columns[i]))
                 {
                     null_maps[i] = nullable_column->getNullMapData().data();
                     key_columns[i] = nullable_column->getNestedColumnPtr().get();
@@ -366,22 +375,73 @@ struct HashMethodSerialized
 
         if constexpr (prealloc)
         {
-            null_maps.resize(keys_size);
+            null_maps.resize(keys_size, nullptr);
+
+            /// Calculate serialized value size for each key column in each row.
             for (size_t i = 0; i < keys_size; ++i)
                 key_columns[i]->collectSerializedValueSizes(row_sizes, null_maps[i]);
+
+            for (auto row_size : row_sizes)
+                total_size += row_size;
+
+            use_batch_serialize = shouldUseBatchSerialize();
+            if (use_batch_serialize)
+            {
+                serialized_buffer.resize(total_size);
+
+                const size_t rows = row_sizes.size();
+                char * memory = serialized_buffer.data();
+                std::vector<char *> memories(rows);
+                serialized_keys.resize(rows);
+                for (size_t i = 0; i < row_sizes.size(); ++i)
+                {
+                    memories[i] = memory;
+                    serialized_keys[i] = std::string_view(memory, row_sizes[i]);
+
+                    memory += row_sizes[i];
+                }
+
+                for (size_t i = 0; i < keys_size; ++i)
+                {
+                    if constexpr (nullable)
+                        key_columns[i]->batchSerializeValueIntoMemoryWithNull(memories, null_maps[i]);
+                    else
+                        key_columns[i]->batchSerializeValueIntoMemory(memories);
+                }
+            }
         }
+    }
+
+    bool shouldUseBatchSerialize() const
+    {
+#if defined(__aarch64__)
+        // On ARM64 architectures, always use batch serialization, otherwise it would cause performance degradation in related perf tests.
+        return true;
+#endif
+
+        size_t l2_size = 256 * 1024;
+#if defined(OS_LINUX) && defined(_SC_LEVEL2_CACHE_SIZE)
+        if (auto ret = sysconf(_SC_LEVEL2_CACHE_SIZE); ret != -1)
+            l2_size = ret;
+#endif
+        // Calculate the average row size.
+        size_t avg_row_size = total_size / std::max(row_sizes.size(), 1UL);
+        // Use batch serialization only if total size fits in 4x L2 cache and average row size is small.
+        return total_size <= 4 * l2_size && avg_row_size < 128;
     }
 
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
 
-    ALWAYS_INLINE SerializedKeyHolder getKeyHolder(size_t row, Arena & pool) const
+    ALWAYS_INLINE ArenaKeyHolder getKeyHolder(size_t row, Arena & pool) const
+    requires(prealloc)
     {
-        if constexpr (prealloc)
+        if (use_batch_serialize)
+            return ArenaKeyHolder{serialized_keys[row], pool};
+        else
         {
-            const char * begin = nullptr;
-
-            char * memory = pool.allocContinue(row_sizes[row], begin);
-            StringRef key(memory, row_sizes[row]);
+            std::unique_ptr<char[]> holder = std::make_unique<char[]>(row_sizes[row]);
+            char * memory = holder.get();
+            std::string_view key(memory, row_sizes[row]);
             for (size_t j = 0; j < keys_size; ++j)
             {
                 if constexpr (nullable)
@@ -390,15 +450,20 @@ struct HashMethodSerialized
                     memory = key_columns[j]->serializeValueIntoMemory(row, memory);
             }
 
-            return SerializedKeyHolder{key, pool};
+            return ArenaKeyHolder{key, pool, std::move(holder)};
         }
-        else if constexpr (nullable)
+    }
+
+    ALWAYS_INLINE SerializedKeyHolder getKeyHolder(size_t row, Arena & pool) const
+    requires(!prealloc)
+    {
+        if constexpr (nullable)
         {
             const char * begin = nullptr;
 
             size_t sum_size = 0;
             for (size_t j = 0; j < keys_size; ++j)
-                sum_size += key_columns[j]->serializeValueIntoArenaWithNull(row, pool, begin, null_maps[j]).size;
+                sum_size += key_columns[j]->serializeValueIntoArenaWithNull(row, pool, begin, null_maps[j]).size();
 
             return SerializedKeyHolder{{begin, sum_size}, pool};
         }

@@ -19,6 +19,7 @@
 *.log
 *.debuglog
 *.stderr
+*.stderr-fatal*
 *.stdout
 
 # llvm-xray logs
@@ -167,6 +168,7 @@ tests/queries/0_stateless/*.binary
 tests/queries/0_stateless/*.generated-expect
 tests/queries/0_stateless/*.expect.history
 tests/integration/**/_gen
+tests/casa_del_dolor/_instances*
 
 # pytest --pdb history
 .pdb_history

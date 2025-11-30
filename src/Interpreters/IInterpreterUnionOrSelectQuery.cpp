@@ -2,6 +2,7 @@
 
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -188,7 +189,7 @@ void IInterpreterUnionOrSelectQuery::addAdditionalPostFilter(QueryPlan & plan) c
     if (!ast)
         return;
 
-    auto dag = makeAdditionalPostFilter(ast, context, plan.getCurrentHeader());
+    auto dag = makeAdditionalPostFilter(ast, context, *plan.getCurrentHeader());
     std::string filter_name = dag.getOutputs().back()->result_name;
     auto filter_step = std::make_unique<FilterStep>(
         plan.getCurrentHeader(), std::move(dag), std::move(filter_name), true);

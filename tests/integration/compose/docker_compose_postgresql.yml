@@ -11,3 +11,4 @@ services:
       - "5433:5433"
     environment:
       POSTGRES_HOST_AUTH_METHOD: "trust"
+    stop_grace_period: 5s

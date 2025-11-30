@@ -1,4 +1,4 @@
-#include "ColumnVector.h"
+#include <Columns/ColumnVector.h>
 
 #include <base/bit_cast.h>
 #include <base/scope_guard.h>
@@ -24,6 +24,8 @@
 #include <Common/findExtreme.h>
 #include <Common/iota.h>
 #include <DataTypes/FieldToDataType.h>
+#include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 
 #include <bit>
 #include <cstring>
@@ -56,16 +58,17 @@ namespace ErrorCodes
 }
 
 template <typename T>
-const char * ColumnVector<T>::deserializeAndInsertFromArena(const char * pos)
+void ColumnVector<T>::deserializeAndInsertFromArena(ReadBuffer & in)
 {
-    data.emplace_back(unalignedLoad<T>(pos));
-    return pos + sizeof(T);
+    T element;
+    readBinaryLittleEndian<T>(element, in);
+    data.emplace_back(std::move(element));
 }
 
 template <typename T>
-const char * ColumnVector<T>::skipSerializedInArena(const char * pos) const
+void ColumnVector<T>::skipSerializedInArena(ReadBuffer & in) const
 {
-    return pos + sizeof(T);
+    in.ignore(sizeof(T));
 }
 
 template <typename T>
@@ -422,7 +425,7 @@ size_t ColumnVector<T>::estimateCardinalityInPermutedRange(const IColumn::Permut
     for (size_t i = equal_range.from; i < equal_range.to; ++i)
     {
         size_t permuted_i = permutation[i];
-        StringRef value = getDataAt(permuted_i);
+        std::string_view value = getDataAt(permuted_i);
         elements.emplace(value, inserted);
     }
     return elements.size();
@@ -449,11 +452,13 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
 }
 
 template <typename T>
-std::pair<String, DataTypePtr> ColumnVector<T>::getValueNameAndType(size_t n) const
+DataTypePtr ColumnVector<T>::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options & options) const
 {
     chassert(n < data.size()); /// This assert is more strict than the corresponding assert inside PODArray.
     const auto & val = castToNearestFieldType(data[n]);
-    return {FieldVisitorToString()(val), FieldToDataType()(val)};
+    if (options.notFull(name_buf))
+        name_buf << FieldVisitorToString()(val);
+    return FieldToDataType()(val);
 }
 
 template <typename T>
@@ -996,6 +1001,13 @@ ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, c
     return res;
 }
 
+template <typename T>
+void ColumnVector<T>::updateAt(const IColumn & src, size_t dst_pos, size_t src_pos)
+{
+    const auto & src_data = assert_cast<const Self &>(src).getData();
+    data[dst_pos] = src_data[src_pos];
+}
+
 DECLARE_DEFAULT_CODE(
     template <typename Container, typename Type> void vectorIndexImpl(
     const Container & data, const PaddedPODArray<Type> & indexes, size_t limit, Container & res_data)
@@ -1140,6 +1152,14 @@ ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_
     TargetSpecific::Default::vectorIndexImpl<Container, Type>(data, indexes, limit, res_data);
 
     return res;
+}
+
+template <typename T>
+std::span<char> ColumnVector<T>::insertRawUninitialized(size_t count)
+{
+    size_t start = data.size();
+    data.resize(start + count);
+    return {reinterpret_cast<char *>(data.data() + start), count * sizeof(T)};
 }
 
 /// Explicit template instantiations - to avoid code bloat in headers.

@@ -158,31 +158,39 @@ private:
 
 REGISTER_FUNCTION(VariantElement)
 {
-    factory.registerFunction<FunctionVariantElement>(FunctionDocumentation{
-        .description = R"(
+    FunctionDocumentation::Description description = R"(
 Extracts a column with specified type from a `Variant` column.
-)",
-        .syntax{"variantElement(variant, type_name, [, default_value])"},
-        .arguments{
-            {"variant", "Variant column"},
-            {"type_name", "The name of the variant type to extract"},
-            {"default_value", "The default value that will be used if variant doesn't have variant with specified type. Can be any type. Optional"}},
-        .examples{{{
-            "Example",
-            R"(
+)";
+    FunctionDocumentation::Syntax syntax = "variantElement(variant, type_name[, default_value])";
+    FunctionDocumentation::Arguments arguments = {
+        {"variant", "Variant column.", {"Variant"}},
+        {"type_name", "The name of the variant type to extract.", {"String"}},
+        {"default_value", "The default value that will be used if variant doesn't have variant with specified type. Can be any type. Optional.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a column with the specified variant type extracted from the Variant column.", {"Any"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
 CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
-SELECT v, variantElement(v, 'String'), variantElement(v, 'UInt64'), variantElement(v, 'Array(UInt64)') FROM test;)",
-            R"(
+SELECT v, variantElement(v, 'String'), variantElement(v, 'UInt64'), variantElement(v, 'Array(UInt64)') FROM test;
+         )",
+         R"(
 ┌─v─────────────┬─variantElement(v, 'String')─┬─variantElement(v, 'UInt64')─┬─variantElement(v, 'Array(UInt64)')─┐
 │ ᴺᵁᴸᴸ          │ ᴺᵁᴸᴸ                        │                        ᴺᵁᴸᴸ │ []                                 │
 │ 42            │ ᴺᵁᴸᴸ                        │                          42 │ []                                 │
 │ Hello, World! │ Hello, World!               │                        ᴺᵁᴸᴸ │ []                                 │
 │ [1,2,3]       │ ᴺᵁᴸᴸ                        │                        ᴺᵁᴸᴸ │ [1,2,3]                            │
 └───────────────┴─────────────────────────────┴─────────────────────────────┴────────────────────────────────────┘
-)"}}},
-        .category = FunctionDocumentation::Category::JSON,
-    });
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 2};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionVariantElement>(documentation);
 }
 
 }

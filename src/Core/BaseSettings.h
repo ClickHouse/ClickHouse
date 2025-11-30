@@ -27,6 +27,7 @@ struct BaseSettingsHelpers
 {
     [[noreturn]] static void throwSettingNotFound(std::string_view name);
     static void warningSettingNotFound(std::string_view name);
+    static void flushWarnings();
 
     static void writeString(std::string_view str, WriteBuffer & out);
     static String readString(ReadBuffer & in);
@@ -42,6 +43,11 @@ struct BaseSettingsHelpers
     static SettingsTierType getTier(UInt64 flags);
     static void writeFlags(Flags flags, WriteBuffer & out);
     static UInt64 readFlags(ReadBuffer & in);
+private:
+    /// For logging the summary of unknown settings instead of logging each one separately.
+    inline static thread_local Strings unknown_settings;
+    inline static thread_local bool unknown_settings_warning_logged = false;
+
 };
 
 /** Template class to define collections of settings.
@@ -473,7 +479,7 @@ void BaseSettings<TTraits>::write(WriteBuffer & out, SettingsWriteFormat format)
         if ((format >= SettingsWriteFormat::STRINGS_WITH_FLAGS) || is_custom)
         {
             using Flags = BaseSettingsHelpers::Flags;
-            Flags flags{0};
+            Flags flags{};
             if (is_custom)
                 flags = static_cast<Flags>(flags | Flags::CUSTOM);
             else if (is_important)
@@ -505,7 +511,7 @@ void BaseSettings<TTraits>::writeChangedBinary(WriteBuffer & out) const
     {
         BaseSettingsHelpers::writeString(field.getName(), out);
         using Flags = BaseSettingsHelpers::Flags;
-        Flags flags{0};
+        Flags flags{};
         BaseSettingsHelpers::writeFlags(flags, out);
         accessor.writeBinary(*this, field.index, out);
     }
@@ -545,7 +551,7 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
         size_t index = accessor.find(name);
 
         using Flags = BaseSettingsHelpers::Flags;
-        UInt64 flags{0};
+        UInt64 flags{};
         if (format >= SettingsWriteFormat::STRINGS_WITH_FLAGS)
             flags = BaseSettingsHelpers::readFlags(in);
         bool is_important = (flags & Flags::IMPORTANT);
@@ -578,6 +584,7 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
             BaseSettingsHelpers::readString(in);
         }
     }
+    BaseSettingsHelpers::flushWarnings();
 }
 
 template <typename TTraits>

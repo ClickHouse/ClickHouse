@@ -1,8 +1,9 @@
 #include <Processors/Formats/IRowInputFormat.h>
-#include <DataTypes/ObjectUtils.h>
 #include <IO/WriteHelpers.h>    // toString
 #include <IO/WithFileName.h>
+#include <IO/WithFileSize.h>
 #include <Common/logger_useful.h>
+#include <Columns/IColumn.h>
 
 
 namespace DB
@@ -30,6 +31,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_IPV6;
     extern const int UNKNOWN_ELEMENT_OF_ENUM;
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
+    extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 }
 
 
@@ -52,10 +54,11 @@ bool isParseError(int code)
         || code == ErrorCodes::CANNOT_PARSE_IPV4
         || code == ErrorCodes::CANNOT_PARSE_IPV6
         || code == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM
-        || code == ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE;
+        || code == ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE
+        || code == ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 }
 
-IRowInputFormat::IRowInputFormat(Block header, ReadBuffer & in_, Params params_)
+IRowInputFormat::IRowInputFormat(SharedHeader header, ReadBuffer & in_, Params params_)
     : IInputFormat(std::move(header), &in_)
     , serializations(getPort().getHeader().getSerializations())
     , params(params_)
@@ -170,13 +173,8 @@ Chunk IRowInputFormat::read()
 
                 if (params.max_block_size_bytes)
                 {
-                    for (size_t i = 0; i != columns.size(); ++i)
-                    {
-                        /// Column of a deprecated Object type will throw inside byteSizeAt because it's not finalized.
-                        /// It's ok to ignore deprecated type here.
-                        if (!header.getByPosition(i).type->hasDynamicSubcolumnsDeprecated())
-                            total_bytes += columns[i]->byteSizeAt(columns[i]->size() - 1);
-                    }
+                    for (const auto & column : columns)
+                        total_bytes += column->byteSizeAt(column->size() - 1);
                 }
             }
             catch (Exception & e)

@@ -1,6 +1,6 @@
-#include "ProgressTable.h"
-#include "Common/ProfileEvents.h"
-#include "base/defines.h"
+#include <Client/ProgressTable.h>
+#include <Common/ProfileEvents.h>
+#include <base/defines.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -328,9 +328,9 @@ void ProgressTable::updateTable(const Block & block)
         if (thread_id != THREAD_GROUP_ID)
             continue;
 
-        auto name = names.getDataAt(row_num).toString();
+        std::string name{names.getDataAt(row_num)};
         auto value = array_values[row_num];
-        auto host_name = host_names.getDataAt(row_num).toString();
+        std::string host_name{host_names.getDataAt(row_num)};
         auto type = static_cast<ProfileEvents::Type>(array_type[row_num]);
 
         /// Got unexpected event name.
