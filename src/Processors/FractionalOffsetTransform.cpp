@@ -35,7 +35,7 @@ FractionalOffsetTransform::FractionalOffsetTransform(const Block & header_, Floa
 
 IProcessor::Status FractionalOffsetTransform::prepare(const PortNumbers & updated_input_ports, const PortNumbers & updated_output_ports)
 {
-    // Check Can we still pull data from input?
+    /// Check can we still pull data from input?
     if (num_finished_input_ports != ports_data.size())
     {
         auto process = [&](size_t pos)
@@ -69,15 +69,15 @@ IProcessor::Status FractionalOffsetTransform::prepare(const PortNumbers & update
             process(pos);
 
         if (num_finished_input_ports != ports_data.size())
-            // Inputs available we can still get more
+            /// Some input ports still available => we can read more data
             return Status::NeedData;
 
-        // Calculate target offset
+        /// Calculate remaining integral offset
         offset = static_cast<UInt64>(std::ceil(rows_cnt * fractional_offset)) - evicted_rows_cnt;
     }
 
-    // If we reached here then all input ports are finished.
-    // we start pushing cached chunks to output ports.
+    /// If we reached here then all input ports are finished.
+    /// we start pushing cached chunks to output ports.
     auto status = pushData();
 
     if (status != Status::Finished)
@@ -104,7 +104,7 @@ FractionalOffsetTransform::Status FractionalOffsetTransform::pullData(PortsData 
 {
     auto & input = *data.input_port;
 
-    /// Check can input.
+    /// Check can input?
     if (input.isFinished())
         return Status::Finished;
 
@@ -124,7 +124,7 @@ FractionalOffsetTransform::Status FractionalOffsetTransform::pullData(PortsData 
     chunks_cache.push_back({data.output_port, std::move(data.current_chunk)});
 
     /// Detect blocks that will 100% get removed by the offset and remove them as early as possible.
-    /// example: if we have 10 blocks with same num of rows and offset 0.1 we can freely drop the first block even before reading all data.
+    /// example: if we have 10 blocks with the same num of rows and offset 0.1 we can freely drop the first block even before reading all data.
     while (!chunks_cache.empty() && std::ceil(rows_cnt * fractional_offset) - evicted_rows_cnt >= chunks_cache.front().chunk.getNumRows())
     {
         evicted_rows_cnt += chunks_cache.front().chunk.getNumRows();

@@ -12,24 +12,24 @@ namespace DB
 {
 
 /// Implementation for OFFSET N (without limit)
-//  where N is a fraction in (0, 1) non-inclusive representing a percentage.
-//
+///  where N is a fraction in (0, 1) range (non-inclusive) representing a percentage.
+///
 /// This processor supports multiple inputs and outputs (the same number).
-/// Each pair of input and output port works independently.
+/// Each pair of input and output ports works independently.
 ///
 /// Processor workflow:
-/// while input:
+/// while input.read():
 ///     1. read and cache input chunk
-///     2. drop from cache chunks that 
+///     2. increase total input rows counter
+///     3. drop from cache chunks that 
 ///        we became 100% sure they will be offseted.
-/// 2. count total rows count in input
-/// 3. calculate integral offset = (fractional_offset * rows_cnt) - evicted_rows_cnt
+/// 3. calculate remaining integral offset = (fractional_offset * rows_cnt) - evicted_rows_cnt
 /// 4. apply normal offset logic on remaining cached chunks.
 class FractionalOffsetTransform final : public IProcessor
 {
 private:
     Float64 fractional_offset;
-    UInt64 offset = 0;
+    UInt64 offset = 0; // To hold the remaining integral offset
 
     RowsBeforeStepCounterPtr rows_before_limit_at_least;
 
