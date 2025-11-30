@@ -26,17 +26,17 @@ Moreover, selecting a fraction of the result is also supported:
 
 `LIMIT m OFFSET n` - if 0 < m < 1 and 0 < n < 1, then the first m * 100% of the result is returned after skipping the first n * 100% of rows. The `LIMIT n, m` syntax is equivalent.
 
-Examples:
-    • `LIMIT 0.1` - selects the first 10% of the result.
-    • `LIMIT 1 OFFSET 0.5` - selects the median row.
-    • `LIMIT 0.25 OFFSET 0.5` - selects 3rd quartile of the result.
+Examples:  
+    • `LIMIT 0.1` - selects the first 10% of the result.  
+    • `LIMIT 1 OFFSET 0.5` - selects the median row.  
+    • `LIMIT 0.25 OFFSET 0.5` - selects 3rd quartile of the result.  
 
-> **Note**
-> • The fraction must be a [Float64](../../data-types/float.md) number less than 1 and greater than zero.
+> **Note**  
+> • The fraction must be a [Float64](../../data-types/float.md) number less than 1 and greater than zero.  
 > • If a fractional number of rows results from the calculation, it is rounded up to the next whole number.
 
-> **Note**
-> • You can combine standard limit with fractional offset and vice versa.
+> **Note**  
+> • You can combine standard limit with fractional offset and vice versa.  
 > • You can combine standard limit with negative offset and vice versa.
 
 If there is no [ORDER BY](../../../sql-reference/statements/select/order-by.md) clause that explicitly sorts results, the choice of rows for the result may be arbitrary and non-deterministic.
