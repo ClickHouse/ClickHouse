@@ -1958,7 +1958,7 @@ struct TestAllocationArray
     std::mutex mutex;
     String approve_order;
     bool save_ids = false;
-    bool save_mem = false;
+    bool save_mem = true;
 
     explicit TestAllocationArray(ResourceTest & t_)
         : t(t_)
@@ -2111,6 +2111,8 @@ struct TestAllocationArray
         approve_order.clear();
     }
 };
+
+// ---------- AllocationQueue ---------- //
 
 TEST(SchedulerWorkloadResourceManager, MemoryReservationPendingFifoOrder)
 {
@@ -2337,6 +2339,30 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationCancelPendingAllocation)
         a4.assertIncreaseEnqueued();
 
         // Cancel pending allocation by dtor
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationMaxWaitingQueries)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100, max_waiting_queries = 2");
+
+    ClassifierPtr c = t.manager->acquire("all");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ResourceLink link = c->get("memory");
+        TestAllocation a1(link, "Running", 100);
+        a1.waitSync();
+        TestAllocation a2(link, "Waiting1", 10);
+        TestAllocation a3(link, "Waiting2", 10);
+        a2.assertIncreaseEnqueued();
+        a3.assertIncreaseEnqueued();
+        EXPECT_THROW(TestAllocation rejected1(link, "Rejected1", 10), DB::Exception);
+        EXPECT_THROW(TestAllocation rejected2(link, "Rejected2", 10), DB::Exception);
+        EXPECT_THROW(TestAllocation rejected3(link, "Rejected3", 10), DB::Exception);
     }
 }
 
