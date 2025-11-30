@@ -8,6 +8,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/buildSelectQuery.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 
 
 namespace DB::ErrorCodes
@@ -72,6 +73,12 @@ namespace
             timeseriesTimeToAST(evaluation_range.end_time),
             timeseriesDurationToAST(evaluation_range.step),
             timeseriesDurationToAST(evaluation_range.window));
+    }
+
+
+    bool shouldDropMetricName(const String & promql_function_name)
+    {
+        return promql_function_name != "last_over_time";
     }
 }
 
@@ -230,6 +237,9 @@ SQLQueryPiece applyFunctionOverRange(
             res.end_time = end_time;
             res.step = step;
 
+            if ((res.store_method == StoreMethod::VECTOR_GRID) && shouldDropMetricName(function_name))
+                res = dropMetricName(std::move(res), context);
+
             return res;
         }
 
@@ -263,6 +273,9 @@ SQLQueryPiece applyFunctionOverRange(
             res.start_time = start_time;
             res.end_time = end_time;
             res.step = step;
+
+            if (shouldDropMetricName(function_name))
+                res = dropMetricName(std::move(res), context);
 
             return res;
         }
