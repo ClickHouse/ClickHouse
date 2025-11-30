@@ -201,17 +201,18 @@ private:
 
         std::vector<ColumnPtr> key_columns(num_keys);
 
-        Block block;
+        Chunk chunk;
         size_t out_offset = 0;
-        while (executor.pull(block))
+        while (executor.pull(chunk))
         {
-            ColumnPtr attr_col = removeSpecialRepresentations(block.getByPosition(num_keys).column);
+            Columns columns = chunk.detachColumns();
+            ColumnPtr attr_col = removeSpecialRepresentations(columns[num_keys]);
 
             for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
-                key_columns[key_pos] = removeSpecialRepresentations(block.getByPosition(key_pos).column);
+                key_columns[key_pos] = removeSpecialRepresentations(columns[key_pos]);
 
-            const size_t rows_in_block = attr_col->size();
-            for (size_t row_id = 0; row_id < rows_in_block; ++row_id)
+            const size_t rows_in_chunk = attr_col->size();
+            for (size_t row_id = 0; row_id < rows_in_chunk; ++row_id)
             {
                 if (attr_col->compareAt(row_id, 0, *values_column, 0) != 0)
                     continue;
