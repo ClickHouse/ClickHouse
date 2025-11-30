@@ -949,6 +949,9 @@ void ColumnNullable::checkConsistency() const
 
 ColumnPtr ColumnNullable::createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
 {
+    if (empty())
+        return cloneEmpty();
+
     ColumnPtr new_values;
     ColumnPtr new_null_map;
 
