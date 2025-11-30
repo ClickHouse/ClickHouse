@@ -579,11 +579,14 @@ void DefaultCoordinator::tryToStealFromQueues(
     else
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasStealingLeftoversMicroseconds);
-        /// Check orphaned ranges
+        /// All replicas can steal orphaned ranges to reduce long-tail latency.
         tryToStealFromQueue(
             ranges_for_stealing_queue, /*owner=*/-1, replica_num, scan_mode, min_number_of_marks, current_marks_amount, description);
+
         /// Last hope. In case we haven't yet figured out that some node is unavailable its segments are still in the distribution queue.
-        steal_from_other_replicas();
+        /// Only the source replica steals from other replicas to preserve cache locality.
+        if (replica_num == source_replica_for_parts_snapshot)
+            steal_from_other_replicas();
     }
 }
 
@@ -812,7 +815,7 @@ ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest reque
     const size_t stolen_by_hash = current_mark_size - assigned_to_me;
 
     /// 3. Try to steal with no preference. We're trying to postpone it as much as possible.
-    if (current_mark_size == 0 && request.replica_num == source_replica_for_parts_snapshot)
+    if (current_mark_size == 0)
         selectPartsAndRanges(
             request.replica_num, ScanMode::TakeEverythingAvailable, request.min_number_of_marks, current_mark_size, response.description);
     const size_t stolen_unassigned = current_mark_size - stolen_by_hash - assigned_to_me;
