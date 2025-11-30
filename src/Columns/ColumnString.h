@@ -220,9 +220,40 @@ public:
         return {pos, result_size};
     }
 
+    std::string_view serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null) const override
+    {
+        if (is_null)
+        {
+            char * memory;
+            if (is_null[n])
+            {
+                memory = arena.allocContinue(1, begin);
+                *memory = 1;
+                return {memory, 1};
+            }
+
+            auto serialized_value_size = getSerializedValueSize(n);
+            if (serialized_value_size)
+            {
+                size_t total_size = *serialized_value_size + 1 /* null map byte */;
+                memory = arena.allocContinue(total_size, begin);
+                *memory = 0;
+                serializeValueIntoMemory(n, memory + 1);
+                return {memory, total_size};
+            }
+
+            memory = arena.allocContinue(1, begin);
+            *memory = 0;
+            auto res = serializeValueIntoArena(n, arena, begin);
+            return std::string_view(res.data() - 1, res.size() + 1);
+        }
+
+        return serializeValueIntoArena(n, arena, begin);
+    }
+
     std::string_view serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
 
-    ALWAYS_INLINE char * serializeValueIntoMemory(size_t n, char * memory) const override
+    char * serializeValueIntoMemory(size_t n, char * memory) const override
     {
         size_t string_size = sizeAt(n);
         size_t offset = offsetAt(n);
@@ -231,6 +262,19 @@ public:
         memory += sizeof(string_size);
         memcpy(memory, &chars[offset], string_size);
         return memory + string_size;
+    }
+
+    char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const override
+    {
+        if (is_null)
+        {
+            *memory = is_null[n];
+            ++memory;
+            if (is_null[n])
+                return memory;
+        }
+
+        return serializeValueIntoMemory(n, memory);
     }
 
     void deserializeAndInsertFromArena(ReadBuffer & in) override;
