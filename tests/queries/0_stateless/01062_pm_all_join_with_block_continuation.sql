@@ -22,6 +22,7 @@ SELECT count(1), uniqExact(n) FROM (
     USING k);
 
 SET max_joined_block_size_rows = 0;
+SET joined_block_split_single_row = 0;
 
 SET query_plan_join_swap_table = 'false';
 
