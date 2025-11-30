@@ -208,7 +208,7 @@ public:
 
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
 
-    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
+    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const final
     {
         size_t string_size = sizeAt(n);
         size_t offset = offsetAt(n);
@@ -220,7 +220,7 @@ public:
         return {pos, result_size};
     }
 
-    std::string_view serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null) const override
+    std::string_view serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null) const final
     {
         if (is_null)
         {
@@ -253,7 +253,7 @@ public:
 
     std::string_view serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
 
-    char * serializeValueIntoMemory(size_t n, char * memory) const override
+    char * serializeValueIntoMemory(size_t n, char * memory) const final
     {
         size_t string_size = sizeAt(n);
         size_t offset = offsetAt(n);
@@ -264,7 +264,7 @@ public:
         return memory + string_size;
     }
 
-    char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const override
+    char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const final
     {
         if (is_null)
         {

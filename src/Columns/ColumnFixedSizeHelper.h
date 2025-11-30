@@ -42,14 +42,14 @@ public:
         return reinterpret_cast<PODArrayBaseClass<element_size> *>(reinterpret_cast<char *>(this) + sizeof(*this))->push_back_raw(ptr);
     }
 
-    char * serializeValueIntoMemory(size_t n, char * memory) const override
+    char * serializeValueIntoMemory(size_t n, char * memory) const final
     {
         const char * raw_data_begin = getRawDataBegin<1>() + n * fixed_size;
         memcpy(memory, raw_data_begin, fixed_size);
         return memory + fixed_size;
     }
 
-    char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const override
+    char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const final
     {
         if (is_null)
         {
@@ -62,14 +62,14 @@ public:
         return this->serializeValueIntoMemory(n, memory);
     }
 
-    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
+    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const final
     {
         char * memory = arena.allocContinue(fixed_size, begin);
         this->serializeValueIntoMemory(n, memory);
         return {memory, fixed_size};
     }
 
-    std::string_view serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null) const override
+    std::string_view serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null) const final
     {
         if (is_null)
         {
