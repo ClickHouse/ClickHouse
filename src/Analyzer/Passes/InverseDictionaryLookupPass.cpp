@@ -28,6 +28,11 @@ extern const SettingsBool optimize_inverse_dictionary_lookup;
 extern const SettingsBool rewrite_in_to_join;
 }
 
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 namespace
 {
 
