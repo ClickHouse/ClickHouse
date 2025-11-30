@@ -152,9 +152,8 @@ private:
     using HashToBucket = HashMap<UInt128, size_t, HashCRC32<UInt128>>;
 
     /// For constant path, it's simple algorithm:
-    ///  Step 1. Compute the hash of the const value column.
-    ///  Step 2. Scan the dictionary and store the matching rows keys directly into the result column.
-    ///  Step 3. Format the result column into appropriate format: tuple for multi-key dictionary or single value otherwise.
+    ///  Step 1. Scan the dictionary and store the matching rows keys directly into the result column.
+    ///  Step 2. Format the result column into appropriate format: tuple for multi-key dictionary or single value otherwise.
     ColumnPtr executeConstPath(
         const String & dict_name,
         const String & attr_name,
@@ -168,16 +167,20 @@ private:
         const auto & attribute_column_type = structure.getAttribute(attr_name).type;
         ColumnPtr values_column = castColumnAccurate(argument_values_column, attribute_column_type);
 
+        if (const auto * values_const_col = checkAndGetColumn<ColumnConst>(values_column.get()))
+            values_column = values_const_col->getDataColumnPtr();
+
         chassert(values_column != nullptr);
         chassert(!values_column->empty());
+        chassert(values_column->size() == 1);
 
         /// Step 1
-        const UInt128 values_column_value_hash = sipHash128AtRow(*values_column, 0);
-
-        /// Step 2
-        MutableColumns result_cols;
         const auto key_types = structure.getKeyTypes();
         chassert(!key_types.empty());
+        const size_t num_keys = key_types.size();
+
+        MutableColumns result_cols;
+        result_cols.reserve(num_keys);
 
         for (const auto & key_type : key_types)
         {
@@ -189,8 +192,6 @@ private:
         auto & offsets = offsets_col->getData();
         offsets.resize(1);
 
-        const size_t num_keys = key_types.size();
-
         Names column_names = structure.getKeysNames();
         column_names.push_back(attr_name);
 
@@ -198,24 +199,21 @@ private:
         QueryPipeline pipeline(std::move(pipe));
         PullingPipelineExecutor executor(pipeline);
 
+        std::vector<ColumnPtr> key_columns(num_keys);
+
         Block block;
         size_t out_offset = 0;
         while (executor.pull(block))
         {
             ColumnPtr attr_col = removeSpecialRepresentations(block.getByPosition(num_keys).column);
 
-            std::vector<ColumnPtr> key_columns(num_keys);
             for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
                 key_columns[key_pos] = removeSpecialRepresentations(block.getByPosition(key_pos).column);
 
             const size_t rows_in_block = attr_col->size();
             for (size_t row_id = 0; row_id < rows_in_block; ++row_id)
             {
-                const UInt128 value_hash = sipHash128AtRow(*attr_col, row_id);
-
-                /// Probability of hash collision of Sip128 is extremely astronomically low. As a result, for the sake of simplicity and efficiency,
-                /// let's assume it never happens
-                if (value_hash != values_column_value_hash)
+                if (attr_col->compareAt(row_id, 0, *values_column, 0) != 0)
                     continue;
 
                 for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
@@ -227,7 +225,7 @@ private:
         }
         offsets[0] = out_offset;
 
-        /// Step 3
+        /// Step 2
         if (num_keys == 1)
         {
             auto array_column = ColumnArray::create(std::move(result_cols[0]), std::move(offsets_col));
