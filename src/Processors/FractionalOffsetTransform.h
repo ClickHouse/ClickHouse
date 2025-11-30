@@ -21,8 +21,8 @@ namespace DB
 /// while input.read():
 ///     1. read and cache input chunk
 ///     2. increase total input rows counter
-///     3. drop from cache chunks that 
-///        we became 100% sure they will be offseted.
+///     3. drop from cache chunks that
+///        we became 100% sure they will be offsetted.
 /// 3. calculate remaining integral offset = (fractional_offset * rows_cnt) - evicted_rows_cnt
 /// 4. apply normal offset logic on remaining cached chunks.
 class FractionalOffsetTransform final : public IProcessor

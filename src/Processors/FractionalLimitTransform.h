@@ -27,8 +27,8 @@ namespace DB
 /// while input.read():
 ///     1. read and cache input chunk
 ///     2. increase total input rows counter
-///     3. if offset or fractional_offset, drop from cache 
-///        chunks that we became 100% sure will be offseted entirely.
+///     3. if offset or fractional_offset, drop from cache
+///        chunks that we became 100% sure will be offsetted entirely.
 ///     4. remove from cache and push to output, chunks that we
 ///        we becamse 100% sure will be pushed
 /// 5. calculate remaining integral limit/offset

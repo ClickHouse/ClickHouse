@@ -164,7 +164,7 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
 
     rows_cnt += rows;
 
-    /// Ignore chunk if it should be offseted
+    /// Ignore chunk if it should be offsetted
     if (rows <= offset)
     {
         offset -= rows;
@@ -190,7 +190,7 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
         chunks_cache.pop_front();
     }
 
-    /// If offset_fraction is zero we can detect blocks that 
+    /// If offset_fraction is zero we can detect blocks that
     /// will 100% get pushed and push them as early as possible.
     if (offset_fraction == 0 && !chunks_cache.empty())
     {
@@ -209,7 +209,7 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
 
         if (std::ceil(rows_cnt * limit_fraction) - outputed_rows_cnt >= num_rows - offset)
         {
-            /// If we still have an integral offset that didn't cause the chunk 
+            /// If we still have an integral offset that didn't cause the chunk
             /// to be dropped entirely above then its offset in part of the chunk => split it
             if (offset)
             {
@@ -265,8 +265,8 @@ FractionalLimitTransform::Status FractionalLimitTransform::pushData()
         return Status::Finished;
     }
 
-    /// The early removal of blocks by offset and fractional_offset at pullData() should have detected 
-    /// all chunks that will be dropped entirely, but we may still need to offset inside the first block 
+    /// The early removal of blocks by offset and fractional_offset at pullData() should have detected
+    /// all chunks that will be dropped entirely, but we may still need to offset inside the first block
     /// and drop a portion of it.
 
     UInt64 rows = chunks_cache.front().chunk.getNumRows();
