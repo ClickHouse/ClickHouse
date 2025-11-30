@@ -521,12 +521,13 @@ public:
 
 TEST_P(CodecTest, TranscodingWithDataType)
 {
-    /// Gorilla can only be applied to floating point columns
-    bool codec_is_gorilla = std::get<0>(GetParam()).codec_statement.contains("Gorilla");
-    WhichDataType which(std::get<1>(GetParam()).data_type.get());
-    bool data_is_float = which.isFloat();
-    if (codec_is_gorilla && !data_is_float)
-        GTEST_SKIP() << "Skipping Gorilla-compressed non-float column";
+    /// Gorilla and ALP can only be applied to floating point columns
+    const auto & codec_statement = std::get<0>(GetParam()).codec_statement;
+    const bool codec_is_float_point = codec_statement.contains("Gorilla") || codec_statement.contains("ALP");
+    const WhichDataType which(std::get<1>(GetParam()).data_type.get());
+    const bool data_is_float = which.isFloat();
+    if (codec_is_float_point && !data_is_float)
+        GTEST_SKIP() << "Skipping Float-point-compressed non-float column";
 
     const auto codec = makeCodec(CODEC_WITH_DATA_TYPE);
     testTranscoding(*codec);
@@ -814,7 +815,10 @@ const auto DefaultCodecsToTest = ::testing::Values(
     Codec("DoubleDelta, ZSTD"),
     Codec("Gorilla"),
     Codec("Gorilla, LZ4"),
-    Codec("Gorilla, ZSTD")
+    Codec("Gorilla, ZSTD"),
+    Codec("ALP"),
+    Codec("ALP, LZ4"),
+    Codec("ALP, ZSTD")
 );
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -904,7 +908,9 @@ INSTANTIATE_TEST_SUITE_P(SameValueFloat,
     ::testing::Combine(
         ::testing::Values(
             Codec("Gorilla"),
-            Codec("Gorilla, LZ4")
+            Codec("Gorilla, LZ4"),
+            Codec("ALP"),
+            Codec("ALP, LZ4")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SameValueGenerator(M_E))),
@@ -918,7 +924,9 @@ INSTANTIATE_TEST_SUITE_P(SameNegativeValueFloat,
     ::testing::Combine(
         ::testing::Values(
             Codec("Gorilla"),
-            Codec("Gorilla, LZ4")
+            Codec("Gorilla, LZ4"),
+            Codec("ALP"),
+            Codec("ALP, LZ4")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SameValueGenerator(-1 * M_E))),
@@ -968,7 +976,9 @@ INSTANTIATE_TEST_SUITE_P(SequentialFloat,
     ::testing::Combine(
         ::testing::Values(
             Codec("Gorilla"),
-            Codec("Gorilla, LZ4")
+            Codec("Gorilla, LZ4"),
+            Codec("ALP"),
+            Codec("ALP, LZ4")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SequentialGenerator(M_E))),
@@ -982,7 +992,9 @@ INSTANTIATE_TEST_SUITE_P(SequentialReverseFloat,
     ::testing::Combine(
         ::testing::Values(
             Codec("Gorilla"),
-            Codec("Gorilla, LZ4")
+            Codec("Gorilla, LZ4"),
+            Codec("ALP"),
+            Codec("ALP, LZ4")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SequentialGenerator(-1 * M_E))),
@@ -1029,7 +1041,8 @@ INSTANTIATE_TEST_SUITE_P(MonotonicFloat,
     CodecTest,
     ::testing::Combine(
         ::testing::Values(
-            Codec("Gorilla")
+            Codec("Gorilla"),
+            Codec("ALP")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(MonotonicGenerator<Float32>(static_cast<Float32>(M_E), 5))),
@@ -1042,7 +1055,8 @@ INSTANTIATE_TEST_SUITE_P(MonotonicReverseFloat,
     CodecTest,
     ::testing::Combine(
         ::testing::Values(
-            Codec("Gorilla")
+            Codec("Gorilla"),
+            Codec("ALP")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(MonotonicGenerator<Float32>(static_cast<Float32>(-1 * M_E), 5))),
@@ -1112,7 +1126,9 @@ INSTANTIATE_TEST_SUITE_P(OverflowFloat,
     ::testing::Combine(
         ::testing::Values(
             Codec("Gorilla", 1.1),
-            Codec("Gorilla, LZ4", 1.0)
+            Codec("Gorilla, LZ4", 1.0),
+            Codec("ALP", 1.1),
+            Codec("ALP, LZ4", 1.0)
         ),
         ::testing::Values(
             generateSeq<Float32>(G(MinMaxGenerator())),
