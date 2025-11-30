@@ -210,20 +210,21 @@ public:
 
         DataTypePtr dict_attr_col_type = dict_structure.getAttribute(attr_col_name).type;
 
-        /// Attempt to use dictGetKeys when semantics match:
-        ///   - only for equals
-        ///   - and 'dictGet' function
-        ///
-        /// This guarantees that
-        ///   dictGet(dict, attr, key) = const
-        /// is equivalent to
-        ///   key IN dictGetKeys(dict, attr, const)
-        /// (for both single and composite keys).
-        const String dictget_function_name = dict_side == Side::LHS
-            ? static_cast<FunctionNode *>(arguments[0].get())->getFunctionName()
-            : static_cast<FunctionNode *>(arguments[1].get())->getFunctionName();
+        const String dictget_function_name = dict_side == Side::LHS ? static_cast<FunctionNode *>(arguments[0].get())->getFunctionName()
+                                                                    : static_cast<FunctionNode *>(arguments[1].get())->getFunctionName();
 
-        if (attr_comparison_function_name == "equals" && dictget_function_name == "dictGet")
+        /// `dictGetKeys` compares casts constant to the attribute column type.
+        /// For `dictGet`-family functions that perform an internal type cast of the attribute
+        /// (for example, `dictGetDateTime` over a `Date` attribute), rewriting
+        ///   dictGetX(dict, attr, key) = const
+        /// to
+        ///   key IN dictGetKeys(dict, attr, const)
+        /// would drop that cast and change the predicate semantics. Therefore this optimization is only allowed
+        /// when the function result type is exactly the dictionary attribute type.
+        bool can_replace_with_dictgetkeys = (attr_comparison_function_name == "equals")
+            && (dictget_function_name == "dictGet" || dict_attr_col_type->equals(*dictget_function_info.return_type));
+
+        if (can_replace_with_dictgetkeys)
         {
             /// Build dictGetKeys('dict_name', 'attr_name', value_expr)
             auto dict_get_keys_fn = std::make_shared<FunctionNode>("dictGetKeys");
@@ -241,16 +242,13 @@ public:
             auto * keys_constant = node_function_ptr->as<ConstantNode>();
 
             if (keys_constant == nullptr)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "InverseDictionaryLookupPass: dictGetKeys did not resolve to ConstantNode as expected");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "dictGetKeys did not resolve to ConstantNode as expected");
 
             const Field & keys_field = keys_constant->getValue();
 
             if (keys_field.getType() != Field::Types::Array)
                 throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "InverseDictionaryLookupPass: dictGetKeys expected to return Array field. Actual type: {}",
-                    keys_field.getType());
+                    ErrorCodes::LOGICAL_ERROR, "dictGetKeys expected to return Array field. Actual type: {}", keys_field.getType());
 
             const auto & keys_array = keys_field.safeGet<Array>();
             const size_t keys_size = keys_array.size();
