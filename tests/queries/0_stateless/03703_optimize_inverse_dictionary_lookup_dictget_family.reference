@@ -3,9 +3,7 @@ SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.tab AS __table1
-WHERE __table1.id IN (SELECT __table1.id AS id
-FROM dictionary(\'dictionary_all\') AS __table1
-WHERE __table1.name = \'alpha\')
+WHERE __table1.id = _CAST(1, \'UInt64\')
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
@@ -16,9 +14,7 @@ SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.tab AS __table1
-WHERE __table1.id IN (SELECT __table1.id AS id
-FROM dictionary(\'dictionary_all\') AS __table1
-WHERE __table1.name = \'alpha\')
+WHERE __table1.id = _CAST(1, \'UInt64\')
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
