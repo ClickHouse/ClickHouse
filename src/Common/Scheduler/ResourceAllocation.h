@@ -68,13 +68,13 @@ private:
     using RemovingHook   = boost::intrusive::member_hook<ResourceAllocation, boost::intrusive::list_member_hook<>, &ResourceAllocation::removing_hook>;
 
     /// Keys for intrusive sets
-    // NOTE: Can only be accessed under queue.mutex as it is used in ordering, allocation.mutex is not needed.
+    /// NOTE: Can only be accessed under queue.mutex as it is used in ordering, allocation.mutex is not needed.
     size_t unique_id = 0; /// Unique id for tie breaking in ordering.
     ResourceCost fair_key = 0; /// Currently allocated plus pending increase (key for max-min fair ordering).
 
     /// Ordering by size and unique id for tie breaking
     /// Used for both running and increasing allocations for consistent ordering
-    // NOTE: called outside of the scheduler thread and thus requires queue.mutex
+    /// NOTE: called outside of the scheduler thread and thus requires queue.mutex
     struct ByFairKey { bool operator()(const auto & lhs, const auto & rhs) const noexcept { return std::tie(lhs.fair_key, lhs.unique_id) < std::tie(rhs.fair_key, rhs.unique_id); } };
 
     /// Intrusive data structures for managing allocations

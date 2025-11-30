@@ -6,8 +6,6 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
-#include <boost/intrusive/list.hpp>
-
 #include <mutex>
 
 
@@ -103,7 +101,7 @@ public:
         std::lock_guard lock(mutex);
         if (is_not_usable)
             return false; // Any request should already be failed or executed
-        if (request->is_linked())
+        if (request->enqueued_hook.is_linked())
         {
             // It's impossible to check that `request` is indeed inserted to this queue and not another queue.
             // It's up to caller to make sure this is the case. Otherwise, list sizes will be corrupted.
@@ -218,7 +216,7 @@ private:
     std::mutex mutex;
     Int64 max_queued; /// Limit on the number of waiting resource requests
     ResourceCost queue_cost = 0;
-    boost::intrusive::list<ResourceRequest> requests;
+    ResourceRequest::EnqueuedList requests;
     bool is_not_usable = false;
 };
 

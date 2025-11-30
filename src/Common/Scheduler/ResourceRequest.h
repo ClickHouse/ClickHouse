@@ -3,7 +3,7 @@
 #include <Common/Scheduler/CostUnit.h>
 
 #include <base/types.h>
-#include <boost/intrusive/list_hook.hpp>
+#include <boost/intrusive/list.hpp>
 #include <array>
 #include <exception>
 
@@ -13,6 +13,8 @@ namespace DB
 // Forward declarations
 class ISchedulerQueue;
 class ISchedulerConstraint;
+class FifoQueue;
+class CPUSlotsAllocation;
 
 /// Max number of constraints for a request to pass though (depth of constraints chain)
 constexpr size_t ResourceMaxConstraints = 8;
@@ -43,7 +45,7 @@ constexpr size_t ResourceMaxConstraints = 8;
 /// Request can be canceled before (3) using ISchedulerQueue::cancelRequest().
 /// Returning false means it is too late for request to be canceled. It should be processed in a regular way.
 /// Returning true means successful cancel and therefore steps (4) and (5) are not going to happen.
-class ResourceRequest : public boost::intrusive::list_base_hook<> // TODO(serxa): make the hook to be a private member and friend FifoQueue
+class ResourceRequest
 {
 public:
     /// Cost of request execution; should be filled before request enqueueing and remain constant until `finish()`.
@@ -94,6 +96,16 @@ public:
     /// Is called from the scheduler thread to fill `constraints` chain
     /// Returns `true` iff constraint was added successfully
     bool addConstraint(ISchedulerConstraint * new_constraint);
+
+private:
+    friend class FifoQueue;
+    friend class CPUSlotsAllocation; // hack for tests only
+
+    /// For an intrusive list of enqueued requests
+    /// NOTE: Can only be accessed under FifoQueue::mutex
+    boost::intrusive::list_member_hook<> enqueued_hook;
+    using EnqueuedHook = boost::intrusive::member_hook<ResourceRequest, boost::intrusive::list_member_hook<>, &ResourceRequest::enqueued_hook>;
+    using EnqueuedList = boost::intrusive::list<ResourceRequest, EnqueuedHook>;
 };
 
 }
