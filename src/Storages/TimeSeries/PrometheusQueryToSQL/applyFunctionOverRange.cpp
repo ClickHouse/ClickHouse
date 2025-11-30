@@ -8,6 +8,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/buildSelectQuery.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 
 
@@ -51,6 +52,12 @@ namespace
             return "timeSeriesLastToGrid";
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} is not implemented", promql_function_name);
+    }
+
+
+    bool shouldDropMetricName(const String & promql_function_name)
+    {
+        return promql_function_name != "last_over_time";
     }
 
 
@@ -231,6 +238,9 @@ SQLQueryPiece applyFunctionOverRange(
             res.end_time = end_time;
             res.step = step;
 
+            if ((res.store_method == StoreMethod::VECTOR_GRID) && shouldDropMetricName(promql_function_name))
+                res = dropMetricName(std::move(res), context);
+
             return res;
         }
 
@@ -266,6 +276,9 @@ SQLQueryPiece applyFunctionOverRange(
             res.start_time = start_time;
             res.end_time = end_time;
             res.step = step;
+
+            if (shouldDropMetricName(promql_function_name))
+                res = dropMetricName(std::move(res), context);
 
             return res;
         }
