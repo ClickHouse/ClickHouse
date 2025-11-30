@@ -33,6 +33,20 @@ Block BuffersReader::getHeader() const
     return header;
 }
 
+void readData(const ISerialization & serialization, ColumnPtr & column, ReadBuffer & istr, const FormatSettings * format_settings)
+{
+    ISerialization::DeserializeBinaryBulkSettings settings;
+    settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
+    settings.position_independent_encoding = false;
+    settings.native_format = false;
+    settings.format_settings = format_settings;
+
+    ISerialization::DeserializeBinaryBulkStatePtr state;
+
+    serialization.deserializeBinaryBulkStatePrefix(settings, state, nullptr);
+    serialization.deserializeBinaryBulkWithMultipleStreams(column, 0, 0, settings, state, nullptr);
+}
+
 Block BuffersReader::read()
 {
     Block res;
@@ -68,9 +82,6 @@ Block BuffersReader::read()
     FormatSettings default_settings;
     const FormatSettings & used_settings = format_settings ? *format_settings : default_settings;
 
-    size_t rows = 0;
-    bool first_column = true;
-
     for (size_t i = 0; i < num_buffers; ++i)
     {
         const auto & header_col = header.getByPosition(i);
@@ -80,44 +91,16 @@ Block BuffersReader::read()
         column.type = header_col.type;
 
         /// Create mutable column for deserialization
-        auto mutable_column = column.type->createColumn();
+        auto serialization = column.type->getDefaultSerialization();
 
-        size_t column_rows = 0;
+        ColumnPtr read_column = column.type->createColumn(*serialization);
 
-        if (!raw_buffers[i].empty())
-        {
-            chassert(buffer_sizes[i] == raw_buffers[i].size());
+        ReadBufferFromString buffer(raw_buffers[i]);
 
-            ReadBufferFromString column_buf(raw_buffers[i]);
+        NameAndTypePair name_and_type = {column.name, column.type};
+        readData(*serialization, read_column, buffer, &used_settings);
 
-            auto serialization = column.type->getDefaultSerialization();
-
-            /// Read row-by-row until the buffer is exhausted
-            while (!column_buf.eof())
-            {
-                size_t old_size = mutable_column->size();
-                serialization->deserializeBinary(*mutable_column, column_buf, used_settings);
-
-                if (mutable_column->size() == old_size)
-                    throw Exception(
-                        ErrorCodes::CANNOT_READ_ALL_DATA, "Serialization for column {} in Buffers format did not advance", column.name);
-
-                ++column_rows;
-            }
-        }
-
-        if (first_column)
-        {
-            rows = column_rows;
-            first_column = false;
-        }
-        else if (column_rows != rows)
-        {
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA, "Column {} in Buffers block has {} rows, but expected {}", column.name, column_rows, rows);
-        }
-
-        column.column = std::move(mutable_column);
+        column.column = std::move(read_column);
         res.insert(std::move(column));
     }
 

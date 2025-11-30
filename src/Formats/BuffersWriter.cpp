@@ -18,6 +18,39 @@ BuffersWriter::BuffersWriter(WriteBuffer & ostr_, SharedHeader header_, std::opt
 {
 }
 
+void writeData(
+    const ISerialization & serialization,
+    const ColumnPtr & column,
+    WriteBuffer & ostr,
+    const std::optional<FormatSettings> & format_settings)
+{
+    /** If there are columns-constants - then we materialize them.
+      * (Since the data type does not know how to serialize / deserialize constants.)
+      * The same for compressed columns in-memory.
+      */
+    ColumnPtr full_column = column->convertToFullColumnIfConst()->decompress();
+
+    if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(full_column.get()))
+    {
+        const auto & columns = column_lazy->getColumns();
+        full_column = ColumnTuple::create(columns);
+    }
+
+    ISerialization::SerializeBinaryBulkSettings settings;
+    settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
+    settings.position_independent_encoding = false;
+    settings.low_cardinality_max_dictionary_size = 0;
+    settings.native_format = false;
+    settings.format_settings = format_settings ? &*format_settings : nullptr;
+    settings.dynamic_serialization_version = MergeTreeDynamicSerializationVersion::V2;
+    settings.object_serialization_version = MergeTreeObjectSerializationVersion::V2;
+
+    ISerialization::SerializeBinaryBulkStatePtr state;
+    serialization.serializeBinaryBulkStatePrefix(*full_column, settings, state);
+    serialization.serializeBinaryBulkWithMultipleStreams(*full_column, 0, 0, settings, state);
+    serialization.serializeBinaryBulkStateSuffix(settings, state);
+}
+
 size_t BuffersWriter::write(const Block & block)
 {
     const size_t written_before = ostr.count();
@@ -25,37 +58,21 @@ size_t BuffersWriter::write(const Block & block)
     block.checkNumberOfRows();
 
     const size_t num_columns = block.columns();
-    const size_t rows = block.rows();
 
     /// Serialize each column into its own in-memory buffer first so that
     /// we know sizes before writing num_buffers + sizes
     std::vector<std::string> column_buffers(num_columns);
 
-    FormatSettings default_settings;
-    const FormatSettings & used_settings = format_settings ? *format_settings : default_settings;
-
     for (size_t i = 0; i < num_columns; ++i)
     {
         auto column = block.safeGetByPosition(i);
-
-        /// Materialize const and decompress in-memory compressed columns
-        ColumnPtr full_column = column.column->convertToFullColumnIfConst()->decompress();
-
-        if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(full_column.get()))
-        {
-            const auto & columns = column_lazy->getColumns();
-            full_column = ColumnTuple::create(columns);
-        }
 
         auto serialization = column.type->getDefaultSerialization();
         chassert(serialization != nullptr);
 
         WriteBufferFromOwnString buffer;
 
-        /// Row-by-row serialization:
-        /// buffer = serializeBinary(value_0), serializeBinary(value_1), ...
-        for (size_t row = 0; row < rows; ++row)
-            serialization->serializeBinary(*full_column, row, buffer, used_settings);
+        writeData(*serialization, column.column, buffer, format_settings);
 
         column_buffers[i] = buffer.str();
     }
