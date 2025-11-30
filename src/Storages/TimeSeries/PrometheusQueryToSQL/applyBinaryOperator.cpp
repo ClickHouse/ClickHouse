@@ -273,7 +273,7 @@ namespace
         chassert((scalar_argument.type == ResultType::SCALAR) && (scalar_argument.store_method == StoreMethod::SCALAR_GRID));
 
         const SQLQueryPiece & other_argument = argument_index ? left_argument : right_argument;
-        auto other_type =  other_argument.type;
+        auto other_type = other_argument.type;
         auto other_store_method = other_argument.store_method;
 
         SQLQueryPiece res = other_argument;
@@ -284,7 +284,10 @@ namespace
             case StoreMethod::CONST_SCALAR:
             {
                 if (other_type != ResultType::INSTANT_VECTOR)
+                {
+                    /// This case must be already handled - see the code of applyBinaryOperator().
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Argument #{} of the operator '{}' has wrong type {}", 2 - argument_index, operator_name, other_type);
+                }
 
                 auto other_scalar_value = other_argument.scalar_value;
                 res.store_method = StoreMethod::SCALAR_GRID;
@@ -441,7 +444,45 @@ namespace
         size_t argument_index,
         ConverterContext & context)
     {
+        const auto & operator_name = operator_node->operator_name;
+        bool is_comparison_without_bool = isComparisonWithoutBool(operator_node);
 
+        chassert((left_argument.type == ResultType::INSTANT_VECTOR) && (right_argument.type == ResultType::INSTANT_VECTOR));
+
+        const SQLQueryPiece & const_scalar_argument = argument_index ? right_argument : left_argument;
+        chassert((const_scalar_argument.store_method == StoreMethod::CONST_SCALAR));
+        auto scalar_value = const_scalar_argument.scalar_value;
+
+        const SQLQueryPiece & other_argument = argument_index ? left_argument : right_argument;
+        auto other_store_method = other_argument.store_method;
+
+        SQLQueryPiece res = other_argument;
+        res.node = operator_node;
+
+        switch (other_store_method)
+        {
+            case StoreMethod::CONST_SCALAR:
+            {
+                Float64 const_result = evaluateConstBinaryOperator(operator_name, left_argument.scalar_value, right_argument.scalar_value);
+                if (is_comparison_without_bool)
+                {
+                    if (const_result)
+                        return left_argument;
+                    else
+                        return SQLQueryPiece{operator_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
+                }
+                res.scalar_value = const_result;
+                return res;
+            }
+            case StoreMethod::SCALAR_GRID:
+            {
+
+            }
+            case StoreMethod::VECTOR_GRID:
+            {
+
+            }
+        }
     }
 
 
@@ -467,7 +508,7 @@ namespace
         size_t argument_index,
         ConverterContext & context)
     {
-
+        inner join
     }
 }
 
