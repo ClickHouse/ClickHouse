@@ -14,9 +14,9 @@ namespace DB
 {
 
 /// Implementation for LIMIT N OFFSET M
-/// where N and M are fractions in (0, 1) representing percentages.
+/// where N and M are fractions in (0, 1) range (non-inclusive) representing percentages.
 ///
-/// This processor support multiple inputs and outputs (the same number).
+/// This processor supports multiple inputs and outputs (the same number).
 /// Each pair of input and output port works independently.
 /// The reason to have multiple ports is to be able to stop all sources when limit is reached, in a query like:
 ///     SELECT * FROM system.numbers_mt WHERE number = 1000000 LIMIT 0.1
@@ -24,22 +24,23 @@ namespace DB
 /// with_ties - implementation of LIMIT WITH TIES. It works only for single port.
 ///
 /// Processor workflow:
-/// while input:
+/// while input.read():
 ///     1. read and cache input chunk
-///     2. if offset or fractional_offset, drop from cache 
+///     2. increase total input rows counter
+///     3. if offset or fractional_offset, drop from cache 
 ///        chunks that we became 100% sure will be offseted entirely.
-/// 2. count total rows count in input
-/// 3. calculate integral limit and offset
-/// 4. apply normal offset logic on remaining cached chunks.
+///     4. remove from cache and push to output, chunks that we
+///        we becamse 100% sure will be pushed
+/// 5. calculate remaining integral limit/offset
+/// 6. apply normal limit/offset logic on remaining cached chunks.
 class FractionalLimitTransform final : public IProcessor
 {
 private:
     Float64 limit_fraction;
     Float64 offset_fraction;
 
-    // Variables to hold real LIMIT and OFFSET values to
-    // use after (input_rows_cnt * fraction) calculation.
-    UInt64 offset = 0; // additionally hold UInt64 offset_ from constructor
+    /// Variables to hold remaining integral limit/offset values to use.
+    UInt64 offset = 0; // additionally holds UInt64 offset_ from constructor
     UInt64 limit = 0;
 
     bool with_ties;
@@ -48,7 +49,7 @@ private:
     Chunk previous_row_chunk; /// for WITH TIES, contains only sort columns
     std::vector<size_t> sort_column_positions;
 
-    UInt64 rows_read = 0; /// including the last read block
+    UInt64 rows_read_from_cache = 0;
     RowsBeforeStepCounterPtr rows_before_limit_at_least;
 
     /// State of port's pair.
@@ -59,15 +60,16 @@ private:
 
         InputPort * input_port = nullptr;
         OutputPort * output_port = nullptr;
-        bool is_input_port_finished = false;
+        bool is_finished = false;
     };
 
     std::vector<PortsData> ports_data;
-    size_t num_finished_input_ports = 0;
+    UInt64 num_finished_ports = 0;
 
-    size_t rows_cnt = 0;
+    UInt64 rows_cnt = 0;
     UInt64 evicted_rows_cnt = 0;
     UInt64 outputed_rows_cnt = 0;
+
     struct CacheEntry
     {
         OutputPort * output_port = nullptr;
