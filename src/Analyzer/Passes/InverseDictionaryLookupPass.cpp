@@ -127,9 +127,6 @@ public:
         if (!getSettings()[Setting::optimize_inverse_dictionary_lookup])
             return;
 
-        if (getSettings()[Setting::rewrite_in_to_join])
-            return;
-
         auto * node_function = node->as<FunctionNode>();
 
         if (!node_function)
@@ -293,6 +290,9 @@ public:
             return;
         }
 
+        if (getSettings()[Setting::rewrite_in_to_join])
+            return;
+
         auto dict_table_function = std::make_shared<TableFunctionNode>("dictionary");
         dict_table_function->getArguments().getNodes().push_back(dictget_function_info.dict_name_node);
 
@@ -314,11 +314,11 @@ public:
 
         if (dict_side == Side::LHS)
         {
-            attr_comparison_function_node->getArguments().getNodes() = { attr_col_node_casted, arguments[1] };
+            attr_comparison_function_node->getArguments().getNodes() = {attr_col_node_casted, arguments[1]};
         }
         else
         {
-            attr_comparison_function_node->getArguments().getNodes() = { arguments[0], attr_col_node_casted };
+            attr_comparison_function_node->getArguments().getNodes() = {arguments[0], attr_col_node_casted};
         }
         resolveOrdinaryFunctionNodeByName(*attr_comparison_function_node, attr_comparison_function_name, getContext());
 
