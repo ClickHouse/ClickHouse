@@ -296,7 +296,6 @@ private:
     /// Positions of aggregation key columns in the header.
     const ColumnNumbers keys_positions;
     Params params;
-    mutable std::atomic_bool aggregation_in_order = false;
 
     AggregatedDataVariants::Type method_chosen;
     Sizes key_sizes;
