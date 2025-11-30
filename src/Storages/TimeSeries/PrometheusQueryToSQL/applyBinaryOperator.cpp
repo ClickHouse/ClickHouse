@@ -1,4 +1,3 @@
-#if 0
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyUnaryOperator.h>
 
 #include <Parsers/ASTFunction.h>
@@ -25,11 +24,6 @@ namespace
         const SQLQueryPiece & right_argument,
         const ConverterContext & context)
     {
-        if (!(operator_name == "+" || operator_name == "-" || operator_name == ""))
-        {
-            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY, "Unknown unary operator with name {}", operator_name);
-        }
-
         if (!(left_argument.type == ResultType::SCALAR || left_argument.type == ResultType::INSTANT_VECTOR))
         {
             throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
@@ -45,214 +39,8 @@ namespace
         }
     }
 
-    /// Binary operator when one of the arguments is of type ResultType::SCALAR with StoreMethod::CONST_SCALAR.
-    /// Other argument can have any type.
-    SQLQueryPiece binaryOperatorWithConstScalar(
-        const PrometheusQueryTree::BinaryOperator * operator_node,
-        SQLQueryPiece && const_scalar_argument,
-        size_t const_scalar_argument_index,
-        SQLQueryPiece && other_argument,
-        ConverterContext & context)
-    {
-        chassert(const_scalar_argument.store_method == StoreMethod::CONST_SCALAR);
-        chassert(const_scalar_argument.type == ResultType::SCALAR || const_scalar_argument.store_method == StoreMethod::INSTANT_VECTOR);
-
-        const auto & operator_name = operator_node->operator_name;
-
-        switch (other_argument.store_method)
-        {
-            case StoreMethod::CONST_SCALAR:
-            {
-                SQLQueryPiece res{operator_node, other_argument.type, other_argument.store_method};
-                res.start_time = other_argument.start_time;
-                res.end_time = other_argument.end_time;
-                res.step = other_argument.step;
-                Float64 const_value = const_scalar_argument.scalar_value;
-                Float64 other_value = other_argument.scalar_value;
-
-                if (operator_name == "+")
-                {
-                    res.scalar_value = left + right;
-                }
-                else if (operator_name == "-")
-                {
-                    res.scalar_value = left - right;
-                }
-                else if (operator_name == "*")
-                {
-                    res.scalar_value = left * right;
-                }
-                else if (operator_name == "/")
-                {
-                    res.scalar_value = const_scalar_argument_index ? (other_value / const_value) : (const_scalar_argument.scalar_value / other_argument.scalar_value);
-                }
-                else if (operator_name == "%")
-                {
-                    res.scalar_value = const_scalar_argument_index ? fmod(other_argument.scalar_value, const_scalar_argument.scalar_value)
-                                                                   : fmod(const_scalar_argument.scalar_value, other_argument.scalar_value);
-                }
-                else if (operator_name == "^")
-                {
-                    res.scalar_value = const_scalar_argument_index ? pow(other_argument.scalar_value, const_scalar_argument.scalar_value)
-                                                                   : pow(const_scalar_argument.scalar_value, other_argument.scalar_value);
-                }
-                else if (operator_name == "atan2")
-                {
-                    res.scalar_value = const_scalar_argument_index ? atan2(other_argument.scalar_value, const_scalar_argument.scalar_value)
-                                                                   : atan2(const_scalar_argument.scalar_value, other_argument.scalar_value);
-                }
-                else
-                {
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Operator '{}' is not implemented", operator_name);
-                }
-                return res;
-            }
-
-            case StoreMethod::SCALAR_GRID:
-            case StoreMethod::VECTOR_GRID:
-            {
-                SQLQueryPiece res{operator_node, other_argument.type, other_argument.store_method};
-                res.start_time = other_argument.start_time;
-                res.end_time = other_argument.end_time;
-                res.step = other_argument.step;
-
-                SelectQueryParams params;
-                if (other_argument.store_method == StoreMethod::VECTOR_GRID)
-                    params.select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
-
-                ASTPtr transform;
-                if (operator_name == "+")
-                {
-                    transform = makeASTFunction("plus", x, scalar_value);
-                }
-                else if (operator_name == "-")
-                {
-                    res.scalar_value = const_scalar_argument_index ? (other_argument.scalar_value - const_scalar_argument.scalar_value)
-                                                                   : (const_scalar_argument.scalar_value - other_argument.scalar_value);
-                }
-                else if (operator_name == "*")
-                {
-                    res.scalar_value = const_scalar_argument.scalar_value * other_argument.scalar_value;
-                }
-                else if (operator_name == "/")
-                {
-                    res.scalar_value = const_scalar_argument_index ? (other_argument.scalar_value / const_scalar_argument.scalar_value)
-                                                                   : (const_scalar_argument.scalar_value / other_argument.scalar_value);
-                }
-                else if (operator_name == "%")
-                {
-                    res.scalar_value = const_scalar_argument_index ? fmod(other_argument.scalar_value, const_scalar_argument.scalar_value)
-                                                                   : fmod(const_scalar_argument.scalar_value, other_argument.scalar_value);
-                }
-                else if (operator_name == "^")
-                {
-                    res.scalar_value = const_scalar_argument_index ? pow(other_argument.scalar_value - const_scalar_argument.scalar_value)
-                                                                   : pow(const_scalar_argument.scalar_value - other_argument.scalar_value);
-                }
-                else if (operator_name == "atan2")
-                {
-                    res.scalar_value = const_scalar_argument_index ? atan2(other_argument.scalar_value - const_scalar_argument.scalar_value)
-                                                                   : atan2(const_scalar_argument.scalar_value - other_argument.scalar_value);
-                }
-                else
-                {
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Operator '{}' is not implemented", operator_name);
-                }                
-            }
-        }
-
-        return res;
-    }
-
-    void binaryOperatorWithScalarGridAsScalar(
-        const PrometheusQueryTree::BinaryOperator * operator_node,
-        SQLQueryPiece && scalar_grid_argument,
-        bool const_scalar_argument_is_right,
-        SQLQueryPiece && other_argument,
-        ConverterContext & context)
-
-    void binaryOperatorWithConstScalarAsVector(
-
-    void binaryOperatorWithScalarGridAsVector(
-
-    void binaryOperatorWithVectorGrids()
-    {
-
-    }
-
-}
-
-
-SQLQueryPiece applyBinaryOperatorWithScalar(
-    const PrometheusQueryTree::BinaryOperator & operator_node,
-    SQLQueryPiece && left_argument,
-    SQLQueryPiece && right_argument,
-    ConverterContext & context)
-{
-    checkArgumentTypes(operator_node, left_argument, right_argument, context);
-
-    if ((left_argument.type == ResultType::SCALAR) && (left_argument.store_method == StoreMethod::CONST_SCALAR))
-        return binaryOperatorWithConstScalarAsScalar(operator_node, std::move(left_argument), 0, std::move(right_argument), context);
-        
-    if ((right_argument.type == ResultType::SCALAR) && (right_argument.store_method == StoreMethod::CONST_SCALAR))
-        return binaryOperatorWithConstScalarAsScalar(operator_node, std::move(left_argument), 1, std::move(right_argument), context);
-
-    if ((left_argument.type == ResultType::SCALAR) && (left_argument.store_method == StoreMethod::SCALAR_GRID))
-        return binaryOperatorWithScalarGridAsScalar(operator_node, std::move(left_argument), 0, std::move(right_argument), context);
-
-    if ((right_argument.type == ResultType::SCALAR) && (right_argument.store_method == StoreMethod::SCALAR_GRID))
-        return binaryOperatorWithScalarGridAsScalar(operator_node, std::move(left_argument), 1, std::move(right_argument), context);
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR);
-}
-    
-
-        if (left_argument.store_method == StoreMethod::SCALAR_GRID)
-
-
-    }
-
-    if (left_argument.store_method == StoreMethod::CONST_SCALAR)
-    {
-        if (left_argument.type == ResultType::SCALAR)
-            return binaryOperatorWithConstScalarAsScalar(operator_node, std::move(left_argument), 0, std::move(right_argument), context);
-        else
-            return binaryOperatorWithConstScalarAsVector(operator_node, std::move(left_argument), 0, std::move(right_argument), context);
-    }
-
-    if (right_argument.store_method == StoreMethod::CONST_SCALAR)
-    {
-        if (right_argument.type == ResultType::SCALAR)
-            return binaryOperatorWithConstScalarAsScalar(operator_node, std::move(right_argument), 1, std::move(left_argument), context);
-        else
-            return binaryOperatorWithConstScalarAsVector(operator_node, std::move(right_argument), 1, std::move(left_argument), context);
-    }
-
-    if (left_argument.store_method == StoreMethod::SCALAR_GRID)
-    {
-        if (left_argument.type == ResultType::SCALAR)
-            return binaryOperatorWithScalarGridAsScalar(operator_node, std::move(left_argument), 0, std::move(right_argument), context);
-        else
-            return binaryOperatorWithScalarGridAsVector(operator_node, std::move(left_argument), 0, std::move(right_argument), context);
-    }
-
-    if (right_argument.store_method == StoreMethod::SCALAR_GRID)
-    {
-        if (right_argument.type == ResultType::SCALAR)
-            return binaryOperatorWithScalarGridAsScalar(operator_node, std::move(right_argument), 1, std::move(left_argument), context);
-        else
-            return binaryOperatorWithScalarGridAsVector(operator_node, std::move(right_argument), 1, std::move(left_argument), context);
-    }
-
-    return binaryOperatorWithVectorGrids(operator_node, std::move(left_argument), std::move(right_argument), context);
-}
-
-
-namespace
-{
     Float64 evaluateConstBinaryOperator(std::string_view operator_name, Float64 left, Float64 right)
     {
-        const auto & operator_name = operator_node->operator_name;
         if (operator_name == "+")
         {
             return left + right;
@@ -322,7 +110,25 @@ namespace
 
     ASTPtr makeTransformAST(std::string_view operator_name, ASTPtr left_argument, ASTPtr right_argument)
     {
-
+        static const std::unordered_map<std::string_view, std::string_view> function_names = {
+            {"+", "plus"},
+            {"-", "minus"},
+            {"*", "multiply"},
+            {"/", "divide"},
+            {"%", "modulo"},
+            {"^", "pow"},
+            {"atan2", "atan2"},
+            {"==", "equals"},
+            {"!=", "notEquals"},
+            {">", "greater"},
+            {"<", "less"},
+            {">=", "greaterOrEquals"},
+            {"<=", "lessOrEquals"},
+        };
+        auto it = function_names.find(operator_name);
+        if (it == function_names.end())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Operator '{}' is not implemented", operator_name);
+        return makeASTFunction(function_name, left_argument, right_argument);
     }
 
     /// Applies a binary operator if one of the arguments is a SCALAR represented by StoreMethod::CONST_SCALAR,
@@ -336,72 +142,116 @@ namespace
         size_t argument_index,
         ConverterContext & context)
     {
+        const auto & operator_name = operator_node->operator_name;
+        bool is_comparison_without_bool = isComparisonWithoutBool(operator_node);
+
         const SQLQueryPiece & scalar_argument = argument_index ? right_argument : left_argument;
-        const SQLQueryPiece & other_argument = argument_index ? left_argument : right_argument;
         chassert((scalar_argument.type == ResultType::SCALAR) && (scalar_argument.store_method == StoreMethod::CONST_SCALAR));
+    
+        const SQLQueryPiece & other_argument = argument_index ? left_argument : right_argument;
+        auto other_type = other_argument.type;
+        auto other_store_method = other_argument.store_method;
 
         SQLQueryPiece res = other_argument;
         res.node = operator_node;
 
-        switch (other_argument.store_method)
+        switch (other_store_method)
         {
             case StoreMethod::CONST_SCALAR:
             {
-                Float64 float_result = evaluateConstBinaryOperator(operator_name, left_argument.scalar_value, right_argument.scalar_value);
-                if ((other_argument.type == ResultType::INSTANT_VECTOR) && isComparisonWithoutBool(operator_node))
+                Float64 const_result = evaluateConstBinaryOperator(operator_name, left_argument.scalar_value, right_argument.scalar_value);
+                if (is_comparison_without_bool && (res.type == ResultType::INSTANT_VECTOR))
                 {
-                    if (float_result)
+                    if (const_result)
                         return res;
                     else
                         return SQLQueryPiece{operator_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
                 }
-                res.scalar_value = float_result;
+                res.scalar_value = const_result;
                 return res;
             }
 
             case StoreMethod::SCALAR_GRID:
             case StoreMethod::VECTOR_GRID:
             {
-                /// For scalar grid:
-                /// SELECT arrayMap(x -> x + <const_scalar>, values) AS values
-                /// FROM <scalar_grid>
+                /// Case 1: other_store_method == SCALAR_GRID, comparison operator (e.g. ==) without bool modifier:
+                /// SELECT 0 AS group, arrayMap(x -> if (x == <scalar_value>, x, NULL), values) AS values
+                /// FROM <other_scalar_grid>
                 ///
-                /// For vector grid:
-                /// SELECT group, arrayMap(x -> x + <const_scalar>, values) AS values
-                /// FROM <vector_grid>
+                /// Case 2: other_store_method == SCALAR_GRID, other operators (e.g. +):
+                /// SELECT arrayMap(x -> x + <scalar_value>, values) AS values
+                /// FROM <other_scalar_grid>
                 ///
-                /// For comparison operator without bool modifier, scalar grid:
-                /// SELECT 0 AS group, arrayMap(x -> if (x == <const_scalar>, x, NULL), values) AS values
-                /// FROM <scalar_grid>
+                /// Case 3: other_store_method == VECTOR_GRID, comparison operator (e.g. ==) without bool modifier:
+                /// SELECT group, arrayMap(x -> if (x == <scalar_value>, x, NULL), values) AS values
+                /// FROM <other_vector_grid>
                 ///
-                /// For comparison operator without bool modifier, vector grid:
-                /// SELECT group, arrayMap(x -> if (x == <const_scalar>, x, NULL), values) AS values
-                /// FROM <vector_grid>
+                /// Case 4: other_store_method == VECTOR_GRID, other operators (e.g. +):
+                /// SELECT group, arrayMap(x -> x + <scalar_value>, values) AS values
+                /// FROM <other_vector_grid>
+
                 SelectQueryParams params;
 
-                bool is_comparison_without_bool = isComparisonWithoutBool(operator_node);
+                auto scalar_value = scalar_argument.scalar_value;
 
-                if (store_method == StoreMethod::VECTOR_GRID)
+                if (other_store_method == StoreMethod::VECTOR_GRID)
                 {
                     params.select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
                 }
-                else if (is_comparison_without_bool)
+                else if (is_comparison_without_bool && (res.type == ResultType::INSTANT_VECTOR))
                 {
                     params.select_list.push_back(std::make_shared<ASTLiteral>(0u));
                     params.select_list.back()->setAlias(TimeSeriesColumnNames::Group);
+                    res.store_method = StoreMethod::VECTOR_GRID;
+                    res.metric_name_dropped = true;
                 }
 
-                ASTPtr left_ast = argument_index ? std::make_shared<ASTIdentifier>("x") : std::make_shared<ASTLiteral>(scalar_argument.scalar_value);
-                ASTPtr right_ast = argument_index ? std::make_shared<ASTLiteral>(scalar_argument.scalar_value) : std::make_shared<ASTIdentifier>("x");
+                ASTPtr left_ast = argument_index ? std::make_shared<ASTIdentifier>("x") : std::make_shared<ASTLiteral>(scalar_value);
+                ASTPtr right_ast = argument_index ? std::make_shared<ASTLiteral>(scalar_value) : std::make_shared<ASTIdentifier>("x");
 
                 ASTPtr transform_ast = makeTransformAST(operator_name, left_ast, right_ast);
 
+                if (is_comparison_without_bool && (res.type == ResultType::INSTANT_VECTOR))
+                {
+                    ASTPtr value_if_match = std::make_shared<ASTIdentifier>("x");
+                    params.select_list.push_back(makeASTFunction(
+                        "arrayMap",
+                        makeASTFunction(
+                            "lambda",
+                            makeASTFunction("tuple", std::make_shared<ASTIdentifier>("x")),
+                            makeASTFunction("if", transform_ast, value_if_match, std::make_shared<ASTLiteral>(Field{})),
+                            std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values))));
+                }
+                else
+                {
+                    params.select_list.push_back(makeASTFunction(
+                        "arrayMap",
+                        makeASTFunction("lambda", makeASTFunction("tuple", std::make_shared<ASTIdentifier>("x")), transform_ast),
+                        std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values)));
+                }
+                params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
+
+                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(other_argument.select_query), SQLSubqueryType::TABLE});
+                params.from_subquery = context.subqueries.back().name;
+
+                res.select_query = buildSelectQuery(std::move(params));
+
+                if (!is_comparison_without_bool)
+                    res = dropMetricName(std::move(res), context);
+
+                return res;
             }
 
+            case StoreMethod::CONST_STRING:
+            case StoreMethod::RAW_DATA:
             {
-
+                throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                                "Argument #{} of the operator '{}' in expression {} has unexpected type {} (store_method: {})",
+                                2 - argument_index, operator_name, getPromQLQuery(other_argument, context), other_type, other_store_method);
             }
         }
+
+        UNREACHABLE();
     }
 
 
@@ -416,7 +266,168 @@ namespace
         size_t argument_index,
         ConverterContext & context)
     {
+        const auto & operator_name = operator_node->operator_name;
+        bool is_comparison_without_bool = isComparisonWithoutBool(operator_node);
 
+        const SQLQueryPiece & scalar_argument = argument_index ? right_argument : left_argument;
+        chassert((scalar_argument.type == ResultType::SCALAR) && (scalar_argument.store_method == StoreMethod::SCALAR_GRID));
+
+        const SQLQueryPiece & other_argument = argument_index ? left_argument : right_argument;
+        auto other_type =  other_argument.type;
+        auto other_store_method = other_argument.store_method;
+
+        SQLQueryPiece res = other_argument;
+        res.node = operator_node;
+
+        switch (other_store_method)
+        {
+            case StoreMethod::CONST_SCALAR:
+            {
+                if (other_type != ResultType::INSTANT_VECTOR)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Argument #{} of the operator '{}' has wrong type {}", 2 - argument_index, operator_name, other_type);
+
+                auto other_scalar_value = other_argument.scalar_value;
+                res.store_method = StoreMethod::SCALAR_GRID;
+
+                /// Case 1: Comparison operator (e.g. ==) without bool modifier:
+                /// SELECT 0 AS group, arrayMap(x -> if (x == <other_scalar_value>, <other_scalar_value>, NULL), values) AS values
+                /// FROM <scalar_grid>
+                ///
+                /// Case 2: Other operators (e.g. +):
+                /// SELECT arrayMap(x -> x + <other_scalar_value>, values) AS values
+                /// FROM <scalar_grid>
+                SelectQueryParams params;
+
+                chassert(res.type == ResultType::INSTANT_VECTOR);
+                if (is_comparison_without_bool)
+                {
+                    params.select_list.push_back(std::make_shared<ASTLiteral>(0u));
+                    params.select_list.back()->setAlias(TimeSeriesColumnNames::Group);
+                    res.store_method = StoreMethod::VECTOR_GRID;
+                    res.metric_name_dropped = true;
+                }
+
+                ASTPtr left_ast = argument_index ? std::make_shared<ASTLiteral>(other_scalar_value) : std::make_shared<ASTIdentifier>("x");
+                ASTPtr right_ast = argument_index ? std::make_shared<ASTIdentifier>("x") : std::make_shared<ASTLiteral>(other_scalar_value);
+
+                ASTPtr transform_ast = makeTransformAST(operator_name, left_ast, right_ast);
+
+                if (is_comparison_without_bool)
+                {
+                    ASTPtr value_if_match = std::make_shared<ASTLiteral>(other_scalar_value);
+                    params.select_list.push_back(makeASTFunction(
+                        "arrayMap",
+                        makeASTFunction(
+                            "lambda",
+                            makeASTFunction("tuple", std::make_shared<ASTIdentifier>("x")),
+                            makeASTFunction("if", transform_ast, value_if_match, std::make_shared<ASTLiteral>(Field{})),
+                            std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values))));
+                }
+                else
+                {
+                    params.select_list.push_back(makeASTFunction(
+                        "arrayMap",
+                        makeASTFunction("lambda", makeASTFunction("tuple", std::make_shared<ASTIdentifier>("x")), transform_ast),
+                        std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values)));
+                }
+                params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
+
+                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(scalar_argument.select_query), SQLSubqueryType::TABLE});
+                params.from_subquery = context.subqueries.back().name;
+
+                res.select_query = buildSelectQuery(std::move(params));
+
+                if (!is_comparision_without_null)
+                    res = dropMetricName(std::move(res), context);
+
+                return res;
+            }
+
+            case StoreMethod::SCALAR_GRID:
+            case StoreMethod::VECTOR_GRID:
+            {
+                /// Case 1: other_store_method == SCALAR_GRID, comparison operator (e.g. ==) without bool modifier:
+                /// SELECT 0 AS group, arrayMap(x, y -> if (x == y, x, NULL), values) AS values
+                /// FROM <other_scalar_grid>
+                ///
+                /// Case 2: other_store_method == SCALAR_GRID, other operators (e.g. +):
+                /// SELECT arrayMap(x, y -> x + y, <scalar_grid>, values) AS values
+                /// FROM <other_scalar_grid>
+                ///
+                /// Case 3: other_store_method == VECTOR_GRID, comparison operator (e.g. ==) without bool modifier:
+                /// SELECT group, arrayMap(x, y -> if (x == y, x, NULL), <scalar_grid>, values) AS values
+                /// FROM <other_vector_grid>
+                ///
+                /// Case 4: other_store_method == VECTOR_GRID, other operators (e.g. +):
+                /// SELECT group, arrayMap(x, y -> x + y, <scalar_grid>, values) AS values
+                /// FROM <other_vector_grid>
+                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(scalar_argument.select_query), SQLSubqueryType::SCALAR});
+                String scalar_grid = context.subqueries.back().name;
+
+                SelectQueryParams params;
+
+                bool is_comparison_without_bool = isComparisonWithoutBool(operator_node);
+
+                if (store_method == StoreMethod::VECTOR_GRID)
+                {
+                    params.select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
+                }
+                else if (is_comparison_without_bool && (res.type == StoreMethod::INSTANT_VECTOR))
+                {
+                    params.select_list.push_back(std::make_shared<ASTLiteral>(0u));
+                    params.select_list.back()->setAlias(TimeSeriesColumnNames::Group);
+                    res.store_method = StoreMethod::VECTOR_GRID;
+                    res.metric_name_dropped = true;
+                }
+
+                ASTPtr transform_ast = makeTransformAST(operator_name, std::make_shared<ASTIdentifier>("x"), std::make_shared<ASTIdentifier>("y"));
+                ASTPtr left_ast = std::make_shared<ASTIdentifier>(argument_index ? scalar_grid : TimeSeriesColumnNames::Values);
+                ASTPtr right_ast = std::make_shared<ASTIdentifier>(argument_index ? TimeSeriesColumnNames::Values : scalar_grid);
+
+                if (is_comparison_without_bool && (res.type == StoreMethod::INSTANT_VECTOR))
+                {
+                    ASTPtr value_if_match = std::make_shared<ASTIdentifier>(argument_index ? "x" : "y");
+                    params.select_list.push_back(makeASTFunction(
+                        "arrayMap",
+                        makeASTFunction(
+                            "lambda",
+                            makeASTFunction("tuple", std::make_shared<ASTIdentifier>("x"), std::make_shared<ASTIdentifier>("y")),
+                            makeASTFunction("if", transform_ast, value_if_match, std::make_shared<ASTLiteral>(Field{})),
+                            std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values))));
+                }
+                else
+                {
+                    params.select_list.push_back(makeASTFunction(
+                        "arrayMap",
+                        makeASTFunction(
+                            "lambda",
+                            makeASTFunction("tuple", std::make_shared<ASTIdentifier>("x"), std::make_shared<ASTIdentifier>("y")),
+                            transform_ast),
+                        std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values)));
+                }
+                params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
+
+                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(other_argument.select_query), SQLSubqueryType::TABLE});
+                params.from_subquery = context.subqueries.back().name;
+
+                res.select_query = buildSelectQuery(std::move(params));
+
+                if (!is_comparision_without_null)
+                    res = dropMetricName(std::move(res), context);
+
+                return res;
+            }
+
+            case StoreMethod::CONST_STRING:
+            case StoreMethod::RAW_DATA:
+            {
+                throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                                "Argument #{} of the operator '{}' in expression {} has unexpected type {} (store_method: {})",
+                                2 - argument_index, operator_name, getPromQLQuery(other_argument, context), other_type, other_store_method);
+            }
+        }
+
+        UNREACHABLE();
     }
 
 
@@ -468,6 +479,7 @@ SQLQueryPiece applyBinaryOperator(
     ConverterContext & context)
 {
     checkArgumentTypes(operator_node, left_argument, right_argument, context);
+    const auto & operator_name = operator_node->operator_name;
 
     if ((left_argument.store_method == StoreMethod::EMPTY) || (right_argument.store_method == StoreMethod::EMPTY))
     {
@@ -507,12 +519,16 @@ SQLQueryPiece applyBinaryOperator(
 
     if (left.argument.store_method != StoreMethod::VECTOR_GRID)
     {
-        throw;
+        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                        "Left argument of the operator '{}' in expression {} has unexpected type {} (store_method: {})",
+                        operator_name, getPromQLQuery(left_argument, context), left_argument.type, left_argument.store_method);
     }
 
     if (right.argument.store_method != StoreMethod::VECTOR_GRID)
     {
-        throw;
+        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                        "Right argument of the operator '{}' in expression {} has unexpected type {} (store_method: {})",
+                        operator_name, getPromQLQuery(right_argument, context), right_argument.type, right_argument.store_method);
     }
 
     return binaryOperatorWithVectorsByVectorGrids(operator_node, left_argument, right_argument, context);

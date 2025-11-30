@@ -38,20 +38,17 @@ namespace
 
     String getSQLFunctionName(const String & promql_function_name)
     {
-        if (promql_function_name == "rate")
-            return "timeSeriesRateToGrid";
-        else if (promql_function_name == "irate")
-            return "timeSeriesInstantRateToGrid";
-        else if (promql_function_name == "delta")
-            return "timeSeriesDeltaToGrid";
-        else if (promql_function_name == "idelta")
-            return "timeSeriesInstantDeltaToGrid";
-        else if (promql_function_name == "idelta")
-            return "timeSeriesInstantDeltaToGrid";
-        else if (promql_function_name == "last_over_time")
-            return "timeSeriesLastToGrid";
-        else
+        static const std::unordered_map<String, String> sql_function_names{
+            {"rate", "timeSeriesRateToGrid"},
+            {"irate", "timeSeriesInstantRateToGrid"},
+            {"delta", "timeSeriesDeltaToGrid"},
+            {"idelta", "timeSeriesInstantDeltaToGrid"},
+            {"last_over_time", "timeSeriesLastToGrid"},
+        };
+        auto it = sql_function_names.find(promql_function_name);
+        if (it == sql_function_names.end())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} is not implemented", promql_function_name);
+        return it->second;
     }
 
 
