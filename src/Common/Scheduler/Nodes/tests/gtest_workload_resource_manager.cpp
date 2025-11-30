@@ -1957,20 +1957,39 @@ struct TestAllocationArray
 
     std::mutex mutex;
     String approve_order;
+    bool save_ids = false;
+    bool save_mem = false;
 
     explicit TestAllocationArray(ResourceTest & t_)
         : t(t_)
     {}
 
-    void onApprove(ResourceCost mem)
+    TestAllocationArray & saveIds(bool value = true)
+    {
+        std::unique_lock lock(mutex);
+        save_ids = value;
+        return *this;
+    }
+
+    TestAllocationArray & saveMem(bool value = true)
+    {
+        std::unique_lock lock(mutex);
+        save_mem = value;
+        return *this;
+    }
+
+    void onApprove(size_t i, ResourceCost mem)
     {
         std::unique_lock lock(mutex);
         if (!approve_order.empty())
             approve_order += " ";
-        approve_order += std::to_string(mem);
+        if (save_ids)
+            approve_order += ids[i];
+        if (save_mem)
+            approve_order += std::to_string(mem);
     }
 
-    void setWorkload(const String & workload, std::vector<size_t> indexes)
+    TestAllocationArray & setWorkload(const String & workload, std::vector<size_t> indexes)
     {
         ClassifierPtr c = t.manager->acquire(workload);
         ResourceLink link = c->get(resource);
@@ -1981,6 +2000,22 @@ struct TestAllocationArray
             ids[idx] = fmt::format("{}{}", static_cast<char>(std::toupper(workload[0])), idx);
         }
         classifiers.push_back(c);
+        return *this;
+    }
+
+    TestAllocationArray & setWorkloads(const std::array<String, count> & workloads)
+    {
+        for (size_t i = 0; i < count; i++)
+        {
+            String workload = workloads[i];
+            ClassifierPtr c = t.manager->acquire(workload);
+            ResourceLink link = c->get(resource);
+            classifiers.push_back(c);
+            chassert(!links[i]);
+            links[i] = link;
+            ids[i] = fmt::format("{}{}", static_cast<char>(std::toupper(workload[0])), i);
+        }
+        return *this;
     }
 
     void insert(ResourceLink & link, const std::array<ResourceCost, count> & sizes)
@@ -1996,7 +2031,7 @@ struct TestAllocationArray
                 chassert(!links[i]);
                 links[i] = link;
                 ids[i] = fmt::format("A{}", i);
-                allocations[i].emplace(links[i], ids[i], mem, [this, mem] { onApprove(mem); });
+                allocations[i].emplace(links[i], ids[i], mem, [this, i, mem] { onApprove(i, mem); });
             }
         });
     }
@@ -2012,7 +2047,7 @@ struct TestAllocationArray
                 if (mem == SKIP)
                     continue;
                 chassert(links[i]);
-                allocations[i].emplace(links[i], ids[i], mem, [this, mem] { onApprove(mem); });
+                allocations[i].emplace(links[i], ids[i], mem, [this, i, mem] { onApprove(i, mem); });
             }
         });
     }
@@ -2056,11 +2091,11 @@ struct TestAllocationArray
                 if (mem == SKIP)
                     continue;
                 if (allocations[i])
-                    allocations[i]->setSize(mem, [this, mem] { onApprove(mem); });
+                    allocations[i]->setSize(mem, [this, i, mem] { onApprove(i, mem); });
                 else
                 {
                     chassert(links[i]);
-                    allocations[i].emplace(links[i], ids[i], mem, [this, mem] { onApprove(mem); });
+                    allocations[i].emplace(links[i], ids[i], mem, [this, i, mem] { onApprove(i, mem); });
                 }
             }
         });
@@ -2305,6 +2340,8 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationCancelPendingAllocation)
     }
 }
 
+// ---------- FairAllocation ---------- //
+
 TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseFairnessBetweenWorkloads)
 {
     ResourceTest t;
@@ -2499,7 +2536,67 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationPendingDoesNotKillRunnin
     }
 }
 
-TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreasePriorityBetweenWorkloadsForPendingAllocations)
+TEST(SchedulerWorkloadResourceManager, MemoryReservationChangeWorkloadWeight)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 104");
+    t.query("CREATE WORKLOAD w0 IN all");
+    t.query("CREATE WORKLOAD w1 IN all");
+    t.query("CREATE WORKLOAD w2 IN all");
+    t.query("CREATE WORKLOAD w3 IN all");
+    t.query("CREATE WORKLOAD blocker IN all SETTINGS precedence = -1");
+
+    ClassifierPtr c_blocker = t.manager->acquire("blocker");
+    ResourceLink l_blocker = c_blocker->get("memory");
+
+    for (int i = 0; i < 1; i++)
+    {
+        // For pending allocation (w/o change)
+        {
+            TestAllocationArray<4> a(t);
+            a.setWorkloads({"w0", "w1", "w2", "w3"});
+            a.insertSequential({ 10, 40, 20, 30 });
+            TestAllocation blocker(l_blocker, "blocker", 4);
+            blocker.waitSync();
+
+            TestAllocationArray<4> b(t);
+            b.setWorkloads({"w0", "w1", "w2", "w3"}).saveIds().saveMem(false);
+            b.insert({ 1, 1, 1, 1 });
+
+            blocker.setSize(0); // Release all memory to allow other allocations to proceed
+            b.assertApproveOrder("W0 W2 W3 W1"); // order of initial sizes
+        }
+
+        // For pending allocation (w/change)
+        {
+            TestAllocationArray<4> a(t);
+            a.setWorkloads({"w0", "w1", "w2", "w3"});
+            a.insertSequential({ 10, 40, 20, 30 });
+            TestAllocation blocker(l_blocker, "blocker", 4);
+            blocker.waitSync();
+
+            TestAllocationArray<4> b(t);
+            b.setWorkloads({"w0", "w1", "w2", "w3"}).saveIds().saveMem(false);
+            b.insert({ 1, 1, 1, 1 });
+
+            // Change weight and reorder allocations
+            t.query("CREATE OR REPLACE WORKLOAD w0 IN all SETTINGS weight = 2");
+            t.query("CREATE OR REPLACE WORKLOAD w1 IN all SETTINGS weight = 10");
+            t.query("CREATE OR REPLACE WORKLOAD w2 IN all SETTINGS weight = 0.1");
+            t.query("CREATE OR REPLACE WORKLOAD w3 IN all SETTINGS weight = 2");
+
+            blocker.setSize(0); // Release all memory to allow other allocations to proceed
+            b.assertApproveOrder("W1 W0 W3 W2"); // order of initial sizes divided by weights: 5, 4, 200, 15
+        }
+
+    }
+}
+
+// ---------- PrecedenceAllocation ---------- //
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreasePrecedenceBetweenWorkloadsForPendingAllocations)
 {
     ResourceTest t;
 
@@ -2523,7 +2620,7 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreasePriorityBetweenW
     }
 }
 
-TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreasePriorityBetweenWorkloads)
+TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreasePrecedenceBetweenWorkloads)
 {
     ResourceTest t;
 
@@ -2549,7 +2646,7 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreasePriorityBetweenW
     }
 }
 
-TEST(SchedulerWorkloadResourceManager, MemoryReservationKillOrderPriorityBetweenWorkloads)
+TEST(SchedulerWorkloadResourceManager, MemoryReservationKillOrderPrecedenceBetweenWorkloads)
 {
     ResourceTest t;
 
@@ -2587,7 +2684,7 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationKillOrderPriorityBetween
     }
 }
 
-TEST(SchedulerWorkloadResourceManager, MemoryReservationPendingKillRunningDueToWorkloadPriority)
+TEST(SchedulerWorkloadResourceManager, MemoryReservationPendingKillRunningDueToWorkloadPrecedence)
 {
     ResourceTest t;
 

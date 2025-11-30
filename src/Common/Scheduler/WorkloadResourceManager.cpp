@@ -3,6 +3,7 @@
 #include <Common/Scheduler/Nodes/SpaceShared/SpaceSharedScheduler.h>
 #include <Common/Scheduler/Nodes/TimeShared/TimeSharedScheduler.h>
 #include <Common/Scheduler/Nodes/WorkloadNode.h>
+#include <Common/Scheduler/Debug.h>
 
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
@@ -157,6 +158,7 @@ void WorkloadResourceManager::Resource::deleteNode(const NodeInfo & info)
 
 void WorkloadResourceManager::Resource::updateNode(const NodeInfo & old_info, const NodeInfo & new_info)
 {
+    SCHED_DBG("WorkloadResourceManager -- updateNode(resource={}, workload={})", resource_name, old_info.name);
     if (old_info.name != new_info.name)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Updating a name of workload '{}' to '{}' is not allowed in resource '{}'",
             old_info.name, new_info.name, resource_name);
@@ -179,6 +181,7 @@ void WorkloadResourceManager::Resource::updateNode(const NodeInfo & old_info, co
 
     executeInSchedulerThread([&, this]
     {
+        SCHED_DBG("WorkloadResourceManager -- [begin] updateNode(resource={}, workload={})", resource_name, old_info.name);
         auto node = node_for_workload[old_info.name];
         bool detached = false;
         if (IWorkloadNode::updateRequiresDetach(
@@ -201,6 +204,7 @@ void WorkloadResourceManager::Resource::updateNode(const NodeInfo & old_info, co
                 node_for_workload[new_info.parent]->attachWorkloadChild(node);
         }
         updateCurrentVersion();
+        SCHED_DBG("WorkloadResourceManager -- [end] updateNode(resource={}, workload={})", resource_name, old_info.name);
     });
 }
 
