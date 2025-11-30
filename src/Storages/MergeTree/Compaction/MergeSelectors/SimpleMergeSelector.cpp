@@ -254,8 +254,8 @@ void selectWithinPartsRange(
             /// Partition is not fully filled but but may be approaching it. Let's lower max parts to merge according to the fullness.
             max_parts_to_merge_at_once = static_cast<size_t>(
                 settings.base +
-                (max_parts_to_merge_at_once - settings.base) * (1.2 * (settings.parts_to_throw_insert -  partition_stats.part_count)) /
-                                                               (1.2 * settings.parts_to_throw_insert - partition_stats.part_count - settings.base));
+                (max_parts_to_merge_at_once - settings.base) * (1.0 - std::pow((partition_stats.part_count - settings.base) / (settings.parts_to_throw_insert - settings.base), 5))
+            );
         }
     }
 
