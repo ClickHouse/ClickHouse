@@ -478,17 +478,7 @@ struct HashMethodSerialized
 
     static std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns_, const Sizes & sizes, bool optimize)
     {
-        ColumnRawPtrs key_columns_copy;
-        key_columns_copy.reserve(key_columns_.size());
-        // Columns holders;
-        // for (const auto * key_column : key_columns_)
-        // {
-        //     if (!aggregation_in_order && key_column->lowCardinality())
-        //     {
-        //         holders.push_back(recursiveRemoveLowCardinality(key_column->getPtr()));
-        //         key_column = holders.back().get();
-        //     }
-        // }
+        ColumnRawPtrs key_columns_copy{key_columns_.begin(), key_columns_.end()};
         Columns new_columns(key_columns_copy, optimize);
 
         std::vector<IColumn *> new_key_columns;
