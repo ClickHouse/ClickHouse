@@ -36,7 +36,7 @@ void DistinctTransform::buildFilter(
     const size_t rows,
     SetVariants & variants) const
 {
-    typename Method::State state(columns, key_sizes, nullptr);
+    typename Method::State state(columns, key_sizes, nullptr, false);
 
     for (size_t i = 0; i < rows; ++i)
     {

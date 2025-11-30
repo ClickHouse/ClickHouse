@@ -133,8 +133,12 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     }
 
     HashMethodSingleLowCardinalityColumn(
-        const ColumnRawPtrs & key_columns_low_cardinality, const Sizes & key_sizes, const HashMethodContextPtr & context)
-        : Base({getLowCardinalityColumn(key_columns_low_cardinality[0]).getDictionary().getNestedNotNullableColumn().get()}, key_sizes, context)
+        const ColumnRawPtrs & key_columns_low_cardinality, const Sizes & key_sizes, const HashMethodContextPtr & context, bool)
+        : Base(
+              {getLowCardinalityColumn(key_columns_low_cardinality[0]).getDictionary().getNestedNotNullableColumn().get()},
+              key_sizes,
+              context,
+              false)
     {
         const auto * column = &getLowCardinalityColumn(key_columns_low_cardinality[0]);
 
@@ -357,7 +361,8 @@ struct HashMethodSerialized
         template <typename ColT>
         using ColumnWithNullMap = std::tuple<const ColT *, const UInt8 *, size_t>;
 
-        explicit Columns(const ColumnRawPtrs & key_columns_)
+        explicit Columns(const ColumnRawPtrs & key_columns_, bool optimize_)
+            : optimize(optimize_)
         {
             size_t pos = 0;
             for (const auto * key_column : key_columns_)
@@ -372,15 +377,16 @@ struct HashMethodSerialized
                     }
                 }
 
-                if (typeid_cast<const ColumnString *>(key_column))
+                if (optimize && typeid_cast<const ColumnString *>(key_column))
                     string_key_columns.emplace_back(static_cast<const ColumnString *>(key_column), null_map, pos++);
-                else if (const auto * ptr = dynamic_cast<const ColumnFixedSizeHelper *>(key_column))
+                else if (const auto * ptr = dynamic_cast<const ColumnFixedSizeHelper *>(key_column); ptr && optimize)
                     fixed_size_key_columns.emplace_back(ptr, null_map, pos++);
                 else
                     other_key_columns.emplace_back(key_column, null_map, pos++);
             }
         }
 
+        bool optimize = true;
         std::vector<ColumnWithNullMap<ColumnString>> string_key_columns;
         std::vector<ColumnWithNullMap<ColumnFixedSizeHelper>> fixed_size_key_columns;
         std::vector<ColumnWithNullMap<IColumn>> other_key_columns;
@@ -388,9 +394,11 @@ struct HashMethodSerialized
 
     PaddedPODArray<UInt64> row_sizes;
     Columns key_columns;
+    bool optimize = true;
 
-    HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
-        : key_columns(key_columns_)
+    HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, bool optimize_)
+        : key_columns(key_columns_, optimize_)
+        , optimize(optimize_)
     {
         if constexpr (prealloc)
         {
@@ -472,17 +480,9 @@ struct HashMethodSerialized
     {
         ColumnRawPtrs key_columns_copy;
         key_columns_copy.reserve(key_columns_.size());
-        std::vector<ColumnPtr> holders;
         for (const auto * key_column : key_columns_)
-        {
-            if (key_column->lowCardinality())
-            {
-                holders.push_back(recursiveRemoveLowCardinality(key_column->getPtr()));
-                key_column = holders.back().get();
-            }
             key_columns_copy.push_back(key_column);
-        }
-        Columns new_columns(key_columns_copy);
+        Columns new_columns(key_columns_copy, true);
 
         std::vector<IColumn *> new_key_columns;
         new_key_columns.reserve(key_columns_.size());

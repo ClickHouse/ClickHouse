@@ -94,7 +94,7 @@ void IntersectOrExceptTransform::work()
 template <typename Method>
 void IntersectOrExceptTransform::addToSet(Method & method, const ColumnRawPtrs & columns, size_t rows, SetVariants & variants) const
 {
-    typename Method::State state(columns, key_sizes, nullptr);
+    typename Method::State state(columns, key_sizes, nullptr, false);
 
     for (size_t i = 0; i < rows; ++i)
         state.emplaceKey(method.data, i, variants.string_pool);
@@ -105,7 +105,7 @@ template <typename Method>
 size_t IntersectOrExceptTransform::buildFilter(
     Method & method, const ColumnRawPtrs & columns, IColumn::Filter & filter, size_t rows, SetVariants & variants) const
 {
-    typename Method::State state(columns, key_sizes, nullptr);
+    typename Method::State state(columns, key_sizes, nullptr, false);
     size_t new_rows_num = 0;
 
     for (size_t i = 0; i < rows; ++i)
