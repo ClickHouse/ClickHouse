@@ -56,6 +56,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromTableStep.h>
 #include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
@@ -1310,10 +1311,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 /// Create step which reads from empty source if storage has no data.
                 const auto & column_names = table_expression_data.getColumnNames();
                 auto source_header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
-                Pipe pipe(std::make_shared<NullSource>(source_header));
-                auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-                read_from_pipe->setStepDescription("Read from NullSource");
-                query_plan.addStep(std::move(read_from_pipe));
+                auto read_nothing = std::make_unique<ReadNothingStep>(source_header);
+                read_nothing->setStepDescription("Read from NullSource");
+                query_plan.addStep(std::move(read_nothing));
                 query_plan.setMaxThreads(max_threads_execute_query);
 
                 auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
@@ -1334,10 +1334,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             for (auto & projection_column : projection_columns)
                 source_header.insert(ColumnWithTypeAndName(projection_column.type, projection_column.name));
 
-            Pipe pipe(std::make_shared<NullSource>(std::make_shared<const Block>(source_header)));
-            auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-            read_from_pipe->setStepDescription("Read from NullSource");
-            query_plan.addStep(std::move(read_from_pipe));
+            auto read_nothing = std::make_unique<ReadNothingStep>(std::make_shared<const Block>(source_header));
+            read_nothing->setStepDescription("Read from NullSource");
+            query_plan.addStep(std::move(read_nothing));
         }
         else
         {
