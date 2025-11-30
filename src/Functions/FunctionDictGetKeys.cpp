@@ -587,8 +587,6 @@ private:
                 }
             }
         }
-        /// Ideally, we should be `shrink_to_fit` each `mapped` in `out` here to save memory.
-        /// However, since saved memory is typically small, we skip it for performance consideration.
     }
 };
 
