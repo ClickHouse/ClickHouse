@@ -518,6 +518,10 @@ private:
         QueryPipeline pipeline(std::move(pipe));
         PullingPipelineExecutor executor(pipeline);
 
+        auto progress_cb = helper.getContext()->getProgressCallback();
+        if (progress_cb)
+            pipeline.setProgressCallback(progress_cb);
+
         /// The arena will not own anything, just used for temporary allocations during serialization
         /// of keys. Then rollback after use to free memory for next use.
         Arena arena;
