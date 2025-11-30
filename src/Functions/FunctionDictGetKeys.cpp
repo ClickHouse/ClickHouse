@@ -521,22 +521,23 @@ private:
         /// The arena will not own anything, just used for temporary allocations during serialization
         /// of keys. Then rollback after use to free memory for next use.
         Arena arena;
-        Block block;
-        while (executor.pull(block))
+        Chunk chunk;
+        while (executor.pull(chunk))
         {
-            chassert(block.columns() >= num_keys + 1);
+            Columns columns = chunk.detachColumns();
+            chassert(columns.size() >= num_keys + 1);
 
-            ColumnPtr attr_col = removeSpecialRepresentations(block.getByPosition(num_keys).column);
-            const size_t rows_in_block = attr_col->size();
+            ColumnPtr attr_col = removeSpecialRepresentations(columns[num_keys]);
+            const size_t rows_in_chunk = attr_col->size();
 
             std::vector<ColumnPtr> key_columns(num_keys);
             for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
             {
-                key_columns[key_pos] = removeSpecialRepresentations(block.getByPosition(key_pos).column);
-                chassert(key_columns[key_pos]->size() == rows_in_block);
+                key_columns[key_pos] = removeSpecialRepresentations(columns[key_pos]);
+                chassert(key_columns[key_pos]->size() == rows_in_chunk);
             }
 
-            for (size_t row_id = 0; row_id < rows_in_block; ++row_id)
+            for (size_t row_id = 0; row_id < rows_in_chunk; ++row_id)
             {
                 const UInt128 value_hash = sipHash128AtRow(*attr_col, row_id);
 
