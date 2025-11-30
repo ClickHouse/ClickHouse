@@ -40,4 +40,6 @@ public:
     virtual ~IMergeSelector() = default;
 };
 
+using MergeSelectorPtr = std::shared_ptr<IMergeSelector>;
+
 }

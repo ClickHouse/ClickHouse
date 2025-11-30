@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/MergeTree/Compaction/MergeSelectors/PartitionStatistics.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/IMergePredicate.h>
@@ -39,6 +40,7 @@ public:
 
     MergeSelectorChoices chooseMergesFrom(
         const PartsRanges & ranges,
+        const PartitionsStatistics & partitions_stats,
         const IMergePredicate & predicate,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeSettingsPtr & merge_tree_settings,
