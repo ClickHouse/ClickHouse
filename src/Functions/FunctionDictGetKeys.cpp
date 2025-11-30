@@ -1,8 +1,9 @@
-#include <Columns/ColumnSparse.h>
 #include <Common/Arena.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/SipHash.h>
+#include <Common/ThreadPool.h>
 #include <Common/assert_cast.h>
 
 #include <Core/Block.h>
@@ -21,14 +22,19 @@
 #include <Interpreters/Cache/ReverseLookupCache.h>
 #include <Interpreters/Context.h>
 
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+
+#include <mutex>
 
 namespace DB
 {
@@ -36,6 +42,7 @@ namespace DB
 namespace Setting
 {
 extern const SettingsNonZeroUInt64 max_block_size;
+extern const SettingsMaxThreads max_threads;
 }
 
 
@@ -179,6 +186,89 @@ private:
         chassert(!key_types.empty());
         const size_t num_keys = key_types.size();
 
+        Names column_names = structure.getKeysNames();
+        column_names.push_back(attr_name);
+
+        const auto & settings = helper.getContext()->getSettingsRef();
+
+        auto pipe = dict->read(column_names, settings[Setting::max_block_size], settings[Setting::max_threads]);
+        const size_t parallel_streams = pipe.maxParallelStreams();
+
+        QueryPipeline pipeline(std::move(pipe));
+        pipeline.setNumThreads(parallel_streams);
+
+        auto progress_cb = helper.getContext()->getProgressCallback();
+        if (progress_cb)
+            pipeline.setProgressCallback(progress_cb);
+
+        PullingAsyncPipelineExecutor executor(pipeline);
+
+        struct TaskResult
+        {
+            MutableColumns columns;
+            size_t matched_rows = 0;
+        };
+
+        std::vector<std::optional<TaskResult>> task_results;
+        std::mutex task_mutex;
+        size_t task_index = 0;
+
+        ThreadPool pool(CurrentMetrics::end(), CurrentMetrics::end(), CurrentMetrics::end(), settings[Setting::max_threads]);
+
+        Chunk chunk;
+        while (executor.pull(chunk))
+        {
+            /// It can happen if dictionary is empty
+            if (chunk.getNumRows() == 0)
+                continue;
+
+            chassert(chunk.getColumns().size() == num_keys + 1);
+
+            const size_t current_task_index = task_index++;
+
+            pool.scheduleOrThrowOnError(
+                [&, task_idx = current_task_index, chunk_columns = chunk.detachColumns()]() mutable
+                {
+                    ColumnPtr attr_col = removeSpecialRepresentations(chunk_columns[num_keys]);
+                    chassert(attr_col != nullptr);
+
+                    Columns key_columns(num_keys);
+                    for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
+                    {
+                        key_columns[key_pos] = removeSpecialRepresentations(chunk_columns[key_pos]);
+                        chassert(key_columns[key_pos] != nullptr);
+                    }
+
+                    const size_t rows_in_chunk = attr_col->size();
+
+                    TaskResult result;
+                    result.columns.reserve(num_keys);
+                    for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
+                        result.columns.emplace_back(key_columns[key_pos]->cloneEmpty());
+
+                    for (size_t row_id = 0; row_id < rows_in_chunk; ++row_id)
+                    {
+                        if (attr_col->compareAt(row_id, 0, *values_column, 1) != 0)
+                            continue;
+
+                        for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
+                            result.columns[key_pos]->insertFrom(*key_columns[key_pos], row_id);
+
+                        ++result.matched_rows;
+                    }
+
+                    if (result.matched_rows)
+                    {
+                        std::lock_guard lock(task_mutex);
+                        if (task_results.size() <= task_idx)
+                            task_results.resize(task_idx + 1);
+                        task_results[task_idx] = std::move(result);
+                    }
+                });
+        }
+
+        pool.wait();
+
         MutableColumns result_cols;
         result_cols.reserve(num_keys);
 
@@ -192,39 +282,17 @@ private:
         auto & offsets = offsets_col->getData();
         offsets.resize(1);
 
-        Names column_names = structure.getKeysNames();
-        column_names.push_back(attr_name);
-
-        auto pipe = dict->read(column_names, helper.getContext()->getSettingsRef()[Setting::max_block_size], 1);
-        QueryPipeline pipeline(std::move(pipe));
-        PullingPipelineExecutor executor(pipeline);
-
-        std::vector<ColumnPtr> key_columns(num_keys);
-
-        Chunk chunk;
-        size_t out_offset = 0;
-        while (executor.pull(chunk))
+        offsets[0] = 0;
+        for (auto & task_result_opt : task_results)
         {
-            Columns columns = chunk.detachColumns();
-            ColumnPtr attr_col = removeSpecialRepresentations(columns[num_keys]);
+            if (!task_result_opt || task_result_opt->matched_rows == 0)
+                continue;
 
             for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
-                key_columns[key_pos] = removeSpecialRepresentations(columns[key_pos]);
+                result_cols[key_pos]->insertRangeFrom(*task_result_opt->columns[key_pos], 0, task_result_opt->columns[key_pos]->size());
 
-            const size_t rows_in_chunk = attr_col->size();
-            for (size_t row_id = 0; row_id < rows_in_chunk; ++row_id)
-            {
-                if (attr_col->compareAt(row_id, 0, *values_column, 0) != 0)
-                    continue;
-
-                for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
-                {
-                    result_cols[key_pos]->insertFrom(*key_columns[key_pos], row_id);
-                }
-                ++out_offset;
-            }
+            offsets[0] += task_result_opt->matched_rows;
         }
-        offsets[0] = out_offset;
 
         /// Step 2
         if (num_keys == 1)
@@ -332,7 +400,6 @@ private:
                 }
             }
         }
-
 
         /// Step 4
         const size_t num_keys = key_types.size();
