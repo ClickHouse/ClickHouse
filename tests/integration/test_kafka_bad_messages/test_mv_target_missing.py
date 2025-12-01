@@ -36,9 +36,12 @@ def kafka_cluster():
 def test_missing_mv_target(kafka_cluster, create_query_generator):
     admin = k.get_admin_client(kafka_cluster)
     topic = "mv_target_missing" + k.get_topic_postfix(create_query_generator)
+
+    # we don't bother creating this topic because we never start streaming
     topic_other = "mv_target_missing_other" + k.get_topic_postfix(
         create_query_generator
     )
+
     k.kafka_create_topic(admin, topic)
 
     settings = {
@@ -66,8 +69,11 @@ def test_missing_mv_target(kafka_cluster, create_query_generator):
         settings=settings,
     )
 
-    kafka_mv_not_ready_before = instance.query(
+    kafka_mv_not_ready_before_str = instance.query(
         "SELECT value FROM system.events WHERE event='KafkaMVNotReady'"
+    )
+    kafka_mv_not_ready_before = (
+        int(kafka_mv_not_ready_before_str) if kafka_mv_not_ready_before_str != "" else 0
     )
 
     instance.query(
@@ -90,13 +96,19 @@ def test_missing_mv_target(kafka_cluster, create_query_generator):
         """
     )
 
-    kafka_mv_not_ready_after = instance.query_with_retry(
-        "SELECT value FROM system.events WHERE event='KafkaMVNotReady'",
-        check_callback=lambda x: int(x) > 2 * kafka_mv_not_ready_before,
+    kafka_mv_not_ready_after = int(
+        instance.query_with_retry(
+            "SELECT value FROM system.events WHERE event='KafkaMVNotReady'",
+            check_callback=lambda x: int(x) > kafka_mv_not_ready_before,
+        )
+    )
+
+    assert (
+        kafka_mv_not_ready_after > kafka_mv_not_ready_before
+        and kafka_mv_not_ready_after < kafka_mv_not_ready_before + 100
     )
 
     skc = instance.query(
-        # "SELECT dependencies_database, dependencies_table, missing_dependencies_database, missing_dependencies_table FROM system.kafka_consumers WHERE table='kafkamiss' FORMAT Vertical"
         "SELECT dependencies, missing_dependencies FROM system.kafka_consumers WHERE table in ('kafkamiss', 'kafkamissother') ORDER BY table FORMAT Vertical"
     )
     assert (
@@ -238,7 +250,6 @@ def test_missing_mv_transitive_target(kafka_cluster, create_query_generator):
     )
 
     skc = instance.query(
-        # "SELECT dependencies_database, dependencies_table, missing_dependencies_database, missing_dependencies_table FROM system.kafka_consumers WHERE table='tkafkamiss' FORMAT Vertical"
         "SELECT missing_dependencies FROM system.kafka_consumers WHERE table='tkafkamiss' FORMAT Vertical"
     )
     assert (
