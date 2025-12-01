@@ -15,6 +15,7 @@
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Coordination/CoordinationSettings.h>
+#include <Coordination/KeeperReconfiguration.h>
 
 #include <IO/ReadHelpers.h>
 #include <Disks/IDisk.h>
@@ -1036,13 +1037,17 @@ void KeeperDispatcher::executeClusterUpdateActionAndWaitConfigChange(const Clust
 {
     pushClusterUpdates({action});
     Stopwatch watch;
+    LOG_DEBUG(log, "Waiting for configuration update {} to be applied, will wait for {} ms", action, max_action_wait_time_ms);
     while (watch.elapsedMilliseconds() < max_action_wait_time_ms)
     {
         if (keeper_context->isShutdownCalled())
             throw Exception(ErrorCodes::ABORTED, "Shutdown called, aborting configuration update");
 
         if (check_callback(server.get()))
+        {
+            LOG_DEBUG(log, "Configuration update {} applied successfully", action);
             return;
+        }
 
         std::this_thread::sleep_for(1000ms);
     }
@@ -1102,6 +1107,7 @@ try
     if (!reconfig_command->has("actions"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Reconfigure command must have 'changes' field");
 
+    LOG_DEBUG(log, "Preconditions passed, executing reconfiguration");
     size_t max_action_wait_time_ms = reconfig_command->has("max_action_wait_time_ms")
         ? reconfig_command->getValue<size_t>("max_action_wait_time_ms")
         : 60000;
@@ -1125,20 +1131,21 @@ try
                 auto remove_callback = [member_id](KeeperServer * server_) -> bool
                 {
                     auto config = server_->getKeeperStateMachine()->getClusterConfig();
+
                     if (config->get_server(member_id) == nullptr)
                     {
                         LOG_INFO(
                             &Poco::Logger::get("KeeperDispatcher"),
-                            "Skip removing server id {} from cluster because it's not present in current configuration",
-                            member_id);
+                                 "Skip removing server id {} from cluster because it's not present in current configuration: {}",
+                            member_id, serializeClusterConfig(config));
                         return true;
                     }
                     else
                     {
                         LOG_INFO(
                             &Poco::Logger::get("KeeperDispatcher"),
-                            "Waiting for removing server id {} from cluster configuration",
-                            member_id);
+                                 "Waiting for removing server id {} from cluster configuration: {}",
+                            member_id, serializeClusterConfig(config));
                         return false;
                     }
                 };
@@ -1193,6 +1200,12 @@ try
             TransferLeadership transfer_action{new_leader_id};
             auto check_callback = [new_leader_id](KeeperServer * server_) -> bool
             {
+                LOG_INFO(
+                    &Poco::Logger::get("KeeperDispatcher"),
+                    "Waiting for leadership transfer to server id {}. Current leader id is {}",
+                    new_leader_id,
+                    server_->getLeaderID());
+
                 return server_->getLeaderID() == new_leader_id;
             };
             auto time_left = std::min(max_action_wait_time_ms, max_total_wait_time_ms - total_watch.elapsedMilliseconds());
@@ -1232,9 +1245,9 @@ try
                     {
                         LOG_INFO(
                             &Poco::Logger::get("KeeperDispatcher"),
-                            "Waiting for setting priority {} for server id {} in cluster configuration",
+                            "Waiting for setting priority {} for server id {} in cluster configuration, current {}",
                             priority,
-                            member_id);
+                            member_id, server_in_config->get_priority());
                         return false;
                     }
                 };
@@ -1249,6 +1262,8 @@ try
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown reconfigure action {}", ss.str());
         }
     }
+
+    LOG_DEBUG(log, "Reconfiguration successfully applied");
     Poco::JSON::Object::Ptr result = new Poco::JSON::Object();
     result->set("status", "ok");
     result->set("message", "Reconfiguration successfully applied");

@@ -233,9 +233,12 @@ bool FourLetterCommandFactory::isEnabled(int32_t code) const
     return std::find(allow_list.begin(), allow_list.end(), code) != allow_list.end();
 }
 
-bool FourLetterCommandFactory::supportArguments(int32_t) const
+bool FourLetterCommandFactory::supportArguments(int32_t code) const
 {
     checkInitialization();
+
+    if (IFourLetterCommand::toName(code) == "rcfg")
+        return true;
     return false;
 }
 
