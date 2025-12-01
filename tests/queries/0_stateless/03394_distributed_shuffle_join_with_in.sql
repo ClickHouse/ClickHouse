@@ -1,3 +1,5 @@
+DROP TABLE IF EXISTS test;
+
 CREATE TABLE test(path String, lang String, hits UInt64) ENGINE MergeTree() ORDER BY tuple();
 
 INSERT INTO test SELECT 'path_' || number::String, 'en', number FROM numbers(5);
@@ -15,7 +17,8 @@ SET
     distributed_plan_default_shuffle_join_bucket_count=3,
     distributed_plan_default_reader_bucket_count=3,
     distributed_plan_force_exchange_kind='Streaming',
-    distributed_plan_optimize_exchanges = 1;
+    distributed_plan_optimize_exchanges = 1,
+    distributed_plan_max_rows_to_broadcast=0;
 
 SELECT '----------';
 
@@ -36,3 +39,12 @@ FROM
    (SELECT path, sum(hits) as hits FROM test WHERE lang = 'de' GROUP BY path) AS de
 WHERE (en.path = de.path)
 ORDER BY ALL;
+
+DROP TABLE test;
+
+DROP DATABASE IF EXISTS d0;
+CREATE DATABASE d0 ON CLUSTER 'default' ENGINE = Memory;
+CREATE TABLE d0.t0 (c0 Int) ENGINE = MergeTree() ORDER BY tuple();
+INSERT INTO TABLE d0.t0 VALUES (1);
+SELECT 1 FROM d0.t0 GROUP BY c0 SETTINGS distributed_plan_default_shuffle_join_bucket_count = 0, make_distributed_plan = 1; -- { serverError BAD_ARGUMENTS }
+DROP DATABASE d0;
