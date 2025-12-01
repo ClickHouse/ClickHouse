@@ -390,3 +390,6 @@
 [submodule "contrib/clickstack"]
 	path = contrib/clickstack
 	url = https://github.com/ClickHouse/clickhouse-clickstack.git
+[submodule "contrib/fsst"]
+	path = contrib/fsst
+	url = https://github.com/cwida/fsst.git
