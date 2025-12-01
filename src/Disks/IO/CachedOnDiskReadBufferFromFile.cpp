@@ -1084,10 +1084,11 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
         else
         {
             chassert(!state.buf->available());
+            chassert(state.read_type == ReadType::REMOTE_FS_READ_BYPASS_CACHE);
+
             auto buf = getRemoteReadBuffer(file_segment, offset, ReadType::REMOTE_FS_READ_BYPASS_CACHE, info);
             buf.swap(state.buf);
             state.buf = buf;
-            state.read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
 
             state.buf->setReadUntilPosition(file_segment.range().right + 1); /// [..., range.right]
             state.buf->seek(offset, SEEK_SET);
