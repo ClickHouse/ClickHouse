@@ -292,20 +292,21 @@ std::shared_ptr<ReadBufferFromFileBase> getRemoteReadBuffer(
         }
         case ReadType::REMOTE_FS_READ_BYPASS_CACHE:
         {
-            /// Result buffer is owned only by current buffer -- not shareable like in the case above.
-
-            if (info.remote_file_reader
-                && info.remote_file_reader->getFileOffsetOfBufferEnd() == offset)
+            if (info.remote_file_reader && offset == info.remote_file_reader->getFileOffsetOfBufferEnd())
             {
+                info.remote_file_reader->seek(offset, SEEK_SET);
                 return info.remote_file_reader;
             }
 
+            /// Result buffer is owned only by current buffer -- not shareable like in the case above.
+            /// We cannot directly check info.remote_file_reader because of a possible race with background downloader.
             auto reader = file_segment.extractRemoteFileReader();
             if (reader && offset == reader->getFileOffsetOfBufferEnd())
                 info.remote_file_reader = reader;
             else
                 info.remote_file_reader = info.implementation_buffer_creator();
 
+            info.remote_file_reader->seek(offset, SEEK_SET);
             return info.remote_file_reader;
         }
         default:
@@ -955,11 +956,8 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             if (std::uncaught_exceptions() > 0)
                 nextimpl_step_log_info = getInfoForLog();
 
-            if (!use_external_buffer)
-            {
-                chassert(!internal_buffer.empty());
-                chassert(internal_buffer.begin());
-            }
+            chassert(!internal_buffer.empty());
+            chassert(internal_buffer.begin());
 
             if (info.file_segments->empty())
                 return;
@@ -1038,6 +1036,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         implementation_buffer_can_be_reused,
         log);
 
+    chassert(!state->buf->internalBuffer().empty());
     if (size)
     {
         file_offset_of_buffer_end += size;
@@ -1046,7 +1045,9 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         chassert(state->buf->available());
     }
 
+    chassert(!state->buf->internalBuffer().empty());
     swap.reset();
+    chassert(!internal_buffer.empty());
 
     if (file_segment.isDownloader())
         file_segment.completePartAndResetDownloader();
@@ -1087,13 +1088,16 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
             chassert(state.read_type == ReadType::REMOTE_FS_READ_BYPASS_CACHE);
 
             auto buf = getRemoteReadBuffer(file_segment, offset, ReadType::REMOTE_FS_READ_BYPASS_CACHE, info);
-            buf.swap(state.buf);
+            buf->setReadUntilPosition(file_segment.range().right + 1); /// [..., range.right]
+            buf->seek(offset, SEEK_SET);
+            buf->swap(*state.buf);
             state.buf = buf;
-
-            state.buf->setReadUntilPosition(file_segment.range().right + 1); /// [..., range.right]
-            state.buf->seek(offset, SEEK_SET);
+            chassert(!state.buf->internalBuffer().empty());
+            chassert(offset == static_cast<size_t>(state.buf->getFileOffsetOfBufferEnd()));
         }
     }
+
+    chassert(!state.buf->internalBuffer().empty());
 
     auto do_download = state.read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
     if (do_download != file_segment.isDownloader())
@@ -1165,6 +1169,7 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
         }
     }
 
+    chassert(!state.buf->internalBuffer().empty());
     if (size)
         chassert(state.buf->available());
 
@@ -1246,6 +1251,7 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
                         info.file_segments->size(), info.file_segments->toString(true)));
     }
 
+    chassert(!state.buf->internalBuffer().empty());
     if (size)
         chassert(state.buf->available());
 
