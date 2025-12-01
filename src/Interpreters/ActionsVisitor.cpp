@@ -26,6 +26,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
@@ -586,12 +587,14 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
     if (!tuple_name_type)
         return {};
 
-    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(tuple_name_type->type.get());
+    auto result_type = tuple_name_type->type;
+    DataTypePtr result_type_without_nullable = removeNullable(result_type);
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(result_type_without_nullable.get());
 
     if (!tuple_type)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Function untuple expect tuple argument, got {}",
-                        tuple_name_type->type->getName());
+                        result_type->getName());
 
     ASTs columns;
     size_t tid = 0;
