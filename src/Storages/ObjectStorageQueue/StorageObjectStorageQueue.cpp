@@ -64,7 +64,6 @@ namespace Setting
     extern const SettingsUInt64 keeper_max_retries;
     extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
     extern const SettingsUInt64 keeper_retry_max_backoff_ms;
-    extern const SettingsBool allow_experimental_object_storage_queue_hive_partitioning;
 }
 
 namespace FailPoints
@@ -310,10 +309,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
 
     if ((*queue_settings_)[ObjectStorageQueueSetting::use_hive_partitioning])
     {
-        if (!context_->getSettingsRef()[Setting::allow_experimental_object_storage_queue_hive_partitioning])
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                            "Experimental 'use_hive_partitioning' setting is not enabled "
-                            "(the setting 'allow_experimental_object_storage_queue_hive_partitioning')");
         hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(
             columns, configuration->getRawPath().path, format_settings, context_);
     }
