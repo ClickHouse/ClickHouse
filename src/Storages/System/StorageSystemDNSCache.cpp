@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Storages/System/StorageSystemDNSCache.h>
+#include "StorageSystemDNSCache.h"
 
 namespace DB
 {

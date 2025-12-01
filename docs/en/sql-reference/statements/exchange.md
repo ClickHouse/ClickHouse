@@ -4,16 +4,15 @@ sidebar_label: 'EXCHANGE'
 sidebar_position: 49
 slug: /sql-reference/statements/exchange
 title: 'EXCHANGE Statement'
-doc_type: 'reference'
 ---
 
 # EXCHANGE Statement
 
 Exchanges the names of two tables or dictionaries atomically.
-This task can also be accomplished with a [`RENAME`](./rename.md) query using a temporary name, but the operation is not atomic in that case.
+This task can also be accomplished with a [RENAME](./rename.md) query using a temporary name, but the operation is not atomic in that case.
 
 :::note    
-The `EXCHANGE` query is supported by the [`Atomic`](../../engines/database-engines/atomic.md) and [`Shared`](/cloud/reference/shared-catalog#shared-database-engine) database engines only.
+The `EXCHANGE` query is supported by the [Atomic](../../engines/database-engines/atomic.md) database engine only.
 :::
 
 **Syntax**

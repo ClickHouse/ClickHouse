@@ -1,6 +1,6 @@
+
 #include <Storages/buildQueryTreeForShard.h>
 
-#include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Analyzer/FunctionNode.h>
@@ -10,15 +10,13 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <IO/WriteHelpers.h>
 #include <Planner/PlannerContext.h>
+#include <Planner/Utils.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -27,14 +25,9 @@
 #include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
-#include <Analyzer/UnionNode.h>
-
-#include <stack>
-
 
 namespace DB
 {
-
 namespace Setting
 {
     extern const SettingsDistributedProductMode distributed_product_mode;
@@ -42,14 +35,11 @@ namespace Setting
     extern const SettingsUInt64 min_external_table_block_size_bytes;
     extern const SettingsBool parallel_replicas_prefer_local_join;
     extern const SettingsBool prefer_global_in_and_join;
-    extern const SettingsBool enable_add_distinct_to_in_subqueries;
-    extern const SettingsInt64 optimize_const_name_size;
 }
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED;
 }
 
@@ -261,127 +251,6 @@ private:
     std::vector<InFunctionOrJoin> global_in_or_join_nodes;
 };
 
-class ReplaceLongConstWithScalarVisitor : public InDepthQueryTreeVisitorWithContext<ReplaceLongConstWithScalarVisitor>
-{
-public:
-    using Base = InDepthQueryTreeVisitorWithContext<ReplaceLongConstWithScalarVisitor>;
-    using Base::Base;
-
-    explicit ReplaceLongConstWithScalarVisitor(const ContextPtr & context, Int64 max_size_)
-        : Base(context)
-        , max_size(max_size_)
-    {}
-
-    static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
-    {
-        if (auto * function_node = parent->as<FunctionNode>())
-        {
-            // Do not traverse "getScalar"
-            if (function_node->getFunctionName() == "__getScalar")
-                return false;
-
-            // Do not visit parameters node
-            if (function_node->getParametersNode() == child)
-                return false;
-        }
-
-        if (auto * query_node = parent->as<QueryNode>())
-        {
-            // Do not visit LIMIT and OFFSET nodes
-            if (query_node->hasLimit() && query_node->getLimit() == child)
-                return false;
-            if (query_node->hasOffset() && query_node->getOffset() == child)
-                return false;
-        }
-
-        return true;
-    }
-
-    void enterImpl(QueryTreeNodePtr & node)
-    {
-        // Do not visit second argument of "in" functions
-        if (!in_second_argument.empty() && in_second_argument.top() == node)
-        {
-            in_second_argument.pop();
-            return;
-        }
-
-        if (auto * function_node = node->as<FunctionNode>(); function_node && isNameOfInFunction(function_node->getFunctionName()))
-        {
-            in_second_argument.push(function_node->getArguments().getNodes()[1]);
-            return;
-        }
-
-        auto * constant_node = node->as<ConstantNode>();
-
-        if (!constant_node)
-            return;
-
-        const auto * col_const = typeid_cast<const ColumnConst *>(constant_node->getColumn().get());
-
-        if (max_size > 0)
-        {
-            WriteBufferFromOwnString name_buf;
-            IColumn::Options options {.optimize_const_name_size = max_size};
-            col_const->getValueNameAndTypeImpl(name_buf, 0, options);
-            if (options.notFull(name_buf))
-                return;
-        }
-
-        const auto & context = getContext();
-
-        auto node_without_alias = constant_node->clone();
-        node_without_alias->removeAlias();
-
-        QueryTreeNodePtrWithHash node_with_hash(node_without_alias);
-        auto str_hash = DB::toString(node_with_hash.hash);
-
-        Block scalar_block({{constant_node->getColumn(), constant_node->getResultType(), "_constant"}});
-
-        context->getQueryContext()->addScalar(str_hash, scalar_block);
-
-        auto scalar_query_hash_string = DB::toString(node_with_hash.hash);
-
-
-        auto scalar_query_hash_constant_node = std::make_shared<ConstantNode>(std::move(scalar_query_hash_string), std::make_shared<DataTypeString>());
-
-        auto get_scalar_function_node = std::make_shared<FunctionNode>("__getScalar");
-        get_scalar_function_node->getArguments().getNodes().push_back(std::move(scalar_query_hash_constant_node));
-
-        auto get_scalar_function = FunctionFactory::instance().get("__getScalar", context);
-        get_scalar_function_node->resolveAsFunction(get_scalar_function->build(get_scalar_function_node->getArgumentColumns()));
-
-        node = std::move(get_scalar_function_node);
-    }
-
-private:
-    Int64 max_size = 0;
-    std::stack<QueryTreeNodePtr> in_second_argument;
-};
-
-// Helper function to add DISTINCT to all QueryNode objects inside a query/union subtree
-void addDistinctRecursively(const QueryTreeNodePtr & node)
-{
-    if (auto * query_node = node->as<QueryNode>())
-    {
-        if (!query_node->isDistinct())
-            query_node->setIsDistinct(true);
-    }
-    else if (auto * union_node = node->as<UnionNode>())
-    {
-        auto union_mode = union_node->getUnionMode();
-        // Only add DISTINCT recursively for UNION operations where it's beneficial
-        // For UNION_DISTINCT, the union already ensures distinctness, so adding DISTINCT to subqueries is redundant
-        // For EXCEPT and INTERSECT operations, adding DISTINCT can change the result set semantics
-        if (union_mode == SelectUnionMode::UNION_DEFAULT ||
-            union_mode == SelectUnionMode::UNION_ALL)
-        {
-            for (auto & child : union_node->getQueries().getNodes())
-                addDistinctRecursively(child);
-        }
-    }
-}
-
 /** Execute subquery node and put result in mutable context temporary table.
   * Returns table node that is initialized with temporary table storage.
   */
@@ -408,26 +277,25 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     InterpreterSelectQueryAnalyzer interpreter(subquery_node, context_copy, subquery_options);
     auto & query_plan = interpreter.getQueryPlan();
 
-    auto sample_block_with_unique_names = *query_plan.getCurrentHeader();
+    auto sample_block_with_unique_names = query_plan.getCurrentHeader();
     makeUniqueColumnNamesInBlock(sample_block_with_unique_names);
 
-    if (!blocksHaveEqualStructure(sample_block_with_unique_names, *query_plan.getCurrentHeader()))
+    if (!blocksHaveEqualStructure(sample_block_with_unique_names, query_plan.getCurrentHeader()))
     {
         auto actions_dag = ActionsDAG::makeConvertingActions(
-            query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
+            query_plan.getCurrentHeader().getColumnsWithTypeAndName(),
             sample_block_with_unique_names.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position,
-            context_copy);
+            ActionsDAG::MatchColumnsMode::Position);
         auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(actions_dag));
         query_plan.addStep(std::move(converting_step));
     }
 
-    auto sample = interpreter.getSampleBlock();
-    NamesAndTypesList columns = sample->getNamesAndTypesList();
+    Block sample = interpreter.getSampleBlock();
+    NamesAndTypesList columns = sample.getNamesAndTypesList();
 
     auto external_storage_holder = TemporaryTableHolder(
         mutable_context,
-        ColumnsDescription(columns, false),
+        ColumnsDescription{columns},
         ConstraintsDescription{},
         nullptr /*query*/,
         true /*create_for_global_subquery*/);
@@ -444,7 +312,7 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
 
     size_t min_block_size_rows = mutable_context->getSettingsRef()[Setting::min_external_table_block_size_rows];
     size_t min_block_size_bytes = mutable_context->getSettingsRef()[Setting::min_external_table_block_size_bytes];
-    auto squashing = std::make_shared<SimpleSquashingChunksTransform>(builder->getSharedHeader(), min_block_size_rows, min_block_size_bytes);
+    auto squashing = std::make_shared<SimpleSquashingChunksTransform>(builder->getHeader(), min_block_size_rows, min_block_size_bytes);
 
     builder->resize(1);
     builder->addTransform(std::move(squashing));
@@ -471,7 +339,8 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
     {
         subquery_node = join_table_expression;
     }
-    else if (join_table_expression_node_type == QueryTreeNodeType::TABLE || join_table_expression_node_type == QueryTreeNodeType::TABLE_FUNCTION)
+    else if (
+        join_table_expression_node_type == QueryTreeNodeType::TABLE || join_table_expression_node_type == QueryTreeNodeType::TABLE_FUNCTION)
     {
         auto columns_it = column_source_to_columns.find(join_table_expression);
         const NamesAndTypes & columns = columns_it != column_source_to_columns.end() ? columns_it->second.columns : NamesAndTypes();
@@ -490,7 +359,7 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
 
 }
 
-QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, bool allow_global_join_for_right_table)
+QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify)
 {
     CollectColumnSourceToColumnsVisitor collect_column_source_to_columns_visitor;
     collect_column_source_to_columns_visitor.visit(query_tree_to_modify);
@@ -505,15 +374,13 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
 
     QueryTreeNodePtrWithHashMap<TableNodePtr> global_in_temporary_tables;
 
-    bool enable_add_distinct_to_in_subqueries = planner_context->getQueryContext()->getSettingsRef()[Setting::enable_add_distinct_to_in_subqueries];
-
     for (const auto & global_in_or_join_node : global_in_or_join_nodes)
     {
         if (auto * join_node = global_in_or_join_node.query_node->as<JoinNode>())
         {
             QueryTreeNodePtr join_table_expression;
             const auto join_kind = join_node->getKind();
-            if (!allow_global_join_for_right_table || join_kind == JoinKind::Left || join_kind == JoinKind::Inner)
+            if (join_kind == JoinKind::Left || join_kind == JoinKind::Inner)
             {
                 join_table_expression = join_node->getRightTableExpression();
             }
@@ -523,10 +390,12 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
             }
             else
             {
-                throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "Unexpected global join kind: {}", toString(join_kind));
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Unexpected join kind: {}", join_kind);
             }
 
-            auto subquery_node = getSubqueryFromTableExpression(join_table_expression, column_source_to_columns, planner_context->getQueryContext());
+            auto subquery_node
+                = getSubqueryFromTableExpression(join_table_expression, column_source_to_columns, planner_context->getQueryContext());
 
             auto temporary_table_expression_node = executeSubqueryNode(subquery_node,
                 planner_context->getMutableQueryContext(),
@@ -554,15 +423,11 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
                         subquery_to_execute,
                         planner_context->getQueryContext());
 
-                // If DISTINCT optimization is enabled, add DISTINCT before executing the subquery
-                if (enable_add_distinct_to_in_subqueries)
-                    addDistinctRecursively(subquery_to_execute);
-
                 temporary_table_expression_node = executeSubqueryNode(
                     subquery_to_execute,
                     planner_context->getMutableQueryContext(),
                     global_in_or_join_node.subquery_depth);
-                replacement_table_expression = temporary_table_expression_node;
+                    replacement_table_expression = temporary_table_expression_node;
             }
             else
             {
@@ -593,13 +458,6 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
     if (auto * query_node = query_tree_to_modify->as<QueryNode>())
         query_node->clearSettingsChanges();
 
-    auto max_const_name_size = planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size];
-    if (max_const_name_size >= 0)
-    {
-        ReplaceLongConstWithScalarVisitor scalar_visitor(planner_context->getQueryContext(), max_const_name_size);
-        scalar_visitor.visit(query_tree_to_modify);
-    }
-
     return query_tree_to_modify;
 }
 
@@ -613,14 +471,6 @@ public:
     {
         if (auto * table_node = node->as<TableNode>())
             storages.push_back(table_node->getStorage());
-        else if (auto * table_func_node = node->as<TableFunctionNode>())
-        {
-            /// See https://github.com/ClickHouse/ClickHouse/issues/77990
-            /// Now that parallel replicas support TableFunctionRemote, GlobalJoin also needs to support TableFunctionRemote.
-            const auto & name = table_func_node->getTableFunctionName();
-            if (name == "cluster" || name == "clusterAllReplicas" || name == "remote" || name == "remoteSecure")
-                storages.push_back(table_func_node->getStorage());
-        }
     }
 
     std::vector<StoragePtr> storages;

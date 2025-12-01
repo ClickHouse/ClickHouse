@@ -10,6 +10,7 @@
 #include <IO/ReadHelpersArena.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <Columns/ColumnArray.h>
@@ -68,6 +69,7 @@ public:
         : IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayData<T>,
           AggregateFunctionGroupUniqArray<T, LimitNumElems>>({argument_type}, parameters_, result_type_),
           max_elems(max_elems_) {}
+
 
     String getName() const override { return "groupUniqArray"; }
 
@@ -138,14 +140,14 @@ struct AggregateFunctionGroupUniqArrayGenericData
 {
     static constexpr size_t INITIAL_SIZE_DEGREE = 3; /// adjustable
 
-    using Set = HashSetWithSavedHashWithStackMemory<std::string_view, StringViewHash,
+    using Set = HashSetWithSavedHashWithStackMemory<StringRef, StringRefHash,
         INITIAL_SIZE_DEGREE>;
 
     Set value;
 };
 
 template <bool is_plain_column>
-static void deserializeAndInsertImpl(std::string_view str, IColumn & data_to);
+static void deserializeAndInsertImpl(StringRef str, IColumn & data_to);
 
 /** Template parameter with true value should be used for columns that store their elements in memory continuously.
  *  For such columns groupUniqArray() can be implemented more efficiently (especially for small numeric arrays).

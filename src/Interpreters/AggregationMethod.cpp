@@ -1,6 +1,5 @@
-#include <Interpreters/AggregatedData.h>
 #include <Interpreters/AggregationMethod.h>
-#include <IO/ReadBufferFromString.h>
+#include <Interpreters/AggregatedData.h>
 
 namespace DB
 {
@@ -49,17 +48,17 @@ template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithNullableUIn
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64KeyTwoLevel>;
 
 template <typename TData, bool nullable>
-void AggregationMethodStringNoCache<TData, nullable>::insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &)
+void AggregationMethodStringNoCache<TData, nullable>::insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
 {
     if constexpr (nullable)
     {
         ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*key_columns[0]);
-        assert_cast<ColumnString &>(column_nullable.getNestedColumn()).insertData(key.data(), key.size());
+        assert_cast<ColumnString &>(column_nullable.getNestedColumn()).insertData(key.data, key.size);
         column_nullable.getNullMapData().push_back(0);
     }
     else
     {
-        assert_cast<ColumnString &>(*key_columns[0]).insertData(key.data(), key.size());
+        assert_cast<ColumnString &>(*key_columns[0]).insertData(key.data, key.size);
     }
 }
 template struct AggregationMethodStringNoCache<AggregatedDataWithShortStringKey>;
@@ -68,9 +67,9 @@ template struct AggregationMethodStringNoCache<AggregatedDataWithNullableShortSt
 template struct AggregationMethodStringNoCache<AggregatedDataWithNullableShortStringKeyTwoLevel, true>;
 
 template <typename TData>
-void AggregationMethodFixedString<TData>::insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &)
+void AggregationMethodFixedString<TData>::insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
 {
-    assert_cast<ColumnFixedString &>(*key_columns[0]).insertData(key.data(), key.size());
+    assert_cast<ColumnFixedString &>(*key_columns[0]).insertData(key.data, key.size);
 }
 template struct AggregationMethodFixedString<AggregatedDataWithStringKeyHash64>;
 template struct AggregationMethodFixedString<AggregatedDataWithNullableStringKey>;
@@ -78,12 +77,12 @@ template struct AggregationMethodFixedString<AggregatedDataWithNullableStringKey
 
 
 template <typename TData, bool nullable>
-void AggregationMethodFixedStringNoCache<TData, nullable>::insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &)
+void AggregationMethodFixedStringNoCache<TData, nullable>::insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
 {
     if constexpr (nullable)
-        assert_cast<ColumnNullable &>(*key_columns[0]).insertData(key.data(), key.size());
+        assert_cast<ColumnNullable &>(*key_columns[0]).insertData(key.data, key.size);
     else
-        assert_cast<ColumnFixedString &>(*key_columns[0]).insertData(key.data(), key.size());
+        assert_cast<ColumnFixedString &>(*key_columns[0]).insertData(key.data, key.size);
 }
 template struct AggregationMethodFixedStringNoCache<AggregatedDataWithShortStringKey>;
 template struct AggregationMethodFixedStringNoCache<AggregatedDataWithShortStringKeyTwoLevel>;
@@ -97,8 +96,8 @@ void AggregationMethodSingleLowCardinalityColumn<SingleColumnMethod>::insertKeyI
 {
     auto * col = assert_cast<ColumnLowCardinality *>(key_columns_low_cardinality[0]);
 
-    if constexpr (std::is_same_v<Key, std::string_view>)
-        col->insertData(key.data(), key.size());
+    if constexpr (std::is_same_v<Key, StringRef>)
+        col->insertData(key.data, key.size);
     else
         col->insertData(reinterpret_cast<const char *>(&key), sizeof(key));
 }
@@ -119,7 +118,7 @@ void AggregationMethodKeysFixed<TData, has_nullable_keys, has_low_cardinality,co
 {
     size_t keys_size = key_columns.size();
 
-    static constexpr auto bitmap_size = has_nullable_keys ? std::tuple_size_v<KeysNullMap<Key>> : 0;
+    static constexpr auto bitmap_size = has_nullable_keys ? std::tuple_size<KeysNullMap<Key>>::value : 0;
     /// In any hash key value, column values to be read start just after the bitmap, if it exists.
     size_t pos = bitmap_size;
 
@@ -167,7 +166,6 @@ void AggregationMethodKeysFixed<TData, has_nullable_keys, has_low_cardinality,co
         }
     }
 }
-
 template struct AggregationMethodKeysFixed<AggregatedDataWithUInt16Key, false, false, false>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithUInt32Key>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithUInt64Key>;
@@ -190,13 +188,12 @@ template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel, fa
 
 
 template <typename TData, bool nullable, bool prealloc>
-void AggregationMethodSerialized<TData, nullable, prealloc>::insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &)
+void AggregationMethodSerialized<TData, nullable, prealloc>::insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
 {
-    ReadBufferFromString buf(key);
+    const auto * pos = key.data;
     for (auto & column : key_columns)
-        column->deserializeAndInsertFromArena(buf);
+        pos = column->deserializeAndInsertFromArena(pos);
 }
-
 template struct AggregationMethodSerialized<AggregatedDataWithStringKey>;
 template struct AggregationMethodSerialized<AggregatedDataWithStringKeyTwoLevel>;
 template struct AggregationMethodSerialized<AggregatedDataWithStringKeyHash64>;

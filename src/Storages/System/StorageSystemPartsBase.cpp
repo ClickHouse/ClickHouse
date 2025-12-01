@@ -68,18 +68,16 @@ MergeTreeData::DataPartsVector
 StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const
 {
     using State = MergeTreeData::DataPartState;
-    using Kind = MergeTreeData::DataPartKind;
-
     if (need_inactive_parts)
     {
         /// If has_state_column is requested, return all states.
         if (!has_state_column)
-            return data->getDataPartsVectorForInternalUsage({State::Active, State::Outdated}, {Kind::Regular, Kind::Patch}, &state);
+            return data->getDataPartsVectorForInternalUsage({State::Active, State::Outdated}, &state);
 
         return data->getAllDataPartsVector(&state);
     }
 
-    return data->getDataPartsVectorForInternalUsage({State::Active}, {Kind::Regular, Kind::Patch}, &state);
+    return data->getDataPartsVectorForInternalUsage({State::Active}, &state);
 }
 
 MergeTreeData::ProjectionPartsVector
@@ -118,7 +116,7 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
     const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES);
 
     {
-        Databases databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+        Databases databases = DatabaseCatalog::instance().getDatabases();
 
         /// Add column 'database'.
         MutableColumnPtr database_column_mut = ColumnString::create();
@@ -126,7 +124,7 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
         {
             /// Check if database can contain MergeTree tables,
             /// if not it's unnecessary to load all tables of database just to filter all of them.
-            if (!database.second->isExternal())
+            if (database.second->canContainMergeTreeTables())
                 database_column_mut->insert(database.first);
         }
         block_to_filter.insert(ColumnWithTypeAndName(
@@ -151,7 +149,7 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
                 String database_name = (*database_column_for_filter)[i].safeGet<String>();
                 const DatabasePtr & database = databases.at(database_name);
 
-                offsets[i] = offsets[i - 1];
+                offsets[i] = i ? offsets[i - 1] : 0;
                 for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
                 {
                     String table_name = iterator->name();
@@ -228,7 +226,7 @@ public:
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
-        SharedHeader sample_block,
+        Block sample_block,
         std::shared_ptr<StorageSystemPartsBase> storage_,
         std::vector<UInt8> columns_mask_,
         bool has_state_column_);
@@ -248,7 +246,7 @@ ReadFromSystemPartsBase::ReadFromSystemPartsBase(
     const SelectQueryInfo & query_info_,
     const StorageSnapshotPtr & storage_snapshot_,
     const ContextPtr & context_,
-    SharedHeader sample_block,
+    Block sample_block,
     std::shared_ptr<StorageSystemPartsBase> storage_,
     std::vector<UInt8> columns_mask_,
     bool has_state_column_)
@@ -275,7 +273,7 @@ void ReadFromSystemPartsBase::applyFilters(ActionDAGNodes added_filter_nodes)
         Block block;
         block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeString>(), database_column_name));
 
-        filter_by_database = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block, context);
+        filter_by_database = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block);
         if (filter_by_database)
             VirtualColumnUtils::buildSetsForDAG(*filter_by_database, context);
 
@@ -284,7 +282,7 @@ void ReadFromSystemPartsBase::applyFilters(ActionDAGNodes added_filter_nodes)
         block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeUInt8>(), active_column_name));
         block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeUUID>(), storage_uuid_column_name));
 
-        filter_by_other_columns = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block, context);
+        filter_by_other_columns = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block);
         if (filter_by_other_columns)
             VirtualColumnUtils::buildSetsForDAG(*filter_by_other_columns, context);
     }
@@ -314,7 +312,7 @@ void StorageSystemPartsBase::read(
 
     auto reading = std::make_unique<ReadFromSystemPartsBase>(
         column_names, query_info, storage_snapshot,
-        std::move(context), std::make_shared<const Block>(std::move(header)), std::move(this_ptr), std::move(columns_mask), has_state_column);
+        std::move(context), std::move(header), std::move(this_ptr), std::move(columns_mask), has_state_column);
 
     query_plan.addStep(std::move(reading));
 }
@@ -324,7 +322,7 @@ void ReadFromSystemPartsBase::initializePipeline(QueryPipelineBuilder & pipeline
     auto stream = storage->getStoragesInfoStream(std::move(filter_by_database), std::move(filter_by_other_columns), context);
     auto header = getOutputHeader();
 
-    MutableColumns res_columns = header->cloneEmptyColumns();
+    MutableColumns res_columns = header.cloneEmptyColumns();
 
     while (StoragesInfo info = stream->next())
     {
