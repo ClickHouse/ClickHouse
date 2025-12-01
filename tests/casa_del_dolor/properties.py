@@ -108,6 +108,7 @@ possible_properties = {
     "async_load_system_database": true_false_lambda,
     "asynchronous_heavy_metrics_update_period_s": threshold_generator(0.2, 0.2, 1, 60),
     "asynchronous_metrics_enable_heavy_metrics": true_false_lambda,
+    "asynchronous_metrics_keeper_metrics_only": true_false_lambda,
     "asynchronous_metrics_update_period_s": threshold_generator(0.2, 0.2, 1, 30),
     "background_buffer_flush_schedule_pool_size": threads_lambda,
     "background_common_pool_size": no_zero_threads_lambda,

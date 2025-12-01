@@ -264,6 +264,12 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
             if (t.isAnyDeltaLakeEngine() || t.isAnyIcebergEngine())
             {
                 rel.cols.emplace_back(SQLRelationCol(rel_name, {"_data_lake_snapshot_version"}));
+                if (t.isAnyDeltaLakeEngine())
+                {
+                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"_change_type"}));
+                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"_commit_timestamp"}));
+                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"_commit_version"}));
+                }
             }
             if (t.isURLEngine())
             {
