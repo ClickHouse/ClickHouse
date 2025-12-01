@@ -220,7 +220,7 @@ namespace ErrorCodes
     Only available in ClickHouse Cloud. Maximal number of bytes to write in a
     single stripe in compact parts
     )", 0) \
-    DECLARE(UInt64, compact_parts_max_granules_to_buffer, 128, R"(
+    DECLARE(NonZeroUInt64, compact_parts_max_granules_to_buffer, 128, R"(
     Only available in ClickHouse Cloud. Maximal number of granules to write in a
     single stripe in compact parts
     )", 0) \
@@ -274,8 +274,8 @@ namespace ErrorCodes
     Controls the serialization format for top-level `String` columns.
 
     This setting is only effective when `serialization_info_version` is set to "with_types".
-    When enabled, top-level `String` columns are serialized with a separate `.size`
-    subcolumn storing string lengths, rather than inline. This allows real `.size`
+    When set to `with_size_stream`, top-level `String` columns are serialized with a separate
+    `.size` subcolumn storing string lengths, rather than inline. This allows real `.size`
     subcolumns and can improve compression efficiency.
 
     Nested `String` types (e.g., inside `Nullable`, `LowCardinality`, `Array`, or `Map`)
@@ -285,6 +285,15 @@ namespace ErrorCodes
 
     - `single_stream` — Use the standard serialization format with inline sizes.
     - `with_size_stream` — Use a separate size stream for top-level `String` columns.
+    )", 0) \
+    DECLARE(MergeTreeNullableSerializationVersion, nullable_serialization_version, "basic", R"(
+    Controls the serialization method used for `Nullable(T)` columns.
+
+    Possible values:
+
+    - basic — Use the standard serialization for `Nullable(T)`.
+
+    - allow_sparse — Permit `Nullable(T)` to use sparse encoding.
     )", 0) \
     DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version, "v2", R"(
     Serialization version for JSON data type. Required for compatibility.
@@ -936,7 +945,7 @@ namespace ErrorCodes
     Allow to use adaptive writer buffers during writing dynamic subcolumns to
     reduce memory usage
     )", 0) \
-    DECLARE(UInt64, adaptive_write_buffer_initial_size, 16 * 1024, R"(
+    DECLARE(NonZeroUInt64, adaptive_write_buffer_initial_size, 16 * 1024, R"(
     Initial size of an adaptive write buffer
     )", 0) \
     DECLARE(UInt64, min_free_disk_bytes_to_perform_insert, 0, R"(

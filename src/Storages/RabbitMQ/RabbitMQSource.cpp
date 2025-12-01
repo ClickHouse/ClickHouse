@@ -270,8 +270,8 @@ Chunk RabbitMQSource::generateImpl()
                 {
                     if (exception_message)
                     {
-                        virtual_columns[6]->insertData(message.message.data(), message.message.size());
-                        virtual_columns[7]->insertData(exception_message->data(), exception_message->size());
+                        virtual_columns[6]->insertData(message.message);
+                        virtual_columns[7]->insertData(*exception_message);
                     }
                     else
                     {
