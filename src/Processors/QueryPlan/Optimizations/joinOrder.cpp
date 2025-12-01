@@ -414,14 +414,33 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
                     if (!join_kind)
                         continue;
 
-                    auto edge = getApplicableExpressions(left->relations, right->relations);
-                    /// Only leave the edges that connect left and right
-                    edge.erase(
-                        std::remove_if(edge.begin(), edge.end(),
-                            [&](auto predicate) { return !connects(predicate, left->relations, right->relations); }),
-                        edge.end());
+                    /// FIXME: Restrict to Inner joins for now because isValidJoinOrder seems to not handle non-Inner joins with swapped inputs correctly
+                    if (*join_kind != JoinKind::Inner)
+                        continue;
 
-                    LOG_TEST(log, "Checking pair: {} and {}, predicates count: {}", left->dump(), right->dump(), edge.size());
+                    auto applicable_edge = getApplicableExpressions(left->relations, right->relations);
+                    /// Only leave the edges that connect left and right
+                    std::vector<JoinActionRef *> edge;
+                    for (auto & edge_it : applicable_edge)
+                    {
+                        if (connects(edge_it, left->relations, right->relations))
+                        {
+                            LOG_TEST(log, "Adding predicate connecting {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
+                            edge.push_back(edge_it);
+                        }
+                        else if ((edge_it->fromLeft() || edge_it->fromRight() || edge_it->fromNone()) && component_size == 2)
+                        {
+                            /// If a predicate does not connect tables we add it at the earliest stage - when joining just 2 tables
+                            LOG_TEST(log, "Adding early non-connecting predicate for {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
+                            edge.push_back(edge_it);
+                        }
+                        else
+                        {
+                            LOG_TEST(log, "Skipping non-connecting predicate for {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
+                        }
+                    }
+
+                    LOG_TEST(log, "Considering join between {} and {}, predicates count: {}", left->dump(), right->dump(), edge.size());
 
                     if (edge.empty())
                         continue;
