@@ -1,0 +1,36 @@
+# FIXME: this will be rewritten, need a quick variant for testing
+name: Build and Publish
+
+on:
+#  push:
+#    tags:
+#      - "v*"
+  pull_request:
+    branches: ['master']
+
+jobs:
+  build_praktika:
+    runs-on: [self-hosted, test]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+
+      - name: Install build backend
+        run: pip install build twine
+
+      - name: Build package
+        run: |
+            cd ci/praktika
+            python3 -m build
+
+      - name: Upload to PyPI
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          twine upload dist/*
