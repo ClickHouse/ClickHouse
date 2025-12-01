@@ -2,6 +2,7 @@
 #include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/Serializations/SerializationInfoSettings.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeVariant.h>

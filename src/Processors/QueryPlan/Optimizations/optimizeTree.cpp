@@ -127,7 +127,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
             if (update_depth)
             {
 #if defined(DEBUG_OR_SANITIZER_BUILD)
-                checkHeaders(*frame.node, String("after optimization") + optimization.name, update_depth);
+                checkHeaders(*frame.node, String("after optimization ") + optimization.name, update_depth);
 #endif
                 ++total_applied_optimizations;
             }
