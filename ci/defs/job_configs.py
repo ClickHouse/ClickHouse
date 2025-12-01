@@ -299,7 +299,7 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.ARM_V80COMPAT,
             provides=[ArtifactNames.CH_ARM_V80COMPAT],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.AMD_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_FREEBSD,
