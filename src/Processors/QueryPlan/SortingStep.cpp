@@ -356,7 +356,7 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
 }
 
 void SortingStep::mergeSorting(
-    QueryPipelineBuilder & pipeline, const Settings & sort_settings, const SortDescription & result_sort_desc, UInt64 limit_, TopNThresholdTrackerPtr threshold_tracker)
+    QueryPipelineBuilder & pipeline, const Settings & sort_settings, const SortDescription & result_sort_desc, UInt64 limit_, TopKThresholdTrackerPtr threshold_tracker)
 {
     bool increase_sort_description_compile_attempts = true;
 
@@ -403,7 +403,7 @@ void SortingStep::fullSortStreams(
     const SortDescription & result_sort_desc,
     const UInt64 limit_,
     const bool skip_partial_sort,
-    TopNThresholdTrackerPtr threshold_tracker)
+    TopKThresholdTrackerPtr threshold_tracker)
 {
     if (!skip_partial_sort || limit_)
     {

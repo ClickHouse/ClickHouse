@@ -4,7 +4,7 @@
 #include <Core/SortDescription.h>
 #include <Common/filesystemHelpers.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-#include <Processors/TopNThresholdTracker.h>
+#include <Processors/TopKThresholdTracker.h>
 
 
 namespace DB
@@ -32,7 +32,7 @@ public:
         size_t max_bytes_in_query_before_external_sort_,
         TemporaryDataOnDiskScopePtr tmp_data_,
         size_t min_free_disk_space_,
-        TopNThresholdTrackerPtr threshold_tracker_ = nullptr);
+        TopKThresholdTrackerPtr threshold_tracker_ = nullptr);
 
     String getName() const override { return "MergeSortingTransform"; }
 
@@ -66,7 +66,7 @@ private:
 
     ProcessorPtr external_merging_sorted;
 
-    TopNThresholdTrackerPtr threshold_tracker;
+    TopKThresholdTrackerPtr threshold_tracker;
 };
 
 }

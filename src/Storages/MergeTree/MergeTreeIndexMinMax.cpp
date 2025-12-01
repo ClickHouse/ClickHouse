@@ -265,7 +265,7 @@ void MergeTreeIndexBulkGranulesMinMax::deserializeBinary(size_t granule_num, Rea
     empty = false;
 }
 
-void MergeTreeIndexBulkGranulesMinMax::getTopNMarks(size_t n, std::vector<MinMaxGranule> & result)
+void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(size_t n, std::vector<MinMaxGranule> & result)
 {
     if (n >= granules.size())
     {
@@ -296,7 +296,7 @@ void MergeTreeIndexBulkGranulesMinMax::getTopNMarks(size_t n, std::vector<MinMax
 }
 
 /// This routine is for top-N of top-N granules from all parts
-void MergeTreeIndexBulkGranulesMinMax::getTopNMarks(int direction,
+void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(int direction,
                                                     size_t n,
                                                     const std::vector<std::vector<MinMaxGranule>> & parts,
                                                     std::vector<MarkRanges> & result)

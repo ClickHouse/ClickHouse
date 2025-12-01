@@ -14,13 +14,13 @@
 
 namespace DB
 {
-FunctionOverloadResolverPtr createInternalFunctionTopNFilterResolver(TopNThresholdTrackerPtr threshold_tracker_);
+FunctionOverloadResolverPtr createInternalFunctionTopKFilterResolver(TopKThresholdTrackerPtr threshold_tracker_);
 }
 
 namespace DB::QueryPlanOptimizations
 {
 
-size_t tryOptimizeTopN(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* nodes*/, const Optimization::ExtraSettings & settings)
+size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* nodes*/, const Optimization::ExtraSettings & settings)
 {
     QueryPlan::Node * node = parent_node;
 
@@ -59,7 +59,7 @@ size_t tryOptimizeTopN(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
         return 0;
 
     size_t n = limit_step->getLimitForSorting();
-    if (settings.max_limit_for_top_n_optimization && n > settings.max_limit_for_top_n_optimization)
+    if (settings.max_limit_for_top_k_optimization && n > settings.max_limit_for_top_k_optimization)
         return 0;
 
     SortingStep::Type sorting_step_type = sorting_step->getType();
@@ -81,8 +81,9 @@ size_t tryOptimizeTopN(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
     const bool where_clause = filter_step || read_from_mergetree_step->getPrewhereInfo();
 
     auto sort_column_name = sort_description.front().column_name;
+
     ///remove alias
-    if (sort_column_name.find('.') != std::string::npos)
+    if (sort_column_name.contains('.'))
     {
         if (!expression_step && !filter_step)
             return 0;
@@ -102,24 +103,24 @@ size_t tryOptimizeTopN(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
         }
         else
         {
-            LOG_TRACE(getLogger("optimizeTopN"), "Could not resolve column alias {}", sort_column_name);
+            LOG_TRACE(getLogger("optimizeTopK"), "Could not resolve column alias {}", sort_column_name);
             return 0;
         }
     }
 
-    TopNThresholdTrackerPtr threshold_tracker = nullptr;
+    TopKThresholdTrackerPtr threshold_tracker = nullptr;
 
     int direction = sort_description.front().direction;
 
-    if ((settings.use_skip_indexes_for_top_n &&
-            read_from_mergetree_step->isSkipIndexAvailableForTopN(sort_column_name) && settings.use_skip_indexes_on_data_read) ||
-        (settings.use_top_n_dynamic_filtering && !read_from_mergetree_step->getPrewhereInfo()))
+    if ((settings.use_skip_indexes_for_top_k &&
+            read_from_mergetree_step->isSkipIndexAvailableForTopK(sort_column_name) && settings.use_skip_indexes_on_data_read) ||
+        (settings.use_top_k_dynamic_filtering && !read_from_mergetree_step->getPrewhereInfo()))
     {
-        threshold_tracker = std::make_shared<TopNThresholdTracker>(direction);
-        sorting_step->setTopNThresholdTracker(threshold_tracker);
+        threshold_tracker = std::make_shared<TopKThresholdTracker>(direction);
+        sorting_step->setTopKThresholdTracker(threshold_tracker);
     }
 
-    if  (settings.use_top_n_dynamic_filtering &&
+    if  (settings.use_top_k_dynamic_filtering &&
          !read_from_mergetree_step->getPrewhereInfo())
     {
         auto new_prewhere_info = std::make_shared<PrewhereInfo>();
@@ -127,8 +128,8 @@ size_t tryOptimizeTopN(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
         new_prewhere_info->prewhere_actions = ActionsDAG({sort_column_name_and_type});
 
         /// Cannot use get() because need to pass an argument to constructor
-        /// auto filter_function = FunctionFactory::instance().get("__topNFilter",nullptr);
-        auto filter_function =  DB::createInternalFunctionTopNFilterResolver(threshold_tracker);
+        /// auto filter_function = FunctionFactory::instance().get("__topKFilter",nullptr);
+        auto filter_function =  DB::createInternalFunctionTopKFilterResolver(threshold_tracker);
         const auto & prewhere_node = new_prewhere_info->prewhere_actions.addFunction(
                 filter_function, {new_prewhere_info->prewhere_actions.getInputs().front()}, {});
         new_prewhere_info->prewhere_actions.getOutputs().push_back(&prewhere_node);
@@ -136,18 +137,18 @@ size_t tryOptimizeTopN(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
         new_prewhere_info->remove_prewhere_column = true;
         new_prewhere_info->need_filter = true;
 
-        LOG_TRACE(getLogger("optimizeTopN"), "New Prewhere {}", new_prewhere_info->prewhere_actions.dumpDAG());
+        LOG_TRACE(getLogger("optimizeTopK"), "New Prewhere {}", new_prewhere_info->prewhere_actions.dumpDAG());
         read_from_mergetree_step->updatePrewhereInfo(new_prewhere_info);
     }
 
-    ///TopNThresholdTracker acts as a link between 3 components
+    ///TopKThresholdTracker acts as a link between 3 components
     ///                                MergeTreeReaderIndex::canSkipMark() (skip whole granule using minmax index)
     ///                                  /
     ///         PartialSortingTransform/MergeSortingTransform --> ("publish" threshold value as sorting progresses)
     ///                                  \
-    ///                                __topNFilter() (Prewhere filtering)
+    ///                                __topKFilter() (Prewhere filtering)
 
-    read_from_mergetree_step->setTopNColumn({sort_column_name, sort_column.type, n, direction, where_clause, threshold_tracker});
+    read_from_mergetree_step->setTopKColumn({sort_column_name, sort_column.type, n, direction, where_clause, threshold_tracker});
 
     return 0;
 }

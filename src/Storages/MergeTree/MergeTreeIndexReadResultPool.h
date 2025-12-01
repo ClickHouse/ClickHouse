@@ -16,8 +16,8 @@ using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 struct SkipIndexReadResult
 {
     std::vector<bool> granules_selected; /// granules selected by skip index(es) at read time
-    std::shared_ptr<MergeTreeIndexBulkGranulesMinMax> min_max_index_for_top_n;
-    TopNThresholdTrackerPtr threshold_tracker;
+    std::shared_ptr<MergeTreeIndexBulkGranulesMinMax> min_max_index_for_top_k;
+    TopKThresholdTrackerPtr threshold_tracker;
 };
 using SkipIndexReadResultPtr = std::shared_ptr<SkipIndexReadResult>;
 

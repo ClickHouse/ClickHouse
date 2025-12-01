@@ -99,7 +99,7 @@ namespace Setting
     extern const SettingsBool secondary_indices_enable_bulk_filtering;
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool vector_search_with_rescoring;
-    extern const SettingsBool use_skip_indexes_for_top_n;
+    extern const SettingsBool use_skip_indexes_for_top_k;
 }
 
 namespace MergeTreeSetting
@@ -667,7 +667,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     const std::optional<KeyCondition> & total_offset_condition,
     const std::optional<KeyCondition> & key_condition_rpn_template,
     const UsefulSkipIndexes & skip_indexes,
-    const std::optional<TopNFilterInfo> & top_n_filter_info,
+    const std::optional<TopKFilterInfo> & top_k_filter_info,
     const MergeTreeReaderSettings & reader_settings,
     LoggerPtr log,
     size_t num_streams,
@@ -744,16 +744,16 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     std::atomic<size_t> sum_marks_pk = 0;
     std::atomic<size_t> sum_parts_pk = 0;
-    std::atomic<size_t> top_n_elapsed_us = 0;
+    std::atomic<size_t> top_k_elapsed_us = 0;
 
     std::atomic<size_t> sum_marks_union = 0;
 
     std::vector<size_t> skip_index_used_in_part(parts_with_ranges.size(), 0);
 
-    std::vector<std::vector<MergeTreeIndexBulkGranulesMinMax::MinMaxGranule>> parts_top_n_granules(
+    std::vector<std::vector<MergeTreeIndexBulkGranulesMinMax::MinMaxGranule>> parts_top_k_granules(
                     parts_with_ranges.size(), std::vector<MergeTreeIndexBulkGranulesMinMax::MinMaxGranule>());
 
-    bool perform_top_n_optimization = top_n_filter_info && skip_indexes.skip_index_for_top_n_filtering && !top_n_filter_info->where_clause;
+    bool perform_top_k_optimization = top_k_filter_info && skip_indexes.skip_index_for_top_k_filtering && !top_k_filter_info->where_clause;
 
     size_t num_threads = std::min<size_t>(num_streams, parts_with_ranges.size());
     if (settings[Setting::max_threads_for_indexes])
@@ -980,14 +980,14 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             }
 
             /// Optimize ORDER BY <col> LIMIT n - if <col> is scalar numeric / date / datetime and has a minmax index
-            if (perform_top_n_optimization)
+            if (perform_top_k_optimization)
             {
                 ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
 
                 auto min_max_granules = getMinMaxIndexGranules(ranges.data_part,
-                                            skip_indexes.skip_index_for_top_n_filtering,
+                                            skip_indexes.skip_index_for_top_k_filtering,
                                             ranges.ranges,
-                                            top_n_filter_info->direction,
+                                            top_k_filter_info->direction,
                                             false, /*access_by_mark*/
                                             reader_settings,
                                             mark_cache.get(),
@@ -996,9 +996,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 if (min_max_granules) /// minmax index may have not been materialized for this part, not a fatal error
                 {
-                    min_max_granules->getTopNMarks(top_n_filter_info->limit_n, parts_top_n_granules[part_index]);
+                    min_max_granules->getTopKMarks(top_k_filter_info->limit_n, parts_top_k_granules[part_index]);
                 }
-                top_n_elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
+                top_k_elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
             }
 
         };
@@ -1045,23 +1045,23 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     }
 
     /// merge top-N results if optimization is done
-    size_t sum_marks_after_top_n = 0;
-    size_t sum_parts_after_top_n = 0;
-    if (perform_top_n_optimization)
+    size_t sum_marks_after_top_k = 0;
+    size_t sum_parts_after_top_k = 0;
+    if (perform_top_k_optimization)
     {
-        std::vector<MarkRanges> top_n_granules_result;
-        MergeTreeIndexBulkGranulesMinMax::getTopNMarks(top_n_filter_info->direction, top_n_filter_info->limit_n,
-                                                       parts_top_n_granules, top_n_granules_result);
+        std::vector<MarkRanges> top_k_granules_result;
+        MergeTreeIndexBulkGranulesMinMax::getTopKMarks(top_k_filter_info->direction, top_k_filter_info->limit_n,
+                                                       parts_top_k_granules, top_k_granules_result);
         for (size_t part_index = 0; part_index < parts_with_ranges.size(); ++part_index)
         {
-            if (!parts_top_n_granules[part_index].empty())
+            if (!parts_top_k_granules[part_index].empty())
             {
-                parts_with_ranges[part_index].ranges = std::move(top_n_granules_result[part_index]);
+                parts_with_ranges[part_index].ranges = std::move(top_k_granules_result[part_index]);
             }
             if (!parts_with_ranges[part_index].ranges.empty())
             {
-                sum_parts_after_top_n++;
-                sum_marks_after_top_n += parts_with_ranges[part_index].ranges.getNumberOfMarks();
+                sum_parts_after_top_k++;
+                sum_marks_after_top_k += parts_with_ranges[part_index].ranges.getNumberOfMarks();
             }
         }
     }
@@ -1165,19 +1165,19 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             .num_granules_after = stat.total_granules - stat.granules_dropped});
     }
 
-    if (perform_top_n_optimization)
+    if (perform_top_k_optimization)
     {
         index_stats.emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::Skip,
-            .name = skip_indexes.skip_index_for_top_n_filtering->index.name,
-            .description = "Filter TopN Granules",
-            .num_parts_after = sum_parts_after_top_n,
-            .num_granules_after = sum_marks_after_top_n});
+            .name = skip_indexes.skip_index_for_top_k_filtering->index.name,
+            .description = "Filter TopK Granules",
+            .num_parts_after = sum_parts_after_top_k,
+            .num_granules_after = sum_marks_after_top_k});
         LOG_DEBUG(
             log,
             "Skip index {} used for top N optimization, it took {}ms across {} threads.",
-            skip_indexes.skip_index_for_top_n_filtering->index.name,
-            top_n_elapsed_us.load() / 1000,
+            skip_indexes.skip_index_for_top_k_filtering->index.name,
+            top_k_elapsed_us.load() / 1000,
             num_threads);
     }
     /// Skip empty ranges.
@@ -2334,17 +2334,16 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
 }
 
 /// Read and return index granules from a minmax index.
-MergeTreeIndexBulkGranulesMinMaxPtr
-MergeTreeDataSelectExecutor::getMinMaxIndexGranules(
-        MergeTreeData::DataPartPtr part,
-        MergeTreeIndexPtr skip_index_minmax,
-        const MarkRanges & ranges,
-        int direction,
-        bool access_by_mark,
-        const MergeTreeReaderSettings & reader_settings,
-        MarkCache * mark_cache,
-        UncompressedCache * uncompressed_cache,
-        VectorSimilarityIndexCache * vector_similarity_index_cache)
+MergeTreeIndexBulkGranulesMinMaxPtr MergeTreeDataSelectExecutor::getMinMaxIndexGranules(
+    MergeTreeData::DataPartPtr part,
+    MergeTreeIndexPtr skip_index_minmax,
+    const MarkRanges & ranges,
+    int direction,
+    bool access_by_mark,
+    const MergeTreeReaderSettings & reader_settings,
+    MarkCache * mark_cache,
+    UncompressedCache * uncompressed_cache,
+    VectorSimilarityIndexCache * vector_similarity_index_cache)
 {
     if (!skip_index_minmax->getDeserializedFormat(part->checksums, skip_index_minmax->getFileName()))
     {

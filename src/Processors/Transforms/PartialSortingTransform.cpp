@@ -86,7 +86,7 @@ bool compareWithThreshold(const ColumnRawPtrs & raw_block_columns, size_t min_bl
 
 PartialSortingTransform::PartialSortingTransform(
     SharedHeader header_, const SortDescription & description_, UInt64 limit_,
-    TopNThresholdTrackerPtr threshold_tracker_)
+    TopKThresholdTrackerPtr threshold_tracker_)
     : ISimpleTransform(header_, header_, false)
     , description(description_)
     , limit(limit_)

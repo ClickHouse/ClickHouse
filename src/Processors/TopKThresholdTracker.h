@@ -12,9 +12,9 @@
 namespace DB
 {
 
-struct TopNThresholdTracker
+struct TopKThresholdTracker
 {
-    explicit TopNThresholdTracker(int direction_) : direction(direction_) {}
+    explicit TopKThresholdTracker(int direction_) : direction(direction_) {}
 
     void testAndSet(const Field & value)
     {
@@ -43,26 +43,16 @@ struct TopNThresholdTracker
 
     bool isValueInsideThreshold(const Field & value) const
     {
-        bool result = true;
         if (!is_set)
-            return result;
+            return true;
 
         std::shared_lock lock(mutex);
-        if (direction == 1) /// ASC
-        {
-            if (value >= threshold)
-            {
-                result = false;
-            }
-        }
-        else if (direction == -1) /// DESC
-        {
-            if (value <= threshold)
-            {
-                result = false;
-            }
-        }
-        return result;
+        if (direction == 1 && value >= threshold) /// ASC
+            return false;
+        else if (direction == -1 && value <= threshold) /// DESC
+            return false;
+
+        return true;
     }
 
     Field getValue() const
@@ -83,6 +73,6 @@ private:
     int direction{0};
 };
 
-using TopNThresholdTrackerPtr = std::shared_ptr<TopNThresholdTracker>;
+using TopKThresholdTrackerPtr = std::shared_ptr<TopKThresholdTracker>;
 
 }

@@ -117,11 +117,11 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
             (*res).granules_selected[i] = true;
     }
 
-    if (skip_indexes.skip_index_for_top_n_filtering && skip_indexes.threshold_tracker)
+    if (skip_indexes.skip_index_for_top_k_filtering && skip_indexes.threshold_tracker)
     {
-        res->min_max_index_for_top_n = MergeTreeDataSelectExecutor::getMinMaxIndexGranules(
+        res->min_max_index_for_top_k = MergeTreeDataSelectExecutor::getMinMaxIndexGranules(
             part.data_part,
-            skip_indexes.skip_index_for_top_n_filtering,
+            skip_indexes.skip_index_for_top_k_filtering,
             ranges,
             skip_indexes.threshold_tracker->getDirection(),
             true,/*access_by_mark*/

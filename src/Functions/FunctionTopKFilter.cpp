@@ -3,7 +3,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
-#include <Processors/TopNThresholdTracker.h>
+#include <Processors/TopKThresholdTracker.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -18,16 +18,16 @@ namespace ErrorCodes
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
-class FunctionTopNFilter: public IFunction
+class FunctionTopKFilter: public IFunction
 {
 public:
-    static constexpr auto name = "__topNFilter";
+    static constexpr auto name = "__topKFilter";
 
-    explicit FunctionTopNFilter(TopNThresholdTrackerPtr threshold_tracker_)
+    explicit FunctionTopKFilter(TopKThresholdTrackerPtr threshold_tracker_)
         : threshold_tracker(threshold_tracker_)
     {
         if (!threshold_tracker_)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionTopNFilter got NULL threshold_tracker");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionTopKFilter got NULL threshold_tracker");
 
         String comparator = "less";
 
@@ -72,6 +72,7 @@ public:
     {
         if (input_rows_count == 0) /// dry run?
             return ColumnUInt8::create();
+
         if (threshold_tracker && threshold_tracker->isSet())
         {
             auto current_threshold = threshold_tracker->getValue();
@@ -91,15 +92,15 @@ public:
         }
     }
 private:
-    TopNThresholdTrackerPtr threshold_tracker;
+    TopKThresholdTrackerPtr threshold_tracker;
     FunctionOverloadResolverPtr compare_function;
 
     int direction;
 };
 
-FunctionOverloadResolverPtr createInternalFunctionTopNFilterResolver(TopNThresholdTrackerPtr threshold_tracker_)
+FunctionOverloadResolverPtr createInternalFunctionTopKFilterResolver(TopKThresholdTrackerPtr threshold_tracker_)
 {
-    return std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTopNFilter>(threshold_tracker_));
+    return std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTopKFilter>(threshold_tracker_));
 };
 
 }

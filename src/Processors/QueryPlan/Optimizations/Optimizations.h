@@ -42,9 +42,9 @@ struct Optimization
         size_t use_index_for_in_with_subqueries_max_values;
         SizeLimits network_transfer_limits;
 
-        bool use_skip_indexes_for_top_n;
-        bool use_top_n_dynamic_filtering;
-        size_t max_limit_for_top_n_optimization;
+        bool use_skip_indexes_for_top_k;
+        bool use_top_k_dynamic_filtering;
+        size_t max_limit_for_top_k_optimization;
         bool use_skip_indexes_on_data_read;
     };
 
@@ -132,7 +132,7 @@ size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes &, const 
 bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
 /// Optimize ORDER BY ... LIMIT n query by using skip index or Prewhere threshold filtering
-size_t tryOptimizeTopN(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
+size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
 inline const auto & getOptimizations()
 {
@@ -154,7 +154,7 @@ inline const auto & getOptimizations()
         {tryMergeFilterIntoJoinCondition, "mergeFilterIntoJoinCondition", &QueryPlanOptimizationSettings::merge_filter_into_join_condition},
         {tryConvertAnyJoinToSemiOrAntiJoin, "convertAnyJoinToSemiOrAntiJoin", &QueryPlanOptimizationSettings::convert_any_join_to_semi_or_anti_join},
         {tryRemoveUnusedColumns, "removeUnusedColumns", &QueryPlanOptimizationSettings::remove_unused_columns},
-        {tryOptimizeTopN, "tryOptimizeTopN", &QueryPlanOptimizationSettings::try_use_top_n_optimization},
+        {tryOptimizeTopK, "tryOptimizeTopK", &QueryPlanOptimizationSettings::try_use_top_k_optimization},
     }};
 
     return optimizations;

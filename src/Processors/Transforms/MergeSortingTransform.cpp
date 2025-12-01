@@ -146,7 +146,7 @@ MergeSortingTransform::MergeSortingTransform(
     size_t max_bytes_in_query_before_external_sort_,
     TemporaryDataOnDiskScopePtr tmp_data_,
     size_t min_free_disk_space_,
-    TopNThresholdTrackerPtr threshold_tracker_)
+    TopKThresholdTrackerPtr threshold_tracker_)
     : SortingTransform(header, description_, max_merged_block_size_, limit_, increase_sort_description_compile_attempts)
     , max_bytes_before_remerge(max_bytes_before_remerge_)
     , remerge_lowered_memory_bytes_ratio(remerge_lowered_memory_bytes_ratio_)
@@ -360,13 +360,13 @@ void MergeSortingTransform::remerge()
     sum_rows_in_blocks = new_sum_rows_in_blocks;
     sum_bytes_in_blocks = new_sum_bytes_in_blocks;
 
-    /// Publish the updated TopN value if optimization is ON
+    /// Publish the updated TopK value if optimization is ON
     if (threshold_tracker && sum_rows_in_blocks == limit && chunks.size() == 1)
     {
         Field value;
         chunks[0].getColumns()[0]->get(limit - 1, value);
         threshold_tracker->testAndSet(value);
-        LOG_DEBUG(log, "TopN threshold tracker is updated");
+        LOG_DEBUG(log, "TopK threshold tracker is updated");
     }
 }
 

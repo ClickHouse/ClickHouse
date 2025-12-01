@@ -228,7 +228,7 @@ public:
         const std::optional<KeyCondition> & total_offset_condition,
         const std::optional<KeyCondition> & key_condition_rpn_template,
         const UsefulSkipIndexes & skip_indexes,
-        const std::optional<TopNFilterInfo> & top_n_filter_info,
+        const std::optional<TopKFilterInfo> & top_k_filter_info,
         const MergeTreeReaderSettings & reader_settings,
         LoggerPtr log,
         size_t num_streams,

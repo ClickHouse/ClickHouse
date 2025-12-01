@@ -1,6 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Processors/TopNThresholdTracker.h>
+#include <Processors/TopKThresholdTracker.h>
 #include <Core/SortDescription.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -115,7 +115,7 @@ public:
         const SortDescription & result_sort_desc,
         UInt64 limit_,
         bool skip_partial_sort = false,
-        TopNThresholdTrackerPtr threshold_tracker = nullptr);
+        TopKThresholdTrackerPtr threshold_tracker = nullptr);
 
     void serializeSettings(QueryPlanSerializationSettings & settings) const override;
     void serialize(Serialization & ctx) const override;
@@ -123,7 +123,7 @@ public:
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
-    void setTopNThresholdTracker(TopNThresholdTrackerPtr threshold_tracker_) { threshold_tracker = threshold_tracker_; }
+    void setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker_) { threshold_tracker = threshold_tracker_; }
 
 private:
     void scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline);
@@ -133,7 +133,7 @@ private:
         QueryPipelineBuilder & pipeline,
         const Settings & sort_settings,
         const SortDescription & result_sort_desc,
-        UInt64 limit_, TopNThresholdTrackerPtr threshold_tracker);
+        UInt64 limit_, TopKThresholdTrackerPtr threshold_tracker);
 
     void mergingSorted(
         QueryPipelineBuilder & pipeline,
@@ -165,7 +165,7 @@ private:
     bool use_buffering = false;
     bool apply_virtual_row_conversions = false;
 
-    TopNThresholdTrackerPtr threshold_tracker;
+    TopKThresholdTrackerPtr threshold_tracker;
 
     Settings sort_settings;
 };

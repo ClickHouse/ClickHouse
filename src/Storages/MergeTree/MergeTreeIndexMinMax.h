@@ -113,8 +113,8 @@ struct MergeTreeIndexBulkGranulesMinMax final : public IMergeTreeIndexBulkGranul
                                               int direction_, size_t size_hint_, bool store_map_ = false);
     void deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
-    void getTopNMarks(size_t n, std::vector<MinMaxGranule> & result);
-    static void getTopNMarks(int direction, size_t n, const std::vector<std::vector<MinMaxGranule>> & parts, std::vector<MarkRanges> & result);
+    void getTopKMarks(size_t n, std::vector<MinMaxGranule> & result);
+    static void getTopKMarks(int direction, size_t n, const std::vector<std::vector<MinMaxGranule>> & parts, std::vector<MarkRanges> & result);
 
     std::vector<MinMaxGranule> granules;
     std::unordered_map<size_t, size_t> granules_map;
