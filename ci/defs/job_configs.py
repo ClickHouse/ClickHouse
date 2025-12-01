@@ -97,6 +97,7 @@ common_integration_test_job_config = Job.Config(
             "./ci/jobs/integration_test_job.py",
             "./tests/integration/",
             "./ci/docker/integration",
+            "./ci/jobs/scripts/docker_in_docker.sh",
         ],
     ),
     run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker",
