@@ -150,6 +150,7 @@ def main():
     is_parallel = False
     is_sequential = False
     is_targeted_check = False
+    is_llvm_coverage = False
     java_path = Shell.get_output(
         "update-alternatives --config java | sed -n 's/.*(providing \/usr\/bin\/java): //p'",
         verbose=True,
@@ -180,6 +181,8 @@ def main():
             is_bugfix_validation = True
         elif "targeted" in to:
             is_targeted_check = True
+        elif "llvm coverage" in to:
+            is_llvm_coverage = True
         else:
             assert False, f"Unknown job option [{to}]"
 
@@ -305,10 +308,6 @@ def main():
     elif is_parallel:
         sequential_test_modules = []
         assert not is_sequential
-
-    # I will use only this for now
-    parallel_test_modules = ["test_dot_in_user_name/test.py"] 
-    sequential_test_modules = ["test_dot_in_user_name/test.py"] 
 
     # Setup environment variables for tests
     for image_name, env_name in IMAGES_ENV.items():
