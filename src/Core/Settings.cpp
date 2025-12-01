@@ -2414,6 +2414,10 @@ SELECT * FROM test;
     \
     DECLARE(Bool, partial_result_on_first_cancel, false, R"(
 Allows query to return a partial result after cancel.
++)", 0) \
+     \
+    DECLARE(Bool, continue_query_on_connection_loss, false, R"(
+Allows long-running queries (INSERT, UPDATE, DELETE) to continue executing in the background when the client connection is lost. When enabled, queries will not be cancelled on network errors and can be monitored via SHOW PROCESSLIST. Does not apply to SELECT queries that need to return results to the client.
 )", 0) \
     \
     DECLARE(Bool, ignore_on_cluster_for_replicated_udf_queries, false, R"(

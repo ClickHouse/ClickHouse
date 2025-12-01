@@ -117,6 +117,7 @@ namespace Setting
     extern const SettingsSeconds wait_for_async_insert_timeout;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool apply_settings_from_server;
+    extern const SettingsBool continue_query_on_connection_loss;
 }
 
 namespace ServerSetting
@@ -1576,15 +1577,45 @@ void TCPHandler::sendTotals(QueryState & state, const Block & totals)
     if (totals.empty())
         return;
 
-    initBlockOutput(state, totals);
+    if (state.connection_lost && state.continue_in_background)
+        return;
 
-    writeVarUInt(Protocol::Server::Totals, *out);
-    writeStringBinary("", *out);
+    try
+    {
+        initBlockOutput(state, totals);
 
-    state.block_out->write(totals);
-    state.maybe_compressed_out->next();
-    out->finishChunk();
-    out->next();
+        writeVarUInt(Protocol::Server::Totals, *out);
+        writeStringBinary("", *out);
+
+        state.block_out->write(totals);
+        state.maybe_compressed_out->next();
+        out->finishChunk();
+        out->next();
+    }
+    catch (const Poco::Net::NetException &)
+    {
+        /// Check if we should continue in background on network errors
+        if (state.query_context->getSettingsRef()[Setting::continue_query_on_connection_loss])
+        {
+            state.connection_lost = true;
+            state.continue_in_background = true;
+            LOG_INFO(log, "Connection lost for query {}, continuing in background", state.query_id);
+            return;
+        }
+        throw;
+    }
+    catch (const DB::NetException &)
+    {
+        /// Check if we should continue in background on network errors
+        if (state.query_context->getSettingsRef()[Setting::continue_query_on_connection_loss])
+        {
+            state.connection_lost = true;
+            state.continue_in_background = true;
+            LOG_INFO(log, "Connection lost for query {}, continuing in background", state.query_id);
+            return;
+        }
+        throw;
+    }
 }
 
 
@@ -1593,15 +1624,46 @@ void TCPHandler::sendExtremes(QueryState & state, const Block & extremes)
     if (extremes.empty())
         return;
 
-    initBlockOutput(state, extremes);
+    /// Skip sending if connection is lost and query continues in background
+    if (state.connection_lost && state.continue_in_background)
+        return;
 
-    writeVarUInt(Protocol::Server::Extremes, *out);
-    writeStringBinary("", *out);
+    try
+    {
+        initBlockOutput(state, extremes);
 
-    state.block_out->write(extremes);
-    state.maybe_compressed_out->next();
-    out->finishChunk();
-    out->next();
+        writeVarUInt(Protocol::Server::Extremes, *out);
+        writeStringBinary("", *out);
+
+        state.block_out->write(extremes);
+        state.maybe_compressed_out->next();
+        out->finishChunk();
+        out->next();
+    }
+    catch (const Poco::Net::Exception &)
+    {
+        /// Check if we should continue in background on network errors
+        if (state.query_context->getSettingsRef()[Setting::continue_query_on_connection_loss])
+        {
+            state.connection_lost = true;
+            state.continue_in_background = true;
+            LOG_INFO(log, "Connection lost for query {}, continuing in background", state.query_id);
+            return;
+        }
+        throw;
+    }
+    catch (const DB::Exception &)
+    {
+        /// Check if we should continue in background on network errors
+        if (state.query_context->getSettingsRef()[Setting::continue_query_on_connection_loss])
+        {
+            state.connection_lost = true;
+            state.continue_in_background = true;
+            LOG_INFO(log, "Connection lost for query {}, continuing in background", state.query_id);
+            return;
+        }
+        throw;
+    }
 }
 
 
@@ -1614,20 +1676,47 @@ void TCPHandler::sendProfileEvents(QueryState & state)
     Block block = ProfileEvents::getProfileEvents(host_name, state.profile_queue, state.last_sent_snapshots);
     if (block.rows() != 0)
     {
-        initProfileEventsBlockOutput(state, block);
+        try
+        {
+            initProfileEventsBlockOutput(state, block);
 
-        writeVarUInt(Protocol::Server::ProfileEvents, *out);
-        writeStringBinary("", *out);
+            writeVarUInt(Protocol::Server::ProfileEvents, *out);
+            writeStringBinary("", *out);
 
-        state.profile_events_block_out->write(block);
-        state.profile_events_block_out->flush();
-        out->finishChunk();
-        out->next();
+            state.profile_events_block_out->write(block);
+            state.profile_events_block_out->flush();
+            out->finishChunk();
+            out->next();
 
-        auto elapsed_milliseconds = stopwatch.elapsedMilliseconds();
-        if (elapsed_milliseconds > 100)
-            LOG_DEBUG(log, "Sending profile events block with {} rows, {} bytes took {} milliseconds",
-                block.rows(), block.bytes(), elapsed_milliseconds);
+            auto elapsed_milliseconds = stopwatch.elapsedMilliseconds();
+            if (elapsed_milliseconds > 100)
+                LOG_DEBUG(log, "Sending profile events block with {} rows, {} bytes took {} milliseconds",
+                          block.rows(), block.bytes(), elapsed_milliseconds);
+        }
+        catch (const Poco::Net::Exception &)
+        {
+            /// Check if we should continue in background on network errors
+            if (state.query_context->getSettingsRef()[Setting::continue_query_on_connection_loss])
+            {
+                state.connection_lost = true;
+                state.continue_in_background = true;
+                LOG_INFO(log, "Connection lost for query {} while sending profile events, continuing in background", state.query_id);
+                return;
+            }
+            throw;
+        }
+        catch (const DB::Exception &)
+        {
+            /// Check if we should continue in background on network errors
+            if (state.query_context->getSettingsRef()[Setting::continue_query_on_connection_loss])
+            {
+                state.connection_lost = true;
+                state.continue_in_background = true;
+                LOG_INFO(log, "Connection lost for query {} while sending profile events, continuing in background", state.query_id);
+                return;
+            }
+            throw;
+        }
     }
 }
 
@@ -1657,14 +1746,46 @@ void TCPHandler::sendTimezone(QueryState & state)
     if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_TIMEZONE_UPDATES)
         return;
 
+    /// Skip sending if connection is lost and query continues in background
+    if (state.connection_lost && state.continue_in_background)
+        return;
+
     const String & tz = state.query_context->getSettingsRef()[Setting::session_timezone].value;
 
-    LOG_DEBUG(log, "TCPHandler::sendTimezone(): {}", tz);
-    writeVarUInt(Protocol::Server::TimezoneUpdate, *out);
-    writeStringBinary(tz, *out);
+    try
+    {
+        LOG_DEBUG(log, "TCPHandler::sendTimezone(): {}", tz);
+        writeVarUInt(Protocol::Server::TimezoneUpdate, *out);
+        writeStringBinary(tz, *out);
 
-    out->finishChunk();
-    out->next();
+
+        out->finishChunk();
+        out->next();
+    }
+    catch (const Poco::Net::Exception &)
+    {
+        /// Check if we should continue in background on network errors
+        if (state.query_context->getSettingsRef()[Setting::continue_query_on_connection_loss])
+        {
+            state.connection_lost = true;
+            state.continue_in_background = true;
+            LOG_INFO(log, "Connection lost for query {}, continuing in background", state.query_id);
+            return;
+        }
+        throw;
+    }
+    catch (const DB::Exception &)
+    {
+        /// Check if we should continue in background on network errors
+        if (state.query_context->getSettingsRef()[Setting::continue_query_on_connection_loss])
+        {
+            state.connection_lost = true;
+            state.continue_in_background = true;
+            LOG_INFO(log, "Connection lost for query {}, continuing in background", state.query_id);
+            return;
+        }
+        throw;
+    }
 }
 
 
@@ -2660,35 +2781,70 @@ void TCPHandler::processCancel(QueryState & state)
 
 void TCPHandler::receivePacketsExpectCancel(QueryState & state)
 {
+    /// Skip receiving if connection is lost and query continues in background
+    if (state.connection_lost && state.continue_in_background)
+        return;
+
     if (after_check_cancelled.elapsed() / 1000 < interactive_delay)
         return;
 
     after_check_cancelled.restart();
 
     /// During request execution the only packet that can come from the client is stopping the query.
-    if (in->poll(0))
+    try
     {
-        if (in->isCanceled() || in->eof())
-            throw NetException(ErrorCodes::ABORTED, "Client has dropped the connection, cancel the query.");
-
-        UInt64 packet_type = 0;
-        readVarUInt(packet_type, *in);
-
-        switch (packet_type)
+        if (in->poll(0))
         {
-            case Protocol::Client::Cancel:
-                processCancel(state);
-                break;
+            if (in->isCanceled() || in->eof())
+                throw NetException(ErrorCodes::ABORTED, "Client has dropped the connection, cancel the query.");
 
-            default:
-                throw NetException(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT, "Unknown packet from client {}", toString(packet_type));
+            UInt64 packet_type = 0;
+            readVarUInt(packet_type, *in);
+
+            switch (packet_type)
+            {
+                case Protocol::Client::Cancel:
+                    processCancel(state);
+                    break;
+
+                default:
+                    throw NetException(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT, "Unknown packet from client {}", toString(packet_type));
+            }
         }
+    }
+    catch (const Poco::Net::Exception &)
+    {
+        /// Check if we should continue in background on network errors
+        if (state.query_context->getSettingsRef()[Setting::continue_query_on_connection_loss])
+        {
+            state.connection_lost = true;
+            state.continue_in_background = true;
+            LOG_INFO(log, "Connection lost for query {}, continuing in background", state.query_id);
+            return;
+        }
+        throw;
+    }
+    catch (const DB::Exception &)
+    {
+        /// Check if we should continue in background on network errors
+        if (state.query_context->getSettingsRef()[Setting::continue_query_on_connection_loss])
+        {
+            state.connection_lost = true;
+            state.continue_in_background = true;
+            LOG_INFO(log, "Connection lost for query {}, continuing in background", state.query_id);
+            return;
+        }
+        throw;
     }
 }
 
 void TCPHandler::sendData(QueryState & state, const Block & block)
 {
     OpenTelemetry::SpanHolder span{"TCPHandler::sendData"};
+
+    /// Skip sending if connection is lost and query continues in background
+    if (state.connection_lost && state.continue_in_background)
+        return;
 
     initBlockOutput(state, block);
 
@@ -2735,6 +2891,30 @@ void TCPHandler::sendData(QueryState & state, const Block & block)
 
         out->finishChunk();
         out->next();
+    }
+    catch (const Poco::Net::NetException &)
+    {
+        /// Check if we should continue in background on network errors
+        if (state.query_context->getSettingsRef()[Setting::continue_query_on_connection_loss])
+        {
+            state.connection_lost = true;
+            state.continue_in_background = true;
+            LOG_INFO(log, "Connection lost for query {}, continuing in background", state.query_id);
+            return;
+        }
+        throw;
+    }
+    catch (const DB::NetException &)
+    {
+        /// Check if we should continue in background on network errors
+        if (state.query_context->getSettingsRef()[Setting::continue_query_on_connection_loss])
+        {
+            state.connection_lost = true;
+            state.continue_in_background = true;
+            LOG_INFO(log, "Connection lost for query {}, continuing in background", state.query_id);
+            return;
+        }
+        throw;
     }
     catch (...)
     {
@@ -2819,10 +2999,39 @@ void TCPHandler::sendEndOfStream(QueryState & state)
     state.sent_all_data = true;
     state.io.setAllDataSent();
 
-    writeVarUInt(Protocol::Server::EndOfStream, *out);
+    /// Skip sending if connection is lost and query continues in background
+    if (state.connection_lost && state.continue_in_background)
+    {
+        LOG_INFO(log, "Query {} completed in background", state.query_id);
+        return;
+    }
+    try
+    {
+        writeVarUInt(Protocol::Server::EndOfStream, *out);
 
-    out->finishChunk();
-    out->next();
+        out->finishChunk();
+        out->next();
+    }
+    catch (const Poco::Net::NetException &)
+    {
+        /// Connection lost at the end, but query is already complete
+        if (state.query_context->getSettingsRef()[Setting::continue_query_on_connection_loss])
+        {
+            LOG_INFO(log, "Query {} completed but connection lost at end", state.query_id);
+            return;
+        }
+        throw;
+    }
+    catch (const DB::NetException &)
+    {
+        /// Connection lost at the end, but query is already complete
+        if (state.query_context->getSettingsRef()[Setting::continue_query_on_connection_loss])
+        {
+            LOG_INFO(log, "Query {} completed but connection lost at end", state.query_id);
+            return;
+        }
+        throw;
+    }
 }
 
 
@@ -2834,15 +3043,45 @@ void TCPHandler::updateProgress(QueryState & state, const Progress & value)
 
 void TCPHandler::sendProgress(QueryState & state)
 {
-    writeVarUInt(Protocol::Server::Progress, *out);
-    auto increment = state.progress.fetchValuesAndResetPiecewiseAtomically();
-    UInt64 current_elapsed_ns = state.watch.elapsedNanoseconds();
-    increment.elapsed_ns = current_elapsed_ns - state.prev_elapsed_ns;
-    state.prev_elapsed_ns = current_elapsed_ns;
-    increment.write(*out, client_tcp_protocol_version);
+    /// Skip sending if connection is lost and query continues in background
+    if (state.connection_lost && state.continue_in_background)
+        return;
 
-    out->finishChunk();
-    out->next();
+    try
+    {
+        writeVarUInt(Protocol::Server::Progress, *out);
+        auto increment = state.progress.fetchValuesAndResetPiecewiseAtomically();
+        UInt64 current_elapsed_ns = state.watch.elapsedNanoseconds();
+        increment.elapsed_ns = current_elapsed_ns - state.prev_elapsed_ns;
+        state.prev_elapsed_ns = current_elapsed_ns;
+        increment.write(*out, client_tcp_protocol_version);
+
+        out->finishChunk();
+        out->next();
+    }
+
+    catch (const Poco::Net::NetException &)
+    {
+        if (state.query_context->getSettingsRef()[Setting::continue_query_on_connection_loss])
+        {
+            state.connection_lost = true;
+            state.continue_in_background = true;
+            LOG_INFO(log, "Connection lost for query {}, continuing in background", state.query_id);
+            return;
+        }
+        throw;
+    }
+    catch (const DB::NetException &)
+    {
+        if (state.query_context->getSettingsRef()[Setting::continue_query_on_connection_loss])
+        {
+            state.connection_lost = true;
+            state.continue_in_background = true;
+            LOG_INFO(log, "Connection lost for query {}, continuing in background", state.query_id);
+            return;
+        }
+        throw;
+    }
 }
 
 
@@ -2854,6 +3093,10 @@ void TCPHandler::sendLogs(QueryState & state)
 void TCPHandler::sendLogs(QueryState & state, std::shared_ptr<WriteBufferFromPocoSocketChunked> out, UInt32 client_tcp_protocol_version)
 {
     if (!state.logs_queue)
+        return;
+
+    /// Skip sending if connection is lost and query continues in background
+    if (state.connection_lost && state.continue_in_background)
         return;
 
     MutableColumns logs_columns;
@@ -2877,7 +3120,32 @@ void TCPHandler::sendLogs(QueryState & state, std::shared_ptr<WriteBufferFromPoc
     {
         Block block = InternalTextLogsQueue::getSampleBlock();
         block.setColumns(std::move(logs_columns));
-        sendLogData(state, block, out, client_tcp_protocol_version);
+        try
+        {
+            sendLogData(state, block, out, client_tcp_protocol_version);
+        }
+        catch (const Poco::Net::NetException &)
+        {
+            if (state.query_context->getSettingsRef()[Setting::continue_query_on_connection_loss])
+            {
+                state.connection_lost = true;
+                state.continue_in_background = true;
+                LOG_INFO(log, "Connection lost for query {}, continuing in background", state.query_id);
+                return;
+            }
+            throw;
+        }
+        catch (const DB::NetException &)
+        {
+            if (state.query_context->getSettingsRef()[Setting::continue_query_on_connection_loss])
+            {
+                state.connection_lost = true;
+                state.continue_in_background = true;
+                LOG_INFO(log, "Connection lost for query {}, continuing in background", state.query_id);
+                return;
+            }
+            throw;
+        }
     }
 }
 

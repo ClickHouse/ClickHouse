@@ -18,6 +18,8 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Parsers/QueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
+#include <Common/NetException.h>
+#include <Poco/Net/NetException.h>
 #include <Interpreters/Session.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
@@ -70,6 +72,7 @@ namespace Setting
     extern const SettingsUInt64 readonly;
     extern const SettingsBool send_progress_in_http_headers;
     extern const SettingsInt64 zstd_window_log_max;
+    extern const SettingsBool continue_query_on_connection_loss;
 }
 
 namespace ErrorCodes
@@ -761,6 +764,62 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             LOG_DEBUG(log, "Authentication in progress...");
         else
             LOG_DEBUG(log, "Done processing query");
+    }
+    catch (const Poco::Net::NetException & e)
+    {
+        /// Check if we should continue in background on network errors
+        auto context = CurrentThread::getQueryContext();
+        if (query_scope && context &&
+            context->getSettingsRef()[Setting::continue_query_on_connection_loss])
+        {
+            LOG_INFO(log, "HTTP client connection lost for query {}, continuing in background: {}",
+                     context->getCurrentQueryId(), e.displayText());
+            /// Don't cancel output, don't send exception - let query complete in background
+            return;
+        }
+
+        SCOPE_EXIT({
+            request_credentials.reset();
+        });
+
+        tryLogCurrentException(log);
+        ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
+        auto error_sent = trySendExceptionToClient(status.code, status.message, request, response, used_output);
+        used_output.cancel();
+
+        if (!error_sent && thread_trace_context)
+            thread_trace_context->root_span.addAttribute("clickhouse.exception", "Cannot flush data to client");
+
+        if (thread_trace_context)
+            thread_trace_context->root_span.addAttribute(status);
+    }
+    catch (const DB::NetException & e)
+    {
+        /// Check if we should continue in background on network errors
+        auto context = CurrentThread::getQueryContext();
+        if (query_scope && context &&
+            context->getSettingsRef()[Setting::continue_query_on_connection_loss])
+        {
+            LOG_INFO(log, "HTTP client connection lost for query {}, continuing in background: {}",
+                     context->getCurrentQueryId(), e.displayText());
+            /// Don't cancel output, don't send exception - let query complete in background
+            return;
+        }
+
+        SCOPE_EXIT({
+            request_credentials.reset();
+        });
+
+        tryLogCurrentException(log);
+        ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
+        auto error_sent = trySendExceptionToClient(status.code, status.message, request, response, used_output);
+        used_output.cancel();
+
+        if (!error_sent && thread_trace_context)
+            thread_trace_context->root_span.addAttribute("clickhouse.exception", "Cannot flush data to client");
+
+        if (thread_trace_context)
+            thread_trace_context->root_span.addAttribute(status);
     }
     catch (...)
     {
