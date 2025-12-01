@@ -39,7 +39,7 @@ namespace
         }
     }
 
-    Float64 evaluateConstBinaryOperator(std::string_view operator_name, Float64 left, Float64 right)
+    Float64 evaluateConstOperator(std::string_view operator_name, Float64 left, Float64 right)
     {
         if (operator_name == "+")
         {
@@ -99,24 +99,15 @@ namespace
         }
     }
 
-    Float64 evaluateConstBinaryOperator(std::string_view operator_name, Float64 argument, Float64 other_argument, bool left_to_right)
+    Float64 evaluateConstOperator(std::string_view operator_name, Float64 argument, Float64 other_argument, bool left_to_right)
     {
         if (left_to_right)
-            return evaluateConstBinaryOperator(operator_name, argument, other_argument);
+            return evaluateConstOperator(operator_name, argument, other_argument);
         else
-            return evaluateConstBinaryOperator(operator_name, other_argument, argument);
+            return evaluateConstOperator(operator_name, other_argument, argument);
     }
 
-    bool isComparisonWithoutBool(const PrometheusQueryTree::BinaryOperator * operator_node)
-    {
-        if (operator_node->bool_modifier)
-            return false;
-
-        std::string_view operator_name = operator_node->operator_name;
-        return (operator_name == "==") || ()
-    }
-
-    ASTPtr makeTransformAST(std::string_view operator_name, ASTPtr left_argument, ASTPtr right_argument)
+    ASTPtr makeOperatorAST(std::string_view operator_name, ASTPtr left_argument, ASTPtr right_argument)
     {
         static const std::unordered_map<std::string_view, std::string_view> function_names = {
             {"+", "plus"},
@@ -139,13 +130,120 @@ namespace
         return makeASTFunction(function_name, left_argument, right_argument);
     }
 
-    ASTPtr makeTransformAST(std::string_view operator_name, ASTPtr argument, ASTPtr other_argument, bool left_to_right)
+    /// Returns an AST for evaluating a binary operator, for example "plus(argument, other_argument)".
+    ASTPtr makeOperatorAST(std::string_view operator_name, ASTPtr argument, ASTPtr other_argument, bool left_to_right)
     {
         if (left_to_right)
-            return makeTransformAST(operator_name, argument, other_argument);
+            return makeOperatorAST(operator_name, argument, other_argument);
         else
-            return makeTransformAST(operator_name, other_argument, argument);
+            return makeOperatorAST(operator_name, other_argument, argument);
     }
+
+    /// Comparison operators without BOOL modifier work as filters and require special handling.
+    bool isComparisonWithoutBool(const PrometheusQueryTree::BinaryOperator * operator_node)
+    {
+        if (operator_node->bool_modifier)
+            return false;
+
+        static const std::unordered_set<std::string_view> comparison_operators = {
+            "==", "!=", ">", "<", ">=", "<="
+        };
+        return comparison_operators.contains(operator_node->operator_name);
+    }
+
+    /// Returns an AST for evaluating a binary operator on a scalar and each element of an array.
+    /// For example, the function can return
+    /// arrayMap(x -> scalar_argument + x, array_argument)
+    ASTPtr makeOperatorASTForScalarAndArray(std::string_view operator_name, Float64 scalar_argument, ASTPtr array_argument, bool left_to_right)
+    {
+        return makeASTFunction(
+            "arrayMap",
+            makeASTFunction(
+                "lambda",
+                makeASTFunction("tuple", std::make_shared<ASTIdentifier>("x")),
+                makeOperatorAST(
+                    operator_name, std::make_shared<ASTLiteral>(scalar_argument), std::make_shared<ASTIdentifier>("x"), left_to_right),
+                array_argument));
+    }
+
+    ASTPtr makeOperatorASTForArrayAndScalar(std::string_view operator_name, ASTPtr array_argument, Float64 scalar_argument, bool left_to_right)
+    {
+        return makeOperatorASTForScalarAndArray(operator_name, scalar_argument, array_argument, !left_to_right);
+    }
+
+    /// Returns an AST for evaluating a binary operator on corresponding elements of two arrays.
+    /// For example, the function can return
+    /// arrayMap(x, y -> x + y, array_argument, other_array_argument)
+    ASTPtr makeOperatorASTForTwoArrays(std::string_view operator_name, ASTPtr array_argument, ASTPtr other_array_argument, bool left_to_right)
+    {
+        return makeASTFunction(
+            "arrayMap",
+            makeASTFunction(
+                "lambda",
+                makeASTFunction("tuple", std::make_shared<ASTIdentifier>("x"), std::make_shared<ASTIdentifier>("y")),
+                makeOperatorAST(operator_name, std::make_shared<ASTIdentifier>("x"), std::make_shared<ASTIdentifier>("y"), left_to_right),
+                array_argument,
+                other_array_argument));
+    }
+
+    /// Returns an AST for evaluating a filter based on a comparison operator on a scalar and each element of an array.
+    /// For example, the function can return
+    /// arrayMap(x -> if (scalar_argument >= x, x, NULL), array_argument)
+    ASTPtr makeFilterASTForScalarAndArray(
+        std::string_view operator_name,
+        Float64 scalar_argument,
+        ASTPtr array_argument,
+        bool left_to_right,
+        bool return_elements_of_array_argument_if_match)
+    {
+        return makeASTFunction(
+            "arrayMap",
+            makeASTFunction(
+                "lambda",
+                makeASTFunction("tuple", std::make_shared<ASTIdentifier>("x")),
+                makeASTFunction(
+                    "if",
+                    makeOperatorAST(
+                        operator_name, std::make_shared<ASTLiteral>(scalar_argument), std::make_shared<ASTIdentifier>("x"), left_to_right),
+                    return_elements_of_array_argument_if_match ? std::make_shared<ASTIdentifier>("x")
+                                                               : std::make_shared<ASTLiteral>(scalar_argument))),
+            array_argument);
+    }
+
+    ASTPtr makeFilterASTForArrayAndScalar(
+        std::string_view operator_name,
+        ASTPtr array_argument,
+        Float64 scalar_argument,
+        bool left_to_right,
+        bool return_scalar_argument_if_match)
+    {
+        return makeFilterASTForScalarAndArray(operator_name, scalar_argument, array_argument, !left_to_right, !return_scalar_argument_if_match);
+    }
+
+    /// Returns an AST for evaluating a filter based on a comparison operator on two arrays.
+    /// For example, the function can return
+    /// arrayMap(x, y -> if (x >= y, y, NULL), array_argument, other_array_argument)
+    ASTPtr makeFilterASTForTwoArrays(
+        std::string_view operator_name,
+        ASTPtr array_argument,
+        ASTPtr other_array_argument,
+        bool left_to_right,
+        bool return_elements_of_other_array_argument_if_match)
+    {
+        return makeASTFunction(
+            "arrayMap",
+            makeASTFunction(
+                "lambda",
+                makeASTFunction("tuple", std::make_shared<ASTIdentifier>("x"), std::make_shared<ASTIdentifier>("y")),
+                makeASTFunction(
+                    "if",
+                    makeOperatorAST(
+                        operator_name, std::make_shared<ASTIdentifier>("x"), std::make_shared<ASTIdentifier>("y"), left_to_right),
+                    std::make_shared<ASTIdentifier>(return_elements_of_other_array_argument_if_match ? "y" : "x"))),
+            array_argument,
+            other_array_argument);
+    }
+
 
     /// Applies a binary operator if one of the arguments is a SCALAR represented by StoreMethod::CONST_SCALAR,
     /// `argument_index` specifies which of the two arguments is such.
@@ -162,6 +260,7 @@ namespace
 
         const auto & operator_name = operator_node->operator_name;
         bool is_comparison_without_bool = isComparisonWithoutBool(operator_node);
+        auto scalar_value = argument.scalar_value;
         auto other_type = other_argument.type;
         auto other_store_method = other_argument.store_method;
 
@@ -172,7 +271,7 @@ namespace
         {
             case StoreMethod::CONST_SCALAR:
             {
-                Float64 float_result = evaluateConstBinaryOperator(operator_name, argument.scalar_value, other_argument.scalar_value, left_to_right);
+                Float64 float_result = evaluateConstOperator(operator_name, scalar_value, other_argument.scalar_value, left_to_right);
                 if (is_comparison_without_bool && (res.type == ResultType::INSTANT_VECTOR))
                 {
                     if (float_result)
@@ -205,8 +304,6 @@ namespace
 
                 SelectQueryParams params;
 
-                auto scalar_value = argument.scalar_value;
-
                 if (other_store_method == StoreMethod::VECTOR_GRID)
                 {
                     params.select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
@@ -219,26 +316,16 @@ namespace
                     res.metric_name_dropped = true;
                 }
 
-                ASTPtr transform_ast = makeTransformAST(
-                    operator_name, std::make_shared<ASTLiteral>(scalar_value), std::make_shared<ASTIdentifier>("x"), left_to_right);
-
                 if (is_comparison_without_bool && (res.type == ResultType::INSTANT_VECTOR))
                 {
-                    ASTPtr value_if_match = std::make_shared<ASTIdentifier>("x");
-                    params.select_list.push_back(makeASTFunction(
-                        "arrayMap",
-                        makeASTFunction(
-                            "lambda",
-                            makeASTFunction("tuple", std::make_shared<ASTIdentifier>("x")),
-                            makeASTFunction("if", transform_ast, value_if_match, std::make_shared<ASTLiteral>(Field{})),
-                            std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values))));
+                    params.select_list.push_back(makeFilterASTForScalarAndArray(
+                        operator_name, scalar_value, std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values), left_to_right,
+                        /* return_elements_of_array_argument_if_match = */ true));
                 }
                 else
                 {
-                    params.select_list.push_back(makeASTFunction(
-                        "arrayMap",
-                        makeASTFunction("lambda", makeASTFunction("tuple", std::make_shared<ASTIdentifier>("x")), transform_ast),
-                        std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values)));
+                    params.select_list.push_back(makeOperatorASTForScalarAndArray(
+                        operator_name, scalar_value, std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values), left_to_right));
                 }
                 params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
 
@@ -316,26 +403,17 @@ namespace
                     res.metric_name_dropped = true;
                 }
 
-                ASTPtr transform_ast = makeTransformAST(
-                    operator_name, std::make_shared<ASTIdentifier>("x"), std::make_shared<ASTLiteral>(other_scalar_value), left_to_right);
-
                 if (is_comparison_without_bool)
                 {
-                    ASTPtr value_if_match = std::make_shared<ASTLiteral>(other_scalar_value);
-                    params.select_list.push_back(makeASTFunction(
-                        "arrayMap",
-                        makeASTFunction(
-                            "lambda",
-                            makeASTFunction("tuple", std::make_shared<ASTIdentifier>("x")),
-                            makeASTFunction("if", transform_ast, value_if_match, std::make_shared<ASTLiteral>(Field{}))),
-                        std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values)));
+                    params.select_list.push_back(makeFilterASTForArrayAndScalar(
+                        operator_name, std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values), other_scalar_value, left_to_right,
+                        /* return_scalar_argument_if_match = */ true));
                 }
                 else
                 {
-                    params.select_list.push_back(makeASTFunction(
-                        "arrayMap",
-                        makeASTFunction("lambda", makeASTFunction("tuple", std::make_shared<ASTIdentifier>("x")), transform_ast),
-                        std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values)));
+                    params.select_list.push_back(
+                        makeOperatorASTForArrayAndScalar(
+                        operator_name, std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values), other_scalar_value, left_to_right));
                 }
                 params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
 
@@ -387,28 +465,22 @@ namespace
                     res.metric_name_dropped = true;
                 }
 
-                ASTPtr transform_ast = makeTransformAST(operator_name, std::make_shared<ASTIdentifier>("x"), std::make_shared<ASTIdentifier>("y"), left_to_right);
-
                 if (is_comparison_without_bool && (res.type == StoreMethod::INSTANT_VECTOR))
                 {
-                    ASTPtr value_if_match = std::make_shared<ASTIdentifier>("y");
-                    params.select_list.push_back(makeASTFunction(
-                        "arrayMap",
-                        makeASTFunction(
-                            "lambda",
-                            makeASTFunction("tuple", std::make_shared<ASTIdentifier>("x"), std::make_shared<ASTIdentifier>("y")),
-                            makeASTFunction("if", transform_ast, value_if_match, std::make_shared<ASTLiteral>(Field{}))),
-                        std::make_shared<ASTIdentifier>(scalar_grid) std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values)));
+                    params.select_list.push_back(makeFilterASTForTwoArrays(
+                        operator_name,
+                        std::make_shared<ASTIdentifier>(scalar_grid),
+                        std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values),
+                        left_to_right,
+                        /* return_elements_of_other_array_argument_if_match = */ true));
                 }
                 else
                 {
-                    params.select_list.push_back(makeASTFunction(
-                        "arrayMap",
-                        makeASTFunction(
-                            "lambda",
-                            makeASTFunction("tuple", std::make_shared<ASTIdentifier>("x"), std::make_shared<ASTIdentifier>("y")),
-                            transform_ast),
-                        std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values)));
+                    params.select_list.push_back(makeOperatorASTForTwoArrays(
+                        operator_name,
+                        std::make_shared<ASTIdentifier>(scalar_grid),
+                        std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values),
+                        left_to_right));
                 }
                 params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
 
@@ -433,6 +505,38 @@ namespace
         }
 
         UNREACHABLE();
+    }
+
+
+    /// Returns an AST to evaluate the join group which is a parameter we join both sides of a binary operator on instant vectors.
+    ASTPtr makeJoinGroupAST(const PrometheusQueryTree::BinaryOperator * operator_node, ASTPtr group)
+    {
+        if (const auto * literal = arg->as<const ASTLiteral>(); literal && literal->value == Field{0u})
+            return group;
+
+        if (operator_node->on)
+        {
+            if (operator_node->labels.empty())
+                return std::make_shared<ASTLiteral>(0u);
+            else
+                return makeASTFunction("timeSeriesRemoveAllTagsExcept", group,
+                    std::make_shared<ASTLiteral>(Array{operator_node->labels.begin(), operator_node->labels.end()}));
+        }
+        else if (operator_node->ignoring && !operator_node->labels.empty())
+        {
+            return makeASTFunction("timeSeriesRemoveTags", group,
+                std::make_shared<ASTLiteral>(Array{operator_node->labels.begin(), operator_node->labels.end()}));
+        }
+        else
+        {
+            return group;
+        }
+    }
+
+    /// Returns an AST to evaluate the group which will be set for the result of a binary operator on instant vectors.
+    ASTPtr makeResultGroupAST(const PrometheusQueryTree::BinaryOperator * operator_node, ASTPtr left_group, ASTPtr right_group, ASTPtr join_group)
+    {
+        if (group_left && 
     }
 
 
