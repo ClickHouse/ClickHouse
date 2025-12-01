@@ -17,6 +17,7 @@ public:
     LazilyReadFromMergeTree(
         SharedHeader header,
         size_t max_block_size,
+        size_t min_marks_for_concurrent_read_,
         MergeTreeReaderSettings reader_settings_,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot_,
         StorageSnapshotPtr storage_snapshot,
@@ -34,6 +35,7 @@ public:
 
 private:
     size_t max_block_size;
+    size_t min_marks_for_concurrent_read;
     MergeTreeReaderSettings reader_settings;
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot;
     StorageSnapshotPtr storage_snapshot;

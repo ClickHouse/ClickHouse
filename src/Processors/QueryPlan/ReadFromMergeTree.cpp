@@ -2721,9 +2721,12 @@ std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColu
             nullptr) //query_info.prewhere_info)
     );
 
+    PartRangesReadInfo info(getParts(), context->getSettingsRef(), *data.getSettings());
+
     auto new_reading = std::make_unique<LazilyReadFromMergeTree>(
         std::move(lazy_reading_header),
         block_size.max_block_size_rows,
+        info.min_marks_for_concurrent_read,
         reader_settings,
         mutations_snapshot,
         storage_snapshot,

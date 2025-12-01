@@ -24,6 +24,7 @@ namespace ErrorCodes
 LazilyReadFromMergeTree::LazilyReadFromMergeTree(
     SharedHeader header,
     size_t max_block_size_,
+    size_t min_marks_for_concurrent_read_,
     MergeTreeReaderSettings reader_settings_,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot_,
     StorageSnapshotPtr storage_snapshot_,
@@ -31,6 +32,7 @@ LazilyReadFromMergeTree::LazilyReadFromMergeTree(
     const std::string & log_name_)
     : ISourceStep(std::move(header))
     , max_block_size(max_block_size_)
+    , min_marks_for_concurrent_read(min_marks_for_concurrent_read_)
     , reader_settings(reader_settings_)
     , mutations_snapshot(std::move(mutations_snapshot_))
     , storage_snapshot(std::move(storage_snapshot_))
@@ -53,6 +55,7 @@ void LazilyReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline
         getOutputHeader(),
         max_block_size,
         settings.max_threads,
+        min_marks_for_concurrent_read,
         settings.actions_settings,
         reader_settings,
         mutations_snapshot,
