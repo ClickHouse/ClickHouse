@@ -26,7 +26,6 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     , filter_column_original_type(header_->getByPosition(filter_column_position).type)
     , filter_column_target_type(filter_column_type_)
     , filter_name(filter_name_)
-    , filters_to_merge(filters_to_merge_)
 {
     const auto & filter_column = header_->getByPosition(filter_column_position);
     if (!filter_column_target_type->equals(*filter_column_original_type))

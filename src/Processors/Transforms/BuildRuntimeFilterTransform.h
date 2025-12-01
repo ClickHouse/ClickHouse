@@ -39,8 +39,6 @@ private:
     const DataTypePtr filter_column_target_type;
     const String filter_name;
 
-    const size_t filters_to_merge;
-
     FunctionBasePtr cast_to_target_type;
 
     UniqueRuntimeFilterPtr built_filter;
