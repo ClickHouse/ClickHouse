@@ -508,24 +508,51 @@ namespace
     }
 
 
-    /// Returns an AST to evaluate the join group which is a parameter we join both sides of a binary operator on instant vectors.
-    ASTPtr makeJoinGroupAST(const PrometheusQueryTree::BinaryOperator * operator_node, ASTPtr group)
+    struct GroupAST
     {
-        if (const auto * literal = arg->as<const ASTLiteral>(); literal && literal->value == Field{0u})
-            return group;
+        ASTPtr ast;
+        bool metric_name_dropped = false;
+    };
+
+
+    /// Returns an AST to evaluate the join group which is a parameter we join both sides of a binary operator on instant vectors.
+    GroupAST makeJoinGroupAST(const PrometheusQueryTree::BinaryOperator * operator_node, GroupAST group)
+    {
+        if (const auto * literal = group.ast->as<const ASTLiteral>(); literal && literal->value == Field{0u})
+            return {.ast = group.ast, .metric_name_dropped = true};
 
         if (operator_node->on)
         {
             if (operator_node->labels.empty())
-                return std::make_shared<ASTLiteral>(0u);
+            {
+                /// ON() means we ignore all tags
+                return {.ast = std::make_shared<ASTLiteral>(0u), .metric_name_dropped = true};
+            }
             else
-                return makeASTFunction("timeSeriesRemoveAllTagsExcept", group,
-                    std::make_shared<ASTLiteral>(Array{operator_node->labels.begin(), operator_node->labels.end()}));
+            {
+                /// ON(tags) means we ignore all tags except the specified `tags`.
+                Strings tags = operator_node->labels;
+                std::sort(tags.begin(), tags.end());
+                tags.erase(std::unique(tags.begin(), tags.end()), tags.end());
+                bool metric_name_dropped = (std::find(tags.begin(), tags.end(), "__name__") == tags.end());
+                return {
+                    .ast = makeASTFunction(
+                        "timeSeriesRemoveAllTagsExcept", group, std::make_shared<ASTLiteral>(Array{tags.begin(), tags.end()})),
+                    .metric_name_dropped = metric_name_dropped};
+            }
         }
         else if (operator_node->ignoring && !operator_node->labels.empty())
         {
-            return makeASTFunction("timeSeriesRemoveTags", group,
-                std::make_shared<ASTLiteral>(Array{operator_node->labels.begin(), operator_node->labels.end()}));
+            /// IGNORE(tags) means we ignore the specified `tags`.
+            /// We ignore the metric name "__name__" even if it isn't specified in `tags`.
+            Strings tags = operator_node->labels;
+            if (std::find(tags.begin(), tags.end(), "__name__") == tags.end())
+                tags.push_back("__name__");
+            std::sort(tags.begin(), tags.end());
+            tags.erase(std::unique(tags.begin(), tags.end()), tags.end());
+            return {
+                .ast = makeASTFunction("timeSeriesRemoveTags", group, std::make_shared<ASTLiteral>(Array{tags.begin(), tags.end()})),
+                .metric_name_dropped = true};
         }
         else
         {
@@ -533,10 +560,60 @@ namespace
         }
     }
 
-    /// Returns an AST to evaluate the group which will be set for the result of a binary operator on instant vectors.
-    ASTPtr makeResultGroupAST(const PrometheusQueryTree::BinaryOperator * operator_node, ASTPtr left_group, ASTPtr right_group, ASTPtr join_group)
+    GroupAST makeResultGroupASTImpl(
+        const PrometheusQueryTree::BinaryOperator * operator_node, GroupAST join_group, bool group_keyword_presents, GroupAST group, GroupAST other_group)
     {
-        if (group_left && 
+        if (!group_keyword_presents)
+        {
+            if (join_group.metric_name_dropped || isComparisonWithoutBool(operator_node))
+                return join_group;
+            else
+                return {
+                    .ast = makeASTFunction("timeSeriesRemoveTag", join_group, std::make_shared<ASTLiteral>("__name__")),
+                    .metric_name_dropped = true};
+        }
+
+        if (operator_node->extra_labels.empty())
+        {
+            if (group.metric_name_dropped || isComparisonWithoutBool(operator_node))
+                return group;
+            else
+                return {
+                    .ast = makeASTFunction("timeSeriesRemoveTag", group, std::make_shared<ASTLiteral>("__name__")),
+                    .metric_name_dropped = true};
+        }
+
+        Strings tags_to_copy = operator_node->extra_labels;
+        std::sort(tags_to_copy.begin(), tags_to_copy.end());
+        tags_to_copy.erase(std::unique(tags_to_copy.begin(), tags_to_copy.end()), tags_to_copy.end());
+        bool copy_metric_name = (std::find(tags_to_copy.begin(), tags_to_copy.end(), "__name__") != tags_to_copy.end());
+        auto dest_group = join_group;
+        if (!dest_group.metric_name_dropped && !copy_metric_name && !isComparisonWithoutBool(operator_node))
+        {
+            dest_group = {
+                .ast = makeASTFunction("timeSeriesRemoveTag", dest_group, std::make_shared<ASTLiteral>("__name__")),
+                .metric_name_dropped = true};
+        }
+
+        return {
+            .ast = makeASTFunction(
+                "timeSeriesCopyTags",
+                dest_group,
+                other_group,
+                std::make_shared<ASTLiteral>(Array{tags_to_copy.begin(), tags_to_copy.end()})),
+            .metric_name_dropped = dest_group.metric_name_dropped && (!copy_metric_name || other_group.metric_name_dropped)};
+    }
+
+    /// Returns an AST to evaluate the group which will be set for the result of a binary operator on instant vectors.
+    GroupAST makeResultGroupAST(
+        const PrometheusQueryTree::BinaryOperator * operator_node, GroupAST join_group, GroupAST left_group, GroupAST right_group)
+    {
+        if (operator_node->group_left)
+            return makeResultGroupASTImpl(operator_node, join_group, /* group_keyword_presents = */ true, left_group, right_group);
+        else if (operator_node->group_right)
+            return makeResultGroupASTImpl(operator_node, join_group, /* group_keyword_presents = */ true, right_group, left_group);
+        else
+            return makeResultGroupASTImpl(operator_node, join_group, /* group_keyword_presents = */ false, left_group, right_group);
     }
 
 
@@ -636,7 +713,10 @@ namespace
         bool left_to_right,
         ConverterContext & context)
     {
-        inner join
+        SelectQueryParams params;
+        
+
+
     }
 }
 
