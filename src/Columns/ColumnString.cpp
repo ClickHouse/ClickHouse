@@ -257,18 +257,6 @@ void ColumnString::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, c
 }
 
 
-std::string_view ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
-{
-    size_t string_size = sizeAt(n);
-    size_t offset = offsetAt(n);
-
-    auto result_size = sizeof(string_size) + string_size;
-    char * pos = arena.allocContinue(result_size, begin);
-    memcpy(pos, &string_size, sizeof(string_size));
-    memcpy(pos + sizeof(string_size), &chars[offset], string_size);
-    return {pos, result_size};
-}
-
 std::string_view ColumnString::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     /// Serialize string values with 0 byte at the end for compatibility
@@ -285,32 +273,6 @@ std::string_view ColumnString::serializeAggregationStateValueIntoArena(size_t n,
     return std::string_view{pos, res_size};
 }
 
-
-ALWAYS_INLINE char * ColumnString::serializeValueIntoMemory(size_t n, char * memory) const
-{
-    size_t string_size = sizeAt(n);
-    size_t offset = offsetAt(n);
-
-    memcpy(memory, &string_size, sizeof(string_size));
-    memory += sizeof(string_size);
-    memcpy(memory, &chars[offset], string_size);
-    return memory + string_size;
-}
-
-void ColumnString::batchSerializeValueIntoMemory(std::vector<char *> & memories) const
-{
-    chassert(memories.size() == size());
-    for (size_t i = 0; i < memories.size(); ++i)
-    {
-        size_t string_size = sizeAt(i);
-        size_t offset = offsetAt(i);
-
-        memcpy(memories[i], &string_size, sizeof(string_size));
-        memories[i] += sizeof(string_size);
-        memcpy(memories[i], &chars[offset], string_size);
-        memories[i] += string_size;
-    }
-}
 
 void ColumnString::deserializeAndInsertFromArena(ReadBuffer & in)
 {
