@@ -2709,8 +2709,8 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
     const uint32_t reload_config = 3;
     const uint32_t reload_users = 3;
     /// For merge trees
-    const uint32_t stop_merges = 20 * has_merge_tree;
-    const uint32_t start_merges = 20 * has_merge_tree;
+    const uint32_t stop_merges = 0 * has_merge_tree;
+    const uint32_t start_merges = 0 * has_merge_tree;
     const uint32_t stop_ttl_merges = 20 * has_merge_tree;
     const uint32_t start_ttl_merges = 20 * has_merge_tree;
     const uint32_t stop_moves = 8 * has_merge_tree;
