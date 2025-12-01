@@ -175,7 +175,7 @@ Test output:
         if issue_url:
             print(f"Issue {issue_url} created")
             self.issue_url = issue_url
-            self.praktika_result.set_clickable_label("flaky", issue_url)
+            self.praktika_result.set_clickable_label("issue", issue_url)
         else:
             raise Exception("Failed to create issue")
         return True
@@ -204,7 +204,7 @@ Test output:
         if issue_url:
             print(f"Issue {issue_url} created")
             self.issue_url = issue_url
-            self.praktika_result.set_clickable_label("flaky", issue_url)
+            self.praktika_result.set_clickable_label("issue", issue_url)
         else:
             raise Exception("Failed to create issue")
         return True
@@ -423,25 +423,41 @@ def find_existing_issues_for_failures(failures: list[CIFailure]):
                 search_in_title = failure.test_name
                 labels = ["flaky test"]
             elif failure.job_type in (JobTypes.BUZZ_FUZZER, JobTypes.AST_FUZZER):
+                if not failure.test_name:
+                    assert (
+                        failure.job_status == Result.Status.ERROR
+                    ), f"Unexpected job status: {failure.job_status}"
+                    print(
+                        f"      --> It's looks like infrastracture problem - cannot handle it"
+                    )
+                    continue
                 search_in_title = failure.test_name
                 labels = ["fuzz"]
             elif failure.job_type in (JobTypes.PERFORMANCE):
                 # TODO:
                 # search_in_title = failure.test_name
                 # labels = ["performance"]
-                pass
+                print(
+                    f"      --> It's looks like Performance tests - not yet supported"
+                )
+                continue
             else:
                 raise Exception(f"Unexpected job type: {failure.job_type}")
 
-            issue = GH.find_issue(
+            issues = GH.find_issue(
                 title=search_in_title,
                 labels=labels,
                 repo="ClickHouse/ClickHouse",
             )
+            if issues and len(issues) > 1:
+                print("WARNING: More than one issue found: check duplicates")
+                for issue in issues:
+                    print(f"  {issue.number}: {issue.title}")
+            issue = issues[0] if issues else None
             if issue:
                 print(f"      --> Issue {issue.html_url} already exists")
                 failure.issue_url = issue.html_url
-                failure.praktika_result.set_clickable_label("flaky", issue.html_url)
+                failure.praktika_result.set_clickable_label("issue", issue.html_url)
                 failure.praktika_result.set_comment("ISSUE EXISTS")
                 failures_with_open_issue.append(failure)
             else:
@@ -585,6 +601,7 @@ def main():
 
     print(f"Change URL: {pr_url}")
     print(f"Commit SHA: {head_sha}")
+    print(f"CI Report: {CIFailure.get_job_report_url(pr_number, head_sha)}")
 
     if not is_master_commit:
         status_map = get_commit_statuses(head_sha)
