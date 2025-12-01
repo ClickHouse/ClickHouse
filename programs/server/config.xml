@@ -1243,6 +1243,13 @@
         <flush_on_crash>false</flush_on_crash>
     </part_log>
 
+    <!-- Contains information about all background tasks that are executed via various background pools.
+         See also:
+         - background_schedule_pool_size
+         - background_buffer_flush_schedule_pool_size
+         - background_message_broker_schedule_pool_size
+         - background_distributed_schedule_pool_size
+    -->
     <background_schedule_pool_log>
         <database>system</database>
         <table>background_schedule_pool_log</table>
