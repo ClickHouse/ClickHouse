@@ -152,96 +152,77 @@ namespace
     }
 
     /// Returns an AST for evaluating a binary operator on a scalar and each element of an array.
-    /// For example, the function can return
-    /// arrayMap(x -> scalar_argument + x, array_argument)
-    ASTPtr makeOperatorASTForScalarAndArray(std::string_view operator_name, Float64 scalar_argument, ASTPtr array_argument, bool left_to_right)
-    {
-        return makeASTFunction(
-            "arrayMap",
-            makeASTFunction(
-                "lambda",
-                makeASTFunction("tuple", std::make_shared<ASTIdentifier>("x")),
-                makeOperatorAST(
-                    operator_name, std::make_shared<ASTLiteral>(scalar_argument), std::make_shared<ASTIdentifier>("x"), left_to_right),
-                array_argument));
-    }
-
-    ASTPtr makeOperatorASTForArrayAndScalar(std::string_view operator_name, ASTPtr array_argument, Float64 scalar_argument, bool left_to_right)
-    {
-        return makeOperatorASTForScalarAndArray(operator_name, scalar_argument, array_argument, !left_to_right);
-    }
-
-    /// Returns an AST for evaluating a binary operator on corresponding elements of two arrays.
-    /// For example, the function can return
-    /// arrayMap(x, y -> x + y, array_argument, other_array_argument)
-    ASTPtr makeOperatorASTForTwoArrays(std::string_view operator_name, ASTPtr array_argument, ASTPtr other_array_argument, bool left_to_right)
-    {
-        return makeASTFunction(
-            "arrayMap",
-            makeASTFunction(
-                "lambda",
-                makeASTFunction("tuple", std::make_shared<ASTIdentifier>("x"), std::make_shared<ASTIdentifier>("y")),
-                makeOperatorAST(operator_name, std::make_shared<ASTIdentifier>("x"), std::make_shared<ASTIdentifier>("y"), left_to_right),
-                array_argument,
-                other_array_argument));
-    }
-
-    /// Returns an AST for evaluating a filter based on a comparison operator on a scalar and each element of an array.
-    /// For example, the function can return
-    /// arrayMap(x -> if (scalar_argument >= x, x, NULL), array_argument)
-    ASTPtr makeFilterASTForScalarAndArray(
-        std::string_view operator_name,
+    ASTPtr makeOperatorASTForScalarAndArray(
+        const PrometheusQueryTree::BinaryOperator * operator_node,
         Float64 scalar_argument,
         ASTPtr array_argument,
         bool left_to_right,
-        bool return_elements_of_array_argument_if_match)
+        bool return_scalar_argument_if_match)
     {
+        ASTPtr operator_expr = makeOperatorAST(
+            operator_node->operator_name,
+            std::make_shared<ASTLiteral>(scalar_argument),
+            std::make_shared<ASTIdentifier>("x"),
+            left_to_right);
+
+        if (isComparisonWithoutBool(operator_node))
+        {
+            /// E.g. arrayMap(x -> if (scalar_argument >= x, x, NULL), array_argument)
+            operator_expr = makeASTFunction(
+                "if",
+                operator_expr,
+                return_scalar_argument_if_match ? std::make_shared<ASTLiteral>(scalar_argument) : std::make_shared<ASTIdentifier>("x"),
+                std::make_shared<ASTLiteral>(Field{} /* NULL */));
+        }
+
+        /// E.g. arrayMap(x -> scalar_argument + x, array_argument)
         return makeASTFunction(
             "arrayMap",
-            makeASTFunction(
-                "lambda",
-                makeASTFunction("tuple", std::make_shared<ASTIdentifier>("x")),
-                makeASTFunction(
-                    "if",
-                    makeOperatorAST(
-                        operator_name, std::make_shared<ASTLiteral>(scalar_argument), std::make_shared<ASTIdentifier>("x"), left_to_right),
-                    return_elements_of_array_argument_if_match ? std::make_shared<ASTIdentifier>("x")
-                                                               : std::make_shared<ASTLiteral>(scalar_argument))),
+            makeASTFunction("lambda", makeASTFunction("tuple", std::make_shared<ASTIdentifier>("x")), operator_expr),
             array_argument);
     }
 
-    ASTPtr makeFilterASTForArrayAndScalar(
-        std::string_view operator_name,
+    ASTPtr makeOperatorASTForArrayAndScalar(
+        const PrometheusQueryTree::BinaryOperator * operator_node,
         ASTPtr array_argument,
         Float64 scalar_argument,
         bool left_to_right,
         bool return_scalar_argument_if_match)
     {
-        return makeFilterASTForScalarAndArray(operator_name, scalar_argument, array_argument, !left_to_right, !return_scalar_argument_if_match);
+        return makeOperatorASTForScalarAndArray(operator_node, scalar_argument, array_argument, !left_to_right, return_scalar_argument_if_match);
     }
 
-    /// Returns an AST for evaluating a filter based on a comparison operator on two arrays.
-    /// For example, the function can return
-    /// arrayMap(x, y -> if (x >= y, y, NULL), array_argument, other_array_argument)
-    ASTPtr makeFilterASTForTwoArrays(
-        std::string_view operator_name,
+    /// Returns an AST for evaluating a binary operator on corresponding elements of two arrays.
+    ASTPtr makeOperatorASTForTwoArrays(
+        const PrometheusQueryTree::BinaryOperator * operator_node,
         ASTPtr array_argument,
         ASTPtr other_array_argument,
         bool left_to_right,
-        bool return_elements_of_other_array_argument_if_match)
+        bool return_array_argument_if_match)
     {
+        ASTPtr operator_expr = makeOperatorAST(
+            operator_node->operator_name, std::make_shared<ASTIdentifier>("x"), std::make_shared<ASTIdentifier>("y"), left_to_right);
+
+        if (isComparisonWithoutBool(operator_node))
+        {
+            /// E.g. arrayMap(x, y -> if (x >= y, y, NULL), array_argument, other_array_argument)
+            operator_expr = makeASTFunction(
+                "if",
+                operator_expr,
+                std::make_shared<ASTIdentifier>(return_array_argument_if_match ? "x" : "y"),
+                std::make_shared<ASTLiteral>(Field{} /* NULL */));
+        }
+
+        /// E.g. arrayMap(x, y -> x + y, array_argument, other_array_argument)
         return makeASTFunction(
             "arrayMap",
             makeASTFunction(
                 "lambda",
                 makeASTFunction("tuple", std::make_shared<ASTIdentifier>("x"), std::make_shared<ASTIdentifier>("y")),
-                makeASTFunction(
-                    "if",
-                    makeOperatorAST(
-                        operator_name, std::make_shared<ASTIdentifier>("x"), std::make_shared<ASTIdentifier>("y"), left_to_right),
-                    std::make_shared<ASTIdentifier>(return_elements_of_other_array_argument_if_match ? "y" : "x"))),
-            array_argument,
-            other_array_argument);
+                operator_expr,
+                array_argument,
+                other_array_argument));
+        }
     }
 
 
@@ -272,8 +253,9 @@ namespace
             case StoreMethod::CONST_SCALAR:
             {
                 Float64 float_result = evaluateConstOperator(operator_name, scalar_value, other_argument.scalar_value, left_to_right);
-                if (is_comparison_without_bool && (res.type == ResultType::INSTANT_VECTOR))
+                if (is_comparison_without_bool)
                 {
+                    chassert(res.type == ResultType::INSTANT_VECTOR);
                     if (float_result)
                         return res;
                     else
@@ -286,47 +268,25 @@ namespace
             case StoreMethod::SCALAR_GRID:
             case StoreMethod::VECTOR_GRID:
             {
-                /// Case 1: other_store_method == SCALAR_GRID, comparison operator (e.g. ==) without bool modifier:
-                /// SELECT 0 AS group, arrayMap(x -> if (<scalar_value> == x, x, NULL), values) AS values
-                /// FROM <other_scalar_grid>
-                ///
-                /// Case 2: other_store_method == SCALAR_GRID, other operators (e.g. +):
-                /// SELECT arrayMap(x -> <scalar_value> + x, values) AS values
-                /// FROM <other_scalar_grid>
-                ///
-                /// Case 3: other_store_method == VECTOR_GRID, comparison operator (e.g. ==) without bool modifier:
-                /// SELECT group, arrayMap(x -> if (<scalar_value> == x, x, NULL), values) AS values
-                /// FROM <other_vector_grid>
-                ///
-                /// Case 4: other_store_method == VECTOR_GRID, other operators (e.g. +):
-                /// SELECT group, arrayMap(x -> <scalar_value> + x, values) AS values
-                /// FROM <other_vector_grid>
-
                 SelectQueryParams params;
 
                 if (other_store_method == StoreMethod::VECTOR_GRID)
                 {
                     params.select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
                 }
-                else if (is_comparison_without_bool && (res.type == ResultType::INSTANT_VECTOR))
+                else if (is_comparison_without_bool)
                 {
+                    chassert(res.type == ResultType::INSTANT_VECTOR);
                     params.select_list.push_back(std::make_shared<ASTLiteral>(0u));
                     params.select_list.back()->setAlias(TimeSeriesColumnNames::Group);
                     res.store_method = StoreMethod::VECTOR_GRID;
                     res.metric_name_dropped = true;
                 }
 
-                if (is_comparison_without_bool && (res.type == ResultType::INSTANT_VECTOR))
-                {
-                    params.select_list.push_back(makeFilterASTForScalarAndArray(
-                        operator_name, scalar_value, std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values), left_to_right,
-                        /* return_elements_of_array_argument_if_match = */ true));
-                }
-                else
-                {
-                    params.select_list.push_back(makeOperatorASTForScalarAndArray(
-                        operator_name, scalar_value, std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values), left_to_right));
-                }
+                params.select_list.push_back(makeOperatorASTForScalarAndArray(
+                    operator_node, scalar_value, std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values), left_to_right,
+                    /* return_scalar_argument_if_match = */ false));
+
                 params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
 
                 context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(other_argument.select_query), SQLSubqueryType::TABLE});
@@ -379,45 +339,20 @@ namespace
         {
             case StoreMethod::CONST_SCALAR:
             {
-                /// This case must be already handled - see the code of applyBinaryOperator().
+                /// Otherwise case must be already handled - see the code of applyBinaryOperator().
                 chassert(other_type == ResultType::INSTANT_VECTOR);
 
                 auto other_scalar_value = other_argument.scalar_value;
                 res.store_method = StoreMethod::SCALAR_GRID;
 
-                /// Case 1: Comparison operator (e.g. ==) without bool modifier:
-                /// SELECT 0 AS group, arrayMap(x -> if (x == <other_scalar_value>, <other_scalar_value>, NULL), values) AS values
-                /// FROM <scalar_grid>
-                ///
-                /// Case 2: Other operators (e.g. +):
-                /// SELECT arrayMap(x -> x + <other_scalar_value>, values) AS values
-                /// FROM <scalar_grid>
                 SelectQueryParams params;
+                params.select_list.push_back(makeOperatorASTForArrayAndScalar(
+                    operator_node, std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values), other_scalar_value, left_to_right,
+                    /* return_scalar_argument_if_match = */ true));
 
-                chassert(res.type == ResultType::INSTANT_VECTOR);
-                if (is_comparison_without_bool)
-                {
-                    params.select_list.push_back(std::make_shared<ASTLiteral>(0u));
-                    params.select_list.back()->setAlias(TimeSeriesColumnNames::Group);
-                    res.store_method = StoreMethod::VECTOR_GRID;
-                    res.metric_name_dropped = true;
-                }
-
-                if (is_comparison_without_bool)
-                {
-                    params.select_list.push_back(makeFilterASTForArrayAndScalar(
-                        operator_name, std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values), other_scalar_value, left_to_right,
-                        /* return_scalar_argument_if_match = */ true));
-                }
-                else
-                {
-                    params.select_list.push_back(
-                        makeOperatorASTForArrayAndScalar(
-                        operator_name, std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values), other_scalar_value, left_to_right));
-                }
                 params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
 
-                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(scalar_argument.select_query), SQLSubqueryType::TABLE});
+                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE});
                 params.from_subquery = context.subqueries.back().name;
 
                 res.select_query = buildSelectQuery(std::move(params));
@@ -431,21 +366,6 @@ namespace
             case StoreMethod::SCALAR_GRID:
             case StoreMethod::VECTOR_GRID:
             {
-                /// Case 1: other_store_method == SCALAR_GRID, comparison operator (e.g. ==) without bool modifier:
-                /// SELECT 0 AS group, arrayMap(x, y -> if (x == y, y, NULL), <scalar_grid>, values) AS values
-                /// FROM <other_scalar_grid>
-                ///
-                /// Case 2: other_store_method == SCALAR_GRID, other operators (e.g. +):
-                /// SELECT arrayMap(x, y -> x + y, <scalar_grid>, values) AS values
-                /// FROM <other_scalar_grid>
-                ///
-                /// Case 3: other_store_method == VECTOR_GRID, comparison operator (e.g. ==) without bool modifier:
-                /// SELECT group, arrayMap(x, y -> if (x == y, y, NULL), <scalar_grid>, values) AS values
-                /// FROM <other_vector_grid>
-                ///
-                /// Case 4: other_store_method == VECTOR_GRID, other operators (e.g. +):
-                /// SELECT group, arrayMap(x, y -> x + y, <scalar_grid>, values) AS values
-                /// FROM <other_vector_grid>
                 context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(scalar_argument.select_query), SQLSubqueryType::SCALAR});
                 String scalar_grid = context.subqueries.back().name;
 
@@ -453,35 +373,26 @@ namespace
 
                 bool is_comparison_without_bool = isComparisonWithoutBool(operator_node);
 
-                if (store_method == StoreMethod::VECTOR_GRID)
+                if (other_store_method == StoreMethod::VECTOR_GRID)
                 {
                     params.select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
                 }
-                else if (is_comparison_without_bool && (res.type == StoreMethod::INSTANT_VECTOR))
+                else if (is_comparison_without_bool)
                 {
+                    chassert(res.type == StoreMethod::INSTANT_VECTOR);
                     params.select_list.push_back(std::make_shared<ASTLiteral>(0u));
                     params.select_list.back()->setAlias(TimeSeriesColumnNames::Group);
                     res.store_method = StoreMethod::VECTOR_GRID;
                     res.metric_name_dropped = true;
                 }
 
-                if (is_comparison_without_bool && (res.type == StoreMethod::INSTANT_VECTOR))
-                {
-                    params.select_list.push_back(makeFilterASTForTwoArrays(
-                        operator_name,
-                        std::make_shared<ASTIdentifier>(scalar_grid),
-                        std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values),
-                        left_to_right,
-                        /* return_elements_of_other_array_argument_if_match = */ true));
-                }
-                else
-                {
-                    params.select_list.push_back(makeOperatorASTForTwoArrays(
-                        operator_name,
-                        std::make_shared<ASTIdentifier>(scalar_grid),
-                        std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values),
-                        left_to_right));
-                }
+                params.select_list.push_back(makeOperatorASTForTwoArrays(
+                    operator_node,
+                    std::make_shared<ASTIdentifier>(scalar_grid),
+                    std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values),
+                    left_to_right,
+                    /* return_array_argument_if_match = */ false));
+
                 params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
 
                 context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(other_argument.select_query), SQLSubqueryType::TABLE});
@@ -489,7 +400,7 @@ namespace
 
                 res.select_query = buildSelectQuery(std::move(params));
 
-                if (!is_comparision_without_null)
+                if (!is_comparison_without_bool)
                     res = dropMetricName(std::move(res), context);
 
                 return res;
