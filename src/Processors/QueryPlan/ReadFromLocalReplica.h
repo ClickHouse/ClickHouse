@@ -2,6 +2,7 @@
 
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
@@ -17,8 +18,12 @@ public:
 
     QueryPlanPtr extractQueryPlan();
 
+    void addFilterDAGInfo(FilterDAGInfo filter);
+
 private:
     QueryPlanPtr query_plan;
+
+    std::vector<FilterDAGInfo> pushed_down_filters;
 };
 
 }
