@@ -208,15 +208,18 @@ public:
         explicit Indexes(KeyCondition key_condition_)
             : key_condition(std::move(key_condition_))
             , use_skip_indexes(false)
+            , use_skip_indexes_for_disjunctions(false)
         {}
 
         KeyCondition key_condition;
+        std::optional<KeyCondition> key_condition_rpn_template; /// skeleton of the key condition without resolved columns
         std::optional<PartitionPruner> partition_pruner;
         std::optional<KeyCondition> minmax_idx_condition;
         std::optional<KeyCondition> part_offset_condition;
         std::optional<KeyCondition> total_offset_condition;
         UsefulSkipIndexes skip_indexes;
         bool use_skip_indexes;
+        bool use_skip_indexes_for_disjunctions;
         std::optional<std::unordered_set<String>> part_values;
     };
 

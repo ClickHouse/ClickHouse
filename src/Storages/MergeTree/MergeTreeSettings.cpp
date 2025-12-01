@@ -274,8 +274,8 @@ namespace ErrorCodes
     Controls the serialization format for top-level `String` columns.
 
     This setting is only effective when `serialization_info_version` is set to "with_types".
-    When enabled, top-level `String` columns are serialized with a separate `.size`
-    subcolumn storing string lengths, rather than inline. This allows real `.size`
+    When set to `with_size_stream`, top-level `String` columns are serialized with a separate
+    `.size` subcolumn storing string lengths, rather than inline. This allows real `.size`
     subcolumns and can improve compression efficiency.
 
     Nested `String` types (e.g., inside `Nullable`, `LowCardinality`, `Array`, or `Map`)
@@ -285,6 +285,15 @@ namespace ErrorCodes
 
     - `single_stream` — Use the standard serialization format with inline sizes.
     - `with_size_stream` — Use a separate size stream for top-level `String` columns.
+    )", 0) \
+    DECLARE(MergeTreeNullableSerializationVersion, nullable_serialization_version, "basic", R"(
+    Controls the serialization method used for `Nullable(T)` columns.
+
+    Possible values:
+
+    - basic — Use the standard serialization for `Nullable(T)`.
+
+    - allow_sparse — Permit `Nullable(T)` to use sparse encoding.
     )", 0) \
     DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version, "v2", R"(
     Serialization version for JSON data type. Required for compatibility.
