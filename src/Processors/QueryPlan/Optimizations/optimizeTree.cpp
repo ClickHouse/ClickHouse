@@ -229,17 +229,28 @@ void optimizeTreeSecondPass(
         stack.pop_back();
     }
 
-    /// Materialize subplan references before other optimizations.
-    traverseQueryPlan(stack, root, [&](auto & frame_node)
+    if (!optimization_settings.correlated_subqueries_use_in_memory_buffer)
     {
-        materializeQueryPlanReferences(frame_node, nodes);
-    });
+        /// Materialize subplan references before other optimizations.
+        traverseQueryPlan(stack, root, [&](auto & frame_node)
+        {
+            materializeQueryPlanReferences(frame_node, nodes);
+        });
 
-    /// Remove CommonSubplanSteps (they must be not used at that point).
-    traverseQueryPlan(stack, root, [&](auto & frame_node)
+        /// Remove CommonSubplanSteps (they must be not used at that point).
+        traverseQueryPlan(stack, root, [&](auto & frame_node)
+        {
+            optimizeUnusedCommonSubplans(frame_node);
+        });
+    }
+
+    if (optimization_settings.correlated_subqueries_use_in_memory_buffer)
     {
-        optimizeUnusedCommonSubplans(frame_node);
-    });
+        traverseQueryPlan(stack, root, [&](auto & frame_node)
+        {
+            useMemoryBufferForCommonSubplanResults(frame_node, optimization_settings);
+        });
+    }
 
     bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
@@ -254,6 +265,14 @@ void optimizeTreeSecondPass(
                 join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
             convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
         });
+
+    if (optimization_settings.correlated_subqueries_use_in_memory_buffer)
+    {
+        traverseQueryPlan(stack, root, [&](auto & frame_node)
+        {
+            useMemoryBufferForCommonSubplanResults(frame_node, optimization_settings);
+        });
+    }
 
     /// If join runtime filters were added re-run optimizePrewhere and filter push down optimizations
     /// to move newly added runtime filter as deep in the tree as possible

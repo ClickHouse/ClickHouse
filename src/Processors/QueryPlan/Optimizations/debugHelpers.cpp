@@ -59,7 +59,7 @@ RelationStats getDummyStats(const String & dummy_stats_str, const String & table
             for (const auto & [key, value] : *distinct_keys)
                 stats.column_stats[key].num_distinct_values = value.convert<UInt64>();
         }
-        LOG_WARNING(getLogger("optimizeJoin"),
+        LOG_DEBUG(getLogger("optimizeJoin"),
             "Got dummy join stats for table '{}' from '{}' query parameter, it's supposed to be used only for testing, do not use it in production",
             table_name, DUMMY_JOIN_STATS_PARAM_NAME);
         return stats;

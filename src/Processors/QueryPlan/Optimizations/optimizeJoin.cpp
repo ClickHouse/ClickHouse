@@ -34,8 +34,11 @@
 #include <ranges>
 #include <Core/Joins.h>
 #include <Interpreters/HashTablesStatistics.h>
+#include "Common/typeid_cast.h"
 #include <Common/logger_useful.h>
 #include <Common/safe_cast.h>
+#include "Processors/QueryPlan/CommonSubplanReferenceStep.h"
+#include "Processors/QueryPlan/ReadFromCommonBufferStep.h"
 #include <base/types.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/JoinExpressionActions.h>
@@ -247,6 +250,11 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         UInt64 estimated_rows = reading->getStorage()->totalRows({}).value_or(0);
         String table_display_name = reading->getStorage()->getName();
         return RelationStats{.estimated_rows = estimated_rows, .table_name = table_display_name};
+    }
+
+    if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
+    {
+        return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter);
     }
 
     if (node.children.size() != 1)
