@@ -81,18 +81,23 @@ void flattenTupleColumnImpl(const ColumnPtr & column, Columns & flattened_column
 
 DataTypePtr flattenTuple(const DataTypePtr & type)
 {
+    bool is_nullable_tuple = typeid_cast<const DataTypeNullable *>(type.get()) != nullptr;
     std::vector<String> flattened_paths;
     DataTypes flattened_types;
-    flattenTupleTypeImpl(type, "", flattened_paths, flattened_types);
-    return std::make_shared<DataTypeTuple>(flattened_types, flattened_paths);
+    flattenTupleTypeImpl(removeNullable(type), "", flattened_paths, flattened_types);
+
+    DataTypePtr result_type = std::make_shared<DataTypeTuple>(flattened_types, flattened_paths);
+    return is_nullable_tuple ? makeNullable(result_type) : result_type;
 }
 
 ColumnPtr flattenTuple(const ColumnPtr & column)
 {
+    bool is_nullable_tuple = typeid_cast<const ColumnNullable *>(column.get()) != nullptr;
     Columns flattened_columns;
     Columns offset_columns;
-    flattenTupleColumnImpl(column, flattened_columns, offset_columns);
-    return ColumnTuple::create(flattened_columns);
+    flattenTupleColumnImpl(removeNullable(column), flattened_columns, offset_columns);
+    ColumnPtr result_column = ColumnTuple::create(flattened_columns);
+    return is_nullable_tuple ? makeNullable(result_column) : result_column;
 }
 
 }
