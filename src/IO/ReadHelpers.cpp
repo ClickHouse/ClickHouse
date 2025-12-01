@@ -1586,9 +1586,15 @@ ReturnType readDateTimeTextFallback(
             auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
             if (!datetime_maybe)
                 return false;
-            /// For usual DateTime check if value is within supported range
-            if (!dt64_mode && (*datetime_maybe < 0 || *datetime_maybe > UINT32_MAX))
-                return false;
+            if (!dt64_mode)
+            {
+
+
+                if (!saturate_on_overflow && (*datetime_maybe < 0))
+                    return false;
+                if (*datetime_maybe > UINT32_MAX)
+                    return false;
+            }
 
             datetime = *datetime_maybe;
         }
