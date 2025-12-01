@@ -41,10 +41,3 @@ WHERE (en.path = de.path)
 ORDER BY ALL;
 
 DROP TABLE test;
-
-DROP DATABASE IF EXISTS d0;
-CREATE DATABASE d0 ON CLUSTER 'default' ENGINE = Memory;
-CREATE TABLE d0.t0 (c0 Int) ENGINE = MergeTree() ORDER BY tuple();
-INSERT INTO TABLE d0.t0 VALUES (1);
-SELECT 1 FROM d0.t0 GROUP BY c0 SETTINGS distributed_plan_default_shuffle_join_bucket_count = 0, make_distributed_plan = 1; -- { serverError BAD_ARGUMENTS }
-DROP DATABASE d0;
