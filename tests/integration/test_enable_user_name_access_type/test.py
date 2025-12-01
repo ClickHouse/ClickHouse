@@ -18,12 +18,12 @@ def test_enable_username_access_type():
         node.query("CREATE USER foobar")
         node.query("GRANT CREATE USER ON * TO foobar")
         node.query("GRANT SET DEFINER ON * TO foobar")
-            assert (
-                sorted(line.rstrip(";\n") for line in node.query(
-                    "SHOW GRANTS FOR foobar"
-                ).strip().split('\n'))
-                == ["GRANT CREATE USER ON *.* TO foobar", "GRANT SET DEFINER ON * TO foobar"]
-            )
+        assert (
+            sorted(line.rstrip(";\n") for line in node.query(
+                "SHOW GRANTS FOR foobar"
+            ).strip().split('\n'))
+            == ["GRANT CREATE USER ON *.* TO foobar", "GRANT SET DEFINER ON * TO foobar"]
+        )
         node.query("DROP USER foobar")
     finally:
         cluster.shutdown()
