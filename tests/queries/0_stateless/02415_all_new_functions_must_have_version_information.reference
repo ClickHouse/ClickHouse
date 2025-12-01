@@ -81,6 +81,7 @@ sigmoid
 sin
 structureToCapnProtoSchema
 svg
+toDecimalString
 toISOWeek
 toInterval
 tuple
