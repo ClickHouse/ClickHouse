@@ -807,7 +807,7 @@ class JobConfigs:
         common_integration_test_job_config.parametrize(
         *[
             Job.ParamSet(
-                parameter=f"llvm_coverage, {batch}/{total_batches}",
+                parameter=f"llvm coverage, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
             )

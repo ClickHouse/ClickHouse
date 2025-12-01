@@ -594,8 +594,8 @@ jobs:
   integration_tests_llvm_coverage_1_5:
     runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_llvm_coverage_build]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGxsdm1fY292ZXJhZ2UsIDEvNSk=') }}
-    name: "Integration tests (llvm_coverage, 1/5)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGxsdm0gY292ZXJhZ2UsIDEvNSk=') }}
+    name: "Integration tests (llvm coverage, 1/5)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status }}
@@ -627,16 +627,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (llvm_coverage, 1/5)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (llvm coverage, 1/5)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (llvm_coverage, 1/5)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (llvm coverage, 1/5)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
   integration_tests_llvm_coverage_2_5:
     runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_llvm_coverage_build]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGxsdm1fY292ZXJhZ2UsIDIvNSk=') }}
-    name: "Integration tests (llvm_coverage, 2/5)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGxsdm0gY292ZXJhZ2UsIDIvNSk=') }}
+    name: "Integration tests (llvm coverage, 2/5)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status }}
@@ -668,16 +668,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (llvm_coverage, 2/5)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (llvm coverage, 2/5)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (llvm_coverage, 2/5)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (llvm coverage, 2/5)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
   integration_tests_llvm_coverage_3_5:
     runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_llvm_coverage_build]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGxsdm1fY292ZXJhZ2UsIDMvNSk=') }}
-    name: "Integration tests (llvm_coverage, 3/5)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGxsdm0gY292ZXJhZ2UsIDMvNSk=') }}
+    name: "Integration tests (llvm coverage, 3/5)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status }}
@@ -709,16 +709,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (llvm_coverage, 3/5)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (llvm coverage, 3/5)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (llvm_coverage, 3/5)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (llvm coverage, 3/5)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
   integration_tests_llvm_coverage_4_5:
     runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_llvm_coverage_build]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGxsdm1fY292ZXJhZ2UsIDQvNSk=') }}
-    name: "Integration tests (llvm_coverage, 4/5)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGxsdm0gY292ZXJhZ2UsIDQvNSk=') }}
+    name: "Integration tests (llvm coverage, 4/5)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status }}
@@ -750,16 +750,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (llvm_coverage, 4/5)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (llvm coverage, 4/5)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (llvm_coverage, 4/5)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (llvm coverage, 4/5)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
   integration_tests_llvm_coverage_5_5:
     runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_llvm_coverage_build]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGxsdm1fY292ZXJhZ2UsIDUvNSk=') }}
-    name: "Integration tests (llvm_coverage, 5/5)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGxsdm0gY292ZXJhZ2UsIDUvNSk=') }}
+    name: "Integration tests (llvm coverage, 5/5)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status }}
@@ -791,9 +791,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (llvm_coverage, 5/5)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (llvm coverage, 5/5)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (llvm_coverage, 5/5)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (llvm coverage, 5/5)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
   unit_tests_llvm_coverage:
