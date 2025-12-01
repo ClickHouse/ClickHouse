@@ -605,7 +605,7 @@ struct Processor
 
             for (size_t i = 0 ; i < input_rows_count; ++i)
             {
-                std::string_view from = col_from.getDataAt(i).toView();
+                std::string_view from = col_from.getDataAt(i);
                 vec_to[i] = transform.execute(from, checkOverflow(delta), time_zone, utc_time_zone, scale);
             }
         }
@@ -680,7 +680,7 @@ private:
 
             for (size_t i = 0 ; i < input_rows_count; ++i)
             {
-                std::string_view from = col_from.getDataAt(i).toView();
+                std::string_view from = col_from.getDataAt(i);
                 vec_to[i] = transform.execute(from, checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale);
             }
         }
