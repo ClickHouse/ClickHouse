@@ -29,6 +29,11 @@ ColumnPtr FunctionIsNull::getConstantResultForNonConstArguments(const ColumnsWit
     if (!use_analyzer)
         return nullptr;
 
+    /// SELECT arrayFilter(x -> (x IS NULL), []) can trigger `defaultImplementationForNothing()`
+    /// which will give return type Nothing. We cannot create constant column of type Nothing so return nullptr.
+    if (isNothing(result_type))
+        return nullptr;
+
     const ColumnWithTypeAndName & elem = arguments[0];
     if (elem.type->onlyNull())
         return result_type->createColumnConst(1, UInt8(1));
