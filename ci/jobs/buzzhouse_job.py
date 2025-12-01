@@ -122,8 +122,8 @@ def main():
     min_string_length = random.randint(0, 100)
     buzz_config = {
         "seed": random.randint(1, 18446744073709551615),
-        "max_depth": random.randint(2, 5),
-        "max_width": random.randint(2, 5),
+        "max_depth": random.randint(2, 6),
+        "max_width": random.randint(2, 8),
         "max_databases": random.randint(2, 5),
         "max_tables": random.randint(3, 10),
         "max_views": random.randint(0, 10),
