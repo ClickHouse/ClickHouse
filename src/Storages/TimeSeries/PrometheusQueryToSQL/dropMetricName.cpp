@@ -17,19 +17,6 @@ namespace DB::ErrorCodes
 namespace DB::PrometheusQueryToSQL
 {
 
-namespace
-{
-    void addParameterToAggregateFunction(ASTFunction & function, const String & parameter)
-    {
-        if (!function.parameters)
-        {
-            function.parameters = std::make_shared<ASTExpressionList>();
-            function.children.push_back(function.parameters);
-        }
-        function.parameters->children.push_back(std::make_shared<ASTLiteral>(parameter));
-    }
-}
-
 SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & context)
 {
     if (query_piece.metric_name_dropped)
@@ -87,6 +74,17 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
     }
 
     UNREACHABLE();
+}
+
+
+void addParameterToAggregateFunction(ASTFunction & function, const String & parameter)
+{
+    if (!function.parameters)
+    {
+        function.parameters = std::make_shared<ASTExpressionList>();
+        function.children.push_back(function.parameters);
+    }
+    function.parameters->children.push_back(std::make_shared<ASTLiteral>(parameter));
 }
 
 }

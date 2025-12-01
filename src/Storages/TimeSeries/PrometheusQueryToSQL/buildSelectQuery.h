@@ -16,6 +16,8 @@ struct SelectQueryParams
     ASTPtr where;
     ASTs group_by;
     ASTs order_by;
+    String inner_join;
+    ASTPtr on;
     int order_direction = 0; /// 1 for ASC, -1 for DESC
     std::optional<size_t> limit;
     SQLSubqueries with;

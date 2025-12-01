@@ -25,20 +25,38 @@ ASTPtr buildSelectQuery(SelectQueryParams && params)
     if (!params.from_subquery.empty() || params.from_table_function)
     {
         auto tables = std::make_shared<ASTTablesInSelectQuery>();
-        auto table = std::make_shared<ASTTablesInSelectQueryElement>();
-        auto table_exp = std::make_shared<ASTTableExpression>();
-        if (!params.from_subquery.empty())
         {
-            table_exp->database_and_table_name = std::make_shared<ASTTableIdentifier>(params.from_subquery);
+            auto table_exp = std::make_shared<ASTTableExpression>();
+            if (!params.from_subquery.empty())
+            {
+                table_exp->database_and_table_name = std::make_shared<ASTTableIdentifier>(params.from_subquery);
+                table_exp->children.emplace_back(table_exp->database_and_table_name);
+            }
+            else if (params.from_table_function)
+            {
+                table_exp->table_function = params.from_table_function;
+                table_exp->children.emplace_back(table_exp->table_function);
+            }
+            auto table = std::make_shared<ASTTablesInSelectQueryElement>();
+            table->table_expression = table_exp;
+            table->children.push_back(table_exp);
+            tables->children.push_back(table);
+        }
+        if (!params.inner_join.empty())
+        {
+            auto table_join = std::make_shared<ASTTableJoin>();
+            table_join->on_expression = params.on;
+            table_join->children.emplace_back(table_join->on_expression);
+            auto table_exp = std::make_shared<ASTTableExpression>();
+            table_exp->database_and_table_name = std::make_shared<ASTTableIdentifier>(params.inner_join);
             table_exp->children.emplace_back(table_exp->database_and_table_name);
+            auto table = std::make_shared<ASTTablesInSelectQueryElement>();
+            table->table_join = table_join;
+            table->table_expression = table_exp;
+            table->children.push_back(table_join);
+            table->children.push_back(table_exp);
+            tables->children.push_back(table);
         }
-        else if (params.from_table_function)
-        {
-            table_exp->table_function = params.from_table_function;
-            table_exp->children.emplace_back(table_exp->table_function);
-        }
-        table->table_expression = table_exp;
-        tables->children.push_back(table);
         select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
     }
 

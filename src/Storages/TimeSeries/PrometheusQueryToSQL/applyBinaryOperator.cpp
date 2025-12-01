@@ -410,8 +410,8 @@ namespace
             case StoreMethod::RAW_DATA:
             {
                 throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                                "Argument #{} of the operator '{}' in expression {} has unexpected type {} (store_method: {})",
-                                2 - argument_index, operator_name, getPromQLQuery(other_argument, context), other_type, other_store_method);
+                                "Other argument of the operator '{}' in expression {} has unexpected type {} (store_method: {})",
+                                operator_name, getPromQLQuery(other_argument, context), other_type, other_store_method);
             }
         }
 
@@ -426,7 +426,7 @@ namespace
     };
 
 
-    /// Returns an AST to evaluate the join group which is a parameter we join both sides of a binary operator on instant vectors.
+    /// Returns an AST to evaluate the join group which is a parameter we join both sides of a binary operator on instant vectors on.
     GroupAST makeJoinGroupAST(const PrometheusQueryTree::BinaryOperator * operator_node, GroupAST group)
     {
         if (const auto * literal = group.ast->as<const ASTLiteral>(); literal && literal->value == Field{0u})
@@ -528,106 +528,128 @@ namespace
     }
 
 
-    /// Applies a binary operator both of the arguments are instant vectors, and one of the arguments is represented by StoreMethod::CONST_SCALAR,
-    /// `argument_index` specifies which of the two arguments is such.
-    /// Other argument can use any store method of {StoreMethod::CONST_SCALAR, StoreMethod::SCALAR_GRID, StoreMethod::VECTOR_GRID}.
-    SQLQueryPiece binaryOperatorWithVectorsByConstScalar(
-        const PrometheusQueryTree::BinaryOperator * operator_node,
-        SQLQueryPiece && argument,
-        SQLQueryPiece && other_argument,
-        bool left_to_right,
-        ConverterContext & context)
+    /// Converts an argument of type INSTANT_VECTOR to StoreMethod::VECTOR_GRID.
+    /// We use that for binary operators taking two instant vectors.
+    SQLQueryPiece toVectorGrid(const PrometheusQueryTree::BinaryOperator * operator_node, SQLQueryPiece && argument, ConverterContext & context)
     {
-        chassert((argument.type == ResultType::INSTANT_VECTOR) && (other_argument.type == ResultType::INSTANT_VECTOR));
-        chassert((argument.store_method == StoreMethod::CONST_SCALAR));
-
-        const auto & operator_name = operator_node->operator_name;
-        bool is_comparison_without_bool = isComparisonWithoutBool(operator_node);
-        auto other_store_method = other_argument.store_method;
-
-        SQLQueryPiece res = other_argument;
-        res.node = operator_node;
-
-        switch (other_store_method)
+        chassert(argument.type == ResultType::INSTANT_VECTOR);
+        switch (argument.store_method)
         {
             case StoreMethod::CONST_SCALAR:
             {
-                Float64 float_result = evaluateConstBinaryOperator(operator_name, argument.scalar_value, other_argument.scalar_value, left_to_right);
-                if (is_comparison_without_bool)
-                {
-                    if (float_result)
-                        return getLeftArgument(argument, other_argument, left_to_right);
-                    else
-                        return SQLQueryPiece{operator_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
-                }
-                res.scalar_value = float_result;
-                return res;
+                SelectQueryParams params;
+                params.select_list.push_back(std::make_shared<ASTLiteral>(0u));
+                params.select_list.back()->setAlias(TimeSeriesColumnNames::Group);
+
+                params.select_list.push_back(makeASTFunction(
+                    "arrayResize",
+                    std::make_shared<ASTLiteral>(Array{}),
+                    std::make_shared<ASTLiteral>(countTimeseriesSteps(argument.start_time, argument.end_time, argument.step)),
+                    std::make_shared<ASTLiteral>(argument.scalar_value)));
+
+                params.select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values));
+
+                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE});
+                params.from_subquery = context.subqueries.back().name;
+
+                argument.select_query = buildSelectQuery(std::move(params));
+                argument.store_method = StoreMethod::VECTOR_GRID;
+                argument.metric_name_dropped = true;
+
+                return std::move(argument);
             }
 
             case StoreMethod::SCALAR_GRID:
-            case StoreMethod::VECTOR_GRID:
             {
-                /// Case 1: other_store_method == SCALAR_GRID, comparison operator (e.g. ==) without bool modifier:
-                /// SELECT 0 AS group, arrayMap(x -> if (<scalar_value> == x, <scalar_value>, NULL), values) AS values
-                /// FROM <other_scalar_grid>
-                ///
-                /// Case 2: other_store_method == SCALAR_GRID, other operators (e.g. +):
-                /// SELECT arrayMap(x -> <scalar_value> + x, values) AS values
-                /// FROM <other_scalar_grid>
-                ///
-                /// Case 3: other_store_method == VECTOR_GRID, comparison operator (e.g. ==) without bool modifier:
-                /// SELECT copyTags(removeAllTagsExcept(group, on_tags) AS join_group, group, tags_to_copy) AS group,
-                ///        arrayMap(x -> if (<scalar_value> == x, x, NULL), values) AS values
-                /// FROM <other_vector_grid>
-                /// WHERE join_group == 0
-                ///
-                /// Case 4: other_store_method == VECTOR_GRID, other operators (e.g. +):
-                /// SELECT group, arrayMap(x -> <scalar_value> + x, values) AS values
-                /// FROM <other_vector_grid>
+                SelectQueryParams params;
+                params.select_list.push_back(std::make_shared<ASTLiteral>(0u));
+                params.select_list.back()->setAlias(TimeSeriesColumnNames::Group);
+
+                params.select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values));
+
+                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE});
+                params.from_subquery = context.subqueries.back().name;
+
+                argument.select_query = buildSelectQuery(std::move(params));
+                argument.store_method = StoreMethod::VECTOR_GRID;
+                argument.metric_name_dropped = true;
+
+                return std::move(argument);
             }
 
             case StoreMethod::VECTOR_GRID:
             {
+                return std::move(argument);
+            }
 
+            case StoreMethod::CONST_STRING:
+            case StoreMethod::RAW_DATA:
+            {
+                throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                                "Argument of the operator '{}' in expression {} has unexpected type {} (store_method: {})",
+                                operator_node->operator_name, getPromQLQuery(argument, context), argument.type, argument.store_method);
             }
         }
-    }
 
-
-    /// Applies a binary operator both of the arguments are instant vectors, and one of the arguments is represented by StoreMethod::SCALAR_GRID,
-    /// `argument_index` specifies which of the two arguments is such.
-    /// Other argument can use any store method of {StoreMethod::SCALAR_GRID, StoreMethod::VECTOR_GRID}.
-    SQLQueryPiece binaryOperatorWithVectorsByScalarGrid(
-        const PrometheusQueryTree::BinaryOperator * operator_node,
-        SQLQueryPiece && argument,
-        SQLQueryPiece && other_argument,
-        bool left_to_right,
-        ConverterContext & context)
-    {
-        chassert((argument.type == ResultType::INSTANT_VECTOR) && (other_argument.type == ResultType::INSTANT_VECTOR));
-        chassert(argument.store_method == StoreMethod::SCALAR_GRID);
-        chassert(other_argument.store_method != StoreMethod::CONST_SCALAR);
-
-            case StoreMethod::SCALAR_GRID:
-            case StoreMethod::VECTOR_GRID:
-            {
-
-            }
+        UNREACHABLE();
     }
 
 
     /// Applies a binary operator both of the arguments are instant vectors represented by StoreMethod::VECTOR_GRID.
-    SQLQueryPiece binaryOperatorWithVectorsByVectorGrids(
+    SQLQueryPiece binaryOperatorWithVectors(
         const PrometheusQueryTree::BinaryOperator * operator_node,
-        SQLQueryPiece && argument,
-        SQLQueryPiece && other_argument,
-        bool left_to_right,
+        SQLQueryPiece && left_argument,
+        SQLQueryPiece && right_argument,
         ConverterContext & context)
     {
         SelectQueryParams params;
-        
 
+        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(left_argument.select_query), SQLSubqueryType::TABLE});
+        String left_table = context.subqueries.back().name;
 
+        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(right_argument.select_query), SQLSubqueryType::TABLE});
+        String right_table = context.subqueries.back().name;
+
+        auto join_group = makeJoinGroupAST(
+            operator_node,
+            GroupAST{.ast = std::make_shared<ASTIdentifier>(Strings{left_table, TimeSeriesColumnNames::Group}), .metric_name_dropped = left_argument.metric_name_dropped});
+        join_group.ast->setAlias("join_group");
+        auto join_group_ref = GroupAST{.ast = std::make_shared<ASTIdentifier>("join_group"), .metric_name_dropped = join_group.metric_name_dropped};
+
+        auto other_join_group = makeJoinGroupAST(
+            operator_node,
+            GroupAST{.ast = std::make_shared<ASTIdentifier>(Strings{right_table, TimeSeriesColumnNames::Group}), .metric_name_dropped = right_argument.metric_name_dropped});
+
+        auto result_group = makeResultGroupAST(operator_node, join_group_ref, left_argument, right_argument);
+        result_group.ast->setAlias(TimeSeriesColumnNames::Group);
+        params.select_list.push_back(result_group.ast);
+
+        ASTPtr new_values = makeASTFunction(
+            "timeSeriesCoalesceGridValues",
+            makeOperatorASTForTwoArrays(
+                operator_node,
+                std::make_shared<ASTIdentifier>(Strings{left_table, TimeSeriesColumnNames::Values}),
+                std::make_shared<ASTIdentifier>(Strings{right_table, TimeSeriesColumnNames::Values}),
+                /* left_to_right = */ true,
+                /* return_array_argument_if_match = */ true));
+
+        addParameterToAggregateFunction(*new_values, "throw_if_conflict");
+        new_values->setAlias(TimeSeriesColumnNames::Values);
+        params.select_list.push_back(new_values);
+
+        params.from_subquery = left_table;
+        params.inner_join = right_table;
+        params.on = makeASTFunction("equals", join_group, other_join_group);
+
+        params.group_by.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
+
+        SQLQueryPiece res = left_argument;
+        res.node = operator_node;
+        res.select_query = buildSelectQuery(std::move(params));
+        res.store_method = StoreMethod::VECTOR_GRID;
+        res.metric_name_dropped = result_group.metric_name_dropped;
+
+        return res;
     }
 }
 
@@ -649,49 +671,37 @@ SQLQueryPiece applyBinaryOperator(
 
     /// Check if one of the arguments is scalar.
     if ((left_argument.type == ResultType::SCALAR) && (left_argument.store_method == StoreMethod::CONST_SCALAR))
-        return binaryOperatorWithScalarByConstScalar(operator_node, std::move(left_argument), std::move(right_argument), true, context);
+    {
+        return binaryOperatorWithScalarByConstScalar(
+            operator_node, std::move(left_argument), std::move(right_argument), /* left_to_right = */ true, context);
+    }
 
     if ((right_argument.type == ResultType::SCALAR) && (right_argument.store_method == StoreMethod::CONST_SCALAR))
-        return binaryOperatorWithScalarByConstScalar(operator_node, std::move(right_argument), std::move(left_argument), false, context);
+    {
+        return binaryOperatorWithScalarByConstScalar(
+            operator_node, std::move(right_argument), std::move(left_argument), /* left_to_right = */ false, context);
+    }
 
     if ((left_argument.type == ResultType::SCALAR) && (left_argument.store_method == StoreMethod::SCALAR_GRID))
-        return binaryOperatorWithScalarByScalarGrid(operator_node, std::move(left_argument), std::move(right_argument), true, context);
+    {
+        return binaryOperatorWithScalarByScalarGrid(
+            operator_node, std::move(left_argument), std::move(right_argument), /* left_to_right = */ true, context);
+    }
 
     if ((right_argument.type == ResultType::SCALAR) && (right_argument.store_method == StoreMethod::SCALAR_GRID))
-        return binaryOperatorWithScalarByScalarGrid(operator_node, std::move(right_argument), std::move(left_argument), false, context);
+    {
+        return binaryOperatorWithScalarByScalarGrid(
+            operator_node, std::move(right_argument), std::move(left_argument), /* left_to_right = */ false, context);
+    }
 
     /// Both of the arguments are instant vectors.
-    /// (The arguments can be either scalars or instant vectors and we've checked scalars already.)
     chassert(left_argument.type == ResultType::INSTANT_VECTOR);
     chassert(right_argument.type == ResultType::INSTANT_VECTOR);
-    
-    if (left_argument.store_method == StoreMethod::CONST_SCALAR)
-        return binaryOperatorWithVectorsByConstScalar(operator_node, std::move(left_argument), std::move(right_argument), true, context);
 
-    if (right_argument.store_method == StoreMethod::CONST_SCALAR)
-        return binaryOperatorWithVectorsByConstScalar(operator_node, std::move(right_argument), std::move(left_argument), false, context);
-
-    if (left_argument.store_method == StoreMethod::SCALAR_GRID)
-        return binaryOperatorWithVectorsByScalarGrid(operator_node, std::move(left_argument), std::move(right_argument), true, context);
-
-    if (right_argument.store_method == StoreMethod::SCALAR_GRID)
-        return binaryOperatorWithVectorsByScalarGrid(operator_node, std::move(right_argument), std::move(left_argument), false, context);
-
-    if (left.argument.store_method != StoreMethod::VECTOR_GRID)
-    {
-        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                        "Left argument of the operator '{}' in expression {} has unexpected type {} (store_method: {})",
-                        operator_name, getPromQLQuery(left_argument, context), left_argument.type, left_argument.store_method);
-    }
-
-    if (right.argument.store_method != StoreMethod::VECTOR_GRID)
-    {
-        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                        "Right argument of the operator '{}' in expression {} has unexpected type {} (store_method: {})",
-                        operator_name, getPromQLQuery(right_argument, context), right_argument.type, right_argument.store_method);
-    }
-
-    return binaryOperatorWithVectorsByVectorGrids(operator_node, std::move(left_argument), std::move(right_argument), context);
+    return binaryOperatorWithVectors(operator_node,
+                                     toVectorGrid(operator_node, std::move(left_argument), context),
+                                     toVectorGrid(operator_node, std::move(right_argument), context),
+                                     context);
 }
 
 }
