@@ -459,6 +459,15 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          },
          {"'single_stream'", "'with_size_stream'"},
          false)},
+    {"nullable_serialization_version",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings & choices = {"'basic'", "'allow_sparse'"};
+             return rg.pickRandomly(choices);
+         },
+         {"'basic'", "'allow_sparse'"},
+         false)},
     {"table_disk", trueOrFalseSetting},
     {"ttl_only_drop_parts", trueOrFalseSetting},
     {"use_adaptive_write_buffer_for_dynamic_subcolumns", trueOrFalseSetting},

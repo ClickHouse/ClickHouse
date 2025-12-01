@@ -494,15 +494,62 @@ class GH:
         if labels is None:
             labels = []
         label_cmd = "".join([f" --label '{label}'" for label in labels])
-        safe_title = shlex.quote(title)
+
+        # GitHub search doesn't handle special characters well, so sanitize the search query
+        # Remove quotes and other problematic characters that break GitHub's search parser
+        search_query = (
+            title.replace("'", "").replace('"', "").replace("(", "").replace(")", "")
+        )
+        # Limit search query length to avoid issues
+        if len(search_query) > 100:
+            search_query = search_query[:100]
+
+        safe_title = shlex.quote(search_query)
         cmd = f"gh issue list --json title,body,labels,author,url,updatedAt,createdAt,number --repo {repo} --search {safe_title} {label_cmd}"
         output = Shell.get_output(cmd, verbose=False)
         try:
             issues = json.loads(output)
-            if issues:
-                return cls.GHIssue.from_gh_json(issues[0])
-            else:
+            if not issues:
                 return None
+
+            # Convert to GHIssue objects
+            gh_issues = [cls.GHIssue.from_gh_json(issue) for issue in issues]
+
+            # If multiple issues found, filter to find the best match
+            # by checking if the sanitized title closely matches the issue title
+            if len(gh_issues) > 1:
+                # Try to find exact match on sanitized titles first
+                best_matches = []
+                for gh_issue in gh_issues:
+                    # Sanitize the issue title the same way
+                    sanitized_issue_title = (
+                        gh_issue.title.replace("'", "")
+                        .replace('"', "")
+                        .replace("(", "")
+                        .replace(")", "")
+                    )
+
+                    # Check for exact match (case-insensitive)
+                    if sanitized_issue_title.lower() == search_query.lower():
+                        return [gh_issue]
+
+                    # Check if the issue title starts with most of the search query (more than 80% match)
+                    if len(search_query) > 20:
+                        # For longer queries, check if at least the first 20 chars match
+                        if sanitized_issue_title.lower().startswith(
+                            search_query.lower()[:20]
+                        ):
+                            best_matches.append(gh_issue)
+
+                if len(best_matches) == 1:
+                    return best_matches
+                elif len(best_matches) > 1:
+                    # Return the most recently updated one
+                    return sorted(
+                        best_matches, key=lambda x: x.updated_at, reverse=True
+                    )[:1]
+
+            return gh_issues
         except Exception:
             print("ERROR: Failed to get issue data")
             traceback.print_exc()
