@@ -1328,6 +1328,15 @@ size_t ColumnObject::capacity() const
     return shared_data->capacity();
 }
 
+void ColumnObject::shrinkToFit()
+{
+    for (auto & [_, column] : typed_paths)
+        column->shrinkToFit();
+    for (auto & [_, column] : dynamic_paths_ptrs)
+        column->shrinkToFit();
+    shared_data->shrinkToFit();
+}
+
 void ColumnObject::ensureOwnership()
 {
     for (auto & [_, column] : typed_paths)
