@@ -36,6 +36,23 @@ public:
     CHColumnToArrowColumn(const Block & header, const std::string & format_name_, const Settings & settings_);
     CHColumnToArrowColumn(const ColumnsWithTypeAndName & header_columns_, const std::string & format_name_, const Settings & settings_);
 
+    static std::shared_ptr<arrow::Schema> calculateArrowSchema(
+        const ColumnsWithTypeAndName & header_columns,
+        const std::string & format_name,
+        const Chunk * chunk,
+        const Settings & settings,
+        std::optional<size_t> columns_num = std::nullopt,
+        const std::optional<std::unordered_map<String, Int64>> & column_to_field_id = std::nullopt
+    );
+
+    static std::shared_ptr<arrow::Table> chunkToArrowTable(
+        const ColumnsWithTypeAndName & header_columns,
+        const std::string & format_name,
+        const std::vector<Chunk> & chunks,
+        const Settings & settings,
+        size_t columns_num,
+        std::shared_ptr<arrow::Schema> schema);
+
     /// Makes a copy of this converter.
     /// This can be useful to prepare for conversion in multiple threads.
     std::unique_ptr<CHColumnToArrowColumn> clone(bool copy_arrow_schema = false) const;
@@ -71,11 +88,6 @@ private:
     /// because LowCardinality column from header always has indexes type UInt8, so, we should get
     /// proper indexes type from first chunk of data.
     std::shared_ptr<arrow::Schema> arrow_schema;
-
-    /// Map {column name : arrow dictionary}.
-    /// To avoid converting dictionary from LowCardinality to Arrow
-    /// Dictionary every chunk we save it and reuse.
-    std::unordered_map<std::string, MutableColumnPtr> dictionary_values;
 };
 
 }

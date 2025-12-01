@@ -2,6 +2,15 @@
 
 #if USE_ARROWFLIGHT
 
+#include <functional>
+#include <vector>
+
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Core/ColumnWithTypeAndName.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Common/Base64.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
@@ -26,7 +35,18 @@
 #include <Poco/StreamCopier.h>
 #include <Poco/URI.h>
 #include <Poco/Util/LayeredConfiguration.h>
+
+#include <boost/algorithm/string.hpp>
+
+#include <arrow/array/builder_base.h>
+#include <arrow/array/builder_binary.h>
+#include <arrow/array/builder_nested.h>
+#include <arrow/array/builder_primitive.h>
+#include <arrow/array/builder_union.h>
+#include <arrow/table.h>
+#include <arrow/scalar.h>
 #include <arrow/flight/server_middleware.h>
+#include <arrow/flight/sql/protocol_internal.h>
 
 
 namespace DB
@@ -202,6 +222,28 @@ namespace
                 const auto & cmd = descriptor.cmd;
                 if (cmd.empty())
                     return arrow::Status::Invalid("Flight descriptor's command should specify a SQL query");
+
+                google::protobuf::Any any_msg;
+                if (!any_msg.ParseFromArray(cmd.data(), cmd.size()))
+                    return arrow::Status::Invalid("Failed to parse FlightDescriptor cmd as Any");
+
+                if (any_msg.Is<arrow::flight::protocol::sql::CommandGetCatalogs>())
+                {
+                    return "SELECT toString(number) as catalog_name FROM numbers(0)";
+                }
+                else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetDbSchemas>())
+                {
+                    arrow::flight::protocol::sql::CommandGetDbSchemas command;
+                    any_msg.UnpackTo(&command);
+                    std::vector<std::string> where;
+                    if (command.has_db_schema_filter_pattern())
+                        where.push_back("database LIKE '" + command.db_schema_filter_pattern() + "'");
+
+                    auto where_expression = where.size() ? " WHERE " + boost::algorithm::join(where, " AND ") : "";
+
+                    return "SELECT NULL::Nullable(String) as catalog_name, name as db_schema_name FROM system.databases" + where_expression;
+                }
+
                 return cmd;
             }
             default:
@@ -296,11 +338,9 @@ namespace
         std::optional<Timestamp> expiration_time;
     };
 
-    /// Keeps a block associated with a ticket.
     struct TicketInfo : public TicketWithExpirationTime
     {
-        ConstBlockPtr block;
-        std::shared_ptr<const CHColumnToArrowColumn> ch_to_arrow_converter;
+        std::shared_ptr<arrow::Table> arrow_table;
     };
 
     /// Information about a poll descriptor.
@@ -398,7 +438,7 @@ public:
     }
 
     /// Creates a flight ticket which allows to download a specified block.
-    std::shared_ptr<const TicketInfo> createTicket(ConstBlockPtr block, std::shared_ptr<const CHColumnToArrowColumn> ch_to_arrow_converter)
+    std::shared_ptr<const TicketInfo> createTicket(std::shared_ptr<arrow::Table> arrow_table)
     {
         String ticket = generateTicketName();
         LOG_DEBUG(log, "Creating ticket {}", ticket);
@@ -406,8 +446,7 @@ public:
         auto info = std::make_shared<TicketInfo>();
         info->ticket = ticket;
         info->expiration_time = expiration_time;
-        info->block = block;
-        info->ch_to_arrow_converter = ch_to_arrow_converter;
+        info->arrow_table = arrow_table;
         std::lock_guard lock{mutex};
         bool inserted = tickets.try_emplace(ticket, info).second;  /// NOLINT(clang-analyzer-deadcode.DeadStores)
         chassert(inserted); /// Flight tickets are unique.
@@ -933,7 +972,11 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
         std::vector<arrow::flight::FlightEndpoint> endpoints;
         int64_t total_rows = 0;
         int64_t total_bytes = 0;
-        std::shared_ptr<const CHColumnToArrowColumn> ch_to_arrow_converter;
+        std::shared_ptr<arrow::Schema> schema;
+
+        std::string sql;
+        std::function<arrow::Result<std::shared_ptr<arrow::Schema>>(std::shared_ptr<arrow::Schema>)> schema_modifier;
+        std::function<void(Block &)> block_modifier;
 
         if ((request.type == arrow::flight::FlightDescriptor::CMD) && hasPollDescriptorPrefix(request.cmd))
         {
@@ -941,9 +984,179 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
         }
         else
         {
-            auto sql_res = convertGetDescriptorToSQL(request);
-            ARROW_RETURN_NOT_OK(sql_res);
-            const String & sql = sql_res.ValueOrDie();
+            if (
+                google::protobuf::Any any_msg;
+                    request.type == arrow::flight::FlightDescriptor::CMD
+                    && !request.cmd.empty()
+                    && any_msg.ParseFromArray(request.cmd.data(), request.cmd.size())
+            )
+            {
+                if (any_msg.Is<arrow::flight::protocol::sql::CommandGetSqlInfo>())
+                {
+                    arrow::flight::protocol::sql::CommandGetSqlInfo command;
+                    if (any_msg.UnpackTo(&command) && command.info(0) == 8)
+                    {
+                        arrow::MemoryPool* pool = arrow::default_memory_pool();
+
+                        // string_list: list<item: string> not null
+                        auto string_list_type = arrow::list(arrow::utf8());
+                        auto string_list_builder = std::make_shared<arrow::ListBuilder>(pool, std::make_shared<arrow::StringBuilder>(), string_list_type);
+
+                        // int32_to_int32_list_map: map<int32, list<item: int32>> not null
+                        auto value_type = arrow::list(arrow::int32());
+                        auto value_builder = std::make_shared<arrow::ListBuilder>(pool, std::make_shared<arrow::Int32Builder>(), value_type);
+                        auto int32_to_int32_list_map_type = arrow::map(arrow::int32(), value_type);
+                        auto int32_to_int32_list_map_builder = std::make_shared<arrow::MapBuilder>(pool, std::make_shared<arrow::Int32Builder>(), value_builder, int32_to_int32_list_map_type);
+                    
+                        // dense_union
+                        auto dense_union_type = arrow::dense_union(
+                            {
+                                std::make_shared<arrow::Field>("string_value", arrow::utf8(), false),
+                                std::make_shared<arrow::Field>("bool_value", arrow::boolean(), false),
+                                std::make_shared<arrow::Field>("bigint_value", arrow::int64(), false),
+                                std::make_shared<arrow::Field>("int32_bitmask", arrow::int32(), false),
+                                std::make_shared<arrow::Field>("string_list", string_list_type, false),
+                                std::make_shared<arrow::Field>("int32_to_int32_list_map", int32_to_int32_list_map_type, false)
+                            });
+
+                        auto dense_union_builder = std::make_shared<arrow::DenseUnionBuilder>(
+                            pool,
+                            std::vector<std::shared_ptr<arrow::ArrayBuilder>>{
+                                std::make_shared<arrow::StringBuilder>(),
+                                std::make_shared<arrow::BooleanBuilder>(),
+                                std::make_shared<arrow::Int64Builder>(),
+                                std::make_shared<arrow::Int32Builder>(),
+                                string_list_builder,
+                                int32_to_int32_list_map_builder
+                            },
+                            dense_union_type);
+
+                        // Add bool_value false
+                        int8_t bool_value_type_id = 1;
+                        auto status = dense_union_builder->Append(bool_value_type_id);
+                        ARROW_RETURN_NOT_OK(status);
+                        status = dense_union_builder->child_builder(bool_value_type_id)->AppendScalar(arrow::BooleanScalar(false));
+                        ARROW_RETURN_NOT_OK(status);
+
+                        // Schema for table
+                        std::shared_ptr<arrow::Schema> table_schema = arrow::schema({
+                            arrow::field("info_name", arrow::uint32()),
+                            arrow::field("value", dense_union_type)
+                        });
+
+                        auto info_name_builder = std::make_shared<arrow::UInt32Builder>();
+                        status = info_name_builder->Append(8);
+                        ARROW_RETURN_NOT_OK(status);
+
+                        auto info_name = info_name_builder->Finish();
+                        ARROW_RETURN_NOT_OK(info_name);
+
+                        auto value = dense_union_builder->Finish();
+                        ARROW_RETURN_NOT_OK(value);
+
+                        std::shared_ptr<arrow::Table> table = arrow::Table::Make(table_schema, {info_name.ValueOrDie(), value.ValueOrDie()});
+    
+                        auto ticket_info = calls_data->createTicket(table);
+                        arrow::flight::FlightEndpoint endpoint;
+                        endpoint.ticket = arrow::flight::Ticket{.ticket = ticket_info->ticket};
+                        endpoint.expiration_time = ticket_info->expiration_time;
+                        endpoints.emplace_back(endpoint);
+
+                        auto flight_info_res = arrow::flight::FlightInfo::Make(
+                            *table_schema,
+                            request,
+                            endpoints,
+                            /* total_rows = */ 1,
+                            /* total_bytes = */ -1);
+                        ARROW_RETURN_NOT_OK(flight_info_res);
+                        *info = std::make_unique<arrow::flight::FlightInfo>(std::move(flight_info_res).ValueOrDie());
+
+                        LOG_INFO(log, "GetFlightInfo returns flight info {}", (*info)->ToString());
+                        return arrow::Status::OK();
+                    }
+                }
+                else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetTables>())
+                {
+                    arrow::flight::protocol::sql::CommandGetTables command;
+                    any_msg.UnpackTo(&command);
+
+                    std::vector<std::string> where;
+                    if (command.has_db_schema_filter_pattern())
+                        where.push_back("database LIKE '" + command.db_schema_filter_pattern() + "'");
+                    if (command.has_table_name_filter_pattern())
+                        where.push_back("table LIKE '" + command.table_name_filter_pattern() + "'");
+                    auto where_expression = where.size() ? " WHERE " + boost::algorithm::join(where, " AND ") : "";
+
+                    if (command.include_schema())
+                    {
+                        sql =
+                            "SELECT "
+                                "NULL::Nullable(String) AS catalog_name, "
+                                "database::Nullable(String) AS db_schema_name, "
+                                "table AS table_name, "
+                                "engine AS table_type, "
+                                "table_schema "
+                            "FROM system.tables AS left "
+                            "LEFT JOIN "
+                            "("
+                                "SELECT "
+                                    "database, "
+                                    "table, "
+                                    "arraySort((x, y) -> y, groupArray((name, type)), groupArray(position)) AS table_schema "
+                                "FROM system.columns "
+                                "GROUP BY "
+                                    "database, "
+                                    "table"
+                            ") AS right ON left.database = right.database AND left.table = right.table";
+
+                        schema_modifier = [](std::shared_ptr<arrow::Schema> table_schema)
+                        {
+                            const auto & table_schema_field = table_schema->field(4);
+                            return table_schema->SetField(4, std::make_shared<arrow::Field>(table_schema_field->name(), arrow::binary(), table_schema_field->nullable()));
+                        };
+
+                        block_modifier = [](Block & block)
+                        {
+                            const auto & table_scheme_column = block.getByPosition(4);
+                            auto new_column = ColumnString::create();
+                            const auto & arr = typeid_cast<const ColumnArray &>(*table_scheme_column.column);
+                            const auto & tuple_col = typeid_cast<const ColumnTuple &>(arr.getData());
+                            const auto & name_col = typeid_cast<const ColumnString &>(tuple_col.getColumn(0));
+                            const auto & type_col = typeid_cast<const ColumnString &>(tuple_col.getColumn(1));
+                            for (size_t i = 0; i < table_scheme_column.column->size(); ++i)
+                            {
+                                ColumnsWithTypeAndName table_columns;
+                                auto start = i ? arr.getOffsets()[i - 1] : 0;
+                                auto end = arr.getOffsets()[i];
+                                for (size_t j = 0; j < end - start; ++j)
+                                {
+                                    const auto name = name_col.getDataAt(start + j).toString();
+                                    const auto type = type_col.getDataAt(start + j).toString();
+
+                                    auto data_type = DataTypeFactory::instance().get(type);
+                                    table_columns.emplace_back(nullptr, data_type, name);
+                                }
+                                auto table_schema = CHColumnToArrowColumn::calculateArrowSchema(table_columns, "Arrow", nullptr, {.output_string_as_string = true});
+                                auto serialized_buffer = arrow::ipc::SerializeSchema(*table_schema, arrow::default_memory_pool()).ValueOrDie();
+                                new_column->insertData(reinterpret_cast<const char *>(serialized_buffer->data()), serialized_buffer->size());
+                            }
+
+                            block.erase(4);
+                            block.insert(ColumnWithTypeAndName(std::move(new_column), std::make_shared<DataTypeString>(), table_scheme_column.name));
+                        };
+                    }
+                    else
+                        sql = "SELECT NULL::Nullable(String) AS catalog_name, database::Nullable(String) AS db_schema_name, table AS table_name, engine AS table_type FROM system.tables" + where_expression;
+                }
+            }
+
+
+            if (sql.empty())
+            {
+                auto sql_res = convertGetDescriptorToSQL(request);
+                ARROW_RETURN_NOT_OK(sql_res);
+                sql = sql_res.ValueOrDie();
+            }
 
             Session session{server.context(), ClientInfo::Interface::ARROW_FLIGHT};
 
@@ -961,16 +1174,32 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
                 ARROW_RETURN_NOT_OK(checkPipelineIsPulling(block_io.pipeline));
 
                 PullingPipelineExecutor executor{block_io.pipeline};
-                ch_to_arrow_converter = createCHToArrowConverter(executor.getHeader());
+                schema = CHColumnToArrowColumn::calculateArrowSchema(executor.getHeader().getColumnsWithTypeAndName(), "Arrow", nullptr, {.output_string_as_string = true});
+                if (schema_modifier)
+                {
+                    auto status = schema_modifier(schema);
+                    ARROW_RETURN_NOT_OK(status);
+                    schema = status.ValueOrDie();
+                }
 
+                // We generate a ticket for every chunk of data so clients can parallelize data retrieval.
+                // However, it's unclear if this is necessary since we later indicate that data is ordered
+                // and all endpoints are local. This forces clients to request data through the same connection,
+                // and even with gRPC, clients are forced to prioritize the order.
+                // TODO: Consider single ticket optimization for ordered local data to reduce overhead.
                 Block block;
                 while (executor.pull(block))
                 {
                     if (!block.empty())
                     {
+                        if (block_modifier)
+                            block_modifier(block);
                         total_rows += block.rows();
                         total_bytes += block.bytes();
-                        auto ticket_info = calls_data->createTicket(std::make_shared<Block>(std::move(block)), ch_to_arrow_converter);
+                        std::vector<Chunk> chunks;
+                        chunks.emplace_back(Chunk{block.getColumns(), block.rows()});
+                        auto table = CHColumnToArrowColumn::chunkToArrowTable(block.getColumnsWithTypeAndName(), "Arrow", chunks, {.output_string_as_string = true}, executor.getHeader().columns(), schema);
+                        auto ticket_info = calls_data->createTicket(table);
                         arrow::flight::FlightEndpoint endpoint;
                         endpoint.ticket = arrow::flight::Ticket{.ticket = ticket_info->ticket};
                         endpoint.expiration_time = ticket_info->expiration_time;
@@ -985,8 +1214,6 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
                 throw;
             }
         }
-
-        auto schema = ch_to_arrow_converter->getArrowSchema();
 
         auto flight_info_res = arrow::flight::FlightInfo::Make(
             *schema,
@@ -1210,7 +1437,12 @@ arrow::Status ArrowFlightHandler::evaluatePollDescriptor(const String & poll_des
             {
                 rows = block.rows();
                 bytes = block.bytes();
-                auto ticket_info = calls_data->createTicket(std::make_shared<Block>(std::move(block)), ch_to_arrow_converter);
+                std::shared_ptr<arrow::Table> table;
+                auto num_columns = block.columns();
+                std::vector<Chunk> chunks;
+                chunks.emplace_back(Chunk{std::move(block).getColumns(), rows});
+                ch_to_arrow_converter->clone(true)->chChunkToArrowTable(table, chunks, num_columns);
+                auto ticket_info = calls_data->createTicket(table);
                 ticket = ticket_info->ticket;
             }
         }
@@ -1249,10 +1481,8 @@ arrow::Status ArrowFlightHandler::DoGet(
     auto impl = [&]
     {
         LOG_INFO(log, "DoGet is called for ticket {}", request.ticket);
-
-        Block header;
         std::vector<Chunk> chunks;
-        std::shared_ptr<CHColumnToArrowColumn> ch_to_arrow_converter;
+        std::shared_ptr<arrow::Table> table;
         bool should_cancel_ticket = false;
 
         if (hasTicketPrefix(request.ticket))
@@ -1260,9 +1490,7 @@ arrow::Status ArrowFlightHandler::DoGet(
             auto ticket_info_res = calls_data->getTicketInfo(request.ticket);
             ARROW_RETURN_NOT_OK(ticket_info_res);
             const auto & ticket_info = ticket_info_res.ValueOrDie();
-            chunks.emplace_back(Chunk(ticket_info->block->getColumns(), ticket_info->block->rows()));
-            header = ticket_info->block->cloneEmpty();
-            ch_to_arrow_converter = ticket_info->ch_to_arrow_converter->clone(/* copy_arrow_schema = */ true);
+            table = ticket_info->arrow_table;
             should_cancel_ticket = cancel_ticket_after_do_get;
         }
         else
@@ -1290,8 +1518,9 @@ arrow::Status ArrowFlightHandler::DoGet(
                 while (executor.pull(block))
                     chunks.emplace_back(Chunk(block.getColumns(), block.rows()));
 
-                header = executor.getHeader();
-                ch_to_arrow_converter = createCHToArrowConverter(header);
+                auto header = executor.getHeader();
+                auto ch_to_arrow_converter = createCHToArrowConverter(header);
+                ch_to_arrow_converter->chChunkToArrowTable(table, chunks, header.columns());
                 block_io.onFinish();
             }
             catch (...)
@@ -1301,12 +1530,8 @@ arrow::Status ArrowFlightHandler::DoGet(
             }
         }
 
-        std::shared_ptr<arrow::Table> arrow_table;
-        ch_to_arrow_converter->chChunkToArrowTable(arrow_table, chunks, header.columns());
-
         auto stream_res = arrow::RecordBatchReader::MakeFromIterator(
-            arrow::Iterator<std::shared_ptr<arrow::RecordBatch>>{arrow::TableBatchReader{arrow_table}},
-            ch_to_arrow_converter->getArrowSchema());
+            arrow::Iterator<std::shared_ptr<arrow::RecordBatch>>{arrow::TableBatchReader{table}}, table->schema());
         ARROW_RETURN_NOT_OK(stream_res);
         *stream = std::make_unique<arrow::flight::RecordBatchStream>(stream_res.ValueOrDie());
 
