@@ -81,14 +81,6 @@ void buildLifetimeConfiguration(
     if (!lifetime)
         return;
 
-    if (lifetime->min_sec > lifetime->max_sec)
-    {
-        throw DB::Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "{} parameter 'MIN' must be less than or equal to 'MAX'",
-            lifetime->getID(0));
-    }
-
     AutoPtr<Element> lifetime_element(doc->createElement("lifetime"));
     AutoPtr<Element> min_element(doc->createElement("min"));
     AutoPtr<Element> max_element(doc->createElement("max"));
@@ -144,8 +136,6 @@ void buildLayoutConfiguration(
         }
     }
 
-    const auto is_ssd_cache_layout = layout->layout_type.ends_with("ssd_cache");
-
     for (const auto & param : layout->parameters->children)
     {
         const ASTPair * pair = param->as<ASTPair>();
@@ -174,17 +164,6 @@ void buildLayoutConfiguration(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Dictionary layout parameter value must be an UInt64, Float64 or String, got '{}' instead",
                 value_field.getTypeName());
-        }
-
-        if (is_ssd_cache_layout)
-        {
-            if (value_field.getType() == Field::Types::UInt64 && value_field.safeGet<::UInt64>() == 0)
-            {
-                throw DB::Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "{} parameter value should be positive number",
-                    layout->getID(0));
-            }
         }
 
         AutoPtr<Element> layout_type_parameter_element(doc->createElement(pair->first));
@@ -605,7 +584,7 @@ void checkAST(const ASTCreateQuery & query)
 void checkPrimaryKey(const AttributeNameToConfiguration & all_attrs, const Names & key_attrs)
 {
     for (const auto & key_attr : key_attrs)
-        if (!all_attrs.contains(key_attr))
+        if (all_attrs.find(key_attr) == all_attrs.end())
             throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Unknown key attribute '{}'", key_attr);
 }
 

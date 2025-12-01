@@ -1,16 +1,13 @@
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/Serializations/SerializationEnum.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <IO/WriteHelpers.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/UTF8Helpers.h>
-#include <Common/SipHash.h>
 #include <Columns/ColumnSparse.h>
 #include <Poco/UTF8Encoding.h>
 #include <Interpreters/Context.h>
@@ -113,11 +110,6 @@ bool DataTypeEnum<Type>::equals(const IDataType & rhs) const
     return typeid(rhs) == typeid(*this) && type_name == static_cast<const DataTypeEnum<Type> &>(rhs).type_name;
 }
 
-template <typename Type>
-void DataTypeEnum<Type>::updateHashImpl(SipHash & hash) const
-{
-    hash.update(type_name);
-}
 
 template <typename Type>
 bool DataTypeEnum<Type>::textCanContainOnlyValidUTF8() const
@@ -148,7 +140,6 @@ static void checkOverflow(Int64 value)
         throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "DataTypeEnum: Unexpected value {}", toString(value));
 }
 
-
 template <typename Type>
 Field DataTypeEnum<Type>::castToName(const Field & value_or_name) const
 {
@@ -161,7 +152,7 @@ Field DataTypeEnum<Type>::castToName(const Field & value_or_name) const
     {
         Int64 value = value_or_name.safeGet<Int64>();
         checkOverflow<Type>(value);
-        return std::string{this->getNameForValue(static_cast<Type>(value))};
+        return this->getNameForValue(static_cast<Type>(value)).toString();
     }
     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "DataTypeEnum: Unsupported type of field {}", value_or_name.getTypeName());
 }
@@ -230,7 +221,7 @@ static void autoAssignNumberForEnum(const ASTPtr & arguments)
         if (child->as<ASTLiteral>())
         {
             assign_count += !is_first_child;
-            ASTPtr func = makeASTOperator("equals", child, std::make_shared<ASTLiteral>(literal_child_assign_num + assign_count));
+            ASTPtr func = makeASTFunction("equals", child, std::make_shared<ASTLiteral>(literal_child_assign_num + assign_count));
             assign_number_child.emplace_back(func);
         }
         else if (child->as<ASTFunction>())

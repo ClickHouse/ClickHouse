@@ -1,6 +1,6 @@
 #pragma once
-#include <base/StringViewHash.h>
 #include <Core/Types.h>
+#include <base/StringRef.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Disks/IDisk.h>
 #include <map>
@@ -35,7 +35,7 @@ private:
         V value;
     };
     using Queue = std::list<ListNode>;
-    using IndexMap = std::unordered_map<std::string_view, typename Queue::iterator, StringViewHash>;
+    using IndexMap = std::unordered_map<StringRef, typename Queue::iterator, StringRefHash>;
 
     Queue queue;
     IndexMap map;
@@ -183,7 +183,6 @@ private:
 
     /// Disk where log is stored
     DiskPtr disk;
-    const bool disk_supports_writing_with_append;
 
     bool stopped{false};
 

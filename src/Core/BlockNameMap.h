@@ -1,6 +1,7 @@
 #pragma once
 
-#include <base/StringViewHash.h>
+#include <base/StringRef.h>
+
 #include <sparsehash/dense_hash_map>
 
 namespace DB
@@ -8,7 +9,7 @@ namespace DB
 
 class Block;
 
-using BlockNameMap = ::google::dense_hash_map<std::string_view, size_t, StringViewHash>;
+using BlockNameMap = ::google::dense_hash_map<StringRef, size_t, StringRefHash>;
 
 BlockNameMap getNamesToIndexesMap(const Block & block);
 
