@@ -63,6 +63,7 @@ def test_smoke():
 
 def test_grant_option():
     instance.query("CREATE USER A")
+    instance.query("DROP USER IF EXISTS B")
     instance.query("CREATE USER B")
 
     instance.query("GRANT SELECT ON test.table TO A;")
@@ -559,6 +560,7 @@ def test_grant_with_replace_option():
     instance.query("GRANT NONE ON *.* TO A WITH REPLACE OPTION;")
     assert instance.query("SHOW GRANTS FOR A") == TSV([])
 
+    instance.query("DROP USER IF EXISTS B")
     instance.query("CREATE USER B")
     instance.query("GRANT SELECT ON test.table TO B;")
     assert instance.query("SHOW GRANTS FOR A") == TSV([])
@@ -573,28 +575,29 @@ def test_grant_with_replace_option():
     )
     assert instance.query("SHOW GRANTS FOR A") == TSV([])
     assert instance.query("SHOW GRANTS FOR B") == TSV(
-        ["GRANT SELECT ON test.`table` TO B;"]
+        ["GRANT SELECT, INSERT ON test.`table` TO B;"]
     )
 
     instance.query("GRANT INSERT ON test.table TO A WITH GRANT OPTION;")
     expected_error = (
-        "it's necessary to have the grant SELECT ON test.`table` WITH GRANT OPTION"
+        "it's necessary to have the grant SELECT, INSERT ON test.`table` WITH GRANT OPTION"
     )
     assert expected_error in instance.query_and_get_error(
         "GRANT INSERT ON test.`table` TO B WITH REPLACE OPTION", user="A"
     )
 
     assert robust_grants(instance.query("SHOW GRANTS FOR A"), ["GRANT INSERT ON test.`table` TO A WITH GRANT OPTION;"])
-    assert robust_grants(instance.query("SHOW GRANTS FOR B"), ["GRANT SELECT ON test.`table` TO B;"])
+    assert robust_grants(instance.query("SHOW GRANTS FOR B"), ["GRANT SELECT, INSERT ON test.`table` TO B;"])
 
     instance.query("GRANT SELECT ON test.`table` TO A WITH GRANT OPTION")
     instance.query("GRANT INSERT ON test.`table` TO B WITH REPLACE OPTION", user="A")
     assert robust_grants(instance.query("SHOW GRANTS FOR A"), ["GRANT SELECT, INSERT ON test.`table` TO A WITH GRANT OPTION;"])
-    assert robust_grants(instance.query("SHOW GRANTS FOR B"), ["GRANT SELECT ON test.`table` TO B;"])
+    assert robust_grants(instance.query("SHOW GRANTS FOR B"), ["GRANT INSERT ON test.`table` TO B;"])
     instance.query("GRANT INSERT ON test.table TO A WITH REPLACE OPTION;")
     assert robust_grants(instance.query("SHOW GRANTS FOR A"), ["GRANT INSERT ON test.`table` TO A;"])
     instance.query("GRANT NONE ON *.* TO A WITH REPLACE OPTION;")
     assert robust_grants(instance.query("SHOW GRANTS FOR A"), [])
+    instance.query("DROP USER IF EXISTS B")
     instance.query("CREATE USER B")
     instance.query("GRANT SELECT ON test.table TO B;")
     assert robust_grants(instance.query("SHOW GRANTS FOR A"), [])
@@ -623,22 +626,24 @@ def test_grant_with_replace_option():
     instance.query("GRANT SELECT ON test.table2 TO A")
 
     assert robust_grants(instance.query("SHOW GRANTS FOR A"), [
-        "GRANT CREATE TABLE ON *.* TO A;",
         "GRANT SELECT ON *.* TO A WITH GRANT OPTION;",
-        "REVOKE SELECT, CREATE TABLE ON test.* FROM A",
-        "GRANT SELECT, CREATE TABLE ON test.`table` TO A WITH GRANT OPTION;",
+        "REVOKE SELECT ON test.* FROM A;",
+        "GRANT SELECT, INSERT, CREATE TABLE ON test.`table` TO A WITH GRANT OPTION;",
         "GRANT SELECT ON test.table2 TO A;",
     ])
-
+    instance.query("DROP USER IF EXISTS B")
     instance.query("CREATE USER B")
     instance.query("GRANT CURRENT GRANTS ON *.* TO B", user="A")
-    assert robust_grants(instance.query("SHOW GRANTS FOR B"), [])
+    assert robust_grants(instance.query("SHOW GRANTS FOR B"), [
+        "GRANT SELECT ON *.* TO B;",
+        "REVOKE SELECT ON test.* FROM B;",
+        "GRANT SELECT, INSERT, CREATE TABLE ON test.`table` TO B;",
+    ])
 
     assert robust_grants(instance.query("SHOW GRANTS FOR A"), [
-        "GRANT CREATE TABLE ON *.* TO A;",
         "GRANT SELECT ON *.* TO A WITH GRANT OPTION;",
-        "REVOKE SELECT, CREATE TABLE ON test.* FROM A",
-        "GRANT SELECT, CREATE TABLE ON test.`table` TO A WITH GRANT OPTION;",
+        "REVOKE SELECT ON test.* FROM A;",
+        "GRANT SELECT, INSERT, CREATE TABLE ON test.`table` TO A WITH GRANT OPTION;",
         "GRANT SELECT ON test.table2 TO A;",
     ])
 
@@ -648,7 +653,7 @@ def test_grant_with_replace_option():
     assert robust_grants(instance.query("SHOW GRANTS FOR B"), [
         "GRANT SELECT ON *.* TO B WITH GRANT OPTION",
         "REVOKE SELECT ON test.* FROM B",
-        "GRANT SELECT, CREATE TABLE ON test.`table` TO B WITH GRANT OPTION",
+        "GRANT SELECT, INSERT, CREATE TABLE ON test.`table` TO B WITH GRANT OPTION",
     ])
 
     instance.query("DROP USER IF EXISTS C")
@@ -656,15 +661,16 @@ def test_grant_with_replace_option():
     instance.query("GRANT SELECT ON test.* TO B")
     instance.query("GRANT CURRENT GRANTS ON *.* TO C", user="B")
     assert robust_grants(instance.query("SHOW GRANTS FOR C"), [
-        "GRANT SELECT ON *.* TO C",
-        "GRANT CREATE TABLE ON test.`table` TO C",
+         "GRANT SELECT ON *.* TO C;",
+         "GRANT INSERT, CREATE TABLE ON test.`table` TO C;",
     ])
 
     instance.query("DROP USER IF EXISTS B")
     instance.query("CREATE USER B")
     instance.query("GRANT CURRENT GRANTS ON test.* TO B WITH GRANT OPTION", user="A")
-    assert robust_grants(instance.query("SHOW GRANTS FOR B"), ["GRANT SELECT, CREATE TABLE ON test.`table` TO B WITH GRANT OPTION;"])
-
+    assert robust_grants(instance.query("SHOW GRANTS FOR B"), [
+        "GRANT SELECT, INSERT, CREATE TABLE ON test.`table` TO B WITH GRANT OPTION;",
+   ])
 
 def test_current_grants_override():
     instance.query("CREATE USER A")
