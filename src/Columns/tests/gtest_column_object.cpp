@@ -38,7 +38,7 @@ TEST(ColumnObject, GetName)
 Field deserializeFieldFromSharedData(ColumnString * values, size_t n)
 {
     auto data = values->getDataAt(n);
-    ReadBufferFromMemory buf(data.data(), data.size());
+    ReadBufferFromMemory buf(data);
     Field res;
     std::make_shared<SerializationDynamic>()->deserializeBinary(res, buf, FormatSettings());
     return res;

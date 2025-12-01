@@ -676,6 +676,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     ColumnsWithTypeAndName argument_columns;
     DataTypes argument_types;
     bool all_arguments_constants = true;
+    bool all_arguments_are_deterministic = true;
     std::vector<size_t> function_lambda_arguments_indexes;
 
     auto & function_arguments = function_node.getArguments().getNodes();
@@ -714,11 +715,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 scope.scope_node->formatASTForErrorMessage());
 
         bool argument_is_constant = false;
+        bool argument_is_deterministic = true;
         const auto * constant_node = function_argument->as<ConstantNode>();
         if (constant_node)
         {
             argument_column.column = constant_node->getColumn();
             argument_column.type = constant_node->getResultType();
+            argument_is_deterministic = constant_node->isDeterministic();
             argument_is_constant = true;
         }
         else if (const auto * get_scalar_function_node = function_argument->as<FunctionNode>();
@@ -741,6 +744,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
 
         all_arguments_constants &= argument_is_constant;
+        all_arguments_are_deterministic &= argument_is_deterministic;
 
         argument_types.push_back(argument_column.type);
         argument_columns.emplace_back(std::move(argument_column));
@@ -1240,6 +1244,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     result_type->getColumnType(),
                     column->getDataType());
 
+            const bool is_deterministic = all_arguments_are_deterministic && function->isDeterministic();
+
             /** Do not perform constant folding if there are aggregate or arrayJoin functions inside function.
               * Example: SELECT toTypeName(sum(number)) FROM numbers(10);
               */
@@ -1249,7 +1255,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 column->byteSize() < 1_MiB)
             {
                 /// Replace function node with result constant node
-                constant_node = std::make_shared<ConstantNode>(ConstantValue{ std::move(column), std::move(result_type) }, node);
+                constant_node = std::make_shared<ConstantNode>(ConstantValue{ std::move(column), std::move(result_type) }, node, is_deterministic);
             }
         }
 
