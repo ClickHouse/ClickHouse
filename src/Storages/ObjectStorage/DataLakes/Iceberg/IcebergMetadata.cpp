@@ -1073,7 +1073,7 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_i
     return persistent_components.schema_processor->getColumnMapperById(iceberg_object_info->info.underlying_format_read_schema_id);
 }
 
-// (TODO): usage of this function is wrong and should be removed completely (it was done as a temporary workaround for a bug which occured during supporting concurrent SELECTs).
+// (TODO): usage of this function is wrong and should be removed completely (it was done as a temporary workaround for a bug which occurred during supporting concurrent SELECTs).
 ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const
 {
     if (Poco::toLower(write_format) != "parquet")
