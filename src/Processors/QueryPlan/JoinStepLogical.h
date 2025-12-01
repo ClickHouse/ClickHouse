@@ -20,6 +20,7 @@ namespace DB
 class StorageJoin;
 class IKeyValueEntity;
 struct JoinAlgorithmParams;
+struct StorageID;
 
 struct PreparedJoinStorage
 {
