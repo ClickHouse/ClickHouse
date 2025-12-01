@@ -783,7 +783,7 @@ bool ExecutionStatus::tryDeserializeText(const std::string & data)
 
 ExecutionStatus ExecutionStatus::fromCurrentException(const std::string & start_of_message, bool with_stacktrace, bool with_version)
 {
-    String msg = (start_of_message.empty() ? "" : (start_of_message + ": ")) + getCurrentExceptionMessage(with_stacktrace, true, true, with_version);
+    String msg = (start_of_message.empty() ? "" : (start_of_message + ": ")) + getCurrentExceptionMessage(with_stacktrace, /*check_embedded_stacktrace=*/true, /*with_extra_info=*/true, with_version);
     return ExecutionStatus(getCurrentExceptionCode(), msg);
 }
 
