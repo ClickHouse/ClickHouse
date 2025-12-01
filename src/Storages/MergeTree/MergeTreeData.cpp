@@ -2424,7 +2424,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         }
 
         unexpected_data_parts_loading_task = getContext()->getSchedulePool().createTask(
-            "MergeTreeData::loadUnexpectedDataParts",
+            getStorageID(), "MergeTreeData::loadUnexpectedDataParts",
             [this] { loadUnexpectedDataParts(); });
     }
 
@@ -2446,7 +2446,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         }
 
         outdated_data_parts_loading_task = getContext()->getSchedulePool().createTask(
-            "MergeTreeData::loadOutdatedDataParts",
+            getStorageID(), "MergeTreeData::loadOutdatedDataParts",
             [this] { loadOutdatedDataParts(/*is_async=*/ true); });
     }
 
@@ -2460,7 +2460,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     if (all_disks_are_readonly && refresh_parts_interval && !refresh_parts_task)
     {
         refresh_parts_task = getContext()->getSchedulePool().createTask(
-            "MergeTreeData::refreshDataParts",
+            getStorageID(), "MergeTreeData::refreshDataParts",
             [this, refresh_parts_interval] { refreshDataParts(refresh_parts_interval); });
 
         refresh_parts_task->scheduleAfter(refresh_parts_interval);
@@ -2470,7 +2470,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     if (refresh_statistics_seconds && !refresh_stats_task)
     {
         refresh_stats_task = getContext()->getSchedulePool().createTask(
-            "MergeTreeData::refreshStatistics",
+            getStorageID(), "MergeTreeData::refreshStatistics",
             [this, refresh_statistics_seconds] { refreshStatistics(refresh_statistics_seconds); });
 
         refresh_stats_task->activateAndSchedule();

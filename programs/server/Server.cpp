@@ -1707,7 +1707,7 @@ try
     if (server_settings[ServerSetting::background_schedule_pool_size] > 1)
     {
         auto cancellation_task_holder = global_context->getSchedulePool().createTask(
-            "CancellationChecker",
+            StorageID::createEmpty(), "CancellationChecker",
             [] { CancellationChecker::getInstance().workerFunction(); }
         );
         cancellation_task = std::make_unique<DB::BackgroundSchedulePoolTaskHolder>(std::move(cancellation_task_holder));

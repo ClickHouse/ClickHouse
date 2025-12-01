@@ -1425,6 +1425,15 @@ void ColumnDynamic::takeDynamicStructureFromColumn(const ColumnPtr & source_colu
         variant_col.getVariantByGlobalDiscriminator(i).takeDynamicStructureFromColumn(source_variant_column.getVariantPtrByGlobalDiscriminator(i));
 }
 
+void ColumnDynamic::fixDynamicStructure()
+{
+    /// Reduce max_dynamic_types to the number of selected variants, so there will be no possibility
+    /// to extend selected variants on inserts into this column.
+    /// -1 because we don't count shared variant in the limit.
+    max_dynamic_types = variant_info.variant_names.size() - 1;
+    getVariantColumn().fixDynamicStructure();
+}
+
 void ColumnDynamic::applyNullMap(const ColumnVector<UInt8>::Container & null_map)
 {
     variant_column_ptr->applyNullMap(null_map);
