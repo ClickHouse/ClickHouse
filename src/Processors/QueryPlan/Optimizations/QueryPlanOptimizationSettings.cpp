@@ -60,7 +60,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool make_distributed_plan;
-    extern const SettingsUInt64 distributed_plan_default_shuffle_join_bucket_count;
+    extern const SettingsNonZeroUInt64 distributed_plan_default_shuffle_join_bucket_count;
     extern const SettingsUInt64 distributed_plan_default_reader_bucket_count;
     extern const SettingsBool distributed_plan_optimize_exchanges;
     extern const SettingsString distributed_plan_force_exchange_kind;

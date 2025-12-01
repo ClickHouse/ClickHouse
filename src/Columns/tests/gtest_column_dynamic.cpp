@@ -757,7 +757,7 @@ TEST(ColumnDynamic, SerializeDeserializeFromArena1)
     column->serializeValueIntoArena(2, arena, pos);
     column->serializeValueIntoArena(3, arena, pos);
 
-    ReadBufferFromString in({ref1.data, arena.usedBytes()});
+    ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     column->deserializeAndInsertFromArena(in);
     column->deserializeAndInsertFromArena(in);
     column->deserializeAndInsertFromArena(in);
@@ -785,7 +785,7 @@ TEST(ColumnDynamic, SerializeDeserializeFromArena2)
     column_from->serializeValueIntoArena(3, arena, pos);
 
     auto column_to = ColumnDynamic::create(254);
-    ReadBufferFromString in({ref1.data, arena.usedBytes()});
+    ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     column_to->deserializeAndInsertFromArena(in);
     column_to->deserializeAndInsertFromArena(in);
     column_to->deserializeAndInsertFromArena(in);
@@ -818,7 +818,7 @@ TEST(ColumnDynamic, SerializeDeserializeFromArenaOverflow1)
     column_from->serializeValueIntoArena(3, arena, pos);
 
     auto column_to = getDynamicWithManyVariants(253);
-    ReadBufferFromString in({ref1.data, arena.usedBytes()});
+    ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     column_to->deserializeAndInsertFromArena(in);
     column_to->deserializeAndInsertFromArena(in);
     column_to->deserializeAndInsertFromArena(in);
@@ -853,7 +853,7 @@ TEST(ColumnDynamic, SerializeDeserializeFromArenaOverflow2)
 
     auto column_to = ColumnDynamic::create(2);
     column_to->insert(Field(42.42));
-    ReadBufferFromString in({ref1.data, arena.usedBytes()});
+    ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     column_to->deserializeAndInsertFromArena(in);
     column_to->deserializeAndInsertFromArena(in);
     column_to->deserializeAndInsertFromArena(in);
@@ -888,7 +888,7 @@ TEST(ColumnDynamic, skipSerializedInArena)
     column_from->serializeValueIntoArena(3, arena, pos);
 
     auto column_to = ColumnDynamic::create(254);
-    ReadBufferFromString in({ref1.data, arena.usedBytes()});
+    ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     column_to->skipSerializedInArena(in);
     column_to->skipSerializedInArena(in);
     column_to->skipSerializedInArena(in);

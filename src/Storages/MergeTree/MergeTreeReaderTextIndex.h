@@ -9,7 +9,7 @@
 namespace DB
 {
 
-using PostingsMap = absl::flat_hash_map<StringRef, PostingListPtr>;
+using PostingsMap = absl::flat_hash_map<std::string_view, PostingListPtr>;
 
 /// A part of "direct read from text index" optimization.
 /// This reader fills virtual columns for text search filters
@@ -23,7 +23,8 @@ public:
     MergeTreeReaderTextIndex(
         const IMergeTreeReader * main_reader_,
         MergeTreeIndexWithCondition index_,
-        NamesAndTypesList columns_);
+        NamesAndTypesList columns_,
+        bool can_skip_mark_);
 
     size_t readRows(
         size_t from_mark,
@@ -59,6 +60,7 @@ private:
     double estimateCardinality(const TextSearchQuery & query, const TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const;
 
     MergeTreeIndexWithCondition index;
+    bool can_skip_mark;
     MarkRanges all_index_ranges;
     std::optional<MergeTreeIndexReader> index_reader;
 
