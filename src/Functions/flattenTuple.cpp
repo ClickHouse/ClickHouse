@@ -32,6 +32,16 @@ public:
     {
         const auto & type = arguments[0];
         const auto * type_tuple = checkAndGetDataType<DataTypeTuple>(type.get());
+        if (!type_tuple)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Argument for function '{}' must be Tuple or Nullable(Tuple). Got '{}'",
+                getName(),
+                type->getName());
+
+        if (type_tuple->getElements().empty())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Tuple cannot be empty for function '{}'", getName());
+
         if (!type_tuple || !type_tuple->hasExplicitNames())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Tuple argument for function '{}' must be named. Got '{}'",
