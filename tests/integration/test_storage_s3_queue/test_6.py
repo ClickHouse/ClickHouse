@@ -176,7 +176,7 @@ def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads
     put_file_content(started_cluster, engine_name, f"{files_path}/date=2025-01-03/city=Amsterdam/file2.csv", b"3,1,2\n")
     put_file_content(started_cluster, engine_name, f"{files_path}/date=2025-01-03/city=Amsterdam/file4.csv", b"3,1,4\n")
 
-    # only new files on the end (file4.csv) should be visible
+    # Only new files on the end (file4.csv) should be visible
     expected_data = [
         "1,1,1",
         "1,1,3",
