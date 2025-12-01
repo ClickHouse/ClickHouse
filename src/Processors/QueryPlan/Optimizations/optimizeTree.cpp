@@ -215,8 +215,13 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
     {
         auto & frame = stack.back();
 
+        /// Currently the approach is very simple: we look for Union step in the plan tree,
+        /// and consider its children. The first child that is not ReadFromParallelRemoteReplicas
+        /// is considered the top node of replicas plan.
         if (typeid_cast<UnionStep *>(frame.node->step.get()))
         {
+            bool found_read_from_parallel_replicas = false;
+
             for (const auto & child : frame.node->children)
             {
                 auto * node = child;
@@ -237,16 +242,23 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
                     if (replicas_plan_top_node)
                     {
                         // TODO(nickitat): support multiple read steps with parallel replicas
-                        // throw Exception(ErrorCodes::LOGICAL_ERROR, "Top node for parallel replicas plan is already found");
                         LOG_DEBUG(getLogger("optimizeTree"), "Top node for parallel replicas plan is already found");
                         return nullptr;
                     }
 
                     replicas_plan_top_node = node;
                 }
+                else
+                {
+                    found_read_from_parallel_replicas = true;
+                }
             }
 
-            if (replicas_plan_top_node)
+            /// We found pattern
+            ///     Union
+            ///       ReadFromParallelRemoteReplicas
+            ///       <replicas_plan_top_node>
+            if (replicas_plan_top_node && found_read_from_parallel_replicas)
                 break;
         }
 
@@ -288,7 +300,6 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
                 return std::make_pair(nopr_node, nopr_hash);
             }
         }
-        // throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find step with matching hash in single-node plan");
         LOG_DEBUG(getLogger("optimizeTree"), "Cannot find step with matching hash in single-node plan");
         return std::make_pair(nullptr, 0);
     }
@@ -300,10 +311,10 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
 
 /// Heuristic-based algorithm to decide whether to enable parallel replicas for the given query
 void considerEnablingParallelReplicas(
-    [[maybe_unused]] const QueryPlanOptimizationSettings & optimization_settings,
-    [[maybe_unused]] QueryPlan::Node & root,
-    [[maybe_unused]] QueryPlan::Nodes & nodes,
-    [[maybe_unused]] QueryPlan & query_plan)
+     const QueryPlanOptimizationSettings & optimization_settings,
+     QueryPlan::Node & root,
+     QueryPlan::Nodes &,
+     QueryPlan & query_plan)
 {
     if (!optimization_settings.query_plan_with_parallel_replicas_builder)
         return;
@@ -321,7 +332,7 @@ void considerEnablingParallelReplicas(
         return;
     LOG_DEBUG(getLogger("optimizeTree"), "Top node of replicas plan: {}", final_node_in_replica_plan->step->getName());
 
-    [[maybe_unused]] const auto [corresponding_node_in_single_replica_plan, single_replica_plan_node_hash]
+    const auto [corresponding_node_in_single_replica_plan, single_replica_plan_node_hash]
         = findCorrespondingNodeInSingleNodePlan(*final_node_in_replica_plan, *plan_with_parallel_replicas->getRootNode(), root);
     if (!corresponding_node_in_single_replica_plan)
         return;
@@ -331,16 +342,9 @@ void considerEnablingParallelReplicas(
         const auto * reading_step = corresponding_node_in_single_replica_plan;
         while (reading_step && !reading_step->children.empty())
         {
+            // TODO(nickitat): support multiple read steps with parallel replicas
             if (reading_step->children.size() > 1)
-            {
-                // TODO(nickitat): Support multiple reading steps (e.g. multiple tables in JOIN).
-                // throw Exception(
-                //     ErrorCodes::LOGICAL_ERROR,
-                //     "Expected single child while searching for ReadFromMergeTree, got {} children for step {}",
-                //     reading_step->children.size(),
-                //     reading_step->step->getName());
                 return;
-            }
             reading_step = reading_step->children.front();
         }
 
@@ -406,16 +410,7 @@ void considerEnablingParallelReplicas(
                 return;
             }
 
-            auto dump_plan = [&](const QueryPlan & plan, bool is_plan_before)
-            {
-                WriteBufferFromOwnString wb;
-                plan.explainPlan(wb, ExplainPlanOptions{});
-                LOG_DEBUG(getLogger("optimizeTree"), "The plan {}:\n{}", (is_plan_before ? "before" : "after"), wb.str());
-            };
-
-            dump_plan(query_plan, /*is_plan_before=*/true);
             query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(plan_with_parallel_replicas));
-            dump_plan(query_plan, /*is_plan_before=*/false);
         }
     }
     else

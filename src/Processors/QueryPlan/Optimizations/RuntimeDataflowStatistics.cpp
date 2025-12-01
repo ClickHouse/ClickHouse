@@ -97,6 +97,20 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
     dataflow_cache.update(*cache_key, res);
 }
 
+/// Tries to estimate compressed size of a column by serializing a sample of it.
+static std::pair<size_t, size_t> getCompressedColumnSize(const ColumnWithTypeAndName & column)
+{
+    NullWriteBuffer null_buf;
+    CompressedWriteBuffer compressed_buf(null_buf);
+    auto [serialization, _, column_to_write] = NativeWriter::getSerializationAndColumn(DBMS_TCP_PROTOCOL_VERSION, column);
+    // To avoid spending too much time on serialization, we limit the number of rows to serialize.
+    const auto limit = std::max<size_t>(std::min(8192ul, column_to_write->size()), column_to_write->size() / 10);
+    NativeWriter::writeData(*serialization, column_to_write, compressed_buf, std::nullopt, 0, limit, DBMS_TCP_PROTOCOL_VERSION);
+    compressed_buf.finalize();
+    // Return pair of (sample size, compressed size), note that both sizes are based on limited number of rows.
+    return std::make_pair(compressed_buf.count(), null_buf.count());
+}
+
 void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chunk, const Block & header)
 {
     if (!cache_key)
@@ -136,6 +150,8 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(Aggregat
 
     Stopwatch watch;
 
+    /// We want to avoid situations when there is a single very large state (think of `SELECT uniqExact(col) FROM t`).
+    /// Then we will spend a lot of time serializing it, and the overhead will be too high.
     if (variant.type == AggregatedDataVariants::Type::without_key
         && std::ranges::any_of(
             variant.aggregator->getParams().aggregates, [](auto agg_func) { return !agg_func.function->hasTrivialDestructor(); }))
@@ -161,7 +177,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(const Aggr
 
     Stopwatch watch;
 
-    auto getKeyColumnsSize = [&](bool compress)
+    auto get_key_column_sizes = [&](bool compress)
     {
         size_t sample_bytes = 0;
         size_t compressed_bytes = 0;
@@ -184,13 +200,13 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(const Aggr
         return std::make_pair(sample_bytes, compressed_bytes);
     };
 
-    const auto block_bytes = getKeyColumnsSize(/*compressed=*/false).first;
+    const auto block_bytes = get_key_column_sizes(/*compressed=*/false).first;
     size_t sample_bytes = 0;
     size_t compressed_bytes = 0;
     auto & statistics = output_bytes_statistics[OutputStatisticsType::AggregationKeys];
     const auto counter = statistics.counter.fetch_add(1, std::memory_order_relaxed);
     if (block.rows() && counter % 50 == 0 && counter < 150)
-        std::tie(sample_bytes, compressed_bytes) = getKeyColumnsSize(/*compressed=*/true);
+        std::tie(sample_bytes, compressed_bytes) = get_key_column_sizes(/*compressed=*/true);
 
     std::lock_guard lock(statistics.mutex);
     statistics.bytes += block_bytes;
@@ -226,22 +242,14 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
         {
             if (!column_sizes.contains(column.name))
                 continue;
-            statistics.sample_bytes += column_sizes.at(column.name).data_uncompressed;
-            statistics.compressed_bytes += column_sizes.at(column.name).data_compressed;
+            const auto compressed_ratio = column_sizes.at(column.name).data_uncompressed
+                ? (column_sizes.at(column.name).data_compressed / static_cast<double>(column_sizes.at(column.name).data_uncompressed))
+                : 1.0;
+            statistics.sample_bytes += column.column->byteSize();
+            statistics.compressed_bytes += static_cast<size_t>(column.column->byteSize() * compressed_ratio);
         }
     }
     statistics.elapsed_microseconds += watch.elapsedMicroseconds();
-}
-
-std::pair<size_t, size_t> RuntimeDataflowStatisticsCacheUpdater::getCompressedColumnSize(const ColumnWithTypeAndName & column)
-{
-    NullWriteBuffer null_buf;
-    CompressedWriteBuffer compressed_buf(null_buf);
-    auto [serialization, _, column_to_write] = NativeWriter::getSerializationAndColumn(DBMS_TCP_PROTOCOL_VERSION, column);
-    const auto limit = std::max<size_t>(std::min(8192ul, column_to_write->size()), column_to_write->size() / 10);
-    NativeWriter::writeData(*serialization, column_to_write, compressed_buf, std::nullopt, 0, limit, DBMS_TCP_PROTOCOL_VERSION);
-    compressed_buf.finalize();
-    return std::make_pair(compressed_buf.count(), null_buf.count());
 }
 
 RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache()

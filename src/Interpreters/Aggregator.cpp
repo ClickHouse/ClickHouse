@@ -189,18 +189,20 @@ namespace DB
 
 size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result, ssize_t bucket) const
 {
-    size_t res = 0;
-
-    auto serialize_states = [&](auto & table)
+    auto estimate_size_of_compressed_state = [&](auto & table)
     {
+        size_t res = 0;
         for (size_t j = 0; j < params.aggregates_size; ++j)
         {
+            /// We only interested in the size of compressed state, not the serialized representation itself.
             NullWriteBuffer wb;
             CompressedWriteBuffer wbuf(wb);
-            size_t it = 0;
+
             /// In single-level case (bucket == -1) we need to choose smaller sampling periods, because we have only one hash table.
-            /// In two-level case we sample across 256 buckets, so we can use larger period.
+            /// In two-level case we sample across 256 buckets, so we can use a larger period.
             const auto period = bucket == -1 ? std::min<size_t>(std::max<size_t>(table.size() / 100, 1), 100) : 100;
+
+            size_t it = 0;
             table.forEachMapped(
                 [&](AggregateDataPtr place)
                 {
@@ -210,12 +212,14 @@ size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result
                         is_simple_count ? writeVarUInt(getInlineCountState(place), wb)
                                         : aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], wb);
                     }
+                    /// A hundred samples should be enough to get a good estimate.
                     return it < 100 * period;
                 });
+
             wbuf.finalize();
-            if (it)
-                res += static_cast<size_t>(table.size() * wb.count() / ((it + period - 1) / period));
+            res += it ? static_cast<size_t>(table.size() * wb.count() / ((it + period - 1) / period)) : 0;
         }
+        return res;
     };
 
     if (result.type == AggregatedDataVariants::Type::EMPTY)
@@ -227,6 +231,7 @@ size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result
         if (!result.without_key)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty without_key data passed to Aggregator::applyToAllStates");
 
+        size_t res = 0;
         for (size_t j = 0; j < params.aggregates_size; ++j)
         {
             NullWriteBuffer wb;
@@ -236,12 +241,13 @@ size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result
             wbuf.finalize();
             res += wb.count();
         }
+        return res;
     }
 
 #define M(NAME) \
     else if (result.type == AggregatedDataVariants::Type::NAME) \
     { \
-        serialize_states(result.NAME->data); \
+        return estimate_size_of_compressed_state(result.NAME->data); \
     }
 
     APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
@@ -251,15 +257,15 @@ size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result
     else if (result.type == AggregatedDataVariants::Type::NAME) \
     { \
         if (bucket >= 0) \
-            serialize_states(result.NAME->data.impls[bucket]); \
+            return estimate_size_of_compressed_state(result.NAME->data.impls[bucket]); \
         else \
-            serialize_states(result.NAME->data); \
+            return estimate_size_of_compressed_state(result.NAME->data); \
     }
 
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 #undef M
 
-    return res;
+    UNREACHABLE();
 }
 
 Block Aggregator::getHeader(bool final) const

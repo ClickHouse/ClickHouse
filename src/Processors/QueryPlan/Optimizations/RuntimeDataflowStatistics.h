@@ -82,8 +82,6 @@ public:
     void recordInputColumns(const ColumnsWithTypeAndName & columns, const ColumnSizeByName & column_sizes, size_t read_bytes = 0);
 
 private:
-    std::pair<size_t, size_t> getCompressedColumnSize(const ColumnWithTypeAndName & column);
-
     std::optional<size_t> cache_key;
 
     std::atomic_bool unsupported_case{false};
