@@ -49,7 +49,7 @@ WHERE id = {id: UInt32}
 AND name = {name: String};
 ```
 
-Query parameters are particularly useful when the same query needs to be executed multiple times with different values, or when building dynamic queries programmatically.
+Query parameters are particularly useful when the same query needs to be executed multiple times with different values.
 
 For more detailed information about query parameters, including usage with the `Identifier` type, see [Defining and Using Query Parameters](../../sql-reference/syntax.md#defining-and-using-query-parameters).
 
