@@ -297,17 +297,16 @@ void StatementGenerator::generateHotTableSettingsValues(RandomGenerator & rg, co
 
     for (size_t i = 0; i < nsets; i++)
     {
+        /// During table creating enable settings if so
         const String & next = fc.hot_table_settings[this->ids[i]];
         SetValue * sv = vals->has_set_value() ? vals->add_other_values() : vals->mutable_set_value();
+        const auto & sett = allTableSettings.at(MergeTree).at(next);
+        const auto & ov = sett.oracle_values;
 
         sv->set_property(next);
         sv->set_value(
-            ((create
-              && (startsWith(next, "add_") || startsWith(next, "allow_") || startsWith(next, "index_") || startsWith(next, "enable_")
-                  || startsWith(next, "ttl_")))
-             || rg.nextBool())
-                ? "1"
-                : "0");
+            (create && ov.contains("0")) ? "1"
+                                         : ((ov.empty() || rg.nextSmallNumber() < 4) ? sett.random_func(rg, fc) : rg.pickRandomly(ov)));
     }
     this->ids.clear();
 }
