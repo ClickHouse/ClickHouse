@@ -46,6 +46,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_optimize_join_order_limit", 1, 10, "Allow JOIN reordering with more tables by default"},
             {"iceberg_insert_max_partitions", 100, 100, "New setting."},
             {"use_paimon_partition_pruning", false, false, "New setting."},
+            {"use_skip_indexes_for_disjunctions", false, true, "New setting"},
             {"allow_statistics_optimize", false, true, "Enable this optimization by default."},
             {"allow_statistic_optimize", false, true, "Enable this optimization by default."},
             {"query_plan_text_index_add_hint", true, true, "New setting"},
@@ -57,6 +58,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"delta_lake_snapshot_end_version", -1, -1, "New setting."},
             {"allow_experimental_export_merge_tree_part", false, false, "New setting."},
             {"export_merge_tree_part_file_already_exists_policy", MergeTreePartExportFileAlreadyExistsPolicy::skip, MergeTreePartExportFileAlreadyExistsPolicy::skip, "New setting."},
+            {"optimize_inverse_dictionary_lookup", false, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
@@ -972,6 +974,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "25.12",
         {
             {"alter_column_secondary_index_mode", "compatibility", "rebuild", "Change the behaviour to allow ALTER `column` when they have dependent secondary indices"},
+            {"nullable_serialization_version", "basic", "basic", "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.11",
         {

@@ -93,6 +93,7 @@ namespace KafkaSetting
     extern const KafkaSettingsString kafka_broker_list;
     extern const KafkaSettingsString kafka_client_id;
     extern const KafkaSettingsMilliseconds kafka_flush_interval_ms;
+    extern const KafkaSettingsMilliseconds kafka_consumer_reschedule_ms;
     extern const KafkaSettingsString kafka_format;
     extern const KafkaSettingsString kafka_group_name;
     extern const KafkaSettingsStreamingHandleErrorMode kafka_handle_error_mode;
@@ -158,6 +159,7 @@ StorageKafka2::StorageKafka2(
     , collection_name(collection_name_)
     , active_node_identifier(toString(ServerUUID::get()))
 {
+    kafka_settings->sanityCheck(getContext());
     if ((*kafka_settings)[KafkaSetting::kafka_num_consumers] > 1 && !thread_per_consumer)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "With multiple consumers, it is required to use `kafka_thread_per_consumer` setting");
 
@@ -1018,7 +1020,10 @@ void StorageKafka2::threadFunc(size_t idx)
                 // Exit the loop & reschedule if some stream stalled
                 if (maybe_stall_reason = streamToViews(idx); maybe_stall_reason.has_value())
                 {
-                    LOG_TRACE(log, "Stream stalled.");
+                    LOG_TRACE(
+                        log,
+                        "Stream stalled. Rescheduling in {} ms",
+                        (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds());
                     break;
                 }
 
@@ -1026,7 +1031,10 @@ void StorageKafka2::threadFunc(size_t idx)
                 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts - start_time);
                 if (duration.count() > KAFKA_MAX_THREAD_WORK_DURATION_MS)
                 {
-                    LOG_TRACE(log, "Thread work duration limit exceeded. Reschedule.");
+                    LOG_TRACE(
+                        log,
+                        "Thread work duration limit exceeded. Rescheduling in {} ms",
+                        (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds());
                     break;
                 }
             }
@@ -1039,10 +1047,11 @@ void StorageKafka2::threadFunc(size_t idx)
 
     if (!task->stream_cancelled)
     {
+        UInt64 kafka_consumer_reschedule_ms = (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds();
         if (maybe_stall_reason.has_value() && *maybe_stall_reason == StallKind::ShortStall)
-            task->holder->scheduleAfter(KAFKA_RESCHEDULE_MS / 10);
+            task->holder->scheduleAfter(kafka_consumer_reschedule_ms / 10);
         else
-            task->holder->scheduleAfter(KAFKA_RESCHEDULE_MS);
+            task->holder->scheduleAfter(kafka_consumer_reschedule_ms);
     }
 }
 

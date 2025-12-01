@@ -23,6 +23,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
+#include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -392,6 +393,8 @@ public:
     IndexPtr loadIndexToCache(PrimaryIndexCache & index_cache) const;
     void moveIndexToCache(PrimaryIndexCache & index_cache);
     void removeIndexFromCache(PrimaryIndexCache * index_cache) const;
+
+    void removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const;
 
     void setIndex(Columns index_columns);
     void unloadIndex();
