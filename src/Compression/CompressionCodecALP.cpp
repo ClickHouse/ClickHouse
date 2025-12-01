@@ -107,9 +107,9 @@ constexpr size_t ALP_MAX_FLOATS_IN_BLOCK = 1024; // 2 << 15;
 
 constexpr double ALP_COMPRESSION_THRESHOLD = 0.9;
 
-constexpr size_t PARAMS_ESTIMATIONS_SAMPLES = 8;
-constexpr size_t PARAMS_ESTIMATIONS_SAMPLE_FLOATS = 32;
-constexpr size_t PARAMS_ESTIMATIONS_CANDIDATES = 5;
+constexpr UInt32 PARAMS_ESTIMATIONS_SAMPLES = 8;
+constexpr UInt32 PARAMS_ESTIMATIONS_SAMPLE_FLOATS = 32;
+constexpr UInt32 PARAMS_ESTIMATIONS_CANDIDATES = 5;
 
 template <typename T, UInt32 N, bool inverse>
 requires std::is_floating_point_v<T>
@@ -156,7 +156,7 @@ requires std::is_floating_point_v<T>
 class ALPCodec
 {
 protected:
-    static Int64 encode(T value, UInt8 magnitude_index, UInt8 fraction_index)
+    static Int64 encodeValue(T value, UInt8 magnitude_index, UInt8 fraction_index)
     {
         T multiplier = ALPCodecNumbers<T>::MAGNITUDES[magnitude_index] * ALPCodecNumbers<T>::FRACTIONS[fraction_index];
         T value_enc = value * multiplier;
@@ -172,7 +172,7 @@ protected:
         return static_cast<Int64>(value_enc);
     }
 
-    static T decode(Int64 value, UInt8 magnitude_index, UInt8 fraction_index)
+    static T decodeValue(Int64 value, UInt8 magnitude_index, UInt8 fraction_index)
     {
         auto magnitude = ALPCodecNumbers<T>::MAGNITUDES[fraction_index];
         auto fraction = ALPCodecNumbers<T>::FRACTIONS[magnitude_index];
@@ -198,13 +198,13 @@ public:
         assert(source_size % sizeof(T) == 0);
         UInt32 float_count = source_size / sizeof(T);
 
-        EncodingParams params = estimateParams(source, float_count);
+        estimateParamCandidates(source, float_count);
 
         while (float_count > 0)
         {
             const UInt32 floats_in_block = std::min<UInt32>(float_count, ALP_MAX_FLOATS_IN_BLOCK);
 
-            dest = encodeBlock(source, floats_in_block, dest, params);
+            dest = encodeBlock(source, floats_in_block, dest);
 
             source += floats_in_block * sizeof(T);
             float_count -= floats_in_block;
@@ -217,6 +217,7 @@ private:
     {
         UInt8 magnitude_index;
         UInt8 fraction_index;
+        size_t occurred_times;
     };
 
     struct EncodingException
@@ -225,16 +226,19 @@ private:
         T value;
     };
 
+    std::vector<EncodingParams> param_candidates;
     std::vector<Int64> block_encoded;
     std::vector<EncodingException> block_exceptions;
     Int64 block_encoded_min;
     Int64 block_encoded_max;
     size_t block_for_bit_width;
 
-    char * encodeBlock(const char * source, const UInt16 float_count, char * dest, const EncodingParams & params)
+    char * encodeBlock(const char * source, const UInt16 float_count, char * dest)
     {
         const char * source_start = source;
         const size_t uncompressed_block_size = float_count * sizeof(T);
+
+        const EncodingParams params = estimateParams(source, float_count);
 
         block_encoded.clear();
         block_exceptions.clear();
@@ -245,8 +249,8 @@ private:
         for (UInt16 i = 0; i < float_count; ++i, source += sizeof(T))
         {
             const T value = unalignedLoadLittleEndian<T>(source);
-            const Int64 value_enc = ALPCodec<T>::encode(value, params.magnitude_index, params.fraction_index);
-            const T value_dec = ALPCodec<T>::decode(value_enc, params.magnitude_index, params.fraction_index);
+            const Int64 value_enc = ALPCodec<T>::encodeValue(value, params.magnitude_index, params.fraction_index);
+            const T value_dec = ALPCodec<T>::decodeValue(value_enc, params.magnitude_index, params.fraction_index);
 
             if (likely(std::abs(value - value_dec) < std::numeric_limits<T>::epsilon()))
             {
@@ -324,25 +328,96 @@ private:
 
     EncodingParams estimateParams(const char * source, const UInt32 float_count)
     {
-        EncodingParams best_params{0, 0};
+        assert(param_candidates.size() > 0);
+
+        char * sample[PARAMS_ESTIMATIONS_SAMPLE_FLOATS * sizeof(T)];
+        const UInt32 sample_count = std::min<UInt32>(float_count, PARAMS_ESTIMATIONS_SAMPLE_FLOATS);
+        const UInt32 sample_step = std::max(float_count / sample_count, 1u);
+        for (UInt32 i = 0; i < sample_count; ++i)
+            unalignedStoreLittleEndian<T>(sample[i * sizeof(T)], unalignedLoadLittleEndian<T>(source + i * sample_step * sizeof(T)));
+
+        EncodingParams best_params = {0, 0, 0};
         size_t best_size = std::numeric_limits<size_t>::max();
+        uint worse_counter = 0;
 
-        for (int magnitude_index = static_cast<int>(ALPCodecNumbers<T>::MAGNITUDES.size()) - 1; magnitude_index >= 0; --magnitude_index)
+        for (const auto & params : param_candidates)
         {
-            for (int fraction_index = magnitude_index; fraction_index >= 0; --fraction_index)
-            {
-                const EncodingParams params{static_cast<UInt8>(magnitude_index), static_cast<UInt8>(fraction_index)};
-                const size_t estimated_size = estimateEncodingSize(source, std::min(float_count, 32u), params);
+            const size_t estimated_size = estimateEncodingSize(reinterpret_cast<char *>(sample), sample_count, params);
 
-                if (estimated_size < best_size)
-                {
-                    best_size = estimated_size;
-                    best_params = params;
-                }
+            if (estimated_size < best_size)
+            {
+                best_size = estimated_size;
+                best_params = params;
+                worse_counter = 0;
             }
+            else if (++worse_counter >= 2)
+                break;
         }
 
         return best_params;
+    }
+
+    void estimateParamCandidates(const char * source, const UInt32 float_count)
+    {
+        param_candidates.clear();
+
+        std::unordered_map<UInt16, EncodingParams> params_map;
+
+        size_t sample_step = float_count > PARAMS_ESTIMATIONS_SAMPLES * PARAMS_ESTIMATIONS_SAMPLE_FLOATS
+            ? (float_count - PARAMS_ESTIMATIONS_SAMPLES * PARAMS_ESTIMATIONS_SAMPLE_FLOATS) / PARAMS_ESTIMATIONS_SAMPLES
+            : PARAMS_ESTIMATIONS_SAMPLE_FLOATS;
+
+        for (UInt32 i = 0; i < PARAMS_ESTIMATIONS_SAMPLES; ++i)
+        {
+            const UInt32 sample_start_float = i * sample_step;
+            if (sample_start_float >= float_count)
+                break;
+
+            EncodingParams best_params{0, 0, 1};
+            size_t best_size = std::numeric_limits<size_t>::max();
+
+            const char * sample_start = source + sample_start_float * sizeof(T);
+            const UInt16 sample_float_count = std::min<UInt16>(PARAMS_ESTIMATIONS_SAMPLE_FLOATS, float_count - sample_start_float);
+
+            for (UInt8 magnitude_index = 0; magnitude_index < static_cast<UInt8>(ALPCodecNumbers<T>::MAGNITUDES.size()); ++magnitude_index)
+            {
+                for (UInt8 fraction_index = 0; fraction_index <= magnitude_index; ++fraction_index)
+                {
+                    const EncodingParams params{magnitude_index, fraction_index, 1};
+                    const size_t estimated_size = estimateEncodingSize(sample_start, sample_float_count, params);
+
+                    if (estimated_size < best_size)
+                    {
+                        best_size = estimated_size;
+                        best_params = params;
+                    }
+                }
+            }
+
+            const UInt16 key = (static_cast<UInt16>(best_params.magnitude_index) << 8) | static_cast<UInt16>(best_params.fraction_index);
+            auto it = params_map.find(key);
+            if (it != params_map.end())
+                it->second.occurred_times += 1;
+            else
+                params_map[key] = best_params;
+        }
+
+        for (const auto & [_, params] : params_map)
+            param_candidates.push_back(params);
+
+        std::sort(param_candidates.begin(), param_candidates.end(),
+            [](const EncodingParams & a, const EncodingParams & b)
+            {
+                if (a.occurred_times == b.occurred_times)
+                {
+                    if (a.magnitude_index == b.magnitude_index)
+                        return a.fraction_index < b.fraction_index;
+                    return a.magnitude_index < b.magnitude_index;
+                }
+                return a.occurred_times > b.occurred_times;
+            });
+
+        param_candidates.resize(std::min<size_t>(param_candidates.size(), PARAMS_ESTIMATIONS_CANDIDATES));
     }
 
     size_t estimateEncodingSize(const char * source, const UInt16 float_count, const EncodingParams & params)
@@ -354,8 +429,8 @@ private:
         for (const char * source_end = source + float_count; source < source_end; source += sizeof(T))
         {
             const T value = unalignedLoadLittleEndian<T>(source);
-            const Int64 value_enc = ALPCodec<T>::encode(value, params.magnitude_index, params.fraction_index);
-            const T value_dec = ALPCodec<T>::decode(value_enc, params.magnitude_index, params.fraction_index);
+            const Int64 value_enc = ALPCodec<T>::encodeValue(value, params.magnitude_index, params.fraction_index);
+            const T value_dec = ALPCodec<T>::decodeValue(value_enc, params.magnitude_index, params.fraction_index);
 
             if (likely(std::abs(value - value_dec) < std::numeric_limits<T>::epsilon()))
             {
@@ -493,7 +568,7 @@ private:
                 const UInt64 for_enc_value = bit_reader.readBits(for_bit_width);
                 const Int64 encoded_value = for_value + static_cast<Int64>(for_enc_value);
 
-                const T decoded_value = ALPCodec<T>::decode(encoded_value, magnitude_index, fraction_index);
+                const T decoded_value = ALPCodec<T>::decodeValue(encoded_value, magnitude_index, fraction_index);
                 unalignedStoreLittleEndian<T>(dest, decoded_value);
                 dest += sizeof(T);
                 --remaining_valid_floats;
