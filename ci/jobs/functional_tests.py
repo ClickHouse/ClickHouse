@@ -152,6 +152,7 @@ def main():
             or to.startswith("arm_")
             or "flaky" in to
             or "targeted" in to
+            or "llvm_coverage_build" in to
         ):
             pass
         elif to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:

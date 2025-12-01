@@ -452,9 +452,10 @@ class ArtifactConfigs:
         name="...",
         type=Artifact.Type.S3,
         path=[
-            f"./build/*.profraw",
-            f"./build/programs*.profraw",
-            f"./build/src/unit_tests_dbms/*.profraw",
+            f"./*.profraw",
+            # f"./build/*.profraw",
+            # f"./build/programs*.profraw",
+            # f"./build/src/unit_tests_dbms/*.profraw",
         ]
     ).parametrize(
         names=[
