@@ -557,9 +557,9 @@ SELECT dictGetKeys('task_id_to_priority_dictionary', 'priority_level', 'high') A
 │ [4,2] │
 └───────┘
     )"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Dictionary;
-    FunctionDocumentation docs{description, syntax, arguments, returned_value, {}, introduced_in, category};
+    FunctionDocumentation docs{description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionDictGetKeys>(docs);
 }
