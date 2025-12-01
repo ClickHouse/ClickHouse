@@ -240,8 +240,8 @@ private:
         if (function_node.type != ActionsDAG::ActionType::FUNCTION || !function_node.function || !function_node.function_base)
             return std::nullopt;
 
-        /// If function returns not UInt8 type, it is not a predicate and cannot be optimized by the text index.
-        if (!WhichDataType(function_node.result_type).isUInt8())
+        /// Skip if function is not a predicate. It doesn't make sense to analyze it.
+        if (!function_node.result_type->canBeUsedInBooleanContext())
             return std::nullopt;
 
         struct SelectedCondition
@@ -338,7 +338,8 @@ const ActionsDAG::Node * applyTextIndexDirectReadToDAG(
     LOG_DEBUG(logger, "{}", optimizationInfoToString(result.added_columns, result.removed_columns));
 
     const auto & indexes = read_from_merge_tree_step->getIndexes();
-    read_from_merge_tree_step->createReadTasksForTextIndex(indexes->skip_indexes, result.added_columns, result.removed_columns);
+    bool is_final = read_from_merge_tree_step->isQueryWithFinal();
+    read_from_merge_tree_step->createReadTasksForTextIndex(indexes->skip_indexes, result.added_columns, result.removed_columns, is_final);
     return result.filter_node;
 }
 

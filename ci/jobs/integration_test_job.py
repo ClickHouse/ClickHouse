@@ -235,8 +235,9 @@ def main():
             for file in changed_files:
                 if (
                     file.startswith("tests/integration/test")
+                    and Path(file).name.startswith("test_")
                     and file.endswith(".py")
-                    and not file.endswith("__init__.py")
+                    and Path(file).is_file()
                 ):
                     changed_test_modules.append(file.removeprefix("tests/integration/"))
 
@@ -339,11 +340,13 @@ def main():
 
     if parallel_test_modules:
         for attempt in range(module_repeat_cnt):
+            log_file = f"{temp_path}/pytest_parallel.log"
             test_result_parallel = Result.from_pytest_run(
-                command=f"{' '.join(reversed(parallel_test_modules))} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option}",
+                command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout=5400",
                 cwd="./tests/integration/",
                 env=test_env,
                 pytest_report_file=f"{temp_path}/pytest_parallel.jsonl",
+                logfile=log_file,
             )
             if is_flaky_check and not test_result_parallel.is_ok():
                 print(
@@ -363,11 +366,13 @@ def main():
     fail_num = len([r for r in test_results if not r.is_ok()])
     if sequential_test_modules and fail_num < MAX_FAILS_BEFORE_DROP and not has_error:
         for attempt in range(module_repeat_cnt):
+            log_file = f"{temp_path}/pytest_sequential.log"
             test_result_sequential = Result.from_pytest_run(
-                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile",
+                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout=5400",
                 env=test_env,
                 cwd="./tests/integration/",
                 pytest_report_file=f"{temp_path}/pytest_sequential.jsonl",
+                logfile=log_file,
             )
             if is_flaky_check and not test_result_sequential.is_ok():
                 print(
@@ -400,19 +405,22 @@ def main():
         for failed_suit in failed_suits:
             failed_tests_files.append(f"tests/integration/{failed_suit}")
 
-        files.append(
-            Utils.compress_files_gz(failed_tests_files, f"{temp_path}/logs.tar.gz")
-        )
-        files.append(
-            Utils.compress_files_gz(config_files, f"{temp_path}/configs.tar.gz")
-        )
+        if failed_suits:
+            files.append(
+                Utils.compress_files_gz(failed_tests_files, f"{temp_path}/logs.tar.gz")
+            )
+            files.append(
+                Utils.compress_files_gz(config_files, f"{temp_path}/configs.tar.gz")
+            )
+            if Path("./ci/tmp/docker-in-docker.log").exists():
+                files.append("./ci/tmp/docker-in-docker.log")
 
     # Rerun failed tests if any to check if failure is reproducible
     if 0 < len(failed_test_cases) < 10 and not (
         is_flaky_check or is_bugfix_validation or is_targeted_check or info.is_local_run
     ):
         test_result_retries = Result.from_pytest_run(
-            command=f"{' '.join(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile",
+            command=f"{' '.join(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=1200",
             env=test_env,
             cwd="./tests/integration/",
             pytest_report_file=f"{temp_path}/pytest_retries.jsonl",

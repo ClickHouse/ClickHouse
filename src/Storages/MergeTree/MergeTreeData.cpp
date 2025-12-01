@@ -38,7 +38,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/hasNullable.h>
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
@@ -283,6 +283,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
+    extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsUInt32 min_level_for_wide_part;
 }
 
@@ -8537,6 +8538,7 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
         false,
         settings[MergeTreeSetting::serialization_info_version],
         settings[MergeTreeSetting::string_serialization_version],
+        settings[MergeTreeSetting::nullable_serialization_version],
     };
 
     for (const auto & column : columns_list)
@@ -9945,6 +9947,7 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
         true,
         (*getSettings())[MergeTreeSetting::serialization_info_version],
         (*getSettings())[MergeTreeSetting::string_serialization_version],
+        (*getSettings())[MergeTreeSetting::nullable_serialization_version],
     };
 
     const auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -10160,6 +10163,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         false,
         (*settings)[MergeTreeSetting::serialization_info_version],
         (*settings)[MergeTreeSetting::string_serialization_version],
+        (*settings)[MergeTreeSetting::nullable_serialization_version],
     };
 
     new_data_part->setColumns(columns, SerializationInfoByName{info_settings}, metadata_snapshot->getMetadataVersion());
@@ -10346,7 +10350,7 @@ size_t MergeTreeData::NamesAndTypesListHash::operator()(const NamesAndTypesList 
 {
     size_t hash = 0;
     for (const auto & name_type : list)
-        boost::hash_combine(hash, StringRefHash{}(std::string_view(name_type.name)));
+        boost::hash_combine(hash, StringViewHash{}(name_type.name));
     return hash;
 }
 
