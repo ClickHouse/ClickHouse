@@ -537,10 +537,11 @@ SinkToStoragePtr StorageObjectStorage::write(
     return std::make_shared<StorageObjectStorageSink>(
         paths.back().path,
         object_storage,
-        configuration,
         format_settings,
         sample_block,
-        local_context);
+        local_context,
+        configuration->format,
+        configuration->compression_method);
 }
 
 bool StorageObjectStorage::optimize(
@@ -597,10 +598,11 @@ SinkToStoragePtr StorageObjectStorage::import(
     return std::make_shared<StorageObjectStorageSink>(
         destination_file_path,
         object_storage,
-        configuration,
         format_settings_ ? format_settings_ : format_settings,
         std::make_shared<const Block>(getInMemoryMetadataPtr()->getSampleBlock()),
-        local_context);
+        local_context,
+        configuration->format,
+        configuration->compression_method); 
 }
 
 void StorageObjectStorage::truncate(
