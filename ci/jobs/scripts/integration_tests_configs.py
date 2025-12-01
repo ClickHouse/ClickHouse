@@ -25,11 +25,9 @@ TEST_CONFIGS = [
     # TC("test_ddl_worker_non_leader/", True, "no idea why i'm sequential"),
     # TC("test_delayed_replica_failover/", True, "no idea why i'm sequential"),
     # TC("test_disabled_mysql_server/", True, "no idea why i'm sequential"),
-
     # 1
     # TC("test_system_metrics/", True, "no idea why i'm sequential"),
     # TC("test_ttl_move/", True, "no idea why i'm sequential"),
-
     # TC(
     #     "test_zookeeper_config_load_balancing/",
     #     True,
@@ -47,13 +45,10 @@ TEST_CONFIGS = [
     #     True,
     #     "no idea why i'm sequential",
     # ),
-
     # 2
-
     # TC("test_distributed_respect_user_timeouts/", True, "no idea why i'm sequential"),
     # TC("test_limited_replicated_fetches/", True, "no idea why i'm sequential"),
     # TC("test_parts_delete_zookeeper/", True, "no idea why i'm sequential"),
-
     # TC("test_insert_into_distributed/", True, "no idea why i'm sequential"),
     # TC(
     #     "test_insert_into_distributed_through_materialized_view/",
@@ -65,11 +60,9 @@ TEST_CONFIGS = [
     #     True,
     #     "no idea why i'm sequential",
     # ),
-
     # 3 not a problem
     # TC("test_quorum_inserts_parallel/", True, "no idea why i'm sequential"),
     # TC("test_storage_s3/", True, "no idea why i'm sequential"),
-
     # Sequential
     TC("test_crash_log/", True, "no idea why i'm sequential"),
     TC(
