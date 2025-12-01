@@ -50,6 +50,7 @@ add_contrib (grpc-cmake grpc)
 add_contrib (llvm-project-cmake llvm-project)
 enable_dummy_launchers_if_needed()
 
+add_contrib (fsst-cmake fsst)
 add_contrib (miniselect-cmake miniselect)
 add_contrib (pdqsort-cmake pdqsort)
 add_contrib (pocketfft-cmake pocketfft)
