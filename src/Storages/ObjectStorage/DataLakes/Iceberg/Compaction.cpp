@@ -113,7 +113,7 @@ Plan getPlan(
     const DataLakeStorageSettings & data_lake_settings,
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage,
-    String write_format,
+    const String & write_format,
     ContextPtr context,
     CompressionMethod compression_method)
 {
@@ -231,7 +231,7 @@ static void writeDataFiles(
     ObjectStoragePtr object_storage,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context,
-    String write_format,
+    const String & write_format,
     CompressionMethod write_compression_method)
 {
     for (auto & [_, data_file] : initial_plan.path_to_data_file)
@@ -514,7 +514,7 @@ void compactIcebergTable(
     const std::optional<FormatSettings> & format_settings_,
     SharedHeader sample_block_,
     ContextPtr context_,
-    String write_format)
+    const String & write_format)
 {
     auto plan = getPlan(
         std::move(snapshots_info),

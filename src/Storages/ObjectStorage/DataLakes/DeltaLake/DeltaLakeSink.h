@@ -29,8 +29,8 @@ public:
         ContextPtr context_,
         SharedHeader sample_block_,
         const std::optional<FormatSettings> & format_settings_,
-        String format,
-        String compression_method);
+        const String & format,
+        const String & compression_method);
 
     ~DeltaLakeSink() override = default;
 

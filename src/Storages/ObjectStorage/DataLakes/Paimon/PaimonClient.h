@@ -300,7 +300,7 @@ struct PaimonManifest
 class PaimonTableClient : private WithContext
 {
 public:
-    PaimonTableClient(ObjectStoragePtr object_storage_, String table_location_, const DB::ContextPtr & context_);
+    PaimonTableClient(ObjectStoragePtr object_storage_, const String & table_location_, const DB::ContextPtr & context_);
 
     Poco::JSON::Object::Ptr getTableSchemaJSON(const std::pair<Int32, String> & schema_meta_info);
     std::pair<Int32, String> getLastestTableSchemaInfo();

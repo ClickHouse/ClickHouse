@@ -538,11 +538,11 @@ void mutate(
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
     PersistentTableComponents & persistent_table_components,
-    String write_format,
+    const String & write_format,
     const std::optional<FormatSettings> & format_settings,
     std::shared_ptr<DataLake::ICatalog> catalog,
-    const String& blob_storage_type_name,
-    const String& blob_storage_namespace_name)
+    const String & blob_storage_type_name,
+    const String & blob_storage_namespace_name)
 {
     auto common_path = persistent_table_components.table_path;
     if (!common_path.starts_with('/'))
@@ -674,7 +674,7 @@ void alter(
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
     PersistentTableComponents & persistent_table_components,
-    String write_format)
+    const String & write_format)
 {
     if (params.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Params with size 1 is not supported");

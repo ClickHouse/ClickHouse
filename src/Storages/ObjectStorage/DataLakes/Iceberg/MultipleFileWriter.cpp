@@ -18,7 +18,7 @@ MultipleFileWriter::MultipleFileWriter(
     ObjectStoragePtr object_storage_,
     ContextPtr context_,
     const std::optional<FormatSettings> & format_settings_,
-    String write_format_,
+    const String & write_format_,
     SharedHeader sample_block_)
     : max_data_file_num_rows(max_data_file_num_rows_)
     , max_data_file_num_bytes(max_data_file_num_bytes_)

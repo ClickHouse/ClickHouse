@@ -56,8 +56,8 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     const std::optional<FormatSettings> & format_settings_,
     SharedHeader sample_block_,
     ContextPtr context,
-    String format,
-    String compression_method)
+    const String & format,
+    const String & compression_method)
     : SinkToStorage(sample_block_)
     , path(path_)
     , sample_block(sample_block_)

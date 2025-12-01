@@ -15,8 +15,8 @@ public:
         const std::optional<FormatSettings> & format_settings_,
         SharedHeader sample_block_,
         ContextPtr context,
-        String format,
-        String compression_method);
+        const String & format,
+        const String & compression_method);
 
     ~StorageObjectStorageSink() override;
 

@@ -37,8 +37,8 @@ public:
         ContextPtr context_,
         SharedHeader sample_block_,
         const std::optional<FormatSettings> & format_settings_,
-        String write_format_,
-        String write_compression_method_);
+        const String & write_format_,
+        const String & write_compression_method_);
 
     ~DeltaLakePartitionedSink() override = default;
 
@@ -76,8 +76,8 @@ private:
     const size_t data_file_max_bytes;
     const std::unique_ptr<IPartitionStrategy> partition_strategy;
     const DeltaLake::WriteTransactionPtr delta_transaction;
-    String write_format;
-    String write_compression_method;
+    const String write_format;
+    const String write_compression_method;
 
     absl::flat_hash_map<std::string_view, PartitionInfoPtr> partitions_data;
     size_t total_data_files_count = 0;

@@ -400,7 +400,7 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     const ContextPtr & local_context,
     LoggerPtr log,
     CompressionMethod compression_method,
-    std::optional<String> table_uuid)
+    const std::optional<String> & table_uuid)
 {
     auto create_fn = [&]()
     {
@@ -972,7 +972,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     IcebergMetadataFilesCachePtr metadata_cache,
     const ContextPtr & local_context,
     Poco::Logger * log,
-    std::optional<String> table_uuid)
+    const std::optional<String> & table_uuid)
 {
     if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
     {

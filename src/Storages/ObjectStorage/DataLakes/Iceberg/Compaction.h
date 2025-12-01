@@ -19,7 +19,7 @@ void compactIcebergTable(
     const std::optional<DB::FormatSettings> & format_settings_,
     DB::SharedHeader sample_block_,
     DB::ContextPtr context_,
-    String write_format);
+    const String & write_format);
 
 #endif
 }

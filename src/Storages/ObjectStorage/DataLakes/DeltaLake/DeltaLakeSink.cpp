@@ -23,8 +23,8 @@ DeltaLakeSink::DeltaLakeSink(
     ContextPtr context_,
     SharedHeader sample_block_,
     const std::optional<FormatSettings> & format_settings_,
-    String format,
-    String compression_method)
+    const String & format,
+    const String & compression_method)
     : SinkToStorage(sample_block_)
     , WithContext(context_)
     , delta_transaction(delta_transaction_)

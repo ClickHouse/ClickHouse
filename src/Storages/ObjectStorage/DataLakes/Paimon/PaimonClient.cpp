@@ -48,7 +48,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int FILE_DOESNT_EXIST;
-extern const int LOGICAL_ERROR;
 extern const int CANNOT_PARSE_NUMBER;
 }
 
@@ -92,7 +91,7 @@ PaimonSnapshot::PaimonSnapshot(const Poco::JSON::Object::Ptr & json_object)
     }
 }
 
-PaimonTableClient::PaimonTableClient(ObjectStoragePtr object_storage_, String table_location_, const DB::ContextPtr & context_)
+PaimonTableClient::PaimonTableClient(ObjectStoragePtr object_storage_, const String & table_location_, const DB::ContextPtr & context_)
     : WithContext(context_)
     , object_storage(object_storage_)
     , table_location(table_location_)

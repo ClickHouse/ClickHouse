@@ -56,7 +56,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
-extern const int LOGICAL_ERROR;
 }
 
 namespace Setting

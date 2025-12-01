@@ -339,7 +339,6 @@ IcebergMetadata::getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object,
     return createIcebergDataSnapshotFromSnapshotJSON(object, snapshot_id, local_context);
 }
 
-
 bool IcebergMetadata::optimize(
     const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings)
 {
@@ -482,7 +481,6 @@ std::shared_ptr<const ActionsDAG> IcebergMetadata::getSchemaTransformer(ContextP
         : nullptr;
 }
 
-
 void IcebergMetadata::mutate(
     const MutationCommands & commands,
     StorageObjectStorageConfigurationPtr configuration,
@@ -545,8 +543,6 @@ void IcebergMetadata::alter(const AlterCommands & params, ContextPtr context)
 
     Iceberg::alter(params, context, object_storage, data_lake_settings, persistent_components, write_format);
 }
-
-
 
 void IcebergMetadata::createInitial(
     const ObjectStoragePtr & object_storage,
@@ -633,7 +629,6 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
     return createIcebergDataSnapshotFromSnapshotJSON(snapshot_object, *table_state_snapshot.snapshot_id, local_context);
 }
 
-
 DataLakeMetadataPtr IcebergMetadata::create(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationWeakPtr & configuration,
@@ -703,7 +698,6 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
         }
     }
 
-
     for (size_t i = 0; i < snapshots->size(); ++i)
     {
         IcebergHistoryRecord history_record;
@@ -749,7 +743,6 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
 
     return iceberg_history;
 }
-
 
 bool IcebergMetadata::isDataSortedBySortingKey(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const
 {
@@ -832,7 +825,6 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
     ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
     return result;
 }
-
 
 std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) const
 {

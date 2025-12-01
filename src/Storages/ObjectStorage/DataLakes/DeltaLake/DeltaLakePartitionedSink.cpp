@@ -73,8 +73,8 @@ DeltaLakePartitionedSink::DeltaLakePartitionedSink(
     ContextPtr context_,
     SharedHeader sample_block_,
     const std::optional<FormatSettings> & format_settings_,
-    String write_format_,
-    String write_compression_method_)
+    const String & write_format_,
+    const String & write_compression_method_)
     : SinkToStorage(sample_block_)
     , WithContext(context_)
     , log(getLogger("DeltaLakePartitionedSink"))
