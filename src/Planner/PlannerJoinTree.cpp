@@ -125,6 +125,7 @@ namespace Setting
     extern const SettingsBoolAuto query_plan_join_swap_table;
     extern const SettingsUInt64 min_joined_block_size_rows;
     extern const SettingsUInt64 min_joined_block_size_bytes;
+    extern const SettingsBool parallel_replicas_for_queries_with_multiple_tables;
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool query_plan_display_internal_aliases;
     extern const SettingsBool enable_lazy_columns_replication;
@@ -1347,6 +1348,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 subquery_planner_context = planner_context->getGlobalPlannerContext();
 
             auto subquery_options = select_query_options.subquery();
+
+            if (query_node)
+            {
+                query_node->getMutableContext() = planner_context->getMutableQueryContext();
+            }
+
             Planner subquery_planner(table_expression, subquery_options, subquery_planner_context);
             /// Propagate storage limits to subquery
             subquery_planner.addStorageLimits(*select_query_info.storage_limits);
@@ -2499,6 +2506,13 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         prepareBuildQueryPlanForTableExpression(table_expression, planner_context);
     }
 
+    const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+    if (!settings[Setting::parallel_replicas_for_queries_with_multiple_tables] && table_expressions_stack_size > 1)
+    {
+        LOG_DEBUG(getLogger("Planner"), "Disable parallel replicas due to enabled parallel_replicas_for_queries_with_multiple_tables setting");
+        planner_context->getMutableQueryContext()->setSetting("enable_parallel_replicas", Field{0});
+    }
+
     auto should_disable_parallel_replicas = [&]() -> bool
     {
         /// n-way join like LEFT/INNER ... RIGHT ...
@@ -2518,7 +2532,6 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
 
     if (should_disable_parallel_replicas())
         planner_context->getMutableQueryContext()->setSetting("enable_parallel_replicas", Field{0});
-
 
     // in case of n-way JOINs the table expression stack contains several join nodes
     // so, we need to find right parent node for a table expression to pass into buildQueryPlanForTableExpression()
