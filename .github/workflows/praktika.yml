@@ -10,7 +10,7 @@ on:
 
 jobs:
   build_praktika:
-    runs-on: [self-hosted, amd-mini]
+    runs-on: [self-hosted, test]
 
     steps:
       - name: Checkout
