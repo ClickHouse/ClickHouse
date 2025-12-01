@@ -1896,9 +1896,9 @@ void ColumnObject::validateDynamicPathsAndSharedData(size_t shared_data_offset) 
     size_t shared_data_paths_end = shared_data_offsets.back();
     for (size_t i = shared_data_paths_start; i != shared_data_paths_end; ++i)
     {
-        auto path = shared_data_paths->getDataAt(i);
+        auto path = shared_data_paths->getDataAt(i).toView();
         if (dynamic_paths.contains(path))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is present both in dynamic paths and in shared data", path.toString());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is present both in dynamic paths and in shared data", path);
     }
 }
 
