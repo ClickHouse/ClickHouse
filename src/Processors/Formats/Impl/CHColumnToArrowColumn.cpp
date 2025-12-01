@@ -322,7 +322,7 @@ namespace DB
         std::shared_ptr<arrow::Array> type_ids_array;
         status = type_ids_builder.Finish(&type_ids_array);
         checkStatus(status, "type_ids", format_name);
-        
+
         if (contains_nulls)
             children.push_back(std::make_shared<arrow::NullArray>(1));
 
