@@ -1,6 +1,7 @@
 # docker build -t clickhouse/binary-builder .
 ARG FROM_TAG
 FROM clickhouse/fasttest:$FROM_TAG
+ARG TARGETARCH
 ENV CC=clang-${LLVM_VERSION}
 ENV CXX=clang++-${LLVM_VERSION}
 
@@ -15,14 +16,12 @@ COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
   \
   /etc/ssl/
 
-# A cross-linker for RISC-V 64 (we need it, because LLVM's LLD does not work):
 RUN apt-get update \
     && apt-get install software-properties-common --yes --no-install-recommends --verbose-versions
 
 RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && apt-get update \
     && apt-get install --yes \
-        binutils-riscv64-linux-gnu \
         build-essential \
         python3-boto3 \
         yasm \
@@ -32,8 +31,14 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-# Download and install mold 2.0 for s390x build
-RUN curl -Lo /tmp/mold.tar.gz "https://github.com/rui314/mold/releases/download/v2.0.0/mold-2.0.0-x86_64-linux.tar.gz" \
+# Download and install mold for s390x build
+ARG MOLD_VERSION=2.40.4
+RUN arch=${TARGETARCH:-amd64} \
+    && case $arch in \
+        amd64) rarch=x86_64 ;; \
+        arm64) rarch=aarch64 ;; \
+    esac \
+    && curl -Lo /tmp/mold.tar.gz "https://github.com/rui314/mold/releases/download/v${MOLD_VERSION}/mold-${MOLD_VERSION}-${rarch}-linux.tar.gz" \
     && mkdir /tmp/mold \
     && tar -xzf /tmp/mold.tar.gz -C /tmp/mold \
     && cp -r /tmp/mold/mold*/* /usr \
@@ -41,9 +46,7 @@ RUN curl -Lo /tmp/mold.tar.gz "https://github.com/rui314/mold/releases/download/
     && rm /tmp/mold.tar.gz
 
 # Architecture of the image when BuildKit/buildx is used
-ARG TARGETARCH
 ARG NFPM_VERSION=2.20.0
-
 RUN arch=${TARGETARCH:-amd64} \
     && curl -Lo /tmp/nfpm.deb "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${arch}.deb" \
     && dpkg -i /tmp/nfpm.deb \

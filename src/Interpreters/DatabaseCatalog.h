@@ -35,7 +35,7 @@ class IDisk;
 
 using DatabasePtr = std::shared_ptr<IDatabase>;
 using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
-using Databases = std::map<String, std::shared_ptr<IDatabase>>;
+using Databases = std::map<String, std::shared_ptr<IDatabase>, std::less<>>;
 using DiskPtr = std::shared_ptr<IDisk>;
 using TableNamesSet = std::unordered_set<QualifiedTableName>;
 
@@ -185,11 +185,11 @@ public:
     void updateDatabaseName(const String & old_name, const String & new_name, const Strings & tables_in_database);
 
     /// database_name must be not empty
-    DatabasePtr getDatabase(const String & database_name) const;
-    DatabasePtr tryGetDatabase(const String & database_name) const;
+    DatabasePtr getDatabase(std::string_view database_name) const;
+    DatabasePtr tryGetDatabase(std::string_view database_name) const;
     DatabasePtr getDatabase(const UUID & uuid) const;
     DatabasePtr tryGetDatabase(const UUID & uuid) const;
-    bool isDatabaseExist(const String & database_name) const;
+    bool isDatabaseExist(std::string_view database_name) const;
     /// Datalake catalogs are implement at IDatabase level in ClickHouse.
     /// In general case Datalake catalog is a some remote service which contains iceberg/delta tables.
     /// Sometimes this service charges money for requests. With this flag we explicitly protect ourself

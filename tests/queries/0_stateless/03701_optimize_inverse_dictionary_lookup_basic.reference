@@ -1,0 +1,405 @@
+Equality, LHS - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE __table1.color_id IN (SELECT __table1.id AS id
+FROM dictionary(\'colors\') AS __table1
+WHERE __table1.name = \'red\')
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+Equality, LHS
+1	a
+3	c
+Equality, RHS - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE __table1.color_id IN (SELECT __table1.id AS id
+FROM dictionary(\'colors\') AS __table1
+WHERE \'red\' = __table1.name)
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+Equality, RHS
+1	a
+3	c
+Inequality <, LHS - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE __table1.color_id IN (SELECT __table1.id AS id
+FROM dictionary(\'colors\') AS __table1
+WHERE __table1.n < 10)
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+Inequality <, LHS
+1	a
+2	b
+4	d
+5	R
+Inequality <, RHS - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE __table1.color_id IN (SELECT __table1.id AS id
+FROM dictionary(\'colors\') AS __table1
+WHERE 10 > __table1.n)
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+Inequality <, RHS
+1	a
+2	b
+4	d
+5	R
+Type variant cast, >= Int32 - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE __table1.color_id IN (SELECT __table1.id AS id
+FROM dictionary(\'colors\') AS __table1
+WHERE _CAST(__table1.n, \'Int32\') >= 2)
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+Type variant cast, >= Int32
+1	a
+2	b
+3	c
+5	R
+LIKE - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE __table1.color_id IN (SELECT __table1.id AS id
+FROM dictionary(\'colors\') AS __table1
+WHERE __table1.name LIKE \'r%\')
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+LIKE
+1	a
+3	c
+ILIKE - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE __table1.color_id IN (SELECT __table1.id AS id
+FROM dictionary(\'colors\') AS __table1
+WHERE __table1.name ILIKE \'r%\')
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+ILIKE
+1	a
+3	c
+5	R
+equals() - plan
+SELECT __table1.color_id AS color_id
+FROM default.t AS __table1
+WHERE __table1.color_id IN (SELECT __table1.id AS id
+FROM dictionary(\'colors\') AS __table1
+WHERE __table1.name = \'red\')
+ORDER BY __table1.color_id ASC
+equals()
+1
+3
+notEquals - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE __table1.color_id IN (SELECT __table1.id AS id
+FROM dictionary(\'colors\') AS __table1
+WHERE __table1.name != \'red\')
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+notEquals
+2	b
+4	d
+5	R
+NOT LIKE r% - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE __table1.color_id IN (SELECT __table1.id AS id
+FROM dictionary(\'colors\') AS __table1
+WHERE __table1.name NOT LIKE \'r%\')
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+NOT LIKE r%
+2	b
+4	d
+5	R
+NOT ILIKE r% - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE __table1.color_id IN (SELECT __table1.id AS id
+FROM dictionary(\'colors\') AS __table1
+WHERE __table1.name NOT ILIKE \'r%\')
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+NOT ILIKE r%
+2	b
+4	d
+match ^r - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE __table1.color_id IN (SELECT __table1.id AS id
+FROM dictionary(\'colors\') AS __table1
+WHERE match(__table1.name, \'^r\'))
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+match ^r
+1	a
+3	c
+NOT recursion - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE NOT (__table1.color_id IN (SELECT __table1.id AS id
+FROM dictionary(\'colors\') AS __table1
+WHERE __table1.name = \'red\'))
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+NOT recursion
+2	b
+4	d
+5	R
+AND/OR recursion - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE ((__table1.color_id IN (SELECT __table1.id AS id
+FROM dictionary(\'colors\') AS __table1
+WHERE __table1.name = \'red\')) AND (__table1.color_id IN (SELECT __table1.id AS id
+FROM dictionary(\'colors\') AS __table1
+WHERE __table1.n < 10))) OR (__table1.color_id IN (SELECT __table1.id AS id
+FROM dictionary(\'colors\') AS __table1
+WHERE __table1.name = \'green\'))
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+AND/OR recursion
+1	a
+4	d
+NULL constant - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+WHERE _CAST(NULL, \'Nullable(Nothing)\')
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+NULL constant
+PREWHERE - plan
+SELECT __table1.color_id AS color_id
+FROM default.t AS __table1
+PREWHERE __table1.color_id IN (SELECT __table1.id AS id
+FROM dictionary(\'colors\') AS __table1
+WHERE __table1.name = \'red\')
+ORDER BY __table1.color_id ASC
+PREWHERE
+1
+3
+QUALIFY - plan
+SELECT
+    __table1.color_id AS color_id,
+    row_number() OVER (PARTITION BY 1 ORDER BY __table1.color_id ASC) AS rn
+FROM default.t AS __table1
+QUALIFY __table1.color_id IN (SELECT __table1.id AS id
+FROM dictionary(\'colors\') AS __table1
+WHERE __table1.name = \'red\')
+ORDER BY
+    __table1.color_id ASC,
+    row_number() OVER (PARTITION BY 1 ORDER BY __table1.color_id ASC) ASC
+QUALIFY
+1	1
+3	3
+Empty result set - plan
+SELECT __table1.color_id AS color_id
+FROM default.t AS __table1
+WHERE __table1.color_id IN (SELECT __table1.id AS id
+FROM dictionary(\'colors\') AS __table1
+WHERE __table1.name = \'nonexistent_color\')
+ORDER BY __table1.color_id ASC
+Empty result set
+HAVING - plan
+SELECT
+    __table1.color_id AS color_id,
+    count() AS c
+FROM default.t AS __table1
+GROUP BY __table1.color_id
+HAVING __table1.color_id IN (SELECT __table1.id AS id
+FROM dictionary(\'colors\') AS __table1
+WHERE __table1.name = \'red\')
+ORDER BY
+    __table1.color_id ASC,
+    count() ASC
+HAVING
+1	1
+3	1
+JOIN ON (INNER) - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload,
+    __table2.payload AS payload2
+FROM default.t AS __table1
+ALL INNER JOIN default.t AS __table2 ON (__table1.color_id = __table2.color_id) AND (__table1.color_id IN (SELECT __table1.id AS id
+FROM dictionary(\'colors\') AS __table1
+WHERE __table1.name = \'red\'))
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC,
+    __table2.payload ASC
+JOIN ON (INNER)
+1	a	a
+3	c	c
+JOIN ON (LEFT) - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload,
+    __table2.payload AS payload2
+FROM default.t AS __table1
+ALL LEFT JOIN default.t AS __table2 ON (__table1.color_id = __table2.color_id) AND (__table1.color_id IN (SELECT __table1.id AS id
+FROM dictionary(\'colors\') AS __table1
+WHERE __table1.name = \'red\'))
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC,
+    __table2.payload ASC
+JOIN ON (LEFT)
+1	a	a
+2	b	
+3	c	c
+4	d	
+5	R	
+SELECT multiIf - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload,
+    if(__table1.color_id IN (    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name = \'red\'), \'match\', \'no_match\') AS tag
+FROM default.t AS __table1
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC,
+    if(__table1.color_id IN (    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name = \'red\'), \'match\', \'no_match\') ASC
+SELECT multiIf
+1	a	match
+2	b	no_match
+3	c	match
+4	d	no_match
+5	R	no_match
+countIf - plan
+SELECT countIf(__table1.color_id IN (    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name = \'red\')) AS cnt
+FROM default.t AS __table1
+countIf
+2
+sumIf - plan
+SELECT sumIf(__table1.color_id, __table1.color_id IN (    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name = \'red\')) AS sum_id_match
+FROM default.t AS __table1
+sumIf
+4
+ORDER BY - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+ORDER BY
+    __table1.color_id IN (    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name = \'red\') DESC,
+    __table1.color_id ASC,
+    __table1.payload ASC
+ORDER BY
+1	a
+3	c
+2	b
+4	d
+5	R
+GROUP BY - plan
+SELECT
+    __table1.color_id IN (    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name = \'red\') AS is_red,
+    count() AS c
+FROM default.t AS __table1
+GROUP BY __table1.color_id IN (    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name = \'red\')
+ORDER BY
+    __table1.color_id IN (    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name = \'red\') ASC,
+    count() ASC
+GROUP BY
+0	3
+1	2
+LIMIT BY - plan
+SELECT
+    __table1.color_id AS color_id,
+    __table1.payload AS payload
+FROM default.t AS __table1
+ORDER BY
+    __table1.color_id ASC,
+    __table1.payload ASC
+LIMIT _CAST(1, \'UInt64\') BY __table1.color_id IN (    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name = \'red\')
+LIMIT BY
+1	a
+2	b
+WINDOW PARTITION BY - plan
+SELECT
+    __table1.color_id AS color_id,
+    row_number() OVER (PARTITION BY __table1.color_id IN (    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name = \'red\') ORDER BY __table1.color_id ASC) AS rn
+FROM default.t AS __table1
+ORDER BY
+    __table1.color_id ASC,
+    row_number() OVER (PARTITION BY __table1.color_id IN (    SELECT __table1.id AS id
+    FROM dictionary(\'colors\') AS __table1
+    WHERE __table1.name = \'red\') ORDER BY __table1.color_id ASC) ASC
+WINDOW PARTITION BY
+1	1
+2	1
+3	2
+4	2
+5	3
+Negative: non-constant RHS - plan
+SELECT __table1.color_id AS color_id
+FROM default.t AS __table1
+WHERE dictGetString(\'colors\', \'name\', __table1.color_id) = __table1.payload
+ORDER BY __table1.color_id ASC
+Negative: non-constant RHS

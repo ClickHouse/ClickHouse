@@ -6,7 +6,7 @@
 #include <mutex>
 #include <Core/ServerUUID.h>
 #include <Disks/DiskLocal.h>
-#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>

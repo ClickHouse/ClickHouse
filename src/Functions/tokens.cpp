@@ -29,7 +29,7 @@ constexpr size_t arg_separators = 2;
 std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & arguments, std::string_view name)
 {
     const auto tokenizer_arg = arguments.size() < 2 ? SplitByNonAlphaTokenExtractor::getExternalName()
-                                                        : arguments[arg_tokenizer].column->getDataAt(0).toView();
+                                                        : arguments[arg_tokenizer].column->getDataAt(0);
 
     if (tokenizer_arg == SplitByNonAlphaTokenExtractor::getExternalName())
     {
@@ -156,7 +156,7 @@ private:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            std::string_view input = column_input.getDataAt(i).toView();
+            std::string_view input = column_input.getDataAt(i);
 
             forEachTokenPadded(extractor, input.data(), input.size(), [&](const char * token_start, size_t token_len)
             {
@@ -229,7 +229,7 @@ public:
 
             if (arguments.size() == 3)
             {
-                const auto tokenizer = arguments[arg_tokenizer].column->getDataAt(0).toString();
+                const std::string tokenizer{arguments[arg_tokenizer].column->getDataAt(0)};
 
                 if (tokenizer == NgramsTokenExtractor::getExternalName())
                     optional_args.emplace_back("ngrams", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
@@ -239,7 +239,7 @@ public:
 
             if (arguments.size() == 4 || arguments.size() == 5)
             {
-                const auto tokenizer = arguments[arg_tokenizer].column->getDataAt(0).toString();
+                const auto tokenizer = arguments[arg_tokenizer].column->getDataAt(0);
 
                 if (tokenizer == SparseGramsTokenExtractor::getExternalName())
                 {
