@@ -2366,6 +2366,42 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationMaxWaitingQueries)
     }
 }
 
+TEST(SchedulerWorkloadResourceManager, MemoryReservationUpdateMaxWaitingQueries)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+
+    for (int i = 0; i < 3; i++)
+    {
+        t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_memory = 100, max_waiting_queries = 4");
+        ClassifierPtr c = t.manager->acquire("all");
+        ResourceLink link = c->get("memory");
+
+        TestAllocation a1(link, "Running", 100);
+        a1.waitSync();
+        TestAllocation a2(link, "Waiting1", 10);
+        TestAllocation a3(link, "Waiting2", 10);
+        TestAllocation a4(link, "Waiting3", 10);
+        TestAllocation a5(link, "Waiting4", 10);
+        a2.assertIncreaseEnqueued();
+        a3.assertIncreaseEnqueued();
+        a4.assertIncreaseEnqueued();
+        a5.assertIncreaseEnqueued();
+        EXPECT_THROW(TestAllocation rejected5(link, "Rejected5", 10), DB::Exception);
+
+        // This should reject the two last waiting allocations
+        t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_memory = 100, max_waiting_queries = 2");
+        EXPECT_THROW(a4.waitSync(), DB::Exception);
+        EXPECT_THROW(a5.waitSync(), DB::Exception);
+
+        // Make sure other waiting allocations are not affected
+        a1.setSize(0);
+        a2.waitSync();
+        a3.waitSync();
+    }
+}
+
 // ---------- FairAllocation ---------- //
 
 TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseFairnessBetweenWorkloads)
@@ -2577,7 +2613,7 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationChangeWorkloadWeight)
     ClassifierPtr c_blocker = t.manager->acquire("blocker");
     ResourceLink l_blocker = c_blocker->get("memory");
 
-    for (int i = 0; i < 1; i++)
+    for (int i = 0; i < 3; i++)
     {
         // For pending allocation (w/o change)
         {
@@ -2617,6 +2653,11 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationChangeWorkloadWeight)
             b.assertApproveOrder("W1 W0 W3 W2"); // order of initial sizes divided by weights: 5, 4, 200, 15
         }
 
+        // Update the weights back for next iteration
+        t.query("CREATE OR REPLACE WORKLOAD w0 IN all");
+        t.query("CREATE OR REPLACE WORKLOAD w1 IN all");
+        t.query("CREATE OR REPLACE WORKLOAD w2 IN all");
+        t.query("CREATE OR REPLACE WORKLOAD w3 IN all");
     }
 }
 

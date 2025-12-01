@@ -282,8 +282,19 @@ std::pair<UInt64, Int64> AllocationQueue::getQueueLengthAndSize()
 
 void AllocationQueue::updateQueueLimit(Int64 value)
 {
-    // TODO(serxa): implement
-    UNUSED(value);
+    std::lock_guard lock(mutex);
+    max_queued = value;
+
+    while (max_queued >= 0 && static_cast<size_t>(max_queued) < pending_allocations.size())
+    {
+        ResourceAllocation & allocation = pending_allocations.back();
+        pending_allocations.erase(pending_allocations.iterator_to(allocation));
+        pending_allocations_size -= allocation.increase.size;
+        allocation.allocationFailed(std::make_exception_ptr(
+            Exception(ErrorCodes::SERVER_OVERLOADED,
+                "Workload limit `max_waiting_queries` has been reached: {} of {}",
+                pending_allocations.size(), max_queued)));
+    }
 }
 
 bool AllocationQueue::setIncrease() // TSA_REQUIRES(mutex)
