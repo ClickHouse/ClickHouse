@@ -1007,7 +1007,7 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
                         auto value_builder = std::make_shared<arrow::ListBuilder>(pool, std::make_shared<arrow::Int32Builder>(), value_type);
                         auto int32_to_int32_list_map_type = arrow::map(arrow::int32(), value_type);
                         auto int32_to_int32_list_map_builder = std::make_shared<arrow::MapBuilder>(pool, std::make_shared<arrow::Int32Builder>(), value_builder, int32_to_int32_list_map_type);
-                    
+
                         // dense_union
                         auto dense_union_type = arrow::dense_union(
                             {
@@ -1055,7 +1055,7 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
                         ARROW_RETURN_NOT_OK(value);
 
                         std::shared_ptr<arrow::Table> table = arrow::Table::Make(table_schema, {info_name.ValueOrDie(), value.ValueOrDie()});
-    
+
                         auto ticket_info = calls_data->createTicket(table);
                         arrow::flight::FlightEndpoint endpoint;
                         endpoint.ticket = arrow::flight::Ticket{.ticket = ticket_info->ticket};
