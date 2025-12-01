@@ -962,6 +962,7 @@ BlockIO InterpreterSystemQuery::execute()
 #else
         case Type::INSTRUMENT_ADD:
         case Type::INSTRUMENT_REMOVE:
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without XRay support");
 #endif
 #if USE_JEMALLOC
         case Type::JEMALLOC_PURGE:
