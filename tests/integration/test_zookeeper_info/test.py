@@ -18,7 +18,7 @@ node2 = cluster.add_instance(
 )
 node3 = cluster.add_instance(
     "node3",
-    main_configs=["configs/use_keeper.xml", "configs/enable_keeper3c.xml"],
+    main_configs=["configs/use_keeper.xml", "configs/enable_keeper3.xml"],
     stay_alive=True,
 )
 
