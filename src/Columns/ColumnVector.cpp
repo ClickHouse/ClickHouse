@@ -256,15 +256,15 @@ void), compareColumnImpl, MULTITARGET_FUNCTION_BODY((
 {
     auto * result_data = compare_results.data();
     size_t num_rows = data.size();
-    if (direction)
+    if (direction < 0)
     {
         for (size_t row = 0; row < num_rows; row++)
-            result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(data[row], value, nan_direction_hint));
+            result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(value, data[row], nan_direction_hint));
     }
     else
     {
         for (size_t row = 0; row < num_rows; row++)
-            result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(value, data[row], nan_direction_hint));
+            result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(data[row], value, nan_direction_hint));
     }
 })
 )
@@ -292,11 +292,11 @@ void ColumnVector<T>::compareColumn(
     {
         auto * result_data = compare_results.data();
         UInt64 * next_index = row_indexes->data();
-        if (direction)
+        if (direction < 0)
         {
             for (auto row : *row_indexes)
             {
-                result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(data[row], value, nan_direction_hint));
+                result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(value, data[row], nan_direction_hint));
                 if (result_data[row] == 0)
                 {
                     *next_index = row;
@@ -308,7 +308,7 @@ void ColumnVector<T>::compareColumn(
         {
             for (auto row : *row_indexes)
             {
-                result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(value, data[row], nan_direction_hint));
+                result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(data[row], value, nan_direction_hint));
                 if (result_data[row] == 0)
                 {
                     *next_index = row;
