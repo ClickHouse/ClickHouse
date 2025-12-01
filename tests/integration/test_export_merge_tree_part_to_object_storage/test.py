@@ -52,23 +52,27 @@ def test_drop_column_during_export_snapshot(cluster):
     with PartitionManager() as pm:
                 # Block responses from MinIO (source_port matches MinIO service)
         pm_rule_reject_responses = {
+            "instance": node,
             "destination": node.ip_address,
             "source_port": minio_port,
             "action": "REJECT --reject-with tcp-reset",
+            "protocol": "tcp",
         }
-        pm._add_rule(pm_rule_reject_responses)
+        pm.add_rule(pm_rule_reject_responses)
 
         # Block requests to MinIO (destination: MinIO, destination_port: minio_port)
         pm_rule_reject_requests = {
+            "instance": node,
             "destination": minio_ip,
             "destination_port": minio_port,
             "action": "REJECT --reject-with tcp-reset",
+            "protocol": "tcp",
         }
-        pm._add_rule(pm_rule_reject_requests)
+        pm.add_rule(pm_rule_reject_requests)
 
         # Start export of 2020
         node.query(
-            f"ALTER TABLE {mt_table} EXPORT PART '2020_1_1_0' TO TABLE {s3_table};"
+            f"ALTER TABLE {mt_table} EXPORT PART '2020_1_1_0' TO TABLE {s3_table} SETTINGS allow_experimental_export_merge_tree_part = 1;"
         )
 
         # Drop a column that is required for the export
@@ -99,23 +103,27 @@ def test_add_column_during_export(cluster):
     with PartitionManager() as pm:
                 # Block responses from MinIO (source_port matches MinIO service)
         pm_rule_reject_responses = {
+            "instance": node,
             "destination": node.ip_address,
             "source_port": minio_port,
             "action": "REJECT --reject-with tcp-reset",
+            "protocol": "tcp",
         }
-        pm._add_rule(pm_rule_reject_responses)
+        pm.add_rule(pm_rule_reject_responses)
 
         # Block requests to MinIO (destination: MinIO, destination_port: minio_port)
         pm_rule_reject_requests = {
+            "instance": node,
             "destination": minio_ip,
             "destination_port": minio_port,
             "action": "REJECT --reject-with tcp-reset",
+            "protocol": "tcp",
         }
-        pm._add_rule(pm_rule_reject_requests)
+        pm.add_rule(pm_rule_reject_requests)
 
         # Start export of 2020
         node.query(
-            f"ALTER TABLE {mt_table} EXPORT PART '2020_1_1_0' TO TABLE {s3_table};"
+            f"ALTER TABLE {mt_table} EXPORT PART '2020_1_1_0' TO TABLE {s3_table} SETTINGS allow_experimental_export_merge_tree_part = 1;"
         )
 
         node.query(f"ALTER TABLE {mt_table} ADD COLUMN id2 UInt64")
