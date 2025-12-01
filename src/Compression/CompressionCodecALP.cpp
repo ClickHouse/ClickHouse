@@ -103,9 +103,13 @@ constexpr size_t ALP_CODEC_HEADER_SIZE = 2 * sizeof(UInt8);
  */
 constexpr size_t ALP_BLOCK_HEADER_SIZE = 15 * sizeof(UInt8);
 
-constexpr size_t ALP_MAX_FLOATS_IN_BLOCK = 2 << 15;
+constexpr size_t ALP_MAX_FLOATS_IN_BLOCK = 1024; // 2 << 15;
 
 constexpr double ALP_COMPRESSION_THRESHOLD = 0.9;
+
+constexpr size_t PARAMS_ESTIMATIONS_SAMPLES = 8;
+constexpr size_t PARAMS_ESTIMATIONS_SAMPLE_FLOATS = 32;
+constexpr size_t PARAMS_ESTIMATIONS_CANDIDATES = 5;
 
 template <typename T, UInt32 N, bool inverse>
 requires std::is_floating_point_v<T>
@@ -194,11 +198,13 @@ public:
         assert(source_size % sizeof(T) == 0);
         UInt32 float_count = source_size / sizeof(T);
 
+        EncodingParams params = estimateParams(source, float_count);
+
         while (float_count > 0)
         {
             const UInt32 floats_in_block = std::min<UInt32>(float_count, ALP_MAX_FLOATS_IN_BLOCK);
 
-            dest = encodeBlock(source, floats_in_block, dest);
+            dest = encodeBlock(source, floats_in_block, dest, params);
 
             source += floats_in_block * sizeof(T);
             float_count -= floats_in_block;
@@ -223,18 +229,10 @@ private:
     std::vector<EncodingException> block_exceptions;
     Int64 block_encoded_min;
     Int64 block_encoded_max;
-    Int8 block_for_bit_width;
+    size_t block_for_bit_width;
 
-    EncodingParams determineParams(const char * /*source*/, UInt32 /*float_count*/)
+    char * encodeBlock(const char * source, const UInt16 float_count, char * dest, const EncodingParams & params)
     {
-        // TODO: Implement actual logic to determine optimal exponent and fraction indices.
-        return EncodingParams{6, 4};
-    }
-
-    char * encodeBlock(const char * source, const UInt16 float_count, char * dest)
-    {
-        auto params = determineParams(source, float_count);
-
         const char * source_start = source;
         const size_t uncompressed_block_size = float_count * sizeof(T);
 
@@ -260,11 +258,10 @@ private:
                 block_exceptions.push_back({i, value});
         }
 
-        // Determine Frame of Reference Bit-Width as number of bits required to represent the range.
-        block_for_bit_width = std::max(sizeof(Int64) * 8 - getLeadingZeroBits(block_encoded_max - block_encoded_min), static_cast<size_t>(1));
+        block_for_bit_width = getFrameOfReferenceBitWidth(block_encoded_min, block_encoded_max);
 
-        const size_t encoded_bits = block_encoded.size() * static_cast<size_t>(block_for_bit_width);
-        const size_t encoded_bytes = encoded_bits % 8 == 0 ? encoded_bits / 8 : encoded_bits / 8 + 1;
+        const size_t encoded_bits = block_encoded.size() * block_for_bit_width;
+        const size_t encoded_bytes = (encoded_bits + 7) / 8;
 
         const size_t estimated_compression_size =
             ALP_BLOCK_HEADER_SIZE +
@@ -296,7 +293,7 @@ private:
         dest += sizeof(UInt16);
 
         // Frame of Reference Bit-Width
-        *dest++ = block_for_bit_width;
+        *dest++ = static_cast<UInt8>(block_for_bit_width);
 
         // Frame of Reference Value
         unalignedStoreLittleEndian<Int64>(dest, block_encoded_min);
@@ -323,6 +320,69 @@ private:
         }
 
         return dest;
+    }
+
+    EncodingParams estimateParams(const char * source, const UInt32 float_count)
+    {
+        EncodingParams best_params{0, 0};
+        size_t best_size = std::numeric_limits<size_t>::max();
+
+        for (int magnitude_index = static_cast<int>(ALPCodecNumbers<T>::MAGNITUDES.size()) - 1; magnitude_index >= 0; --magnitude_index)
+        {
+            for (int fraction_index = magnitude_index; fraction_index >= 0; --fraction_index)
+            {
+                const EncodingParams params{static_cast<UInt8>(magnitude_index), static_cast<UInt8>(fraction_index)};
+                const size_t estimated_size = estimateEncodingSize(source, std::min(float_count, 32u), params);
+
+                if (estimated_size < best_size)
+                {
+                    best_size = estimated_size;
+                    best_params = params;
+                }
+            }
+        }
+
+        return best_params;
+    }
+
+    size_t estimateEncodingSize(const char * source, const UInt16 float_count, const EncodingParams & params)
+    {
+        Int64 enc_min = std::numeric_limits<Int64>::max();
+        Int64 enc_max = std::numeric_limits<Int64>::min();
+        size_t exception_count = 0;
+
+        for (const char * source_end = source + float_count; source < source_end; source += sizeof(T))
+        {
+            const T value = unalignedLoadLittleEndian<T>(source);
+            const Int64 value_enc = ALPCodec<T>::encode(value, params.magnitude_index, params.fraction_index);
+            const T value_dec = ALPCodec<T>::decode(value_enc, params.magnitude_index, params.fraction_index);
+
+            if (likely(std::abs(value - value_dec) < std::numeric_limits<T>::epsilon()))
+            {
+                enc_min = std::min(value_enc, enc_min);
+                enc_max = std::max(value_enc, enc_max);
+            }
+            else
+                ++exception_count;
+        }
+
+        const size_t values_enc_bits = (float_count - exception_count) * getFrameOfReferenceBitWidth(enc_min, enc_max);
+        const size_t values_enc_bytes = (values_enc_bits + 7) / 8;
+
+        const size_t total_size = ALP_BLOCK_HEADER_SIZE + values_enc_bytes + exception_count * (sizeof(UInt16) + sizeof(T));
+
+        return total_size;
+    }
+
+    static size_t getFrameOfReferenceBitWidth(const Int64 min_value, const Int64 max_value)
+    {
+        const size_t leading_zero_bits = getLeadingZeroBits(max_value - min_value);
+        const size_t bit_width = sizeof(Int64) * 8 - leading_zero_bits;
+
+        if (unlikely(bit_width == 0))
+            return 1; // Edge case when all values are identical, need at least 1 bit to represent.
+
+        return bit_width;
     }
 };
 
