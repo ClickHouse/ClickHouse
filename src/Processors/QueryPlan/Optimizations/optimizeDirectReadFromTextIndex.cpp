@@ -363,8 +363,9 @@ void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*n
     auto logger = getLogger("optimizeDirectReadFromTextIndex");
     LOG_DEBUG(logger, "{}", optimizationInfoToString(result.added_columns, result.removed_columns));
 
-    bool removes_filter_column = filter_step->removesFilterColumn();
-    read_from_merge_tree_step->createReadTasksForTextIndex(indexes->skip_indexes, result.added_columns, result.removed_columns);
+    const bool removes_filter_column = filter_step->removesFilterColumn();
+    const bool is_final = read_from_merge_tree_step->isQueryWithFinal();
+    read_from_merge_tree_step->createReadTasksForTextIndex(indexes->skip_indexes, result.added_columns, result.removed_columns, is_final);
 
     auto new_filter_column_name = result.filter_node->result_name;
     filter_node->step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_dag.clone(), new_filter_column_name, removes_filter_column);
