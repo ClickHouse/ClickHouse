@@ -39,8 +39,8 @@ ColumnConst::ColumnConst(const ColumnPtr & data_, size_t s_)
 #if defined(MEMORY_SANITIZER)
     if (data->isFixedAndContiguous())
     {
-        StringRef value = data->getDataAt(0);
-        __msan_check_mem_is_initialized(value.data, value.size);
+        auto value = data->getDataAt(0);
+        __msan_check_mem_is_initialized(value.data(), value.size());
     }
 #endif
 }
@@ -113,7 +113,7 @@ ColumnPtr ColumnConst::index(const IColumn & indexes, size_t limit) const
     return ColumnConst::create(data, limit);
 }
 
-MutableColumns ColumnConst::scatter(ColumnIndex num_columns, const Selector & selector) const
+MutableColumns ColumnConst::scatter(size_t num_columns, const Selector & selector) const
 {
     if (s != selector.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector ({}) doesn't match size of column ({})",

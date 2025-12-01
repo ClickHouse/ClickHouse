@@ -92,6 +92,7 @@ namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_URI_SCHEME;
+    extern const int HTTP_CONNECTION_LIMIT_REACHED;
 }
 
 
@@ -171,6 +172,12 @@ public:
         mute_warning_until = 0;
     }
 
+    HTTPConnectionPools::Limits getLimits() const
+    {
+        std::lock_guard lock(mutex);
+        return limits;
+    }
+
     bool isSoftLimitReached() const
     {
         std::lock_guard lock(mutex);
@@ -181,6 +188,12 @@ public:
     {
         std::lock_guard lock(mutex);
         return total_connections_in_group >= limits.store_limit;
+    }
+
+    bool isHardLimitReached() const
+    {
+        std::lock_guard lock(mutex);
+        return limits.hard_limit > 0 && total_connections_in_group >= limits.hard_limit;
     }
 
     void atConnectionCreate()
@@ -438,45 +451,38 @@ private:
 
         ~PooledConnection() override
         {
-            try
+            if (bool(response_stream))
             {
-                if (bool(response_stream))
+                if (auto * fixed_steam = dynamic_cast<Poco::Net::HTTPFixedLengthInputStream *>(response_stream))
                 {
-                    if (auto * fixed_steam = dynamic_cast<Poco::Net::HTTPFixedLengthInputStream *>(response_stream))
-                    {
-                        response_stream_completed = fixed_steam->isComplete();
-                    }
-                    else if (auto * chunked_steam = dynamic_cast<Poco::Net::HTTPChunkedInputStream *>(response_stream))
-                    {
-                        response_stream_completed = chunked_steam->isComplete();
-                    }
-                    else if (auto * http_stream = dynamic_cast<Poco::Net::HTTPInputStream *>(response_stream))
-                    {
-                        response_stream_completed = http_stream->isComplete();
-                    }
-                    else
-                    {
-                        response_stream_completed = false;
-                    }
+                    response_stream_completed = fixed_steam->isComplete();
                 }
-                response_stream = nullptr;
-                Session::setSendDataHooks();
-                Session::setReceiveDataHooks();
-                Session::setSendThrottler();
-                Session::setReceiveThrottler();
-
-                group->atConnectionDestroy();
-
-                if (!isExpired)
-                    if (auto lock = pool.lock())
-                        lock->atConnectionDestroy(*this);
-
-                CurrentMetrics::sub(metrics.active_count);
+                else if (auto * chunked_steam = dynamic_cast<Poco::Net::HTTPChunkedInputStream *>(response_stream))
+                {
+                    response_stream_completed = chunked_steam->isComplete();
+                }
+                else if (auto * http_stream = dynamic_cast<Poco::Net::HTTPInputStream *>(response_stream))
+                {
+                    response_stream_completed = http_stream->isComplete();
+                }
+                else
+                {
+                    response_stream_completed = false;
+                }
             }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
+            response_stream = nullptr;
+            Session::setSendDataHooks();
+            Session::setReceiveDataHooks();
+            Session::setSendThrottler();
+            Session::setReceiveThrottler();
+
+            group->atConnectionDestroy();
+
+            if (!isExpired)
+                if (auto lock = pool.lock())
+                    lock->atConnectionDestroy(*this);
+
+            CurrentMetrics::sub(metrics.active_count);
         }
 
     private:
@@ -671,6 +677,12 @@ private:
 
     ConnectionPtr prepareNewConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time)
     {
+        if (group->isHardLimitReached())
+            throw Exception(
+                ErrorCodes::HTTP_CONNECTION_LIMIT_REACHED,
+                "Cannot create new connection to {}:{}, hard limit {} for connections in group {} is reached",
+                host, port, group->getLimits().hard_limit, group->getType());
+
         auto connection = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
 
         connection->setKeepAlive(true);
@@ -693,7 +705,7 @@ private:
         {
             address.setFail();
             ProfileEvents::increment(getMetrics().errors);
-            connection->reset();
+            (*connection).reset();
             throw;
         }
 

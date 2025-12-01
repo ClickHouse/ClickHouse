@@ -894,9 +894,9 @@ public:
 
         std::function<const char *(size_t)> get_ip_data;
         if (col_const_ip_in)
-            get_ip_data = [col_const_ip_in](size_t) { return col_const_ip_in->getDataAt(0).data; };
+            get_ip_data = [col_const_ip_in](size_t) { return col_const_ip_in->getDataAt(0).data(); };
         else if (col_const_str_in)
-            get_ip_data = [col_const_str_in](size_t) { return col_const_str_in->getDataAt(0).data; };
+            get_ip_data = [col_const_str_in](size_t) { return col_const_str_in->getDataAt(0).data(); };
         else if (col_ip_in)
             get_ip_data = [col_ip_in](size_t i) { return reinterpret_cast<const char *>(&col_ip_in->getData()[i]); };
         else if (col_str_in)

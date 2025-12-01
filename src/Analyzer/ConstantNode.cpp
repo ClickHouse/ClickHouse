@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <Analyzer/ConstantNode.h>
 
 #include <Analyzer/FunctionNode.h>
@@ -155,10 +156,31 @@ QueryTreeNodePtr ConstantNode::cloneImpl() const
     return std::make_shared<ConstantNode>(constant_value, source_expression);
 }
 
+template <typename F>
+std::shared_ptr<ASTLiteral> ConstantNode::getCachedAST(const F &ast_generator) const
+{
+    HashState hash_state;
+    hash_state.update(getTreeHash());
+    /// ast_generator function's address is used as a key to uniquely define generated AST
+    hash_state.update(reinterpret_cast<const std::uintptr_t>(&ast_generator));
+    auto hash = getSipHash128AsPair(hash_state);
+
+    if (cached_ast && hash == hash_ast)
+        return std::make_shared<ASTLiteral>(*cached_ast);
+
+    hash_ast = hash;
+    cached_ast = ast_generator(*this);
+
+    return std::make_shared<ASTLiteral>(*cached_ast);
+}
+
 ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 {
+    static const auto from_column = [](const ConstantNode &node){ return std::make_shared<ASTLiteral>(getFieldFromColumnForASTLiteral(node.constant_value.getColumn(), 0, node.constant_value.getType())); };
+    static const auto from_field = [](const ConstantNode &node){ return std::make_shared<ASTLiteral>(node.getValue()); };
+
     if (!options.add_cast_for_constants)
-        return std::make_shared<ASTLiteral>(getFieldFromColumnForASTLiteral(constant_value.getColumn(), 0, constant_value.getType()));
+        return getCachedAST(from_column);
 
     const auto & constant_value_type = constant_value.getType();
 
@@ -168,7 +190,7 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 
     auto requires_cast = [this]()
     {
-        const auto & [_, type] = getValueNameAndType();
+        const auto & [_, type] = getValueNameAndType({});
         return requiresCastCall(type, getResultType());
     };
 
@@ -177,12 +199,12 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
         /// For some types we cannot just get a field from a column, because it can loose type information during serialization/deserialization of the literal.
         /// For example, DateTime64 will return Field with Decimal64 and we won't be able to parse it to DateTine64 back in some cases.
         /// Also for Dynamic and Object types we can loose types information, so we need to create a Field carefully.
-        auto constant_value_ast = std::make_shared<ASTLiteral>(getFieldFromColumnForASTLiteral(constant_value.getColumn(), 0, constant_value.getType()));
+        auto constant_value_ast = getCachedAST(from_column);
         auto constant_type_name_ast = std::make_shared<ASTLiteral>(constant_value_type->getName());
         return makeASTFunction("_CAST", std::move(constant_value_ast), std::move(constant_type_name_ast));
     }
 
-    auto constant_value_ast = std::make_shared<ASTLiteral>(getValue());
+    auto constant_value_ast = getCachedAST(from_field);
 
     if (isBool(constant_value_type))
         constant_value_ast->custom_type = constant_value_type;

@@ -86,7 +86,7 @@ SELECT timeSeriesResampleToGridWithStaleness(100, 150, 10, 30)(toDateTime(105), 
 SELECT timeSeriesInstantRateToGrid(100, 150, 10, 30)([1, 2, 3]::Array(UInt32), 1.); --{serverError ILLEGAL_TYPE_OF_ARGUMENT}
 SELECT timeSeriesDeltaToGrid(100, 150, 10, 30)([1, 2, 3]::Array(UInt32), 1.); --{serverError ILLEGAL_TYPE_OF_ARGUMENT}
 
--- Try to use aggregation function state in combinators with start, end, step and window parameters that are different from original paramaters
+-- Try to use aggregation function state in combinators with start, end, step and window parameters that are different from original parameters
 -- An error should be returned
 SELECT timeSeriesResampleToGridWithStalenessMerge(toNullable(60), 100, 200, 20)(
     initializeAggregation('timeSeriesResampleToGridWithStalenessState(100, 200, 20, 60)', (100 + number*10)::DateTime32, number::Float64)

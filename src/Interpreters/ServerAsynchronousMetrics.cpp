@@ -74,12 +74,11 @@ ServerAsynchronousMetrics::~ServerAsynchronousMetrics()
 void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint current_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values)
 {
     {
-        auto caches = FileCacheFactory::instance().getAll();
         size_t total_bytes = 0;
         size_t max_bytes = 0;
         size_t total_files = 0;
 
-        for (const auto & [_, cache_data] : caches)
+        for (const auto & cache_data : FileCacheFactory::instance().getUniqueInstances())
         {
             total_bytes += cache_data->cache->getUsedCacheSize();
             max_bytes += cache_data->cache->getMaxCacheSize();

@@ -162,8 +162,7 @@ size_t BackupCoordinationOnCluster::findCurrentHostIndex(const String & current_
 
 
 BackupCoordinationOnCluster::BackupCoordinationOnCluster(
-    const UUID & backup_uuid_,
-    bool is_plain_backup_,
+    const BackupSettings & backup_settings_,
     const String & root_zookeeper_path_,
     zkutil::GetZooKeeper get_zookeeper_,
     const BackupKeeperSettings & keeper_settings_,
@@ -173,15 +172,17 @@ BackupCoordinationOnCluster::BackupCoordinationOnCluster(
     BackupConcurrencyCounters & concurrency_counters_,
     ThreadPoolCallbackRunnerUnsafe<void> schedule_,
     QueryStatusPtr process_list_element_)
-    : root_zookeeper_path(root_zookeeper_path_)
-    , zookeeper_path(root_zookeeper_path_ + "/backup-" + toString(backup_uuid_))
+    : backup_uuid(*backup_settings_.backup_uuid)
+    , root_zookeeper_path(root_zookeeper_path_)
+    , zookeeper_path(root_zookeeper_path_ + "/backup-" + toString(backup_uuid))
     , keeper_settings(keeper_settings_)
-    , backup_uuid(backup_uuid_)
     , all_hosts(all_hosts_)
     , all_hosts_without_initiator(excludeInitiator(all_hosts))
     , current_host(current_host_)
     , current_host_index(findCurrentHostIndex(current_host, all_hosts))
-    , plain_backup(is_plain_backup_)
+    , plain_backup(!backup_settings_.deduplicate_files)
+    , data_file_name_gen(backup_settings_.data_file_name_generator)
+    , data_file_name_prefix_length(*backup_settings_.data_file_name_prefix_length)
     , process_list_element(process_list_element_)
     , log(getLogger("BackupCoordinationOnCluster"))
     , with_retries(log, get_zookeeper_, keeper_settings, process_list_element_, [root_zookeeper_path_](Coordination::ZooKeeperWithFaultInjection::Ptr zk) { zk->sync(root_zookeeper_path_); })
@@ -777,7 +778,7 @@ void BackupCoordinationOnCluster::prepareFileInfos() const
     if (file_infos)
         return;
 
-    file_infos.emplace(plain_backup);
+    file_infos.emplace(BackupCoordinationFileInfos::Config{plain_backup, data_file_name_gen, data_file_name_prefix_length});
 
     Strings hosts_with_file_infos;
     {
