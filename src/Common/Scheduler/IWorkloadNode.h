@@ -75,6 +75,9 @@ public:
         }
     }
 
+    /// Returns the name of the workload associated with this node
+    virtual const String & getWorkload() const = 0;
+
     /// Returns current settings of this workload node
     virtual const WorkloadSettings & getSettings() const = 0;
 

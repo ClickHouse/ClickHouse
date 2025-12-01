@@ -21,6 +21,7 @@ namespace DB
 {
 
 class ISchedulerNode;
+class IWorkloadNode;
 class EventQueue;
 using EventId = UInt64;
 
@@ -136,10 +137,14 @@ public:
     /// Attach to a parent (used by attachChild)
     void setParentNode(ISchedulerNode * parent_);
 
-    /// Do activation of this node.
-    /// This is the way to introduce into the hierarchy from outside.
-    /// It is called from scheduler thread's in response to scheduleActivation() by the EventQueue.
-    virtual void processActivation() {}
+    /// Return workload name this node belongs to (if any)
+    const String & getWorkloadName() const;
+
+    EventQueue & event_queue;
+    String basename;
+    SchedulerNodeInfo info;
+    ISchedulerNode * parent = nullptr;
+    IWorkloadNode * workload = nullptr; /// Workload node this scheduler node belongs to (if any)
 
 protected:
     /// Notify parents about the first pending request or constraint becoming satisfied.
@@ -149,15 +154,14 @@ protected:
     /// Cancel previously scheduled activation.
     void cancelActivation();
 
-public:
-    EventQueue & event_queue;
-    String basename;
-    SchedulerNodeInfo info;
-    ISchedulerNode * parent = nullptr;
-    EventId activation_event_id = 0; // Non-zero for `ISchedulerNode` placed in EventQueue::activations
+    /// Do activation of this node.
+    /// This is the way to introduce updates into the hierarchy from outside.
+    /// It is called from scheduler thread's in response to scheduleActivation() by the EventQueue.
+    virtual void processActivation() {}
 
 private:
     friend class EventQueue;
+    EventId activation_event_id = 0; // Non-zero for `ISchedulerNode` placed in EventQueue::activations
     boost::intrusive::list_member_hook<> activation_hook;
     using ActivationHook = boost::intrusive::member_hook<ISchedulerNode, boost::intrusive::list_member_hook<>, &ISchedulerNode::activation_hook>;
     using ActivationList = boost::intrusive::list<ISchedulerNode, ActivationHook>;

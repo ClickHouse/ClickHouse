@@ -1,4 +1,5 @@
 #include <Common/Scheduler/ISchedulerNode.h>
+#include <Common/Scheduler/IWorkloadNode.h>
 #include <Common/Scheduler/EventQueue.h>
 #include <Common/EventRateMeter.h>
 #include <Common/ErrorCodes.h>
@@ -117,6 +118,14 @@ void ISchedulerNode::setParentNode(ISchedulerNode * parent_)
     // Avoid activation of a detached node
     if (parent == nullptr)
         cancelActivation();
+}
+
+const String & ISchedulerNode::getWorkloadName() const
+{
+    if (workload)
+        return workload->getWorkload();
+    static const String empty_workload;
+    return empty_workload;
 }
 
 void ISchedulerNode::scheduleActivation()

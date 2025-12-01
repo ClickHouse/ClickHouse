@@ -1,4 +1,5 @@
 #include <Common/Scheduler/Nodes/SpaceShared/AllocationQueue.h>
+#include <Common/Scheduler/IWorkloadNode.h>
 
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
@@ -47,8 +48,8 @@ void AllocationQueue::insertAllocation(ResourceAllocation & allocation, Resource
         // rejected_requests++; // TODO(serxa): introspection counters
         // rejected_cost += allocation.cost;
         throw Exception(ErrorCodes::SERVER_OVERLOADED,
-            "Workload limit `max_waiting_queries` has been reached: {} of {}",
-            pending_allocations.size(), max_queued);
+            "Workload '{}' limit `max_waiting_queries` has been reached: {} of {}",
+            getWorkloadName(), pending_allocations.size(), max_queued);
     }
 
     // Prepare allocation
@@ -292,8 +293,8 @@ void AllocationQueue::updateQueueLimit(Int64 value)
         pending_allocations_size -= allocation.increase.size;
         allocation.allocationFailed(std::make_exception_ptr(
             Exception(ErrorCodes::SERVER_OVERLOADED,
-                "Workload limit `max_waiting_queries` has been reached: {} of {}",
-                pending_allocations.size(), max_queued)));
+                "Workload '{}' limit `max_waiting_queries` has been reached: {} of {}",
+                getWorkloadName(), pending_allocations.size(), max_queued)));
     }
 }
 
@@ -323,7 +324,8 @@ void AllocationQueue::ensureUsable() const // TSA_REQUIRES(mutex)
 {
     if (is_not_usable)
         throw Exception(ErrorCodes::INVALID_SCHEDULER_NODE,
-        "Allocation queue is about to be destructed");
+        "Allocation queue is about to be destructed for workload '{}'",
+        getWorkloadName());
 }
 
 }

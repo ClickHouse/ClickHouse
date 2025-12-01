@@ -53,7 +53,7 @@ namespace DB
     namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int RESOURCE_ACCESS_DENIED;
+    extern const int SERVER_OVERLOADED;
 }
 
 }
@@ -2313,6 +2313,7 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseOfRunningHasPrio
 
 TEST(SchedulerWorkloadResourceManager, MemoryReservationCancelPendingAllocation)
 {
+    // TODO(serxa): this test is flaky - https://pastila.nl/?000db1e0/48461ddb885d2ba64843eecc1bdaf9fc#s0WpBcUsPWv+lwQ97WBMTQ==
     ResourceTest t;
 
     t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
@@ -2362,7 +2363,15 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationMaxWaitingQueries)
         a3.assertIncreaseEnqueued();
         EXPECT_THROW(TestAllocation rejected1(link, "Rejected1", 10), DB::Exception);
         EXPECT_THROW(TestAllocation rejected2(link, "Rejected2", 10), DB::Exception);
-        EXPECT_THROW(TestAllocation rejected3(link, "Rejected3", 10), DB::Exception);
+        try {
+            TestAllocation rejected3(link, "Rejected3", 10);
+            GTEST_FAIL() << "Expected SERVER_OVERLOADED exception";
+        }
+        catch (const DB::Exception & e)
+        {
+            ASSERT_EQ(e.code(), ErrorCodes::SERVER_OVERLOADED);
+            ASSERT_NE(e.displayText().find("all"), std::string::npos);
+        }
     }
 }
 
@@ -2393,7 +2402,15 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationUpdateMaxWaitingQueries)
         // This should reject the two last waiting allocations
         t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_memory = 100, max_waiting_queries = 2");
         EXPECT_THROW(a4.waitSync(), DB::Exception);
-        EXPECT_THROW(a5.waitSync(), DB::Exception);
+        try {
+            a5.waitSync();
+            GTEST_FAIL() << "Expected SERVER_OVERLOADED exception";
+        }
+        catch (const DB::Exception & e)
+        {
+            ASSERT_EQ(e.code(), ErrorCodes::SERVER_OVERLOADED);
+            ASSERT_NE(e.displayText().find("all"), std::string::npos);
+        }
 
         // Make sure other waiting allocations are not affected
         a1.setSize(0);

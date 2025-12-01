@@ -41,13 +41,14 @@ struct WorkloadNodeTraits<ITimeSharedNode>
 {
     using NodePtr = TimeSharedNodePtr;
 
-    static NodePtr makeQueue(EventQueue & event_queue_, const WorkloadSettings & settings_, CostUnit unit)
+    static NodePtr makeQueue(IWorkloadNode * workload, EventQueue & event_queue_, const WorkloadSettings & settings_, CostUnit unit)
     {
         NodePtr result = std::make_shared<FifoQueue>(
             event_queue_,
             SchedulerNodeInfo{},
             settings_.getQueueLimit(unit));
         result->basename = "fifo";
+        result->workload = workload;
         return result;
     }
 
@@ -66,11 +67,12 @@ struct WorkloadNodeTraits<ITimeSharedNode>
         static_cast<FifoQueue &>(*node).purgeQueue();
     }
 
-    static NodePtr makeFairPolicy(EventQueue & event_queue_, Priority priority)
+    static NodePtr makeFairPolicy(IWorkloadNode * workload, EventQueue & event_queue_, Priority priority)
     {
         NodePtr result = std::make_shared<FairPolicy>(event_queue_, SchedulerNodeInfo{});
         result->info.setPriority(priority);
         result->basename = fmt::format("p{}_fair", priority.value);
+        result->workload = workload;
         return result;
     }
 
@@ -79,10 +81,11 @@ struct WorkloadNodeTraits<ITimeSharedNode>
         return info.priority; // time-shared nodes use priority directly
     }
 
-    static NodePtr makePriorityPolicy(EventQueue & event_queue_)
+    static NodePtr makePriorityPolicy(IWorkloadNode * workload, EventQueue & event_queue_)
     {
         NodePtr result = std::make_shared<PriorityPolicy>(event_queue_, SchedulerNodeInfo{});
         result->basename = "prio";
+        result->workload = workload;
         return result;
     }
 
@@ -91,7 +94,7 @@ struct WorkloadNodeTraits<ITimeSharedNode>
         return settings_.hasSemaphore(unit);
     }
 
-    static NodePtr makeSemaphore(EventQueue & event_queue_, const WorkloadSettings & settings_, CostUnit unit)
+    static NodePtr makeSemaphore(IWorkloadNode * workload, EventQueue & event_queue_, const WorkloadSettings & settings_, CostUnit unit)
     {
         NodePtr result = std::make_shared<SemaphoreConstraint>(
             event_queue_,
@@ -99,6 +102,7 @@ struct WorkloadNodeTraits<ITimeSharedNode>
             settings_.getSemaphoreMaxRequests(unit),
             settings_.getSemaphoreMaxCost(unit));
         result->basename = "semaphore";
+        result->workload = workload;
         return result;
     }
 
@@ -115,7 +119,7 @@ struct WorkloadNodeTraits<ITimeSharedNode>
         return settings_.hasThrottler(unit);
     }
 
-    static NodePtr makeThrottler(EventQueue & event_queue_, const WorkloadSettings & settings_, CostUnit unit)
+    static NodePtr makeThrottler(IWorkloadNode * workload, EventQueue & event_queue_, const WorkloadSettings & settings_, CostUnit unit)
     {
         NodePtr result = std::make_shared<ThrottlerConstraint>(
             event_queue_,
@@ -123,6 +127,7 @@ struct WorkloadNodeTraits<ITimeSharedNode>
             settings_.getThrottlerMaxSpeed(unit),
             settings_.getThrottlerMaxBurst(unit));
         result->basename = "throttler";
+        result->workload = workload;
         return result;
     }
 
@@ -143,13 +148,14 @@ struct WorkloadNodeTraits<ISpaceSharedNode>
 {
     using NodePtr = SpaceSharedNodePtr;
 
-    static NodePtr makeQueue(EventQueue & event_queue_, const WorkloadSettings & settings_, CostUnit unit)
+    static NodePtr makeQueue(IWorkloadNode * workload, EventQueue & event_queue_, const WorkloadSettings & settings_, CostUnit unit)
     {
         NodePtr result = std::make_shared<AllocationQueue>(
             event_queue_,
             SchedulerNodeInfo{},
             settings_.getQueueLimit(unit));
         result->basename = "queue";
+        result->workload = workload;
         return result;
     }
 
@@ -168,11 +174,12 @@ struct WorkloadNodeTraits<ISpaceSharedNode>
         static_cast<AllocationQueue &>(*node).purgeQueue();
     }
 
-    static NodePtr makeFairPolicy(EventQueue & event_queue_, Priority precedence)
+    static NodePtr makeFairPolicy(IWorkloadNode * workload, EventQueue & event_queue_, Priority precedence)
     {
         NodePtr result = std::make_shared<FairAllocation>(event_queue_, SchedulerNodeInfo{});
         result->info.setPrecedence(precedence);
         result->basename = fmt::format("p{}_fair", precedence.value);
+        result->workload = workload;
         return result;
     }
 
@@ -181,10 +188,11 @@ struct WorkloadNodeTraits<ISpaceSharedNode>
         return info.precedence; // space-shared nodes use precedence for ordering instead of priority
     }
 
-    static NodePtr makePriorityPolicy(EventQueue & event_queue_)
+    static NodePtr makePriorityPolicy(IWorkloadNode * workload, EventQueue & event_queue_)
     {
         NodePtr result = std::make_shared<PrecedenceAllocation>(event_queue_, SchedulerNodeInfo{});
         result->basename = "prio";
+        result->workload = workload;
         return result;
     }
 
@@ -193,13 +201,14 @@ struct WorkloadNodeTraits<ISpaceSharedNode>
         return settings_.hasAllocationLimit(unit);
     }
 
-    static NodePtr makeSemaphore(EventQueue & event_queue_, const WorkloadSettings & settings_, CostUnit unit)
+    static NodePtr makeSemaphore(IWorkloadNode * workload, EventQueue & event_queue_, const WorkloadSettings & settings_, CostUnit unit)
     {
         NodePtr result = std::make_shared<AllocationLimit>(
             event_queue_,
             SchedulerNodeInfo{},
             settings_.getAllocationLimit(unit));
         result->basename = "limit";
+        result->workload = workload;
         return result;
     }
 
@@ -213,7 +222,7 @@ struct WorkloadNodeTraits<ISpaceSharedNode>
         return false;
     }
 
-    static NodePtr makeThrottler(EventQueue &, const WorkloadSettings &, CostUnit)
+    static NodePtr makeThrottler(IWorkloadNode *, EventQueue &, const WorkloadSettings &, CostUnit)
     {
         chassert(false);
         return {};
@@ -282,7 +291,7 @@ protected:
 
         /// Attaches a new child.
         /// Returns root node if it has been changed to a different node, otherwise returns null.
-        [[nodiscard]] NodePtr attachWorkloadChild(EventQueue & event_queue_, const SelfPtr & child)
+        [[nodiscard]] NodePtr attachWorkloadChild(IWorkloadNode * self, EventQueue & event_queue_, const SelfPtr & child)
         {
             if (auto [it, inserted] = children.emplace(child->basename, child); !inserted)
                 throw Exception(
@@ -294,7 +303,7 @@ protected:
             {
                 // Insert fair node if we have just added the second child
                 chassert(!root);
-                root = Traits::makeFairPolicy(event_queue_, Traits::getPriority(child->info));
+                root = Traits::makeFairPolicy(self, event_queue_, Traits::getPriority(child->info));
                 for (auto & [_, node] : children)
                     reparent(node, root);
                 return root; // New root has been created
@@ -309,7 +318,7 @@ protected:
         /// Detaches a child.
         /// Returns root node if it has been changed to a different node, otherwise returns null.
         /// NOTE: It could also return null if `empty()` after detaching
-        [[nodiscard]] NodePtr detachWorkloadChild(EventQueue &, const SelfPtr & child)
+        [[nodiscard]] NodePtr detachWorkloadChild(IWorkloadNode *, EventQueue &, const SelfPtr & child)
         {
             auto it = children.find(child->basename);
             if (it == children.end())
@@ -351,11 +360,11 @@ protected:
 
         /// Attaches a new child.
         /// Returns root node if it has been changed to a different node, otherwise returns null.
-        [[nodiscard]] NodePtr attachWorkloadChild(EventQueue & event_queue_, const SelfPtr & child)
+        [[nodiscard]] NodePtr attachWorkloadChild(IWorkloadNode * self, EventQueue & event_queue_, const SelfPtr & child)
         {
             auto [it, new_branch]  = branches.try_emplace(Traits::getPriority(child->info));
             auto & child_branch = it->second;
-            auto branch_root = child_branch.attachWorkloadChild(event_queue_, child);
+            auto branch_root = child_branch.attachWorkloadChild(self, event_queue_, child);
             if (!new_branch)
             {
                 if (branch_root)
@@ -374,7 +383,7 @@ protected:
                 {
                     // Insert priority node if we have just added the second branch
                     chassert(!root);
-                    root = Traits::makePriorityPolicy(event_queue_);
+                    root = Traits::makePriorityPolicy(self, event_queue_);
                     for (auto & [_, branch] : branches)
                         reparent(branch.getRoot(), root);
                     return root; // New root has been created
@@ -390,14 +399,14 @@ protected:
         /// Detaches a child.
         /// Returns root node if it has been changed to a different node, otherwise returns null.
         /// NOTE: It could also return null if `empty()` after detaching
-        [[nodiscard]] NodePtr detachWorkloadChild(EventQueue & event_queue_, const SelfPtr & child)
+        [[nodiscard]] NodePtr detachWorkloadChild(IWorkloadNode * self, EventQueue & event_queue_, const SelfPtr & child)
         {
             auto it = branches.find(Traits::getPriority(child->info));
             if (it == branches.end())
                 return {}; // unknown child
 
             auto & child_branch = it->second;
-            auto branch_root = child_branch.detachWorkloadChild(event_queue_, child);
+            auto branch_root = child_branch.detachWorkloadChild(self, event_queue_, child);
             if (child_branch.empty())
             {
                 branches.erase(it);
@@ -442,41 +451,41 @@ protected:
         }
 
         // Should be called after constructor, before any other methods
-        [[nodiscard]] NodePtr initialize(EventQueue & event_queue_, const WorkloadSettings & settings_, CostUnit unit_)
+        [[nodiscard]] NodePtr initialize(IWorkloadNode * self, EventQueue & event_queue_, const WorkloadSettings & settings_, CostUnit unit_)
         {
             settings = settings_;
             unit = unit_;
-            queue = Traits::makeQueue(event_queue_, settings, unit);
+            queue = Traits::makeQueue(self, event_queue_, settings, unit);
             return queue;
         }
 
         /// Attaches a new child.
         /// Returns root node if it has been changed to a different node, otherwise returns null.
-        [[nodiscard]] NodePtr attachWorkloadChild(EventQueue & event_queue_, const SelfPtr & child)
+        [[nodiscard]] NodePtr attachWorkloadChild(IWorkloadNode * self, EventQueue & event_queue_, const SelfPtr & child)
         {
             if (queue)
                 removeQueue();
-            return branch.attachWorkloadChild(event_queue_, child);
+            return branch.attachWorkloadChild(self, event_queue_, child);
         }
 
         /// Detaches a child.
         /// Returns root node if it has been changed to a different node, otherwise returns null.
-        [[nodiscard]] NodePtr detachWorkloadChild(EventQueue & event_queue_, const SelfPtr & child)
+        [[nodiscard]] NodePtr detachWorkloadChild(IWorkloadNode * self, EventQueue & event_queue_, const SelfPtr & child)
         {
             if (queue)
                 return {}; // No-op, it already has no children
-            auto branch_root = branch.detachWorkloadChild(event_queue_, child);
+            auto branch_root = branch.detachWorkloadChild(self, event_queue_, child);
             if (branch.empty())
             {
-                queue = Traits::makeQueue(event_queue_, settings, unit);
+                queue = Traits::makeQueue(self, event_queue_, settings, unit);
                 return queue;
             }
             return branch_root;
         }
 
-        void updateSchedulingSettings(EventQueue & event_queue_, const WorkloadSettings & new_settings)
+        void updateSchedulingSettings(IWorkloadNode * self, EventQueue & event_queue_, const WorkloadSettings & new_settings)
         {
-            UNUSED(event_queue_);
+            UNUSED(self, event_queue_);
             settings = new_settings;
             if (queue)
                 Traits::updateQueue(queue, settings, unit);
@@ -504,20 +513,20 @@ protected:
         CostUnit unit;
 
         // Should be called after constructor, before any other methods
-        [[nodiscard]] NodePtr initialize(EventQueue & event_queue_, const WorkloadSettings & settings_, CostUnit unit_)
+        [[nodiscard]] NodePtr initialize(IWorkloadNode * self, EventQueue & event_queue_, const WorkloadSettings & settings_, CostUnit unit_)
         {
             settings = settings_;
             unit = unit_;
-            NodePtr node = branch.initialize(event_queue_, settings, unit);
+            NodePtr node = branch.initialize(self, event_queue_, settings, unit);
             if (Traits::hasSemaphore(settings, unit))
             {
-                semaphore = Traits::makeSemaphore(event_queue_, settings, unit);
+                semaphore = Traits::makeSemaphore(self, event_queue_, settings, unit);
                 reparent(node, semaphore);
                 node = semaphore;
             }
             if (Traits::hasThrottler(settings, unit))
             {
-                throttler = Traits::makeThrottler(event_queue_, settings, unit);
+                throttler = Traits::makeThrottler(self, event_queue_, settings, unit);
                 reparent(node, throttler);
                 node = throttler;
             }
@@ -526,9 +535,9 @@ protected:
 
         /// Attaches a new child.
         /// Returns root node if it has been changed to a different node, otherwise returns null.
-        [[nodiscard]] NodePtr attachWorkloadChild(EventQueue & event_queue_, const SelfPtr & child)
+        [[nodiscard]] NodePtr attachWorkloadChild(IWorkloadNode * self, EventQueue & event_queue_, const SelfPtr & child)
         {
-            if (auto branch_root = branch.attachWorkloadChild(event_queue_, child))
+            if (auto branch_root = branch.attachWorkloadChild(self, event_queue_, child))
             {
                 // If both semaphore and throttler exist we should reparent to the farthest from the root
                 if (semaphore)
@@ -543,9 +552,9 @@ protected:
 
         /// Detaches a child.
         /// Returns root node if it has been changed to a different node, otherwise returns null.
-        [[nodiscard]] NodePtr detachWorkloadChild(EventQueue & event_queue_, const SelfPtr & child)
+        [[nodiscard]] NodePtr detachWorkloadChild(IWorkloadNode * self, EventQueue & event_queue_, const SelfPtr & child)
         {
-            if (auto branch_root = branch.detachWorkloadChild(event_queue_, child))
+            if (auto branch_root = branch.detachWorkloadChild(self, event_queue_, child))
             {
                 if (semaphore)
                     reparent(branch_root, semaphore);
@@ -559,15 +568,15 @@ protected:
 
         /// Updates constraint-related nodes.
         /// Returns root node if it has been changed to a different node, otherwise returns null.
-        [[nodiscard]] NodePtr updateSchedulingSettings(EventQueue & event_queue_, const WorkloadSettings & new_settings)
+        [[nodiscard]] NodePtr updateSchedulingSettings(IWorkloadNode * self, EventQueue & event_queue_, const WorkloadSettings & new_settings)
         {
-            branch.updateSchedulingSettings(event_queue_, new_settings);
+            branch.updateSchedulingSettings(self, event_queue_, new_settings);
 
             NodePtr node = branch.getRoot();
 
             if (!Traits::hasSemaphore(settings, unit) && Traits::hasSemaphore(new_settings, unit)) // Add
             {
-                semaphore = Traits::makeSemaphore(event_queue_, new_settings, unit);
+                semaphore = Traits::makeSemaphore(self, event_queue_, new_settings, unit);
                 reparent(node, semaphore);
                 node = semaphore;
             }
@@ -584,7 +593,7 @@ protected:
 
             if (!Traits::hasThrottler(settings, unit) && Traits::hasThrottler(new_settings, unit)) // Add
             {
-                throttler = Traits::makeThrottler(event_queue_, new_settings, unit);
+                throttler = Traits::makeThrottler(self, event_queue_, new_settings, unit);
                 reparent(node, throttler);
                 node = throttler;
             }
@@ -611,13 +620,13 @@ public:
 
     void attachWorkloadChild(const WorkloadNodePtr & child) final
     {
-        if (auto new_child = impl.attachWorkloadChild(this->event_queue, std::static_pointer_cast<WorkloadNodeCommon>(child)))
+        if (auto new_child = impl.attachWorkloadChild(this, this->event_queue, std::static_pointer_cast<WorkloadNodeCommon>(child)))
             reparent(new_child, this);
     }
 
     void detachWorkloadChild(const WorkloadNodePtr & child) final
     {
-        if (auto new_child = impl.detachWorkloadChild(this->event_queue, std::static_pointer_cast<WorkloadNodeCommon>(child)))
+        if (auto new_child = impl.detachWorkloadChild(this, this->event_queue, std::static_pointer_cast<WorkloadNodeCommon>(child)))
             reparent(new_child, this);
     }
 
@@ -625,12 +634,17 @@ public:
     {
         this->info.update(new_settings);
         propagateUpdateSchedulingSettings();
-        if (auto new_child = impl.updateSchedulingSettings(this->event_queue, new_settings))
+        if (auto new_child = impl.updateSchedulingSettings(this, this->event_queue, new_settings))
             reparent(new_child, this);
     }
 
     /// Sharing-mode specific implementation of scheduling settings propagation
     virtual void propagateUpdateSchedulingSettings() = 0;
+
+    const String & getWorkload() const final
+    {
+        return this->basename;
+    }
 
     const WorkloadSettings & getSettings() const final
     {
@@ -713,7 +727,7 @@ public:
     TimeSharedWorkloadNode(EventQueue & event_queue_, const WorkloadSettings & settings, CostUnit unit)
         : WorkloadNodeCommon(event_queue_, settings)
     {
-        child = impl.initialize(event_queue_, settings, unit);
+        child = impl.initialize(this, event_queue_, settings, unit);
         reparent(child, this);
     }
 
@@ -805,7 +819,7 @@ public:
     SpaceSharedWorkloadNode(EventQueue & event_queue_, const WorkloadSettings & settings, CostUnit unit)
         : WorkloadNodeCommon(event_queue_, settings)
     {
-        child = impl.initialize(event_queue_, settings, unit);
+        child = impl.initialize(this, event_queue_, settings, unit);
         reparent(child, this);
     }
 
