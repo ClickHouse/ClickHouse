@@ -60,6 +60,7 @@ struct QueryPlanOptimizationSettings
     bool use_join_disjunctions_push_down;
     bool convert_any_join_to_semi_or_anti_join;
     bool remove_unused_columns;
+    bool allow_statistics_optimize;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap

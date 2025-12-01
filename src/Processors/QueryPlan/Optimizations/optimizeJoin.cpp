@@ -11,6 +11,8 @@
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/StorageMemory.h>
 
@@ -239,7 +241,10 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         if (has_filter && !is_filtered_by_index)
             return RelationStats{.estimated_rows = {}, .table_name = table_display_name};
 
-        return RelationStats{.estimated_rows = analyzed_result->selected_rows, .table_name = table_display_name};
+        return RelationStats{
+            .estimated_rows = analyzed_result->selected_rows,
+            .table_name = table_display_name
+        };
     }
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
@@ -1058,6 +1063,119 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
     return result;
 }
 
+/// Quick check if a node will definitely produce zero rows
+/// This is a lightweight check that avoids expensive estimateReadRowsCount
+/// It only checks for obvious cases without building indexes
+static bool isDefinitelyEmpty(QueryPlan::Node & node)
+{
+    IQueryPlanStep * step = node.step.get();
+
+    if (const auto * reading = typeid_cast<const ReadFromPreparedSource *>(step))
+        return reading->isEmpty();
+
+    if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
+    {
+        auto analyzed_result = reading->getAnalyzedResult();
+        if (analyzed_result && analyzed_result->selected_rows == 0)
+            return true;
+        return false;
+    }
+
+    if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
+    {
+        const auto & storage = reading->getStorage();
+        auto total = storage->totalRows({});
+        return total.has_value() && *total == 0;
+    }
+
+    if (const auto * reading = typeid_cast<const ReadFromStorageStep *>(step))
+    {
+        auto storage = reading->getStorage();
+        if (!storage)
+            return false;
+
+        auto total = storage->totalRows({});
+        return total.has_value() && *total == 0;
+    }
+
+    if (const auto * reading = typeid_cast<const ReadFromSystemNumbersStep *>(step))
+    {
+        auto limit = reading->getLimit();
+        return limit.has_value() && limit.value() == 0;
+    }
+
+    if (node.children.size() == 1)
+        return isDefinitelyEmpty(*node.children[0]);
+
+    return false;
+}
+
+
+/// Table showing when each JOIN type produces empty result (1 = empty, 0 = not empty):
+/// ┌─────────────┬──────────────┬───────────────┬──────────────┬─────────────┐
+/// │ JOIN Type   │ Left Empty   │ Right Empty   │ Both Empty   │ None Empty  │
+/// ├─────────────┼──────────────┼───────────────┼──────────────┼─────────────┤
+/// │ INNER       │      1       │      1        │      1       │      0      │
+/// │ LEFT        │      1       │      0        │      1       │      0      │
+/// │ RIGHT       │      0       │      1        │      1       │      0      │
+/// │ FULL        │      0       │      0        │      1       │      0      │
+/// │ CROSS       │      1       │      1        │      1       │      0      │
+/// │ COMMA       │      1       │      1        │      1       │      0      │
+/// │ PASTE       │      1       │      1        │      1       │      0      │
+/// └─────────────┴──────────────┴───────────────┴──────────────┴─────────────┘
+static bool canOptimizeJoinWithEmptyInput(
+    JoinKind kind,
+    QueryPlan::Node * left_node,
+    QueryPlan::Node * right_node)
+{
+    switch (kind)
+    {
+        case JoinKind::Inner: [[fallthrough]];
+        case JoinKind::Cross: [[fallthrough]];
+        case JoinKind::Comma:
+        {
+            return isDefinitelyEmpty(*left_node) || isDefinitelyEmpty(*right_node);
+        }
+        case JoinKind::Left:
+        {
+            return isDefinitelyEmpty(*left_node);
+        }
+        case JoinKind::Right:
+        {
+            return isDefinitelyEmpty(*right_node);
+        }
+        case JoinKind::Full:
+        {
+            return isDefinitelyEmpty(*left_node) && isDefinitelyEmpty(*right_node);
+        }
+        default:
+            return false;
+    }
+}
+
+bool tryOptimizeJoinWithEmptyInput(
+    JoinStepLogical * join_step,
+    QueryPlan::Node & node,
+    JoinKind kind,
+    const QueryPlanOptimizationSettings & optimization_settings)
+{
+    if (!optimization_settings.allow_statistics_optimize)
+        return false;
+
+    if (canOptimizeJoinWithEmptyInput(kind, node.children[0], node.children[1]))
+    {
+        LOG_DEBUG(getLogger("optimizeJoin"),
+            "Replacing {} with ReadNothingStep because one side is empty",
+            toString(kind));
+
+        auto read_nothing_step = std::make_unique<ReadNothingStep>(join_step->getOutputHeader());
+        node.step = std::move(read_nothing_step);
+        node.children.clear();
+        return true;
+    }
+    return false;
+}
+
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
@@ -1093,6 +1211,9 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
         join_step->setOptimized();
         return;
     }
+
+    if (tryOptimizeJoinWithEmptyInput(join_step, node, kind, optimization_settings))
+        return;
 
     QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());
     query_graph_builder.context->dummy_stats = join_step->getDummyStats();

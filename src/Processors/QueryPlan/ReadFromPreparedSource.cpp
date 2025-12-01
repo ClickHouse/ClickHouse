@@ -1,9 +1,11 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -17,6 +19,18 @@ ReadFromPreparedSource::ReadFromPreparedSource(Pipe pipe_)
     : ISourceStep(pipe_.getSharedHeader())
     , pipe(std::move(pipe_))
 {
+}
+
+bool ReadFromPreparedSource::isEmpty() const
+{
+    const auto & processors = pipe.getProcessors();
+    for (const auto & processor : processors)
+    {
+        if (!typeid_cast<const NullSource *>(processor.get()))
+            return false;
+    }
+
+    return true;
 }
 
 void ReadFromPreparedSource::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

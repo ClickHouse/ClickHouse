@@ -77,6 +77,7 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
+    extern const SettingsBool allow_statistics_optimize;
 }
 
 namespace ServerSetting
@@ -119,6 +120,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     convert_join_to_in = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_join_to_in];
     merge_filter_into_join_condition = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_filter_into_join_condition];
     convert_any_join_to_semi_or_anti_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_any_join_to_semi_or_anti_join];
+    allow_statistics_optimize = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_statistics_optimize];
 
     bool use_parallel_replicas = from[Setting::allow_experimental_parallel_reading_from_replicas] && from[Setting::max_parallel_replicas] > 1;
     query_plan_optimize_join_order_limit = use_parallel_replicas ? 0 : from[Setting::query_plan_optimize_join_order_limit];

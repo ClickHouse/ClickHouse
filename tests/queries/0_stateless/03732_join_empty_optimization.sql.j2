@@ -1,0 +1,44 @@
+{% set join_kinds = ['INNER', 'LEFT', 'RIGHT', 'FULL', 'CROSS'] %}
+{% set engines = ['Memory', 'MergeTree', 'Log'] %}
+
+{% for engine in engines %}
+
+DROP TABLE IF EXISTS l_empty_{{ engine }};
+DROP TABLE IF EXISTS r_empty_{{ engine }};
+DROP TABLE IF EXISTS l_data_{{ engine }};
+DROP TABLE IF EXISTS r_data_{{ engine }};
+
+CREATE TABLE l_empty_{{ engine }} (k Int32, v Int32) ENGINE = {{ engine }} {% if engine == 'MergeTree' %}ORDER BY k{% endif %};
+CREATE TABLE r_empty_{{ engine }} (k Int32, v Int32) ENGINE = {{ engine }} {% if engine == 'MergeTree' %}ORDER BY k{% endif %};
+CREATE TABLE l_data_{{ engine }} (k Int32, v Int32) ENGINE = {{ engine }} {% if engine == 'MergeTree' %}ORDER BY k{% endif %};
+CREATE TABLE r_data_{{ engine }} (k Int32, v Int32) ENGINE = {{ engine }} {% if engine == 'MergeTree' %}ORDER BY k{% endif %};
+
+INSERT INTO l_data_{{ engine }} VALUES (1,10),(2,20),(3,30);
+INSERT INTO r_data_{{ engine }} VALUES (2,200),(3,300),(4,400);
+
+{% endfor %}
+
+SET allow_statistics_optimize = 1;
+
+-- { echoOn }
+
+{% for engine in engines %}
+{% for kind in join_kinds %}
+-- {{ engine }}: {{ kind }} JOIN, left empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_empty_{{ engine }} AS l {{ kind }} JOIN r_data_{{ engine }} AS r {% if kind != 'CROSS' %}USING (k){% endif %}) WHERE explain LIKE '%Join%';
+
+-- {{ engine }}: {{ kind }} JOIN, right empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_data_{{ engine }} AS l {{ kind }} JOIN r_empty_{{ engine }} AS r {% if kind != 'CROSS' %}USING (k){% endif %}) WHERE explain LIKE '%Join%';
+
+{% endfor %}
+{% endfor %}
+
+-- numbers() table function
+{% for kind in join_kinds %}
+-- numbers: {{ kind }} JOIN, left empty
+SELECT count() FROM (EXPLAIN SELECT * FROM (SELECT number AS k, number * 10 AS v FROM numbers(0)) AS l {{ kind }} JOIN (SELECT number AS k, number * 100 AS v FROM numbers(3)) AS r {% if kind != 'CROSS' %}USING (k){% endif %}) WHERE explain LIKE '%Join%';
+
+-- numbers: {{ kind }} JOIN, right empty
+SELECT count() FROM (EXPLAIN SELECT * FROM (SELECT number AS k, number * 10 AS v FROM numbers(3)) AS l {{ kind }} JOIN (SELECT number AS k, number * 100 AS v FROM numbers(0)) AS r {% if kind != 'CROSS' %}USING (k){% endif %}) WHERE explain LIKE '%Join%';
+
+{% endfor %}
