@@ -1394,4 +1394,9 @@ void ColumnArray::takeDynamicStructureFromSourceColumns(const Columns & source_c
     data->takeDynamicStructureFromSourceColumns(nested_source_columns);
 }
 
+void ColumnArray::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
+{
+    data->takeDynamicStructureFromColumn(assert_cast<const ColumnArray &>(*source_column).getDataPtr());
+}
+
 }
