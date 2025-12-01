@@ -532,7 +532,6 @@ void MergeTreeRangeReader::ReadResult::applyFilter(const FilterWithCachedCount &
 
     LOG_TEST(log, "ReadResult::applyFilter() num_rows before: {}", num_rows);
 
-    /// Prevents repeated in-place filter execution on the same column
     filterColumns(columns, filter);
     filterBlock(additional_columns, filter);
     filterBlock(columns_for_patches, filter);
