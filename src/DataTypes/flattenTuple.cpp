@@ -1,8 +1,10 @@
 #include <DataTypes/flattenTuple.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
 
 namespace DB
 {
@@ -12,7 +14,7 @@ namespace
 
 void flattenTupleTypeImpl(const DataTypePtr & type, const String & current_path, std::vector<String> & flattened_paths, DataTypes & flattened_types)
 {
-    if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(removeNullable(type).get()))
     {
         const auto & tuple_names = type_tuple->getElementNames();
         const auto & tuple_types = type_tuple->getElements();
@@ -46,7 +48,7 @@ void flattenTupleTypeImpl(const DataTypePtr & type, const String & current_path,
 
 void flattenTupleColumnImpl(const ColumnPtr & column, Columns & flattened_columns, Columns & offsets_columns)
 {
-    if (const auto * column_tuple = checkAndGetColumn<ColumnTuple>(column.get()))
+    if (const auto * column_tuple = checkAndGetColumn<ColumnTuple>(removeNullable(column).get()))
     {
         const auto & subcolumns = column_tuple->getColumns();
         for (const auto & subcolumn : subcolumns)
