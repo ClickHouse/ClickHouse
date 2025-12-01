@@ -20,8 +20,8 @@ Positions: 0
         Actions: INPUT :: 0 -> __join_result_dummy UInt8 : 0
         Positions:
           JoinLogical
-          Join: en[50] ⋈ de[50]
-          ResultRows: 50
+          Join: en[5] ⋈ de[10]
+          ResultRows: 5
           Type: INNER
           Strictness: ALL
           Locality: UNSPECIFIED

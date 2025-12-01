@@ -1,5 +1,8 @@
 SET distributed_plan_optimize_exchanges = 1;
-CREATE TABLE test(path String, lang String, hits UInt64) ENGINE MergeTree() ORDER BY tuple();
+
+CREATE TABLE test(path String, lang String, hits UInt64) ENGINE MergeTree()
+ORDER BY tuple()
+SETTINGS auto_statistics_types = 'tdigest,countmin,uniq,minmax';
 
 INSERT INTO test SELECT 'path' || number::String, 'en', number FROM numbers(5);
 INSERT INTO test SELECT 'path' || number::String, 'de', number FROM numbers(10);
