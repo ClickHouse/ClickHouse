@@ -64,20 +64,6 @@ class JobStages(metaclass=MetaClasses.WithIter):
     UPLOAD_PROFILE_DATA = "profile"
 
 
-def should_use_sparse_checkout_of_submodules(build_type: str) -> bool:
-    NOT_COMPATIBLE_JOBS = [
-        BuildTypes.AMD_COMPAT,
-        BuildTypes.AMD_DARWIN,
-        BuildTypes.AMD_FREEBSD,
-        BuildTypes.ARM_DARWIN,
-        BuildTypes.PPC64LE,
-        BuildTypes.RISCV64,
-        BuildTypes.S390X,
-    ]
-
-    return build_type not in NOT_COMPATIBLE_JOBS
-
-
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Build Job")
     parser.add_argument(
@@ -141,11 +127,14 @@ def main():
     if info.pr_number == 0:
         cmake_cmd += " -DCLICKHOUSE_OFFICIAL_BUILD=1"
 
-    # For PRs we prefer to build without debug symbols to save space and time (LTO is much faster)
-    if info.pr_number != 0 and build_type in (
-        BuildTypes.AMD_RELEASE,
-        BuildTypes.ARM_RELEASE,
-    ):
+    is_private = (
+        "PRIVATE_BUILDS_TO_CMAKE" in vars() or "PRIVATE_BUILDS_TO_CMAKE" in globals()
+    )
+
+    # When building with LTO removing debug symbols makes linking much faster
+    # In PRs we disable them to save time and space, but keep them for official builds (master, pr_number = 0)
+    # We keep them in private to allow deploying to staging from PRs
+    if not is_private and info.pr_number != 0 and "ENABLE_THINLTO=1" in cmake_cmd:
         cmake_cmd += " -DDISABLE_ALL_DEBUG_SYMBOLS=1"
 
     cmake_cmd += f" {current_directory}"
