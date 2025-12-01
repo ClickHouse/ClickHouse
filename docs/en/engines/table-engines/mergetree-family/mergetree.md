@@ -767,7 +767,7 @@ In addition to local block devices, ClickHouse supports these storage types:
 - [`hdfs` for HDFS](/engines/table-engines/integrations/hdfs)
 - [`web` for read-only from web](/operations/storing-data#web-storage)
 - [`cache` for local caching](/operations/storing-data#using-local-cache)
-- [`s3_plain` for backups to S3](/operations/backup#backuprestore-using-an-s3-disk)
+- [`s3_plain` for backups to S3](/operations/backup/disk)
 - [`s3_plain_rewritable` for immutable, non-replicated tables in S3](/operations/storing-data.md#s3-plain-rewritable-storage)
 
 ## Using multiple block devices for data storage {#table_engine-mergetree-multiple-volumes}
