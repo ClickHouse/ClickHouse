@@ -577,7 +577,7 @@ class JobConfigs:
         *[
             Job.ParamSet(
                 parameter=f"{BuildTypes.AMD_COVERAGE}, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_SMALL,
+                runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_COV_BIN],
             )
             for total_batches in (8,)
@@ -803,6 +803,19 @@ class JobConfigs:
     #         requires=[ArtifactNames.CH_AMD_ASAN],
     #     )
     # )
+    integration_test_llvm_coverage = (
+        common_integration_test_job_config.parametrize(
+        *[
+            Job.ParamSet(
+                parameter=f"llvm_coverage, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_MEDIUM,
+                requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+            )
+            for total_batches in (5,)
+            for batch in range(1, total_batches + 1)
+        ],
+        )
+    )
     # compatibility_test_jobs = Job.Config(
     #     name=JobNames.COMPATIBILITY,
     #     runs_on=[],  # from parametrize()
