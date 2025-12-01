@@ -7,6 +7,7 @@
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include "Storages/ObjectStorage/ObjectStorageFilePathGenerator.h"
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
@@ -72,6 +73,17 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
         bool async_insert) override;
+
+
+    bool supportsImport() const override;
+
+    SinkToStoragePtr import(
+        const std::string & /* file_name */,
+        Block & /* block_with_partition_values */,
+        std::string & /* destination_file_path */,
+        bool /* overwrite_if_exists */,
+        const std::optional<FormatSettings> & /* format_settings_ */,
+        ContextPtr /* context */) override;
 
     void truncate(
         const ASTPtr & query,

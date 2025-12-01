@@ -956,8 +956,6 @@ private:
 
     MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const override;
 
-    void startBackgroundMovesIfNeeded() override;
-
     /// Attaches restored parts to the storage.
     void attachRestoredParts(MutableDataPartsVector && parts) override;
 

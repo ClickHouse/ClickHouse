@@ -1,0 +1,11 @@
+---- Get actual part names and export them
+---- Both data parts should appear
+1	2020
+2	2020
+3	2020
+4	2021
+---- Export the same part again, it should be idempotent
+1	2020
+2	2020
+3	2020
+4	2021

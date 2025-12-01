@@ -143,6 +143,7 @@ public:
         NOT_A_BACKGROUND_OPERATION = 0,
         MERGE = 1,
         MUTATION = 2,
+        EXPORT_PART = 3,
     };
 
     /// It's ClientInfo and context created for background operation (not real query)

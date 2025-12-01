@@ -72,6 +72,7 @@ public:
         FREEZE_ALL,
         UNFREEZE_PARTITION,
         UNFREEZE_ALL,
+        EXPORT_PART,
 
         DELETE,
         UPDATE,
@@ -263,6 +264,8 @@ public:
     bool isDropPartitionAlter() const;
 
     bool isMovePartitionToDiskOrVolumeAlter() const;
+
+    bool isExportPartAlter() const;
 
     bool isCommentAlter() const;
 

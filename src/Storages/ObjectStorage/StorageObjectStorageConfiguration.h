@@ -7,6 +7,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/ObjectStorage/ObjectStorageFilePathGenerator.h>
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Storages/MutationCommands.h>
@@ -67,6 +68,7 @@ public:
         std::string path;
 
         bool hasPartitionWildcard() const;
+        bool hasExportFilenameWildcard() const;
         bool hasGlobsIgnorePartitionWildcard() const;
         bool hasGlobs() const;
         std::string cutGlobs(bool supports_partial_prefix) const;
@@ -100,6 +102,8 @@ public:
     const Path & getPathForRead() const;
     // Path used for writing, it should not be globbed and might contain a partition key
     Path getPathForWrite(const std::string & partition_id = "") const;
+
+    Path getPathForWrite(const std::string & partition_id, const std::string & filename_override) const;
 
     void setPathForRead(const Path & path)
     {
@@ -285,6 +289,7 @@ private:
     // Path used for reading, by default it is the same as `getRawPath`
     // When using `partition_strategy=hive`, a recursive reading pattern will be appended `'table_root/**.parquet'
     Path read_path;
+    std::shared_ptr<ObjectStorageFilePathGenerator> file_path_generator;
 };
 
 using StorageObjectStorageConfigurationPtr = std::shared_ptr<StorageObjectStorageConfiguration>;

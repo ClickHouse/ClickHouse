@@ -90,6 +90,7 @@ class AsynchronousMetrics;
 class BackgroundSchedulePool;
 class MergeList;
 class MovesList;
+class ExportsList;
 class ReplicatedFetchList;
 class RefreshSet;
 class Cluster;
@@ -1174,6 +1175,7 @@ public:
     void makeQueryContext();
     void makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings);
     void makeQueryContextForMutate(const MergeTreeSettings & merge_tree_settings);
+    void makeQueryContextForExportPart();
     void makeSessionContext();
     void makeGlobalContext();
 
@@ -1208,6 +1210,9 @@ public:
 
     MovesList & getMovesList();
     const MovesList & getMovesList() const;
+
+    ExportsList & getExportsList();
+    const ExportsList & getExportsList() const;
 
     ReplicatedFetchList & getReplicatedFetchList();
     const ReplicatedFetchList & getReplicatedFetchList() const;
@@ -1734,6 +1739,7 @@ public:
 
     ThrottlerPtr getMutationsThrottler() const;
     ThrottlerPtr getMergesThrottler() const;
+    ThrottlerPtr getExportsThrottler() const;
 
     ThrottlerPtr getDistributedCacheReadThrottler() const;
     ThrottlerPtr getDistributedCacheWriteThrottler() const;

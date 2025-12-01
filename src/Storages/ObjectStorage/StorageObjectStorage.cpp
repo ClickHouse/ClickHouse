@@ -1,6 +1,8 @@
+#include <optional>
 #include <thread>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 
 #include <Common/Exception.h>
 #include <Common/Logger.h>
@@ -61,6 +63,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
+    extern const int FILE_ALREADY_EXISTS;
 }
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
@@ -520,7 +523,8 @@ SinkToStoragePtr StorageObjectStorage::write(
 
     if (configuration->partition_strategy)
     {
-        return std::make_shared<PartitionedStorageObjectStorageSink>(object_storage, configuration, format_settings, sample_block, local_context);
+        auto sink_creator = std::make_shared<PartitionedStorageObjectStorageSink>(object_storage, configuration, format_settings, sample_block, local_context);
+        return std::make_shared<PartitionedSink>(configuration->partition_strategy, sink_creator, local_context, sample_block);
     }
 
     auto paths = configuration->getPaths();
@@ -550,6 +554,53 @@ bool StorageObjectStorage::optimize(
     [[maybe_unused]] ContextPtr context)
 {
     return configuration->optimize(metadata_snapshot, context, format_settings);
+}
+
+bool StorageObjectStorage::supportsImport() const
+{
+    if (!configuration->partition_strategy)
+        return false;
+
+    if (configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::WILDCARD)
+        return configuration->getRawPath().hasExportFilenameWildcard();
+
+    return configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE;
+}
+
+SinkToStoragePtr StorageObjectStorage::import(
+    const std::string & file_name,
+    Block & block_with_partition_values,
+    std::string & destination_file_path,
+    bool overwrite_if_exists,
+    const std::optional<FormatSettings> & format_settings_,
+    ContextPtr local_context)
+{
+    std::string partition_key;
+
+    if (configuration->partition_strategy)
+    {
+        const auto column_with_partition_key = configuration->partition_strategy->computePartitionKey(block_with_partition_values);
+
+        if (!column_with_partition_key->empty())
+        {
+            partition_key = std::string{column_with_partition_key->getDataAt(0)};
+        }
+    }
+
+    destination_file_path = configuration->getPathForWrite(partition_key, file_name).path;
+
+    if (!overwrite_if_exists && object_storage->exists(StoredObject(destination_file_path)))
+    {
+        throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File {} already exists", destination_file_path);
+    }
+
+    return std::make_shared<StorageObjectStorageSink>(
+        destination_file_path,
+        object_storage,
+        configuration,
+        format_settings_ ? format_settings_ : format_settings,
+        std::make_shared<const Block>(getInMemoryMetadataPtr()->getSampleBlock()),
+        local_context);
 }
 
 void StorageObjectStorage::truncate(
@@ -727,6 +778,5 @@ void StorageObjectStorage::checkAlterIsPossible(const AlterCommands & commands, 
 {
     configuration->checkAlterIsPossible(commands);
 }
-
 
 }

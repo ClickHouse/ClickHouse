@@ -364,6 +364,8 @@ public:
         static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_);
         /// For Load
         static String getFileColumnName(const String & column_name, const Checksums & checksums_);
+
+        Block getBlock(const MergeTreeData & data) const;
     };
 
     using MinMaxIndexPtr = std::shared_ptr<MinMaxIndex>;

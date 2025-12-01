@@ -10,6 +10,7 @@
     M(Merge, "Number of executing background merges") \
     M(MergeParts, "Number of source parts participating in current background merges") \
     M(Move, "Number of currently executing moves") \
+    M(Export, "Number of currently executing exports") \
     M(PartMutation, "Number of mutations (ALTER DELETE/UPDATE)") \
     M(ReplicatedFetch, "Number of data parts being fetched from replica") \
     M(ReplicatedSend, "Number of data parts being sent to replicas") \

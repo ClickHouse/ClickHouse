@@ -525,4 +525,13 @@ enum class ArrowFlightDescriptorType : uint8_t
 
 DECLARE_SETTING_ENUM(ArrowFlightDescriptorType)
 
+enum class MergeTreePartExportFileAlreadyExistsPolicy : uint8_t
+{
+    skip,
+    error,
+    overwrite,
+};
+
+DECLARE_SETTING_ENUM(MergeTreePartExportFileAlreadyExistsPolicy)
+
 }

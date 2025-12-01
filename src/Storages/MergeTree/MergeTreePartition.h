@@ -60,6 +60,8 @@ struct MergeTreePartition
 
     void create(const StorageMetadataPtr & metadata_snapshot, Block block, size_t row, ContextPtr context);
 
+    Block getBlockWithPartitionValues(const NamesAndTypesList & partition_columns) const;
+
     /// Adjust partition key and execute its expression on block. Return sample block according to used expression.
     static NamesAndTypesList executePartitionByExpression(const StorageMetadataPtr & metadata_snapshot, Block & block, ContextPtr context);
 

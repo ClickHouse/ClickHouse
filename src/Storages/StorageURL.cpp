@@ -735,7 +735,7 @@ void StorageURLSink::cancelBuffers()
         write_buf->cancel();
 }
 
-class PartitionedStorageURLSink : public PartitionedSink
+class PartitionedStorageURLSink : public PartitionedSink::SinkCreator
 {
 public:
     PartitionedStorageURLSink(
@@ -749,7 +749,7 @@ public:
         const CompressionMethod compression_method_,
         const HTTPHeaderEntries & headers_,
         const String & http_method_)
-        : PartitionedSink(partition_strategy_, context_, std::make_shared<const Block>(sample_block_))
+        : partition_strategy(partition_strategy_)
         , uri(uri_)
         , format(format_)
         , format_settings(format_settings_)
@@ -764,7 +764,8 @@ public:
 
     SinkPtr createSinkForPartition(const String & partition_id) override
     {
-        std::string partition_path = partition_strategy->getPathForWrite(uri, partition_id);
+        const auto file_path_generator = std::make_shared<ObjectStorageWildcardFilePathGenerator>(uri);
+        std::string partition_path = file_path_generator->getPathForWrite(partition_id);
 
         context->getRemoteHostFilter().checkURL(Poco::URI(partition_path));
         return std::make_shared<StorageURLSink>(
@@ -772,6 +773,7 @@ public:
     }
 
 private:
+    std::shared_ptr<IPartitionStrategy> partition_strategy;
     const String uri;
     const String format;
     const std::optional<FormatSettings> format_settings;
@@ -1451,7 +1453,7 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             has_wildcards,
             /* partition_columns_in_data_file */true);
 
-        return std::make_shared<PartitionedStorageURLSink>(
+        auto sink_creator = std::make_shared<PartitionedStorageURLSink>(
             partition_strategy,
             uri,
             format_name,
@@ -1462,6 +1464,8 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             compression_method,
             headers,
             http_method);
+
+        return std::make_shared<PartitionedSink>(partition_strategy, sink_creator, context, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()));
     }
 
     return std::make_shared<StorageURLSink>(

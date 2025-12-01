@@ -7137,6 +7137,12 @@ Possible values:
 - 0 — always,
 - negative integer - never.
 )", 0) \
+    DECLARE(MergeTreePartExportFileAlreadyExistsPolicy, export_merge_tree_part_file_already_exists_policy, MergeTreePartExportFileAlreadyExistsPolicy::skip, R"(
+Possible values:
+- skip - Skip the file if it already exists.
+- error - Throw an error if the file already exists.
+- overwrite - Overwrite the file.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
@@ -7335,6 +7341,9 @@ Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optim
     DECLARE_WITH_ALIAS(Bool, allow_experimental_time_series_aggregate_functions, false, R"(
 Experimental timeSeries* aggregate functions for Prometheus-like timeseries resampling, rate, delta calculation.
 )", EXPERIMENTAL, allow_experimental_ts_to_grid_aggregate_function) \
+    DECLARE(Bool, allow_experimental_export_merge_tree_part, false, R"(
+Experimental export merge tree part.
+)", EXPERIMENTAL) \
     \
     DECLARE(String, promql_database, "", R"(
 Specifies the database name used by the 'promql' dialect. Empty string means the current database.
