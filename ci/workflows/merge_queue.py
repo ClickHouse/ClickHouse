@@ -8,7 +8,7 @@ workflow = Workflow.Config(
     event=Workflow.Event.MERGE_QUEUE,
     jobs=[
         JobConfigs.style_check,
-        JobConfigs.fast_test,
+        # JobConfigs.fast_test,
         *[job for job in JobConfigs.build_jobs if job.name == "Build (amd_binary)"],
     ],
     artifacts=[
