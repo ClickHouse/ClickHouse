@@ -110,6 +110,8 @@ public:
 
     bool isExceedingMemorySoftLimit() const;
 
+    int64_t getLeaderID() const;
+
     Keeper4LWInfo getPartiallyFilled4LWInfo() const;
 
     /// @return follower count if node is not leader return 0

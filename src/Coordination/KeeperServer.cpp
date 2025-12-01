@@ -1129,6 +1129,13 @@ KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
         raft_instance->set_priority(update->id, update->priority, /*broadcast on live leader*/ true);
         return Accepted;
     }
+    if (const auto * transfer_leader = std::get_if<TransferLeadership>(&action))
+    {
+        if (raft_instance->request_leadership(transfer_leader->target_server_id))
+            return Accepted;
+        else
+            return Declined;
+    }
     std::unreachable();
 }
 
@@ -1305,6 +1312,11 @@ KeeperLogInfo KeeperServer::getKeeperLogInfo()
 bool KeeperServer::requestLeader()
 {
     return isLeader() || raft_instance->request_leadership();
+}
+
+int64_t KeeperServer::getLeaderID() const
+{
+    return raft_instance->get_leader();
 }
 
 void KeeperServer::yieldLeadership()

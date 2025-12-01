@@ -101,6 +101,9 @@ private:
     nuraft::ptr<nuraft::buffer> forceWaitAndProcessResult(
         RaftAppendResult & result, KeeperRequestsForSessions & requests_for_sessions, bool clear_requests_on_success);
 
+    using ConfigCheckCallback = std::function<bool(KeeperServer * server)>;
+    void executeClusterUpdateActionAndWaitConfigChange(const ClusterUpdateAction & action, ConfigCheckCallback check_callback, size_t max_action_wait_time_ms);
+
 public:
     std::mutex read_request_queue_mutex;
 
