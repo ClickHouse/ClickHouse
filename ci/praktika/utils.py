@@ -53,13 +53,20 @@ class MetaClasses:
 
         @classmethod
         def from_fs(cls: Type[T], name) -> T:
-            with open(cls.file_name_static(name), "r", encoding="utf8") as f:
+            return cls.from_file(cls.file_name_static(name))
+
+        @classmethod
+        def from_file(cls: Type[T], path) -> T:
+            """
+            For non-default result file locations
+            """
+            with open(path, "r", encoding="utf8") as f:
                 try:
                     return cls.from_dict(json.load(f))
                 except json.decoder.JSONDecodeError as ex:
                     print(f"ERROR: failed to parse json, ex [{ex}]")
-                    print(f"JSON content [{cls.file_name_static(name)}]")
-                    Shell.check(f"cat {cls.file_name_static(name)}")
+                    print(f"JSON content [{path}]")
+                    Shell.check(f"cat {path}")
                     raise ex
 
         @classmethod
@@ -768,6 +775,20 @@ class Utils:
             # Perform decompression
             res = Shell.check(
                 f"zstd --decompress --force -o {quote(path_to)} {quote(path)}",
+                verbose=True,
+                strict=not no_strict,
+            )
+        elif path.endswith(".gz"):
+            path_to = path_to or path.removesuffix(".gz")
+
+            # Ensure gzip is installed
+            if not Shell.check("which gzip", verbose=True, strict=not no_strict):
+                print("ERROR: gzip is not installed. Cannot decompress artifact.")
+                return False
+
+            # Perform decompression (decompress to stdout and redirect to file)
+            res = Shell.check(
+                f"gzip --decompress --stdout {quote(path)} > {quote(path_to)}",
                 verbose=True,
                 strict=not no_strict,
             )

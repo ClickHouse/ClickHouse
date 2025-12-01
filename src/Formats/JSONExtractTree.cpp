@@ -131,7 +131,7 @@ void jsonElementToString(const typename JSONParser::Element & element, WriteBuff
 
 template <typename JSONParser, typename NumberType>
 bool tryGetNumericValueFromJSONElement(
-    NumberType & value, const typename JSONParser::Element & element, bool convert_bool_to_integer, bool allow_type_conversion, String & error)
+    NumberType & value, const typename JSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, String & error)
 {
     switch (element.type())
     {
@@ -164,13 +164,10 @@ bool tryGetNumericValueFromJSONElement(
             }
             break;
         case ElementType::BOOL:
-            if constexpr (is_integer<NumberType>)
+            if (convert_bool_to_number && allow_type_conversion)
             {
-                if (convert_bool_to_integer && allow_type_conversion)
-                {
-                    value = static_cast<NumberType>(element.getBool());
-                    break;
-                }
+                value = static_cast<NumberType>(element.getBool());
+                break;
             }
             error = fmt::format("cannot convert bool value to {}", TypeName<NumberType>);
             return false;
@@ -262,7 +259,7 @@ public:
         }
 
         NumberType value;
-        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, insert_settings.convert_bool_to_integer || is_bool_type, insert_settings.allow_type_conversion, error))
+        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, /*convert_bool_to_number=*/ true, insert_settings.allow_type_conversion, error))
         {
             if (error.empty())
                 error = fmt::format("cannot read {} value from JSON element: {}", TypeName<NumberType>, jsonElementToString<JSONParser>(element, format_settings));
@@ -319,7 +316,7 @@ public:
         }
 
         NumberType value;
-        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, insert_settings.convert_bool_to_integer || this->is_bool_type, insert_settings.allow_type_conversion, error))
+        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, /*convert_bool_to_number=*/ true, insert_settings.allow_type_conversion, error))
         {
             if (error.empty())
                 error = fmt::format("cannot read {} value from JSON element: {}", TypeName<NumberType>, jsonElementToString<JSONParser>(element, format_settings));
@@ -581,7 +578,7 @@ public:
 
     static bool tryParse(UUID & uuid, std::string_view data)
     {
-        ReadBufferFromMemory buf(data.data(), data.size());
+        ReadBufferFromMemory buf(data);
         return tryReadUUIDText(uuid, buf) && buf.eof();
     }
 };
@@ -612,7 +609,7 @@ public:
         }
 
         auto data = element.getString();
-        ReadBufferFromMemory buf(data.data(), data.size());
+        ReadBufferFromMemory buf(data);
         UUID uuid;
         if (!tryReadUUIDText(uuid, buf) || !buf.eof())
         {
@@ -651,7 +648,7 @@ public:
         }
 
         auto data = element.getString();
-        ReadBufferFromMemory buf(data.data(), data.size());
+        ReadBufferFromMemory buf(data);
         DateType date;
         if (!tryReadDateText(date, buf) || !buf.eof())
         {
@@ -708,7 +705,7 @@ public:
 
     bool tryParse(time_t & value, std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
     {
-        ReadBufferFromMemory buf(data.data(), data.size());
+        ReadBufferFromMemory buf(data);
         switch (date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
@@ -773,7 +770,7 @@ public:
 
     bool tryParse(time_t & value, std::string_view data, FormatSettings::DateTimeInputFormat /*time_input_format*/) const
     {
-        ReadBufferFromMemory buf(data.data(), data.size());
+        ReadBufferFromMemory buf(data);
         const auto & date_lut = DateLUT::instance();
 
         if (tryReadTimeText(value, buf, date_lut) && buf.eof())
@@ -916,7 +913,7 @@ public:
 
     bool tryParse(DateTime64 & value, std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
     {
-        ReadBufferFromMemory buf(data.data(), data.size());
+        ReadBufferFromMemory buf(data);
         switch (date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
@@ -998,7 +995,7 @@ public:
 
     bool tryParse(Time64 & value, std::string_view data, FormatSettings::DateTimeInputFormat /*time_input_format*/) const
     {
-        ReadBufferFromMemory buf(data.data(), data.size());
+        ReadBufferFromMemory buf(data);
         const auto & date_lut = DateLUT::instance();
 
         if (tryReadTime64Text(value, scale, buf, date_lut) && buf.eof())
@@ -1129,7 +1126,7 @@ public:
 
     static bool tryParse(IPv4 & value, std::string_view data)
     {
-        ReadBufferFromMemory buf(data.data(), data.size());
+        ReadBufferFromMemory buf(data);
         return tryReadIPv4Text(value, buf) && buf.eof();
     }
 };
@@ -1172,7 +1169,7 @@ public:
 
     static bool tryParse(IPv6 & value, std::string_view data)
     {
-        ReadBufferFromMemory buf(data.data(), data.size());
+        ReadBufferFromMemory buf(data);
         return tryReadIPv6Text(value, buf) && buf.eof();
     }
 };
@@ -2192,13 +2189,13 @@ template std::unique_ptr<JSONExtractTreeNode<SimdJSONParser>> buildJSONExtractTr
 #if USE_RAPIDJSON
 template void jsonElementToString<RapidJSONParser>(const RapidJSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);
 template std::unique_ptr<JSONExtractTreeNode<RapidJSONParser>> buildJSONExtractTree<RapidJSONParser>(const DataTypePtr & type, const char * source_for_exception_message);
-template bool tryGetNumericValueFromJSONElement<RapidJSONParser, Float64>(Float64 & value, const RapidJSONParser::Element & element, bool convert_bool_to_integer, bool allow_type_conversion, String & error);
+template bool tryGetNumericValueFromJSONElement<RapidJSONParser, Float64>(Float64 & value, const RapidJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, String & error);
 #else
 template void jsonElementToString<DummyJSONParser>(const DummyJSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);
 template std::unique_ptr<JSONExtractTreeNode<DummyJSONParser>> buildJSONExtractTree<DummyJSONParser>(const DataTypePtr & type, const char * source_for_exception_message);
-template bool tryGetNumericValueFromJSONElement<DummyJSONParser, Float64>(Float64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_integer, bool allow_type_conversion, String & error);
-template bool tryGetNumericValueFromJSONElement<DummyJSONParser, Int64>(Int64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_integer, bool allow_type_conversion, String & error);
-template bool tryGetNumericValueFromJSONElement<DummyJSONParser, UInt64>(UInt64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_integer, bool allow_type_conversion, String & error);
+template bool tryGetNumericValueFromJSONElement<DummyJSONParser, Float64>(Float64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, String & error);
+template bool tryGetNumericValueFromJSONElement<DummyJSONParser, Int64>(Int64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, String & error);
+template bool tryGetNumericValueFromJSONElement<DummyJSONParser, UInt64>(UInt64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, String & error);
 #endif
 
 }

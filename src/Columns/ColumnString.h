@@ -110,17 +110,18 @@ public:
         res = std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)};
     }
 
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override
     {
-        WriteBufferFromOwnString wb;
-        writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)}, wb);
-        return {wb.str(), std::make_shared<DataTypeString>()};
+
+        if (options.notFull(name_buf))
+            writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)}, name_buf);
+        return std::make_shared<DataTypeString>();
     }
 
-    StringRef getDataAt(size_t n) const override
+    std::string_view getDataAt(size_t n) const override
     {
         chassert(n < size());
-        return StringRef(&chars[offsetAt(n)], sizeAt(n));
+        return std::string_view(reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n));
     }
 
     bool isDefaultAt(size_t n) const override
@@ -206,16 +207,16 @@ public:
 
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    std::string_view serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     ALWAYS_INLINE char * serializeValueIntoMemory(size_t n, char * memory) const override;
 
     void batchSerializeValueIntoMemory(std::vector<char *> & memories) const override;
 
-    const char * deserializeAndInsertFromArena(const char * pos) override;
-    const char * deserializeAndInsertAggregationStateValueFromArena(const char * pos) override;
+    void deserializeAndInsertFromArena(ReadBuffer & in) override;
+    void deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in) override;
 
-    const char * skipSerializedInArena(const char * pos) const override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 

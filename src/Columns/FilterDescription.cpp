@@ -62,41 +62,35 @@ ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
     }
 }
 
-/// Here we check for ColumnUInt8.
-/// If the argument has a different type, convert it to ColumnUInt8.
-/// If the argument is ColumnUInt8, check if we own it to avoid copying.
-/// Fill the filter if we own the column and can modify the data later.
-/// For ColumnUInt8 which is shared, return the fererence to existing filter.
-static const IColumnFilter & unpackOrConvertFilter(ColumnPtr & column, std::optional<IColumnFilter> & filter)
+/// Extracts or converts filter data out of ColumnVector<some int or float>.
+/// If we own the resulting filter, returns it and possibly resets `column` to nullptr.
+/// If `column` is a shared ColumnUInt8, returns nullopt.
+static std::optional<IColumnFilter> unpackOrConvertFilter(ColumnPtr & column)
 {
-    if (const auto * column_uint8 = typeid_cast<const ColumnUInt8 *>(column.get()))
+    if (typeid_cast<const ColumnUInt8 *>(column.get()))
     {
         if (column->use_count() == 1)
         {
+            /// Move the data out of the column so that the caller can mutate it without copying.
             auto mut_col = IColumn::mutate(std::move(column));
-            filter = std::move(assert_cast<ColumnUInt8 &>(*mut_col).getData());
-            return *filter;
+            auto filter = std::move(assert_cast<ColumnUInt8 &>(*mut_col).getData());
+            column = nullptr;
+            return std::make_optional(std::move(filter));
         }
         else
-            return column_uint8->getData();
+            return std::nullopt;
     }
 
     IColumnFilter res(column->size());
     if (!tryConvertAnyColumnToBool(*column, res))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
             "Illegal type {} of column for filter. Must be Number or Nullable(Number).", column->getName());
-    filter = std::move(res);
-    return *filter;
+    return std::make_optional(std::move(res));
 }
 
-FilterDescription::FilterDescription(const IColumn & column_)
+ColumnPtr FilterDescription::preprocessFilterColumn(ColumnPtr column)
 {
-    ColumnPtr column = column_.getPtr();
-    if (column_.isSparse())
-        column = column_.convertToFullColumnIfSparse();
-
-    if (column_.lowCardinality())
-        column = column_.convertToFullColumnIfLowCardinality();
+    column = column->convertToFullIfNeeded();
 
     ColumnPtr null_map_column;
     if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(column.get()))
@@ -105,10 +99,7 @@ FilterDescription::FilterDescription(const IColumn & column_)
         column = nullable_column->getNestedColumnPtr();
     }
 
-    std::optional<IColumnFilter> column_filter;
-    /// We pass argument by reference, so for UInt8 or Nullable(UInt8) column we return the reference to existing filter.
-    /// If the conversion or cast happened, column_filter will contain the newly-created data, so we avoid extra copying.
-    data = &unpackOrConvertFilter(column, column_filter);
+    auto column_filter = unpackOrConvertFilter(column);
 
     if (null_map_column)
     {
@@ -117,7 +108,6 @@ FilterDescription::FilterDescription(const IColumn & column_)
             /// If we don't own the filter yet, the copy will happen here.
             auto mut_col = IColumn::mutate(std::move(column));
             column_filter = std::move(assert_cast<ColumnUInt8 &>(*mut_col).getData());
-            data = &*column_filter;
         }
 
         const NullMap & null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
@@ -138,9 +128,16 @@ FilterDescription::FilterDescription(const IColumn & column_)
     {
         auto col = ColumnUInt8::create();
         col->getData() = std::move(*column_filter);
-        data = &col->getData();
-        data_holder = std::move(col);
+        column = std::move(col);
     }
+
+    return column; // NOLINT(bugprone-use-after-move,hicpp-invalid-access-moved)
+}
+
+FilterDescription::FilterDescription(const IColumn & column_)
+{
+    data_holder = preprocessFilterColumn(column_.getPtr());
+    data = &assert_cast<const ColumnUInt8 &>(*data_holder).getData();
 }
 
 ColumnPtr FilterDescription::filter(const IColumn & column, ssize_t result_size_hint) const
@@ -166,12 +163,43 @@ size_t SparseFilterDescription::countBytesInFilter() const
 
 SparseFilterDescription::SparseFilterDescription(const IColumn & column)
 {
-    const auto * column_sparse = typeid_cast<const ColumnSparse *>(&column);
-    if (!column_sparse || !typeid_cast<const ColumnUInt8 *>(&column_sparse->getValuesColumn()))
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-            "Illegal type {} of column for sparse filter. Must be Sparse(UInt8)", column.getName());
+    auto throw_invalid_type = [&column]()
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+            "Illegal type {} of column for sparse filter. Must be Sparse(UInt8) or Sparse(Nullable(UInt8))",
+            column.getName());
+    };
 
-    filter_indices = &assert_cast<const ColumnUInt64 &>(column_sparse->getOffsetsColumn());
+    const auto * column_sparse = typeid_cast<const ColumnSparse *>(&column);
+    if (!column_sparse)
+        throw_invalid_type();
+
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column_sparse->getValuesColumn()))
+    {
+        const auto * values = typeid_cast<const ColumnUInt8 *>(&nullable->getNestedColumn());
+        if (!values)
+            throw_invalid_type();
+
+        const auto & offsets = column_sparse->getOffsetsData();
+        ColumnUInt64::MutablePtr mutable_valid_offsets = ColumnUInt64::create();
+        mutable_valid_offsets->reserve(offsets.size());
+        for (size_t i = 0; i < offsets.size(); ++i)
+        {
+            if (values->getBool(i + 1))
+                mutable_valid_offsets->insertValue(offsets[i]);
+        }
+
+        valid_offsets = std::move(mutable_valid_offsets);
+        filter_indices = &assert_cast<const ColumnUInt64 &>(*valid_offsets);
+    }
+    else
+    {
+        if (!typeid_cast<const ColumnUInt8 *>(&column_sparse->getValuesColumn()))
+            throw_invalid_type();
+
+        filter_indices = &assert_cast<const ColumnUInt64 &>(column_sparse->getOffsetsColumn());
+    }
 }
 
 }

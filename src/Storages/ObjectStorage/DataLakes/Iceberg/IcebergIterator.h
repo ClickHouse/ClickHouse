@@ -9,7 +9,7 @@
 #include <Poco/JSON/Parser.h>
 
 #include <Core/Types.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
@@ -106,7 +106,7 @@ private:
     Iceberg::SingleThreadIcebergKeysIterator data_files_iterator;
     Iceberg::SingleThreadIcebergKeysIterator deletes_iterator;
     ConcurrentBoundedQueue<Iceberg::ManifestFileEntry> blocking_queue;
-    BackgroundSchedulePool::TaskHolder producer_task;
+    std::optional<ThreadFromGlobalPool> producer_task;
     IDataLakeMetadata::FileProgressCallback callback;
     std::vector<Iceberg::ManifestFileEntry> position_deletes_files;
     std::vector<Iceberg::ManifestFileEntry> equality_deletes_files;
