@@ -8,6 +8,7 @@
 #include <Common/logger_useful.h>
 #include <Poco/Environment.h>
 #include <Poco/Path.h>
+#include <Poco/JSON/Parser.h>
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
 #include <Common/StringUtils.h>
@@ -714,6 +715,26 @@ String ToggleRequestLogging::run()
     auto old_value = keeper_context->shouldLogRequests();
     keeper_context->setLogRequests(!old_value);
     return old_value ? "disabled" : "enabled";
+}
+
+
+String ReconfigureCommand::run()
+{
+    return "Reconfiguration command require single JSON argument";
+}
+
+String ReconfigureCommand::runWithArgument(const std::string & argument)
+{
+    Poco::JSON::Parser parser;
+    auto json = parser.parse(argument).extract<Poco::JSON::Object::Ptr>();
+
+    if (!keeper_dispatcher.reconfigEnabled())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reconfiguration is not enabled on this keeper server");
+
+    auto result = keeper_dispatcher.reconfigureClusterFromReconfigureCommand(json);
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    Poco::JSON::Stringifier::stringify(result, oss, 4);
+    return oss.str();
 }
 
 }

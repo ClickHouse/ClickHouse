@@ -41,7 +41,6 @@ RaftServers parseRaftServers(std::string_view servers);
 
 struct AddRaftServer : RaftServerConfig
 {
-    using RaftServerConfig::RaftServerConfig;
 };
 
 struct RemoveRaftServer

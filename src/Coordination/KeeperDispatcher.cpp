@@ -24,6 +24,8 @@
 #include <chrono>
 #include <limits>
 
+#include <fmt/ranges.h>
+
 #if USE_JEMALLOC
 #include <Common/Jemalloc.h>
 #endif
@@ -1030,7 +1032,7 @@ Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
 }
 
 
-void KeeperDispatcher::executeClusterUpdateActionAndWaitConfigChange(const ClusterUpdateAction & action, ConfigCheckCallback check_callback, size_t max_action_wait_time_ms)
+void KeeperDispatcher::executeClusterUpdateActionAndWaitConfigChange(const ClusterUpdateAction & action, KeeperDispatcher::ConfigCheckCallback check_callback, size_t max_action_wait_time_ms)
 {
     pushClusterUpdates({action});
     Stopwatch watch;
@@ -1088,12 +1090,12 @@ try
             if (!server->isLeaderAlive())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Precondition failed: expected leader id {} but there is no leader currently",
-                    leaders);
+                    fmt::join(leaders, ", "));
 
             if (!leaders.contains(server->getLeaderID()))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Precondition failed: expected leader id {} does not match actual leader id {}",
-                    leaders,
+                    fmt::join(leaders, ", "),
                     server->getLeaderID());
         }
     }
@@ -1154,7 +1156,7 @@ try
                 std::string endpoint = member_obj->getValue<std::string>("endpoint");
                 bool learner = member_obj->has("learner") ? member_obj->getValue<bool>("learner") : false;
                 int priority = member_obj->has("priority") ? member_obj->getValue<int>("priority") : 1;
-                AddRaftServer add_action(member_id, endpoint, learner, priority);
+                AddRaftServer add_action({RaftServerConfig{member_id, endpoint, learner, priority}});
                 auto add_callback = [member_id](KeeperServer * server_) -> bool
                 {
                     auto config = server_->getKeeperStateMachine()->getClusterConfig();
@@ -1258,12 +1260,9 @@ catch (...)
     Poco::JSON::Object::Ptr result = new Poco::JSON::Object();
     result->set("status", "error");
     result->set("message", getCurrentExceptionMessage(false));
+    return result;
 }
 
-void executeClusterUpdateActionAndWaitConfigChange(const ClusterUpdateAction & action, ConfigCheckCallback check_callback)
-{
-    // Implementation goes here
-}
 
 void KeeperDispatcher::cleanResources()
 {
