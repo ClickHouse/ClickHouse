@@ -3259,7 +3259,6 @@ void Context::makeQueryContextForExportPart()
 {
     makeQueryContext();
     classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
-    // Export part operations don't have a specific workload setting, so we leave the default workload
 }
 
 void Context::makeSessionContext()

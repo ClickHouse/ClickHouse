@@ -7,7 +7,7 @@
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include "Storages/ObjectStorage/ObjectStorageFilePathGenerator.h"
+#include <Storages/ObjectStorage/ObjectStorageFilePathGenerator.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>

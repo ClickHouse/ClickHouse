@@ -45,9 +45,9 @@ public:
 
     static String replaceWildcards(const String & haystack, const String & partition_id);
 
-
 protected:
     std::shared_ptr<IPartitionStrategy> partition_strategy;
+
 private:
     std::shared_ptr<SinkCreator> sink_creator;
     ContextPtr context;
