@@ -118,6 +118,7 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
     "flaky check": "--flaky-check",
+    "llvm coverage": "--no-random-settings --no-random-merge-tree-settings",
 }
 
 
@@ -175,7 +176,10 @@ def main():
         elif "BugfixValidation" in to:
             is_bugfix_validation = True
         elif "coverage" in to:
-            is_coverage = True
+            if "llvm" in to:
+                is_coverage = False
+            else:
+                is_coverage = True
 
         if "s3 storage" in to:
             is_s3_storage = True
