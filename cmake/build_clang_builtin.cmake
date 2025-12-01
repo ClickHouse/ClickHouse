@@ -2,7 +2,6 @@
 # Note that the arguments are hardcoded and based on the current sources
 # To add support for more target triples, please extend the first if block
 function (build_clang_builtin target_triple OUT_VARIABLE)
-    message (NOTICE "Builtins library for target ${CMAKE_CXX_COMPILER_TARGET} not found in the system")
 
     set (BUILTINS_DEFAULT_TARGET_TRIPLE ${target_triple})
     # Linux target triples

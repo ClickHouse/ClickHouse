@@ -3,12 +3,15 @@
 
 set (DEFAULT_LIBS "-nodefaultlibs")
 
-# We need builtins from Clang
-execute_process (COMMAND
-    ${CMAKE_CXX_COMPILER} --target=${CMAKE_CXX_COMPILER_TARGET} --print-libgcc-file-name --rtlib=compiler-rt
-    OUTPUT_VARIABLE BUILTINS_LIBRARY
-    COMMAND_ERROR_IS_FATAL ANY
-    OUTPUT_STRIP_TRAILING_WHITESPACE)
+set (BUILTINS_LIBRARY "")
+if (USE_SYSTEM_COMPILER_RT)
+    # We need builtins from Clang
+    execute_process (COMMAND
+        ${CMAKE_CXX_COMPILER} --target=${CMAKE_CXX_COMPILER_TARGET} --print-libgcc-file-name --rtlib=compiler-rt
+        OUTPUT_VARIABLE BUILTINS_LIBRARY
+        COMMAND_ERROR_IS_FATAL ANY
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
+endif ()
 
 if (NOT EXISTS "${BUILTINS_LIBRARY}")
     # In the past we used to fallback into using libgcc, which then required sysroot to include gcc libraries.
