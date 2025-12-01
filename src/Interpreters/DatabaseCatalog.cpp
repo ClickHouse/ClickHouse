@@ -237,14 +237,14 @@ void DatabaseCatalog::createBackgroundTasks()
     if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER && getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_cleanup_period_sec])
     {
         auto cleanup_task_holder
-            = getContext()->getSchedulePool().createTask("DatabaseCatalogCleanupStoreDirectoryTask", [this]() { this->cleanupStoreDirectoryTask(); });
+            = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "DatabaseCatalogCleanupStoreDirectoryTask", [this]() { this->cleanupStoreDirectoryTask(); });
         cleanup_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(cleanup_task_holder));
     }
 
-    auto drop_task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalogDropTableTask", [this](){ this->dropTableDataTask(); });
+    auto drop_task_holder = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "DatabaseCatalogDropTableTask", [this](){ this->dropTableDataTask(); });
     drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(drop_task_holder));
 
-    auto reload_disks_task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalogReloadDisksTask", [this](){ this->reloadDisksTask(); });
+    auto reload_disks_task_holder = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "DatabaseCatalogReloadDisksTask", [this](){ this->reloadDisksTask(); });
     reload_disks_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(reload_disks_task_holder));
 }
 
@@ -771,7 +771,7 @@ void DatabaseCatalog::updateMetadataFile(const String & database_name, const AST
     }
 }
 
-DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
+DatabasePtr DatabaseCatalog::getDatabase(std::string_view database_name) const
 {
     assert(!database_name.empty());
     DatabasePtr db;
@@ -784,7 +784,7 @@ DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
     if (!db)
     {
         DatabaseNameHints hints(*this);
-        std::vector<String> names = hints.getHints(database_name);
+        std::vector<String> names = hints.getHints(std::string{database_name});
         if (names.empty())
         {
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
@@ -799,7 +799,7 @@ DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
     return db;
 }
 
-DatabasePtr DatabaseCatalog::tryGetDatabase(const String & database_name) const
+DatabasePtr DatabaseCatalog::tryGetDatabase(std::string_view database_name) const
 {
     assert(!database_name.empty());
     std::lock_guard lock{databases_mutex};
@@ -826,7 +826,7 @@ DatabasePtr DatabaseCatalog::tryGetDatabase(const UUID & uuid) const
     return db_and_table.first;
 }
 
-bool DatabaseCatalog::isDatabaseExist(const String & database_name) const
+bool DatabaseCatalog::isDatabaseExist(std::string_view database_name) const
 {
     assert(!database_name.empty());
     std::lock_guard lock{databases_mutex};
