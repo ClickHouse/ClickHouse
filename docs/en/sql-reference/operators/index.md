@@ -89,7 +89,7 @@ For tuple subtraction: [tupleMinus](../../sql-reference/functions/tuple-function
 From 25.10 you can use `<=>` in the same way as any other operator.
 Before 25.10 it could only be used in JOIN expressions, for example:
 
-```
+```sql
 CREATE TABLE a (x String) ENGINE = Memory;
 INSERT INTO a VALUES ('ClickHouse');
 
