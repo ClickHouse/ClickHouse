@@ -26,6 +26,8 @@
 #include <Interpreters/AggregationMethod.h>
 #include <Interpreters/HashTablesStatistics.h>
 
+#include <Analyzer/SortNode.h>
+
 namespace DB
 {
 
@@ -116,8 +118,10 @@ public:
         bool optimize_group_by_constant_keys = false;
         const float min_hit_rate_to_use_consecutive_keys_optimization = 0.;
         StatsCollectingParams stats_collecting_params;
-
         bool enable_producing_buckets_out_of_order_in_aggregation = true;
+        size_t limit_plus_offset_length;
+        std::optional<std::vector<ColumnsHashing::OptimizationDataOneExpression>> optimization_indexes;
+
 
         static size_t getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by);
 
@@ -142,7 +146,9 @@ public:
             bool optimize_group_by_constant_keys_,
             float min_hit_rate_to_use_consecutive_keys_optimization_,
             const StatsCollectingParams & stats_collecting_params_,
-            bool enable_producing_buckets_out_of_order_in_aggregation_);
+            bool enable_producing_buckets_out_of_order_in_aggregation_,
+            size_t limit_plus_offset_length_ = std::numeric_limits<size_t>::max(),
+            std::optional<std::vector<ColumnsHashing::OptimizationDataOneExpression>> optimization_indexes_ = std::nullopt);
 
         /// Only parameters that matter during merge.
         Params(
