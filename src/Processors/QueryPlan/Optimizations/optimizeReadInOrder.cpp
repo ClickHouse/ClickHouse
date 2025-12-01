@@ -1106,11 +1106,11 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
     return nullptr;
 }
 
-InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & node, const QueryPlanOptimizationSettings &)
+InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)
 {
     FindReadingStepContext find_reading_ctx {
         .allow_existing_order = false,
-        .read_in_order_through_join = false,
+        .read_in_order_through_join = optimization_settings.read_in_order_through_join,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
     if (!reading_node)
@@ -1143,6 +1143,8 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
                 return {};
         }
 
+        for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+            join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         return order_info;
     }
     if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
@@ -1159,6 +1161,8 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
                 return {};
         }
 
+        for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+            join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         return order_info;
     }
 
@@ -1176,6 +1180,8 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
                 return {};
         }
 
+        for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+            join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         return order_info;
     }
 
@@ -1211,7 +1217,7 @@ bool canImproveOrderForDistinct(InputOrder & required_order, const InputOrderInf
     return true;
 }
 
-InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, const QueryPlanOptimizationSettings &)
+InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// Here we allow improving existing in-order optimization.
     /// Example: SELECT DISTINCT a, b FROM t ORDER BY a; -- sorting key: a, b
@@ -1220,7 +1226,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
 
     FindReadingStepContext find_reading_ctx {
         .allow_existing_order = true,
-        .read_in_order_through_join = false,
+        .read_in_order_through_join = optimization_settings.read_in_order_through_join,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
     if (!reading_node)
@@ -1252,6 +1258,8 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
             order_info.input_order->limit))
             return {};
 
+        for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+            join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         return order_info;
     }
     if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
@@ -1267,6 +1275,8 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
         if (!merge->requestReadingInOrder(order_info.input_order))
             return {};
 
+        for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+            join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         return order_info;
     }
 
@@ -1283,6 +1293,8 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
         if (!object_storage_step->requestReadingInOrder(order_info.input_order))
             return {};
 
+        for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+            join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         return order_info;
     }
 

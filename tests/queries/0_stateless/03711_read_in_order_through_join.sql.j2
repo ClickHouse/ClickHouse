@@ -19,6 +19,7 @@ SET optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_read_in
 SET min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;
 SET read_in_order_use_virtual_row = 1;
 SET query_plan_optimize_join_order_limit = 1;
+SET optimize_aggregation_in_order = 1;
 SET query_plan_join_swap_table = 0;
 
 SET read_in_order_two_level_merge_threshold = DEFAULT;
@@ -52,6 +53,8 @@ LIMIT 3
 SETTINGS log_comment = '03711_read_in_order_through_join'
 ;
 
+-- Two joins:
+
 SELECT groupArray(trim(explain)) FROM (
     EXPLAIN PLAN actions = 1
     SELECT events.Time, events.Id, payloads.Payload, payloads2.Payload2
@@ -63,6 +66,33 @@ SELECT groupArray(trim(explain)) FROM (
     ORDER BY events.Time
     LIMIT 3
 ) WHERE explain like '%ReadType%'
+;
+
+-- Aggregation:
+
+SELECT groupArray(trim(explain)) FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT toStartOfHour(events.Time) t, sum(length(payloads2.Payload2)), sum(length(payloads.Payload)), count(), countIf(payloads2.Payload2 IS NOT NULL)
+    FROM events
+    {{ join_kind }} JOIN payloads
+    ON events.Id = payloads.Id
+    {{ join_kind }} JOIN payloads2
+    ON events.Id = payloads2.Id
+    GROUP BY t
+    ORDER BY t DESC
+    LIMIT 3
+) WHERE explain like '%ReadType%'
+;
+
+SELECT toStartOfHour(events.Time) t, sum(length(payloads2.Payload2)), sum(length(payloads.Payload)), count(), countIf(payloads2.Payload2 IS NOT NULL)
+FROM events
+{{ join_kind }} JOIN payloads
+ON events.Id = payloads.Id
+{{ join_kind }} JOIN payloads2
+ON events.Id = payloads2.Id
+GROUP BY t
+ORDER BY t
+LIMIT 3
 ;
 
 SELECT events.Time, events.Id, payloads.Payload, payloads2.Payload2
