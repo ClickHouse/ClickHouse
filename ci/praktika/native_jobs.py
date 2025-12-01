@@ -671,6 +671,7 @@ def _finish_workflow(workflow, job_name):
             continue
         if result.status == Result.Status.DROPPED:
             dropped_results.append(result.name)
+            continue
         if not result.is_completed():
             print(
                 f"ERROR: not finished job [{result.name}] in the workflow - set status to error"
