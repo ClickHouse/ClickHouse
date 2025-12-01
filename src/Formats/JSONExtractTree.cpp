@@ -578,7 +578,7 @@ public:
 
     static bool tryParse(UUID & uuid, std::string_view data)
     {
-        ReadBufferFromMemory buf(data.data(), data.size());
+        ReadBufferFromMemory buf(data);
         return tryReadUUIDText(uuid, buf) && buf.eof();
     }
 };
@@ -609,7 +609,7 @@ public:
         }
 
         auto data = element.getString();
-        ReadBufferFromMemory buf(data.data(), data.size());
+        ReadBufferFromMemory buf(data);
         UUID uuid;
         if (!tryReadUUIDText(uuid, buf) || !buf.eof())
         {
@@ -648,7 +648,7 @@ public:
         }
 
         auto data = element.getString();
-        ReadBufferFromMemory buf(data.data(), data.size());
+        ReadBufferFromMemory buf(data);
         DateType date;
         if (!tryReadDateText(date, buf) || !buf.eof())
         {
@@ -705,7 +705,7 @@ public:
 
     bool tryParse(time_t & value, std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
     {
-        ReadBufferFromMemory buf(data.data(), data.size());
+        ReadBufferFromMemory buf(data);
         switch (date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
@@ -770,7 +770,7 @@ public:
 
     bool tryParse(time_t & value, std::string_view data, FormatSettings::DateTimeInputFormat /*time_input_format*/) const
     {
-        ReadBufferFromMemory buf(data.data(), data.size());
+        ReadBufferFromMemory buf(data);
         const auto & date_lut = DateLUT::instance();
 
         if (tryReadTimeText(value, buf, date_lut) && buf.eof())
@@ -913,7 +913,7 @@ public:
 
     bool tryParse(DateTime64 & value, std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
     {
-        ReadBufferFromMemory buf(data.data(), data.size());
+        ReadBufferFromMemory buf(data);
         switch (date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
@@ -995,7 +995,7 @@ public:
 
     bool tryParse(Time64 & value, std::string_view data, FormatSettings::DateTimeInputFormat /*time_input_format*/) const
     {
-        ReadBufferFromMemory buf(data.data(), data.size());
+        ReadBufferFromMemory buf(data);
         const auto & date_lut = DateLUT::instance();
 
         if (tryReadTime64Text(value, scale, buf, date_lut) && buf.eof())
@@ -1126,7 +1126,7 @@ public:
 
     static bool tryParse(IPv4 & value, std::string_view data)
     {
-        ReadBufferFromMemory buf(data.data(), data.size());
+        ReadBufferFromMemory buf(data);
         return tryReadIPv4Text(value, buf) && buf.eof();
     }
 };
@@ -1169,7 +1169,7 @@ public:
 
     static bool tryParse(IPv6 & value, std::string_view data)
     {
-        ReadBufferFromMemory buf(data.data(), data.size());
+        ReadBufferFromMemory buf(data);
         return tryReadIPv6Text(value, buf) && buf.eof();
     }
 };
