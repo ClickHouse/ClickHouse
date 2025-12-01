@@ -1356,6 +1356,15 @@ size_t ColumnObject::capacity() const
     return shared_data->capacity();
 }
 
+void ColumnObject::shrinkToFit()
+{
+    for (auto & [_, column] : typed_paths)
+        column->shrinkToFit();
+    for (auto & [_, column] : dynamic_paths_ptrs)
+        column->shrinkToFit();
+    shared_data->shrinkToFit();
+}
+
 void ColumnObject::ensureOwnership()
 {
     for (auto & [_, column] : typed_paths)
@@ -1869,6 +1878,13 @@ void ColumnObject::takeDynamicStructureFromColumn(const ColumnPtr & source_colum
     max_dynamic_paths = dynamic_paths.size();
 
     statistics = source_object.getStatistics();
+}
+
+void ColumnObject::fixDynamicStructure()
+{
+    /// Set max_dynamic_paths to the number of dynamic paths.
+    /// It's needed to avoid adding new unexpected dynamic paths during later inserts into this column.
+    max_dynamic_paths = dynamic_paths.size();
 }
 
 size_t ColumnObject::findPathLowerBoundInSharedData(std::string_view path, const ColumnString & shared_data_paths, size_t start, size_t end)

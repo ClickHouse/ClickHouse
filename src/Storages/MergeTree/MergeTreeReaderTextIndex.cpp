@@ -35,7 +35,8 @@ namespace ErrorCodes
 MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     const IMergeTreeReader * main_reader_,
     MergeTreeIndexWithCondition index_,
-    NamesAndTypesList columns_)
+    NamesAndTypesList columns_,
+    bool can_skip_mark_)
     : IMergeTreeReader(
         main_reader_->data_part_info_for_read,
         columns_,
@@ -47,6 +48,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         main_reader_->all_mark_ranges,
         main_reader_->settings)
     , index(std::move(index_))
+    , can_skip_mark(can_skip_mark_)
 {
     for (const auto & column : columns_)
     {
@@ -139,7 +141,7 @@ bool MergeTreeReaderTextIndex::canSkipMark(size_t mark, size_t current_task_last
 
         index_reader->adjustRightMark(index_last_mark);
         index_reader->read(index_mark, index.condition.get(), granule.granule);
-        granule.may_be_true = index.condition->mayBeTrueOnGranule(granule.granule);
+        granule.may_be_true = index.condition->mayBeTrueOnGranule(granule.granule, nullptr);
         granule.need_read_postings = granule.may_be_true;
 
         auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule.granule);
@@ -147,7 +149,7 @@ bool MergeTreeReaderTextIndex::canSkipMark(size_t mark, size_t current_task_last
         analyzed_granules.add(index_mark);
     }
 
-    return !it->second.may_be_true;
+    return can_skip_mark && !it->second.may_be_true;
 }
 
 size_t MergeTreeReaderTextIndex::readRows(
@@ -559,9 +561,10 @@ bool MergeTreeReaderTextIndex::RemainingMarks::finished(size_t granularity) cons
 MergeTreeReaderPtr createMergeTreeReaderTextIndex(
     const IMergeTreeReader * main_reader,
     const MergeTreeIndexWithCondition & index,
-    const NamesAndTypesList & columns_to_read)
+    const NamesAndTypesList & columns_to_read,
+    bool can_skip_mark)
 {
-    return std::make_unique<MergeTreeReaderTextIndex>(main_reader, index, columns_to_read);
+    return std::make_unique<MergeTreeReaderTextIndex>(main_reader, index, columns_to_read, can_skip_mark);
 }
 
 }

@@ -18,7 +18,7 @@ MultipleFileWriter::MultipleFileWriter(
     ObjectStoragePtr object_storage_,
     ContextPtr context_,
     const std::optional<FormatSettings> & format_settings_,
-    StorageObjectStorageConfigurationPtr configuration_,
+    const String & write_format_,
     SharedHeader sample_block_)
     : max_data_file_num_rows(max_data_file_num_rows_)
     , max_data_file_num_bytes(max_data_file_num_bytes_)
@@ -27,7 +27,7 @@ MultipleFileWriter::MultipleFileWriter(
     , object_storage(object_storage_)
     , context(context_)
     , format_settings(format_settings_)
-    , configuration(configuration_)
+    , write_format(std::move(write_format_))
     , sample_block(sample_block_)
 {
 }
@@ -52,7 +52,7 @@ void MultipleFileWriter::startNewFile()
         format_settings->parquet.filter_push_down = true;
     }
     output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
-        configuration->format, *buffer, *sample_block, context, format_settings);
+        write_format, *buffer, *sample_block, context, format_settings);
 }
 
 void MultipleFileWriter::consume(const Chunk & chunk)

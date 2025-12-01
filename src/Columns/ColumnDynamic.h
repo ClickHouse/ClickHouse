@@ -282,6 +282,11 @@ public:
     /// Prepare only variants but not discriminators and offsets.
     void prepareVariantsForSquashing(const Columns & source_columns, size_t factor);
 
+    void shrinkToFit() override
+    {
+        variant_column_ptr->shrinkToFit();
+    }
+
     void ensureOwnership() override
     {
         variant_column_ptr->ensureOwnership();
@@ -387,6 +392,7 @@ public:
     bool dynamicStructureEquals(const IColumn & rhs) const override;
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
+    void fixDynamicStructure() override;
 
     const StatisticsPtr & getStatistics() const { return statistics; }
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
