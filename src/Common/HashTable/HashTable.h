@@ -622,7 +622,6 @@ protected:
     template <typename Derived, bool is_const>
     class prefetching_iterator_base
     {
-
         using Container = std::conditional_t<is_const, const Self, Self>;
         using cell_type = std::conditional_t<is_const, const Cell, Cell>;
         Container * container;
@@ -644,44 +643,28 @@ protected:
 
         Derived & operator++()
         {
-            if constexpr (CouldPrefetchKey<cell_type>)
+            if (ptr->isZero(*container)) [[unlikely]]
             {
-                if (ptr->isZero(*container)) [[unlikely]]
-                {
-                    ptr = container->buf;
-                    prefetch_ptr = ptr;
-                }
-                else if (!prefetch_ptr) [[unlikely]]
-                {
-                    ++ptr;
-                    prefetch_ptr = ptr;
-                }
-                else
-                    ++ptr;
-
-                prefetch();
-
-                /// Skip empty cells in the main buffer.
-                auto * buf_end = container->buf + container->grower.bufSize();
-                while (ptr < buf_end && ptr->isZero(*container))
-                    ++ptr;
-
-                if (prefetched_count > 0)
-                    prefetched_count--;
+                ptr = container->buf;
+                prefetch_ptr = ptr;
+            }
+            else if (!prefetch_ptr) [[unlikely]]
+            {
+                ++ptr;
+                prefetch_ptr = ptr;
             }
             else
-            {
-                /// If iterator was pointed to ZeroValueStorage, move it to the beginning of the main buffer.
-                if (unlikely(ptr->isZero(*container)))
-                    ptr = container->buf;
-                else
-                    ++ptr;
+                ++ptr;
 
-                /// Skip empty cells in the main buffer.
-                auto * buf_end = container->buf + container->grower.bufSize();
-                while (ptr < buf_end && ptr->isZero(*container))
-                    ++ptr;
-            }
+            prefetch();
+
+            /// Skip empty cells in the main buffer.
+            auto * buf_end = container->buf + container->grower.bufSize();
+            while (ptr < buf_end && ptr->isZero(*container))
+                ++ptr;
+
+            if (prefetched_count > 0)
+                prefetched_count--;
             return static_cast<Derived &>(*this);
         }
 
@@ -693,34 +676,32 @@ protected:
 
         void prefetch()
         {
-            if constexpr (CouldPrefetchKey<cell_type>)
+            static_assert(CouldPrefetchKey<cell_type>);
+            auto * buf_end = container->buf + container->grower.bufSize();
+            iter_count++;
+            if (prefetch_ptr < buf_end && prefetched_count < prefetch_ahead) [[likely]]
             {
-                auto * buf_end = container->buf + container->grower.bufSize();
-                iter_count++;
-                if (prefetch_ptr < buf_end && prefetched_count < prefetch_ahead) [[likely]]
+                if (iter_count == DB::PrefetchingHelper::iterationsToMeasure()) [[unlikely]]
+                    prefetch_ahead = prefetching.calcPrefetchLookAhead();
+                auto n = prefetch_ahead - prefetched_count;
+                cell_type * last_ptr = nullptr;
+                for (size_t i = 0; i < n; ++i)
                 {
-                    if (iter_count == DB::PrefetchingHelper::iterationsToMeasure()) [[unlikely]]
-                        prefetch_ahead = prefetching.calcPrefetchLookAhead();
-                    auto n = prefetch_ahead - prefetched_count;
-                    cell_type * last_ptr = nullptr;
-                    for (size_t i = 0; i < n; ++i)
+                    while (prefetch_ptr < buf_end && prefetch_ptr->isZero(*container))
+                        ++prefetch_ptr;
+
+                    if (prefetch_ptr < buf_end) [[likely]]
                     {
-                        while (prefetch_ptr < buf_end && prefetch_ptr->isZero(*container))
-                           ++prefetch_ptr;
-
-                        if (prefetch_ptr < buf_end) [[likely]]
-                        {
-                            last_ptr = prefetch_ptr;
-                            prefetch_ptr++;
-                            prefetched_count++;
-                        }
-                        else
-                            break;
+                        last_ptr = prefetch_ptr;
+                        prefetch_ptr++;
+                        prefetched_count++;
                     }
-
-                    if (last_ptr) [[likely]]
-                        keyPrefetch(last_ptr->getKey());
+                    else
+                        break;
                 }
+
+                if (last_ptr) [[likely]]
+                    keyPrefetch(last_ptr->getKey());
             }
         }
     };
@@ -958,26 +939,19 @@ public:
     template<bool prefetch = false>
     auto begin() const
     {
+        using ConstIterator = std::conditional_t<prefetch && CouldPrefetchKey<cell_type>, const_prefetching_iterator, const_iterator>;
         if (!buf)
             return end<prefetch>();
 
         if (this->hasZero())
-        {
-            if constexpr (prefetch)
-                return const_prefetching_iterator(this, this->zeroValue());
-            else
-                return iteratorToZero();
-        }
+            return ConstIterator(this, this->zeroValue());
 
         const Cell * ptr = buf;
         auto buf_end = buf + grower.bufSize();
         while (ptr < buf_end && ptr->isZero(*this))
             ++ptr;
 
-        if constexpr (prefetch)
-            return const_prefetching_iterator(this, ptr);
-        else
-            return const_iterator(this, ptr);
+        return ConstIterator(this, ptr);
     }
 
     template<bool prefetch = false>
@@ -986,36 +960,27 @@ public:
     template<bool prefetch = false>
     auto begin()
     {
+        using Iterator = std::conditional_t<prefetch && CouldPrefetchKey<cell_type>, prefetching_iterator, iterator>;
         if (!buf)
             return end<prefetch>();
 
         if (this->hasZero())
-        {
-            if constexpr (prefetch)
-                return prefetching_iterator(this, this->zeroValue());
-            else
-                return iteratorToZero();
-        }
+            return Iterator(this, this->zeroValue());
 
         Cell * ptr = buf;
         auto * buf_end = buf + grower.bufSize();
         while (ptr < buf_end && ptr->isZero(*this))
             ++ptr;
 
-        if constexpr (prefetch)
-            return prefetching_iterator(this, ptr);
-        else
-            return iterator(this, ptr);
+        return Iterator(this, ptr);
     }
 
     template <bool prefetch = false>
     auto end() const
     {
+        using ConstIterator = std::conditional_t<prefetch && CouldPrefetchKey<cell_type>, const_prefetching_iterator, const_iterator>;
         /// Avoid UBSan warning about adding zero to nullptr. It is valid in C++20 (and earlier) but not valid in C.
-        if constexpr (prefetch)
-            return const_prefetching_iterator(this, buf ? buf + grower.bufSize() : buf);
-        else
-            return const_iterator(this, buf ? buf + grower.bufSize() : buf);
+        return ConstIterator(this, buf ? buf + grower.bufSize() : buf);
     }
 
     template<bool prefetch = false>
@@ -1027,10 +992,8 @@ public:
     template <bool prefetch = false>
     auto end()
     {
-        if constexpr (prefetch)
-            return prefetching_iterator(this, buf ? buf + grower.bufSize() : buf);
-        else
-            return iterator(this, buf ? buf + grower.bufSize() : buf);
+        using Iterator = std::conditional_t<prefetch && CouldPrefetchKey<cell_type>, prefetching_iterator, iterator>;
+        return Iterator(this, buf ? buf + grower.bufSize() : buf);
     }
 
 
