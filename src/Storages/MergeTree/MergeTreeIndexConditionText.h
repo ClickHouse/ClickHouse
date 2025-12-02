@@ -68,7 +68,7 @@ public:
     TextIndexDirectReadMode getDirectReadMode(const String & function_name) const;
 
     bool alwaysUnknownOrTrue() const override;
-    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
+    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
 
     const std::vector<String> & getAllSearchTokens() const { return all_search_tokens; }
     bool useBloomFilter() const { return use_bloom_filter; }
