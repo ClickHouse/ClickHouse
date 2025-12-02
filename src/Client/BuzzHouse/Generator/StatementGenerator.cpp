@@ -5452,10 +5452,13 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                 {
                     const uint32_t tname = getIdentifierFromString(est.table().table());
 
-                    newb.tables[tname] = this->tables[tname];
-                    if (bro.partitions_size())
+                    if (this->tables.contains(tname))
                     {
-                        newb.partition_id = bro.partitions(0).partition_id();
+                        newb.tables[tname] = this->tables[tname];
+                        if (bro.partitions_size())
+                        {
+                            newb.partition_id = bro.partitions(0).partition_id();
+                        }
                     }
                 }
                 else
@@ -5468,44 +5471,53 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
             {
                 const uint32_t vname = getIdentifierFromString(bre.bobject().object().est().table().table());
 
-                newb.views[vname] = this->views[vname];
+                if (this->views.contains(vname))
+                {
+                    newb.views[vname] = this->views[vname];
+                }
             }
             else if (bre.has_bobject() && bre.bobject().sobject() == SQLObject::DICTIONARY)
             {
                 const uint32_t dname = getIdentifierFromString(bre.bobject().object().est().table().table());
 
-                newb.dictionaries[dname] = this->dictionaries[dname];
+                if (this->dictionaries.contains(dname))
+                {
+                    newb.dictionaries[dname] = this->dictionaries[dname];
+                }
             }
             else if (bre.has_bobject() && bre.bobject().sobject() == SQLObject::DATABASE)
             {
                 const uint32_t dname = getIdentifierFromString(bre.bobject().object().database().database());
 
-                for (const auto & [key, val] : this->tables)
+                if (this->databases.contains(dname))
                 {
-                    if (val.db && val.db->dname == dname)
+                    for (const auto & [key, val] : this->tables)
                     {
-                        newb.tables[key] = val;
+                        if (val.db && val.db->dname == dname)
+                        {
+                            newb.tables[key] = val;
+                        }
                     }
-                }
-                for (const auto & [key, val] : this->views)
-                {
-                    if (val.db && val.db->dname == dname)
+                    for (const auto & [key, val] : this->views)
                     {
-                        newb.views[key] = val;
+                        if (val.db && val.db->dname == dname)
+                        {
+                            newb.views[key] = val;
+                        }
                     }
-                }
-                for (const auto & [key, val] : this->dictionaries)
-                {
-                    if (val.db && val.db->dname == dname)
+                    for (const auto & [key, val] : this->dictionaries)
                     {
-                        newb.dictionaries[key] = val;
+                        if (val.db && val.db->dname == dname)
+                        {
+                            newb.dictionaries[key] = val;
+                        }
                     }
+                    newb.databases[dname] = this->databases[dname];
                 }
-                newb.databases[dname] = this->databases[dname];
             }
             this->backups[br.backup_number()] = std::move(newb);
         }
-        else
+        else if (backups.contains(br.backup_number()))
         {
             const CatalogBackup & backup = backups.at(br.backup_number());
 
