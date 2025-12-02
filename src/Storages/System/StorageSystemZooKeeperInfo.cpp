@@ -136,6 +136,13 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
     Poco::Util::AbstractConfiguration::Keys keys;
     clickhouse_config.configuration->keys("zookeeper", keys);
 
+    String cluster_name = "default";
+
+    if (clickhouse_config.configuration->hasProperty("zookeeper.name"))
+    {
+        cluster_name = clickhouse_config.configuration->getString("zookeeper.name");
+    }
+
     if (!context->getConfigRef().has("host") && !context->getConfigRef().has("port") && !keys.empty())
     {
         for (const auto & key : keys)
@@ -144,19 +151,39 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
                 continue;
 
             String prefix = "zookeeper." + key;
+
             String host = clickhouse_config.configuration->getString(prefix + ".host");
             String port = clickhouse_config.configuration->getString(prefix + ".port");
+
 
             if (clickhouse_config.configuration->has(prefix + ".secure"))
                 host = "secure://" + host;
 
-            res_columns[0]->insert("default");
+
+            res_columns[0]->insert(cluster_name);
             res_columns[1]->insert(host);
             res_columns[2]->insert(stoi(port));
 
-            /// to-do set index
-            res_columns[3]->insert(0);
-            res_columns[4]->insert(false);
+            if (clickhouse_config.configuration->hasProperty(prefix + ".index"))
+            {
+                LOG_INFO(getLogger("StorageSystemZooKeeperInfo"), "index found " );
+                auto index = clickhouse_config.configuration->getUInt(prefix + ".index");
+                LOG_INFO(getLogger("StorageSystemZooKeeperInfo"), "index found value {} ", index);
+                res_columns[3]->insert(index);
+            }
+            else
+            {
+                res_columns[3]->insert(0);
+            }
+
+
+            /// ruok command
+            String ruok_output = sendFourLetterCommand(host, port, "ruok");
+            if (ruok_output == "imok")
+                res_columns[4]->insert(true);
+            else
+                res_columns[4]->insert(false);
+
 
             /// isro command
             /// The server will respond with "ro" if in read-only mode or "rw" if not in read-only mode.
