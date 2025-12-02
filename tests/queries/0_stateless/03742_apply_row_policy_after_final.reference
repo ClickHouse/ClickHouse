@@ -30,3 +30,9 @@
 1	aaa	100	1
 2	bbb	200	1
 --- with setting
+
+= SELECT subset of columns with row policy on other column =
+--- SELECT x only (row policy on y should still work)
+2
+--- SELECT x, version (row policy on y should still work)
+2	1

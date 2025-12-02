@@ -89,3 +89,28 @@ SELECT * FROM tab3 FINAL PREWHERE z < 250 ORDER BY x;
 
 DROP ROW POLICY pol3 ON tab3;
 DROP TABLE tab3;
+
+-- Test that SELECT with subset of columns works when row policy uses other columns
+SELECT '';
+SELECT '= SELECT subset of columns with row policy on other column =';
+
+DROP TABLE IF EXISTS tab4;
+DROP ROW POLICY IF EXISTS pol4 ON tab4;
+
+CREATE TABLE tab4 (x UInt32, y String, version UInt32) ENGINE = ReplacingMergeTree(version) ORDER BY x;
+
+INSERT INTO tab4 VALUES (1, 'aaa', 1), (2, 'bbb', 1);
+INSERT INTO tab4 VALUES (1, 'ccc', 2);
+
+-- Row policy on y, but we SELECT only x
+CREATE ROW POLICY pol4 ON tab4 USING y != 'ccc' TO ALL;
+
+SET apply_row_policy_after_final = 1;
+SELECT '--- SELECT x only (row policy on y should still work)';
+SELECT x FROM tab4 FINAL ORDER BY x;
+
+SELECT '--- SELECT x, version (row policy on y should still work)';
+SELECT x, version FROM tab4 FINAL ORDER BY x;
+
+DROP ROW POLICY pol4 ON tab4;
+DROP TABLE tab4;

@@ -2930,7 +2930,16 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// apply row policy after FINAL if needed (must be applied before prewhere)
     if (deferred_row_level_filter)
     {
-        auto row_level_filter_actions = std::make_shared<ExpressionActions>(deferred_row_level_filter->actions.clone());
+        /// Clone the filter DAG and add all inputs to outputs to preserve them
+        auto filter_dag = deferred_row_level_filter->actions.clone();
+
+        /// Get all input column names and add them to outputs
+        NameSet input_names;
+        for (const auto * input : filter_dag.getInputs())
+            input_names.insert(input->result_name);
+        restoreDAGInputs(filter_dag, input_names);
+
+        auto row_level_filter_actions = std::make_shared<ExpressionActions>(std::move(filter_dag));
         pipe.addSimpleTransform([&](const SharedHeader & header)
         {
             return std::make_shared<FilterTransform>(
@@ -2944,7 +2953,15 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// apply deferred PREWHERE after row policy
     if (deferred_prewhere_info)
     {
-        auto prewhere_actions = std::make_shared<ExpressionActions>(deferred_prewhere_info->prewhere_actions.clone());
+        /// Clone the prewhere DAG and add all inputs to outputs to preserve them
+        auto prewhere_dag = deferred_prewhere_info->prewhere_actions.clone();
+
+        NameSet input_names;
+        for (const auto * input : prewhere_dag.getInputs())
+            input_names.insert(input->result_name);
+        restoreDAGInputs(prewhere_dag, input_names);
+
+        auto prewhere_actions = std::make_shared<ExpressionActions>(std::move(prewhere_dag));
         pipe.addSimpleTransform([&](const SharedHeader & header)
         {
             return std::make_shared<FilterTransform>(
