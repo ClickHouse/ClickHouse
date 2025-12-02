@@ -313,7 +313,7 @@ public:
             }
 
             reader.reset();
-            pipeline = nullptr;
+            pipeline.reset();
             read_buf.reset();
         }
     }
@@ -443,7 +443,7 @@ StorageHive::StorageHive(
     storage_metadata.setComment(comment_);
     storage_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_ast, storage_metadata.columns, getContext());
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, getContext()));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));
     setInMemoryMetadata(storage_metadata);
 }
 

@@ -652,7 +652,8 @@ String JemallocDumpStats::run()
 
 String JemallocFlushProfile::run()
 {
-    return std::string{Jemalloc::flushProfile("/tmp/jemalloc_keeper")};
+    Jemalloc::flushProfile("/tmp/jemalloc_keeper");
+    return std::string{Jemalloc::getLastFlushProfileForThread()};
 }
 
 String JemallocEnableProfile::run()

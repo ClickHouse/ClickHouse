@@ -241,7 +241,7 @@ public:
     bool canUseAdaptiveGranularity() const override;
 
     /// Modify a CREATE TABLE query to make a variant which must be written to a backup.
-    void applyMetadataChangesToCreateQueryForBackup(const ASTPtr & create_query) const override;
+    void applyMetadataChangesToCreateQueryForBackup(ASTPtr & create_query) const override;
 
     /// Makes backup entries to backup the data of the storage.
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
@@ -883,7 +883,6 @@ private:
     mutable std::unordered_set<std::string> existing_nodes_cache;
     mutable std::mutex existing_nodes_cache_mutex;
     bool existsNodeCached(const ZooKeeperWithFaultInjectionPtr & zookeeper, const std::string & path) const;
-    void tryRemoveNodeCache(const std::string & path) const;
 
     /// Cancels INSERTs in the block range by removing ephemeral block numbers
     void clearLockedBlockNumbersInPartition(zkutil::ZooKeeper & zookeeper, const String & partition_id, Int64 min_block_num, Int64 max_block_num);

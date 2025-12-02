@@ -246,15 +246,6 @@ namespace
             /// Distributed(cluster_name, db_name, table_name, ...)
             if (table_engine.name == "Distributed")
                 visitDistributedTableEngine(table_engine);
-
-            /// Alias(table_name) or Alias(db_name, table_name)
-            if (table_engine.name == "Alias")
-            {
-                if (table_engine.arguments->children.size() == 1)
-                    addQualifiedNameFromArgument(table_engine, 0);
-                else
-                    addDatabaseAndTableNameFromArguments(table_engine, 0, 1);
-            }
         }
 
         /// Distributed(cluster_name, database_name, table_name, ...)
@@ -387,32 +378,34 @@ namespace
 
             const auto & arg = args[arg_idx];
 
-            if (const auto * id = arg->as<ASTIdentifier>())
-                return id->name();
-
-            if (const auto * literal = arg->as<ASTLiteral>())
+            if (evaluate)
             {
-                if (literal->value.getType() == Field::Types::String)
+                try
+                {
+                    /// We're just searching for dependencies here, it's not safe to execute subqueries now.
+                    /// Use copy of the global_context and set current database, because expressions can contain currentDatabase() function.
+                    ContextMutablePtr global_context_copy = Context::createCopy(global_context);
+                    global_context_copy->setCurrentDatabase(current_database);
+                    auto evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(arg, global_context_copy);
+                    const auto * literal = evaluated->as<ASTLiteral>();
+                    if (!literal || (literal->value.getType() != Field::Types::String))
+                        return {};
                     return literal->value.safeGet<String>();
-            }
-
-            if (!evaluate)
-                return {};
-
-            try
-            {
-                /// We're just searching for dependencies here, it's not safe to execute subqueries now.
-                /// Use copy of the global_context and set current database, because expressions can contain currentDatabase() function.
-                ContextMutablePtr global_context_copy = Context::createCopy(global_context);
-                global_context_copy->setCurrentDatabase(current_database);
-                auto evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(arg, global_context_copy);
-                const auto * literal = evaluated->as<ASTLiteral>();
-                if (!literal || (literal->value.getType() != Field::Types::String))
+                }
+                catch (...)
+                {
                     return {};
-                return literal->value.safeGet<String>();
+                }
             }
-            catch (...)
+            else
             {
+                if (const auto * id = arg->as<ASTIdentifier>())
+                    return id->name();
+                if (const auto * literal = arg->as<ASTLiteral>())
+                {
+                    if (literal->value.getType() == Field::Types::String)
+                        return literal->value.safeGet<String>();
+                }
                 return {};
             }
         }
