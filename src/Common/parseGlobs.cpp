@@ -22,6 +22,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -98,7 +99,8 @@ std::string Expression::dumpWildcard() const
 {
     const auto & wildcard = std::get<WildcardType>(getData());
 
-    switch (wildcard) {
+    switch (wildcard)
+    {
         case WildcardType::QUESTION:
             return "?";
         case WildcardType::SINGLE_ASTERISK:
@@ -131,7 +133,8 @@ std::string Expression::wildcardAsRegex() const
 {
     const auto & wildcard = std::get<WildcardType>(getData());
 
-    switch (wildcard) {
+    switch (wildcard)
+    {
         case WildcardType::QUESTION:
             return "[^/]";
         case WildcardType::SINGLE_ASTERISK:
