@@ -34,6 +34,7 @@
                 <hostname>node3</hostname>
                 <port>9234</port>
                 <priority>1</priority>
+                <start_as_follower>true</start_as_follower>
             </server>
             <server>
                 <id>4</id>

@@ -284,8 +284,12 @@ def send_4lw_cmd(cluster, node, cmd="ruok", port=9181, argument=None):
     logging.debug("Sending %s to %s:%d", cmd, node, port)
     try:
         client = get_keeper_socket(cluster, node.name, port)
-        client.send(cmd.encode() + struct.pack('>L', len(argument)) + argument.encode() if argument else b"")
-        data = client.recv(100_000_000)
+        if argument is not None:
+            client.send(cmd.encode() + struct.pack('>L', len(argument)) + argument.encode())
+        else:
+            client.send(cmd.encode())
+
+        data = client.recv(100_000)
         data = data.decode()
         return data
     finally:

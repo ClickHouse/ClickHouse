@@ -1126,7 +1126,7 @@ KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
         if (ptr->get_priority() == update->priority)
             return Accepted;
 
-        raft_instance->set_priority(update->id, update->priority, /*broadcast on live leader*/ true);
+        raft_instance->set_priority_v2(update->id, update->priority);
         return Accepted;
     }
     if (const auto * transfer_leader = std::get_if<TransferLeadership>(&action))
@@ -1208,7 +1208,7 @@ void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateActi
     }
     else if (const auto * update = std::get_if<UpdateRaftServerPriority>(&action))
     {
-        raft_instance->set_priority(update->id, update->priority, /*broadcast on live leader*/true);
+        raft_instance->set_priority_v2(update->id, update->priority);
         return;
     }
 

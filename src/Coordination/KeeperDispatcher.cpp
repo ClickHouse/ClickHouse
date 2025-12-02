@@ -1107,6 +1107,26 @@ try
     if (!reconfig_command->has("actions"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Reconfigure command must have 'changes' field");
 
+    auto actions = reconfig_command->getArray("actions");
+    for (const auto & action_json : *actions)
+    {
+        const auto & action_obj = action_json.extract<Poco::JSON::Object::Ptr>();
+        if (action_obj->has("remove_members"))
+        {
+            auto remove_members = action_obj->getArray("remove_members");
+            for (const auto & member_id_json : *remove_members)
+            {
+                int32_t member_id = member_id_json.convert<int32_t>();
+                if (member_id == server->getServerID())
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Reconfigure command cannot remove current server id {} from cluster",
+                        member_id);
+                }
+            }
+        }
+    }
+
     LOG_DEBUG(log, "Preconditions passed, executing reconfiguration");
     size_t max_action_wait_time_ms = reconfig_command->has("max_action_wait_time_ms")
         ? reconfig_command->getValue<size_t>("max_action_wait_time_ms")
@@ -1117,7 +1137,6 @@ try
         : 300000;
 
     Stopwatch total_watch;
-    auto actions = reconfig_command->getArray("actions");
     for (const auto & action_json : *actions)
     {
         const auto & action_obj = action_json.extract<Poco::JSON::Object::Ptr>();
@@ -1200,13 +1219,24 @@ try
             TransferLeadership transfer_action{new_leader_id};
             auto check_callback = [new_leader_id](KeeperServer * server_) -> bool
             {
+                if (server_->getLeaderID() == new_leader_id)
+                {
+                    LOG_INFO(
+                        &Poco::Logger::get("KeeperDispatcher"),
+                        "Leadership successfully transferred to server id {}",
+                        new_leader_id);
+                    return true;
+                }
+                else
+                {
                 LOG_INFO(
                     &Poco::Logger::get("KeeperDispatcher"),
                     "Waiting for leadership transfer to server id {}. Current leader id is {}",
                     new_leader_id,
                     server_->getLeaderID());
 
-                return server_->getLeaderID() == new_leader_id;
+                    return false;
+                }
             };
             auto time_left = std::min(max_action_wait_time_ms, max_total_wait_time_ms - total_watch.elapsedMilliseconds());
             executeClusterUpdateActionAndWaitConfigChange(transfer_action, std::move(check_callback), time_left);
