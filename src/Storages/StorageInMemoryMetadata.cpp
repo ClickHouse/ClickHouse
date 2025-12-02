@@ -7,21 +7,17 @@
 
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
-#include <Common/quoteString.h>
-#include <Common/StringUtils.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTSQLSecurity.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
-#include "Common/logger_useful.h" /// DELETE ME
 
 namespace DB
 {
@@ -822,6 +818,9 @@ NameSet StorageInMemoryMetadata::getColumnsWithoutDefaultExpressions(const Names
 
 void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescription & column, ContextPtr context)
 {
+    if (column.default_desc.kind == ColumnDefaultKind::Ephemeral)
+        return;
+
     if ((isNumber(column.type) && add_minmax_index_for_numeric_columns) || (isString(column.type) && add_minmax_index_for_string_columns))
     {
         bool minmax_index_exists = false;
@@ -836,7 +835,21 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
         }
 
         if (!minmax_index_exists)
-            secondary_indices.push_back(createImplicitMinMaxIndexDescription(column.name, columns, context));
+        {
+            auto index = createImplicitMinMaxIndexDescription(column.name, columns, context);
+            bool valid_index = true;
+            try
+            {
+                MergeTreeIndexFactory::implicitValidation(index);
+            }
+            catch (...)
+            {
+                valid_index = false;
+            }
+            if (valid_index)
+                secondary_indices.push_back(std::move(index));
+        }
+
     }
 }
 
