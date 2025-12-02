@@ -21,6 +21,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
+#include "Common/logger_useful.h" /// DELETE ME
 
 namespace DB
 {
@@ -38,6 +39,8 @@ namespace ErrorCodes
 
 StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata & other)
     : columns(other.columns)
+    , add_minmax_index_for_numeric_columns(other.add_minmax_index_for_numeric_columns)
+    , add_minmax_index_for_string_columns(other.add_minmax_index_for_string_columns)
     , secondary_indices(other.secondary_indices)
     , constraints(other.constraints)
     , projections(other.projections.clone())
@@ -66,6 +69,8 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
         return *this;
 
     columns = other.columns;
+    add_minmax_index_for_numeric_columns = other.add_minmax_index_for_numeric_columns;
+    add_minmax_index_for_string_columns = other.add_minmax_index_for_string_columns;
     secondary_indices = other.secondary_indices;
     constraints = other.constraints;
     projections = other.projections.clone();
@@ -815,4 +820,34 @@ NameSet StorageInMemoryMetadata::getColumnsWithoutDefaultExpressions(const Names
     return names;
 }
 
+void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescription & column, ContextPtr context)
+{
+    if ((isNumber(column.type) && add_minmax_index_for_numeric_columns) || (isString(column.type) && add_minmax_index_for_string_columns))
+    {
+        bool minmax_index_exists = false;
+
+        for (const auto & index : secondary_indices)
+        {
+            if (index.column_names.front() == column.name && index.type == "minmax")
+            {
+                minmax_index_exists = true;
+                break;
+            }
+        }
+
+        if (!minmax_index_exists)
+            secondary_indices.push_back(createImplicitMinMaxIndexDescription(column.name, columns, context));
+    }
+}
+
+void StorageInMemoryMetadata::dropImplicitIndicesForColumn(const String & column_name)
+{
+    for (auto index_it = secondary_indices.begin(); index_it != secondary_indices.end();)
+    {
+        if (index_it->isImplicitlyCreated() && index_it->column_names.front() == column_name)
+            index_it = secondary_indices.erase(index_it);
+        else
+            ++index_it;
+    }
+}
 }

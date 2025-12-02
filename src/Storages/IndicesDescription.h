@@ -67,7 +67,7 @@ struct IndexDescription
     /// if something change in columns.
     void recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr context);
 
-    bool isImplicitlyCreated() const { return name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX); }
+    bool isImplicitlyCreated() const { return is_implicitly_created; }
 
     void initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context);
 
