@@ -23,6 +23,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
+#include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -143,8 +144,8 @@ public:
     void writeMetadataVersion(ContextPtr local_context, int32_t metadata_version, bool sync);
 
     const NamesAndTypesList & getColumns() const { return columns; }
-    const ColumnsDescription & getColumnsDescription() const { return columns_description; }
-    const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const { return columns_description_with_collected_nested; }
+    const ColumnsDescription & getColumnsDescription() const { return *columns_description; }
+    const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const { return *columns_description_with_collected_nested; }
     const ColumnsSubstreams & getColumnsSubstreams() const { return columns_substreams; }
     StorageMetadataPtr getMetadataSnapshot() const;
 
@@ -391,6 +392,8 @@ public:
     IndexPtr loadIndexToCache(PrimaryIndexCache & index_cache) const;
     void moveIndexToCache(PrimaryIndexCache & index_cache);
     void removeIndexFromCache(PrimaryIndexCache * index_cache) const;
+
+    void removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const;
 
     void setIndex(Columns index_columns);
     void unloadIndex();
@@ -721,11 +724,11 @@ private:
 
     /// Columns description for more convenient access
     /// to columns by name and getting subcolumns.
-    ColumnsDescription columns_description;
+    std::shared_ptr<const ColumnsDescription> columns_description;
 
     /// The same as above but after call of Nested::collect().
     /// It is used while reading from wide parts.
-    ColumnsDescription columns_description_with_collected_nested;
+    std::shared_ptr<const ColumnsDescription> columns_description_with_collected_nested;
 
     /// Small state of finalized statistics for suitable statistics types.
     /// Lazily initialized on a first access.

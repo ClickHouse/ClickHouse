@@ -180,6 +180,7 @@ namespace Setting
     extern const SettingsBool split_intersecting_parts_ranges_into_layers_final;
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_if_final;
+    extern const SettingsBool use_skip_indexes_for_disjunctions;
     extern const SettingsBool use_uncompressed_cache;
     extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool read_in_order_use_virtual_row;
@@ -357,7 +358,7 @@ std::shared_ptr<QueryIdHolder> ReadFromMergeTree::AnalysisResult::checkLimits(
 }
 
 ReadFromMergeTree::ReadFromMergeTree(
-    RangesInDataParts parts_,
+    RangesInDataPartsPtr parts_,
     MergeTreeData::MutationsSnapshotPtr mutations_,
     Names all_column_names_,
     const MergeTreeData & data_,
@@ -445,7 +446,8 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
 {
     const bool enable_parallel_reading = true;
     return std::make_unique<ReadFromMergeTree>(
-        getParts(),
+        /// Optimized version of getParts() to avoid extra copy
+        analyzed_result_ptr ? std::make_shared<RangesInDataParts>(analyzed_result_ptr->parts_with_ranges) : prepared_parts,
         mutations_snapshot,
         all_column_names,
         data,
@@ -1019,7 +1021,6 @@ Pipe ReadFromMergeTree::readByLayers(
         std::move(split_parts),
         storage_snapshot->metadata->getPrimaryKey(),
         std::move(reading_step_getter),
-        false,
         context);
     return Pipe::unitePipes(std::move(pipes));
 }
@@ -1865,6 +1866,9 @@ static void buildIndexes(
     indexes.emplace(
         ReadFromMergeTree::Indexes{KeyCondition{filter_dag, context, primary_key_column_names, primary_key.expression}});
 
+    NamesAndTypesList dummy_names_and_types;
+    indexes->key_condition_rpn_template = KeyCondition{filter_dag, context, {}, std::make_shared<ExpressionActions>(ActionsDAG(dummy_names_and_types))};
+
     if (metadata_snapshot->hasPartitionKey())
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
@@ -1952,6 +1956,9 @@ static void buildIndexes(
             skip_indexes.useful_indices.emplace_back(index_helper, condition);
     }
 
+    indexes->use_skip_indexes_for_disjunctions = settings[Setting::use_skip_indexes_for_disjunctions]
+                                                    && skip_indexes.useful_indices.size() > 1
+                                                    && !indexes->key_condition_rpn_template->hasOnlyConjunctions();
     {
         std::vector<size_t> index_sizes;
         index_sizes.reserve(skip_indexes.useful_indices.size());
@@ -2038,7 +2045,7 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
 }
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
-    RangesInDataParts parts,
+    const RangesInDataParts & parts,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const std::optional<VectorSearchParameters> & vector_search_parameters,
     const StorageMetadataPtr & metadata_snapshot,
@@ -2055,6 +2062,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     bool is_parallel_reading_from_replicas_)
 {
     AnalysisResult result;
+    RangesInDataParts res_parts;
     const auto & settings = context_->getSettingsRef();
 
     size_t total_parts = parts.size();
@@ -2115,7 +2123,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     bool add_index_stat_row_for_pk_expand = false;
 
     {
-        MergeTreeDataSelectExecutor::filterPartsByPartition(
+        res_parts = MergeTreeDataSelectExecutor::filterPartsByPartition(
             parts,
             indexes->partition_pruner,
             indexes->minmax_idx_condition,
@@ -2130,7 +2138,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         result.sampling = MergeTreeDataSelectExecutor::getSampling(
             query_info_,
             metadata_snapshot->getColumns().getAllPhysical(),
-            parts,
+            res_parts,
             indexes->key_condition,
             data,
             metadata_snapshot,
@@ -2140,27 +2148,29 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         if (result.sampling.read_nothing)
             return std::make_shared<AnalysisResult>(std::move(result));
 
-        for (const auto & part : parts)
+        for (const auto & part : res_parts)
             total_marks_pk += part.data_part->index_granularity->getMarksCountWithoutFinal();
-        parts_before_pk = parts.size();
+        parts_before_pk = res_parts.size();
 
-        MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(parts, query_info_, vector_search_parameters, context_, log);
+        MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, mutations_snapshot, context_, log);
 
         auto reader_settings = MergeTreeReaderSettings::create(context_, *data_settings_, query_info_);
         result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
-            parts,
+            res_parts,
             metadata_snapshot,
             mutations_snapshot,
             context_,
             indexes->key_condition,
             indexes->part_offset_condition,
             indexes->total_offset_condition,
+            indexes->key_condition_rpn_template,
             indexes->skip_indexes,
             reader_settings,
             log,
             num_streams,
             result.index_stats,
             indexes->use_skip_indexes,
+            indexes->use_skip_indexes_for_disjunctions,
             find_exact_ranges,
             query_info_.isFinal(),
             is_parallel_reading_from_replicas_);
@@ -2186,10 +2196,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         {
             RangesInDataParts remaining;
 
-            auto it_parts = parts.begin();
+            auto it_parts = res_parts.begin();
             auto it_result = result.parts_with_ranges.begin();
 
-            while (it_parts != parts.end())
+            while (it_parts != res_parts.end())
             {
                 if (it_result != result.parts_with_ranges.end() && it_parts->part_index_in_query == it_result->part_index_in_query)
                 {
@@ -2820,6 +2830,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         {
             skip_index_reader = std::make_shared<MergeTreeSkipIndexReader>(
                 applicable_skip_indexes,
+                indexes->key_condition_rpn_template,
+                indexes->use_skip_indexes_for_disjunctions,
                 context->getIndexMarkCache(),
                 context->getIndexUncompressedCache(),
                 context->getVectorSimilarityIndexCache(),
@@ -3351,7 +3363,7 @@ std::shared_ptr<ParallelReadingExtension> ReadFromMergeTree::getParallelReadingE
         context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount());
 }
 
-void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns)
+void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final)
 {
     index_read_tasks.clear();
 
@@ -3405,7 +3417,7 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
             /// Create tasks for text indexes which don't read virtual columns.
             /// It's required to always read text indexes on separate step on data read.
             if (!index_read_tasks.contains(index.index->index.name))
-                index_read_tasks.emplace(index.index->index.name, IndexReadTask{.columns = {}, .index = index});
+                index_read_tasks.emplace(index.index->index.name, IndexReadTask{.columns = {}, .index = index, .is_final = is_final});
         }
     }
 

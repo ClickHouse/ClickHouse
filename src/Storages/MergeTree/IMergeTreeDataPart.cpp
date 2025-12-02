@@ -10,6 +10,7 @@
 #include <Compression/getCompressionCodecForFile.h>
 #include <Core/Defines.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/NestedUtils.h>
 #include <IO/HashingWriteBuffer.h>
@@ -94,6 +95,11 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool replace_long_file_name_to_hash;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
+}
+
+namespace Setting
+{
+    extern const SettingsBool merge_tree_use_prefixes_deserialization_thread_pool;
 }
 
 namespace ErrorCodes
@@ -413,6 +419,13 @@ IMergeTreeDataPart::~IMergeTreeDataPart()
     decrementStateMetric(state);
     decrementTypeMetric(part_type);
 
+    if (columns_description)
+    {
+        columns_description.reset();
+        columns_description_with_collected_nested.reset();
+        storage.decrefColumnsDescriptionForColumns(columns);
+    }
+
     DimensionalMetrics::sub(
         DimensionalMetrics::MergeTreeParts,
         {stateToString(), part_type.toString(), std::to_string(isProjectionPart())});
@@ -460,6 +473,14 @@ void IMergeTreeDataPart::removeIndexFromCache(PrimaryIndexCache * index_cache) c
 
     auto key = PrimaryIndexCache::hash(getRelativePathOfActivePart());
     index_cache->remove(key);
+}
+
+void IMergeTreeDataPart::removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const
+{
+    if (!vector_similarity_index_cache)
+        return;
+
+    vector_similarity_index_cache->removeEntriesFromCache(getRelativePathOfActivePart());
 }
 
 void IMergeTreeDataPart::setIndex(Columns index_columns)
@@ -605,8 +626,9 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
         }, ISerialization::SubstreamData(serialization));
     }
 
-    columns_description = ColumnsDescription(columns);
-    columns_description_with_collected_nested = ColumnsDescription(Nested::collect(columns));
+    auto columns_descriptions = storage.getColumnsDescriptionForColumns(columns);
+    columns_description = columns_descriptions.original;
+    columns_description_with_collected_nested = columns_descriptions.with_collected_nested;
 }
 
 String IMergeTreeDataPart::getProjectionName() const
@@ -633,7 +655,7 @@ String IMergeTreeDataPart::getProjectionName() const
 StorageMetadataPtr IMergeTreeDataPart::getMetadataSnapshot() const
 {
     if (info.isPatch())
-        return storage.getPatchPartMetadata(columns_description, info.getPartitionId(), storage.getContext());
+        return storage.getPatchPartMetadata(*columns_description, info.getPartitionId(), storage.getContext());
 
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     if (!parent_part)
@@ -644,12 +666,12 @@ StorageMetadataPtr IMergeTreeDataPart::getMetadataSnapshot() const
 
 NameAndTypePair IMergeTreeDataPart::getColumn(const String & column_name) const
 {
-    return columns_description.getColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+    return columns_description->getColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
 }
 
 std::optional<NameAndTypePair> IMergeTreeDataPart::tryGetColumn(const String & column_name) const
 {
-    return columns_description.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+    return columns_description->tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
 }
 
 SerializationPtr IMergeTreeDataPart::getSerialization(const String & column_name) const
@@ -685,6 +707,9 @@ void IMergeTreeDataPart::clearCaches()
     /// even if the overall index size is much less.
     removeMarksFromCache(storage.getContext()->getMarkCache().get());
     removeIndexFromCache(storage.getPrimaryIndexCache().get());
+
+    /// Remove from other caches of secondary indexes
+    removeFromVectorIndexCache(storage.getContext()->getVectorSimilarityIndexCache().get());
 }
 
 bool IMergeTreeDataPart::mayStoreDataInCaches() const
@@ -2722,7 +2747,8 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
     settings.can_read_part_without_marks = true;
     /// Use prefixes deserialization thread pool to read prefixes faster.
     /// In JSON type there might be hundreds of small files that needs to be read.
-    settings.use_prefixes_deserialization_thread_pool = true;
+    /// Set this to value from storage settings rather than true by default as this could cause starvation on huge JSON.
+    settings.use_prefixes_deserialization_thread_pool = storage.getContext()->getSettingsRef()[Setting::merge_tree_use_prefixes_deserialization_thread_pool];
 
     auto alter_conversions = std::make_shared<AlterConversions>();
     auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);

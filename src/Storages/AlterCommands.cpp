@@ -1305,9 +1305,8 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
             auto minmax_columns = metadata_copy.getColumnsRequiredForPartitionKey();
             auto partition_key = metadata_copy.partition_key.expression_list_ast->clone();
             FunctionNameNormalizer::visit(partition_key.get());
-            auto primary_key_asts = metadata_copy.primary_key.expression_list_ast->children;
             metadata_copy.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-                metadata_copy.columns, partition_key, minmax_columns, primary_key_asts, context));
+                metadata_copy.columns, partition_key, minmax_columns, metadata_copy.primary_key, context));
         }
     }
 
@@ -1697,6 +1696,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             {
                 if (from_nested_table_name != to_nested_table_name)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column from one nested name to another");
+                all_columns.rename(command.column_name, command.rename_to);
             }
             else if (!from_nested && !to_nested)
             {

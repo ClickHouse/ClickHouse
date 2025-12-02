@@ -74,18 +74,18 @@ public:
     UInt64 getUInt(size_t n) const override;
     Int64 getInt(size_t n) const override;
     UInt64 get64(size_t n) const override;
-    StringRef getDataAt(size_t n) const override;
+    std::string_view getDataAt(size_t n) const override;
 
     ColumnPtr convertToFullColumnIfReplicated() const override;
 
     void insertData(const char * pos, size_t length) override;
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    std::string_view serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
     std::optional<size_t> getSerializedValueSize(size_t n) const override;
-    const char * deserializeAndInsertFromArena(const char * pos) override;
-    const char * deserializeAndInsertAggregationStateValueFromArena(const char * pos) override;
-    const char * skipSerializedInArena(const char * pos) const override;
+    void deserializeAndInsertFromArena(ReadBuffer & in) override;
+    void deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in) override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 #else
@@ -186,6 +186,7 @@ public:
     bool hasDynamicStructure() const override { return nested_column->hasDynamicStructure(); }
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
+    void fixDynamicStructure() override { nested_column->fixDynamicStructure(); }
 
     const ColumnIndex & getIndexes() const { return indexes; }
     ColumnIndex & getIndexes() { return indexes; }

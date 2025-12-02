@@ -36,6 +36,7 @@
 #include <Common/randomSeed.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
+#include <Common/setThreadName.h>
 
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
@@ -1432,7 +1433,7 @@ void StorageDistributed::initializeFromDisk()
 
     /// Make initialization for large number of disks parallel.
     ThreadPool pool(CurrentMetrics::StorageDistributedThreads, CurrentMetrics::StorageDistributedThreadsActive, CurrentMetrics::StorageDistributedThreadsScheduled, disks.size());
-    ThreadPoolCallbackRunnerLocal<void> runner(pool, "DistInit");
+    ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::DISTRIBUTED_INIT);
 
     for (const DiskPtr & disk : disks)
     {
@@ -1640,9 +1641,11 @@ Cluster::Addresses StorageDistributed::parseAddresses(const std::string & name) 
                 continue;
             }
 
-            if (address.replica_index > replicas)
+            if (address.replica_index == 0 || address.replica_index > replicas)
             {
-                LOG_ERROR(log, "No shard with replica_index={} ({})", address.replica_index, name);
+                LOG_ERROR(log, "Invalid replica_index={} for directory '{}' (cluster has {} replicas for shard {}). "
+                               "Expected directory format: 'shardN_replicaM' or 'shardN_all_replicas'",
+                                address.replica_index, dirname, replicas, address.shard_index);
                 continue;
             }
 
@@ -1896,7 +1899,7 @@ void StorageDistributed::flushClusterNodesAllDataImpl(ContextPtr local_context, 
 
         Stopwatch watch;
         ThreadPool pool(CurrentMetrics::StorageDistributedThreads, CurrentMetrics::StorageDistributedThreadsActive, CurrentMetrics::StorageDistributedThreadsScheduled, directory_queues.size());
-        ThreadPoolCallbackRunnerLocal<void> runner(pool, "DistFlush");
+        ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::DISTRIBUTED_FLUSH);
 
         for (const auto & node : directory_queues)
         {

@@ -49,7 +49,7 @@ DataTypePtr DataTypeDecimal<T>::promoteNumericType() const
 template <is_decimal T>
 T DataTypeDecimal<T>::parseFromString(const String & str) const
 {
-    ReadBufferFromMemory buf(str.data(), str.size());
+    ReadBufferFromMemory buf(str);
     T x;
     UInt32 unread_scale = this->scale;
     readDecimalText(buf, x, this->precision, unread_scale, true);

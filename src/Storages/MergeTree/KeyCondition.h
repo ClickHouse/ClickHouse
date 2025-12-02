@@ -78,11 +78,32 @@ public:
     };
 
     using ColumnIndexToBloomFilter = std::unordered_map<std::size_t, std::unique_ptr<BloomFilter>>;
+
+    /// Ref : https://github.com/ClickHouse/ClickHouse/pull/87781
+    /// ClickHouse always supported pruning for conditions with conjunctions/ANDs :
+    ///    A = 5 AND B > 10 AND C < 1000
+    /// The code was oriented towards each skip index application immediately 'throwing out'
+    /// ranges that do not pass the condition and moving on to evaluating the next skip index
+    /// on a reduced set of ranges.
+    ///
+    /// But a condition with ORs is fundamentally different : A = 5 OR B = 5. If a range does
+    /// not match the condition (A = 5) using skip index on A, we cannot throw out or prune away
+    /// that range. We need to 'wait' for skip index B application and see the result of B = 5
+    /// on that range.
+    ///
+    /// Range pruning for mixed AND/OR predicates uses below callback to record each atom's
+    /// evaluation result got by applying corresponding skip index (true or false). This is
+    /// done in MergeTreeDataSelectExecutor::filterMarksUsingIndex(). Each *IndexCondition
+    /// invokes this callback as it is evaluating the predicate. The final result for each
+    /// granule is computed in MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions()
+    using UpdatePartialDisjunctionResultFn = std::function<void (size_t position, bool result, bool is_unknown)>;
+
     /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `hyperrectangle`.
     BoolMask checkInHyperrectangle(
         const Hyperrectangle & hyperrectangle,
         const DataTypes & data_types,
-        const ColumnIndexToBloomFilter & column_index_to_column_bf = {}) const;
+        const ColumnIndexToBloomFilter & column_index_to_column_bf = {},
+        const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn = nullptr) const;
 
     /// Whether the condition and its negation are (independently) feasible in the key range.
     /// left_key and right_key must contain all fields in the sort_descr in the appropriate order.
@@ -279,6 +300,9 @@ public:
     bool isRelaxed() const { return relaxed; }
 
     bool isSinglePoint() const { return single_point; }
+
+    /// Does the filter condition have any ORs?
+    bool hasOnlyConjunctions() const;
 
     void prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
                                 std::function<std::optional<std::vector<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many);

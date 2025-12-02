@@ -241,7 +241,7 @@ public:
     bool canUseAdaptiveGranularity() const override;
 
     /// Modify a CREATE TABLE query to make a variant which must be written to a backup.
-    void applyMetadataChangesToCreateQueryForBackup(ASTPtr & create_query) const override;
+    void applyMetadataChangesToCreateQueryForBackup(const ASTPtr & create_query) const override;
 
     /// Makes backup entries to backup the data of the storage.
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
