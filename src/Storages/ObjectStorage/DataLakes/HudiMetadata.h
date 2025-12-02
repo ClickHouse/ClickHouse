@@ -1,10 +1,10 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
+#include <Disks/ObjectStorages/IObjectStorage_fwd.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Core/Types.h>
 
 namespace DB
@@ -17,7 +17,7 @@ public:
 
     const char * getName() const override { return name; }
 
-    HudiMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationPtr configuration_, ContextPtr context_);
+    HudiMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, ContextPtr context_);
 
     NamesAndTypesList getTableSchema(ContextPtr /*local_context*/) const override { return {}; }
 
@@ -35,7 +35,6 @@ public:
         const ContextPtr & /*local_context*/,
         const std::optional<ColumnsDescription> & /*columns*/,
         ASTPtr /*partition_by*/,
-        ASTPtr /*order_by*/,
         bool /*if_not_exists*/,
         std::shared_ptr<DataLake::ICatalog> /*catalog*/,
         const StorageID & /*table_id_*/)
@@ -47,7 +46,7 @@ public:
         StorageObjectStorageConfigurationWeakPtr configuration,
         ContextPtr local_context)
     {
-        return std::make_unique<HudiMetadata>(object_storage, configuration.lock(), local_context);
+        return std::make_unique<HudiMetadata>(object_storage, configuration, local_context);
     }
 
 protected:
@@ -60,8 +59,7 @@ protected:
 
 private:
     const ObjectStoragePtr object_storage;
-    const String table_path;
-    const String format;
+    const StorageObjectStorageConfigurationWeakPtr configuration;
     mutable Strings data_files;
 
     Strings getDataFilesImpl() const;

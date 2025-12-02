@@ -6,6 +6,9 @@
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 
+#include <base/StringRef.h>
+
+
 namespace DB
 {
 
@@ -83,9 +86,9 @@ public:
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
 
-    std::string_view getDataAt(size_t n) const override { return tuple->getDataAt(n); }
+    StringRef getDataAt(size_t n) const override { return tuple->getDataAt(n); }
     void insertData(const char * pos, size_t length) override { tuple->insertData(pos, length); }
     void insert(const Field & x) override { tuple->insert(x); }
     bool tryInsert(const Field & x) override { return tuple->tryInsert(x); }
@@ -112,7 +115,7 @@ public:
 
     void insertDefault() override { tuple->insertDefault(); }
     void popBack(size_t n) override { tuple->popBack(n); }
-    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override
     {
         return tuple->serializeValueIntoArena(n, arena, begin, settings);
     }

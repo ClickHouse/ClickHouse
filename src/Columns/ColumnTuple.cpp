@@ -149,32 +149,26 @@ void ColumnTuple::get(size_t n, Field & res) const
         res_tuple.push_back((*columns[i])[n]);
 }
 
-DataTypePtr ColumnTuple::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+std::pair<String, DataTypePtr> ColumnTuple::getValueNameAndType(size_t n) const
 {
     const size_t tuple_size = columns.size();
 
-    if (options.notFull(name_buf))
-    {
-        if (tuple_size > 1)
-            name_buf << "(";
-        else
-            name_buf << "tuple(";
-    }
+    String value_name {tuple_size > 1 ? "(" : "tuple("};
 
     DataTypes element_types;
     element_types.reserve(tuple_size);
 
     for (size_t i = 0; i < tuple_size; ++i)
     {
-        if (options.notFull(name_buf) && i > 0)
-            name_buf << ", ";
-        const auto & type = columns[i]->getValueNameAndTypeImpl(name_buf, n, options);
+        const auto & [value, type] = columns[i]->getValueNameAndType(n);
         element_types.push_back(type);
+        if (i > 0)
+            value_name += ", ";
+        value_name += value;
     }
-    if (options.notFull(name_buf))
-        name_buf << ")";
+    value_name += ")";
 
-    return std::make_shared<DataTypeTuple>(element_types);
+    return {value_name, std::make_shared<DataTypeTuple>(element_types)};
 }
 
 bool ColumnTuple::isDefaultAt(size_t n) const
@@ -186,7 +180,7 @@ bool ColumnTuple::isDefaultAt(size_t n) const
     return true;
 }
 
-std::string_view ColumnTuple::getDataAt(size_t) const
+StringRef ColumnTuple::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
 }
@@ -329,7 +323,7 @@ void ColumnTuple::rollback(const ColumnCheckpoint & checkpoint)
         columns[i]->rollback(*checkpoints[i]);
 }
 
-std::string_view ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
+StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
     if (columns.empty())
     {
@@ -339,17 +333,43 @@ std::string_view ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, c
         return { res, 1 };
     }
 
-    std::string_view res;
+    StringRef res(begin, 0);
     for (const auto & column : columns)
     {
         auto value_ref = column->serializeValueIntoArena(n, arena, begin, settings);
-        res = std::string_view{value_ref.data() - res.size(), res.size() + value_ref.size()};
+        res.data = value_ref.data - res.size;
+        res.size += value_ref.size;
     }
 
     return res;
 }
 
+<<<<<<< HEAD
 char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
+=======
+StringRef ColumnTuple::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+{
+    if (columns.empty())
+    {
+        /// Has to put one useless byte into Arena, because serialization into zero number of bytes is ambiguous.
+        char * res = arena.allocContinue(1, begin);
+        *res = 0;
+        return { res, 1 };
+    }
+
+    StringRef res(begin, 0);
+    for (const auto & column : columns)
+    {
+        auto value_ref = column->serializeAggregationStateValueIntoArena(n, arena, begin);
+        res.data = value_ref.data - res.size;
+        res.size += value_ref.size;
+    }
+
+    return res;
+}
+
+char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory) const
+>>>>>>> backport/25.10/90880
 {
     if (columns.empty())
     {
@@ -865,7 +885,7 @@ bool ColumnTuple::dynamicStructureEquals(const IColumn & rhs) const
     }
 }
 
-void ColumnTuple::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnTuple::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
 {
     std::vector<Columns> nested_source_columns;
     nested_source_columns.resize(columns.size());
@@ -880,7 +900,7 @@ void ColumnTuple::takeDynamicStructureFromSourceColumns(const Columns & source_c
     }
 
     for (size_t i = 0; i != columns.size(); ++i)
-        columns[i]->takeDynamicStructureFromSourceColumns(nested_source_columns[i], max_dynamic_subcolumns);
+        columns[i]->takeDynamicStructureFromSourceColumns(nested_source_columns[i]);
 }
 
 void ColumnTuple::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
@@ -890,11 +910,6 @@ void ColumnTuple::takeDynamicStructureFromColumn(const ColumnPtr & source_column
         columns[i]->takeDynamicStructureFromColumn(source_elements[i]);
 }
 
-void ColumnTuple::fixDynamicStructure()
-{
-    for (auto & column : columns)
-        column->fixDynamicStructure();
-}
 
 ColumnPtr ColumnTuple::compress(bool force_compression) const
 {

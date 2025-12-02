@@ -66,15 +66,15 @@ MergeSelectorChoices pack(const ChooseContext & ctx, PartsRanges && ranges, Merg
 
 MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
 {
-    /// Drop parts - 1 priority
+    /// Delete parts - 1 priority
     if (!ctx.max_merge_sizes.empty())
     {
         /// The size of the completely expired part of TTL drop is not affected by the merge pressure and the size of the storage space
         std::vector<size_t> max_sizes(ctx.max_merge_sizes.size(), std::numeric_limits<size_t>::max());
-        TTLPartDropMergeSelector drop_ttl_selector(ctx.current_time);
+        TTLPartDeleteMergeSelector drop_ttl_selector(ctx.next_delete_times, ctx.current_time);
 
         if (auto merge_ranges = drop_ttl_selector.select(ctx.ranges, max_sizes, ctx.range_filter); !merge_ranges.empty())
-            return pack(ctx, std::move(merge_ranges), MergeType::TTLDrop);
+            return pack(ctx, std::move(merge_ranges), MergeType::TTLDelete);
     }
 
     /// Delete rows - 2 priority

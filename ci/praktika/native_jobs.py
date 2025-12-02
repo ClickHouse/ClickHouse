@@ -115,9 +115,6 @@ def _build_dockers(workflow, job_name):
     job_status = Result.Status.SUCCESS
     job_info = ""
     dockers = Docker.sort_in_build_order(dockers)
-    for d in dockers:
-        if isinstance(d.platforms, str):
-            d.platforms = [d.platforms]
     docker_digests = {}  # type: Dict[str, str]
     arm_only = False
     amd_only = False
@@ -147,7 +144,7 @@ def _build_dockers(workflow, job_name):
             job_info = "Failed to install docker buildx driver"
 
     if job_status == Result.Status.SUCCESS:
-        if not Info().is_local_run and not Docker.login(
+        if not Docker.login(
             Settings.DOCKERHUB_USERNAME,
             user_password=workflow.get_secret(Settings.DOCKERHUB_SECRET).get_value(),
         ):
@@ -163,12 +160,7 @@ def _build_dockers(workflow, job_name):
                 continue
             elif arm_only and Docker.Platforms.ARM not in docker.platforms:
                 continue
-            platforms = (
-                docker.platforms
-                if isinstance(docker.platforms, list)
-                else [docker.platforms]
-            )
-            if any(p not in Docker.Platforms.arm_amd for p in platforms):
+            if any(p not in Docker.Platforms.arm_amd for p in docker.platforms):
                 Utils.raise_with_error(
                     f"TODO: add support for all docker platforms [{docker.platforms}]"
                 )
@@ -182,7 +174,6 @@ def _build_dockers(workflow, job_name):
                     digests=docker_digests,
                     amd_only=amd_only,
                     arm_only=arm_only,
-                    disable_push=Info().is_local_run,
                 )
             )
             if results[-1].is_ok():
@@ -553,7 +544,7 @@ def _check_and_mark_flaky_tests(workflow_result: Result):
 
     flaky_catalog = TestCaseIssueCatalog.from_fs(name=catalog_name)
 
-    # Build a lookup map: test_name -> issue (for fast matching)
+    # Build a map of test_name -> issue info for quick lookup
     flaky_tests_map = {
         issue.test_name: issue
         for issue in flaky_catalog.active_test_issues
@@ -561,7 +552,7 @@ def _check_and_mark_flaky_tests(workflow_result: Result):
     }
     print(f"  Loaded {len(flaky_tests_map)} flaky test patterns")
 
-    # Walk the result tree and flag flaky leaves
+    # Recursive function to check all result leaves
     def check_and_mark_flaky(result: Result):
         if result.is_ok():
             return
@@ -571,26 +562,13 @@ def _check_and_mark_flaky_tests(workflow_result: Result):
                 check_and_mark_flaky(sub_result)
         else:
             for test_name, issue in flaky_tests_map.items():
-                name_in_report = result.name
-
-                # Normalize pytest parameterized names.
-                # If the issue already includes parameters (e.g. "test_x[param]"),
-                # do exact matching later. Otherwise, strip the "[param]" suffix
-                # from the reported test name so we can match the base test name.
-                if "[" in test_name:
-                    # Issue mentions a specific parametrization: keep full name for exact match
-                    pass
-                elif "[" in name_in_report:
-                    # Issue mentions only the base test: compare against the base part
-                    name_in_report = name_in_report.split("[")[0]
-
-                if name_in_report.endswith(
+                if result.name.endswith(
                     test_name
-                ):  # TODO: Replace suffix match with a canonical test id matcher (e.g. full nodeid/path)
+                ):  # TODO: find the best way to match test name
                     print(
                         f"  Marking '{result.name}' as flaky (matched: {test_name}, issue: #{issue.issue})"
                     )
-                    result.set_clickable_label(label="issue", link=issue.issue_url)
+                    result.set_clickable_label(label="flaky", link=issue.issue_url)
                     break
 
     # Check all workflow results
@@ -612,13 +590,6 @@ def _finish_workflow(workflow, job_name):
         Result.file_name_static(workflow.name),
     )
     workflow_result = Result.from_fs(workflow.name)
-
-    if (
-        workflow.enable_merge_ready_status
-        or workflow.enable_open_issues_check
-        or workflow.post_hooks
-    ):
-        _GH_Auth(workflow)
 
     update_final_report = False
     results = []
@@ -645,20 +616,20 @@ def _finish_workflow(workflow, job_name):
     if results and any(not result.is_ok() for result in results):
         failed_results.append("Workflow Post Hook")
 
-    if workflow.enable_open_issues_check:
+    if workflow.enable_flaky_tests_catalog and workflow.enable_merge_ready_status:
 
         def do():
             try:
                 _check_and_mark_flaky_tests(workflow_result)
             except Exception as e:
-                print(f"ERROR: failed to check open issues: {e}")
+                print(f"ERROR: failed to check flaky tests: {e}")
                 traceback.print_exc()
-                env.add_info("Open issues check failed")
+                env.add_info("Flaky tests check failed")
             return True  # make it always success for now
 
         results.append(
             Result.from_commands_run(
-                name="Open issues check", command=do, with_info=True
+                name="Flaky Tests Check", command=do, with_info=True
             )
         )
 
@@ -671,7 +642,6 @@ def _finish_workflow(workflow, job_name):
             continue
         if result.status == Result.Status.DROPPED:
             dropped_results.append(result.name)
-            continue
         if not result.is_completed():
             print(
                 f"ERROR: not finished job [{result.name}] in the workflow - set status to error"
@@ -701,16 +671,19 @@ def _finish_workflow(workflow, job_name):
         if dropped_results:
             ready_for_merge_description += f", Dropped: {len(dropped_results)}"
 
-    if workflow.enable_merge_ready_status:
-        if not GH.post_commit_status(
-            name=Settings.READY_FOR_MERGE_CUSTOM_STATUS_NAME
-            or f"Ready For Merge [{workflow.name}]",
-            status=ready_for_merge_status,
-            description=ready_for_merge_description,
-            url="",
-        ):
-            print(f"ERROR: failed to set ReadyForMerge status")
-            env.add_info(ResultInfo.GH_STATUS_ERROR)
+    if workflow.enable_merge_ready_status or workflow.enable_gh_summary_comment:
+        _GH_Auth(workflow)
+
+        if workflow.enable_merge_ready_status:
+            if not GH.post_commit_status(
+                name=Settings.READY_FOR_MERGE_CUSTOM_STATUS_NAME
+                or f"Ready For Merge [{workflow.name}]",
+                status=ready_for_merge_status,
+                description=ready_for_merge_description,
+                url="",
+            ):
+                print(f"ERROR: failed to set ReadyForMerge status")
+                env.add_info(ResultInfo.GH_STATUS_ERROR)
 
     if update_final_report:
         _ResultS3.copy_result_to_s3_with_version(workflow_result, version + 1)
