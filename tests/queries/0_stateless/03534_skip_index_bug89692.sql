@@ -3,6 +3,7 @@
 SET use_skip_indexes_on_data_read = 1;
 SET use_skip_indexes = 1;
 SET use_query_condition_cache = 0;
+SET max_rows_to_read = 0;
 
 DROP TABLE IF EXISTS tab;
 
