@@ -153,8 +153,21 @@ inline void keyPrefetch(const std::string_view key)
         __builtin_prefetch(ptr);
     }
 }
+
 template <typename CellType>
 concept CouldPrefetchKey = requires(CellType * cell)
 {
     { keyPrefetch(cell->getKey()) };
 };
+
+inline void mappedPrefetch(const void * mapped)
+{
+    __builtin_prefetch(mapped);
+}
+
+template <typename CellType, typename Mapped = typename CellType::Mapped>
+concept CouldPrefetchMapped = requires(CellType * cell, Mapped *)
+{
+    { mappedPrefetch(cell->getMapped()) };
+};
+
