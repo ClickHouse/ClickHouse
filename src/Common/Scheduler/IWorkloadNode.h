@@ -32,7 +32,7 @@ using WorkloadNodePtr = std::shared_ptr<IWorkloadNode>;
 ///                              |
 ///   [If no children]------ SEMAPHORE        <-- [Optional] Semaphore constraint (or limit for space-shared resource)
 ///           |                  |
-///         FIFO             PRIORITY         <-- [Optional] Scheduling policy distinguishing priorities or precedences
+///         FIFO             PRIORITY         <-- [Optional] Scheduling policy distinguishing priorities or precedence
 ///                 .-------'        '-------.
 ///       FAIRNESS[p1]          ...         FAIRNESS[pN] <-- [Optional] Policies for fairness if priorities are equal
 ///        /        \                        /        \

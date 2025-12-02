@@ -52,7 +52,7 @@ Resources are classified by sharing mode:
 
 ## Workload hierarchy {#workloads}
 
-ClickHouse provides convenient SQL syntax to define scheduling hierarchy. All RESOURCEs are distributed across a common WORKLOAD hierarchy. Distribution rules may be altered in some aspects for particular resources, but the hierarchy is the same. Every WORKLOAD maintains necessary scheduling nodes for every resource. A child workload can be created inside any workload building the hierarchy. ClickHouse does not enforce any specific or predefined structure of workload hierarchy.
+ClickHouse provides convenient SQL syntax to define scheduling hierarchy. All resources are distributed across a common WORKLOAD hierarchy. Distribution rules may be altered in some aspects for particular resources, but the hierarchy is the same. Every WORKLOAD maintains necessary scheduling nodes for every resource. A child workload can be created inside any workload building the hierarchy. ClickHouse does not enforce any specific or predefined structure of workload hierarchy.
 
 Here is an example of a hierarchy that divides all resources between "user" and "system" workloads with a guarantee of 90% and 10% correspondingly. Note that weights defined for workloads are used for max-min fairness and thus only provide best-effort guarantee from below (not a limit or quota from above). All the scheduling is done on every host independently and thus limits defined by `max_*` settings are per host. Workload "user" subdivides its resources between "development" and "production" workloads with "production" having 3 times more resources than "development":
 
@@ -419,7 +419,7 @@ graph TD
 **Space-shared node types:**
 * `limit` - makes sure child total allocation never exceeds a limit, initiates eviction procedure in a subtree if necessary; must have a single child.
 * `fair_allocation` - enforces eviction according to max-min fairness; pending allocation never evict running; children nodes may specify `weight` (default is 1).
-* `precedence_allocation` - enforces eviction according to static precedences (lower value means higher precedence); pending allocation of higher precedence evicts lower precedence allocations; children nodes should specify `precedence` (default is 0).
+* `precedence_allocation` - enforces eviction according to static precedence (lower value means higher precedence); pending allocation of higher precedence evicts lower precedence allocations; children nodes should specify `precedence` (default is 0).
 * `queue` - leaf of the hierarchy capable of holding running and pending allocations.
 
 ## Deprecated XML configuration {#deprecated_configuration}

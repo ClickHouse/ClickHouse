@@ -2020,7 +2020,7 @@ struct TestAllocationArray
 
     void insert(ResourceLink & link, const std::array<ResourceCost, count> & sizes)
     {
-        // We run in the scheduler thread to emulate requests comming in specific order while delaying their processing
+        // We run in the scheduler thread to emulate requests coming in specific order while delaying their processing
         t.executeFromScheduler(resource, [&]
         {
             for (size_t i = 0; i < count; i++)
@@ -2038,7 +2038,7 @@ struct TestAllocationArray
 
     void insert(const std::array<ResourceCost, count> & sizes)
     {
-        // We run in the scheduler thread to emulate requests comming in specific order while delaying their processing
+        // We run in the scheduler thread to emulate requests coming in specific order while delaying their processing
         t.executeFromScheduler(resource, [&]
         {
             for (size_t i = 0; i < count; i++)
@@ -2082,7 +2082,7 @@ struct TestAllocationArray
 
     void setSize(const std::array<ResourceCost, count> & sizes)
     {
-        // We run in the scheduler thread to emulate requests comming in specific order while delaying their processing
+        // We run in the scheduler thread to emulate requests coming in specific order while delaying their processing
         t.executeFromScheduler("memory", [&]
         {
             for (size_t i = 0; i < count; i++)
