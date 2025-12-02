@@ -8,7 +8,6 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeDynamic.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/StorageJoin.h>
@@ -65,7 +64,6 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
     extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
-    extern const SettingsBool allow_dynamic_type_in_join_keys;
 }
 
 namespace ServerSetting
@@ -79,7 +77,6 @@ namespace ErrorCodes
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int ILLEGAL_COLUMN;
 }
 
 void JoinClause::dump(WriteBuffer & buffer) const
@@ -274,15 +271,7 @@ void buildJoinClauseImpl(
     std::string function_name;
     auto * function_node = join_expression->as<FunctionNode>();
     if (function_node)
-    {
-        function_name = function_node->getFunctionName();
-        if (!function_node->isOrdinaryFunction())
-        {
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                "Unexpected function '{}' in JOIN ON section, only ordinary functions are supported, in expression: {}",
-                function_name, function_node->formatASTForErrorMessage());
-        }
-    }
+        function_name = function_node->getFunction()->getName();
 
     auto asof_inequality = getASOFJoinInequality(function_name);
     bool is_asof_join_inequality = join_node.getStrictness() == JoinStrictness::Asof && asof_inequality != ASOFJoinInequality::None;
@@ -478,15 +467,7 @@ void buildJoinClause(
     std::string function_name;
     auto * function_node = join_expression->as<FunctionNode>();
     if (function_node)
-    {
-        function_name = function_node->getFunctionName();
-        if (!function_node->isOrdinaryFunction())
-        {
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                "Unexpected function '{}' in JOIN ON section, only ordinary functions are supported, in expression: {}",
-                function_name, function_node->formatASTForErrorMessage());
-        }
-    }
+        function_name = function_node->getFunction()->getName();
 
     /// For 'and' function go into children
     if (function_name == "and")
@@ -695,7 +676,7 @@ std::pair<JoinClauses, bool /*is_inequal_join*/> buildAllJoinClauses(
 
     bool has_residual_filters = false;
     JoinClauses join_clauses;
-    const auto & function_name = function_node.getFunctionName();
+    const auto & function_name = function_node.getFunction()->getName();
     if (function_name == "or")
     {
         for (const auto & child : function_node.getArguments())
@@ -740,7 +721,6 @@ JoinClausesAndActions buildJoinClausesAndActions(
     const JoinNode & join_node,
     const PlannerContextPtr & planner_context)
 {
-    auto context = planner_context->getQueryContext();
     ActionsDAG left_join_actions(left_table_expression_columns);
     ActionsDAG right_join_actions(right_table_expression_columns);
     ColumnsWithTypeAndName result_relation_columns;
@@ -866,21 +846,6 @@ JoinClausesAndActions buildJoinClausesAndActions(
             auto & left_key_node = join_clause.getLeftKeyNodes()[i];
             auto & right_key_node = join_clause.getRightKeyNodes()[i];
 
-            if (!planner_context->getQueryContext()->getSettingsRef()[Setting::allow_dynamic_type_in_join_keys])
-            {
-                bool is_left_key_dynamic = hasDynamicType(left_key_node->result_type);
-                bool is_right_key_dynamic = hasDynamicType(right_key_node->result_type);
-
-                if (is_left_key_dynamic || is_right_key_dynamic)
-                {
-                    throw DB::Exception(
-                        ErrorCodes::ILLEGAL_COLUMN,
-                        "JOIN on keys with Dynamic type is not supported: key {} has type {}. In order to use this key in JOIN you should cast it to any other type",
-                        is_left_key_dynamic ? left_key_node->result_name : right_key_node->result_name,
-                        is_left_key_dynamic ? left_key_node->result_type->getName() : right_key_node->result_type->getName());
-                }
-            }
-
             if (!left_key_node->result_type->equals(*right_key_node->result_type))
             {
                 DataTypePtr common_type;
@@ -901,10 +866,10 @@ JoinClausesAndActions buildJoinClausesAndActions(
                 }
 
                 if (!left_key_node->result_type->equals(*common_type))
-                    left_key_node = &left_join_actions.addCast(*left_key_node, common_type, {}, context);
+                    left_key_node = &left_join_actions.addCast(*left_key_node, common_type, {});
 
                 if (!is_join_with_special_storage && !right_key_node->result_type->equals(*common_type))
-                    right_key_node = &right_join_actions.addCast(*right_key_node, common_type, {}, context);
+                    right_key_node = &right_join_actions.addCast(*right_key_node, common_type, {});
             }
 
             if (join_clause.isNullsafeCompareKey(i) && isNullableOrLowCardinalityNullable(left_key_node->result_type) && isNullableOrLowCardinalityNullable(right_key_node->result_type))

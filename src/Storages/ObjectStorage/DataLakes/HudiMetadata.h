@@ -1,10 +1,10 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
+#include <Disks/ObjectStorages/IObjectStorage_fwd.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Core/Types.h>
 
 namespace DB
@@ -15,11 +15,9 @@ class HudiMetadata final : public IDataLakeMetadata, private WithContext
 public:
     static constexpr auto name = "Hudi";
 
-    const char * getName() const override { return name; }
-
     HudiMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, ContextPtr context_);
 
-    NamesAndTypesList getTableSchema(ContextPtr /*local_context*/) const override { return {}; }
+    NamesAndTypesList getTableSchema() const override { return {}; }
 
     bool operator ==(const IDataLakeMetadata & other) const override
     {
@@ -35,7 +33,6 @@ public:
         const ContextPtr & /*local_context*/,
         const std::optional<ColumnsDescription> & /*columns*/,
         ASTPtr /*partition_by*/,
-        ASTPtr /*order_by*/,
         bool /*if_not_exists*/,
         std::shared_ptr<DataLake::ICatalog> /*catalog*/,
         const StorageID & /*table_id_*/)
@@ -55,7 +52,6 @@ protected:
         const ActionsDAG * filter_dag,
         FileProgressCallback callback,
         size_t list_batch_size,
-        StorageMetadataPtr storage_metadata_snapshot,
         ContextPtr context) const override;
 
 private:

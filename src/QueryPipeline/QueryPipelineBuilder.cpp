@@ -306,7 +306,7 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
 
     QueryPipelineBuilder pipeline;
     pipeline.init(Pipe::unitePipes(std::move(pipes), collected_processors, false));
-    pipeline.addResources(resources);
+    pipeline.addResources(std::move(resources));
 
     if (will_limit_max_threads)
     {

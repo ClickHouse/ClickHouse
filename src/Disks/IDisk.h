@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
+#include <Disks/ObjectStorages/StoredObject.h>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Defines.h>
 #include <Core/Names.h>
@@ -52,7 +52,7 @@ namespace ErrorCodes
 
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
-using DisksMap = std::map<String, DiskPtr, std::less<>>;
+using DisksMap = std::map<String, DiskPtr>;
 
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
@@ -162,6 +162,9 @@ public:
 
     /// Create directory and all parent directories if necessary.
     virtual void createDirectories(const String & path) = 0;
+
+    /// Remove all files from the directory. Directories are not removed.
+    virtual void clearDirectory(const String & path) = 0;
 
     /// Move directory from `from_path` to `to_path`.
     virtual void moveDirectory(const String & from_path, const String & to_path) = 0;
@@ -444,6 +447,8 @@ public:
 
     virtual bool supportsHardLinks() const { return true; }
 
+    virtual bool supportsPartitionCommand(const PartitionCommand & command) const;
+
     /// Check if disk is broken. Broken disks will have 0 space and cannot be used.
     virtual bool isBroken() const { return false; }
 
@@ -567,6 +572,8 @@ public:
 
 
 protected:
+    friend class DiskReadOnlyWrapper;
+
     const String name;
 
     /// Base implementation of the function copy().

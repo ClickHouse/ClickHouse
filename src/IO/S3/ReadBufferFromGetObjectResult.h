@@ -5,7 +5,6 @@
 
 #include <IO/ReadBufferFromIStream.h>
 #include <aws/s3/model/GetObjectResult.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 
 namespace DB::S3
 {
@@ -13,16 +12,11 @@ namespace DB::S3
 class ReadBufferFromGetObjectResult : public ReadBufferFromIStream
 {
     std::optional<Aws::S3::Model::GetObjectResult> result;
-    ObjectMetadata metadata;
 
 public:
     ReadBufferFromGetObjectResult(Aws::S3::Model::GetObjectResult && result_, size_t size_)
         : ReadBufferFromIStream(result_.GetBody(), size_), result(std::move(result_))
     {
-        metadata.size_bytes = result->GetContentLength();
-        metadata.last_modified = Poco::Timestamp::fromEpochTime(result->GetLastModified().Seconds());
-        metadata.etag = result->GetETag();
-        metadata.attributes = result->GetMetadata();
     }
 
     /// Allows to safely release the result and detach the underlying body stream from the buffer.
@@ -34,8 +28,6 @@ public:
     }
 
     bool isResultReleased() const { return !result; }
-
-    ObjectMetadata getObjectMetadata() const { return metadata; }
 };
 }
 

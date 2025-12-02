@@ -147,9 +147,9 @@ public:
         size_t rows = block.rows();
         for (size_t i = 0; i < rows; i++)
         {
-            String name{name_column->getDataAt(i)};
-            String value{value_column->getDataAt(i)};
-            String path{path_column->getDataAt(i)};
+            String name = name_column->getDataAt(i).toString();
+            String value = value_column->getDataAt(i).toString();
+            String path = path_column->getDataAt(i).toString();
 
             /// We don't expect a "name" contains a path.
             if (name.contains('/'))
@@ -398,7 +398,7 @@ static void extractNameImpl(const ActionsDAG::Node & node, String & res, Context
             return;
 
         /// Only inserted if the key doesn't exists already
-        res = value->column->getDataAt(0);
+        res = value->column->getDataAt(0).toString();
     }
 }
 
@@ -454,7 +454,7 @@ static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextP
 
         for (size_t row = 0; row < size; ++row)
             /// Only inserted if the key doesn't exists already
-            res.insert({std::string{values->getDataAt(row)}, ZkPathType::Exact});
+            res.insert({values->getDataAt(row).toString(), ZkPathType::Exact});
     }
     else if (function_name == "equals")
     {
@@ -475,7 +475,7 @@ static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextP
             return;
 
         /// Only inserted if the key doesn't exists already
-        res.insert({std::string{value->column->getDataAt(0)}, ZkPathType::Exact});
+        res.insert({value->column->getDataAt(0).toString(), ZkPathType::Exact});
     }
     else if (allow_unrestricted && function_name == "like")
     {
@@ -492,7 +492,7 @@ static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextP
         if (value->column->size() != 1)
             return;
 
-        String pattern{value->column->getDataAt(0)};
+        String pattern = value->column->getDataAt(0).toString();
         bool has_metasymbol = false;
         String prefix{}; // pattern prefix before the first metasymbol occurrence
         for (size_t i = 0; i < pattern.size(); i++)

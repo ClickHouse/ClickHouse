@@ -176,17 +176,9 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
             execWithRetry(
                 [&](size_t retry_attempt)
                 {
-                    Azure::Storage::Blobs::UploadBlockBlobOptions options;
-
-                    if (write_settings.object_storage_write_if_none_match.empty())
-                        options.AccessConditions.IfNoneMatch = Azure::ETag(write_settings.object_storage_write_if_none_match);
-
-                    if (write_settings.object_storage_write_if_match.empty())
-                        options.AccessConditions.IfMatch = Azure::ETag(write_settings.object_storage_write_if_match);
-
                     block_blob_client.Upload(
                         memory_stream,
-                        options,
+                        Azure::Storage::Blobs::UploadBlockBlobOptions{},
                         azure_context.WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), retry_attempt));
                 },
                 max_unexpected_write_error_retries,
@@ -203,17 +195,9 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
             execWithRetry(
                 [&](size_t retry_attempt)
                 {
-                    Azure::Storage::Blobs::UploadBlockBlobOptions options;
-
-                    if (write_settings.object_storage_write_if_none_match.empty())
-                        options.AccessConditions.IfNoneMatch = Azure::ETag(write_settings.object_storage_write_if_none_match);
-
-                    if (write_settings.object_storage_write_if_match.empty())
-                        options.AccessConditions.IfMatch = Azure::ETag(write_settings.object_storage_write_if_match);
-
                     block_blob_client.Upload(
                         memory_stream,
-                        options,
+                        Azure::Storage::Blobs::UploadBlockBlobOptions{},
                         azure_context.WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), retry_attempt));
                 },
                 max_unexpected_write_error_retries,
@@ -248,18 +232,9 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
         execWithRetry(
             [&](size_t retry_attetmpt)
             {
-                Azure::Storage::Blobs::CommitBlockListOptions options;
-
-                if (write_settings.object_storage_write_if_none_match.empty())
-                    options.AccessConditions.IfNoneMatch = Azure::ETag(write_settings.object_storage_write_if_none_match);
-
-                if (write_settings.object_storage_write_if_match.empty())
-                    options.AccessConditions.IfMatch = Azure::ETag(write_settings.object_storage_write_if_match);
-
-
                 block_blob_client.CommitBlockList(
                     block_ids,
-                    options,
+                    Azure::Storage::Blobs::CommitBlockListOptions{},
                     azure_context.WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), retry_attetmpt));
             },
             max_unexpected_write_error_retries);
