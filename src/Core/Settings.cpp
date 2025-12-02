@@ -6732,7 +6732,7 @@ Use up to `max_parallel_replicas` the number of replicas from each shard for SEL
 )", BETA, enable_parallel_replicas) \
     DECLARE(UInt64, automatic_parallel_replicas_mode, 0, R"(
 🚨 HIGHLY EXPERIMENTAL 🚨
-Enable automatic switching to execution with parallel replicas based on collected statistics. Requires `parallel_replicas_local_plan` to be enabled.
+Enable automatic switching to execution with parallel replicas based on collected statistics. Requires enabling `parallel_replicas_local_plan` and providing `cluster_for_parallel_replicas`.
 0 - disabled, 1 - enabled, 2 - only statistics collection is enabled (switching to execution with parallel replicas is disabled).
 )", 0) \
     DECLARE(UInt64, automatic_parallel_replicas_min_bytes_per_replica, 0, R"(

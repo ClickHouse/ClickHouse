@@ -317,16 +317,35 @@ void considerEnablingParallelReplicas(
      QueryPlan::Nodes &,
      QueryPlan & query_plan)
 {
+    if (!optimization_settings.automatic_parallel_replicas_mode)
+        return;
+
     if (!optimization_settings.query_plan_with_parallel_replicas_builder)
         return;
 
     if (optimization_settings.parallel_replicas_enabled)
         return;
 
-    if (!optimization_settings.automatic_parallel_replicas_mode)
+    if (optimization_settings.force_use_projection)
         return;
 
+    Stack stack;
+    // Technically, it isn't required for all steps to support dataflow statistics collection,
+    // but only for those that we will actually instrument (see `setRuntimeDataflowStatisticsCacheUpdater` calls below).
+    // However, currently only relatively simple plans are supported (no JOINs, CreatingSets from subqueries, UNIONs, etc.),
+    // since all these steps obviously don't support statistics collection, `supportsDataflowStatisticsCollection` is handy to check if the plan is simple enough.
+    bool plan_is_simple_enough = true;
+    traverseQueryPlan(
+        stack, root, [&](auto & frame_node) { plan_is_simple_enough &= frame_node.step->supportsDataflowStatisticsCollection(); });
+    if (!plan_is_simple_enough)
+    {
+        LOG_DEBUG(getLogger("optimizeTree"), "Some steps in the plan don't support dataflow statistics collection. Skipping optimization");
+        return;
+    }
+
     auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder();
+    if (!plan_with_parallel_replicas)
+        return;
 
     const auto * final_node_in_replica_plan = findTopNodeOfReplicasPlan(plan_with_parallel_replicas->getRootNode());
     if (!final_node_in_replica_plan)

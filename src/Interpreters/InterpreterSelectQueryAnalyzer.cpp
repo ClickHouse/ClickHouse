@@ -47,6 +47,7 @@ namespace Setting
 {
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool parallel_replicas_local_plan;
+    extern const SettingsString cluster_for_parallel_replicas;
 }
 
 namespace
@@ -192,9 +193,21 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
                       "Setting 'parallel_replicas_local_plan' is disabled. Skipping building query plan with parallel replicas.");
                   return QueryPlanPtr{};
               }
+              if (ctx->getSettingsRef()[Setting::cluster_for_parallel_replicas].value.empty())
+              {
+                  LOG_DEBUG(
+                      getLogger("InterpreterSelectQueryAnalyzer"),
+                      "Cluster for parallel replicas is not set, can't build plan with parallel replicas");
+                  return QueryPlanPtr{};
+              }
+              /// If the query is executed by remote*/cluster* function, the following attempt to build a plan with parallel replicas may result in exceptions
+              if (ctx->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+                  return QueryPlanPtr{};
               ctx->setSetting("enable_parallel_replicas", true);
               InterpreterSelectQueryAnalyzer interpreter(ast, ctx, select_options, column_names);
               auto plan = std::move(interpreter).extractQueryPlan();
+              // TODO(nickitat): split optimization into two phases. First will do the minimum necessary to apply automatic parallel replicas,
+              // second will do the rest of optimizations, but only if the plan with parallel replicas was chosen.
               plan.optimize(QueryPlanOptimizationSettings(ctx));
               return std::make_unique<QueryPlan>(std::move(plan));
           })
@@ -226,6 +239,16 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
                       "Setting 'parallel_replicas_local_plan' is disabled. Skipping building query plan with parallel replicas.");
                   return QueryPlanPtr{};
               }
+              if (ctx->getSettingsRef()[Setting::cluster_for_parallel_replicas].value.empty())
+              {
+                  LOG_DEBUG(
+                      getLogger("InterpreterSelectQueryAnalyzer"),
+                      "Cluster for parallel replicas is not set, can't build plan with parallel replicas");
+                  return QueryPlanPtr{};
+              }
+              /// If the query is executed by remote*/cluster* function, the following attempt to build a plan with parallel replicas may result in exceptions
+              if (ctx->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+                  return QueryPlanPtr{};
               ctx->setSetting("enable_parallel_replicas", true);
               InterpreterSelectQueryAnalyzer interpreter(ast, ctx, storage, select_options, column_names);
               auto plan = std::move(interpreter).extractQueryPlan();
@@ -252,6 +275,16 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
                       "Setting 'parallel_replicas_local_plan' is disabled. Skipping building query plan with parallel replicas.");
                   return QueryPlanPtr{};
               }
+              if (ctx->getSettingsRef()[Setting::cluster_for_parallel_replicas].value.empty())
+              {
+                  LOG_DEBUG(
+                      getLogger("InterpreterSelectQueryAnalyzer"),
+                      "Cluster for parallel replicas is not set, can't build plan with parallel replicas");
+                  return QueryPlanPtr{};
+              }
+              /// If the query is executed by remote*/cluster* function, the following attempt to build a plan with parallel replicas may result in exceptions
+              if (ctx->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+                  return QueryPlanPtr{};
               ctx->setSetting("enable_parallel_replicas", true);
               InterpreterSelectQueryAnalyzer interpreter(tree, ctx, select_options);
               auto plan = std::move(interpreter).extractQueryPlan();
