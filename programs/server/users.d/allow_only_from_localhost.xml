@@ -1,10 +1,17 @@
 <clickhouse>
     <users>
         <default>
+           <password/>
             <networks replace="replace">
                 <ip>::1</ip>
                 <ip>127.0.0.1</ip>
             </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+            <access_management>1</access_management>
+			<named_collection_control>1</named_collection_control>
+			<show_named_collections>1</show_named_collections>
+			<show_named_collections_secrets>1</show_named_collections_secrets>
         </default>
     </users>
 </clickhouse>
