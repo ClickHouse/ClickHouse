@@ -102,11 +102,30 @@ ColumnsDescription StorageSystemZooKeeperInfo::getColumnsDescription()
     };
 }
 
+static std::map<String,String> getTokens(String response, char separator)
+{
+    std::vector<String> result_split;
+    boost::split(result_split, response, [](char c) { return c == '\n'; });
+
+    std::map<String,String> responses_map;
+    for (auto & line : result_split)
+    {
+        if (line.empty())
+            break;
+
+        std::vector <String> line_result;
+
+        boost::split(line_result, line, [separator](char c) { return c == separator; });
+
+        assert(line_result.size() == 2);
+        responses_map[line_result[0]] = line_result[1];
+    }
+    return responses_map;
+}
+
 void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextPtr context,
                                                     const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    LOG_DEBUG(getLogger("StorageSystemZooKeeperInfo"), "StorageSystemZooKeeperInfo enter");
-
     /// Read all Keeper from config
     ConfigProcessor config_processor(context->getConfigRef().getString("config-file", "config.xml"));
 
@@ -119,8 +138,6 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
 
     if (!context->getConfigRef().has("host") && !context->getConfigRef().has("port") && !keys.empty())
     {
-        LOG_INFO(getLogger("KeeperClient"), "Found keeper node in the config.xml, will use it for connection");
-
         for (const auto & key : keys)
         {
             if (key != "node")
@@ -133,8 +150,6 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
             if (clickhouse_config.configuration->has(prefix + ".secure"))
                 host = "secure://" + host;
 
-            LOG_DEBUG(getLogger("StorageSystemZooKeeperInfo"), "StorageSystemZooKeeperInfo host = {} port = {}", host, port);
-
             res_columns[0]->insert("default");
             res_columns[1]->insert(host);
             res_columns[2]->insert(stoi(port));
@@ -142,7 +157,6 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
             /// to-do set index
             res_columns[3]->insert(0);
             res_columns[4]->insert(false);
-
 
             /// isro command
             /// The server will respond with "ro" if in read-only mode or "rw" if not in read-only mode.
@@ -154,24 +168,7 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
 
             /// mntr command
             String mntr_output = sendFourLetterCommand(host, port, "mntr");
-            std::vector<String> mntr_result_split;
-            boost::split(mntr_result_split, mntr_output, [](char c) { return c == '\n'; });
-
-            std::map<String,String> mntr_responses_map;
-            for (auto & line : mntr_result_split)
-            {
-                if (line.empty())
-                    break;
-                LOG_DEBUG(getLogger("StorageSystemZooKeeperInfo"), "Result of line =  {}", line);
-
-                std::vector <String> line_result;
-
-                boost::split(line_result, line, [](char c) { return c == '\t'; });
-
-                assert(line_result.size() == 2);
-                LOG_DEBUG(getLogger("StorageSystemZooKeeperInfo"), "Result of line split  name = {} value={}. ", line_result[0], line_result[1]);
-                mntr_responses_map[line_result[0]] = line_result[1];
-            }
+            std::map<String,String> mntr_responses_map = getTokens(mntr_output,'\t');
 
             /// /* 6 */{"version", std::make_shared<DataTypeString>(), "The ZooKeeper version."},
             res_columns[6]->insert(mntr_responses_map["zk_version"]);
@@ -235,24 +232,7 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
 
             /// srvr command
             String srvr_output = sendFourLetterCommand(host, port, "srvr");
-            std::vector<String> srvr_result_split;
-            boost::split(srvr_result_split, srvr_output, [](char c) { return c == '\n'; });
-
-            std::map<String,String> srvr_responses_map;
-            for (auto & line : srvr_result_split)
-            {
-                if (line.empty())
-                    break;
-                LOG_DEBUG(getLogger("StorageSystemZooKeeperInfo"), "Result of line =  {}", line);
-
-                std::vector <String> line_result;
-
-                boost::split(line_result, line, [](char c) { return c == ':'; });
-
-                assert(line_result.size() == 2);
-                LOG_DEBUG(getLogger("StorageSystemZooKeeperInfo"), "Result of srvr line split  name = {} value={}. ", line_result[0], line_result[1]);
-                srvr_responses_map[line_result[0]] = line_result[1];
-            }
+            std::map<String,String> srvr_responses_map = getTokens(srvr_output,':');
 
             ///* 24 */ {"connections", std::make_shared<DataTypeUInt64>(), "The ZooKeeper connections."},
             res_columns[24]->insert(stoi(srvr_responses_map["Connections"]));
@@ -269,25 +249,7 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
 
             /// dirs command
             String dirs_output = sendFourLetterCommand(host, port, "dirs");
-            std::vector<String> dirs_result_split;
-            boost::split(dirs_result_split, dirs_output, [](char c) { return c == '\n'; });
-
-            std::map<String,String> dirs_responses_map;
-            for (auto & line : dirs_result_split)
-            {
-                if (line.empty())
-                    break;
-                LOG_DEBUG(getLogger("StorageSystemZooKeeperInfo"), "Result of line =  {}", line);
-
-                std::vector <String> line_result;
-
-                boost::split(line_result, line, [](char c) { return c == ':'; });
-
-                assert(line_result.size() == 2);
-                LOG_DEBUG(getLogger("StorageSystemZooKeeperInfo"), "Result of dirs line split  name = {} value={}. ", line_result[0], line_result[1]);
-                dirs_responses_map[line_result[0]] = line_result[1];
-            }
-
+            std::map<String,String> dirs_responses_map = getTokens(dirs_output,':');
 
             //* 28 */ {"snapshot_dir_size", std::make_shared<DataTypeUInt64>(), "The ZooKeeper snapshot directory size."},
             res_columns[28]->insert(stoi(dirs_responses_map["snapshot_dir_size"]));
@@ -296,27 +258,9 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
             res_columns[29]->insert(stoi(dirs_responses_map["log_dir_size"]));
 
 
-            //        /// lgif command
+            /// lgif command
             String lgif_output = sendFourLetterCommand(host, port, "lgif");
-            std::vector<String> lgif_result_split;
-            boost::split(lgif_result_split, lgif_output, [](char c) { return c == '\n'; });
-
-            std::map<String,String> lgif_responses_map;
-            for (auto & line :lgif_result_split)
-            {
-                if (line.empty())
-                    break;
-                LOG_DEBUG(getLogger("StorageSystemZooKeeperInfo"), "Result of line lgif =  {}", line);
-
-                std::vector <String> line_result;
-
-                boost::split(line_result, line, [](char c) { return c == '\t'; });
-
-                assert(line_result.size() == 2);
-                LOG_DEBUG(getLogger("StorageSystemZooKeeperInfo"), "Result of lgif line split  name = {} value={}. ", line_result[0], line_result[1]);
-                lgif_responses_map[line_result[0]] = line_result[1];
-            }
-
+            std::map<String,String> lgif_responses_map = getTokens(lgif_output,'\t');
 
             // /* 30 */ {"first_log_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper first log index."},
             res_columns[30]->insert(stoi(lgif_responses_map["first_log_idx"]));
@@ -350,8 +294,6 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
 String StorageSystemZooKeeperInfo::sendFourLetterCommand(String host, String port, String command) const
 {
     Poco::Net::SocketAddress address(host, port);
-    LOG_INFO(getLogger("StorageSystemZooKeeperInfo"), "sendFourLetterCommand socket_address : {}", address.toString());
-
     Poco::Net::StreamSocket socket;
 
     size_t MAX_RESPONSE_SIZE = 1000000;
@@ -361,8 +303,6 @@ String StorageSystemZooKeeperInfo::sendFourLetterCommand(String host, String por
             socket = Poco::Net::StreamSocket();
             socket.connect(address);
 
-            socket.setReceiveTimeout(10000 * 3000);
-            socket.setSendTimeout(10000 * 1000);
             socket.setNoDelay(true);
 
             auto in = std::make_shared<ReadBufferFromPocoSocket>(socket);
@@ -379,8 +319,6 @@ String StorageSystemZooKeeperInfo::sendFourLetterCommand(String host, String por
             while (in->read(ch) && response.size() <= MAX_RESPONSE_SIZE)
                 response += ch;
 
-
-            LOG_INFO(getLogger("StorageSystemZooKeeperInfo"), "Response to four letter command : {}   response : {}  ", command, response);
         }
         catch (...)
         {
