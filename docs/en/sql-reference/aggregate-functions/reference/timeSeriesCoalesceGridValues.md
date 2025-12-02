@@ -17,7 +17,7 @@ CREATE TABLE mytable(a Array(Nullable(Float64))) ENGINE=MergeTree ORDER BY tuple
 INSERT INTO mytable VALUES ([100, NULL, NULL]);
 INSERT INTO mytable VALUES ([NULL, 200, NULL]);
 INSERT INTO mytable VALUES ([NULL, NULL, 300]);
-SELECT timeSeriesCoalesceGridValues('throw_if_conflict')(a) AS result FROM mytable;
+SELECT timeSeriesCoalesceGridValues('throw')(a) AS result FROM mytable;
 ```
 
 ```response
@@ -36,15 +36,22 @@ with functions like [timeSeriesRemoveTag()](../../functions/time-series-function
 **Syntax**
 
 ```sql
-timeSeriesCoalesceGridValues(mode)(values)
+timeSeriesCoalesceGridValues(mode)(values, [, group])
 ```
 
 **Parameters**
-- `mode` - sets what the function should do in case two or more of the arrays extracted from different rows have values which are not `NULL` at the same position. If the `mode` equals to `'null_if_conflict'` then the function returns an array with `NULL` at that position, and if the `mode` equals to `'throw_if_conflict'` then the function throws an exception `Vector cannot contain metrics with the same labelset` (because such error message corresponds to the usage of this function in evaluation of prometheus queries).
+- `mode` - sets what the function should do in case two or more of the arrays extracted from different rows have values which are not `NULL` at the same position. The following values of the `mode` are supported:
+
+| `mode` | Description |
+| --- | --- |
+| `'any'` | The function returns the first value it finds at every position. |
+| `'null'` | The function returns `NULL` if there are two values at the same position (even if they're equal) |
+| `'throw'` | The function throws an exception (`Found duplicate series`) with information about these time series in case the argument `group` is provided |
 
 **Arguments**
 
 - `values` - array of nullable floating-point values
+- `group` - [optional] specifies a time series group (see the function [timeSeriesTagsToGroup()](../../functions/time-series-functions#timeSeriesTagsToGroup))
 
 **Returned value**
 
@@ -54,29 +61,44 @@ The function returns a new array of nullable floating-point values.
 
 ```sql
 WITH [[1., NULL, 3., NULL, 5], [NULL, 2., NULL, NULL, 5]] AS data
-SELECT timeSeriesCoalesceGridValues('null_if_conflict')(arrayJoin(data));
+SELECT timeSeriesCoalesceGridValues('any')(arrayJoin(data));
 ```
 
 Response:
 
 ```response
-┌─timeSeriesCoalesceGridValues('null_if_conflict')(arrayJoin(data))─┐
-│ [1,2,3,NULL,NULL]                                                 │
-└───────────────────────────────────────────────────────────────────┘
+┌─timeSeriesCoalesceGridValues('any')(arrayJoin(data))─┐
+│ [1,2,3,NULL,5]                                       │
+└──────────────────────────────────────────────────────┘
 ```
 
-The fifth element in both rows is `5`. So with `mode == null_if_conflict` the function returns an array with `NULL`
-at the fifth position, and with `mode == throw_if_conflict` the function throws an exception:
+The fifth element in both rows is `5`, so if we set `mode` to `null` the function will return `NULL` at the fifth position:
+
 
 ```sql
 WITH [[1., NULL, 3., NULL, 5], [NULL, 2., NULL, NULL, 5]] AS data
-SELECT timeSeriesCoalesceGridValues('throw_if_conflict')(arrayJoin(data));
+SELECT timeSeriesCoalesceGridValues('null')(arrayJoin(data));
 ```
 
 Response:
 
 ```response
-Code: 36. DB::Exception: Received from localhost:9000. DB::Exception: Vector cannot contain metrics with the same labelset: While executing ConvertingAggregatedToChunksTransform. (BAD_ARGUMENTS)
+┌─timeSeriesCoalesceGridValues('null')(arrayJoin(data))─┐
+│ [1,2,3,NULL,NULL]                                     │
+└───────────────────────────────────────────────────────┘
+```
+
+And setting `mode` to `throw` will make the function throw an exception:
+
+```sql
+WITH [[1., NULL, 3., NULL, 5], [NULL, 2., NULL, NULL, 5]] AS data
+SELECT timeSeriesCoalesceGridValues('throw')(arrayJoin(data));
+```
+
+Response:
+
+```response
+Code: 36. DB::Exception: Found duplicate time series. (BAD_ARGUMENTS)
 ```
 
 :::note
