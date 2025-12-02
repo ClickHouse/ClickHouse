@@ -65,20 +65,20 @@ void FormRowInputFormat::readField(size_t index, MutableColumns & columns)
 void FormRowInputFormat::readFormData(MutableColumns & columns)
 {
     size_t index = 0;
-    StringRef name_ref;
+    std::string_view name_ref;
     while (true)
     {
         if (in->eof())
             break;
 
         auto tmp = readFieldName(*in);
-        name_ref = StringRef(tmp);
+        name_ref = std::string_view(tmp);
         auto * it = name_map.find(name_ref);
 
         if (!it)
         {
             if (!format_settings.skip_unknown_fields)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing Form format: {}", name_ref.toString());
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing Form format: {}", name_ref);
 
             /// Skip the value if key is not found.
             String encoded_str;

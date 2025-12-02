@@ -565,8 +565,8 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQueryImpl() const
 
     const auto & settings = getContext()->getSettingsRef();
     {
-        auto database_metadata_path = fs::path("metadata") / (escapeForFileName(database_name) + ".sql");
-        ast = parseQueryFromMetadata(log, getContext(), default_db_disk, database_metadata_path, true);
+        auto metadata_file_path = DatabaseCatalog::getMetadataFilePath(database_name);
+        ast = parseQueryFromMetadata(log, getContext(), default_db_disk, metadata_file_path, true);
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
         ast_create_query.attach = false;
         ast_create_query.setDatabase(database_name);
@@ -912,18 +912,17 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     writeChar('\n', statement_buf);
     String statement = statement_buf.str();
 
-    String database_name_escaped = escapeForFileName(TSA_SUPPRESS_WARNING_FOR_READ(database_name));   /// FIXME
-    fs::path metadata_file_tmp_path = fs::path("metadata") / (database_name_escaped + ".sql.tmp");
-    fs::path metadata_file_path = fs::path("metadata") / (database_name_escaped + ".sql");
+    auto metadata_file_path = DatabaseCatalog::getMetadataFilePath(TSA_SUPPRESS_WARNING_FOR_READ(database_name));   /// FIXME
+    auto metadata_tmp_file_path = DatabaseCatalog::getMetadataTmpFilePath(TSA_SUPPRESS_WARNING_FOR_READ(database_name));
 
     auto default_db_disk = getContext()->getDatabaseDisk();
     writeMetadataFile(
         default_db_disk,
-        /*file_path=*/metadata_file_tmp_path,
+        /*file_path=*/metadata_tmp_file_path,
         /*content=*/statement,
         getContext()->getSettingsRef()[Setting::fsync_metadata]);
 
-    default_db_disk->replaceFile(metadata_file_tmp_path, metadata_file_path);
+    default_db_disk->replaceFile(metadata_tmp_file_path, metadata_file_path);
 }
 
 void DatabaseOnDisk::checkTableNameLength(const String & table_name) const

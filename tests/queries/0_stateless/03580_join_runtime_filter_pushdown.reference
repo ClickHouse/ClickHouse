@@ -1,8 +1,8 @@
 Expression
-  Join
+  Join (JOIN FillRightFirst)
     Expression (Left Pre Join Actions)
       Expression
-        Join
+        Join (JOIN FillRightFirst)
           Expression (Left Pre Join Actions)
             Filter
               ReadFromSystemNumbers

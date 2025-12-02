@@ -48,7 +48,7 @@ SELECT * FROM test WHERE region = 'unknown' AND user_id = 101 ORDER BY ALL SETTI
 -- narrowing filter via user_id_idx
 SELECT * FROM test WHERE region = 'us_west' AND user_id = 106 ORDER BY ALL SETTINGS log_comment = 'test_3';
 
--- it's not possible to use different indexes with or filter yet
+-- test with an OR filter - 3 rows/granules for user_id=101 union 3 rows/granules for 'asia'
 SELECT * FROM test WHERE region = 'asia' OR user_id = 101 ORDER BY ALL SETTINGS log_comment = 'test_4';
 
 SYSTEM FLUSH LOGS query_log;
@@ -105,7 +105,11 @@ SELECT * FROM test_partial_index WHERE region = 'unknown' AND user_id = 101 ORDE
 -- narrowing filter via user_id_idx
 SELECT * FROM test_partial_index WHERE region = 'us_west' AND user_id = 106 ORDER BY ALL SETTINGS log_comment = 'test_partial_3';
 
--- it's not possible to use different indexes with or filter yet
+-- Skip indexes on OR supported.
+-- All 5 rows from part1 (no skip indexes) +
+-- All 5 rows from part2 (because no index on user_id) +
+-- 2 rows from part3 -> 1 row each for region='asia' and user_id=101.
+-- Total 12
 SELECT * FROM test_partial_index WHERE region = 'asia' OR user_id = 101 ORDER BY ALL SETTINGS log_comment = 'test_partial_4';
 
 SYSTEM FLUSH LOGS query_log;

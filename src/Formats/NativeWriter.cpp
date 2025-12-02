@@ -111,6 +111,11 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
             result_column = result_column->convertToFullColumnIfReplicated();
         if (client_revision < DBMS_MIN_REVISION_WITH_SPARSE_SERIALIZATION)
             result_column = recursiveRemoveSparse(result_column);
+        if (client_revision < DBMS_MIN_REVISION_WITH_NULLABLE_SPARSE_SERIALIZATION)
+        {
+            if (column.type->isNullable())
+                result_column = recursiveRemoveSparse(result_column);
+        }
 
         auto info = column.type->getSerializationInfo(*result_column);
         return {column.type->getSerialization(*info), info, result_column};

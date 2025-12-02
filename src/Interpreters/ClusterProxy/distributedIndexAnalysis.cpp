@@ -172,7 +172,7 @@ IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, c
 
         for (size_t i = 0; i < col_part_name.size(); ++i)
         {
-            auto & ranges_dst = res[col_part_name.getDataAt(i).toString()];
+            auto & ranges_dst = res[std::string(col_part_name.getDataAt(i))];
             for (size_t range_i = col_ranges_array_offsets[i - 1]; range_i < col_ranges_array_offsets[i]; ++range_i)
                 ranges_dst.push_back(MarkRange{col_range_start[range_i], col_range_end[range_i]});
         }

@@ -65,6 +65,11 @@ int64_t RandomGenerator::nextRandomInt64()
     return ints64(generator);
 }
 
+uint64_t RandomGenerator::nextInFullRange()
+{
+    return full_range(generator);
+}
+
 uint32_t RandomGenerator::nextStrlen()
 {
     return strlens(generator);

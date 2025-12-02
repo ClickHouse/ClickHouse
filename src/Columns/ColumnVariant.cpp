@@ -430,7 +430,7 @@ bool ColumnVariant::isNullAt(size_t n) const
     return localDiscriminatorAt(n) == NULL_DISCRIMINATOR;
 }
 
-StringRef ColumnVariant::getDataAt(size_t) const
+std::string_view ColumnVariant::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
 }
@@ -791,87 +791,51 @@ void ColumnVariant::rollback(const ColumnCheckpoint & checkpoint)
         variants[i]->rollback(*checkpoints[i]);
 }
 
-StringRef ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
     /// During any serialization/deserialization we should always use global discriminators.
     Discriminator global_discr = globalDiscriminatorAt(n);
     char * pos = arena.allocContinue(sizeof(global_discr), begin);
     memcpy(pos, &global_discr, sizeof(global_discr));
-    StringRef res(pos, sizeof(global_discr));
+    std::string_view res(pos, sizeof(global_discr));
 
     if (global_discr == NULL_DISCRIMINATOR)
         return res;
 
-    auto value_ref = variants[localDiscriminatorByGlobal(global_discr)]->serializeValueIntoArena(offsetAt(n), arena, begin);
-    res.data = value_ref.data - res.size;
-    res.size += value_ref.size;
-
-    return res;
+    auto value_ref = variants[localDiscriminatorByGlobal(global_discr)]->serializeValueIntoArena(offsetAt(n), arena, begin, settings);
+    return std::string_view{value_ref.data() - res.size(), res.size() + value_ref.size()};
 }
 
-StringRef ColumnVariant::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+void ColumnVariant::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     /// During any serialization/deserialization we should always use global discriminators.
-    Discriminator global_discr = globalDiscriminatorAt(n);
-    char * pos = arena.allocContinue(sizeof(global_discr), begin);
-    memcpy(pos, &global_discr, sizeof(global_discr));
-    StringRef res(pos, sizeof(global_discr));
+    Discriminator global_discr;
+    readBinaryLittleEndian<Discriminator>(global_discr, in);
 
-    if (global_discr == NULL_DISCRIMINATOR)
-        return res;
-
-    auto value_ref = variants[localDiscriminatorByGlobal(global_discr)]->serializeAggregationStateValueIntoArena(offsetAt(n), arena, begin);
-    res.data = value_ref.data - res.size;
-    res.size += value_ref.size;
-
-    return res;
-}
-
-const char * ColumnVariant::deserializeAndInsertFromArena(const char * pos)
-{
-    /// During any serialization/deserialization we should always use global discriminators.
-    Discriminator global_discr = unalignedLoad<Discriminator>(pos);
-    pos += sizeof(global_discr);
     Discriminator local_discr = localDiscriminatorByGlobal(global_discr);
     getLocalDiscriminators().push_back(local_discr);
     if (local_discr == NULL_DISCRIMINATOR)
     {
         getOffsets().emplace_back();
-        return pos;
+        return;
     }
 
     getOffsets().push_back(variants[local_discr]->size());
-    return variants[local_discr]->deserializeAndInsertFromArena(pos);
+    variants[local_discr]->deserializeAndInsertFromArena(in, settings);
 }
 
-const char * ColumnVariant::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+void ColumnVariant::skipSerializedInArena(ReadBuffer & in) const
 {
-    /// During any serialization/deserialization we should always use global discriminators.
-    Discriminator global_discr = unalignedLoad<Discriminator>(pos);
-    pos += sizeof(global_discr);
-    Discriminator local_discr = localDiscriminatorByGlobal(global_discr);
-    getLocalDiscriminators().push_back(local_discr);
-    if (local_discr == NULL_DISCRIMINATOR)
-    {
-        getOffsets().emplace_back();
-        return pos;
-    }
+    Discriminator global_discr;
+    readBinaryLittleEndian<Discriminator>(global_discr, in);
 
-    getOffsets().push_back(variants[local_discr]->size());
-    return variants[local_discr]->deserializeAndInsertAggregationStateValueFromArena(pos);
-}
-
-const char * ColumnVariant::skipSerializedInArena(const char * pos) const
-{
-    Discriminator global_discr = unalignedLoad<Discriminator>(pos);
-    pos += sizeof(global_discr);
     if (global_discr == NULL_DISCRIMINATOR)
-        return pos;
+        return;
 
-    return variants[localDiscriminatorByGlobal(global_discr)]->skipSerializedInArena(pos);
+    variants[localDiscriminatorByGlobal(global_discr)]->skipSerializedInArena(in);
 }
 
-char * ColumnVariant::serializeValueIntoMemory(size_t n, char * memory) const
+char * ColumnVariant::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
     Discriminator global_discr = globalDiscriminatorAt(n);
     memcpy(memory, &global_discr, sizeof(global_discr));
@@ -879,17 +843,17 @@ char * ColumnVariant::serializeValueIntoMemory(size_t n, char * memory) const
     if (global_discr == NULL_DISCRIMINATOR)
         return memory;
 
-    return variants[localDiscriminatorByGlobal(global_discr)]->serializeValueIntoMemory(offsetAt(n), memory);
+    return variants[localDiscriminatorByGlobal(global_discr)]->serializeValueIntoMemory(offsetAt(n), memory, settings);
 }
 
-std::optional<size_t> ColumnVariant::getSerializedValueSize(size_t n) const
+std::optional<size_t> ColumnVariant::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
     size_t res = sizeof(Discriminator);
     Discriminator global_discr = globalDiscriminatorAt(n);
     if (global_discr == NULL_DISCRIMINATOR)
         return res;
 
-    auto variant_size = variants[localDiscriminatorByGlobal(global_discr)]->getSerializedValueSize(offsetAt(n));
+    auto variant_size = variants[localDiscriminatorByGlobal(global_discr)]->getSerializedValueSize(offsetAt(n), settings);
     if (!variant_size)
         return std::nullopt;
 
@@ -1398,8 +1362,19 @@ size_t ColumnVariant::capacity() const
     return local_discriminators->capacity();
 }
 
+void ColumnVariant::shrinkToFit()
+{
+    offsets->shrinkToFit();
+    local_discriminators->shrinkToFit();
+    const size_t num_variants = variants.size();
+    for (size_t i = 0; i < num_variants; ++i)
+        getVariantByLocalDiscriminator(i).shrinkToFit();
+}
+
 void ColumnVariant::ensureOwnership()
 {
+    offsets->ensureOwnership();
+    local_discriminators->ensureOwnership();
     const size_t num_variants = variants.size();
     for (size_t i = 0; i < num_variants; ++i)
         getVariantByLocalDiscriminator(i).ensureOwnership();
@@ -1782,6 +1757,12 @@ void ColumnVariant::takeDynamicStructureFromColumn(const ColumnPtr & source_colu
     const auto & source_variant = assert_cast<const ColumnVariant &>(*source_column);
     for (size_t i = 0; i != variants.size(); ++i)
         getVariantByGlobalDiscriminator(i).takeDynamicStructureFromColumn(source_variant.getVariantPtrByGlobalDiscriminator(i));
+}
+
+void ColumnVariant::fixDynamicStructure()
+{
+    for (auto & variant : variants)
+        variant->fixDynamicStructure();
 }
 
 

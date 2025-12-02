@@ -1641,9 +1641,11 @@ Cluster::Addresses StorageDistributed::parseAddresses(const std::string & name) 
                 continue;
             }
 
-            if (address.replica_index > replicas)
+            if (address.replica_index == 0 || address.replica_index > replicas)
             {
-                LOG_ERROR(log, "No shard with replica_index={} ({})", address.replica_index, name);
+                LOG_ERROR(log, "Invalid replica_index={} for directory '{}' (cluster has {} replicas for shard {}). "
+                               "Expected directory format: 'shardN_replicaM' or 'shardN_all_replicas'",
+                                address.replica_index, dirname, replicas, address.shard_index);
                 continue;
             }
 

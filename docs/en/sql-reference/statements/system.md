@@ -19,9 +19,8 @@ Always returns `Ok.` regardless of the result of the internal dictionary update.
 
 ## SYSTEM RELOAD DICTIONARIES {#reload-dictionaries}
 
-Reloads all dictionaries that have been successfully loaded before.
-By default, dictionaries are loaded lazily (see [dictionaries_lazy_load](../../operations/server-configuration-parameters/settings.md#dictionaries_lazy_load)), so instead of being loaded automatically at startup, they are initialized on first access through dictGet function or SELECT from tables with ENGINE = Dictionary. The `SYSTEM RELOAD DICTIONARIES` query reloads such dictionaries (LOADED).
-Always returns `Ok.` regardless of the result of the dictionary update.
+The `SYSTEM RELOAD DICTIONARIES` query reloads dictionaries with a status of `LOADED` (see the `status` column of [`system.dictionaries`](/operations/system-tables/dictionaries)), i.e dictionaries that have been successfully loaded before.
+By default, dictionaries are loaded lazily (see [dictionaries_lazy_load](../../operations/server-configuration-parameters/settings.md#dictionaries_lazy_load)), so instead of being loaded automatically at startup, they are initialized on first access through use of the [`dictGet`](/sql-reference/functions/ext-dict-functions#dictGet) function or use of `SELECT` from tables with `ENGINE = Dictionary`.
 
 **Syntax**
 
@@ -113,6 +112,10 @@ Clears the text index header cache.
 ## SYSTEM DROP TEXT INDEX POSTINGS CACHE {#drop-text-index-postings-cache}
 
 Clears the text index postings cache.
+
+## SYSTEM DROP TEXT INDEX CACHES {#drop-text-index-caches}
+
+Clears the text index header cache, dictionary cache, and postings cache.
 
 ## SYSTEM DROP REPLICA {#drop-replica}
 
@@ -506,7 +509,7 @@ SYSTEM RESTORE DATABASE REPLICA repl_db [ON CLUSTER cluster]
 **Example**
 
 ```sql
-CREATE DATABASE repl_db 
+CREATE DATABASE repl_db
 ENGINE=Replicated("/clickhouse/repl_db", shard1, replica1);
 
 CREATE TABLE repl_db.test_table (n UInt32)

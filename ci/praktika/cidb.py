@@ -124,7 +124,7 @@ ORDER BY day DESC
             base_repo=env.REPOSITORY,
             head_ref=env.BRANCH,
             head_repo=env.FORK_NAME,
-            task_url="",
+            task_url=Info().get_job_url(),
             instance_type=",".join(
                 filter(None, [env.INSTANCE_TYPE, env.INSTANCE_LIFE_CYCLE])
             ),

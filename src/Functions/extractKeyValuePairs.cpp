@@ -57,7 +57,7 @@ class ExtractKeyValuePairs : public IFunction
 
         if (parsed_arguments.unexpected_quoting_character_strategy)
         {
-            const auto unexpected_quoting_character_strategy_string = parsed_arguments.unexpected_quoting_character_strategy->getDataAt(0).toString();
+            const std::string unexpected_quoting_character_strategy_string{parsed_arguments.unexpected_quoting_character_strategy->getDataAt(0)};
             const auto unexpected_quoting_character_strategy = magic_enum::enum_cast<extractKV::Configuration::UnexpectedQuotingCharacterStrategy>(
                     unexpected_quoting_character_strategy_string, magic_enum::case_insensitive);
 
@@ -90,7 +90,7 @@ class ExtractKeyValuePairs : public IFunction
 
         for (auto i = 0u; i < input_rows_count; i++)
         {
-            auto row = data_column->getDataAt(i).toView();
+            auto row = data_column->getDataAt(i);
 
             auto pairs_count = extractor.extract(row, keys, values);
 

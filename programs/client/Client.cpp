@@ -319,6 +319,10 @@ void Client::initialize(Poco::Util::Application & self)
     /// Set the path for google proto files
     if (config().has("google_protos_path"))
         client_context->setGoogleProtosPath(fs::weakly_canonical(config().getString("google_protos_path")));
+
+    /// Use <server_client_version_message/> unless --server-client-version-message is specified
+    if (!config().has("no-server-client-version-message") && !config().getBool("server_client_version_message", true))
+        config().setBool("no-server-client-version-message", true);
 }
 
 
@@ -509,20 +513,23 @@ void Client::connect()
         output_stream << "Connected to " << server_name << " server version " << server_version << "." << std::endl << std::endl;
 
 #if not CLICKHOUSE_CLOUD
-        auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
-        auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
+        if (!config().has("no-server-client-version-message"))
+        {
+            auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
+            auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
 
-        if (client_version_tuple < server_version_tuple)
-        {
-            output_stream << "ClickHouse client version is older than ClickHouse server. "
-                      << "It may lack support for new features." << std::endl
-                      << std::endl;
-        }
-        else if (client_version_tuple > server_version_tuple && server_display_name != "clickhouse-cloud")
-        {
-            output_stream << "ClickHouse server version is older than ClickHouse client. "
-                      << "It may indicate that the server is out of date and can be upgraded." << std::endl
-                      << std::endl;
+            if (client_version_tuple < server_version_tuple)
+            {
+                output_stream << "ClickHouse client version is older than ClickHouse server. "
+                          << "It may lack support for new features." << std::endl
+                          << std::endl;
+            }
+            else if (client_version_tuple > server_version_tuple && server_display_name != "clickhouse-cloud")
+            {
+                output_stream << "ClickHouse server version is older than ClickHouse client. "
+                          << "It may indicate that the server is out of date and can be upgraded." << std::endl
+                          << std::endl;
+            }
         }
 #endif
     }
@@ -681,6 +688,7 @@ void Client::addExtraOptions(OptionsDescription & options_description)
             po::value<std::string>(),
             "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
         ("no-warnings", "disable warnings when client connects to server")
+        ("no-server-client-version-message", "suppress server-client version mismatch message")
         /// TODO: Left for compatibility as it's used in upgrade check, remove after next release and use server setting ignore_drop_queries_probability
         ("fake-drop", "Ignore all DROP queries, should be used only for testing")
         ("accept-invalid-certificate",
@@ -802,6 +810,8 @@ void Client::processOptions(
         config().setBool("compression", options["compression"].as<bool>());
     if (options.contains("no-warnings"))
         config().setBool("no-warnings", true);
+    if (options.contains("no-server-client-version-message"))
+        config().setBool("no-server-client-version-message", true);
     if (options.contains("fake-drop"))
         config().setString("ignore_drop_queries_probability", "1");
     if (options.contains("jwt"))

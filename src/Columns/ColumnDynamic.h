@@ -155,7 +155,7 @@ public:
         return variant_column_ptr->isNullAt(n);
     }
 
-    StringRef getDataAt(size_t n) const override
+    std::string_view getDataAt(size_t n) const override
     {
         return variant_column_ptr->getDataAt(n);
     }
@@ -193,10 +193,10 @@ public:
         variant_column_ptr->popBack(n);
     }
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    const char * deserializeAndInsertFromArena(const char * pos) override;
-    const char * skipSerializedInArena(const char * pos) const override;
-    std::optional<size_t> getSerializedValueSize(size_t) const override { return std::nullopt; }
+    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
+    std::optional<size_t> getSerializedValueSize(size_t, const IColumn::SerializationSettings *) const override { return std::nullopt; }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
@@ -281,6 +281,11 @@ public:
     void prepareForSquashing(const Columns & source_columns, size_t factor) override;
     /// Prepare only variants but not discriminators and offsets.
     void prepareVariantsForSquashing(const Columns & source_columns, size_t factor);
+
+    void shrinkToFit() override
+    {
+        variant_column_ptr->shrinkToFit();
+    }
 
     void ensureOwnership() override
     {
@@ -387,6 +392,7 @@ public:
     bool dynamicStructureEquals(const IColumn & rhs) const override;
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
+    void fixDynamicStructure() override;
 
     const StatisticsPtr & getStatistics() const { return statistics; }
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }

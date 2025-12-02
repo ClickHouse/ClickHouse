@@ -140,8 +140,8 @@ struct AggregateFunctionUniqUpToData<String> : AggregateFunctionUniqUpToData<UIn
     void ALWAYS_INLINE add(const IColumn & column, size_t row_num, UInt8 threshold)
     {
         /// Keep in mind that calculations are approximate.
-        StringRef value = column.getDataAt(row_num);
-        insert(CityHash_v1_0_2::CityHash64(value.data, value.size), threshold);
+        auto value = column.getDataAt(row_num);
+        insert(CityHash_v1_0_2::CityHash64(value.data(), value.size()), threshold);
     }
 };
 

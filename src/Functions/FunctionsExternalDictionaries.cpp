@@ -1158,7 +1158,7 @@ R"(
     {
         FunctionDocumentation::Description description_dictGetChildren =
 R"(
-Returns first-level children as an array of indexes. It is the inverse transformation for [dictGetHierarchy](#dictgethierarchy).
+Returns first-level children as an array of indexes. It is the inverse transformation for [dictGetHierarchy](#dictGetHierarchy).
 )";
         FunctionDocumentation::Syntax syntax_dictGetChildren = "dictGetChildren(dict_name, key)";
         FunctionDocumentation::Arguments arguments_dictGetChildren =

@@ -147,7 +147,7 @@ BUILD_TO_REPORT = {
     BuildNames.BINARY_RISCV64: "artifact_report_build_riscv64.json",
     BuildNames.BINARY_S390X: "artifact_report_build_s390x.json",
     BuildNames.BINARY_LOONGARCH64: "artifact_report_build_loongarch.json",
-    BuildNames.FUZZERS: "artifact_report_build_fuzzers.json",
+    BuildNames.ARM_FUZZERS: "artifact_report_build_arm_fuzzers.json",
 }
 
 

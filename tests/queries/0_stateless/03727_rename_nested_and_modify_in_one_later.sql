@@ -1,0 +1,5 @@
+DROP TABLE IF EXISTS t0;
+CREATE TABLE t0 (`c0.c1` Array(Int)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t0 VALUES ([1]);
+ALTER TABLE t0 (RENAME COLUMN `c0.c1` TO `c0.c2`), (MODIFY COLUMN `c0.c1` MODIFY SETTING max_compress_block_size = 1); -- {serverError NOT_FOUND_COLUMN_IN_BLOCK}
+DROP TABLE t0;

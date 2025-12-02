@@ -4,7 +4,7 @@ DROP TABLE IF EXISTS t_subcolumns_sizes;
 
 CREATE TABLE t_subcolumns_sizes (id UInt64, arr Array(UInt64), n Nullable(String))
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, serialization_info_version = 'basic';
+SETTINGS min_bytes_for_wide_part = 0, serialization_info_version = 'basic', ratio_of_defaults_for_sparse_serialization = 1;
 
 INSERT INTO t_subcolumns_sizes FORMAT JSONEachRow {"id": 1, "arr": [1, 2, 3], "n": null}
 

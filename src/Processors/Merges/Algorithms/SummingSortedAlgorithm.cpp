@@ -613,8 +613,12 @@ void SummingSortedAlgorithm::SummingMergedData::initialize(const DB::Block & hea
         }
         else
         {
-            const auto & type = desc.nested_type ? desc.nested_type : desc.real_type;
-            new_columns.emplace_back(type->createColumn());
+            /// Remove LowCardinality from columns if needed. It's important to use columns initialized in
+            /// MergedData::initialize to keep correct dynamic structure of some columns (like JSON/Dynamic).
+            if (desc.nested_type)
+                new_columns.emplace_back(recursiveRemoveLowCardinality(std::move(columns[desc.column_numbers[0]]))->assumeMutable());
+            else
+                new_columns.emplace_back(std::move(columns[desc.column_numbers[0]]));
         }
     }
 

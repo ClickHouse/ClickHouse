@@ -77,9 +77,7 @@ MergeTreeDataPartsVector collectInitial(const MergeTreeData & data, const MergeT
 
 auto constructPreconditionsPredicate(const StoragePolicyPtr & storage_policy, const MergeTreeTransactionPtr & tx, const MergeTreeMergePredicatePtr & merge_pred)
 {
-    bool has_volumes_with_disabled_merges = storage_policy->hasAnyVolumeWithDisabledMerges();
-
-    auto predicate = [storage_policy, tx, merge_pred, has_volumes_with_disabled_merges](const MergeTreeDataPartPtr & part) -> std::expected<void, PreformattedMessage>
+    auto predicate = [storage_policy, tx, merge_pred](const MergeTreeDataPartPtr & part) -> std::expected<void, PreformattedMessage>
     {
         if (tx)
         {
@@ -92,9 +90,6 @@ auto constructPreconditionsPredicate(const StoragePolicyPtr & storage_policy, co
             if (part->version.isRemovalTIDLocked())
                 return std::unexpected(PreformattedMessage::create("Part {} is locked for removal", part->name));
         }
-
-        if (has_volumes_with_disabled_merges && !part->shallParticipateInMerges(storage_policy))
-            return std::unexpected(PreformattedMessage::create("Merges for part's {} volume are disabled", part->name));
 
         chassert(merge_pred);
         return merge_pred->canUsePartInMerges(part);
@@ -135,7 +130,7 @@ PartsRanges MergeTreePartsCollector::grabAllPossibleRanges(
 {
     auto parts = filterByPartitions(collectInitial(storage, tx), partitions_hint);
     auto ranges = splitPartsByPreconditions(std::move(parts), storage_policy, tx, merge_pred, series_log);
-    return constructPartsRanges(std::move(ranges), metadata_snapshot, current_time);
+    return constructPartsRanges(std::move(ranges), metadata_snapshot, storage_policy, current_time);
 }
 
 std::expected<PartsRange, PreformattedMessage> MergeTreePartsCollector::grabAllPartsInsidePartition(
@@ -148,7 +143,7 @@ std::expected<PartsRange, PreformattedMessage> MergeTreePartsCollector::grabAllP
     if (auto result = checkAllParts(parts, storage_policy, tx, merge_pred); !result)
         return std::unexpected(std::move(result.error()));
 
-    auto ranges = constructPartsRanges({std::move(parts)}, metadata_snapshot, current_time);
+    auto ranges = constructPartsRanges({std::move(parts)}, metadata_snapshot, storage_policy, current_time);
     chassert(ranges.size() == 1);
 
     return std::move(ranges.front());

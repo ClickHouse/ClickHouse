@@ -2221,8 +2221,8 @@ public:
                 const auto * col_left = &checkAndGetColumn<ColumnString>(col_left_const->getDataColumn());
                 const auto * col_right = &checkAndGetColumn<ColumnString>(col_right_const->getDataColumn());
 
-                std::string_view a = col_left->getDataAt(0).toView();
-                std::string_view b = col_right->getDataAt(0).toView();
+                std::string_view a = col_left->getDataAt(0);
+                std::string_view b = col_right->getDataAt(0);
 
                 auto res = OpImpl::constConst(a, b);
 
@@ -2253,12 +2253,12 @@ public:
             }
             else if (is_left_column_const)
             {
-                std::string_view str_view = col_left->getDataAt(0).toView();
+                std::string_view str_view = col_left->getDataAt(0);
                 OpImpl::vectorConstant(col_right->getChars(), col_right->getOffsets(), str_view, data);
             }
             else
             {
-                std::string_view str_view = col_right->getDataAt(0).toView();
+                std::string_view str_view = col_right->getDataAt(0);
                 OpImpl::vectorConstant(col_left->getChars(), col_left->getOffsets(), str_view, data);
             }
 

@@ -1478,3 +1478,23 @@ def test_numbers_parsing(started_cluster):
 
     node.query("DROP TABLE numbers_parsing_table")
     numbers_parsing_table.drop()
+
+
+def test_url_validation(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.command("dropAllUsersFromDatabase")
+    db.command("createUser", "root@aa.com", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "url_validation_table")
+    url_validation_table = db["url_validation_table"]
+    data = []
+    for i in range(0, 100):
+        data.append({"key": i, "data": hex(i * i)})
+    url_validation_table.insert_many(data)
+
+    node = started_cluster.instances["node"]
+    node.query(
+        f"CREATE OR REPLACE TABLE url_validation_table(key UInt64, data String) ENGINE = MongoDB('mongo1', 'test', 'url_validation_table', 'root@aa.com', '{mongo_pass}')"
+    )
+
+    assert node.query("SELECT COUNT() FROM url_validation_table") == "100\n"

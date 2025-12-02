@@ -1,7 +1,7 @@
 1
-2	fail: correlated subquery
+2
 3
-4	fail: exists
+4
 5
 6
 0
@@ -16,10 +16,11 @@
 0
 15	fail: correlated subquery
 16
-17	fail: correlated subquery
+17
+0
 18
 19
 0
-20	fail: correlated subquery
-21	fail: exists, not exists
-22	fail: not exists
+20
+21
+22

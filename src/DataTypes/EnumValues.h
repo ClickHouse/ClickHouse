@@ -4,7 +4,6 @@
 #include <unordered_set>
 #include <string>
 #include <Core/Names.h>
-#include <base/StringRef.h>
 #include <Common/NamePrompter.h>
 
 
@@ -20,7 +19,7 @@ public:
 
 private:
     class NameToValueMap;
-    using ValueToNameMap = std::unordered_map<T, StringRef>;
+    using ValueToNameMap = std::unordered_map<T, std::string_view>;
 
     Values values;
     std::unique_ptr<NameToValueMap> name_to_value_map;
@@ -42,13 +41,13 @@ public:
     }
 
     /// throws exception if value is not valid
-    const StringRef & getNameForValue(const T & value) const
+    std::string_view getNameForValue(const T & value) const
     {
         return findByValue(value)->second;
     }
 
     /// returns false if value is not valid
-    bool getNameForValue(const T & value, StringRef & result) const
+    bool getNameForValue(const T & value, std::string_view & result) const
     {
         const auto it = value_to_name_map.find(value);
         if (it == value_to_name_map.end())
@@ -58,8 +57,8 @@ public:
         return true;
     }
 
-    T getValue(StringRef field_name) const;
-    bool tryGetValue(T & x, StringRef field_name) const;
+    T getValue(std::string_view field_name) const;
+    bool tryGetValue(T & x, std::string_view field_name) const;
 
     template <typename TValues>
     bool containsAll(const TValues & rhs_values) const;

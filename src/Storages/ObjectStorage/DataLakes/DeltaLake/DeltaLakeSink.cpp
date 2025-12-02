@@ -19,20 +19,22 @@ namespace Setting
 
 DeltaLakeSink::DeltaLakeSink(
     DeltaLake::WriteTransactionPtr delta_transaction_,
-    StorageObjectStorageConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
     ContextPtr context_,
     SharedHeader sample_block_,
-    const std::optional<FormatSettings> & format_settings_)
+    const std::optional<FormatSettings> & format_settings_,
+    const String & format,
+    const String & compression_method)
     : SinkToStorage(sample_block_)
     , WithContext(context_)
     , delta_transaction(delta_transaction_)
     , object_storage(object_storage_)
-    , configuration(configuration_)
     , format_settings(format_settings_)
     , sample_block(sample_block_)
     , data_file_max_rows(context_->getSettingsRef()[Setting::delta_lake_insert_max_rows_in_data_file])
     , data_file_max_bytes(context_->getSettingsRef()[Setting::delta_lake_insert_max_bytes_in_data_file])
+    , write_format(format)
+    , write_compression_method(compression_method)
 {
     delta_transaction->validateSchema(getHeader());
 }
@@ -40,14 +42,13 @@ DeltaLakeSink::DeltaLakeSink(
 DeltaLakeSink::StorageSinkPtr DeltaLakeSink::createStorageSink() const
 {
     return std::make_unique<StorageObjectStorageSink>(
-        DeltaLake::generateWritePath(
-            delta_transaction->getDataPath(),
-            configuration->format),
+        DeltaLake::generateWritePath(delta_transaction->getDataPath(), write_format),
         object_storage,
-        configuration,
         format_settings,
         sample_block,
-        getContext());
+        getContext(),
+        write_format,
+        write_compression_method);
 }
 
 void DeltaLakeSink::consume(Chunk & chunk)

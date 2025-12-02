@@ -19,6 +19,7 @@ namespace ColumnsHashing
 struct HashMethodContextSettings
 {
     size_t max_threads;
+    bool serialize_string_with_zero_byte = false;
 };
 
 /// Generic context for HashMethod. Context is shared between multiple threads, all methods must be thread-safe.

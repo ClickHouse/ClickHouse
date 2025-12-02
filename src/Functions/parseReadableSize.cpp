@@ -100,7 +100,7 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            std::string_view value = col_str->getDataAt(i).toView();
+            std::string_view value = col_str->getDataAt(i);
             try
             {
                 UInt64 num_bytes = parseReadableFormat(value);

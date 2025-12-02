@@ -1,0 +1,25 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <with_merges>
+                <path>/with_merges/</path>
+            </with_merges>
+            <no_merges>
+                <path>/no_merges/</path>
+            </no_merges>
+        </disks>
+        <policies>
+            <hot_cold_separation_policy>
+                <volumes>
+                    <with_merges>
+                        <disk>with_merges</disk>
+                    </with_merges>
+                    <no_merges>
+                        <disk>no_merges</disk>
+                        <prefer_not_to_merge>true</prefer_not_to_merge>
+                    </no_merges>
+                </volumes>
+            </hot_cold_separation_policy>
+        </policies>
+    </storage_configuration>
+</clickhouse>

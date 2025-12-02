@@ -20,7 +20,7 @@ class ITTLMergeSelector : public IMergeSelector
     friend class MergeRangesConstructor;
 
 public:
-    ITTLMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_);
+    ITTLMergeSelector(const PartitionIdToTTLs * merge_due_times_, time_t current_time_);
 
     PartsRanges select(
         const PartsRanges & parts_ranges,
@@ -49,14 +49,14 @@ private:
     PartsIterator findRightRangeBorder(const CenterPosition & center_position, size_t & usable_memory, DisjointPartsRangesSet & disjoint_set) const;
 
     const time_t current_time;
-    const PartitionIdToTTLs & merge_due_times;
+    const PartitionIdToTTLs * merge_due_times;
 };
 
 /// Select parts that must be fully deleted because of ttl for part.
-class TTLPartDeleteMergeSelector : public ITTLMergeSelector
+class TTLPartDropMergeSelector : public ITTLMergeSelector
 {
 public:
-    explicit TTLPartDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_);
+    explicit TTLPartDropMergeSelector(time_t current_time_);
 
 private:
     time_t getTTLForPart(const PartProperties & part) const override;
@@ -75,7 +75,7 @@ private:
     time_t getTTLForPart(const PartProperties & part) const override;
 
     /// Checks that part has at least one unfinished ttl. Because if all ttls
-    /// are finished for part - it will be considered by TTLPartDeleteMergeSelector.
+    /// are finished for part - it will be considered by TTLPartDropMergeSelector.
     bool canConsiderPart(const PartProperties & part) const override;
 };
 

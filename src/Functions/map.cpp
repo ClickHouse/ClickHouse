@@ -337,7 +337,7 @@ public:
         auto result_offsets = ColumnVector<IColumn::Offset>::create(input_rows_count);
         auto & result_offsets_data = result_offsets->getData();
 
-        using Set = HashSetWithStackMemory<StringRef, StringRefHash, 4>;
+        using Set = HashSetWithStackMemory<std::string_view, StringViewHash, 4>;
 
         Set right_keys_const;
         if (is_right_const)

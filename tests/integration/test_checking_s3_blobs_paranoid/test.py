@@ -465,9 +465,8 @@ def test_when_s3_connection_reset_by_peer_at_upload_is_retried(
 
     assert "Code: 1000" in error, error
     assert (
-        "DB::Exception: Connection reset by peer." in error
-        or "DB::Exception: Poco::Exception. Code: 1000, e.code() = 104, Connection reset by peer"
-        in error
+        "Connection reset by peer." in error
+        or "Code: 1000, e.code() = 104, Connection reset by peer" in error
     ), error
 
 
@@ -548,10 +547,80 @@ def test_when_s3_connection_reset_by_peer_at_create_mpu_retried(
 
     assert "Code: 1000" in error, error
     assert (
-        "DB::Exception: Connection reset by peer." in error
-        or "DB::Exception: Poco::Exception. Code: 1000, e.code() = 104, Connection reset by peer"
+        "Connection reset by peer." in error
+        or "Code: 1000, e.code() = 104, Connection reset by peer"
         in error
     ), error
+
+
+def test_when_s3_timeout_at_listing(
+    cluster, broken_s3
+):
+    node = cluster.instances["node_with_inf_s3_retries"]
+
+    insert_query_id = randomize_query_id(
+        f"TEST_WHEN_S3_TIMEOUT_AT_LISTING_INSERT"
+    )
+    node.query(
+        f"""
+        INSERT INTO
+            TABLE FUNCTION s3(
+                'http://resolver:8083/root/data/test_when_s3_timeout_at_listing/{{_partition_id}}/file',
+                'minio', '{minio_secret_key}',
+                'CSV', auto, 'none'
+            )
+            PARTITION BY number
+        SELECT
+            *
+        FROM system.numbers
+        LIMIT 2000
+        SETTINGS
+            s3_check_objects_after_upload=0,
+            s3_truncate_on_insert=1
+        """,
+        query_id=insert_query_id,
+    )
+
+    broken_s3.setup_at_listing(
+        count=1,
+        after=1,
+        action="timeout"
+    )
+
+    select_query_id = randomize_query_id(
+        f"TEST_WHEN_S3_TIMEOUT_AT_LISTING_SELECT"
+    )
+    result = node.query(
+        f"""
+        SELECT * FROM
+            s3(
+                'http://resolver:8083/root/data/test_when_s3_timeout_at_listing/*/file',
+                'minio', '{minio_secret_key}',
+                'CSV', auto, 'none'
+            )
+        ORDER BY ALL
+        """,
+        query_id=select_query_id,
+    )
+    result = result.strip().split("\n")
+    assert len(result) == 2000
+    assert result == [str(i) for i in range(2000)]
+
+    node.query("SYSTEM FLUSH LOGS")
+    read_count, errors, retryable = node.query(
+        f"""
+            SELECT
+                ProfileEvents['S3ReadRequestsCount'],
+                ProfileEvents['S3ReadRequestsErrors'],
+                ProfileEvents['S3ReadRequestRetryableErrors'],
+            FROM system.query_log
+            WHERE query_id='{select_query_id}'
+                AND type='QueryFinish'
+            """).strip().split("\t")
+
+    assert int(read_count) > 10 # at least 10 files are read from s3
+    assert int(errors) >= 1
+    assert int(retryable) >= 1
 
 
 def test_query_is_canceled_with_inf_retries(cluster, broken_s3):
@@ -729,7 +798,7 @@ def test_no_key_found_disk(cluster, broken_s3):
     error = node.query_and_get_error("SELECT * FROM no_key_found_disk").strip()
 
     assert (
-        "DB::Exception: The specified key does not exist. This error happened for S3 disk"
+        "The specified key does not exist. This error happened for S3 disk"
         in error
     )
 

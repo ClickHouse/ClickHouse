@@ -16,7 +16,7 @@ select explain e from (explain actions = 1 select * from tab_l l inner join tab_
 where e like '%ReadFromMergeTree%' or e like '%Expression%' or e like '%Join%' or e like '%Clauses%' or e like '%Sharding%';
 Expression ((Project names + Projection))
   Expression (Post Join Actions)
-    Join
+    Join (JOIN FillRightFirst)
     Algorithm: ConcurrentHashJoin
     Clauses: [(multiply(__table1.a, 2_UInt8), plus(__table1.b, __table1.c)) = (plus(__table2.c, __table2.d), multiply(__table2.b, 2_UInt8))]
     Sharding: [(multiply(a, 2) = plus(c, d)), (plus(b, c) = multiply(b, 2))]
@@ -42,13 +42,13 @@ select explain e from (explain actions = 1 select * from tab_l l inner join tab_
 where e like '%ReadFromMergeTree%' or e like '%Expression%' or e like '%Join%' or e like '%Clauses%' or e like '%Sharding%';
 Expression ((Project names + Projection))
   Expression (Post Join Actions)
-    Join
+    Join (JOIN FillRightFirst)
     Algorithm: ConcurrentHashJoin
     Clauses: [(multiply(__table1.a, 2_UInt8), plus(__table1.b, __table1.c), __table1.d) = (multiply(__table3.a, 2_UInt8), multiply(__table3.c, 2_UInt8), __table3.d)]
     Sharding: [(multiply(a, 2) = multiply(a, 2)), (plus(b, c) = multiply(c, 2))]
       Expression (Left Pre Join Actions)
         Expression (Post Join Actions)
-          Join
+          Join (JOIN FillRightFirst)
           Algorithm: ConcurrentHashJoin
           Clauses: [(multiply(__table1.a, 2_UInt8), __table1.d, plus(__table1.b, __table1.c)) = (plus(__table2.c, __table2.d), __table2.a, multiply(__table2.b, 2_UInt8))]
           Sharding: [(multiply(a, 2) = plus(c, d)), (plus(b, c) = multiply(b, 2))]
@@ -77,13 +77,13 @@ select explain e from (explain actions = 1 select * from tab_l l inner join tab_
 where e like '%ReadFromMergeTree%' or e like '%Expression%' or e like '%Join%' or e like '%Clauses%' or e like '%Sharding%';
 Expression ((Project names + Projection))
   Expression (Post Join Actions)
-    Join
+    Join (JOIN FillRightFirst)
     Algorithm: ConcurrentHashJoin
     Clauses: [(multiply(__table1.a, 2_UInt8), plus(__table1.b, __table1.c), __table1.d) = (multiply(__table3.a, 2_UInt8), multiply(__table3.c, 2_UInt8), __table3.d)]
     Sharding: [(multiply(a, 2) = multiply(a, 2))]
       Expression (Left Pre Join Actions)
         Expression (Post Join Actions)
-          Join
+          Join (JOIN FillRightFirst)
           Algorithm: ConcurrentHashJoin
           Clauses: [(multiply(__table1.a, 2_UInt8), __table1.d) = (plus(__table2.c, __table2.d), __table2.a)]
           Sharding: [(multiply(a, 2) = plus(c, d))]
@@ -112,13 +112,13 @@ select explain e from (explain actions = 1 select * from tab_l l inner join tab_
 where e like '%ReadFromMergeTree%' or e like '%Expression%' or e like '%Join%' or e like '%Clauses%' or e like '%Sharding%';
 Expression ((Project names + Projection))
   Expression (Post Join Actions)
-    Join
+    Join (JOIN FillRightFirst)
     Algorithm: ConcurrentHashJoin
     Clauses: [(multiply(__table1.a, 2_UInt8), __table1.d) = (multiply(__table3.a, 2_UInt8), __table3.d)]
     Sharding: [(multiply(a, 2) = multiply(a, 2))]
       Expression (Left Pre Join Actions)
         Expression (Post Join Actions)
-          Join
+          Join (JOIN FillRightFirst)
           Algorithm: ConcurrentHashJoin
           Clauses: [(multiply(__table1.a, 2_UInt8), __table1.d, plus(__table1.b, __table1.c)) = (plus(__table2.c, __table2.d), __table2.a, multiply(__table2.b, 2_UInt8))]
           Sharding: [(multiply(a, 2) = plus(c, d))]
@@ -147,13 +147,13 @@ select explain e from (explain actions = 1 select * from tab_l l inner join tab_
 where e like '%ReadFromMergeTree%' or e like '%Expression%' or e like '%Join%' or e like '%Clauses%' or e like '%Sharding%';
 Expression ((Project names + Projection))
   Expression (Post Join Actions)
-    Join
+    Join (JOIN FillRightFirst)
     Algorithm: ConcurrentHashJoin
     Clauses: [(multiply(__table1.a, 2_UInt8), plus(__table1.b, __table1.c), __table1.d) = (multiply(__table3.a, 2_UInt8), multiply(__table3.c, 2_UInt8), __table3.d)]
     Sharding: [(multiply(a, 2) = multiply(a, 2)), (plus(b, c) = multiply(c, 2))]
       Expression (Left Pre Join Actions)
         Expression (Post Join Actions)
-          Join
+          Join (JOIN FillRightFirst)
           Algorithm: ConcurrentHashJoin
           Clauses: [(__table1.d) = (__table2.a)]
             Expression (Left Pre Join Actions)
@@ -182,7 +182,7 @@ select explain e from (explain actions = 1 select * from tab_l l right join tab_
 where e like '%ReadFromMergeTree%' or e like '%Expression%' or e like '%Join%' or e like '%Clauses%' or e like '%Sharding%';
 Expression ((Project names + Projection))
   Expression (Post Join Actions)
-    Join
+    Join (JOIN FillRightFirst)
     Algorithm: ConcurrentHashJoin
     Clauses: [(multiply(__table1.a, 2_UInt8), plus(__table1.b, __table1.c)) = (plus(__table2.c, __table2.d), multiply(__table2.b, 2_UInt8))]
     Sharding: [(multiply(a, 2) = plus(c, d)), (plus(b, c) = multiply(b, 2))]
@@ -208,13 +208,13 @@ select explain e from (explain actions = 1 select * from tab_l l left join tab_m
 where e like '%ReadFromMergeTree%' or e like '%Expression%' or e like '%Join%' or e like '%Clauses%' or e like '%Sharding%';
 Expression ((Project names + Projection))
   Expression (Post Join Actions)
-    Join
+    Join (JOIN FillRightFirst)
     Algorithm: ConcurrentHashJoin
     Clauses: [(multiply(__table1.a, 2_UInt8), plus(__table1.b, __table1.c), __table1.d) = (multiply(__table3.a, 2_UInt8), multiply(__table3.c, 2_UInt8), __table3.d)]
     Sharding: [(multiply(a, 2) = multiply(a, 2)), (plus(b, c) = multiply(c, 2))]
       Expression (Left Pre Join Actions)
         Expression (Post Join Actions)
-          Join
+          Join (JOIN FillRightFirst)
           Algorithm: ConcurrentHashJoin
           Clauses: [(multiply(__table1.a, 2_UInt8), __table1.d, plus(__table1.b, __table1.c)) = (plus(__table2.c, __table2.d), __table2.a, multiply(__table2.b, 2_UInt8))]
           Sharding: [(multiply(a, 2) = plus(c, d)), (plus(b, c) = multiply(b, 2))]

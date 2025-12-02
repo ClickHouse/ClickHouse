@@ -162,7 +162,7 @@ OwnedRefreshTask RefreshTask::create(
 {
     auto task = std::make_shared<RefreshTask>(view, context, strategy, attach, coordinated, empty, is_restore_from_backup);
 
-    task->refresh_task = context->getSchedulePool().createTask("RefreshTask",
+    task->refresh_task = context->getSchedulePool().createTask(view->getStorageID(), "RefreshTask",
         [self = task.get()] { self->refreshTask(); });
 
     task->refresh_task_watch_callback = std::make_shared<Coordination::WatchCallback>([w = task->coordination.watches, task_waker = task->refresh_task->getWatchCallback()](const Coordination::WatchResponse & response)

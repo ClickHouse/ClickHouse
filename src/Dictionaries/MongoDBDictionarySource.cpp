@@ -185,7 +185,7 @@ BlockIO MongoDBDictionarySource::loadKeys(const Columns & key_columns, const std
             else if (type.isInt())
                 key.append(make_document(kvp(dict_key.name, key_columns[i]->getInt(row))));
             else if (type.isString())
-                key.append(make_document(kvp(dict_key.name, key_columns[i]->getDataAt(row).toString())));
+                key.append(make_document(kvp(dict_key.name, key_columns[i]->getDataAt(row))));
             else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type '{}' of key in MongoDB dictionary", dict_key.type->getName());
         }

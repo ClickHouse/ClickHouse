@@ -211,7 +211,7 @@ private:
     }
 
     template <bool check_overflow, bool scale_left, bool scale_right>
-    static NO_INLINE UInt8 apply(A a, B b, CompareInt scale [[maybe_unused]])
+    static ALWAYS_INLINE UInt8 apply(A a, B b, CompareInt scale [[maybe_unused]])
     {
         CompareInt x;
         if constexpr (is_decimal<A>)
@@ -275,12 +275,15 @@ private:
         }
     }
 
-    template <bool check_overflow, bool scale_left, bool scale_right>
-    static void NO_INLINE vectorConstant(const ArrayA & a, B b, PaddedPODArray<UInt8> & c, CompareInt scale)
+    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
+    MULTITARGET_FUNCTION_HEADER(
+    template <bool check_overflow, bool scale_left, bool scale_right> static void NO_INLINE
+    ), vectorConstantImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
+        const ArrayA & a, B b, PaddedPODArray<UInt8> & c, CompareInt scale)
     {
         size_t size = a.size();
-        const A * a_pos = a.data();
-        UInt8 * c_pos = c.data();
+        const A * __restrict a_pos = a.data();
+        UInt8 * __restrict c_pos = c.data();
         const A * a_end = a_pos + size;
 
         while (a_pos < a_end)
@@ -289,6 +292,38 @@ private:
             ++a_pos;
             ++c_pos;
         }
+    }))
+
+    template <bool check_overflow, bool scale_left, bool scale_right>
+    static void NO_INLINE vectorConstant(const ArrayA & a, B b, PaddedPODArray<UInt8> & c, CompareInt scale)
+    {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX512BW))
+        {
+            vectorConstantImplAVX512BW<check_overflow, scale_left, scale_right>(a, b, c, scale);
+            return;
+        }
+
+        if (isArchSupported(TargetArch::AVX512F))
+        {
+            vectorConstantImplAVX512F<check_overflow, scale_left, scale_right>(a, b, c, scale);
+            return;
+        }
+
+        if (isArchSupported(TargetArch::AVX2))
+        {
+            vectorConstantImplAVX2<check_overflow, scale_left, scale_right>(a, b, c, scale);
+            return;
+        }
+
+        if (isArchSupported(TargetArch::SSE42))
+        {
+            vectorConstantImplSSE42<check_overflow, scale_left, scale_right>(a, b, c, scale);
+            return;
+        }
+#endif
+
+        vectorConstantImpl<check_overflow, scale_left, scale_right>(a, b, c, scale);
     }
 
     template <bool check_overflow, bool scale_left, bool scale_right>

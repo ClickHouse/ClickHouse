@@ -29,7 +29,7 @@ namespace
 /// to columnar view.
 class CustomMetricLogViewTransform : public IInflatingTransform
 {
-    HashMap<StringRef, size_t> mapping;
+    HashMap<std::string_view, size_t> mapping;
     Names column_names;
 public:
     static constexpr size_t SECONDS_IN_HOUR = 3600;
@@ -277,9 +277,9 @@ public:
                 dates[second_in_hour] = date_column.getUInt(i);
 
             if (need_hostname)
-                hostnames[second_in_hour] = hostname_column.getDataAt(i).toString();
+                hostnames[second_in_hour] = hostname_column.getDataAt(i);
 
-            StringRef metric_name = metric_column.getDataAt(i);
+            std::string_view metric_name = metric_column.getDataAt(i);
             auto * it = mapping.find(metric_name);
             if (it == mapping.end())
                 continue;

@@ -87,7 +87,7 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            std::string_view current_row = column_haystack->getDataAt(i).toView();
+            std::string_view current_row = column_haystack->getDataAt(i);
 
             if (re2->Match({current_row.data(), current_row.size()},
                 0, current_row.size(), re2::RE2::UNANCHORED, matched_groups.data(),

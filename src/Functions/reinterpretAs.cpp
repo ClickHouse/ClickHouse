@@ -309,8 +309,8 @@ public:
 
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    StringRef ref = col_from->getDataAt(i);
-                    col_res->insertData(ref.data, ref.size);
+                    std::string_view ref = col_from->getDataAt(i);
+                    col_res->insertData(ref.data(), ref.size());
                 }
 
                 result = std::move(col_res);
@@ -355,7 +355,7 @@ private:
         ColumnFixedString::Offset offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            std::string_view data = src.getDataAt(i).toView();
+            std::string_view data = src.getDataAt(i);
 
             if constexpr (std::endian::native == std::endian::little)
                 memcpy(&data_to[offset], data.data(), std::min(n, data.size()));
@@ -386,25 +386,23 @@ private:
         ColumnString::Offset offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            StringRef data = src.getDataAt(i);
+            std::string_view data = src.getDataAt(i);
 
             /// Cut trailing zero bytes.
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-            while (data.size && data.data[data.size - 1] == 0)
-                --data.size;
+            while (!data.empty() && data.back() == 0)
+                data.remove_suffix(1);
 #else
-            size_t index = 0;
-            while (index < data.size && data.data[index] == 0)
-                index++;
-            data.size -= index;
+            while (!data.empty() && data.front() == 0)
+                data.remove_prefix(1);
 #endif
-            data_to.resize(offset + data.size);
+            data_to.resize(offset + data.size());
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-            memcpy(&data_to[offset], data.data, data.size);
+            memcpy(&data_to[offset], data.data(), data.size());
 #else
-            reverseMemcpy(&data_to[offset], data.data + index, data.size);
+            reverseMemcpy(&data_to[offset], data.data(), data.size());
 #endif
-            offset += data.size;
+            offset += data.size();
             offsets_to[i] = offset;
         }
     }

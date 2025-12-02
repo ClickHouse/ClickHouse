@@ -193,7 +193,7 @@ void SerializationStringSize::deserializeBinaryBulkWithSizeStream(
         if (rows_offset)
             column->assumeMutable()->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
         else
-            insertDataFromCachedColumn(settings, column, cached_column, num_read_rows);
+            insertDataFromCachedColumn(settings, column, cached_column, num_read_rows, cache);
     }
     else if (ReadBuffer * stream = settings.getter(settings.path))
     {
@@ -207,7 +207,7 @@ void SerializationStringSize::deserializeBinaryBulkWithSizeStream(
         {
             ColumnPtr column_for_cache;
             /// If rows_offset != 0 we should keep data without applied offsets in the cache to be able
-            /// to calculate offset for nested data in SerializationArray if the whole array is also read.
+            /// to calculate offset for string data in SerializationString if the whole string is also read.
             /// As we will apply offsets to the current column we cannot put in the cache, so we use cut()
             /// method to create a separate column with all the data from current range.
             if (rows_offset)

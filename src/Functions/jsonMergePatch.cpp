@@ -96,7 +96,7 @@ namespace
             auto parse_json_document = [](const ColumnString & column, rapidjson::Document & document, size_t i)
             {
                 auto str_ref = column.getDataAt(i);
-                document.Parse(str_ref.toString().c_str());
+                document.Parse(std::string{str_ref}.c_str());
 
                 if (document.HasParseError())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong JSON string to merge: {}", rapidjson::GetParseError_En(document.GetParseError()));

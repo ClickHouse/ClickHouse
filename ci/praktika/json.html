@@ -1283,29 +1283,35 @@
                         td.appendChild(link);
                     }
 
-                    // Create a container for labels and linklabels
-                    const labelsContainer = document.createElement('span');
-                    labelsContainer.className = 'labels-container';
-                    labelsContainer.style.userSelect = 'none'; // Prevent selection
-                    labelsContainer.style.marginLeft = '4px';
+                    // Helper to apply common label styling
+                    const applyLabelStyles = (element, text) => {
+                        element.textContent = text;
+                        element.style.marginLeft = '6px';
+                        element.style.padding = '2px 8px';
+                        element.style.backgroundColor = stringToColor(text, true);
+                        element.style.color = 'white';
+                        element.style.fontSize = '12px';
+                        element.style.borderRadius = '8px';
+                        element.style.fontWeight = 'bold';
+                        element.style.display = 'inline-block';
+                        element.style.verticalAlign = 'middle';
+                    };
 
+                    // Add whitespace before labels if any exist
+                    if ((labels && labels.length > 0) || (linklabels && linklabels.length > 0)) {
+                        td.appendChild(document.createTextNode(' '));
+                    }
+
+                    // Render plain labels
                     if (Array.isArray(labels)) {
                         labels.forEach(labelStr => {
                             const label = document.createElement('span');
-                            label.textContent = labelStr;
-                            label.style.marginLeft = '6px';
-                            label.style.padding = '2px 8px';
-                            label.style.backgroundColor = stringToColor(labelStr, true);
-                            label.style.color = 'white';
-                            label.style.fontSize = '12px';
-                            label.style.borderRadius = '8px';
-                            label.style.fontWeight = 'bold';
-                            label.style.display = 'inline-block';
-                            label.style.verticalAlign = 'middle';
-                            labelsContainer.appendChild(label);
+                            applyLabelStyles(label, labelStr);
+                            td.appendChild(label);
                         });
                     }
 
+                    // Render link labels
                     if (Array.isArray(linklabels)) {
                         linklabels.forEach(item => {
                             let text, href;
@@ -1319,40 +1325,16 @@
                                 href = '';
                             }
                             if (!text) return;
-                            if (href) {
-                                const a = document.createElement('a');
-                                a.textContent = text;
-                                a.href = href;
-                                a.target = '_blank';
-                                a.rel = 'noopener noreferrer';
-                                a.style.marginLeft = '6px';
-                                a.style.padding = '2px 8px';
-                                a.style.backgroundColor = stringToColor(text, true);
-                                a.style.color = 'white';
-                                a.style.fontSize = '12px';
-                                a.style.borderRadius = '8px';
-                                a.style.fontWeight = 'bold';
-                                a.style.display = 'inline-block';
-                                labelsContainer.appendChild(a);
-                            } else {
-                                const label = document.createElement('span');
-                                label.textContent = text;
-                                label.style.marginLeft = '6px';
-                                label.style.padding = '2px 8px';
-                                label.style.backgroundColor = stringToColor(text, true);
-                                label.style.color = 'white';
-                                label.style.fontSize = '12px';
-                                label.style.borderRadius = '8px';
-                                label.style.fontWeight = 'bold';
-                                label.style.display = 'inline-block';
-                                labelsContainer.appendChild(label);
-                            }
-                        });
-                    }
 
-                    // Only append if there are labels
-                    if (labelsContainer.childNodes.length > 0) {
-                        td.appendChild(labelsContainer);
+                            const element = href ? document.createElement('a') : document.createElement('span');
+                            if (href) {
+                                element.href = href;
+                                element.target = '_blank';
+                                element.rel = 'noopener noreferrer';
+                            }
+                            applyLabelStyles(element, text);
+                            td.appendChild(element);
+                        });
                     }
 
                 } else if (column === 'start_time') {
@@ -1399,11 +1381,9 @@
             infoCell.classList.add('info-text');
 
             if (infoText) {
-                let content = document.createElement('div');
-                infoCell.innerHTML = '<pre></pre>';
-                // Append content securely, without interpreting HTML tags.
-                infoCell.firstChild.textContent = infoText;
-                infoCell.appendChild(content);
+                const pre = document.createElement('pre');
+                pre.textContent = infoText;
+                infoCell.appendChild(pre);
             }
 
             // Handle subResults

@@ -369,6 +369,7 @@
 02402_merge_engine_with_view
     No order guarantee with group_by_overflow_mode='any'
 02180_group_by_lowcardinality
+03657_gby_overflow_any_sparse
 
     RMT zookeeper test
 01154_move_partition_long

@@ -25,9 +25,10 @@
 namespace DB
 {
 
-ConstantNode::ConstantNode(ConstantValue constant_value_, QueryTreeNodePtr source_expression_)
+    ConstantNode::ConstantNode(ConstantValue constant_value_, QueryTreeNodePtr source_expression_, bool is_deterministic_)
     : IQueryTreeNode(children_size)
     , constant_value(std::move(constant_value_))
+    , is_deterministic(is_deterministic_)
 {
     source_expression = std::move(source_expression_);
 }
@@ -153,7 +154,7 @@ void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions com
 
 QueryTreeNodePtr ConstantNode::cloneImpl() const
 {
-    return std::make_shared<ConstantNode>(constant_value, source_expression);
+    return std::make_shared<ConstantNode>(constant_value, source_expression, is_deterministic);
 }
 
 template <typename F>

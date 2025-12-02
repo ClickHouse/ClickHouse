@@ -474,7 +474,7 @@ namespace
                 ColumnString::Offset current_offset = 0;
                 for (size_t i = 0; i < size; ++i)
                 {
-                    const StringRef ref{&data[current_offset], offsets[i] - current_offset};
+                    const std::string_view ref{reinterpret_cast<const char *>(&data[current_offset]), offsets[i] - current_offset};
                     current_offset = offsets[i];
                     const auto * it = table.find(ref);
                     if (it)
@@ -551,7 +551,7 @@ namespace
             {
                 const char8_t * to = nullptr;
                 size_t to_size = 0;
-                const StringRef ref{&data[current_offset], offsets[i] - current_offset};
+                const std::string_view ref{reinterpret_cast<const char *>(&data[current_offset]), offsets[i] - current_offset};
                 current_offset = offsets[i];
                 const auto * it = table.find(ref);
                 if (it)
@@ -621,7 +621,7 @@ namespace
             ColumnString::Offset current_offset = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                const StringRef ref{&data[current_offset], offsets[i] - current_offset};
+                const std::string_view ref{reinterpret_cast<const char *>(&data[current_offset]), offsets[i] - current_offset};
                 current_offset = offsets[i];
                 const auto * it = table.find(ref);
                 if (it)
@@ -643,7 +643,7 @@ namespace
         struct Cache
         {
             using NumToIdx = HashMap<UInt64, size_t, HashCRC32<UInt64>>;
-            using StringToIdx = HashMap<StringRef, size_t, StringRefHash>;
+            using StringToIdx = HashMap<std::string_view, size_t, StringViewHash>;
             using AnythingToIdx = HashMap<UInt128, size_t>;
 
             std::unique_ptr<NumToIdx> table_num_to_idx;
@@ -768,10 +768,10 @@ namespace
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunreachable-code"
                         if constexpr (std::endian::native == std::endian::big)
-                            dst += sizeof(key) - ref.size;
+                            dst += sizeof(key) - ref.size();
 #pragma clang diagnostic pop
 
-                        memcpy(dst, ref.data, ref.size);
+                        memcpy(dst, ref.data(), ref.size());
                         table.insertIfNotPresent(key, i);
                     }
                 }
@@ -784,7 +784,7 @@ namespace
                 {
                     if (accurateEquals((*cache.from_column)[i], (*from_column_uncast)[i]))
                     {
-                        StringRef ref = cache.from_column->getDataAt(i);
+                        std::string_view ref = cache.from_column->getDataAt(i);
                         table.insertIfNotPresent(ref, i);
                     }
                 }

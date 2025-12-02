@@ -43,6 +43,7 @@ class WriteBuffer;
 
 /// List of available types supported in Settings object (!= MergeTreeSettings, MySQLSettings, etc)
 #define COMMON_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
+    M(CLASS_NAME, AggregateFunctionInputFormat) \
     M(CLASS_NAME, ArrowCompression) \
     M(CLASS_NAME, ArrowFlightDescriptorType) \
     M(CLASS_NAME, Bool) \

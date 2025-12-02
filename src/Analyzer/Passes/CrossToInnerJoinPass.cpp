@@ -152,8 +152,8 @@ public:
             /// If there is common key type, we can join on this condition
             if (common_key_type)
             {
-                auto left_src = getExpressionSource(lhs_equi_argument);
-                auto right_src = getExpressionSource(rhs_equi_argument);
+                auto left_src = getExpressionSource(lhs_equi_argument).first;
+                auto right_src = getExpressionSource(rhs_equi_argument).first;
 
                 if (left_src && right_src)
                 {

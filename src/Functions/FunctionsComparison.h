@@ -49,7 +49,6 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_not_comparable_types_in_comparison_functions;
     extern const SettingsBool validate_enum_literals_in_operators;
 }
 
@@ -654,12 +653,10 @@ struct ComparisonParams
 {
     bool check_decimal_overflow = false;
     bool validate_enum_literals_in_operators = false;
-    bool allow_not_comparable_types = false;
 
     explicit ComparisonParams(const ContextPtr & context)
         : check_decimal_overflow(decimalCheckComparisonOverflow(context))
         , validate_enum_literals_in_operators(context->getSettingsRef()[Setting::validate_enum_literals_in_operators])
-        , allow_not_comparable_types(context->getSettingsRef()[Setting::allow_not_comparable_types_in_comparison_functions])
     {}
 
     ComparisonParams() = default;
@@ -809,7 +806,7 @@ private:
             if (c0_const_string)
             {
                 c0_const_chars = &c0_const_string->getChars();
-                c0_const_size = c0_const_string->getDataAt(0).size;
+                c0_const_size = c0_const_string->getDataAt(0).size();
             }
             else if (c0_const_fixed_string)
             {
@@ -828,7 +825,7 @@ private:
             if (c1_const_string)
             {
                 c1_const_chars = &c1_const_string->getChars();
-                c1_const_size = c1_const_string->getDataAt(0).size;
+                c1_const_size = c1_const_string->getDataAt(0).size();
             }
             else if (c1_const_fixed_string)
             {
@@ -1175,29 +1172,24 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!params.allow_not_comparable_types)
+        if ((name == NameEquals::name || name == NameNotEquals::name))
         {
-            if ((name == NameEquals::name || name == NameNotEquals::name))
-            {
-                if (!arguments[0]->isComparableForEquality() || !arguments[1]->isComparableForEquality())
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable for equality."
-                        "Set setting allow_not_comparable_types_in_comparison_functions = 1 in order to allow it",
-                        backQuote(arguments[0]->getName()),
-                        backQuote(arguments[1]->getName()),
-                        backQuote(getName()));
-            }
-            else if (!arguments[0]->isComparable() || !arguments[1]->isComparable())
-            {
+            if (!arguments[0]->isComparableForEquality() || !arguments[1]->isComparableForEquality())
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable."
-                    "Set setting allow_not_comparable_types_in_comparison_functions = 1 in order to allow it",
+                    "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable for equality",
                     backQuote(arguments[0]->getName()),
                     backQuote(arguments[1]->getName()),
                     backQuote(getName()));
-            }
+        }
+        else if (!arguments[0]->isComparable() || !arguments[1]->isComparable())
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable",
+                backQuote(arguments[0]->getName()),
+                backQuote(arguments[1]->getName()),
+                backQuote(getName()));
         }
 
         WhichDataType left(arguments[0].get());
@@ -1231,6 +1223,7 @@ public:
 
             bool has_nullable = false;
             bool has_null = false;
+            bool has_nothing = false;
 
             const DataTypeTuple * any_tuple = left_tuple ? left_tuple : right_tuple;
             size_t size = any_tuple->getElements().size();
@@ -1244,8 +1237,16 @@ public:
                     element_type = func->build(args)->getResultType();
                 }
                 has_nullable = has_nullable || element_type->isNullable() || isDynamic(element_type);
+
+                /// Nullable(Nothing)
                 has_null = has_null || element_type->onlyNull();
+
+                /// Nothing
+                has_nothing = has_nothing || isNothing(element_type);
             }
+
+            if (has_nothing)
+                return std::make_shared<DataTypeNothing>();
 
             // In null-safe cmp mode, return DataTypeUInt8
             if (is_null_safe_cmp_mode)

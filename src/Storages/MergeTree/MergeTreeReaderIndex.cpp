@@ -56,7 +56,7 @@ size_t MergeTreeReaderIndex::readRows(
     size_t total_rows = data_part_info_for_read->getIndexGranularity().getTotalRows();
     if (starting_row < total_rows)
         max_rows_to_read = std::min(max_rows_to_read, total_rows - starting_row);
-
+    max_rows_to_read = std::min(max_rows_to_read, data_part_info_for_read->getRowCount());
     /// If projection index is available, attempt to construct the filter column
     if (index_read_result->projection_index_read_result)
     {

@@ -307,6 +307,18 @@ public:
         }
     }
 
+    void ALWAYS_INLINE insertIfNotPresent(const Key & x, size_t hash, const typename Cell::Mapped & value)
+    {
+        LookupResult it;
+        bool inserted;
+        this->emplace(x, it, inserted, hash);
+        if (inserted)
+        {
+            new (&it->getMapped()) typename Cell::Mapped();
+            it->getMapped() = value;
+        }
+    }
+
     const typename Cell::Mapped & ALWAYS_INLINE at(const Key & x) const
     {
         if (auto it = this->find(x); it != this->end())

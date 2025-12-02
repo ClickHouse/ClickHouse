@@ -97,10 +97,7 @@ public:
         : Base(cache_policy, CurrentMetrics::IcebergMetadataFilesCacheBytes, CurrentMetrics::IcebergMetadataFilesCacheFiles, max_size_in_bytes, max_count, size_ratio)
     {}
 
-    static String getKey(StorageObjectStorageConfigurationPtr config, const String & data_path)
-    {
-        return std::filesystem::path(config->getDataSourceDescription()) / data_path;
-    }
+    static String getKey(const String& table_uuid, const String & data_path) { return table_uuid + data_path; }
 
     template <typename LoadFunc>
     String getOrSetTableMetadata(const String & data_path, LoadFunc && load_fn)

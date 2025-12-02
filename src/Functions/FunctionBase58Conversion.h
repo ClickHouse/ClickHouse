@@ -29,9 +29,14 @@ struct Base58DecodeTraits
     template <typename Col>
     static size_t getBufferSize(Col const & src_column)
     {
-        auto const string_length = src_column.getChars().size();
-        /// decoded size is at most length of encoded (every 8 bytes becomes at most 6 bytes)
-        return (string_length * 6 + 7) / 8;
+        /// According to the RFC https://datatracker.ietf.org/doc/html/draft-msporny-base58-03
+        /// base58 doesn't have a clean bitsequence-to-character mapping like base32 or base64.
+        /// Instead, it uses division by 58 and modulo operations on big integers.
+        /// In addition all the leading zeros are converted to "1"s as is.
+        /// Thus, if we decode the can have at most same amount of bytes as a result.
+        /// Example:
+        /// "11111" (5 chars) -> b'\x00\x00\x00\x00\x00' (5 bytes)
+        return src_column.getChars().size();
     }
 
     static std::optional<size_t> perform(std::string_view src, UInt8 * dst)
