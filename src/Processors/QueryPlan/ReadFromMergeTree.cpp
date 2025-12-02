@@ -3323,7 +3323,7 @@ std::shared_ptr<ParallelReadingExtension> ReadFromMergeTree::getParallelReadingE
         context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount());
 }
 
-void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns)
+void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final)
 {
     index_read_tasks.clear();
 
@@ -3377,7 +3377,7 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
             /// Create tasks for text indexes which don't read virtual columns.
             /// It's required to always read text indexes on separate step on data read.
             if (!index_read_tasks.contains(index.index->index.name))
-                index_read_tasks.emplace(index.index->index.name, IndexReadTask{.columns = {}, .index = index});
+                index_read_tasks.emplace(index.index->index.name, IndexReadTask{.columns = {}, .index = index, .is_final = is_final});
         }
     }
 
