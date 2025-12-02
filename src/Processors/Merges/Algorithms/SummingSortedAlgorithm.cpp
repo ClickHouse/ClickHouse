@@ -503,7 +503,7 @@ static void postprocessChunk(
         if (!desc.aggregate_all_columns && !desc.is_agg_func_type && !desc.is_simple_agg_func_type && isTuple(desc.function->getResultType()))
         {
             /// Unpack tuple into block.
-            size_t tuple_size = desc.column_numbers.size();
+            const size_t tuple_size = desc.column_numbers.size();
             for (size_t i = 0; i < tuple_size; ++i)
                res_columns[desc.column_numbers[i]] = assert_cast<const ColumnTuple &>(*column).getColumnPtr(i);
         }
@@ -585,7 +585,7 @@ void SummingSortedAlgorithm::SummingMergedData::initialize(const DB::Block & hea
         // Wrap aggregated columns in a tuple to match function signature
         if (!desc.aggregate_all_columns && !desc.is_agg_func_type && !desc.is_simple_agg_func_type && isTuple(desc.function->getResultType()))
         {
-            size_t tuple_size = desc.column_numbers.size();
+            const size_t tuple_size = desc.column_numbers.size();
             MutableColumns tuple_columns(tuple_size);
             for (size_t i = 0; i < tuple_size; ++i)
                 tuple_columns[i] = std::move(columns[desc.column_numbers[i]]);
