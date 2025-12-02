@@ -6799,7 +6799,7 @@ When used in conjunction with [parallel_replicas_custom_key_range_lower](#parall
 
 Note: This setting will not cause any additional data to be filtered during query processing, rather it changes the points at which the range filter breaks up the range `[0, INT_MAX]` for parallel processing
 )", BETA) \
-    DECLARE(String, cluster_for_parallel_replicas, "parallel_replicas", R"(
+    DECLARE(String, cluster_for_parallel_replicas, "", R"(
 Cluster for a shard in which current server is located
 )", BETA) \
     DECLARE(Bool, parallel_replicas_allow_in_with_subquery, true, R"(

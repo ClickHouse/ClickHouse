@@ -329,8 +329,8 @@ void considerEnablingParallelReplicas(
     if (optimization_settings.force_use_projection)
         return;
 
-    bool should_apply_optimization = true;
     Stack stack;
+    bool should_apply_optimization = true;
     traverseQueryPlan(
         stack,
         root,

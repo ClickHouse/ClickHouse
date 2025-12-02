@@ -183,7 +183,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/))
     , planner(query_tree, select_query_options)
     , query_plan_with_parallel_replicas_builder(
-          [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names]() mutable
+          [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names]()
           {
               if (ctx->getSettingsRef()[Setting::cluster_for_parallel_replicas].value.empty())
               {
@@ -222,7 +222,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
            ctx = Context::createCopy(context_),
            storage = storage_,
            select_options = select_query_options_,
-           column_names]() mutable
+           column_names]()
           {
               if (ctx->getSettingsRef()[Setting::cluster_for_parallel_replicas].value.empty())
               {
@@ -251,7 +251,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , query_tree(query_tree_)
     , planner(query_tree_, select_query_options)
     , query_plan_with_parallel_replicas_builder(
-          [tree = query_tree_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_]() mutable
+          [tree = query_tree_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_]()
           {
               if (ctx->getSettingsRef()[Setting::cluster_for_parallel_replicas].value.empty())
               {
