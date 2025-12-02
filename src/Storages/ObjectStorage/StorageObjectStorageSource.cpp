@@ -4,8 +4,8 @@
 #include <Common/setThreadName.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Disks/ObjectStorages/ObjectStorageIterator.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <IO/Archives/ArchiveUtils.h>

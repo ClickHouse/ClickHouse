@@ -8,7 +8,7 @@ Ngram tokenizer
 []	Array(String)	1
 ['abc','bc ','c d',' de','def']	Array(String)	1
 ['abc','bc ','c d',' de','def']	Array(String)	1
-['abc def']	Array(String)	1
+[]	Array(String)	1
 Split tokenizer
 []	Array(String)	1
 ['  a  bc d']	Array(String)	1
