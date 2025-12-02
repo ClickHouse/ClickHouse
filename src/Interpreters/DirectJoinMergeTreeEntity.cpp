@@ -27,6 +27,7 @@
 #include <Planner/Utils.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/ArenaAllocator.h>
+#include <Functions/CastOverloadResolver.h>
 
 
 namespace ProfileEvents
@@ -160,12 +161,26 @@ Chunk DirectJoinMergeTreeEntity::getByKeys(
 
     const size_t num_keys = keys[0].column->size();
     if (num_keys == 0)
-    {
         return Chunk(sample_block.cloneEmptyColumns(), 0);
-    }
+
+    if (filter_dag.getOutputs().size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Filter DAG must have single output");
 
     QueryPlan plan = lookup_plan.clone();
     plan.addStep(buildFilterStepWithIn(keys[0], filter_dag.clone(), plan.getCurrentHeader()));
+
+    const String & key_column_name = filter_dag.getOutputs().front()->result_name;
+    auto plan_header = plan.getCurrentHeader();
+    size_t key_column_idx = plan_header->getPositionByName(key_column_name);
+    auto header_key_column = plan_header->getByPosition(key_column_idx);
+
+    /// We need to convert key type to common type to perform comparison via hash map.
+    FunctionBasePtr func_cast = nullptr;
+    if (!header_key_column.type->equals(*keys[0].type))
+        /// Left key type expected to be supertype of columns from left and right sides.
+        /// It's checked during analysis and planning.
+        /// So, here we expect that column from right side can be safely casted to that supertype.
+        func_cast = createInternalCast(header_key_column, keys[0].type, CastType::accurate, {}, context);
 
     auto found_chunk = executePlan(plan);
 
@@ -179,16 +194,15 @@ Chunk DirectJoinMergeTreeEntity::getByKeys(
         return Chunk(std::move(result_columns), num_keys);
     }
 
-    /// Get the join key column from the result to map back to input keys
-    if (filter_dag.getOutputs().size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Filter DAG must have single output");
-
-    const String & key_column_name = filter_dag.getOutputs().front()->result_name;
-    size_t key_column_idx = lookup_plan.getCurrentHeader()->getPositionByName(key_column_name);
-
     size_t num_found_rows = found_chunk.getNumRows();
-    const auto & found_columns = found_chunk.mutateColumns();
-    const auto & found_key_column = found_columns[key_column_idx];
+
+    auto found_key_column = found_chunk.getColumns()[key_column_idx];
+    if (func_cast)
+    {
+        found_key_column = func_cast->execute(
+            ColumnsWithTypeAndName{{found_key_column, header_key_column.type, ""}},
+            keys[0].type, found_key_column->size(), false);
+    }
 
     using IndexPositions = PODArray<UInt64, 4, AlignedArenaAllocator<sizeof(UInt64)>>;
 
@@ -197,20 +211,24 @@ Chunk DirectJoinMergeTreeEntity::getByKeys(
     using Method = ColumnsHashing::HashMethodHashed<typename Map::value_type, typename Map::mapped_type, false>;
 
     Map key_to_rows;
-    Method method({found_key_column.get()}, {}, nullptr);
     Arena pool;
 
+    Method method({found_key_column.get()}, {}, nullptr);
     for (size_t i = 0; i < num_found_rows; ++i)
     {
         auto emplace_result = method.emplaceKey(key_to_rows, i, pool);
         auto & row_list = emplace_result.getMapped();
         row_list.push_back(i, &pool);
     }
+    /// All values inserted, can release the column
+    found_key_column.reset();
 
     Method key_getter({keys[0].column.get()}, {}, nullptr);
 
     out_offsets.reserve(num_keys);
     out_null_map.reserve(num_keys);
+
+    const auto & found_columns = found_chunk.mutateColumns();
 
     for (const auto & col : found_columns)
         col->insertDefault();
