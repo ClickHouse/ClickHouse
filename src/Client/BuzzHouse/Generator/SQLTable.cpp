@@ -407,6 +407,7 @@ void StatementGenerator::generateNextCodecs(RandomGenerator & rg, CodecList * cl
             case COMP_Delta:
             case COMP_DoubleDelta:
             case COMP_Gorilla:
+            case COMP_ALP:
                 if (rg.nextBool())
                 {
                     std::uniform_int_distribution<uint32_t> next_dist(0, 3);

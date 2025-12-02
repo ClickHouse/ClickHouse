@@ -3197,6 +3197,7 @@ enum CompressionCodec {
     //COMP_SZ3 = 14;
     COMP_AES_128_GCM_SIV = 14;
     COMP_AES_256_GCM_SIV = 15;
+    COMP_ALP = 16;
 }
 
 message IndexKeyVal {
