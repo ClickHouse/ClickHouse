@@ -409,7 +409,8 @@ public:
         else
         {
             const char * begin = nullptr;
-            auto str_serialized = columns[0]->serializeAggregationStateValueIntoArena(row_num, *arena, begin);
+            auto settings = IColumn::SerializationSettings::createForAggregationState();
+            auto str_serialized = columns[0]->serializeValueIntoArena(row_num, *arena, begin, &settings);
             if constexpr (is_weighted)
                 set.insert(str_serialized, columns[1]->getUInt(row_num));
             else

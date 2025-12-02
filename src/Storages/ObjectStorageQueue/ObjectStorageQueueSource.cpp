@@ -289,19 +289,29 @@ ObjectStorageQueueSource::FileIterator::next()
                         }
                         else
                         {
-                            String data;
-                            for (const auto & path : processing_paths)
+                            auto processing_paths_responses = zk_client->tryGet(processing_paths);
+                            for (size_t i = 0; i < processing_paths_responses.size(); ++i)
                             {
-                                if (!zk_client->tryGet(path, data))
+                                const auto & response = processing_paths_responses[i];
+                                if (response.error == Coordination::Error::ZNONODE)
                                 {
-                                    LOG_TEST(log, "Path {} does not exist", path);
+                                    LOG_TEST(log, "Path {} does not exist", processing_paths[i]);
                                     failed = true;
                                     break;
                                 }
-
-                                LOG_TEST(log, "Having {}, current processor: {}", data, processor_info);
-                                if (data != processor_info)
+                                if (response.error == Coordination::Error::ZOK)
                                 {
+                                    LOG_TEST(log, "Having {}, current processor: {}", response.data, processor_info);
+                                    if (response.data != processor_info)
+                                    {
+                                        failed = true;
+                                        break;
+                                    }
+                                }
+                                else
+                                {
+                                    LOG_WARNING(log, "Unexpected error: {}, path: {}", response.error, processing_paths[i]);
+                                    chassert(false);
                                     failed = true;
                                     break;
                                 }
@@ -1249,51 +1259,63 @@ void ObjectStorageQueueSource::finalizeCommit(
     if (processed_files.empty())
         return;
 
+    std::exception_ptr finalize_exception;
     for (const auto & [file_state, file_metadata, exception_during_read] : processed_files)
     {
-        switch (file_state)
+        try
         {
-            case FileState::Processed:
+            switch (file_state)
             {
-                if (insert_succeeded)
+                case FileState::Processed:
                 {
-                    file_metadata->finalizeProcessed();
+                    if (insert_succeeded)
+                    {
+                        file_metadata->finalizeProcessed();
+                    }
+                    else
+                    {
+                        file_metadata->finalizeFailed(exception_message);
+                    }
+                    break;
                 }
-                else
+                case FileState::Cancelled: [[fallthrough]];
+                case FileState::Processing:
                 {
+                    if (insert_succeeded)
+                    {
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Unexpected state {} of file {} while insert succeeded",
+                            file_state, file_metadata->getPath());
+                    }
+
                     file_metadata->finalizeFailed(exception_message);
+                    break;
                 }
-                break;
-            }
-            case FileState::Cancelled: [[fallthrough]];
-            case FileState::Processing:
-            {
-                if (insert_succeeded)
+                case FileState::ErrorOnRead:
                 {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Unexpected state {} of file {} while insert succeeded",
-                        file_state, file_metadata->getPath());
+                    chassert(!exception_during_read.empty());
+                    file_metadata->finalizeFailed(exception_during_read);
+                    break;
                 }
+            }
 
-                file_metadata->finalizeFailed(exception_message);
-                break;
-            }
-            case FileState::ErrorOnRead:
-            {
-                chassert(!exception_during_read.empty());
-                file_metadata->finalizeFailed(exception_during_read);
-                break;
-            }
+            appendLogElement(
+                file_metadata,
+                /* processed */insert_succeeded && file_state == FileState::Processed,
+                commit_id,
+                commit_time,
+                transaction_start_time_);
         }
-
-        appendLogElement(
-            file_metadata,
-            /* processed */insert_succeeded && file_state == FileState::Processed,
-            commit_id,
-            commit_time,
-            transaction_start_time_);
+        catch (...)
+        {
+            tryLogCurrentException(log);
+            if (!finalize_exception)
+                finalize_exception = std::current_exception();
+        }
     }
+    if (finalize_exception)
+        std::rethrow_exception(finalize_exception);
 }
 
 void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string & exception_message)
