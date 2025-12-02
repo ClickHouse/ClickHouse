@@ -111,19 +111,11 @@ Chunk ParquetV3BlockInputFormat::read()
         Parquet::Prefetcher temp_prefetcher;
         parquet::format::FileMetaData file_metadata;
         temp_prefetcher.init(in, read_options, parser_shared_resources);
-        if (metadata_cache && dynamic_cast<ReadBufferFromS3*>(in))
+        if (metadata_cache)
         {
-            auto [file_path, etag] = extractFilePathAndETagFromReadBuffer(*in);
-            if (etag != "s3_metadata_unavailable")
-            {
-                ParquetMetadataCacheKey cache_key = ParquetV3MetadataCache::createKey(file_path, etag);
-                file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() { return Parquet::Reader::readFileMetaData(temp_prefetcher); });
-            }
-            else
-            {
-                /// S3 file but no ETag available - read directly without caching
-                file_metadata = Parquet::Reader::readFileMetaData(temp_prefetcher);
-            }
+            auto [file_path, file_attr] = extractObjectAttributes(*in);
+            ParquetMetadataCacheKey cache_key = ParquetV3MetadataCache::createKey(file_path, file_attr);
+            file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() { return Parquet::Reader::readFileMetaData(temp_prefetcher); });
         }
         else
         {
@@ -185,19 +177,11 @@ void NativeParquetSchemaReader::initializeIfNeeded()
         return;
     Parquet::Prefetcher prefetcher;
     prefetcher.init(&in, read_options, /*parser_shared_resources_=*/ nullptr);
-    if (metadata_cache && dynamic_cast<ReadBufferFromS3*>(&in))
+    if (metadata_cache)
     {
-        auto [file_path, etag] = extractFilePathAndETagFromReadBuffer(in);
-        if (etag != "s3_metadata_unavailable")
-        {
-            ParquetMetadataCacheKey cache_key = ParquetV3MetadataCache::createKey(file_path, etag);
-            file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() { return Parquet::Reader::readFileMetaData(prefetcher); });
-        }
-        else
-        {
-            /// S3 file but no ETag available - read directly without caching
-            file_metadata = Parquet::Reader::readFileMetaData(prefetcher);
-        }
+        auto [file_path, file_attr] = extractObjectAttributes(in);
+        ParquetMetadataCacheKey cache_key = ParquetV3MetadataCache::createKey(file_path, file_attr);
+        file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() { return Parquet::Reader::readFileMetaData(prefetcher); });
     }
     else
     {

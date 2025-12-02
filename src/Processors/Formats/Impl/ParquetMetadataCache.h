@@ -232,7 +232,8 @@ using ParquetMetadataCachePtr = std::shared_ptr<ParquetMetadataCache>;
 using ParquetV3MetadataCachePtr = std::shared_ptr<ParquetV3MetadataCache>;
 /// Utility function to extract file path and ETag from ReadBuffer for cache key creation
 /// Returns pair of (file_path, etag) - works with S3 ReadBuffers
-std::pair<String, String> extractFilePathAndETagFromReadBuffer(ReadBuffer & in);
+std::pair<String, String> extractObjectAttributes(ReadBuffer & in);
+std::optional<ObjectMetadata> tryGetObjectMetadata(ReadBuffer & in);
 
 }
 

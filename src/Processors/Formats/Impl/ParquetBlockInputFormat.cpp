@@ -713,21 +713,12 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     if (is_stopped)
         return;
 
-    /// Use cache if available and file is remote, otherwise read directly
-    if (metadata_cache && dynamic_cast<ReadBufferFromS3*>(in))
+    /// Use cache if available
+    if (metadata_cache)
     {
-        /// Only cache S3 files since they have reliable ETags
-        auto [file_path, etag] = extractFilePathAndETagFromReadBuffer(*in);
-        if (etag != "s3_metadata_unavailable")
-        {
-            ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_path, etag);
-            metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() { return parquet::ReadMetaData(arrow_file); });
-        }
-        else
-        {
-            /// S3 file but no ETag available - read directly without caching
-            metadata = parquet::ReadMetaData(arrow_file);
-        }
+        auto [file_path, file_attr] = extractObjectAttributes(*in);
+        ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_path, file_attr);
+        metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() { return parquet::ReadMetaData(arrow_file); });
     }
     else
     {
@@ -1371,14 +1362,11 @@ void ArrowParquetSchemaReader::initializeIfNeeded()
 
     std::atomic<int> is_stopped{0};
     arrow_file = asArrowFile(in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true);
-    if (metadata_cache && dynamic_cast<ReadBufferFromS3*>(&in))
+    if (metadata_cache)
     {
-        auto [file_path, etag] = extractFilePathAndETagFromReadBuffer(in);
-        if (etag != "s3_metadata_unavailable")
-        {
-            ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_path, etag);
-            metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() { return parquet::ReadMetaData(arrow_file); });
-        }
+        auto [file_path, file_attr] = extractObjectAttributes(in);
+        ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_path, file_attr);
+        metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() { return parquet::ReadMetaData(arrow_file); });
     }
     metadata = parquet::ReadMetaData(arrow_file);
 }
