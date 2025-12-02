@@ -1715,11 +1715,17 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                         if (check_in_range(result_exact_range, BoolMask::consider_only_can_be_false).can_be_false)
                         {
                             /// key_condition.matchesExactContinuousRange returned true, but the
-                            /// range doesn't seem to be continuous.
+                            /// range doesn't seem to be continuous. Something's broken.
+                            /// TODO: Remove the #ifndef and always throw after
+                            ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
+#ifndef NDEBUG
                             throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent KeyCondition behavior");
+#endif
                         }
-
-                        exact_ranges->emplace_back(std::move(result_exact_range));
+                        else
+                        {
+                            exact_ranges->emplace_back(std::move(result_exact_range));
+                        }
                     }
                 }
             }
