@@ -4,12 +4,28 @@
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <Common/ErrorCodes.h>
 
 #include <base/types.h>
 #include <gtest/gtest.h>
 
 
-using namespace DB;
+#define EXPECT_THROW_ERROR_CODE(statement, expected_exception, expected_code) \
+    EXPECT_THROW( \
+        try { statement; } catch (const expected_exception & e) { \
+            EXPECT_EQ(expected_code, e.code()); \
+            throw; \
+        }, \
+        expected_exception)
+
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
 
 TEST(QBitSerialization, FieldBinarySerializationFloat32)
 {
@@ -57,5 +73,7 @@ TEST(QBitSerialization, FieldBinarySerializationFloat32)
 TEST(QBitSerialization, RejectInvalidElementType)
 {
     auto int32_type = DataTypeFactory::instance().get("Int32");
-    EXPECT_THROW(std::make_shared<DataTypeQBit>(int32_type, 5), DB::Exception);
+    EXPECT_THROW_ERROR_CODE(std::make_shared<DataTypeQBit>(int32_type, 5), Exception, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+}
+
 }
