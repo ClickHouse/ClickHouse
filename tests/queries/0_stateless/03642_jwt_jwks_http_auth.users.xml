@@ -3,15 +3,9 @@
         <default/>
     </profiles>
 
-    <named_collections>
-        <my_static_jwks>
-            <jwks/>
-        </my_static_jwks>
-    </named_collections>
-
     <users>
         <default>
-            <static_jwks>my_static_jwks</static_jwks>
+            <jwks>my_static_jwks</jwks>
 
             <networks>
                 <ip>::/0</ip>
@@ -20,17 +14,6 @@
             <access_management>1</access_management>
             <named_collection_control>1</named_collection_control>
         </default>
-
-        <user_jwt>
-            <static_jwks>my_static_jwks</static_jwks>
-
-            <networks>
-                <ip>::/0</ip>
-            </networks>
-
-            <access_management>1</access_management>
-            <named_collection_control>1</named_collection_control>
-        </user_jwt>
     </users>
 
     <quotas>

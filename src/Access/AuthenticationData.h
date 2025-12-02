@@ -59,6 +59,10 @@ public:
     const String & getKerberosRealm() const { return kerberos_realm; }
     void setKerberosRealm(const String & realm) { kerberos_realm = realm; }
 
+    /// Sets named collection fo JWK.
+    const String & getNamedCollection() const { return named_collection; }
+    void setNamedCollection(const String & named_collection_) { named_collection = named_collection_; }
+
 #if USE_SSL
     const X509Certificate::Subjects & getSSLCertificateSubjects() const { return ssl_certificate_subjects; }
     void setSSLCertificateSubjects(X509Certificate::Subjects && ssl_certificate_subjects_);
@@ -117,6 +121,7 @@ private:
     String http_auth_server_name;
     HTTPAuthenticationScheme http_auth_scheme = HTTPAuthenticationScheme::BASIC;
     time_t valid_until = 0;
+    String named_collection;
 };
 
 }

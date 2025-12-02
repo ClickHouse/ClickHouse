@@ -7,6 +7,7 @@
 #include <Common/Base64.h>
 #include <Common/Crypto/X509Certificate.h>
 #include <Common/Exception.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/SSHWrapper.h>
 #include <Common/typeid_cast.h>
 #include <Poco/SHA1Engine.h>
@@ -234,10 +235,18 @@ namespace
     {
         switch (authentication_method.getType())
         {
-            case AuthenticationType::JWT:
+            case AuthenticationType::JWKS:
             {
-                auto jwks_str = AuthenticationData::Util::digestToString(authentication_method.getPasswordHashBinary());
-                JWTCredentials jwt_creds(bearer_credentials->getToken(), jwks_str);
+                constexpr const char * jwks_col_key = "jwks";
+
+                NamedCollectionFactory::instance().loadIfNot();
+                const String collection_name = authentication_method.getNamedCollection();
+                NamedCollectionPtr collection = NamedCollectionFactory::instance().tryGet(collection_name);
+                if (!collection || !collection->has(jwks_col_key))
+                    return false;
+                auto jwks_string = collection->get<String>(jwks_col_key);
+
+                JWTCredentials jwt_creds(bearer_credentials->getToken(), jwks_string);
                 return jwt_creds.isValid() && jwt_creds.getUserName() == bearer_credentials->getUserName();
             }
             case AuthenticationType::HTTP:

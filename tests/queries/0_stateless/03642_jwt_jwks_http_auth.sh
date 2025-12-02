@@ -33,15 +33,17 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CONFIG_FILE=$CURDIR/$(basename "${BASH_SOURCE[0]}" .sh).config.xml
 USERS_FILE=$CURDIR/$(basename "${BASH_SOURCE[0]}" .sh).users.xml
 
+mkdir -p $CURDIR/access_03642
 cp $USERS_FILE $CURDIR/users.xml
-sed -i "s|<jwks\/>|<jwks>$JWKS<\/jwks>|g" $CURDIR/users.xml
+cp $CONFIG_FILE $CURDIR/config.xml
+sed -i "s|<jwks\/>|<jwks>$JWKS<\/jwks>|g" $CURDIR/config.xml
 
 export CLICKHOUSE_CURL_TIMEOUT=2
 
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-CLICKHOUSE_WATCHDOG_ENABLE=0 $CLICKHOUSE_SERVER_BINARY --config-file=$CONFIG_FILE &> $CURDIR/clickhouse-server.stderr &
+CLICKHOUSE_WATCHDOG_ENABLE=0 $CLICKHOUSE_SERVER_BINARY --config-file=$CURDIR/config.xml &> $CURDIR/clickhouse-server.stderr &
 server_pid=$!
 
 CLICKHOUSE_URL="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:3642"
@@ -63,6 +65,8 @@ echo "SELECT 42" | ${CLICKHOUSE_CURL} -sS -i -H "Authorization: never" "${CLICKH
 ${CLICKHOUSE_CURL} -sS -H "Authorization: Bearer $JWT" "${CLICKHOUSE_URL}" -d "SELECT 42"
 ${CLICKHOUSE_CURL} -sS -i "${CLICKHOUSE_URL}" -d "SELECT 42" | grep -c 'X-ClickHouse-Exception-Code: 194'
 ${CLICKHOUSE_CURL} -sS -i -H "Authorization: never" "${CLICKHOUSE_URL}" -d "SELECT 42" | grep -c 'X-ClickHouse-Exception-Code: 516'
+
+echo "CREATE USER user_jwt IDENTIFIED WITH jwks BY 'my_static_jwks'" | ${CLICKHOUSE_CURL} -sS -H "Authorization: Bearer $JWT" "${CLICKHOUSE_URL}" --data-binary @-
 
 echo "SELECT 42" | ${CLICKHOUSE_CURL} -sS -H "Authorization: Bearer $JWT_2" "${CLICKHOUSE_URL}" --data-binary @-
 ${CLICKHOUSE_CURL} -sS -H "Authorization: Bearer $JWT_2" "${CLICKHOUSE_URL}" -d "SELECT 42"

@@ -50,6 +50,9 @@ enum class AuthenticationType : uint8_t
     /// Internal user. It's impossible to log in to this user.
     NO_AUTHENTICATION,
 
+    /// JWT over static JSON Web Key Set
+    JWKS,
+
     /// NOT an AuthenticationType. It is used indicate the element number of AuthenticationType.
     /// It should always be placed at the bottom of the element list.
     MAX,

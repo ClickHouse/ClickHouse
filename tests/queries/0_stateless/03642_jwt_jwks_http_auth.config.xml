@@ -15,6 +15,14 @@
     <path>.</path>
     <mark_cache_size>0</mark_cache_size>
 
+    <access_control_path>access_03642</access_control_path>
+
+    <named_collections>
+        <my_static_jwks>
+            <jwks/>
+        </my_static_jwks>
+    </named_collections>
+
     <user_directories>
         <users_xml>
             <path>users.xml</path>
