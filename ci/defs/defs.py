@@ -187,18 +187,6 @@ DOCKERS = [
         depends_on=[],
     ),
     Docker.Config(
-        name="clickhouse/test-mysql80",
-        path="./ci/docker/integration/mysql80",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
-    ),
-    Docker.Config(
-        name="clickhouse/test-mysql57",
-        path="./ci/docker/integration/mysql57",
-        platforms=Docker.Platforms.AMD,
-        depends_on=[],
-    ),
-    Docker.Config(
         name="clickhouse/mysql-golang-client",
         path="./ci/docker/integration/mysql_golang_client",
         platforms=Docker.Platforms.arm_amd,

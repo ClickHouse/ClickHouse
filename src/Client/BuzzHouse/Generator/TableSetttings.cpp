@@ -48,15 +48,6 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"allow_summing_columns_in_partition_or_order_key", trueOrFalseSetting},
     {"allow_suspicious_indices", trueOrFalseSetting},
     {"allow_vertical_merges_from_compact_to_wide_parts", trueOrFalseSetting},
-    {"alter_column_secondary_index_mode",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &)
-         {
-             static const DB::Strings & choices = {"'throw'", "'drop'", "'rebuild'", "'compatibility'"};
-             return rg.pickRandomly(choices);
-         },
-         {"'throw'", "'drop'", "'rebuild'", "'compatibility'"},
-         false)},
     {"always_fetch_merged_part", trueOrFalseSetting},
     {"always_use_copy_instead_of_hardlinks", trueOrFalseSetting},
     {"apply_patches_on_merge", trueOrFalseSetting},
@@ -458,15 +449,6 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
              return rg.pickRandomly(choices);
          },
          {"'single_stream'", "'with_size_stream'"},
-         false)},
-    {"nullable_serialization_version",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &)
-         {
-             static const DB::Strings & choices = {"'basic'", "'allow_sparse'"};
-             return rg.pickRandomly(choices);
-         },
-         {"'basic'", "'allow_sparse'"},
          false)},
     {"table_disk", trueOrFalseSetting},
     {"ttl_only_drop_parts", trueOrFalseSetting},

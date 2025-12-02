@@ -49,7 +49,6 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 interactive_delay;
-    extern const SettingsAggregateFunctionInputFormat aggregate_function_input_format;
     extern const SettingsBool allow_special_serialization_kinds_in_output_formats;
 }
 
@@ -361,7 +360,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.client_protocol_version = context->getClientProtocolVersion();
     format_settings.allow_special_bool_values_inside_variant = settings[Setting::allow_special_bool_values_inside_variant];
     format_settings.max_block_size_bytes = settings[Setting::input_format_max_block_size_bytes];
-    format_settings.aggregate_function_input_format = settings[Setting::aggregate_function_input_format];
     format_settings.allow_special_serialization_kinds = settings[Setting::allow_special_serialization_kinds_in_output_formats];
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
@@ -669,13 +667,6 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     format->setProgressWriteFrequencyMicroseconds(context->getSettingsRef()[Setting::interactive_delay]);
 
     return format;
-}
-
-OutputFormatPtr FormatFactory::getDefaultJSONEachRowOutputFormat(WriteBuffer & buf, const Block & sample) const
-{
-    const auto & output_getter = getCreators("JSONEachRow").output_creator;
-    chassert(output_getter);
-    return output_getter(buf, sample, {}, {});
 }
 
 String FormatFactory::getContentType(const String & name, const std::optional<FormatSettings> & settings) const

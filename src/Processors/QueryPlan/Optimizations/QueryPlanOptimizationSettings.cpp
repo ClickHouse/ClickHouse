@@ -36,7 +36,6 @@ namespace Setting
     extern const SettingsBool query_plan_split_filter;
     extern const SettingsBool query_plan_try_use_vector_search;
     extern const SettingsBool query_plan_convert_join_to_in;
-    extern const SettingsBool query_plan_remove_unused_columns;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool query_condition_cache_store_conditions_as_plaintext;
     extern const SettingsBool collect_hash_table_stats_during_joins;
@@ -60,7 +59,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool make_distributed_plan;
-    extern const SettingsNonZeroUInt64 distributed_plan_default_shuffle_join_bucket_count;
+    extern const SettingsUInt64 distributed_plan_default_shuffle_join_bucket_count;
     extern const SettingsUInt64 distributed_plan_default_reader_bucket_count;
     extern const SettingsBool distributed_plan_optimize_exchanges;
     extern const SettingsString distributed_plan_force_exchange_kind;
@@ -131,7 +130,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         ? std::nullopt
         : std::make_optional(from[Setting::query_plan_join_swap_table].base);
     use_join_disjunctions_push_down = from[Setting::query_plan_enable_optimizations] && from[Setting::use_join_disjunctions_push_down];
-    remove_unused_columns = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_remove_unused_columns];
 
     optimize_prewhere = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_optimize_prewhere];
     read_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_read_in_order] && from[Setting::query_plan_read_in_order];

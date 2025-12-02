@@ -204,7 +204,7 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     ColumnsDescription fake_column_descriptions{};
     // Add columns from index to ensure names are unique in case of duplicated columns.
     for (const auto & column : header.getIndexByName())
-        fake_column_descriptions.add(ColumnDescription(column.first, header.getByPosition(column.second).type), /*after_column=*/ "", /*first=*/false, /*add_subcolumns=*/false);
+        fake_column_descriptions.add(ColumnDescription(column.first, header.getByPosition(column.second).type));
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
     QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
 
@@ -296,10 +296,6 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
     for (size_t i = 0; i < available_columns.size(); ++i, ++available_column)
     {
         if (res_columns[i] == nullptr || isColumnConst(*res_columns[i]))
-            continue;
-
-        /// Small hack. Currently sparse serialization is not supported with Arrays.
-        if (res_columns[i]->isSparse())
             continue;
 
         auto serialization_info = available_column->type->getSerializationInfo(*res_columns[i]);

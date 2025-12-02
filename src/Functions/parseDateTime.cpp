@@ -773,9 +773,9 @@ namespace
                 if constexpr (return_type == ReturnType::DateTime64)
                     datetime.setScale(scale, parse_syntax);
 
-                std::string_view str_ref = col_str->getDataAt(i);
-                Pos cur = str_ref.data();
-                Pos end = str_ref.data() + str_ref.size();
+                StringRef str_ref = col_str->getDataAt(i);
+                Pos cur = str_ref.data;
+                Pos end = str_ref.data + str_ref.size;
                 bool error = false;
 
                 for (const auto & instruction : instructions)
@@ -818,7 +818,7 @@ namespace
                     result = std::unexpected(ErrorCodeAndMessage(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Invalid format input {} is malformed at {}",
-                        str_ref,
+                        str_ref.toView(),
                         std::string_view(cur, end - cur)));
                 }
 
@@ -2425,7 +2425,7 @@ REGISTER_FUNCTION(ParseDateTime)
     FunctionDocumentation::Description parseDateTime_description = R"(
 Parses a date and time string according to a MySQL date format string.
 
-This function is the inverse of [`formatDateTime`](/sql-reference/functions/date-time-functions).
+This function is the inverse of [`formatDateTime`](./format-date-time.md).
 It parses a String argument using a format String. Returns a DateTime type.
     )";
     FunctionDocumentation::Syntax parseDateTime_syntax = "parseDateTime(time_string, format[, timezone])";

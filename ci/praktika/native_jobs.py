@@ -115,9 +115,6 @@ def _build_dockers(workflow, job_name):
     job_status = Result.Status.SUCCESS
     job_info = ""
     dockers = Docker.sort_in_build_order(dockers)
-    for d in dockers:
-        if isinstance(d.platforms, str):
-            d.platforms = [d.platforms]
     docker_digests = {}  # type: Dict[str, str]
     arm_only = False
     amd_only = False
@@ -163,12 +160,7 @@ def _build_dockers(workflow, job_name):
                 continue
             elif arm_only and Docker.Platforms.ARM not in docker.platforms:
                 continue
-            platforms = (
-                docker.platforms
-                if isinstance(docker.platforms, list)
-                else [docker.platforms]
-            )
-            if any(p not in Docker.Platforms.arm_amd for p in platforms):
+            if any(p not in Docker.Platforms.arm_amd for p in docker.platforms):
                 Utils.raise_with_error(
                     f"TODO: add support for all docker platforms [{docker.platforms}]"
                 )
@@ -590,7 +582,7 @@ def _check_and_mark_flaky_tests(workflow_result: Result):
                     print(
                         f"  Marking '{result.name}' as flaky (matched: {test_name}, issue: #{issue.issue})"
                     )
-                    result.set_clickable_label(label="issue", link=issue.issue_url)
+                    result.set_clickable_label(label="flaky", link=issue.issue_url)
                     break
 
     # Check all workflow results
