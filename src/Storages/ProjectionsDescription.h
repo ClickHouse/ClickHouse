@@ -95,7 +95,7 @@ struct ProjectionDescription
 
     ProjectionDescription clone() const;
 
-    void loadOptions(const SettingsChanges & changes);
+    void loadSettings(const SettingsChanges & changes);
 
     bool operator==(const ProjectionDescription & other) const;
     bool operator!=(const ProjectionDescription & other) const { return !(*this == other); }

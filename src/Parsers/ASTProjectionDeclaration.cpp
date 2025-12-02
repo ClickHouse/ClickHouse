@@ -11,8 +11,8 @@ ASTPtr ASTProjectionDeclaration::clone() const
     res->name = name;
     if (query)
         res->set(res->query, query->clone());
-    if (options)
-        res->set(res->options, options->clone());
+    if (with_settings)
+        res->set(res->with_settings, with_settings->clone());
     return res;
 }
 
@@ -30,10 +30,10 @@ void ASTProjectionDeclaration::formatImpl(
     query->format(ostr, settings, state, frame_nested);
     ostr << nl_or_nothing << indent_str << ")";
 
-    if (options)
+    if (with_settings)
     {
-        ostr << settings.nl_or_ws << indent_str << "OPTIONS (";
-        options->format(ostr, settings, state, frame);
+        ostr << settings.nl_or_ws << indent_str << "WITH SETTINGS (";
+        with_settings->format(ostr, settings, state, frame);
         ostr << ")";
     }
 }

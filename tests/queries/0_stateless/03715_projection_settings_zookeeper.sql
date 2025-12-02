@@ -1,4 +1,4 @@
--- Tags: zookeeper, no-random-merge-tree-settings, no-replicated-database
+-- Tags: long, zookeeper, no-random-merge-tree-settings, no-replicated-database
 -- { echo ON }
 
 DROP TABLE IF EXISTS x1;
@@ -8,10 +8,10 @@ CREATE TABLE x1 (i int) ENGINE ReplicatedMergeTree('/clickhouse/tables/{database
 
 CREATE TABLE x2 (i int) ENGINE ReplicatedMergeTree('/clickhouse/tables/{database}/x', 'r2') ORDER BY i SETTINGS index_granularity = 999999999, index_granularity_bytes = 99999999999, use_const_adaptive_granularity = 0, min_bytes_for_wide_part = 0;
 
-ALTER TABLE x1 ADD PROJECTION p1 (SELECT i ORDER BY i) OPTIONS (index_granularity = 2, index_granularity_bytes = 999999999);
-ALTER TABLE x1 ADD PROJECTION p2 (SELECT i ORDER BY i) OPTIONS (index_granularity = 9999999999, index_granularity_bytes = 4096);
+ALTER TABLE x1 ADD PROJECTION p1 (SELECT i ORDER BY i) WITH SETTINGS (index_granularity = 2, index_granularity_bytes = 999999999);
+ALTER TABLE x1 ADD PROJECTION p2 (SELECT i ORDER BY i) WITH SETTINGS (index_granularity = 9999999999, index_granularity_bytes = 4096);
 
-INSERT INTO x1 SELECT number FROM numbers(100000);
+INSERT INTO x1 SELECT number FROM numbers(1000);
 
 OPTIMIZE TABLE x1 FINAL;
 

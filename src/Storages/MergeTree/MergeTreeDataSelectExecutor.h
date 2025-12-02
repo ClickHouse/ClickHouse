@@ -257,6 +257,7 @@ public:
         const PartialDisjunctionResult & partial_eval_results,
         MergeTreeReaderSettings reader_settings,
         LoggerPtr log);
+
 };
 
 }

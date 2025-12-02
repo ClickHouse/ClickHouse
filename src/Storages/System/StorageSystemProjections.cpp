@@ -43,9 +43,9 @@ StorageSystemProjections::StorageSystemProjections(const StorageID & table_id_)
         {"type", std::move(projection_type_datatype), "Projection type."},
         {"sorting_key", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Projection sorting key."},
         {"query", std::make_shared<DataTypeString>(), "Projection query."},
-        {"options",
+        {"settings",
          std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()),
-         "Projection options."},
+         "Projection settings."},
     }));
     setInMemoryMetadata(storage_metadata);
 }
@@ -155,14 +155,14 @@ protected:
                     {
                         res_columns[res_index++]->insert(projection.definition_ast->children.at(0)->formatForLogging());
                     }
-                    // 'options' column
+                    // 'settings' column
                     if (column_mask[src_index++])
                     {
                         Map settings_map;
                         const auto & projection_definition = projection.definition_ast->as<ASTProjectionDeclaration &>();
-                        if (projection_definition.options)
+                        if (projection_definition.with_settings)
                         {
-                            for (const auto & change : projection_definition.options->changes)
+                            for (const auto & change : projection_definition.with_settings->changes)
                             {
                                 Tuple pair;
                                 pair.push_back(change.name);

@@ -31,7 +31,7 @@ name:        improved_sorting_key
 type:        Normal
 sorting_key: ['user_id','date']
 query:       SELECT * ORDER BY user_id, date
-options:     {}
+settings:     {}
 
 Row 2:
 ──────
@@ -41,5 +41,5 @@ name:        agg_no_key
 type:        Aggregate
 sorting_key: []
 query:       SELECT count()
-options:     {}
+settings:     {}
 ```

@@ -209,7 +209,7 @@ private:
 
 }
 
-void ProjectionDescription::loadOptions(const SettingsChanges & changes)
+void ProjectionDescription::loadSettings(const SettingsChanges & changes)
 {
     for (const auto & [setting, value] : changes)
     {
@@ -252,8 +252,8 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     result.definition_ast = projection_definition->clone();
     result.name = projection_definition->name;
 
-    if (projection_definition->options)
-        result.loadOptions(projection_definition->options->changes);
+    if (projection_definition->with_settings)
+        result.loadSettings(projection_definition->with_settings->changes);
 
     auto query = projection_definition->query->as<ASTProjectionSelectQuery &>();
     result.query_ast = query.cloneToASTSelect();
