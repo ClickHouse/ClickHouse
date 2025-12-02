@@ -82,6 +82,7 @@ namespace Setting
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
 }
 
 namespace ErrorCodes
@@ -1205,6 +1206,9 @@ void IStorageURLBase::read(
     size_t max_block_size,
     size_t num_streams)
 {
+    if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
+        num_streams = local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
+
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
     auto read_from_format_info = prepareReadingFromFormat(
         column_names,

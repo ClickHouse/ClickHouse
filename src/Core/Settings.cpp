@@ -5896,6 +5896,9 @@ Max attempts to read with backoff
     DECLARE(Bool, cluster_function_process_archive_on_multiple_nodes, true, R"(
 If set to `true`, increases performance of processing archives in cluster functions. Should be set to `false` for compatibility and to avoid errors during upgrade to 25.7+ if using cluster functions with archives on earlier versions.
 )", 0) \
+    DECLARE(UInt64, max_streams_for_files_processing_in_cluster_functions, 0, R"(
+If is not zero, limit the number of threads reading data from files in *Cluster table functions.
+)", 0) \
     DECLARE(Bool, enable_filesystem_cache, true, R"(
 Use cache for remote filesystem. This setting does not turn on/off cache for disks (must be done via disk config), but allows to bypass cache for some queries if intended
 )", 0) \
