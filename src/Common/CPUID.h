@@ -8,6 +8,11 @@
 
 #include <cstring>
 
+#if defined(__aarch64__) && defined(__linux__)
+#include <sys/auxv.h>
+#include <asm/hwcap.h>
+#endif
+
 
 namespace DB
 {
@@ -324,6 +329,21 @@ inline bool haveGenuineIntel() noexcept
 #endif
 }
 
+inline bool haveSVE() noexcept
+{
+#if defined(__aarch64__) && defined(__linux__)
+    /** "Support for the execution of SVE instructions in userspace can also be detected by reading the CPU ID register ID_AA64PFR0_EL1
+      *  using an MRS instruction, and checking that the value of the SVE field is nonzero. It does not guarantee the presence of the system
+      *  interfaces described in the following sections: software that needs to verify that those interfaces are present must check for
+      *  HWCAP_SVE instead." (c) https://www.kernel.org/doc/Documentation/arm64/sve.txt
+      */
+    const UInt64 hwcap = getauxval(AT_HWCAP);
+    return (hwcap & HWCAP_SVE) != 0;
+#else
+    return false;
+#endif
+}
+
 #define CPU_ID_ENUMERATE(OP) \
     OP(SSE) \
     OP(SSE2) \
@@ -365,7 +385,8 @@ inline bool haveGenuineIntel() noexcept
     OP(AMXBF16) \
     OP(AMXTILE) \
     OP(AMXINT8) \
-    OP(GenuineIntel)
+    OP(GenuineIntel) \
+    OP(SVE)
 
 struct CPUFlagsCache
 {

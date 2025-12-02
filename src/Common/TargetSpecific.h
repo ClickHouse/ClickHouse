@@ -89,6 +89,7 @@ enum class TargetArch : UInt32
     AMXTILE = (1 << 10),
     AMXINT8 = (1 << 11),
     GenuineIntel = (1 << 12), /// Not an instruction set, but a CPU vendor.
+    SVE = (1 << 13),
 };
 
 /// Runtime detection.
@@ -224,9 +225,68 @@ namespace TargetSpecific::AVX512BF16 { \
 } \
 END_TARGET_SPECIFIC_CODE
 
+#elif ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__aarch64__)
+
+    #define USE_MULTITARGET_CODE 0
+
+    #define USE_ARM_MULTITARGET_CODE 1
+
+    #define SVE_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sve")))
+
+    #   define BEGIN_SVE_SPECIFIC_CODE \
+            _Pragma("clang attribute push(__attribute__((target(\"sve\"))),apply_to=function)")
+    #   define END_TARGET_SPECIFIC_CODE \
+            _Pragma("clang attribute pop")
+
+    /* Clang shows warning when there aren't any objects to apply pragma.
+     * To prevent this warning we define this function inside every macros with pragmas.
+     */
+    #   define DUMMY_FUNCTION_DEFINITION [[maybe_unused]] void _dummy_function_definition();
+
+    #define DECLARE_SVE_SPECIFIC_CODE(...) \
+    BEGIN_SVE_SPECIFIC_CODE \
+    namespace TargetSpecific::SVE { \
+        DUMMY_FUNCTION_DEFINITION \
+        using namespace DB::TargetSpecific::SVE; \
+        __VA_ARGS__ \
+    } \
+    END_TARGET_SPECIFIC_CODE
+
+    DECLARE_SVE_SPECIFIC_CODE(
+        constexpr auto BuildArch = TargetArch::SVE;
+    )
+
+    #define DECLARE_SSE42_SPECIFIC_CODE(...)
+    #define DECLARE_AVX_SPECIFIC_CODE(...)
+    #define DECLARE_AVX2_SPECIFIC_CODE(...)
+    #define DECLARE_AVX512F_SPECIFIC_CODE(...)
+    #define DECLARE_AVX512BW_SPECIFIC_CODE(...)
+    #define DECLARE_AVX512VBMI_SPECIFIC_CODE(...)
+    #define DECLARE_AVX512VL_SPECIFIC_CODE(...)
+    #define DECLARE_AVX512VBMI2_SPECIFIC_CODE(...)
+    #define DECLARE_AVX512BF16_SPECIFIC_CODE(...)
+
+#elif defined(__GNUC__) && defined(__aarch64__)
+
+    #define USE_MULTITARGET_CODE 0
+
+    #define USE_ARM_MULTITARGET_CODE 0
+
+    #define DECLARE_SSE42_SPECIFIC_CODE(...)
+    #define DECLARE_AVX_SPECIFIC_CODE(...)
+    #define DECLARE_AVX2_SPECIFIC_CODE(...)
+    #define DECLARE_AVX512F_SPECIFIC_CODE(...)
+    #define DECLARE_AVX512BW_SPECIFIC_CODE(...)
+    #define DECLARE_AVX512VBMI_SPECIFIC_CODE(...)
+    #define DECLARE_AVX512VL_SPECIFIC_CODE(...)
+    #define DECLARE_AVX512VBMI2_SPECIFIC_CODE(...)
+    #define DECLARE_AVX512BF16_SPECIFIC_CODE(...)
+
 #else
 
 #define USE_MULTITARGET_CODE 0
+
+#define USE_ARM_MULTITARGET_CODE 0
 
 /* Multitarget code is disabled, just delete target-specific code.
  */
@@ -239,6 +299,7 @@ END_TARGET_SPECIFIC_CODE
 #define DECLARE_AVX512VBMI_SPECIFIC_CODE(...)
 #define DECLARE_AVX512VBMI2_SPECIFIC_CODE(...)
 #define DECLARE_AVX512BF16_SPECIFIC_CODE(...)
+#define DECLARE_SVE_SPECIFIC_CODE(...)
 
 #endif
 
@@ -259,7 +320,7 @@ DECLARE_AVX512BW_SPECIFIC_CODE    (__VA_ARGS__) \
 DECLARE_AVX512VL_SPECIFIC_CODE    (__VA_ARGS__) \
 DECLARE_AVX512VBMI_SPECIFIC_CODE  (__VA_ARGS__) \
 DECLARE_AVX512VBMI2_SPECIFIC_CODE (__VA_ARGS__) \
-DECLARE_AVX512BF16_SPECIFIC_CODE (__VA_ARGS__)
+DECLARE_AVX512BF16_SPECIFIC_CODE (__VA_ARGS__) \
 
 DECLARE_DEFAULT_CODE(
     constexpr auto BuildArch = TargetArch::Default; /// NOLINT
