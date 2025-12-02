@@ -404,6 +404,13 @@ void GlobString::parse()
         }
         else if (input[position] == '{')  /// NOLINT
         {
+            /// FIXME why do we even need to support double braces?
+            if (position + 1 > input.length() && input[position + 1] == '{')
+            {
+                expressions.emplace_back("{");
+                position += 1;
+            }
+
             auto matcher_expression = consumeMatcher(input.substr(position));
 
             auto range = tryParseRangeMatcher(matcher_expression);
