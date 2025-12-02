@@ -21,6 +21,7 @@
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <TableFunctions/registerTableFunctions.h>
+#include <Access/Common/AccessFlags.h>
 
 
 namespace DB
@@ -315,6 +316,22 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
         cached_columns = getActualTableStructure(context, is_insert_query);
 
     assert(cluster);
+
+    bool has_local_shard = false;
+    for (const auto & shard_info : cluster->getShardsInfo())
+    {
+        if (shard_info.isLocal())
+        {
+            has_local_shard = true;
+            break;
+        }
+    }
+
+    if (has_local_shard && !is_insert_query)
+        context->checkAccess(AccessType::SELECT, remote_table_id);
+    else if (has_local_shard)
+        context->checkAccess(AccessType::INSERT, remote_table_id);
+
     StoragePtr res = std::make_shared<StorageDistributed>(
             StorageID(getDatabaseName(), table_name),
             cached_columns,
