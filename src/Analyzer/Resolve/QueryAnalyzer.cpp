@@ -1295,7 +1295,13 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     IdentifierResolveScope & scope,
     IdentifierResolveContext identifier_resolve_context)
 {
-    auto it = scope.identifier_in_lookup_process.find(identifier_lookup);
+    /// Create a scope-aware version of the lookup for cache operations.
+    /// Different values of allow_resolve_from_using need different cache entries
+    /// (e.g., PREWHERE sets it to false to avoid resolving USING columns).
+    IdentifierLookup cache_lookup = identifier_lookup;
+    cache_lookup.allow_resolve_from_using = scope.allow_resolve_from_using;
+
+    auto it = scope.identifier_in_lookup_process.find(cache_lookup);
 
     /// Can not use cache if:
     /// 1. Identifier is resolved in non-initial context.
@@ -1316,7 +1322,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     {
         if (can_use_cache)
         {
-            const auto * cached_result = scope.identifier_to_resolved_expression_cache.find(identifier_lookup);
+            const auto * cached_result = scope.identifier_to_resolved_expression_cache.find(cache_lookup);
             if (cached_result)
             {
                 // aggregate functions can be rewritten in ways which require multiple instances
@@ -1338,7 +1344,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
             }
         }
 
-        auto [insert_it, _] = scope.identifier_in_lookup_process.insert({identifier_lookup, IdentifierResolveState()});
+        auto [insert_it, _] = scope.identifier_in_lookup_process.insert({cache_lookup, IdentifierResolveState()});
         it = insert_it;
     }
 
@@ -1452,7 +1458,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         if (can_use_cache && resolve_result.resolved_identifier)
         {
             resolve_result.requires_clone_from_cache = nodeRequiresCloneFromCache(resolve_result.resolved_identifier);
-            scope.identifier_to_resolved_expression_cache.insert(identifier_lookup, resolve_result);
+            scope.identifier_to_resolved_expression_cache.insert(cache_lookup, resolve_result);
         }
     }
 
@@ -4898,16 +4904,15 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     resolveQueryJoinTreeNode(query_node_typed.getJoinTree(), scope, visitor);
 
-     if (!scope.group_by_use_nulls)
-         scope.identifier_to_resolved_expression_cache.enable();
-
     /// Resolve query node sections.
 
     NamesAndTypes projection_columns;
 
     if (!scope.group_by_use_nulls)
     {
-        projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
+        scope.identifier_to_resolved_expression_cache.enable();
+
+        projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope, interpolate_list);
         if (query_node_typed.getProjection().getNodes().empty())
             throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
                 "Empty list of columns in projection. In scope {}",
@@ -4916,8 +4921,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (auto & prewhere_node = query_node_typed.getPrewhere())
     {
-        scope.identifier_to_resolved_expression_cache.clear();
-
         bool allow_resolve_from_using = scope.allow_resolve_from_using;
         scope.allow_resolve_from_using = false;
         resolveExpressionNode(prewhere_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);

@@ -45,6 +45,7 @@ struct IdentifierLookup
     Identifier identifier;
     IdentifierLookupContext lookup_context;
     ASTPtr original_ast_node = nullptr;
+    bool allow_resolve_from_using = true;  /// Part of cache key - PREWHERE sets this to false
 
     bool isExpressionLookup() const
     {
@@ -69,7 +70,9 @@ struct IdentifierLookup
 
 inline bool operator==(const IdentifierLookup & lhs, const IdentifierLookup & rhs)
 {
-    return lhs.identifier.getFullName() == rhs.identifier.getFullName() && lhs.lookup_context == rhs.lookup_context;
+    return lhs.identifier.getFullName() == rhs.identifier.getFullName()
+        && lhs.lookup_context == rhs.lookup_context
+        && lhs.allow_resolve_from_using == rhs.allow_resolve_from_using;
 }
 
 [[maybe_unused]] inline bool operator!=(const IdentifierLookup & lhs, const IdentifierLookup & rhs)
@@ -81,7 +84,9 @@ struct IdentifierLookupHash
 {
     size_t operator()(const IdentifierLookup & identifier_lookup) const
     {
-        return std::hash<std::string>()(identifier_lookup.identifier.getFullName()) ^ static_cast<uint8_t>(identifier_lookup.lookup_context);
+        return std::hash<std::string>()(identifier_lookup.identifier.getFullName())
+            ^ static_cast<uint8_t>(identifier_lookup.lookup_context)
+            ^ (identifier_lookup.allow_resolve_from_using ? 0x100 : 0);
     }
 };
 
