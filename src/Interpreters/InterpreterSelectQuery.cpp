@@ -121,6 +121,7 @@ namespace Setting
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsArrayGroupByMode array_group_by_mode;
     extern const SettingsBool allow_experimental_query_deduplication;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
@@ -2819,7 +2820,8 @@ static Aggregator::Params getAggregatorParams(
         settings[Setting::optimize_group_by_constant_keys],
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
         stats_collecting_params,
-        settings[Setting::enable_producing_buckets_out_of_order_in_aggregation]};
+        settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
+        settings[Setting::array_group_by_mode]};
 }
 
 void InterpreterSelectQuery::executeAggregation(

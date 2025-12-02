@@ -1108,6 +1108,27 @@ See also:
 
 - [GROUP BY clause](/sql-reference/statements/select/group-by)
 )", 0) \
+    DECLARE(ArrayGroupByMode, array_group_by_mode, ArrayGroupByMode::ORDERED, R"(
+Controls how arrays are compared for equality in GROUP BY operations.
+
+Possible values:
+
+- `ordered` — Default. Arrays are compared element-by-element in order. `[1,2,3]` and `[3,2,1]` are different groups.
+- `multiset` — Arrays are compared as multisets (unordered, duplicates count). `[1,2,3]` and `[3,2,1]` are the same group, but `[1,1,2]` and `[1,2,2]` are different.
+- `set` — Arrays are compared as sets (unordered, duplicates ignored). `[1,2,3]`, `[3,2,1]`, and `[1,1,2,3]` are all the same group.
+
+**Example**
+
+```sql
+SET array_group_by_mode = 'multiset';
+SELECT arr, COUNT(*) FROM (SELECT [1,2,3] AS arr UNION ALL SELECT [3,2,1]) GROUP BY arr;
+-- Returns 1 row with count 2
+
+SET array_group_by_mode = 'ordered';
+SELECT arr, COUNT(*) FROM (SELECT [1,2,3] AS arr UNION ALL SELECT [3,2,1]) GROUP BY arr;
+-- Returns 2 rows with count 1 each
+```
+)", 0) \
     \
     DECLARE(Bool, skip_unavailable_shards, false, R"(
 Enables or disables silently skipping of unavailable shards.

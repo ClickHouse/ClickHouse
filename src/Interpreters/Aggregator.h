@@ -10,6 +10,7 @@
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
 #include <Core/ColumnNumbers.h>
+#include <Core/SettingsEnums.h>
 #include <Common/ThreadPool.h>
 #include <Common/filesystemHelpers.h>
 
@@ -119,6 +120,9 @@ public:
 
         bool enable_producing_buckets_out_of_order_in_aggregation = true;
 
+        /// How to compare arrays in GROUP BY keys
+        ArrayGroupByMode array_group_by_mode = ArrayGroupByMode::ORDERED;
+
         static size_t getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by);
 
         Params(
@@ -142,7 +146,8 @@ public:
             bool optimize_group_by_constant_keys_,
             float min_hit_rate_to_use_consecutive_keys_optimization_,
             const StatsCollectingParams & stats_collecting_params_,
-            bool enable_producing_buckets_out_of_order_in_aggregation_);
+            bool enable_producing_buckets_out_of_order_in_aggregation_,
+            ArrayGroupByMode array_group_by_mode_ = ArrayGroupByMode::ORDERED);
 
         /// Only parameters that matter during merge.
         Params(
