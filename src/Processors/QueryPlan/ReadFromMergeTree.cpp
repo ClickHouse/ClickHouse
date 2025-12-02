@@ -1411,6 +1411,40 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     return Pipe::unitePipes(std::move(pipes));
 }
 
+/// Returns the list of column names required for the transforms in addMergingFinal
+static NameSet getColumnsRequiredForMergingFinal(const SortDescription & sort_description, MergeTreeData::MergingParams merging_params)
+{
+    NameSet required_columns = sort_description | std::views::transform([](const SortColumnDescription & desc) { return desc.column_name; })
+        | std::ranges::to<NameSet>();
+    switch (merging_params.mode)
+    {
+        case MergeTreeData::MergingParams::Ordinary:
+            [[fallthrough]];
+        case MergeTreeData::MergingParams::Aggregating:
+            [[fallthrough]];
+        case MergeTreeData::MergingParams::Coalescing:
+            [[fallthrough]];
+        case MergeTreeData::MergingParams::Summing:
+            break;
+        case MergeTreeData::MergingParams::VersionedCollapsing:
+            [[fallthrough]];
+        case MergeTreeData::MergingParams::Collapsing: {
+            required_columns.insert(merging_params.sign_column);
+            break;
+        }
+        case MergeTreeData::MergingParams::Replacing: {
+            required_columns.insert(merging_params.is_deleted_column);
+            required_columns.insert(merging_params.version_column);
+            break;
+        }
+        case MergeTreeData::MergingParams::Graphite:
+            /// TODO(antaljanosbenjamin): add required columns for Graphite
+            break;
+    }
+    required_columns.erase(""); // remove empty column names
+    return required_columns;
+}
+
 static void addMergingFinal(
     Pipe & pipe,
     const SortDescription & sort_description,
@@ -3411,7 +3445,23 @@ ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstim
 
 bool ReadFromMergeTree::canRemoveUnusedColumns() const
 {
-    return query_info.prewhere_info == nullptr || !hasDuplicatedNamesInInputOrOutputs(query_info.prewhere_info->prewhere_actions);
+    if (query_info.row_level_filter && hasDuplicatedNamesInInputOrOutputs(query_info.row_level_filter->actions))
+        return false;
+
+    if (query_info.prewhere_info && hasDuplicatedNamesInInputOrOutputs(query_info.prewhere_info->prewhere_actions))
+        return false;
+
+    if (query_info.isFinal())
+    {
+        // Cannot remove columns if FINAL requires them for merging
+        NameSet required_for_final = getColumnsRequiredForMergingFinal(result_sort_description, data.merging_params);
+        const auto has_column_that_is_not_required_for_final
+            = std::ranges::any_of(all_column_names, [&](const auto & column_name) { return !required_for_final.contains(column_name); });
+
+        if (!has_column_that_is_not_required_for_final)
+            return false;
+    }
+    return true;
 }
 
 IQueryPlanStep::RemovedUnusedColumns ReadFromMergeTree::removeUnusedColumns(NameMultiSet required_outputs, bool /*remove_inputs*/)
@@ -3420,6 +3470,9 @@ IQueryPlanStep::RemovedUnusedColumns ReadFromMergeTree::removeUnusedColumns(Name
         return RemovedUnusedColumns::None;
 
     NameSet columns_to_keep;
+
+    if (query_info.isFinal())
+        columns_to_keep = getColumnsRequiredForMergingFinal(result_sort_description, data.merging_params);
 
     for (const auto & column_name : required_outputs)
         columns_to_keep.insert(column_name);
@@ -3434,11 +3487,11 @@ IQueryPlanStep::RemovedUnusedColumns ReadFromMergeTree::removeUnusedColumns(Name
                                            [&](const auto * output)
                                            {
                                                return output->result_name != query_info.prewhere_info->prewhere_column_name
-                                                   && required_outputs.find(output->result_name) == required_outputs.end();
+                                                   && columns_to_keep.find(output->result_name) == columns_to_keep.end();
                                            })
             > 0;
 
-        if (!query_info.prewhere_info->remove_prewhere_column && !required_outputs.contains(query_info.prewhere_info->prewhere_column_name))
+        if (!query_info.prewhere_info->remove_prewhere_column && !columns_to_keep.contains(query_info.prewhere_info->prewhere_column_name))
         {
             query_info.prewhere_info->remove_prewhere_column = true;
             removed_output_from_prewhere = true;
