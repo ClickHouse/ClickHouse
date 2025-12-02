@@ -5,6 +5,7 @@ SET optimize_aggregation_in_order = 0;
 -- avoid using projection index
 SET min_table_rows_to_use_projection_index = 1000000;
 
+DROP TABLE IF EXISTS test_projection;
 CREATE TABLE test_projection
 (
     id UInt64,
