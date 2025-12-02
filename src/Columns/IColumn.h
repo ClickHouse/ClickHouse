@@ -675,6 +675,8 @@ public:
     virtual void takeDynamicStructureFromSourceColumns(const std::vector<Ptr> & /*source_columns*/) {}
     /// For columns with dynamic subcolumns this method takes the exact dynamic structure from provided column.
     virtual void takeDynamicStructureFromColumn(const ColumnPtr & /*source_column*/) {}
+    /// For columns with dynamic subcolumns fix current dynamic structure so later inserts into this column won't change it.
+    virtual void fixDynamicStructure() {}
 
     /** Some columns can contain another columns inside.
       * So, we have a tree of columns. But not all combinations are possible.
