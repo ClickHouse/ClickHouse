@@ -1,3 +1,4 @@
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
@@ -287,6 +288,8 @@ Coordination::Error ZooKeeper::getChildrenImpl(const std::string & path, Strings
                                    Coordination::WatchCallbackPtrOrEventPtr watch_callback,
                                    Coordination::ListRequestType list_request_type)
 {
+    auto span = std::make_shared<DB::OpenTelemetry::SpanHolder>("zookeeper.list", DB::OpenTelemetry::SpanKind::CLIENT);
+
     auto future_result = asyncTryGetChildrenNoThrow(path, watch_callback, list_request_type);
 
     if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
@@ -347,6 +350,8 @@ Coordination::Error ZooKeeper::tryGetChildrenWatch(
 
 Coordination::Error ZooKeeper::createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created)
 {
+    auto span = std::make_shared<DB::OpenTelemetry::SpanHolder>("zookeeper.create", DB::OpenTelemetry::SpanKind::CLIENT);
+
     auto future_result = asyncTryCreateNoThrow(path, data, mode);
 
     if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
@@ -493,6 +498,8 @@ void ZooKeeper::checkExistsAndGetCreateAncestorsOps(const std::string & path, Co
 
 Coordination::Error ZooKeeper::removeImpl(const std::string & path, int32_t version)
 {
+    auto span = std::make_shared<DB::OpenTelemetry::SpanHolder>("zookeeper.remove", DB::OpenTelemetry::SpanKind::CLIENT);
+
     auto future_result = asyncTryRemoveNoThrow(path, version);
 
 
@@ -524,6 +531,8 @@ Coordination::Error ZooKeeper::tryRemove(const std::string & path, int32_t versi
 
 Coordination::Error ZooKeeper::existsImpl(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallbackPtrOrEventPtr watch_callback)
 {
+    auto span = std::make_shared<DB::OpenTelemetry::SpanHolder>("zookeeper.exists", DB::OpenTelemetry::SpanKind::CLIENT);
+
     auto future_result = asyncTryExistsNoThrow(path, watch_callback);
 
     if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
@@ -568,6 +577,8 @@ bool ZooKeeper::existsWatch(const std::string & path, Coordination::Stat * stat,
 Coordination::Error ZooKeeper::getImpl(
     const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallbackPtrOrEventPtr watch_callback)
 {
+    auto span = std::make_shared<DB::OpenTelemetry::SpanHolder>("zookeeper.get", DB::OpenTelemetry::SpanKind::CLIENT);
+
     auto future_result = asyncTryGetNoThrow(path, watch_callback);
 
     if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
@@ -637,6 +648,8 @@ bool ZooKeeper::tryGetWatch(
 Coordination::Error ZooKeeper::setImpl(const std::string & path, const std::string & data,
                            int32_t version, Coordination::Stat * stat)
 {
+    auto span = std::make_shared<DB::OpenTelemetry::SpanHolder>("zookeeper.set", DB::OpenTelemetry::SpanKind::CLIENT);
+
     auto future_result = asyncTrySetNoThrow(path, data, version);
 
     if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
@@ -687,6 +700,8 @@ ZooKeeper::multiImpl(const Coordination::Requests & requests, Coordination::Resp
 {
     if (requests.empty())
         return {Coordination::Error::ZOK, ""};
+
+    auto span = std::make_shared<DB::OpenTelemetry::SpanHolder>("zookeeper.multi", DB::OpenTelemetry::SpanKind::CLIENT);
 
     std::future<Coordination::MultiResponse> future_result;
     Coordination::Requests requests_with_check_session;
@@ -766,6 +781,8 @@ Coordination::Error ZooKeeper::tryMulti(const Coordination::Requests & requests,
 
 Coordination::Error ZooKeeper::syncImpl(const std::string & path, std::string & returned_path)
 {
+    auto span = std::make_shared<DB::OpenTelemetry::SpanHolder>("zookeeper.sync", DB::OpenTelemetry::SpanKind::CLIENT);
+
     auto future_result = asyncTrySyncNoThrow(path);
 
     if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
@@ -929,6 +946,8 @@ Coordination::Error ZooKeeper::tryRemoveRecursive(const std::string & path, uint
     if (!isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE))
         return fallback_method();
 
+    auto span = std::make_shared<DB::OpenTelemetry::SpanHolder>("zookeeper.remove_recursive", DB::OpenTelemetry::SpanKind::CLIENT);
+
     auto promise = std::make_shared<std::promise<Coordination::RemoveRecursiveResponse>>();
     auto future = promise->get_future();
 
@@ -955,6 +974,8 @@ Coordination::Error ZooKeeper::tryRemoveRecursive(const std::string & path, uint
 
 Coordination::Error ZooKeeper::getACLImpl(const std::string & path, Coordination::ACLs & res, Coordination::Stat * stat)
 {
+    auto span = std::make_shared<DB::OpenTelemetry::SpanHolder>("zookeeper.get_acl", DB::OpenTelemetry::SpanKind::CLIENT);
+
     auto future_result = asyncTryGetACLNoThrow(path);
 
     if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
@@ -1097,6 +1118,8 @@ Coordination::ReconfigResponse ZooKeeper::reconfig(
     const std::string & new_members,
     int32_t version)
 {
+    auto span = std::make_shared<DB::OpenTelemetry::SpanHolder>("zookeeper.reconfig", DB::OpenTelemetry::SpanKind::CLIENT);
+
     auto future_result = asyncReconfig(joining, leaving, new_members, version);
 
     if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
