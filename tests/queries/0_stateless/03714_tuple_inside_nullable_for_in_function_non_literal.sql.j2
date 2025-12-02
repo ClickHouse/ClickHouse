@@ -1,5 +1,7 @@
 -- Tags: long
 
+SET allow_experimental_nullable_tuple_type = 1;
+
 {% for setting in ['enable_analyzer = 1', 'enable_analyzer = 0'] -%}
 
 select '{{ setting }}';

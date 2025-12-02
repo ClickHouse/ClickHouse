@@ -1,3 +1,5 @@
+SET allow_experimental_nullable_tuple_type = 1;
+
 DROP TABLE IF EXISTS tuple_test;
 
 CREATE TABLE tuple_test
