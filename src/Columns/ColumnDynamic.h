@@ -282,6 +282,11 @@ public:
     /// Prepare only variants but not discriminators and offsets.
     void prepareVariantsForSquashing(const Columns & source_columns);
 
+    void shrinkToFit() override
+    {
+        variant_column_ptr->shrinkToFit();
+    }
+
     void ensureOwnership() override
     {
         variant_column_ptr->ensureOwnership();
