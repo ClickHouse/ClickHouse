@@ -18,6 +18,7 @@ ncpu = Utils.cpu_count()
 mem_gb = round(Utils.physical_memory() / (1024**3), 1)
 MAX_CPUS_PER_WORKER = 4
 MAX_MEM_PER_WORKER = 7
+MAX_WORKERS = min(ncpu // MAX_CPUS_PER_WORKER, mem_gb // MAX_MEM_PER_WORKER) or 1
 
 
 def _start_docker_in_docker():
@@ -73,12 +74,6 @@ def parse_args():
         type=str,
         default="",
     )
-    parser.add_argument(
-        "--workers",
-        help="Optional. Number of parallel workers for pytest",
-        default=None,
-        type=int,
-    )
     return parser.parse_args()
 
 
@@ -87,7 +82,7 @@ FLAKY_CHECK_MODULE_REPEAT_COUNT = 2
 
 
 def tests_to_run(
-    batch_num: int, total_batches: int, args_test: List[str], workers: int
+    batch_num: int, total_batches: int, args_test: List[str]
 ) -> Tuple[List[str], List[str]]:
     if args_test:
         batch_num = 1
@@ -101,7 +96,7 @@ def tests_to_run(
     assert len(test_files) > 100
 
     parallel_test_modules, sequential_test_modules = get_optimal_test_batch(
-        test_files, total_batches, batch_num, workers
+        test_files, total_batches, batch_num, MAX_WORKERS
     )
     if not args_test:
         return parallel_test_modules, sequential_test_modules
@@ -167,6 +162,7 @@ def main():
             use_distributed_plan = True
         elif to == "flaky":
             is_flaky_check = True
+            args.count = FLAKY_CHECK_TEST_REPEAT_COUNT
         elif to == "parallel":
             is_parallel = True
         elif to == "sequential":
@@ -176,15 +172,8 @@ def main():
         else:
             assert False, f"Unknown job option [{to}]"
 
-    if args.count or is_flaky_check:
-        repeat_option = (
-            f"--count {args.count or FLAKY_CHECK_TEST_REPEAT_COUNT} --random-order"
-        )
-
-    if args.workers:
-        workers = args.workers
-    else:
-        workers = min(ncpu // MAX_CPUS_PER_WORKER, mem_gb // MAX_MEM_PER_WORKER) or 1
+    if args.count:
+        repeat_option = f"--count {args.count} --random-order"
 
     changed_test_modules = []
     if is_bugfix_validation or is_flaky_check:
@@ -246,7 +235,7 @@ def main():
     Shell.check("docker info > /dev/null", verbose=True, strict=True)
 
     parallel_test_modules, sequential_test_modules = tests_to_run(
-        batch_num, total_batches, args.test, workers
+        batch_num, total_batches, args.test
     )
 
     if is_bugfix_validation or is_flaky_check:
@@ -298,7 +287,7 @@ def main():
     if parallel_test_modules:
         for attempt in range(module_repeat_cnt):
             test_result_parallel = Result.from_pytest_run(
-                command=f"{' '.join(reversed(parallel_test_modules))} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option}",
+                command=f"{' '.join(reversed(parallel_test_modules))} --report-log-exclude-logs-on-passed-tests -n {MAX_WORKERS} --dist=loadfile --tb=short {repeat_option}",
                 cwd="./tests/integration/",
                 env=test_env,
                 pytest_report_file=f"{temp_path}/pytest_parallel.jsonl",

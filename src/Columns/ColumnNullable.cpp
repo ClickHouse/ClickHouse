@@ -10,7 +10,6 @@
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/MaskOperations.h>
-#include <IO/Operators.h>
 
 #if USE_EMBEDDED_COMPILER
 #include <DataTypes/Native.h>
@@ -117,16 +116,12 @@ void ColumnNullable::get(size_t n, Field & res) const
         getNestedColumn().get(n, res);
 }
 
-DataTypePtr ColumnNullable::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+std::pair<String, DataTypePtr> ColumnNullable::getValueNameAndType(size_t n) const
 {
     if (isNullAt(n))
-    {
-        if (options.notFull(name_buf))
-            name_buf << "NULL";
-        return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
-    }
+        return {"NULL", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())};
 
-    return getNestedColumn().getValueNameAndTypeImpl(name_buf, n, options);
+    return getNestedColumn().getValueNameAndType(n);
 }
 
 Float64 ColumnNullable::getFloat64(size_t n) const
@@ -230,45 +225,39 @@ std::optional<size_t> ColumnNullable::getSerializedValueSize(size_t n) const
     return 1 + *nested_size; /// +1 for null mask byte.
 }
 
-const char * ColumnNullable::deserializeAndInsertFromArena(const char * pos)
+void ColumnNullable::deserializeAndInsertFromArena(ReadBuffer & in)
 {
-    UInt8 val = unalignedLoad<UInt8>(pos);
-    pos += sizeof(val);
+    UInt8 val;
+    readBinaryLittleEndian<UInt8>(val, in);
 
     getNullMapData().push_back(val);
 
     if (val == 0)
-        pos = getNestedColumn().deserializeAndInsertFromArena(pos);
+        getNestedColumn().deserializeAndInsertFromArena(in);
     else
         getNestedColumn().insertDefault();
-
-    return pos;
 }
 
-const char * ColumnNullable::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+void ColumnNullable::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
 {
-    UInt8 val = unalignedLoad<UInt8>(pos);
-    pos += sizeof(val);
+    UInt8 val;
+    readBinaryLittleEndian<UInt8>(val, in);
 
     getNullMapData().push_back(val);
 
     if (val == 0)
-        pos = getNestedColumn().deserializeAndInsertAggregationStateValueFromArena(pos);
+        getNestedColumn().deserializeAndInsertAggregationStateValueFromArena(in);
     else
         getNestedColumn().insertDefault();
-
-    return pos;
 }
 
-const char * ColumnNullable::skipSerializedInArena(const char * pos) const
+void ColumnNullable::skipSerializedInArena(ReadBuffer & in) const
 {
-    UInt8 val = unalignedLoad<UInt8>(pos);
-    pos += sizeof(val);
+    UInt8 val;
+    readBinaryLittleEndian<UInt8>(val, in);
 
     if (val == 0)
-        return getNestedColumn().skipSerializedInArena(pos);
-
-    return pos;
+        getNestedColumn().skipSerializedInArena(in);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

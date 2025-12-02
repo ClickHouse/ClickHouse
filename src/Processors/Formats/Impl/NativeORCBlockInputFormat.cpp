@@ -549,7 +549,7 @@ static void buildORCSearchArgumentImpl(
                 }
             }
 
-            String column_name = getColumnNameFromKeyCondition(key_condition, curr.getKeyColumn());
+            String column_name = getColumnNameFromKeyCondition(key_condition, curr.key_column);
             const auto * orc_type = getORCTypeByName(schema, column_name, format_settings.orc.case_insensitive_column_matching);
             if (!orc_type)
             {

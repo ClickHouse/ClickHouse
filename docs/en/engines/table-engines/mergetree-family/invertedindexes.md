@@ -7,11 +7,13 @@ title: 'Full-text Search using Text Indexes'
 doc_type: 'reference'
 ---
 
-import PrivatePreviewBadge from '@theme/badges/PrivatePreviewBadge';
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # Full-text search using text indexes
 
-<PrivatePreviewBadge/>
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
 Text indexes in ClickHouse (also known as ["inverted indexes"](https://en.wikipedia.org/wiki/Inverted_index)) provide fast full-text capabilities on string data.
 The index maps each token in the column to the rows which contain the token.
@@ -56,10 +58,12 @@ The `tokenizer` argument specifies the tokenizer:
   Note that each string can consist of multiple characters (`', '` in the example).
   The default separator list, if not specified explicitly (for example, `tokenizer = splitByString`), is a single whitespace `[' ']`.
 - `ngrams(N)` splits strings into equally large `N`-grams (also see function [ngrams](/sql-reference/functions/splitting-merging-functions.md/#ngrams)).
- The ngram length can be specified using an optional integer parameter between 2 and 8, for example, `tokenizer = ngrams(3)`.
+  The ngram length can be specified using an optional integer parameter between 2 and 8, for example, `tokenizer = ngrams(3)`.
   The default ngram size, if not specified explicitly (for example, `tokenizer = ngrams`), is 3.
 - `array` performs no tokenization, i.e. every row value is a token (also see function [array](/sql-reference/functions/array-functions.md/#array)).
-- `sparseGrams(min_length, max_length, min_cutoff_length)` — uses the algorithm as in the [sparseGrams](/sql-reference/functions/string-functions#sparseGrams) function to split a string into all ngrams of `min_length` and several ngrams of larger size up to `max_length`, inclusive. If `min_cutoff_length` is specified, only N-grams with length greater than or equal to `min_cutoff_length` are saved in the index. Unlike `ngrams(N)`, which generates only fixed-length N-grams, `sparseGrams` produces a set of variable-length N-grams within the specified range, allowing for a more flexible representation of text context. For example, `tokenizer = sparseGrams(3, 5, 4)` will generate 3-, 4-, 5-grams from the input string and save only the 4- and 5-grams in the index.
+- `sparseGrams(MIN_N, MAX_N)` — splits a string into all possible N-grams with lengths ranging from `min_length` to `max_length`, inclusive.
+  Unlike `ngrams(N)`, which generates only fixed-length N-grams, `sparseGrams` produces a set of variable-length N-grams within the specified range, allowing for a more flexible representation of text context.
+  For example, `tokenizer = sparseGrams(2, 4)` will create all 2-, 3-, and 4-grams from the input string.
 
 :::note
 The `splitByString` tokenizer applies the split separators left-to-right.
@@ -68,12 +72,6 @@ For example, the separator strings `['%21', '%']` will cause `%21abc` to be toke
 In the most cases, you want that matching prefers longer separators first.
 This can generally be done by passing the separator strings in order of descending length.
 If the separator strings happen to form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), they can be passed in arbitrary order.
-:::
-
-:::warning
-It is at the moment not recommended to build text indexes on top of text in non-western languages, e.g. Chinese.
-The currently supported tokenizers may lead to huge index sizes and large query times.
-We plan to add specialized language-specific tokenizers in future which will handle these cases better.
 :::
 
 To test how the tokenizers split the input string, you can use ClickHouse's [tokens](/sql-reference/functions/splitting-merging-functions.md/#tokens) function:
@@ -165,7 +163,7 @@ The same restrictions as for `=` and `!=` apply, i.e. `IN` and `NOT IN` only mak
 These functions currently use the text index for filtering only if the index tokenizer is either `splitByNonAlpha` or `ngrams`.
 :::
 
-In order to use `LIKE` [like](/sql-reference/functions/string-search-functions.md/#like), `NOT LIKE` ([notLike](/sql-reference/functions/string-search-functions.md/#notLike)), and the [match](/sql-reference/functions/string-search-functions.md/#match) function with text indexes, ClickHouse must be able to extract complete tokens from the search term.
+In order to use `LIKE` [like](/sql-reference/functions/string-search-functions.md/#like), `NOT LIKE` ([notLike](/sql-reference/functions/string-search-functions.md/#notlike)), and the [match](/sql-reference/functions/string-search-functions.md/#match) function with text indexes, ClickHouse must be able to extract complete tokens from the search term.
 
 Example:
 
@@ -186,7 +184,7 @@ The spaces left and right of `support` make sure that the term can be extracted 
 
 #### `startsWith` and `endsWith` {#functions-example-startswith-endswith}
 
-Similar to `LIKE`, functions [startsWith](/sql-reference/functions/string-functions.md/#startsWith) and [endsWith](/sql-reference/functions/string-functions.md/#endsWith) can only use a text index, if complete tokens can be extracted from the search term.
+Similar to `LIKE`, functions [startsWith](/sql-reference/functions/string-functions.md/#startswith) and [endsWith](/sql-reference/functions/string-functions.md/#endswith) can only use a text index, if complete tokens can be extracted from the search term.
 
 Example:
 
@@ -211,7 +209,7 @@ SELECT count() FROM tab WHERE endsWith(comment, ' olap engine');
 
 #### `hasToken` and `hasTokenOrNull` {#functions-example-hastoken-hastokenornull}
 
-Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken) and [hasTokenOrNull](/sql-reference/functions/string-search-functions.md/#hasTokenOrNull) match against a single given token.
+Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hastoken) and [hasTokenOrNull](/sql-reference/functions/string-search-functions.md/#hastokenornull) match against a single given token.
 
 Unlike the previously mentioned functions, they do not tokenize the search term (they assume the input is a single token).
 
@@ -225,7 +223,7 @@ Functions `hasToken` and `hasTokenOrNull` are the most performant functions to u
 
 #### `hasAnyTokens` and `hasAllTokens` {#functions-example-hasanytokens-hasalltokens}
 
-Functions [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) and [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens) match against one or all of the given tokens.
+Functions [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasanytokens) and [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasalltokens) match against one or all of the given tokens.
 
 These two functions accept the search tokens as either a string which will be tokenized using the same tokenizer used for the index column, or as an array of already processed tokens to which no tokenization will be applied prior to searching.
 See the function documentation for more info.
@@ -278,7 +276,7 @@ See the following examples for the usage of `Array(T)` and `Map(K, V)` with the 
 
 ### Examples for the text index `Array` and `Map` support. {#text-index-array-and-map-examples}
 
-#### Indexing Array(String) {#text-index-example-array}
+#### Indexing Array(String) {#text-indexi-example-array}
 
 In a simple blogging platform, authors assign keywords to their posts to categorize content.
 A common feature allows users to discover related content by clicking on keywords or searching for topics.
@@ -435,8 +433,6 @@ Direct read is controlled by two settings:
 - Setting [query_plan_direct_read_from_text_index](../../../operations/settings/settings#query_plan_direct_read_from_text_index) (default: 1) which specifies if direct read is generally enabled.
 - Setting [use_skip_indexes_on_data_read](../../../operations/settings/settings#use_skip_indexes_on_data_read) (default: 1) which is another prerequisite for direct read. Note that on ClickHouse databases with [compatibility](../../../operations/settings/settings#compatibility) < 25.10, `use_skip_indexes_on_data_read` is disabled, so you either need to raise the compatibility setting value or `SET use_skip_indexes_on_data_read = 1` explicitly.
 
-Also, the text index must be fully materialized to use direct reading (use `ALTER TABLE ... MATERIALIZE INDEX` for that).
-
 **Supported functions**
 The direct read optimization supports functions `hasToken`, `hasAllTokens`, and `hasAnyTokens`.
 These functions can also be combined by AND, OR, and NOT operators.
@@ -493,8 +489,7 @@ If this column is present, then direct read is used.
 ## Example: Hackernews dataset {#hacker-news-dataset}
 
 Let's look at the performance improvements of text indexes on a large dataset with lots of text.
-We will use 28.7M rows of comments on the popular Hacker News website.
-Here is the table without text index:
+We will use 28.7M rows of comments on the popular Hacker News website. Here is the table without an text index:
 
 ```sql
 CREATE TABLE hackernews (
@@ -544,188 +539,64 @@ INSERT INTO hackernews
     descendants UInt32');
 ```
 
-We will use `ALTER TABLE` and add a text index on comment column, then materialize it:
-
-```sql
--- Add the index
-ALTER TABLE hackernews ADD INDEX comment_idx(comment) TYPE text(tokenizer = splitByNonAlpha);
-
--- Materialize the index for existing data
-ALTER TABLE hackernews MATERIALIZE INDEX comment_idx SETTINGS mutations_sync = 2;
-```
-
-Now, let's run queries using `hasToken`, `hasAnyTokens`, and `hasAllTokens` functions.
-The following examples will show the dramatic performance difference between a standard index scan and the direct read optimization.
-
-### 1. Using `hasToken` {#using-hasToken}
-
-`hasToken` checks if the text contains a specific single token.
-We'll search for the case-sensitive token 'ClickHouse'.
-
-**Direct read disabled (Standard scan)**
-By default, ClickHouse uses the skip index to filter granules and then reads the column data for those granules.
-We can simulate this behavior by disabling direct read.
+Consider the following simple search for the term `ClickHouse` (and its varied upper and lower cases) in the `comment` column:
 
 ```sql
 SELECT count()
 FROM hackernews
-WHERE hasToken(comment, 'ClickHouse')
-SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_read = 0;
-
-┌─count()─┐
-│     516 │
-└─────────┘
-
-1 row in set. Elapsed: 0.362 sec. Processed 24.90 million rows, 9.51 GB
+WHERE hasToken(lower(comment), 'clickhouse');
 ```
 
-**Direct read enabled (Fast index read)**
-Now we run the same query with direct read enabled (the default).
+Notice it takes 3 seconds to execute the query:
+
+```response
+┌─count()─┐
+│    1145 │
+└─────────┘
+
+1 row in set. Elapsed: 3.001 sec. Processed 28.74 million rows, 9.75 GB (9.58 million rows/s., 3.25 GB/s.)
+```
+
+We will use `ALTER TABLE` and add an text index on the lowercase of the `comment` column, then materialize it (which can take a while - wait for it to materialize):
+
+```sql
+ALTER TABLE hackernews
+     ADD INDEX comment_lowercase(lower(comment)) TYPE text;
+
+ALTER TABLE hackernews MATERIALIZE INDEX comment_lowercase;
+```
+
+We run the same query...
 
 ```sql
 SELECT count()
 FROM hackernews
-WHERE hasToken(comment, 'ClickHouse')
-SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1;
+WHERE hasToken(lower(comment), 'clickhouse')
+```
 
+...and notice the query executes 4x faster:
+
+```response
 ┌─count()─┐
-│     516 │
+│    1145 │
 └─────────┘
 
-1 row in set. Elapsed: 0.008 sec. Processed 3.15 million rows, 3.15 MB
+1 row in set. Elapsed: 0.747 sec. Processed 4.49 million rows, 1.77 GB (6.01 million rows/s., 2.37 GB/s.)
 ```
-The direct read query is over 45 times faster (0.362s vs 0.008s) and processes significantly less data (9.51 GB vs 3.15 MB) by reading from the index alone.
 
-### 2. Using `hasAnyTokens` {#using-hasAnyTokens}
-
-`hasAnyTokens` checks if the text contains at least one of the given tokens.
-We'll search for comments containing either 'love' or 'ClickHouse'.
-
-**Direct read disabled (Standard scan)**
+We can also search for one or all of multiple terms, i.e., disjunctions or conjunctions:
 
 ```sql
-SELECT count()
+-- multiple OR'ed terms
+SELECT count(*)
 FROM hackernews
-WHERE hasAnyTokens(comment, 'love ClickHouse')
-SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_read = 0;
+WHERE hasToken(lower(comment), 'avx') OR hasToken(lower(comment), 'sve');
 
-┌─count()─┐
-│  408426 │
-└─────────┘
-
-1 row in set. Elapsed: 1.329 sec. Processed 28.74 million rows, 9.72 GB
-```
-
-**Direct read enabled (Fast index read)**
-
-```sql
-SELECT count()
+-- multiple AND'ed terms
+SELECT count(*)
 FROM hackernews
-WHERE hasAnyTokens(comment, 'love ClickHouse')
-SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1;
-
-┌─count()─┐
-│  408426 │
-└─────────┘
-
-1 row in set. Elapsed: 0.015 sec. Processed 27.99 million rows, 27.99 MB
+WHERE hasToken(lower(comment), 'avx') AND hasToken(lower(comment), 'sve');
 ```
-The speedup is even more dramatic for this common "OR" search.
-The query is nearly 89 times faster (1.329s vs 0.015s) by avoiding the full column scan.
-
-### 3. Using `hasAllTokens` {#using-hasAllTokens}
-
-`hasAllTokens` checks if the text contains all of the given tokens.
-We'll search for comments containing both 'love' and 'ClickHouse'.
-
-**Direct read disabled (Standard scan)**
-Even with direct read disabled, the standard skip index is still effective.
-It filters down the 28.7M rows to just 147.46K rows, but it still must read 57.03 MB from the column.
-
-```sql
-SELECT count()
-FROM hackernews
-WHERE hasAllTokens(comment, 'love ClickHouse')
-SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_read = 0;
-
-┌─count()─┐
-│      11 │
-└─────────┘
-
-1 row in set. Elapsed: 0.184 sec. Processed 147.46 thousand rows, 57.03 MB
-```
-
-**Direct read enabled (Fast index read)**
-Direct read answers the query by operating on the index data, reading only 147.46 KB.
-
-```sql
-SELECT count()
-FROM hackernews
-WHERE hasAllTokens(comment, 'love ClickHouse')
-SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1;
-
-┌─count()─┐
-│      11 │
-└─────────┘
-
-1 row in set. Elapsed: 0.007 sec. Processed 147.46 thousand rows, 147.46 KB
-```
-
-For this "AND" search, the direct read optimization is over 26 times faster (0.184s vs 0.007s) than the standard skip index scan.
-
-### 4. Compound search: OR, AND, NOT, ... {#compound-search}
-The direct read optimization also applies to compound boolean expressions.
-Here, we'll perform a case-insensitive search for 'ClickHouse' OR 'clickhouse'.
-
-**Direct read disabled (Standard scan)**
-
-```sql
-SELECT count()
-FROM hackernews
-WHERE hasToken(comment, 'ClickHouse') OR hasToken(comment, 'clickhouse')
-SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_read = 0;
-
-┌─count()─┐
-│     769 │
-└─────────┘
-
-1 row in set. Elapsed: 0.450 sec. Processed 25.87 million rows, 9.58 GB
-```
-
-**Direct read enabled (Fast index read)**
-
-```sql
-SELECT count()
-FROM hackernews
-WHERE hasToken(comment, 'ClickHouse') OR hasToken(comment, 'clickhouse')
-SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1;
-
-┌─count()─┐
-│     769 │
-└─────────┘
-
-1 row in set. Elapsed: 0.013 sec. Processed 25.87 million rows, 51.73 MB
-```
-
-By combining the results from the index, the direct read query is 34 times faster (0.450s vs 0.013s) and avoids reading the 9.58 GB of column data.
-For this specific case, `hasAnyTokens(comment, ['ClickHouse', 'clickhouse'])` would be the preferred, more efficient syntax.
-
-## Tuning the text index {#tuning-the-text-index}
-
-Currently, there is a cache for the deserialized dictionary blocks of the text index to reduce I/O.
-
-It can be enabled via the setting [use_text_index_dictionary_cache](/operations/settings/settings#use_text_index_dictionary_cache). By default, it is disabled.
-
-Refer the following server settings to configure the cache.
-
-### Server Settings {#text-index-tuning-server-settings}
-
-| Setting                                                                                                                                                  | Description                                                                                                          | Default      |
-|----------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------|--------------|
-| [text_index_dictionary_block_cache_policy](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_policy)             | Text index dictionary block cache policy name.                                                                       | `SLRU`       |
-| [text_index_dictionary_block_cache_size](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_size)                 | Maximum cache size in bytes.                                                                                         | `1073741824` |
-| [text_index_dictionary_block_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_max_entries)   | Maximum number of deserialized dictionary blocks in cache.                                                           | `1'000'000`  |
-| [text_index_dictionary_block_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_size_ratio)     | The size of the protected queue in the text index dictionary block cache relative to the cache\'s total size.        | `0.5`        |
 
 ## Related content {#related-content}
 

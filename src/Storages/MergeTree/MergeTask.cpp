@@ -1538,7 +1538,7 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
         global_ctx->cached_marks.emplace(name, std::move(marks));
 
     global_ctx->new_data_part->getDataPartStorage().precommitTransaction();
-    global_ctx->promise.set_value(global_ctx->new_data_part);
+    global_ctx->promise.set_value(std::exchange(global_ctx->new_data_part, nullptr));
 
     return false;
 }
@@ -1701,6 +1701,9 @@ void MergeTask::cancel() noexcept
 
     if (global_ctx->to)
         global_ctx->to->cancel();
+
+    if (global_ctx->new_data_part)
+        global_ctx->new_data_part->removeIfNeeded();
 }
 
 

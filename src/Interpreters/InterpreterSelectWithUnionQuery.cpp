@@ -287,7 +287,7 @@ SharedHeader InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & quer
     auto key = query_ptr_->formatWithSecretsOneLine();
     {
         auto [cache, lock] = context_->getSampleBlockCache();
-        if (cache->contains(key))
+        if (cache->find(key) != cache->end())
             return cache->at(key);
     }
 

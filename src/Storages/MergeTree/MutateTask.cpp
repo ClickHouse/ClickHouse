@@ -1626,7 +1626,7 @@ private:
                         break;
 
                     entries_to_hardlink.insert(it->first);
-                    ctx->existing_indices_stats_checksums.addFile(it->first, it->second);
+                    ctx->existing_indices_stats_checksums.addFile(it->first, it->second.file_size, it->second.file_hash);
                     ++it;
                 }
             }
@@ -1652,7 +1652,7 @@ private:
                 {
                     const auto & checksum = ctx->source_part->checksums.files.at(*stat_filename);
                     entries_to_hardlink.insert(*stat_filename);
-                    ctx->existing_indices_stats_checksums.addFile(*stat_filename, checksum);
+                    ctx->existing_indices_stats_checksums.addFile(*stat_filename, checksum.file_size, checksum.file_hash);
                 }
             }
         }
@@ -1705,7 +1705,7 @@ private:
                     hardlinked_files.insert(it->name());
                     /// Also we need to "rename" checksums to finalize correctly.
                     const auto & check_sum = ctx->source_part->checksums.files.at(it->name());
-                    ctx->existing_indices_stats_checksums.addFile(renamed_stats.at(it->name()), check_sum);
+                    ctx->existing_indices_stats_checksums.addFile(renamed_stats.at(it->name()), check_sum.file_size, check_sum.file_hash);
                 }
             }
             else if (it->isFile())
@@ -2273,7 +2273,7 @@ bool MutateTask::execute()
             //
             // Fetching a byte-identical part (in case of checksum mismatches) will fail with
             // `Part ... should be deleted after previous attempt before fetch`.
-            promise.set_value(std::move(ctx->new_data_part));
+            promise.set_value(std::exchange(ctx->new_data_part, nullptr));
             return false;
         }
     }
@@ -2284,6 +2284,9 @@ void MutateTask::cancel() noexcept
 {
     if (task)
         task->cancel();
+
+    if (ctx->new_data_part)
+        ctx->new_data_part->removeIfNeeded();
 }
 
 void MutateTask::updateProfileEvents() const

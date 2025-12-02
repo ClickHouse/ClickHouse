@@ -164,14 +164,14 @@ try
     po::store(parsed, options);
     po::notify(options);
 
-    if (options.contains("version") || options.contains("V"))
+    if (options.count("version") || options.count("V"))
     {
         showClientVersion();
         cleanup();
         return 0;
     }
 
-    if (options.contains("help"))
+    if (options.count("help"))
     {
         printHelpMessage(options_description);
         cleanup();

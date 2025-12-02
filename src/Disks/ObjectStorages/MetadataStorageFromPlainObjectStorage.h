@@ -3,7 +3,7 @@
 #include <Core/Types.h>
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Disks/ObjectStorages/InMemoryDirectoryTree.h>
+#include <Disks/ObjectStorages/InMemoryDirectoryPathMap.h>
 #include <Disks/ObjectStorages/MetadataOperationsHolder.h>
 #include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
 #include <Common/CacheBase.h>
@@ -18,6 +18,7 @@
 namespace DB
 {
 
+class InMemoryDirectoryPathMap;
 struct UnlinkMetadataFileOperationOutcome;
 using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
 
@@ -99,8 +100,8 @@ protected:
     /// Get the object storage prefix for storing metadata files.
     virtual std::string getMetadataKeyPrefix() const { return object_storage->getCommonKeyPrefix(); }
 
-    /// Returns an in-memory virtual filesystem tree.
-    virtual std::shared_ptr<InMemoryDirectoryTree> getFsTree() const { throwNotImplemented(); }
+    /// Returns a map of virtual filesystem paths to paths in the object storage.
+    virtual std::shared_ptr<InMemoryDirectoryPathMap> getPathMap() const { throwNotImplemented(); }
 
     ObjectMetadataEntryPtr getObjectMetadataEntryWithCache(const std::string & path) const;
 };

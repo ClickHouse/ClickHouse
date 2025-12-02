@@ -8,7 +8,6 @@
 #include <Common/PODArray_fwd.h>
 #include <Common/typeid_cast.h>
 
-#include <IO/WriteBufferFromString.h>
 #include "config.h"
 
 #include <span>
@@ -34,6 +33,7 @@ class ColumnConst;
 class ColumnReplicated;
 class IDataType;
 class Block;
+class ReadBuffer;
 struct ColumnsInfo;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using IColumnPermutation = PaddedPODArray<size_t>;
@@ -147,18 +147,7 @@ public:
     /// Like the previous one, but avoids extra copying if Field is in a container, for example.
     virtual void get(size_t n, Field & res) const = 0;
 
-    struct Options
-    {
-        Int64 optimize_const_name_size = -1;
-
-        bool notFull(WriteBufferFromOwnString & buf) const
-        {
-            return optimize_const_name_size < 0 || static_cast<Int64>(buf.count()) <= optimize_const_name_size;
-        }
-    };
-
-    virtual DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const = 0;
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n, const Options & options) const;
+    virtual std::pair<String, DataTypePtr> getValueNameAndType(size_t) const = 0;
 
     /// If possible, returns pointer to memory chunk which contains n-th element (if it isn't possible, throws an exception)
     /// Is used to optimize some computations (in aggregation, for example).
@@ -326,19 +315,18 @@ public:
     virtual void collectSerializedValueSizes(PaddedPODArray<UInt64> & /* sizes */, const UInt8 * /* is_null */) const;
 
     /// Deserializes a value that was serialized using IColumn::serializeValueIntoArena method.
-    /// Returns pointer to the position after the read data.
-    [[nodiscard]] virtual const char * deserializeAndInsertFromArena(const char * pos) = 0;
+    /// Note that it needs to deal with user input
+    virtual void deserializeAndInsertFromArena(ReadBuffer & in) = 0;
 
     /// Deserializes a value that was serialized using IColumn::serializeAggregationStateValueIntoArena method.
-    /// Returns pointer to the position after the read data.
-    [[nodiscard]] virtual const char * deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+    /// Note that it needs to deal with user input
+    virtual void deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
     {
-        return deserializeAndInsertFromArena(pos);
+        deserializeAndInsertFromArena(in);
     }
 
     /// Skip previously serialized value that was serialized using IColumn::serializeValueIntoArena method.
-    /// Returns a pointer to the position after the deserialized data.
-    [[nodiscard]] virtual const char * skipSerializedInArena(const char *) const = 0;
+    virtual void skipSerializedInArena(ReadBuffer & in) const = 0;
 
     /// Update state of hash function with value of n-th element.
     /// On subsequent calls of this method for sequence of column values of arbitrary types,

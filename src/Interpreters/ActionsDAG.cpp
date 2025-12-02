@@ -239,6 +239,15 @@ ActionsDAG::Node & ActionsDAG::addNode(Node node)
 {
     auto & res = nodes.emplace_back(std::move(node));
 
+    // This should only be a temporary fix to avoid regression in 25.10
+    // https://github.com/ClickHouse/ClickHouse/issues/90363#issue-3642139014
+    if (res.type != ActionType::PLACEHOLDER)
+    {
+        const auto valid_column = !res.column || (res.column->isConst() || typeid_cast<const ColumnSet *>(res.column.get()) != nullptr);
+        if (!valid_column)
+            res.column = nullptr;
+    }
+
     if (res.type == ActionType::INPUT)
         inputs.emplace_back(&res);
 
@@ -1062,7 +1071,7 @@ NameSet ActionsDAG::foldActionsByProjection(
     /// Record all needed output nodes to start folding.
     for (const auto & output_node : outputs)
     {
-        if (required_columns.contains(output_node->result_name) || output_node->result_name == predicate_column_name)
+        if (required_columns.find(output_node->result_name) != required_columns.end() || output_node->result_name == predicate_column_name)
         {
             visited_nodes.insert(output_node);
             visited_output_nodes_names.insert(output_node->result_name);
@@ -1077,7 +1086,7 @@ NameSet ActionsDAG::foldActionsByProjection(
     {
         for (const auto & column : required_columns)
         {
-            if (!visited_output_nodes_names.contains(column))
+            if (visited_output_nodes_names.find(column) == visited_output_nodes_names.end())
             {
                 if (const ColumnWithTypeAndName * column_with_type_name = projection_block_for_keys.findByName(column))
                 {
@@ -3392,122 +3401,6 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::filterNodesByAllowedInputs(
 
     nodes.resize(result_size);
     return nodes;
-}
-
-ActionsDAG ActionsDAG::restrictFilterDAGToInputs(const ActionsDAG::Node * filter_node, const NameSet & available_inputs) const
-{
-    ActionsDAG actions;
-    std::unordered_map<const Node *, const Node *> copy_map;
-    std::unordered_map<const ActionsDAG::Node *, bool> can_compute;
-
-    /// Phase 1: Traverse the DAG and determine which nodes can be computed
-    {
-        struct Frame
-        {
-            const ActionsDAG::Node * node;
-            size_t next_child_to_visit = 0;
-            bool can_compute_all_children = true;
-        };
-
-        std::stack<Frame> stack;
-        stack.push({filter_node});
-        while (!stack.empty())
-        {
-            auto & frame = stack.top();
-            bool need_visit_child = false;
-
-            while (frame.next_child_to_visit < frame.node->children.size())
-            {
-                const auto * child = frame.node->children[frame.next_child_to_visit];
-                auto it = can_compute.find(child);
-                if (it == can_compute.end())
-                {
-                    stack.push({child});
-                    need_visit_child = true;
-                    break;
-                }
-
-                /// If child is not computable, attempt to substitute it with a constant.
-                /// Currently, only "and" function is supported.
-                if (!it->second)
-                {
-                    if (frame.node->type == ActionsDAG::ActionType::FUNCTION)
-                    {
-                        const auto & name = frame.node->function_base->getName();
-
-                        /// Replace non-computable child in "and" with constant true.
-                        if (name == "and")
-                        {
-                            ColumnWithTypeAndName column;
-                            column.name = child->result_name;
-                            column.type = child->result_type;
-                            column.column = child->result_type->createColumnConst(0, 1);
-                            copy_map[child] = &actions.addColumn(std::move(column));
-
-                            /// Mark as now computable (since we substituted it)
-                            it->second = true;
-                        }
-                    }
-                }
-
-                frame.can_compute_all_children &= it->second;
-                ++frame.next_child_to_visit;
-            }
-
-            if (need_visit_child)
-                continue;
-
-            if (frame.node->type == ActionsDAG::ActionType::INPUT)
-                can_compute[frame.node] = available_inputs.contains(frame.node->result_name);
-            else
-                can_compute[frame.node] = frame.can_compute_all_children;
-
-            stack.pop();
-        }
-    }
-
-    /// Phase 2: Reconstruct the DAG using copy_map
-    struct Frame
-    {
-        const Node * node = nullptr;
-        size_t next_child = 0;
-    };
-
-    std::stack<Frame> stack;
-    if (!copy_map.contains(filter_node))
-    {
-        stack.push(Frame{filter_node});
-        while (!stack.empty())
-        {
-            auto & frame = stack.top();
-            const auto & children = frame.node->children;
-
-            while (frame.next_child < children.size() && copy_map.contains(children[frame.next_child]))
-                ++frame.next_child;
-
-            if (frame.next_child < children.size())
-            {
-                stack.push(Frame{children[frame.next_child]});
-                continue;
-            }
-
-            auto & copy_node = copy_map[frame.node];
-            copy_node = &actions.nodes.emplace_back(*frame.node);
-
-            if (frame.node->type == ActionType::INPUT)
-                actions.inputs.push_back(copy_node);
-
-            stack.pop();
-        }
-    }
-
-    for (auto & node : actions.nodes)
-        for (auto & child : node.children)
-            child = copy_map[child];
-
-    actions.outputs.push_back(copy_map[filter_node]);
-
-    return actions;
 }
 
 FindOriginalNodeForOutputName::FindOriginalNodeForOutputName(const ActionsDAG & actions_)

@@ -56,7 +56,7 @@
 #include <Core/Settings.h>
 #include <boost/algorithm/string/replace.hpp>
 
-#include <Storages/WindowView/StorageBlocks.h>
+#include <Storages/LiveView/StorageBlocks.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/WindowView/WindowViewSource.h>
 #include <Storages/ReadInOrderOptimizer.h>

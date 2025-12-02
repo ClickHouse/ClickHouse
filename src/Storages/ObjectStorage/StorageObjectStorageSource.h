@@ -18,8 +18,9 @@ class SchemaCache;
 class StorageObjectStorageSource : public ISource
 {
     friend class ObjectStorageQueueSource;
-
 public:
+    using ObjectInfos = StorageObjectStorage::ObjectInfos;
+
     class ReadTaskIterator;
     class GlobIterator;
     class KeysIterator;
@@ -64,7 +65,9 @@ public:
         bool skip_object_metadata = false);
 
     static std::string getUniqueStoragePathIdentifier(
-        const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info = true);
+        const StorageObjectStorageConfiguration & configuration,
+        const ObjectInfo & object_info,
+        bool include_connection_info = true);
 
 protected:
     const String name;

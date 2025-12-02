@@ -39,22 +39,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
-        addSettingsChanges(settings_changes_history, "25.11",
-        {
-            {"into_outfile_create_parent_directories", false, false, "New setting"},
-            {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
-            {"use_statistics_cache", 0, 0, "New setting"},
-            {"max_projection_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
-            {"min_table_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
-            {"use_text_index_dictionary_cache", false, false, "New setting"},
-            {"s3_retry_attempts", 500, 500, "Changed the value of the obsolete setting"},
-            {"http_write_exception_in_output_format", true, false, "Changed for consistency across formats"},
-            {"optimize_const_name_size", -1, 256, "Replace with scalar and use hash as a name for large constants (size is estimated by name length)"},
-            {"enable_lazy_columns_replication", false, true, "Enable lazy columns replication in JOIN and ARRAY JOIN by default"},
-            {"input_format_parquet_local_time_as_utc", false, true, "Use more appropriate type DateTime64(..., 'UTC') for parquet 'local time without timezone' type."},
-            {"input_format_parquet_verify_checksums", true, true, "New setting."},
-            {"output_format_parquet_write_checksums", false, true, "New setting."},
-        });
         addSettingsChanges(settings_changes_history, "25.10",
         {
             {"allow_special_serialization_kinds_in_output_formats", false, false, "Add a setting to allow output of special columns representations like Sparse/Replicated without converting them to full columns"},
@@ -72,8 +56,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"joined_block_split_single_row", false, false, "New setting"},
             {"temporary_files_buffer_size", DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE, "New setting"},
             {"rewrite_in_to_join", false, false, "New experimental setting"},
-            {"iceberg_insert_max_rows_in_data_file", 100000, 1000000, "Changed default value."},
-            {"delta_lake_insert_max_rows_in_data_file", 100000, 1000000, "Changed default value."},
             {"delta_lake_log_metadata", false, false, "New setting."},
             {"distributed_cache_prefer_bigger_buffer_size", false, false, "New setting."},
             {"allow_experimental_qbit_type", false, false, "New experimental setting"},
@@ -88,6 +70,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_use_logical_join_step", true, true, "Added alias"},
             {"schema_inference_make_columns_nullable", 1, 3, "Take nullability information from Parquet/ORC/Arrow metadata by default, instead of making everything nullable."},
             {"materialized_views_squash_parallel_inserts", false, true, "Added setting to preserve old behavior if needed."},
+            {"allow_experimental_alias_table_engine", false, false, "New setting"},
             {"distributed_cache_connect_timeout_ms", 50, 50, "New setting"},
             {"distributed_cache_receive_timeout_ms", 3000, 3000, "New setting"},
             {"distributed_cache_send_timeout_ms", 3000, 3000, "New setting"},
@@ -100,9 +83,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_skip_indexes_on_data_read", false, false, "New setting"},
             {"s3_slow_all_threads_after_retryable_error", false, false, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
             {"iceberg_metadata_log_level", "none", "none", "New setting."},
-            {"iceberg_insert_max_rows_in_data_file", 100000, 100000, "New setting."},
-            {"iceberg_insert_max_bytes_in_data_file", 100000000, 100000000, "New setting."},
-            {"query_plan_optimize_join_order_limit", 0, 1, "New setting"},
+            {"iceberg_insert_max_rows_in_data_file", 1000000, 1000000, "New setting."},
+            {"iceberg_insert_max_bytes_in_data_file", 1_GiB, 1_GiB, "New setting."},
+            {"query_plan_optimize_join_order_limit", 1, 1, "New setting"},
             {"query_plan_display_internal_aliases", false, false, "New setting"},
             {"query_plan_max_step_description_length", 1000000000, 500, "New setting"},
             {"allow_experimental_delta_lake_writes", false, false, "New setting."},
@@ -113,7 +96,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"jemalloc_enable_profiler", false, false, "New setting"},
             {"jemalloc_collect_profile_samples_in_trace_log", false, false, "New setting"},
             {"delta_lake_insert_max_bytes_in_data_file", 1_GiB, 1_GiB, "New setting."},
-            {"delta_lake_insert_max_rows_in_data_file", 100000, 100000, "New setting."},
+            {"delta_lake_insert_max_rows_in_data_file", 1000000, 1000000, "New setting."},
             {"promql_evaluation_time", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."},
             {"evaluation_time", 0, 0, "Old setting which popped up here being renamed."},
             {"os_threads_nice_value_query", 0, 0, "New setting."},
@@ -237,7 +220,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
             {"backup_slow_all_threads_after_retryable_s3_error", false, false, "New setting"},
             {"s3_slow_all_threads_after_retryable_error", false, false, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
-            {"s3_retry_attempts", 500, 500, "Changed the value of the obsolete setting"},
             /// RELEASE CLOSED
         });
         addSettingsChanges(settings_changes_history, "25.5",

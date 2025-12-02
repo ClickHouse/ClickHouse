@@ -72,7 +72,7 @@ void ColumnLazy::get(size_t, Field &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method get is not supported for {}", getName());
 }
 
-DataTypePtr ColumnLazy::getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const
+std::pair<String, DataTypePtr> ColumnLazy::getValueNameAndType(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getValueNameAndType is not supported for {}", getName());
 }
@@ -152,12 +152,12 @@ void ColumnLazy::popBack(size_t)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method popBack is not supported for {}", getName());
 }
 
-const char * ColumnLazy::deserializeAndInsertFromArena(const char *)
+void ColumnLazy::deserializeAndInsertFromArena(ReadBuffer &)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method deserializeAndInsertFromArena is not supported for {}", getName());
 }
 
-const char * ColumnLazy::skipSerializedInArena(const char *) const
+void ColumnLazy::skipSerializedInArena(ReadBuffer &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method skipSerializedInArena is not supported for {}", getName());
 }

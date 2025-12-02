@@ -106,9 +106,9 @@ public:
         data.resize_assume_reserved(data.size() - n);
     }
 
-    const char * deserializeAndInsertFromArena(const char * pos) override;
+    void deserializeAndInsertFromArena(ReadBuffer & in) override;
 
-    const char * skipSerializedInArena(const char * pos) const override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
@@ -205,7 +205,7 @@ public:
         res = (*this)[n];
     }
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &) const override;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
 
     UInt64 get64(size_t n) const override;
 

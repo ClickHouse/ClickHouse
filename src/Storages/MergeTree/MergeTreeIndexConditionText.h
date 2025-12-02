@@ -7,8 +7,6 @@
 namespace DB
 {
 
-class TextIndexDictionaryBlockCache;
-
 enum class TextSearchMode : uint8_t
 {
     Any,
@@ -64,9 +62,6 @@ public:
     std::optional<String> replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name);
     TextSearchQueryPtr getSearchQueryForVirtualColumn(const String & column_name) const;
 
-    bool useDictionaryBlockCache() const { return use_dictionary_block_cache; }
-    TextIndexDictionaryBlockCache * dictionaryBlockCache() const { return dictionary_block_cache; }
-
 private:
     /// Uses RPN like KeyCondition
     struct RPNElement
@@ -108,10 +103,6 @@ private:
         const Field & value_field,
         RPNElement & out) const;
 
-    std::vector<String> stringToTokens(const Field & field) const;
-    std::vector<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;
-    std::vector<String> stringLikeToTokens(const Field & field) const;
-
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
     static TextSearchMode getTextSearchMode(const RPNElement & element);
 
@@ -122,7 +113,7 @@ private:
 
     /// Sorted unique tokens from all RPN elements.
     std::vector<String> all_search_tokens;
-    /// Search queries from all RPN elements
+    /// Search qieries from all RPN elements.s
     std::unordered_map<UInt128, TextSearchQueryPtr> all_search_queries;
     /// Mapping from virtual column (optimized for direct read from text index) to search query.
     std::unordered_map<String, TextSearchQueryPtr> virtual_column_to_search_query;
@@ -130,10 +121,6 @@ private:
     bool use_bloom_filter = true;
     /// If global mode is All, then we can exit analysis earlier if any token is missing in granule.
     TextSearchMode global_search_mode = TextSearchMode::All;
-    /// Using text index dictionary block cache can be enabled to reduce I/O
-    bool use_dictionary_block_cache;
-    /// Instance of the text index dictionary block cache
-    TextIndexDictionaryBlockCache * dictionary_block_cache;
 };
 
 static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";

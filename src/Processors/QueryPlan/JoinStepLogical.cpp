@@ -1240,6 +1240,16 @@ JoinStepLogical::preCalculateKeys(const SharedHeader & left_header, const Shared
 }
 
 
+std::vector<JoinActionRef> JoinStepLogical::getOutputActions() const
+{
+    std::vector<JoinActionRef> output_actions;
+    const auto & raw_outputs = expression_actions.getActionsDAG()->getOutputs();
+    for (const auto * node : raw_outputs)
+        output_actions.emplace_back(node, expression_actions);
+    return output_actions;
+}
+
+
 void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings) const
 {
     join_settings.updatePlanSettings(settings);

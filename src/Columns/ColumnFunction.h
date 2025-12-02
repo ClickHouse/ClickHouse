@@ -63,7 +63,7 @@ public:
 
     void get(size_t n, Field & res) const override;
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
 
     StringRef getDataAt(size_t) const override
     {
@@ -111,12 +111,12 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot serialize from {}", getName());
     }
 
-    const char * deserializeAndInsertFromArena(const char *) override
+    void deserializeAndInsertFromArena(ReadBuffer &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot deserialize to {}", getName());
     }
 
-    const char * skipSerializedInArena(const char*) const override
+    void skipSerializedInArena(ReadBuffer &) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot skip serialized {}", getName());
     }

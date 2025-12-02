@@ -1309,14 +1309,6 @@ struct ConvertThroughParsing
                                     break;
                                 }
                             }
-                            if constexpr (std::is_same_v<FromDataType, DataTypeFixedString> && std::is_same_v<ToDataType, DataTypeUUID>)
-                            {
-                                if (fixed_string_size == UUID_BINARY_LENGTH)
-                                {
-                                    readBinary(vec_to[i], read_buffer);
-                                    break;
-                                }
-                            }
                             if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
                             {
                                 if (!tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, precise_float_parsing))
@@ -1408,10 +1400,8 @@ struct ConvertThroughParsing
                         parsed = SerializationDecimal<typename ToDataType::FieldType>::tryReadText(
                             vec_to[i], read_buffer, ToDataType::maxPrecision(), col_to->getScale());
                     }
-                    else if (
-                        std::is_same_v<FromDataType, DataTypeFixedString>
-                        && ((std::is_same_v<ToDataType, DataTypeIPv6> && fixed_string_size == IPV6_BINARY_LENGTH)
-                            || (std::is_same_v<ToDataType, DataTypeUUID> && fixed_string_size == UUID_BINARY_LENGTH)))
+                    else if (std::is_same_v<FromDataType, DataTypeFixedString> && std::is_same_v<ToDataType, DataTypeIPv6>
+                            && fixed_string_size == IPV6_BINARY_LENGTH)
                     {
                         readBinary(vec_to[i], read_buffer);
                         parsed = true;
@@ -4703,6 +4693,13 @@ private:
             const auto * col = arguments.front().column.get();
 
             size_t tuple_size = to_element_types.size();
+
+            if (tuple_size == 0)
+            {
+                /// Preserve the number of rows for empty tuple columns
+                return ColumnTuple::create(col->size());
+            }
+
             const ColumnTuple & column_tuple = typeid_cast<const ColumnTuple &>(*col);
 
             Columns converted_columns(tuple_size);

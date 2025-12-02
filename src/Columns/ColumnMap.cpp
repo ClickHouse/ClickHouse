@@ -88,28 +88,27 @@ void ColumnMap::get(size_t n, Field & res) const
         map.push_back(getNestedData()[offset + i]);
 }
 
-DataTypePtr ColumnMap::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+std::pair<String, DataTypePtr> ColumnMap::getValueNameAndType(size_t n) const
 {
     const auto & offsets = getNestedColumn().getOffsets();
     size_t offset = offsets[n - 1];
     size_t size = offsets[n] - offsets[n - 1];
 
-    if (options.notFull(name_buf))
-        name_buf << "[";
+    String value_name {"["};
     DataTypes element_types;
     element_types.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
     {
-        if (options.notFull(name_buf) && i > 0)
-            name_buf << ", ";
-        const auto & type = getNestedData().getValueNameAndTypeImpl(name_buf, offset + i, options);
+        const auto & [value, type] = getNestedData().getValueNameAndType(offset + i);
         element_types.push_back(type);
+        if (i > 0)
+            value_name += ", ";
+        value_name += value;
     }
-    if (options.notFull(name_buf))
-        name_buf << "]";
+    value_name += "]";
 
-    return std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types));
+    return {value_name, std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types))};
 }
 
 bool ColumnMap::isDefaultAt(size_t n) const
@@ -171,19 +170,19 @@ std::optional<size_t> ColumnMap::getSerializedValueSize(size_t n) const
     return nested->getSerializedValueSize(n);
 }
 
-const char * ColumnMap::deserializeAndInsertFromArena(const char * pos)
+void ColumnMap::deserializeAndInsertFromArena(ReadBuffer & in)
 {
-    return nested->deserializeAndInsertFromArena(pos);
+    nested->deserializeAndInsertFromArena(in);
 }
 
-const char * ColumnMap::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+void ColumnMap::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
 {
-    return nested->deserializeAndInsertAggregationStateValueFromArena(pos);
+    nested->deserializeAndInsertAggregationStateValueFromArena(in);
 }
 
-const char * ColumnMap::skipSerializedInArena(const char * pos) const
+void ColumnMap::skipSerializedInArena(ReadBuffer & in) const
 {
-    return nested->skipSerializedInArena(pos);
+    nested->skipSerializedInArena(in);
 }
 
 void ColumnMap::updateHashWithValue(size_t n, SipHash & hash) const

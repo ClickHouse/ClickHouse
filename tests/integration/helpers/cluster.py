@@ -44,7 +44,6 @@ try:
     # Not an easy dep
     import cassandra.cluster
     from cassandra.policies import RoundRobinPolicy
-    from filelock import FileLock, Timeout
 
 except Exception as e:
     logging.warning(f"Cannot import some modules, some tests may not work: {e}")
@@ -54,6 +53,7 @@ from dict2xml import dict2xml
 from docker.models.containers import Container
 from kazoo.exceptions import KazooException
 from minio import Minio
+from filelock import FileLock, Timeout
 
 from . import pytest_xdist_logging_to_separate_files
 from .client import Client, QueryRuntimeException

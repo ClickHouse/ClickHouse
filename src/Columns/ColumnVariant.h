@@ -173,7 +173,7 @@ public:
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
 
     bool isDefaultAt(size_t n) const override;
     bool isNullAt(size_t n) const override;
@@ -215,9 +215,9 @@ public:
     void popBack(size_t n) override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    const char * deserializeAndInsertFromArena(const char * pos) override;
-    const char * deserializeAndInsertAggregationStateValueFromArena(const char * pos) override;
-    const char * skipSerializedInArena(const char * pos) const override;
+    void deserializeAndInsertFromArena(ReadBuffer & in) override;
+    void deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in) override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
     std::optional<size_t> getSerializedValueSize(size_t n) const override;
 
@@ -248,6 +248,7 @@ public:
     void reserve(size_t n) override;
     size_t capacity() const override;
     void prepareForSquashing(const Columns & source_columns, size_t factor) override;
+    void shrinkToFit() override;
     void ensureOwnership() override;
     size_t byteSize() const override;
     size_t byteSizeAt(size_t n) const override;

@@ -8,6 +8,7 @@
 #include <azure/storage/blobs/blob_client.hpp>
 #include <azure/storage/blobs/blob_options.hpp>
 #include <azure/storage/blobs/blob_service_client.hpp>
+#include <azure/core/http/curl_transport.hpp>
 
 #endif
 
@@ -15,7 +16,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
-
+#include <base/strong_typedef.h>
 #include <filesystem>
 #include <variant>
 
@@ -55,6 +56,11 @@ struct RequestSettings
     bool read_only = false;
     size_t http_keep_alive_timeout = DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT;
     size_t http_keep_alive_max_requests = DEFAULT_HTTP_KEEP_ALIVE_MAX_REQUEST;
+
+#if USE_AZURE_BLOB_STORAGE
+    using CurlOptions = Azure::Core::Http::CurlTransportOptions;
+    CurlOptions::CurlOptIPResolve curl_ip_resolve = CurlOptions::CURL_IPRESOLVE_WHATEVER;
+#endif
 };
 
 struct Endpoint

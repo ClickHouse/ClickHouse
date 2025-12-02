@@ -14,6 +14,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
@@ -268,90 +269,79 @@ void ColumnObject::get(size_t n, Field & res) const
     res = (*this)[n];
 }
 
-DataTypePtr ColumnObject::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+std::pair<String, DataTypePtr> ColumnObject::getValueNameAndType(size_t n) const
 {
-    if (options.notFull(name_buf))
-        name_buf << '{';
+    WriteBufferFromOwnString wb;
+    wb << '{';
 
     bool first = true;
 
-    if (options.notFull(name_buf))
+    for (const auto & [path, column] : typed_paths)
     {
-        for (const auto & [path, column] : typed_paths)
-        {
-            if (!options.notFull(name_buf))
-                break;
+        const auto & [value, type] = column->getValueNameAndType(n);
 
-            if (first)
-                first = false;
-            else
-                name_buf << ", ";
-            writeDoubleQuoted(path, name_buf);
-            column->getValueNameAndTypeImpl(name_buf, n, options);
-        }
+        if (first)
+            first = false;
+        else
+            wb << ", ";
+
+        writeDoubleQuoted(path, wb);
+        wb << ": " << value;
     }
 
-    if (options.notFull(name_buf))
+    for (const auto & [path, column] : dynamic_paths_ptrs)
     {
-        for (const auto & [path, column] : dynamic_paths_ptrs)
-        {
-            if (!options.notFull(name_buf))
-                break;
+        /// Output only non-null values from dynamic paths. We cannot distinguish cases when
+        /// dynamic path has Null value and when it's absent in the row and consider them equivalent.
+        if (column->isNullAt(n))
+            continue;
 
-            /// Output only non-null values from dynamic paths. We cannot distinguish cases when
-            /// dynamic path has Null value and when it's absent in the row and consider them equivalent.
-            if (column->isNullAt(n))
-                continue;
+        const auto & [value, type] = column->getValueNameAndType(n);
 
-            if (first)
-                first = false;
-            else
-                name_buf << ", ";
-            writeDoubleQuoted(path, name_buf);
-            column->getValueNameAndTypeImpl(name_buf, n, options);
-        }
+        if (first)
+            first = false;
+        else
+            wb << ", ";
+
+        writeDoubleQuoted(path, wb);
+        wb << ": " << value;
     }
 
-    if (options.notFull(name_buf))
+    const auto & shared_data_offsets = getSharedDataOffsets();
+    const auto [shared_paths, shared_values] = getSharedDataPathsAndValues();
+    size_t start = shared_data_offsets[static_cast<ssize_t>(n) - 1];
+    size_t end = shared_data_offsets[n];
+    for (size_t i = start; i != end; ++i)
     {
-        const auto & shared_data_offsets = getSharedDataOffsets();
-        const auto [shared_paths, shared_values] = getSharedDataPathsAndValues();
-        size_t start = shared_data_offsets[static_cast<ssize_t>(n) - 1];
-        size_t end = shared_data_offsets[n];
-        for (size_t i = start; i != end; ++i)
+        if (first)
+            first = false;
+        else
+            wb << ", ";
+
+        String path = shared_paths->getDataAt(i).toString();
+        writeDoubleQuoted(path, wb);
+
+        auto value_data = shared_values->getDataAt(i);
+        ReadBufferFromMemory buf(value_data.data, value_data.size);
+        auto decoded_type = decodeDataType(buf);
+
+        if (isNothing(decoded_type))
         {
-            if (!options.notFull(name_buf))
-                break;
-
-            if (first)
-                first = false;
-            else
-                name_buf << ", ";
-
-            String path = shared_paths->getDataAt(i).toString();
-            writeDoubleQuoted(path, name_buf);
-
-            auto value_data = shared_values->getDataAt(i);
-            ReadBufferFromMemory buf(value_data.data, value_data.size);
-            auto decoded_type = decodeDataType(buf);
-
-            if (isNothing(decoded_type))
-            {
-                name_buf << ": NULL";
-                continue;
-            }
-
-            const auto column = decoded_type->createColumn();
-            decoded_type->getDefaultSerialization()->deserializeBinary(*column, buf, getFormatSettings());
-
-            column->getValueNameAndTypeImpl(name_buf, 0, options);
+            wb << ": NULL";
+            continue;
         }
+
+        const auto column = decoded_type->createColumn();
+        decoded_type->getDefaultSerialization()->deserializeBinary(*column, buf, getFormatSettings());
+
+        const auto & [value, type] = column->getValueNameAndType(0);
+
+        wb << ": " << value;
     }
 
-    if (options.notFull(name_buf))
-        name_buf << "}";
+    wb << "}";
 
-    return std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
+    return {wb.str(), std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON)};
 }
 
 bool ColumnObject::isDefaultAt(size_t n) const
@@ -642,7 +632,6 @@ void ColumnObject::doInsertFrom(const IColumn & src, size_t n)
 
     /// Finally, insert paths from shared data.
     insertFromSharedDataAndFillRemainingDynamicPaths(src_object_column, std::move(src_dynamic_paths_for_shared_data), n, 1);
-    validateDynamicPathsSizes();
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -677,7 +666,6 @@ void ColumnObject::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
 
     /// Finally, insert paths from shared data.
     insertFromSharedDataAndFillRemainingDynamicPaths(src_object_column, std::move(src_dynamic_paths_for_shared_data), start, length);
-    validateDynamicPathsSizes();
 }
 
 void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::ColumnObject & src_object_column, std::vector<std::string_view> && src_dynamic_paths_for_shared_data, size_t start, size_t length)
@@ -740,8 +728,15 @@ void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::Co
             {
                 /// Deserialize binary value into dynamic column from shared data.
                 if (it->second->size() != current_size)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {} != {}. It may indicate duplicated data for this path", path, it->second->size(), current_size);
+                {
+                    src_object_column.validateDynamicPathsAndSharedData();
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {} != {}", path, it->second->size(), current_size);
+                }
                 deserializeValueFromSharedData(src_shared_data_values, i, *it->second);
+            }
+            else if (auto * dynamic_path_column = tryToAddNewDynamicPath(path))
+            {
+                deserializeValueFromSharedData(src_shared_data_values, i, *dynamic_path_column);
             }
             else
             {
@@ -995,59 +990,73 @@ void ColumnObject::serializePathAndValueIntoArena(DB::Arena & arena, const char 
     res.size += sizeof(size_t) + path_size + sizeof(size_t) + value_size;
 }
 
-const char * ColumnObject::deserializeAndInsertFromArena(const char * pos)
+void ColumnObject::deserializeAndInsertFromArena(ReadBuffer & in)
 {
     /// First deserialize typed paths. They come first.
     for (auto path : sorted_typed_paths)
-        pos = typed_paths.find(path)->second->deserializeAndInsertFromArena(pos);
+        typed_paths.find(path)->second->deserializeAndInsertFromArena(in);
 
     /// Second deserialize all other paths and values and insert them into dynamic paths or shared data.
-    return deserializeDynamicPathsAndSharedDataFromArena(pos);
+    deserializeDynamicPathsAndSharedDataFromArena(in);
 }
 
-const char * ColumnObject::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+void ColumnObject::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
 {
     /// First deserialize typed paths. They come first.
     for (auto path : sorted_typed_paths)
-        pos = typed_paths.find(path)->second->deserializeAndInsertAggregationStateValueFromArena(pos);
+        typed_paths.find(path)->second->deserializeAndInsertAggregationStateValueFromArena(in);
 
     /// Second deserialize all other paths and values and insert them into dynamic paths or shared data.
-    return deserializeDynamicPathsAndSharedDataFromArena(pos);
+    deserializeDynamicPathsAndSharedDataFromArena(in);
 }
 
-const char * ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(const char * pos)
+void ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in)
 {
     size_t current_size = size();
-    auto num_paths = unalignedLoad<size_t>(pos);
-    pos += sizeof(size_t);
+    size_t num_paths;
+    readBinaryLittleEndian<size_t>(num_paths, in);
+
     const auto [shared_data_paths, shared_data_values] = getSharedDataPathsAndValues();
     for (size_t i = 0; i != num_paths; ++i)
     {
-        auto path_size = unalignedLoad<size_t>(pos);
-        pos += sizeof(size_t);
-        std::string_view path(pos, path_size);
-        pos += path_size;
+        size_t path_size;
+        readBinaryLittleEndian<size_t>(path_size, in);
+
+        if (in.available() < path_size)
+            throw Exception(
+                ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF,
+                "Attempt to read {} bytes for the path size, but only {} bytes are available",
+                path_size,
+                in.available());
+        std::string_view path(in.position(), path_size);
+        in.ignore(path_size);
+
         /// Deserialize binary value and try to insert it to dynamic paths or shared data.
-        auto value_size = unalignedLoad<size_t>(pos);
-        pos += sizeof(size_t);
-        std::string_view value(pos, value_size);
-        pos += value_size;
+        size_t value_size;
+        readBinaryLittleEndian<size_t>(value_size, in);
+
         /// Check if we have this path in dynamic paths.
         if (auto dynamic_it = dynamic_paths.find(path); dynamic_it != dynamic_paths.end())
         {
-            ReadBufferFromMemory buf(value.data(), value.size());
-            getDynamicSerialization()->deserializeBinary(*dynamic_it->second, buf, getFormatSettings());
+            getDynamicSerialization()->deserializeBinary(*dynamic_it->second, in, getFormatSettings());
         }
         /// Try to add a new dynamic path.
         else if (auto * dynamic_path_column = tryToAddNewDynamicPath(path))
         {
-            ReadBufferFromMemory buf(value.data(), value.size());
-            getDynamicSerialization()->deserializeBinary(*dynamic_path_column, buf, getFormatSettings());
+            getDynamicSerialization()->deserializeBinary(*dynamic_path_column, in, getFormatSettings());
         }
         /// Limit on dynamic paths is reached, add this path to shared data.
         /// Serialized paths are sorted, so we can insert right away.
         else
         {
+            if (in.available() < value_size)
+                throw Exception(
+                    ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF,
+                    "Attempt to read {} bytes for the value size, but only {} bytes are available",
+                    value_size,
+                    in.available());
+            std::string_view value(in.position(), value_size);
+            in.ignore(value_size);
             shared_data_paths->insertData(path.data(), path.size());
             shared_data_values->insertData(value.data(), value.size());
         }
@@ -1061,30 +1070,28 @@ const char * ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(const c
         if (column->size() == current_size)
             column->insertDefault();
     }
-
-    return pos;
 }
 
-const char * ColumnObject::skipSerializedInArena(const char * pos) const
+void ColumnObject::skipSerializedInArena(ReadBuffer & in) const
 {
     /// First, skip all values of typed paths;
     for (auto path : sorted_typed_paths)
-        pos = typed_paths.find(path)->second->skipSerializedInArena(pos);
+        typed_paths.find(path)->second->skipSerializedInArena(in);
 
     /// Second, skip all other paths and values.
-    auto num_paths = unalignedLoad<size_t>(pos);
-    pos += sizeof(size_t);
+    size_t num_paths;
+    readBinaryLittleEndian<size_t>(num_paths, in);
+
     for (size_t i = 0; i != num_paths; ++i)
     {
-        auto path_size = unalignedLoad<size_t>(pos);
-        pos += sizeof(size_t);
-        std::string_view path(pos, path_size);
-        pos += path_size;
-        auto value_size = unalignedLoad<size_t>(pos);
-        pos += sizeof(size_t) + value_size;
-    }
+        size_t path_size;
+        readBinaryLittleEndian<size_t>(path_size, in);
+        in.ignore(path_size);
 
-    return pos;
+        size_t value_size;
+        readBinaryLittleEndian<size_t>(value_size, in);
+        in.ignore(value_size);
+    }
 }
 
 void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
@@ -1319,6 +1326,15 @@ void ColumnObject::reserve(size_t n)
 size_t ColumnObject::capacity() const
 {
     return shared_data->capacity();
+}
+
+void ColumnObject::shrinkToFit()
+{
+    for (auto & [_, column] : typed_paths)
+        column->shrinkToFit();
+    for (auto & [_, column] : dynamic_paths_ptrs)
+        column->shrinkToFit();
+    shared_data->shrinkToFit();
 }
 
 void ColumnObject::ensureOwnership()
@@ -2074,13 +2090,27 @@ int ColumnObject::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_d
     return 1;
 }
 
-void ColumnObject::validateDynamicPathsSizes() const
+void ColumnObject::validateDynamicPathsAndSharedData(size_t shared_data_offset) const
 {
+    if (dynamic_paths.empty())
+        return;
+
     size_t expected_size = shared_data->size();
     for (const auto & [path, column] : dynamic_paths)
     {
         if (column->size() != expected_size)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {} != {}", path, column->size(), expected_size);
+    }
+
+    const auto & shared_data_offsets = getSharedDataOffsets();
+    const auto [shared_data_paths, _] = getSharedDataPathsAndValues();
+    size_t shared_data_paths_start = shared_data_offsets[ssize_t(shared_data_offset) - 1];
+    size_t shared_data_paths_end = shared_data_offsets.back();
+    for (size_t i = shared_data_paths_start; i != shared_data_paths_end; ++i)
+    {
+        auto path = shared_data_paths->getDataAt(i);
+        if (dynamic_paths.contains(path))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is present both in dynamic paths and in shared data", path.toString());
     }
 }
 

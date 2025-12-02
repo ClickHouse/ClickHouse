@@ -631,12 +631,12 @@ SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON(SKIP `a%2Eb`) as json,
 
 ## Reading JSON type from data {#reading-json-type-from-data}
 
-All text formats
-([`JSONEachRow`](/interfaces/formats/JSONEachRow),
-[`TSV`](/interfaces/formats/TabSeparated),
-[`CSV`](/interfaces/formats/CSV),
-[`CustomSeparated`](/interfaces/formats/CustomSeparated),
-[`Values`](/interfaces/formats/Values), etc.) support reading the `JSON` type.
+All text formats 
+([`JSONEachRow`](../../interfaces/formats/JSON/JSONEachRow.md), 
+[`TSV`](../../interfaces/formats/TabSeparated/TabSeparated.md), 
+[`CSV`](../../interfaces/formats/CSV/CSV.md), 
+[`CustomSeparated`](../../interfaces/formats/CustomSeparated/CustomSeparated.md), 
+[`Values`](../../interfaces/formats/Values.md), etc.) support reading the `JSON` type.
 
 Examples:
 

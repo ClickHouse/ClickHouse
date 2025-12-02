@@ -676,7 +676,7 @@ bool decompress(
 
         /// Update performance statistics.
 
-        statistics.data[best_variant].update(watch.elapsedSeconds(), dest_size);  // NOLINT(clang-analyzer-security.ArrayBound)
+        statistics.data[best_variant].update(watch.elapsedSeconds(), dest_size);
 
         return success;
     }

@@ -433,10 +433,6 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
             system_context->clearVectorSimilarityIndexCache();
             break;
-        case Type::DROP_TEXT_INDEX_DICTIONARY_CACHE:
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_DICTIONARY_CACHE);
-            system_context->clearTextIndexDictionaryBlockCache();
-            break;
         case Type::DROP_MMAP_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
             system_context->clearMMappedFileCache();
@@ -478,8 +474,7 @@ BlockIO InterpreterSystemQuery::execute()
 
             if (query.filesystem_cache_name.empty())
             {
-                auto caches = FileCacheFactory::instance().getAll();
-                for (const auto & [_, cache_data] : caches)
+                for (const auto & cache_data : FileCacheFactory::instance().getUniqueInstances())
                 {
                     if (!cache_data->cache->isInitialized())
                         continue;
@@ -540,11 +535,10 @@ BlockIO InterpreterSystemQuery::execute()
 
             if (query.filesystem_cache_name.empty())
             {
-                auto caches = FileCacheFactory::instance().getAll();
-                for (const auto & [cache_name, cache_data] : caches)
+                for (const auto & cache_data : FileCacheFactory::instance().getUniqueInstances())
                 {
                     auto file_segments = cache_data->cache->sync();
-                    fill_data(cache_name, cache_data->cache, file_segments);
+                    fill_data(cache_data->cache->getName(), cache_data->cache, file_segments);
                 }
             }
             else
@@ -1862,7 +1856,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
         case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
-        case Type::DROP_TEXT_INDEX_DICTIONARY_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
         case Type::DROP_DISTRIBUTED_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:

@@ -110,12 +110,11 @@ public:
         res = std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)};
     }
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
     {
-
-        if (options.notFull(name_buf))
-            writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)}, name_buf);
-        return std::make_shared<DataTypeString>();
+        WriteBufferFromOwnString wb;
+        writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)}, wb);
+        return {wb.str(), std::make_shared<DataTypeString>()};
     }
 
     StringRef getDataAt(size_t n) const override
@@ -213,10 +212,10 @@ public:
 
     void batchSerializeValueIntoMemory(std::vector<char *> & memories) const override;
 
-    const char * deserializeAndInsertFromArena(const char * pos) override;
-    const char * deserializeAndInsertAggregationStateValueFromArena(const char * pos) override;
+    void deserializeAndInsertFromArena(ReadBuffer & in) override;
+    void deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in) override;
 
-    const char * skipSerializedInArena(const char * pos) const override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 

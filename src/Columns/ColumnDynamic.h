@@ -143,7 +143,7 @@ public:
 
     void get(size_t n, Field & res) const override;
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
 
     bool isDefaultAt(size_t n) const override
     {
@@ -194,8 +194,8 @@ public:
     }
 
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    const char * deserializeAndInsertFromArena(const char * pos) override;
-    const char * skipSerializedInArena(const char * pos) const override;
+    void deserializeAndInsertFromArena(ReadBuffer & in) override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
     std::optional<size_t> getSerializedValueSize(size_t) const override { return std::nullopt; }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
@@ -281,6 +281,11 @@ public:
     void prepareForSquashing(const Columns & source_columns, size_t factor) override;
     /// Prepare only variants but not discriminators and offsets.
     void prepareVariantsForSquashing(const Columns & source_columns, size_t factor);
+
+    void shrinkToFit() override
+    {
+        variant_column_ptr->shrinkToFit();
+    }
 
     void ensureOwnership() override
     {

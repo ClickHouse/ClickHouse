@@ -21,6 +21,7 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/KeyHolderHelpers.h>
 
 #include <memory>
 
@@ -196,7 +197,7 @@ class AggregateFunctionGroupArrayIntersectGeneric final
     : public IAggregateFunctionDataHelper<AggregateFunctionGroupArrayIntersectGenericData,
         AggregateFunctionGroupArrayIntersectGeneric<is_plain_column>>
 {
-    const DataTypePtr input_data_type;
+    const DataTypePtr & input_data_type;
 
     using State = AggregateFunctionGroupArrayIntersectGenericData;
 
@@ -341,10 +342,7 @@ public:
 
         for (auto & elem : set)
         {
-            if constexpr (is_plain_column)
-                data_to.insertData(elem.getValue().data, elem.getValue().size);
-            else
-                std::ignore = data_to.deserializeAndInsertAggregationStateValueFromArena(elem.getValue().data);
+            deserializeAndInsert<is_plain_column>(elem.getValue(), data_to);
         }
     }
 };

@@ -71,9 +71,9 @@ public:
         data->get(0, res);
     }
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t, const Options & options) const override
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t) const override
     {
-        return data->getValueNameAndTypeImpl(name_buf, 0, options);
+        return data->getValueNameAndType(0);
     }
 
     StringRef getDataAt(size_t) const override
@@ -184,17 +184,23 @@ public:
         return data->serializeValueIntoMemory(0, memory);
     }
 
-    const char * deserializeAndInsertFromArena(const char * pos) override
+    void deserializeAndInsertFromArena(ReadBuffer & in) override
     {
-        const auto * res = data->deserializeAndInsertFromArena(pos);
+        data->deserializeAndInsertFromArena(in);
         data->popBack(1);
         ++s;
-        return res;
     }
 
-    const char * skipSerializedInArena(const char * pos) const override
+    void deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in) override
     {
-        return data->skipSerializedInArena(pos);
+        data->deserializeAndInsertAggregationStateValueFromArena(in);
+        data->popBack(1);
+        ++s;
+    }
+
+    void skipSerializedInArena(ReadBuffer & in) const override
+    {
+        data->skipSerializedInArena(in);
     }
 
     void updateHashWithValue(size_t, SipHash & hash) const override
