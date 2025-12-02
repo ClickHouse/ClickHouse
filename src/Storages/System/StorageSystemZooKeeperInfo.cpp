@@ -354,6 +354,7 @@ String StorageSystemZooKeeperInfo::sendFourLetterCommand(String host, String por
 
     Poco::Net::StreamSocket socket;
 
+    size_t MAX_RESPONSE_SIZE = 1000000;
     String response;
         try
         {
@@ -373,8 +374,13 @@ String StorageSystemZooKeeperInfo::sendFourLetterCommand(String host, String por
 
             Coordination::write(cmd_int,*out);
             out->next();
-            Coordination::read(response, *in);
-            LOG_INFO(getLogger("StorageSystemZooKeeperInfo"), "Response to four letter command : {}   response : {}", command, response);
+
+            char ch;
+            while (in->read(ch) && response.size() <= MAX_RESPONSE_SIZE)
+                response += ch;
+
+
+            LOG_INFO(getLogger("StorageSystemZooKeeperInfo"), "Response to four letter command : {}   response : {}  ", command, response);
         }
         catch (...)
         {

@@ -617,7 +617,7 @@ bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(int32_t command)
     {
         String res = command_ptr->run();
         LOG_DEBUG(log, "Run four letter command res {}  size = {}", res, res.size());
-        Coordination::write(res, *out);
+        out->write(res.data(), res.size());
         out->next();
     }
     catch (...)
