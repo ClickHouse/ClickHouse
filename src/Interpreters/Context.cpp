@@ -47,10 +47,10 @@
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
 #include <IO/S3Settings.h>
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/DiskLocal.h>
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/StoragePolicy.h>
 #include <Disks/IO/IOUringReader.h>
@@ -5367,6 +5367,16 @@ std::shared_ptr<PartLog> Context::getPartLog(const String & part_database) const
     return shared->system_logs->part_log;
 }
 
+std::shared_ptr<BackgroundSchedulePoolLog> Context::getBackgroundSchedulePoolLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->background_schedule_pool_log;
+}
+
 std::shared_ptr<TraceLog> Context::getTraceLog() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -5376,7 +5386,6 @@ std::shared_ptr<TraceLog> Context::getTraceLog() const
 
     return shared->system_logs->trace_log;
 }
-
 
 std::shared_ptr<TextLog> Context::getTextLog() const
 {
