@@ -317,23 +317,17 @@ void considerEnablingParallelReplicas(
      QueryPlan::Nodes &,
      QueryPlan & query_plan)
 {
+    if (!optimization_settings.automatic_parallel_replicas_mode)
+        return;
+
     if (!optimization_settings.query_plan_with_parallel_replicas_builder)
         return;
 
     if (optimization_settings.parallel_replicas_enabled)
         return;
 
-    if (!optimization_settings.automatic_parallel_replicas_mode)
+    if (optimization_settings.force_use_projection)
         return;
-
-    auto dump_plan = [&](const QueryPlan & plan, bool is_plan_before)
-    {
-        WriteBufferFromOwnString wb;
-        plan.explainPlan(wb, ExplainPlanOptions{});
-        LOG_DEBUG(getLogger("optimizeTree"), "The plan {}:\n{}", (is_plan_before ? "before" : "after"), wb.str());
-    };
-
-    dump_plan(query_plan, true);
 
     bool should_apply_optimization = true;
     Stack stack;
@@ -342,12 +336,6 @@ void considerEnablingParallelReplicas(
         root,
         [&](auto & frame_node)
         {
-            if (typeid_cast<const FilterStep *>(frame_node.step.get()))
-            {
-                return;
-            }
-            if (!frame_node.step->supportsDataflowStatisticsCollection())
-                LOG_DEBUG(&Poco::Logger::get("debug"), "frame_node.step->getName()={}", frame_node.step->getName());
             should_apply_optimization &= frame_node.step->supportsDataflowStatisticsCollection();
         });
 
@@ -358,6 +346,8 @@ void considerEnablingParallelReplicas(
     }
 
     auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder();
+    if (!plan_with_parallel_replicas)
+        return;
 
     const auto * final_node_in_replica_plan = findTopNodeOfReplicasPlan(plan_with_parallel_replicas->getRootNode());
     if (!final_node_in_replica_plan)

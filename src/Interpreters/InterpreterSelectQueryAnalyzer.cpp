@@ -46,6 +46,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsString cluster_for_parallel_replicas;
 }
 
 namespace
@@ -184,21 +185,22 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , query_plan_with_parallel_replicas_builder(
           [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names]() mutable
           {
-              LOG_DEBUG(
-                  &Poco::Logger::get("debug"),
-                  "select_options.is_internal={}, select_options.is_subquery={}, select_options.subquery_depth={}, "
-                  "select_options.to_stage={}",
-                  select_options.is_internal,
-                  select_options.is_subquery,
-                  select_options.subquery_depth,
-                  select_options.to_stage);
+              if (ctx->getSettingsRef()[Setting::cluster_for_parallel_replicas].value.empty())
+              {
+                  LOG_DEBUG(
+                      getLogger("InterpreterSelectQueryAnalyzer"),
+                      "Cluster for parallel replicas is not set, can't build plan with parallel replicas");
+                  return QueryPlanPtr{};
+              }
+              /// If we are already in secondary query, don't try to build plan with parallel replicas
+              if (ctx->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+                  return QueryPlanPtr{};
               ctx->setSetting("enable_parallel_replicas", true);
-              // select_options.planning_for_automatic_parallel_replicas = true;
               InterpreterSelectQueryAnalyzer interpreter(ast, ctx, select_options, column_names);
               auto plan = std::move(interpreter).extractQueryPlan();
-              auto settings = QueryPlanOptimizationSettings(ctx);
-              settings.build_sets = false;
-              plan.optimize(settings);
+              // TODO(nickitat): split optimization into two phases. First will do the minimum necessary to apply automatic parallel replicas,
+              // second will do the rest of optimizations, but only if the plan with parallel replicas was chosen.
+              plan.optimize(QueryPlanOptimizationSettings(ctx));
               return std::make_unique<QueryPlan>(std::move(plan));
           })
 {
@@ -222,21 +224,20 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
            select_options = select_query_options_,
            column_names]() mutable
           {
-              LOG_DEBUG(
-                  &Poco::Logger::get("debug"),
-                  "select_options.is_internal={}, select_options.is_subquery={}, select_options.subquery_depth={}, "
-                  "select_options.to_stage={}",
-                  select_options.is_internal,
-                  select_options.is_subquery,
-                  select_options.subquery_depth,
-                  select_options.to_stage);
+              if (ctx->getSettingsRef()[Setting::cluster_for_parallel_replicas].value.empty())
+              {
+                  LOG_DEBUG(
+                      getLogger("InterpreterSelectQueryAnalyzer"),
+                      "Cluster for parallel replicas is not set, can't build plan with parallel replicas");
+                  return QueryPlanPtr{};
+              }
+              /// If we are already in secondary query, don't try to build plan with parallel replicas
+              if (ctx->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+                  return QueryPlanPtr{};
               ctx->setSetting("enable_parallel_replicas", true);
-              // select_options.planning_for_automatic_parallel_replicas = true;
               InterpreterSelectQueryAnalyzer interpreter(ast, ctx, storage, select_options, column_names);
               auto plan = std::move(interpreter).extractQueryPlan();
-              auto settings = QueryPlanOptimizationSettings(ctx);
-              settings.build_sets = false;
-              plan.optimize(settings);
+              plan.optimize(QueryPlanOptimizationSettings(ctx));
               return std::make_unique<QueryPlan>(std::move(plan));
           })
 {
@@ -252,21 +253,20 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , query_plan_with_parallel_replicas_builder(
           [tree = query_tree_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_]() mutable
           {
-              LOG_DEBUG(
-                  &Poco::Logger::get("debug"),
-                  "select_options.is_internal={}, select_options.is_subquery={}, select_options.subquery_depth={}, "
-                  "select_options.to_stage={}",
-                  select_options.is_internal,
-                  select_options.is_subquery,
-                  select_options.subquery_depth,
-                  select_options.to_stage);
+              if (ctx->getSettingsRef()[Setting::cluster_for_parallel_replicas].value.empty())
+              {
+                  LOG_DEBUG(
+                      getLogger("InterpreterSelectQueryAnalyzer"),
+                      "Cluster for parallel replicas is not set, can't build plan with parallel replicas");
+                  return QueryPlanPtr{};
+              }
+              /// If we are already in secondary query, don't try to build plan with parallel replicas
+              if (ctx->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+                  return QueryPlanPtr{};
               ctx->setSetting("enable_parallel_replicas", true);
-              // select_options.planning_for_automatic_parallel_replicas = true;
               InterpreterSelectQueryAnalyzer interpreter(tree, ctx, select_options);
               auto plan = std::move(interpreter).extractQueryPlan();
-              auto settings = QueryPlanOptimizationSettings(ctx);
-              settings.build_sets = false;
-              plan.optimize(settings);
+              plan.optimize(QueryPlanOptimizationSettings(ctx));
               return std::make_unique<QueryPlan>(std::move(plan));
           })
 {
