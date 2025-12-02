@@ -7247,6 +7247,10 @@ On server startup, prevent scheduling of refreshable materialized views, as if w
 Allow to create database with Engine=MaterializedPostgreSQL(...).
 )", EXPERIMENTAL) \
     \
+    DECLARE(Bool, allow_experimental_nullable_tuple_type, true, R"(
+Allows creation of [Nullable](../../sql-reference/data-types/nullable) [Tuple](../../sql-reference/data-types/tuple.md) columns in tables.
+)", EXPERIMENTAL) \
+    \
     DECLARE(Bool, allow_experimental_qbit_type, false, R"(
 Allows creation of [QBit](../../sql-reference/data-types/qbit.md) data type.
 )", EXPERIMENTAL) \
