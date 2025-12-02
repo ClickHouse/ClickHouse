@@ -133,35 +133,24 @@ void ColumnReplicated::insertData(const char * pos, size_t length)
     indexes.insertIndex(nested_column->size() - 1);
 }
 
-std::string_view ColumnReplicated::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnReplicated::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
-    return nested_column->serializeValueIntoArena(indexes.getIndexAt(n), arena, begin);
+    return nested_column->serializeValueIntoArena(indexes.getIndexAt(n), arena, begin, settings);
 }
 
-std::string_view ColumnReplicated::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+char * ColumnReplicated::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
-    return nested_column->serializeAggregationStateValueIntoArena(indexes.getIndexAt(n), arena, begin);
+    return nested_column->serializeValueIntoMemory(indexes.getIndexAt(n), memory, settings);
 }
 
-char * ColumnReplicated::serializeValueIntoMemory(size_t n, char * memory) const
+std::optional<size_t> ColumnReplicated::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
-    return nested_column->serializeValueIntoMemory(indexes.getIndexAt(n), memory);
+    return nested_column->getSerializedValueSize(indexes.getIndexAt(n), settings);
 }
 
-std::optional<size_t> ColumnReplicated::getSerializedValueSize(size_t n) const
+void ColumnReplicated::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
-    return nested_column->getSerializedValueSize(indexes.getIndexAt(n));
-}
-
-void ColumnReplicated::deserializeAndInsertFromArena(ReadBuffer & in)
-{
-    nested_column->deserializeAndInsertFromArena(in);
-    indexes.insertIndex(nested_column->size() - 1);
-}
-
-void ColumnReplicated::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
-{
-    nested_column->deserializeAndInsertAggregationStateValueFromArena(in);
+    nested_column->deserializeAndInsertFromArena(in, settings);
     indexes.insertIndex(nested_column->size() - 1);
 }
 
