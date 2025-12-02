@@ -32,6 +32,9 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryLog.h>
 
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
+
 namespace DB
 {
 
@@ -179,12 +182,23 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/))
     , planner(query_tree, select_query_options)
     , query_plan_with_parallel_replicas_builder(
-          [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names]()
+          [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names]() mutable
           {
+              LOG_DEBUG(
+                  &Poco::Logger::get("debug"),
+                  "select_options.is_internal={}, select_options.is_subquery={}, select_options.subquery_depth={}, "
+                  "select_options.to_stage={}",
+                  select_options.is_internal,
+                  select_options.is_subquery,
+                  select_options.subquery_depth,
+                  select_options.to_stage);
               ctx->setSetting("enable_parallel_replicas", true);
+              // select_options.planning_for_automatic_parallel_replicas = true;
               InterpreterSelectQueryAnalyzer interpreter(ast, ctx, select_options, column_names);
               auto plan = std::move(interpreter).extractQueryPlan();
-              plan.optimize(QueryPlanOptimizationSettings(ctx));
+              auto settings = QueryPlanOptimizationSettings(ctx);
+              settings.build_sets = false;
+              plan.optimize(settings);
               return std::make_unique<QueryPlan>(std::move(plan));
           })
 {
@@ -206,12 +220,23 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
            ctx = Context::createCopy(context_),
            storage = storage_,
            select_options = select_query_options_,
-           column_names]()
+           column_names]() mutable
           {
+              LOG_DEBUG(
+                  &Poco::Logger::get("debug"),
+                  "select_options.is_internal={}, select_options.is_subquery={}, select_options.subquery_depth={}, "
+                  "select_options.to_stage={}",
+                  select_options.is_internal,
+                  select_options.is_subquery,
+                  select_options.subquery_depth,
+                  select_options.to_stage);
               ctx->setSetting("enable_parallel_replicas", true);
+              // select_options.planning_for_automatic_parallel_replicas = true;
               InterpreterSelectQueryAnalyzer interpreter(ast, ctx, storage, select_options, column_names);
               auto plan = std::move(interpreter).extractQueryPlan();
-              plan.optimize(QueryPlanOptimizationSettings(ctx));
+              auto settings = QueryPlanOptimizationSettings(ctx);
+              settings.build_sets = false;
+              plan.optimize(settings);
               return std::make_unique<QueryPlan>(std::move(plan));
           })
 {
@@ -225,12 +250,23 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , query_tree(query_tree_)
     , planner(query_tree_, select_query_options)
     , query_plan_with_parallel_replicas_builder(
-          [tree = query_tree_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_]()
+          [tree = query_tree_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_]() mutable
           {
+              LOG_DEBUG(
+                  &Poco::Logger::get("debug"),
+                  "select_options.is_internal={}, select_options.is_subquery={}, select_options.subquery_depth={}, "
+                  "select_options.to_stage={}",
+                  select_options.is_internal,
+                  select_options.is_subquery,
+                  select_options.subquery_depth,
+                  select_options.to_stage);
               ctx->setSetting("enable_parallel_replicas", true);
+              // select_options.planning_for_automatic_parallel_replicas = true;
               InterpreterSelectQueryAnalyzer interpreter(tree, ctx, select_options);
               auto plan = std::move(interpreter).extractQueryPlan();
-              plan.optimize(QueryPlanOptimizationSettings(ctx));
+              auto settings = QueryPlanOptimizationSettings(ctx);
+              settings.build_sets = false;
+              plan.optimize(settings);
               return std::make_unique<QueryPlan>(std::move(plan));
           })
 {

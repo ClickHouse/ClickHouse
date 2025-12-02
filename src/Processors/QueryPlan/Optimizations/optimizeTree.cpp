@@ -1,6 +1,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -324,6 +325,37 @@ void considerEnablingParallelReplicas(
 
     if (!optimization_settings.automatic_parallel_replicas_mode)
         return;
+
+    auto dump_plan = [&](const QueryPlan & plan, bool is_plan_before)
+    {
+        WriteBufferFromOwnString wb;
+        plan.explainPlan(wb, ExplainPlanOptions{});
+        LOG_DEBUG(getLogger("optimizeTree"), "The plan {}:\n{}", (is_plan_before ? "before" : "after"), wb.str());
+    };
+
+    dump_plan(query_plan, true);
+
+    bool should_apply_optimization = true;
+    Stack stack;
+    traverseQueryPlan(
+        stack,
+        root,
+        [&](auto & frame_node)
+        {
+            if (typeid_cast<const FilterStep *>(frame_node.step.get()))
+            {
+                return;
+            }
+            if (!frame_node.step->supportsDataflowStatisticsCollection())
+                LOG_DEBUG(&Poco::Logger::get("debug"), "frame_node.step->getName()={}", frame_node.step->getName());
+            should_apply_optimization &= frame_node.step->supportsDataflowStatisticsCollection();
+        });
+
+    if (!should_apply_optimization)
+    {
+        LOG_DEBUG(getLogger("optimizeTree"), "Some steps in the plan don't support dataflow statistics collection. Skipping optimization");
+        return;
+    }
 
     auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder();
 
