@@ -753,16 +753,16 @@ TEST(ColumnDynamic, SerializeDeserializeFromArena1)
 
     Arena arena;
     const char * pos = nullptr;
-    auto ref1 = column->serializeValueIntoArena(0, arena, pos);
-    column->serializeValueIntoArena(1, arena, pos);
-    column->serializeValueIntoArena(2, arena, pos);
-    column->serializeValueIntoArena(3, arena, pos);
+    auto ref1 = column->serializeValueIntoArena(0, arena, pos, nullptr);
+    column->serializeValueIntoArena(1, arena, pos, nullptr);
+    column->serializeValueIntoArena(2, arena, pos, nullptr);
+    column->serializeValueIntoArena(3, arena, pos, nullptr);
 
     ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
-    column->deserializeAndInsertFromArena(in);
-    column->deserializeAndInsertFromArena(in);
-    column->deserializeAndInsertFromArena(in);
-    column->deserializeAndInsertFromArena(in);
+    column->deserializeAndInsertFromArena(in, nullptr);
+    column->deserializeAndInsertFromArena(in, nullptr);
+    column->deserializeAndInsertFromArena(in, nullptr);
+    column->deserializeAndInsertFromArena(in, nullptr);
 
     ASSERT_EQ((*column)[column->size() - 4], 42);
     ASSERT_EQ((*column)[column->size() - 3], 42.42);
@@ -780,17 +780,17 @@ TEST(ColumnDynamic, SerializeDeserializeFromArena2)
 
     Arena arena;
     const char * pos = nullptr;
-    auto ref1 = column_from->serializeValueIntoArena(0, arena, pos);
-    column_from->serializeValueIntoArena(1, arena, pos);
-    column_from->serializeValueIntoArena(2, arena, pos);
-    column_from->serializeValueIntoArena(3, arena, pos);
+    auto ref1 = column_from->serializeValueIntoArena(0, arena, pos, nullptr);
+    column_from->serializeValueIntoArena(1, arena, pos, nullptr);
+    column_from->serializeValueIntoArena(2, arena, pos, nullptr);
+    column_from->serializeValueIntoArena(3, arena, pos, nullptr);
 
     auto column_to = ColumnDynamic::create(254);
     ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
-    column_to->deserializeAndInsertFromArena(in);
-    column_to->deserializeAndInsertFromArena(in);
-    column_to->deserializeAndInsertFromArena(in);
-    column_to->deserializeAndInsertFromArena(in);
+    column_to->deserializeAndInsertFromArena(in, nullptr);
+    column_to->deserializeAndInsertFromArena(in, nullptr);
+    column_to->deserializeAndInsertFromArena(in, nullptr);
+    column_to->deserializeAndInsertFromArena(in, nullptr);
 
     ASSERT_EQ((*column_to)[column_to->size() - 4], 42);
     ASSERT_EQ((*column_to)[column_to->size() - 3], 42.42);
@@ -813,17 +813,17 @@ TEST(ColumnDynamic, SerializeDeserializeFromArenaOverflow1)
 
     Arena arena;
     const char * pos = nullptr;
-    auto ref1 = column_from->serializeValueIntoArena(0, arena, pos);
-    column_from->serializeValueIntoArena(1, arena, pos);
-    column_from->serializeValueIntoArena(2, arena, pos);
-    column_from->serializeValueIntoArena(3, arena, pos);
+    auto ref1 = column_from->serializeValueIntoArena(0, arena, pos, nullptr);
+    column_from->serializeValueIntoArena(1, arena, pos, nullptr);
+    column_from->serializeValueIntoArena(2, arena, pos, nullptr);
+    column_from->serializeValueIntoArena(3, arena, pos, nullptr);
 
     auto column_to = getDynamicWithManyVariants(253);
     ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
-    column_to->deserializeAndInsertFromArena(in);
-    column_to->deserializeAndInsertFromArena(in);
-    column_to->deserializeAndInsertFromArena(in);
-    column_to->deserializeAndInsertFromArena(in);
+    column_to->deserializeAndInsertFromArena(in, nullptr);
+    column_to->deserializeAndInsertFromArena(in, nullptr);
+    column_to->deserializeAndInsertFromArena(in, nullptr);
+    column_to->deserializeAndInsertFromArena(in, nullptr);
 
     ASSERT_EQ((*column_to)[column_to->size() - 4], 42);
     ASSERT_EQ((*column_to)[column_to->size() - 3], 42.42);
@@ -846,20 +846,20 @@ TEST(ColumnDynamic, SerializeDeserializeFromArenaOverflow2)
 
     Arena arena;
     const char * pos = nullptr;
-    auto ref1 = column_from->serializeValueIntoArena(0, arena, pos);
-    column_from->serializeValueIntoArena(1, arena, pos);
-    column_from->serializeValueIntoArena(2, arena, pos);
-    column_from->serializeValueIntoArena(3, arena, pos);
-    column_from->serializeValueIntoArena(4, arena, pos);
+    auto ref1 = column_from->serializeValueIntoArena(0, arena, pos, nullptr);
+    column_from->serializeValueIntoArena(1, arena, pos, nullptr);
+    column_from->serializeValueIntoArena(2, arena, pos, nullptr);
+    column_from->serializeValueIntoArena(3, arena, pos, nullptr);
+    column_from->serializeValueIntoArena(4, arena, pos, nullptr);
 
     auto column_to = ColumnDynamic::create(2);
     column_to->insert(Field(42.42));
     ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
-    column_to->deserializeAndInsertFromArena(in);
-    column_to->deserializeAndInsertFromArena(in);
-    column_to->deserializeAndInsertFromArena(in);
-    column_to->deserializeAndInsertFromArena(in);
-    column_to->deserializeAndInsertFromArena(in);
+    column_to->deserializeAndInsertFromArena(in, nullptr);
+    column_to->deserializeAndInsertFromArena(in, nullptr);
+    column_to->deserializeAndInsertFromArena(in, nullptr);
+    column_to->deserializeAndInsertFromArena(in, nullptr);
+    column_to->deserializeAndInsertFromArena(in, nullptr);
 
     ASSERT_EQ((*column_to)[column_to->size() - 5], 42);
     ASSERT_EQ((*column_to)[column_to->size() - 4], 42.42);
@@ -883,10 +883,10 @@ TEST(ColumnDynamic, skipSerializedInArena)
 
     Arena arena;
     const char * pos = nullptr;
-    auto ref1 = column_from->serializeValueIntoArena(0, arena, pos);
-    column_from->serializeValueIntoArena(1, arena, pos);
-    column_from->serializeValueIntoArena(2, arena, pos);
-    column_from->serializeValueIntoArena(3, arena, pos);
+    auto ref1 = column_from->serializeValueIntoArena(0, arena, pos, nullptr);
+    column_from->serializeValueIntoArena(1, arena, pos, nullptr);
+    column_from->serializeValueIntoArena(2, arena, pos, nullptr);
+    column_from->serializeValueIntoArena(3, arena, pos, nullptr);
 
     auto column_to = ColumnDynamic::create(254);
     ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
