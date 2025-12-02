@@ -159,34 +159,24 @@ void ColumnSparse::insertData(const char * pos, size_t length)
     insertSingleValue([&](IColumn & column) { column.insertData(pos, length); });
 }
 
-std::string_view ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
-    return values->serializeValueIntoArena(getValueIndex(n), arena, begin);
+    return values->serializeValueIntoArena(getValueIndex(n), arena, begin, settings);
 }
 
-std::string_view ColumnSparse::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+char * ColumnSparse::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
-    return values->serializeAggregationStateValueIntoArena(getValueIndex(n), arena, begin);
+    return values->serializeValueIntoMemory(getValueIndex(n), memory, settings);
 }
 
-char * ColumnSparse::serializeValueIntoMemory(size_t n, char * memory) const
+std::optional<size_t> ColumnSparse::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
-    return values->serializeValueIntoMemory(getValueIndex(n), memory);
+    return values->getSerializedValueSize(getValueIndex(n), settings);
 }
 
-std::optional<size_t> ColumnSparse::getSerializedValueSize(size_t n) const
+void ColumnSparse::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
-    return values->getSerializedValueSize(getValueIndex(n));
-}
-
-void ColumnSparse::deserializeAndInsertFromArena(ReadBuffer & in)
-{
-    insertSingleValue([&](IColumn & column) { column.deserializeAndInsertFromArena(in); });
-}
-
-void ColumnSparse::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
-{
-    insertSingleValue([&](IColumn & column) { column.deserializeAndInsertAggregationStateValueFromArena(in); });
+    insertSingleValue([&](IColumn & column) { column.deserializeAndInsertFromArena(in, settings); });
 }
 
 void ColumnSparse::skipSerializedInArena(ReadBuffer & in) const
