@@ -174,10 +174,10 @@ def main():
             is_flaky_check = True
         elif "BugfixValidation" in to:
             is_bugfix_validation = True
-        elif "coverage" in to:
-            is_coverage = True
         elif "llvm coverage" in to:
             is_llvm_coverage = True
+        elif "coverage" in to:
+            is_coverage = True
         if "s3 storage" in to:
             is_s3_storage = True
         if "azure" in to:
