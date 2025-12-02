@@ -29,7 +29,7 @@
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
 
-#include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/SingleDiskVolume.h>
 
 #include <base/sort.h>
@@ -239,6 +239,7 @@ namespace FailPoints
     extern const char zero_copy_unlock_zk_fail_before_op[];
     extern const char zero_copy_unlock_zk_fail_after_op[];
     extern const char rmt_lightweight_update_sleep_after_block_allocation[];
+    extern const char rmt_merge_selecting_task_pause_when_scheduled[];
 }
 
 namespace ErrorCodes
@@ -435,24 +436,24 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     /// We create and deactivate all tasks for consistency.
     /// They all will be scheduled and activated by the restarting thread.
     queue_updating_task = getContext()->getSchedulePool().createTask(
-        getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::queueUpdatingTask)", [this]{ queueUpdatingTask(); });
+        getStorageID(), getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::queueUpdatingTask)", [this]{ queueUpdatingTask(); });
 
     queue_updating_task->deactivate();
 
     mutations_updating_task = getContext()->getSchedulePool().createTask(
-        getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mutationsUpdatingTask)", [this]{ mutationsUpdatingTask(); });
+        getStorageID(), getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mutationsUpdatingTask)", [this]{ mutationsUpdatingTask(); });
 
     mutations_updating_task->deactivate();
 
     merge_selecting_task = getContext()->getSchedulePool().createTask(
-        getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mergeSelectingTask)", [this] { mergeSelectingTask(); });
+        getStorageID(), getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mergeSelectingTask)", [this] { mergeSelectingTask(); });
 
     /// Will be activated if we will achieve leader state.
     merge_selecting_task->deactivate();
     merge_selecting_sleep_ms = (*getSettings())[MergeTreeSetting::merge_selecting_sleep_ms];
 
     mutations_finalizing_task = getContext()->getSchedulePool().createTask(
-        getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mutationsFinalizingTask)", [this] { mutationsFinalizingTask(); });
+        getStorageID(), getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mutationsFinalizingTask)", [this] { mutationsFinalizingTask(); });
 
     /// This task can be scheduled by different parts of code even when storage is readonly.
     /// This can lead to redundant exceptions during startup.
@@ -4078,6 +4079,8 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 {
     if (!is_leader)
         return;
+
+    FailPointInjection::pauseFailPoint(FailPoints::rmt_merge_selecting_task_pause_when_scheduled);
 
     const auto storage_settings_ptr = getSettings();
     const bool deduplicate = false; /// TODO: read deduplicate option from table config

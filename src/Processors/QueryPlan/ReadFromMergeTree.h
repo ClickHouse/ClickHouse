@@ -141,7 +141,6 @@ public:
         UInt64 total_marks_pk = 0;
         UInt64 selected_rows = 0;
         bool has_exact_ranges = false;
-        bool exceeded_row_limits = false;
 
         AnalysisResult() = default;
 
@@ -149,7 +148,7 @@ public:
         AnalysisResult(AnalysisResult &&) noexcept = default;
 
         bool readFromProjection() const { return !parts_with_ranges.empty() && parts_with_ranges.front().data_part->isProjectionPart(); }
-        bool isUsable() const { return !exceeded_row_limits; }
+        void checkLimits(const Settings & settings, const SelectQueryInfo & query_info_) const;
     };
 
     using AnalysisResultPtr = std::shared_ptr<AnalysisResult>;
@@ -209,15 +208,18 @@ public:
         explicit Indexes(KeyCondition key_condition_)
             : key_condition(std::move(key_condition_))
             , use_skip_indexes(false)
+            , use_skip_indexes_for_disjunctions(false)
         {}
 
         KeyCondition key_condition;
+        std::optional<KeyCondition> key_condition_rpn_template; /// skeleton of the key condition without resolved columns
         std::optional<PartitionPruner> partition_pruner;
         std::optional<KeyCondition> minmax_idx_condition;
         std::optional<KeyCondition> part_offset_condition;
         std::optional<KeyCondition> total_offset_condition;
         UsefulSkipIndexes skip_indexes;
         bool use_skip_indexes;
+        bool use_skip_indexes_for_disjunctions;
         std::optional<std::unordered_set<String>> part_values;
     };
 
@@ -285,7 +287,7 @@ public:
 
     /// Adds virtual columns for reading from text index.
     /// Removes physical text columns that were eliminated by direct read from text index.
-    void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns);
+    void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final);
 
     const std::optional<Indexes> & getIndexes() const { return indexes; }
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator() const;

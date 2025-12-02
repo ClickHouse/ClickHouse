@@ -136,6 +136,7 @@ public:
 
 private:
     std::vector<TableEngineValues> likeEngsDeterministic, likeEngsNotDeterministic, likeEngsInfinite;
+    std::unordered_map<SQLFunc, uint32_t> dictFuncs;
     ExternalIntegrations & connections;
     const bool supports_cloud_features;
     const size_t deterministic_funcs_limit, deterministic_aggrs_limit;
@@ -546,7 +547,7 @@ private:
                 const InOutFormat next_format
                     = (b.file_format.has_value() && (!this->allow_not_deterministic || rg.nextMediumNumber() < 81))
                     ? b.file_format.value()
-                    : static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
+                    : static_cast<InOutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
 
                 next->set_key("format");
                 next->set_value(InOutFormat_Name(next_format).substr(6));

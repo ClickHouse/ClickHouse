@@ -56,6 +56,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromTableStep.h>
 #include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
@@ -1310,10 +1311,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 /// Create step which reads from empty source if storage has no data.
                 const auto & column_names = table_expression_data.getColumnNames();
                 auto source_header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
-                Pipe pipe(std::make_shared<NullSource>(source_header));
-                auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-                read_from_pipe->setStepDescription("Read from NullSource");
-                query_plan.addStep(std::move(read_from_pipe));
+                auto read_nothing = std::make_unique<ReadNothingStep>(source_header);
+                read_nothing->setStepDescription("Read from NullSource");
+                query_plan.addStep(std::move(read_nothing));
                 query_plan.setMaxThreads(max_threads_execute_query);
 
                 auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
@@ -1334,10 +1334,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             for (auto & projection_column : projection_columns)
                 source_header.insert(ColumnWithTypeAndName(projection_column.type, projection_column.name));
 
-            Pipe pipe(std::make_shared<NullSource>(std::make_shared<const Block>(source_header)));
-            auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-            read_from_pipe->setStepDescription("Read from NullSource");
-            query_plan.addStep(std::move(read_from_pipe));
+            auto read_nothing = std::make_unique<ReadNothingStep>(std::make_shared<const Block>(source_header));
+            read_nothing->setStepDescription("Read from NullSource");
+            query_plan.addStep(std::move(read_nothing));
         }
         else
         {
@@ -2451,6 +2450,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     size_t joins_count = 0;
     bool is_full_join = false;
     bool is_global_join = false;
+    bool is_right_join_with_remote_table = false;
     int first_left_or_inner_join_pos = -1;
     int first_right_join_pos = -1;
     /// For each table, table function, query, union table expressions prepare before query plan build
@@ -2483,6 +2483,16 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             if (first_right_join_pos < 0 && join_node.getKind() == JoinKind::Right)
                 first_right_join_pos = i;
 
+            /// For RIGHT JOIN with a distributed table on the right side, disable parallel replicas.
+            /// The distributed table on the right side would be wrapped into a subquery,
+            /// causing parallel replicas to incorrectly choose the left table for parallel reading.
+            /// Each replica would then independently read the full distributed table, resulting in duplicate data.
+            if (join_node.getKind() == JoinKind::Right)
+            {
+                const auto & right_expression_data = planner_context->getTableExpressionDataOrThrow(join_node.getRightTableExpression());
+                is_right_join_with_remote_table = right_expression_data.isRemote();
+            }
+
             continue;
         }
 
@@ -2497,6 +2507,10 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
 
         /// for n-way join with FULL JOIN or GLOBAL JOINS
         if (joins_count > 1 && (is_full_join || is_global_join))
+            return true;
+
+        /// For RIGHT JOIN with distributed table on the right side
+        if (is_right_join_with_remote_table)
             return true;
 
         return false;
