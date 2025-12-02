@@ -3424,6 +3424,12 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
     required_source_columns = all_column_names;
 }
 
+void ReadFromMergeTree::setTopKColumn(const TopKFilterInfo & top_k_filter_info_)
+{
+    top_k_filter_info = top_k_filter_info_;
+    reader_settings.use_query_condition_cache = false;
+}
+
 bool ReadFromMergeTree::isSkipIndexAvailableForTopK(const String & sort_column) const
 {
     const auto & all_indexes = storage_snapshot->metadata->getSecondaryIndices();

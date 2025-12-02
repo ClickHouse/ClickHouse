@@ -306,10 +306,12 @@ public:
     const std::optional<Indexes> & getIndexes() const { return indexes; }
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator() const;
 
-    void setTopKColumn(const TopKFilterInfo & top_k_filter_info_) { top_k_filter_info = top_k_filter_info_; }
+    void setTopKColumn(const TopKFilterInfo & top_k_filter_info_);
     bool isSkipIndexAvailableForTopK(const String & sort_column) const;
     const ProjectionIndexReadDescription & getProjectionIndexReadDescription() const { return projection_index_read_desc; }
     ProjectionIndexReadDescription & getProjectionIndexReadDescription() { return projection_index_read_desc; }
+
+    bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
 
 private:
     MergeTreeReaderSettings reader_settings;
