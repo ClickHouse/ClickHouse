@@ -1798,5 +1798,11 @@ void ColumnVariant::takeDynamicStructureFromColumn(const ColumnPtr & source_colu
         getVariantByGlobalDiscriminator(i).takeDynamicStructureFromColumn(source_variant.getVariantPtrByGlobalDiscriminator(i));
 }
 
+void ColumnVariant::fixDynamicStructure()
+{
+    for (auto & variant : variants)
+        variant->fixDynamicStructure();
+}
+
 
 }
