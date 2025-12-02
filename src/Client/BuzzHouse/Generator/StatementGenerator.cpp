@@ -5040,40 +5040,38 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
     else if (ssq.has_explain() && !ssq.explain().is_explain() && query.has_drop() && success)
     {
         const Drop & drp = query.drop();
-        const bool istable = drp.object().has_est() && drp.object().est().table().table()[0] == 't';
-        const bool isview = drp.object().has_est() && drp.object().est().table().table()[0] == 'v';
-        const bool isdictionary = drp.object().has_est() && drp.object().est().table().table()[0] == 'd';
-        const bool isdatabase = drp.object().has_database();
-        const bool isfunction = drp.object().has_function();
 
-        if (istable)
+        if (drp.sobject() == SQLObject::TABLE)
         {
             dropTable(false, true, getIdentifierFromString(drp.object().est().table().table()));
         }
-        else if (isview)
+        else if (drp.sobject() == SQLObject::VIEW)
         {
             this->views.erase(getIdentifierFromString(drp.object().est().table().table()));
         }
-        else if (isdictionary)
+        else if (drp.sobject() == SQLObject::DICTIONARY)
         {
             this->dictionaries.erase(getIdentifierFromString(drp.object().est().table().table()));
         }
-        else if (isdatabase)
+        else if (drp.sobject() == SQLObject::DATABASE)
         {
             dropDatabase(getIdentifierFromString(drp.object().database().database()), true);
         }
-        else if (isfunction)
+        else if (drp.sobject() == SQLObject::FUNCTION)
         {
             this->functions.erase(getIdentifierFromString(drp.object().function().function()));
+        }
+        else
+        {
+            UNREACHABLE();
         }
     }
     else if (ssq.has_explain() && !ssq.explain().is_explain() && query.has_exchange() && success)
     {
         const Exchange & ex = query.exchange();
         const SQLObjectName & obj1 = ex.object1();
-        const bool istable = obj1.has_est() && obj1.est().table().table()[0] == 't';
-        const bool isview = obj1.has_est() && obj1.est().table().table()[0] == 'v';
-        const bool isdictionary = obj1.has_est() && obj1.est().table().table()[0] == 'd';
+        const bool istable = ex.sobject() == SQLObject::TABLE && obj1.est().table().table()[0] == 't';
+        const bool isview = ex.sobject() == SQLObject::TABLE && obj1.est().table().table()[0] == 'v';
         const uint32_t tname1 = getIdentifierFromString(obj1.est().table().table());
         const uint32_t tname2 = getIdentifierFromString(query.exchange().object2().est().table().table());
 
@@ -5085,9 +5083,13 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
         {
             this->exchangeObjects<SQLView>(tname1, tname2);
         }
-        else if (isdictionary)
+        else if (ex.sobject() == SQLObject::DICTIONARY)
         {
             this->exchangeObjects<SQLDictionary>(tname1, tname2);
+        }
+        else
+        {
+            UNREACHABLE();
         }
     }
     else if (ssq.has_explain() && !ssq.explain().is_explain() && query.has_rename() && success)
@@ -5095,10 +5097,9 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
         const Rename & ren = query.rename();
         const SQLObjectName & oobj = ren.old_object();
         const SQLObjectName & nobj = ren.new_object();
-        const bool istable = oobj.has_est() && oobj.est().table().table()[0] == 't';
-        const bool isview = oobj.has_est() && oobj.est().table().table()[0] == 'v';
-        const bool isdictionary = oobj.has_est() && oobj.est().table().table()[0] == 'd';
-        const bool isdatabase = oobj.has_database();
+        const bool istable = ren.sobject() == SQLObject::TABLE && oobj.est().table().table()[0] == 't';
+        const bool isview = ren.sobject() == SQLObject::TABLE && oobj.est().table().table()[0] == 'v';
+        const bool isdatabase = ren.sobject() == SQLObject::DATABASE;
         const uint32_t old_tname = getIdentifierFromString(isdatabase ? oobj.database().database() : oobj.est().table().table());
         const uint32_t new_tname = getIdentifierFromString(isdatabase ? nobj.database().database() : nobj.est().table().table());
         std::optional<uint32_t> new_db;
@@ -5115,13 +5116,17 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
         {
             this->renameObjects<SQLView>(old_tname, new_tname, new_db);
         }
-        else if (isdictionary)
+        else if (ren.sobject() == SQLObject::DICTIONARY)
         {
             this->renameObjects<SQLDictionary>(old_tname, new_tname, new_db);
         }
         else if (isdatabase)
         {
             this->renameObjects<std::shared_ptr<SQLDatabase>>(old_tname, new_tname, new_db);
+        }
+        else
+        {
+            UNREACHABLE();
         }
     }
     else if (ssq.has_explain() && !ssq.explain().is_explain() && query.has_alter())
@@ -5366,31 +5371,33 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
     }
     else if (ssq.has_explain() && !ssq.explain().is_explain() && (query.has_attach() || query.has_detach()) && success)
     {
+        const SQLObject & ob = query.has_attach() ? query.attach().sobject() : query.detach().sobject();
         const SQLObjectName & oobj = query.has_attach() ? query.attach().object() : query.detach().object();
-        const bool istable = oobj.has_est() && oobj.est().table().table()[0] == 't';
-        const bool isview = oobj.has_est() && oobj.est().table().table()[0] == 'v';
-        const bool isdictionary = oobj.has_est() && oobj.est().table().table()[0] == 'd';
-        const bool isdatabase = oobj.has_database();
-        const uint32_t tname = getIdentifierFromString(isdatabase ? oobj.database().database() : oobj.est().table().table());
+        const bool istable = ob == SQLObject::TABLE && oobj.est().table().table()[0] == 't';
+        const bool isview = ob == SQLObject::TABLE && oobj.est().table().table()[0] == 'v';
         const DetachStatus status = query.has_attach()
             ? DetachStatus::ATTACHED
             : (query.detach().permanently() ? DetachStatus::PERM_DETACHED : DetachStatus::DETACHED);
 
         if (istable)
         {
-            this->attachOrDetachObject<SQLTable>(tname, status);
+            this->attachOrDetachObject<SQLTable>(getIdentifierFromString(oobj.est().table().table()), status);
         }
         else if (isview)
         {
-            this->attachOrDetachObject<SQLView>(tname, status);
+            this->attachOrDetachObject<SQLView>(getIdentifierFromString(oobj.est().table().table()), status);
         }
-        else if (isdictionary)
+        else if (ob == SQLObject::DICTIONARY)
         {
-            this->attachOrDetachObject<SQLDictionary>(tname, status);
+            this->attachOrDetachObject<SQLDictionary>(getIdentifierFromString(oobj.est().table().table()), status);
         }
-        else if (isdatabase)
+        else if (ob == SQLObject::DATABASE)
         {
-            this->attachOrDetachObject<std::shared_ptr<SQLDatabase>>(tname, status);
+            this->attachOrDetachObject<std::shared_ptr<SQLDatabase>>(getIdentifierFromString(oobj.database().database()), status);
+        }
+        else
+        {
+            UNREACHABLE();
         }
     }
     else if (ssq.has_explain() && query.has_create_database())
@@ -5514,6 +5521,10 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                     }
                     newb.databases[dname] = this->databases[dname];
                 }
+            }
+            else
+            {
+                UNREACHABLE();
             }
             this->backups[br.backup_number()] = std::move(newb);
         }
