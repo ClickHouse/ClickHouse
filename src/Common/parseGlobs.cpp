@@ -1,10 +1,16 @@
 #include <Common/parseGlobs.h>
 #include <Common/re2.h>
+
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/readIntText.h>
+#include <Interpreters/Context_fwd.h>
+#include <base/defines.h>
+
 #include <algorithm>
+#include <cstdlib>
+#include <limits>
 #include <optional>
 #include <sstream>
 #include <iomanip>
@@ -54,6 +60,183 @@ bool hasExactlyOneBracketsExpansion(const std::string & input)
 namespace BetterGlob
 {
 
+std::string Expression::dump() const
+{
+    switch (type())
+    {
+        case ExpressionType::CONSTANT:
+            return std::string(std::get<std::string_view>(getData()));
+        case ExpressionType::WILDCARD:
+            return dumpWildcard();
+        case ExpressionType::RANGE:
+            return dumpRange();
+        case ExpressionType::ENUM:
+            return dumpEnum();
+    }
+
+    UNREACHABLE();
+}
+
+std::string Expression::asRegex() const
+{
+    switch (type())
+    {
+        case ExpressionType::CONSTANT:
+            return escape(std::get<std::string_view>(getData()));
+        case ExpressionType::WILDCARD:
+            return wildcardAsRegex();
+        case ExpressionType::RANGE:
+            return rangeAsRegex();
+        case ExpressionType::ENUM:
+            return enumAsRegex();
+    }
+
+    UNREACHABLE();
+}
+
+std::string Expression::dumpWildcard() const
+{
+    const auto & wildcard = std::get<WildcardType>(getData());
+
+    switch (wildcard) {
+        case WildcardType::QUESTION:
+            return "?";
+        case WildcardType::SINGLE_ASTERISK:
+            return "*";
+        case WildcardType::DOUBLE_ASTERISK:
+            return "**";
+    }
+
+    UNREACHABLE();
+}
+
+std::string Expression::escape(const std::string_view input) const
+{
+    WriteBufferFromOwnString buf_for_escaping;
+
+    for (const auto & letter : input)
+    {
+        if ((letter == '[') || (letter == ']') || (letter == '|') || (letter == '+') || (letter == '-') || (letter == '(') || (letter == ')') || (letter == '\\'))
+            buf_for_escaping << '\\';
+        if ((letter == '.') || (letter == '{') || (letter == '}'))
+            buf_for_escaping << '\\';
+        buf_for_escaping << letter;
+    }
+
+    return buf_for_escaping.str();
+
+}
+
+std::string Expression::wildcardAsRegex() const
+{
+    const auto & wildcard = std::get<WildcardType>(getData());
+
+    switch (wildcard) {
+        case WildcardType::QUESTION:
+            return "[^/]";
+        case WildcardType::SINGLE_ASTERISK:
+            return "[^/]*";
+        case WildcardType::DOUBLE_ASTERISK:
+            return "[^{}]*";
+    }
+
+    UNREACHABLE();
+}
+
+std::string Expression::enumAsRegex() const
+{
+    const auto separator = '|';
+
+    std::string result = "(";
+    const auto & enum_values = std::get<std::vector<std::string_view>>(getData());
+
+    for (const auto & e: enum_values)
+    {
+         result += escape(e);
+         result += separator;
+    }
+
+    result.back() = ')';
+    return result;
+}
+
+std::string Expression::rangeAsRegex() const
+{
+    std::string result = "(";
+
+    const auto & range = std::get<Range>(getData());
+
+    const size_t value = std::min(range.start, range.end);
+    const size_t width = ((range.start_zero_padded && range.start_digit_count > 1) || (range.end_zero_padded && range.end_digit_count > 1))
+        ? std::max(range.start_digit_count, range.end_digit_count)
+        : 0;
+
+    for (size_t i = 0; i <= cardinality(); ++i)
+    {
+        result += fmt::format(
+            "{:0>{}}",
+            value + i,
+            width
+        );
+        result += '|';
+    }
+
+    result.back() = ')';
+
+    return result;
+}
+
+std::string Expression::dumpEnum(char separator) const
+{
+    std::string result = "{";
+    const auto & enum_values = std::get<std::vector<std::string_view>>(getData());
+
+    for (const auto & e: enum_values)
+    {
+         result += e;
+         result += separator;
+    }
+
+    result.back() = '}';
+    return result;
+}
+
+std::string Expression::dumpRange() const
+{
+    std::string result = "{";
+    const auto & range = std::get<Range>(getData());
+
+    result += fmt::format("{:0>{}}", range.start, range.start_digit_count);
+    result += "..";
+    result += fmt::format("{:0>{}}", range.end, range.end_digit_count);
+    result += "}";
+
+    return result;
+}
+
+size_t Expression::cardinality() const
+{
+    switch (type())
+    {
+        case ExpressionType::CONSTANT:
+            return 1;
+        case ExpressionType::WILDCARD:
+            return std::numeric_limits<size_t>::max();
+        case ExpressionType::ENUM:
+            return std::get<std::vector<std::string_view>>(getData()).size();
+        case ExpressionType::RANGE:
+        {
+            Range range = std::get<Range>(getData());
+            const size_t range_len = (range.start > range.end)
+                ? range.start - range.end
+                : range.end - range.start;
+            return range_len;
+        }
+    }
+
+    UNREACHABLE();
+}
+
 std::string_view GlobString::consumeConstantExpression(const std::string_view & input) const
 {
     auto first_nonconstant = input.find_first_of("{*?");
@@ -92,11 +275,11 @@ std::vector<std::string_view> GlobString::tryParseEnumMatcher(const std::string_
 
         if (next_separator_pos == std::string_view::npos)
         {
-            enum_elements.push_back(contents.substr(search_start_pos));
+            enum_elements.emplace_back(contents.begin() + search_start_pos, contents.end());
             break;
         }
 
-        enum_elements.push_back(contents.substr(search_start_pos, next_separator_pos));
+        enum_elements.emplace_back(contents.begin() + search_start_pos, contents.begin() + next_separator_pos);
         search_start_pos = next_separator_pos + 1;
     }
 
@@ -114,6 +297,7 @@ std::optional<Range> GlobString::tryParseRangeMatcher(const std::string_view & i
 
     Range range;
     ReadBufferFromString read_buffer(input);
+    size_t first_digit_pos;
 
     bool ok = true;
 
@@ -122,20 +306,61 @@ std::optional<Range> GlobString::tryParseRangeMatcher(const std::string_view & i
     if (!ok)
         return std::nullopt;
 
+    first_digit_pos = read_buffer.offset();
+
     ok &= tryReadIntText(range.start, read_buffer);
+    if (!ok)
+        return std::nullopt;
+
+    range.start_digit_count = read_buffer.offset() - first_digit_pos;
+    range.start_zero_padded = input[first_digit_pos] == '0';
+
     ok &= checkChar('.', read_buffer);
     ok &= checkChar('.', read_buffer);
 
     if (!ok)
         return std::nullopt;
 
+    first_digit_pos = read_buffer.offset();
+
     ok &= tryReadIntText(range.end, read_buffer);
+    if (!ok)
+        return std::nullopt;
+
+    range.end_digit_count = read_buffer.offset() - first_digit_pos;
+    range.end_zero_padded = input[first_digit_pos] == '0';
+
     ok &= checkChar('}', read_buffer);
 
     if (!ok)
         return std::nullopt;
 
     return range;
+}
+
+GlobString::GlobString(std::string input): input_data(std::move(input))
+{
+    parse();
+}
+
+std::string GlobString::dump() const
+{
+    std::string result;
+
+    for (const auto & e: getExpressions())
+        result += e.dump();
+
+    return result;
+}
+
+std::string GlobString::asRegex() const
+{
+    std::string result;
+
+    for (const auto & e: getExpressions())
+        result += e.asRegex();
+
+    return result;
 }
 
 void GlobString::parse()
@@ -148,18 +373,33 @@ void GlobString::parse()
     size_t position = 0;
     while (position < input.length())
     {
-        if(input[position] != '{')
+        if (input[position] == '?' || input[position] == '*')
         {
-            auto constant_expression = consumeConstantExpression(input.substr(position));
+            if (position + 1 < input.length() && input[position] == input[position + 1] && input[position] == '*')
+            {
+                expressions.emplace_back(WildcardType::DOUBLE_ASTERISK);
+                position += 2;
 
-            /// if (constant_expression.length() != 0) ...
+                continue;
+            }
 
-            position += constant_expression.length();
-            expressions.push_back(Expression(constant_expression));
+            /// FIXME move to WildcardType enum
+            switch (input[position])
+            {
+                case '?':
+                    expressions.emplace_back(WildcardType::QUESTION);
+                    break;
+                case '*':
+                    expressions.emplace_back(WildcardType::SINGLE_ASTERISK);
+                    break;
+                default:
+                    UNREACHABLE();
+            }
+            position += 1;
 
             continue;
         }
-        else
+        else if (input[position] == '{')  /// NOLINT
         {
             auto matcher_expression = consumeMatcher(input.substr(position));
 
@@ -173,10 +413,24 @@ void GlobString::parse()
 
             auto enum_matcher = tryParseEnumMatcher(matcher_expression);
 
-            /// if (enum_matcher.length() != 0) ...
+            if (enum_matcher.size() == 0)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected an enum expression, but read 0 bytes.");  // FIXME
 
             position += matcher_expression.length();
             expressions.push_back(Expression(enum_matcher));
+
+            continue;
+        }
+        else
+        {
+            auto constant_expression = consumeConstantExpression(input.substr(position));
+
+            if (constant_expression.length() == 0)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a constant expression, but read 0 bytes.");  // FIXME
+
+            position += constant_expression.length();
+            expressions.push_back(Expression(constant_expression));
+
             continue;
         }
     }
