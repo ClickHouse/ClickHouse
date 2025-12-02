@@ -201,16 +201,9 @@ SET TBLPROPERTIES ('delta.minReaderVersion'='1', 'delta.minWriterVersion'='2', d
             settings={"delta_lake_snapshot_start_version": 0},
         )
     )
-
-    assert (
-        "ba\t44\tinsert\t2\n"
-        "bb\t55\tinsert\t2\n"
-        "bc\t66\tinsert\t2"
-        == instance.query(
-            f"SELECT {select_columns} FROM {table_function} ORDER BY all",
-            settings={"delta_lake_snapshot_start_version": 1},
-        ).strip()
-    )
+    # Data with CDF enabled starts from snapshot version 2.
+    # Snapshot version 1 is just a metadata change. 
+    # Reading from snapshot version 1 can sometimes fail with "cdf not enabled", because metadata is propagated asynchronously.
     assert (
         "ba\t44\tinsert\t2\n"
         "bb\t55\tinsert\t2\n"

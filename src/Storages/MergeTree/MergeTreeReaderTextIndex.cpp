@@ -407,7 +407,7 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule, size_t in
     PostingListPtr posting_list = nullptr;
     for (const auto & [token, postings] : remaining_tokens)
     {
-        if (!useful_tokens.contains(token.toView()))
+        if (!useful_tokens.contains(token))
         {
             continue;
         }
@@ -420,7 +420,7 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule, size_t in
         else
         {
             const auto & future_postings = postings.getFuturePostings();
-            posting_list = get_postings(future_postings, token.toView());
+            posting_list = get_postings(future_postings, token);
         }
 
         granule.postings.emplace(token, std::move(posting_list));

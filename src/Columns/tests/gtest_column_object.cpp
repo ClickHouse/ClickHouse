@@ -38,7 +38,7 @@ TEST(ColumnObject, GetName)
 Field deserializeFieldFromSharedData(ColumnString * values, size_t n)
 {
     auto data = values->getDataAt(n);
-    ReadBufferFromMemory buf(data.data, data.size);
+    ReadBufferFromMemory buf(data.data(), data.size());
     Field res;
     std::make_shared<SerializationDynamic>()->deserializeBinary(res, buf, FormatSettings());
     return res;
@@ -319,7 +319,7 @@ TEST(ColumnObject, SerializeDeserializerFromArena)
 
     auto col2 = type->createColumn();
     auto & col_object2 = assert_cast<ColumnObject &>(*col);
-    ReadBufferFromString in({ref1.data, arena.usedBytes()});
+    ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     col_object2.deserializeAndInsertFromArena(in);
     col_object2.deserializeAndInsertFromArena(in);
     col_object2.deserializeAndInsertFromArena(in);
@@ -346,7 +346,7 @@ TEST(ColumnObject, SkipSerializedInArena)
     col_object.serializeValueIntoArena(2, arena, pos);
 
     auto col2 = type->createColumn();
-    ReadBufferFromString in({ref1.data, arena.usedBytes()});
+    ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     col2->skipSerializedInArena(in);
     col2->skipSerializedInArena(in);
     col2->skipSerializedInArena(in);

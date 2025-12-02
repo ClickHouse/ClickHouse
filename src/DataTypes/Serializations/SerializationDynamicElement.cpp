@@ -206,7 +206,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
             if (!shared_null_map[i])
             {
                 auto value = shared_variant.getDataAt(i);
-                ReadBufferFromMemory buf(value.data, value.size);
+                ReadBufferFromMemory buf(value.data(), value.size());
                 auto type = decodeDataType(buf);
                 if (type->getName() == dynamic_element_name)
                 {
