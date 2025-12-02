@@ -3,7 +3,6 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/ObjectUtils.h>
 #include <Disks/createVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -87,6 +86,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
+    extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
 }
 
 namespace ErrorCodes
@@ -656,10 +656,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
 
-    for (auto & column : columns)
-        if (column.type->hasDynamicSubcolumnsDeprecated())
-            column.type = block.getByName(column.name).type;
-
     auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
     minmax_idx->update(block, MergeTreeData::getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
 
@@ -857,6 +853,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         true,
         (*data_settings)[MergeTreeSetting::serialization_info_version],
         (*data_settings)[MergeTreeSetting::string_serialization_version],
+        (*data_settings)[MergeTreeSetting::nullable_serialization_version],
     };
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
@@ -1014,6 +1011,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         true,
         (*data.getSettings())[MergeTreeSetting::serialization_info_version],
         (*data.getSettings())[MergeTreeSetting::string_serialization_version],
+        (*data.getSettings())[MergeTreeSetting::nullable_serialization_version],
     };
     SerializationInfoByName infos(columns, settings);
     infos.add(block);

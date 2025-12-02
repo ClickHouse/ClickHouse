@@ -166,6 +166,7 @@ namespace DB
     DECLARE(UInt32, asynchronous_metrics_update_period_s, 1, R"(Period in seconds for updating asynchronous metrics.)", 0) \
     DECLARE(Bool, asynchronous_metrics_enable_heavy_metrics, false, R"(Enable the calculation of heavy asynchronous metrics.)", 0) \
     DECLARE(UInt32, asynchronous_heavy_metrics_update_period_s, 120, R"(Period in seconds for updating heavy asynchronous metrics.)", 0) \
+    DECLARE(Bool, asynchronous_metrics_keeper_metrics_only, false, R"(Make asynchronous metrics calculate the keeper-related metrics only.)", 0) \
     DECLARE(String, default_database, "default", R"(The default database name.)", 0) \
     DECLARE(String, tmp_policy, "", R"(
     Policy for storage with temporary data. All files with `tmp` prefix will be removed at start.
@@ -952,6 +953,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(UInt32, max_database_replicated_create_table_thread_pool_size, 1, R"(The number of threads to create tables during replica recovery in DatabaseReplicated. Zero means number of threads equal number of cores.)", 0) \
     DECLARE(Bool, database_replicated_allow_detach_permanently, true, R"(Allow detaching tables permanently in Replicated databases)", 0) \
     DECLARE(Bool, database_replicated_drop_broken_tables, false, R"(Drop unexpected tables from Replicated databases instead of moving them to a separate local database)", 0) \
+    DECLARE(Bool, distributed_ddl_use_initial_user_and_roles, false, R"(If enabled, ON CLUSTER queries will preserve and use the initiator's user and roles for execution on remote shards. This ensures consistent access control across the cluster but requires that the user and roles exist on all nodes.)", 0) \
     DECLARE(String, default_replica_path, "/clickhouse/tables/{uuid}/{shard}", R"(
     The path to the table in ZooKeeper.
 
@@ -971,14 +973,17 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     ```
     )", 0) \
     DECLARE(UInt64, disk_connections_soft_limit, 5000, R"(Connections above this limit have significantly shorter time to live. The limit applies to the disks connections.)", 0) \
-    DECLARE(UInt64, disk_connections_warn_limit, 10000, R"(Warning massages are written to the logs if number of in-use connections are higher than this limit. The limit applies to the disks connections.)", 0) \
-    DECLARE(UInt64, disk_connections_store_limit, 30000, R"(Connections above this limit reset after use. Set to 0 to turn connection cache off. The limit applies to the disks connections.)", 0) \
+    DECLARE(UInt64, disk_connections_warn_limit, 8000, R"(Warning massages are written to the logs if number of in-use connections are higher than this limit. The limit applies to the disks connections.)", 0) \
+    DECLARE(UInt64, disk_connections_store_limit, 10000, R"(Connections above this limit reset after use. Set to 0 to turn connection cache off. The limit applies to the disks connections.)", 0) \
+    DECLARE(UInt64, disk_connections_hard_limit, 20000, R"(Exception is thrown at a creation attempt when this limit is reached. Set to 0 to turn off hard limitation. The limit applies to the disks connections.)", 0) \
     DECLARE(UInt64, storage_connections_soft_limit, 100, R"(Connections above this limit have significantly shorter time to live. The limit applies to the storages connections.)", 0) \
-    DECLARE(UInt64, storage_connections_warn_limit, 1000, R"(Warning massages are written to the logs if number of in-use connections are higher than this limit. The limit applies to the storages connections.)", 0) \
-    DECLARE(UInt64, storage_connections_store_limit, 5000, R"(Connections above this limit reset after use. Set to 0 to turn connection cache off. The limit applies to the storages connections.)", 0) \
+    DECLARE(UInt64, storage_connections_warn_limit, 500, R"(Warning massages are written to the logs if number of in-use connections are higher than this limit. The limit applies to the storages connections.)", 0) \
+    DECLARE(UInt64, storage_connections_store_limit, 1000, R"(Connections above this limit reset after use. Set to 0 to turn connection cache off. The limit applies to the storages connections.)", 0) \
+    DECLARE(UInt64, storage_connections_hard_limit, 5000, R"(Exception is thrown at a creation attempt when this limit is reached. Set to 0 to turn off hard limitation. The limit applies to the storages connections.)", 0) \
     DECLARE(UInt64, http_connections_soft_limit, 100, R"(Connections above this limit have significantly shorter time to live. The limit applies to the http connections which do not belong to any disk or storage.)", 0) \
-    DECLARE(UInt64, http_connections_warn_limit, 1000, R"(Warning massages are written to the logs if number of in-use connections are higher than this limit. The limit applies to the http connections which do not belong to any disk or storage.)", 0) \
-    DECLARE(UInt64, http_connections_store_limit, 5000, R"(Connections above this limit reset after use. Set to 0 to turn connection cache off. The limit applies to the http connections which do not belong to any disk or storage.)", 0) \
+    DECLARE(UInt64, http_connections_warn_limit, 500, R"(Warning massages are written to the logs if number of in-use connections are higher than this limit. The limit applies to the http connections which do not belong to any disk or storage.)", 0) \
+    DECLARE(UInt64, http_connections_store_limit, 1000, R"(Connections above this limit reset after use. Set to 0 to turn connection cache off. The limit applies to the http connections which do not belong to any disk or storage.)", 0) \
+    DECLARE(UInt64, http_connections_hard_limit, 5000, R"(Exception is thrown at a creation attempt when this limit is reached. Set to 0 to turn off hard limitation. The limit applies to the http connections which do not belong to any disk or storage.)", 0) \
     DECLARE(UInt64, global_profiler_real_time_period_ns, 10000000000, R"(Period for real clock timer of global profiler (in nanoseconds). Set 0 value to turn off the real clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling.)", 0) \
     DECLARE(UInt64, global_profiler_cpu_time_period_ns, 10000000000, R"(Period for CPU clock timer of global profiler (in nanoseconds). Set 0 value to turn off the CPU clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling.)", 0) \
     DECLARE(Bool, enable_azure_sdk_logging, false, R"(Enables logging from Azure sdk)", 0) \
@@ -1067,7 +1072,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     )", 0) \
     DECLARE(Bool, memory_worker_use_cgroup, true, "Use current cgroup memory usage information to correct memory tracking.", 0) \
     DECLARE(Bool, disable_insertion_and_mutation, false, R"(
-    Disable all insert/alter/delete queries. This setting will be enabled if someone needs read-only nodes to prevent insertion and mutation affect reading performance.
+    Disable insert/alter/delete queries. This setting will be enabled if someone needs read-only nodes to prevent insertion and mutation affect reading performance. Inserts into external engines (S3, DataLake, MySQL, PostrgeSQL, Kafka, etc) are allowed despite this setting.
     )", 0) \
     DECLARE(UInt64, parts_kill_delay_period, 30, R"(
     Period to completely remove parts for SharedMergeTree. Only available in ClickHouse Cloud
@@ -1207,6 +1212,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     )", 0) \
     DECLARE(String, keeper_hosts, "", R"(Dynamic setting. Contains a set of [Zoo]Keeper hosts ClickHouse can potentially connect to. Doesn't expose information from `<auxiliary_zookeepers>`)", 0) \
     DECLARE(Bool, allow_impersonate_user, false, R"(Enable/disable the IMPERSONATE feature (EXECUTE AS target_user).)", 0) \
+    DECLARE(UInt64, s3_credentials_provider_max_cache_size, 100, R"(The maximum number of S3 credentials providers that can be cached)", 0) \
 
 // clang-format on
 

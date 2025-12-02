@@ -570,6 +570,7 @@ JSONExtractStringCaseInsensitive
 JSONExtractUInt
 JSONExtractUIntCaseInsensitive
 JSONHas
+JSONL
 JSONLength
 JSONLines
 JSONObjectEachRow
@@ -863,6 +864,7 @@ Observability
 Octonica
 Ok
 OnTime
+OneLake
 OpenAI
 OpenCelliD
 OpenFileForRead
@@ -919,6 +921,7 @@ Poess
 PointDistKm
 PointDistM
 PointDistRads
+PolygonToCells
 PostHistory
 PostLink
 PostLinks
@@ -1394,10 +1397,14 @@ appendTrailingCharIfAbsent
 approximative
 approxtopk
 approxtopsum
+areaCartesian
+areaSpherical
 argMax
 argMin
 argmax
 argmin
+argAndMax
+argAndMin
 arrayAUC
 arrayAUCPR
 arrayAll
@@ -1861,6 +1868,7 @@ dictGetAll
 dictGetChildren
 dictGetDescendant
 dictGetHierarchy
+dictGetKeys
 dictGetOrDefault
 dictGetOrNull
 dictGetUUID
@@ -1986,6 +1994,8 @@ flamegraph
 flatbuffers
 flattenTuple
 flink
+Flink
+flipCoordinates
 fluentd
 fmtlib
 formatDateTime
@@ -2502,6 +2512,7 @@ multiline
 multilinestring
 multiplyDecimal
 multipolygon
+multipolygons
 multiquery
 multiread
 multisearchany
@@ -2670,6 +2681,8 @@ pclmulqdq
 pcre
 perf
 performant
+perimeterCartesian
+perimeterSpherical
 perkey
 perl
 persistency
@@ -2859,6 +2872,7 @@ readWKTMultiPolygon
 readWKTPoint
 readWKTPolygon
 readWKTRing
+readWkt
 readahead
 readline
 readme

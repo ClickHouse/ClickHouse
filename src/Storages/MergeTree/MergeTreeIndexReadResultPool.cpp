@@ -24,12 +24,16 @@ namespace ErrorCodes
 
 MergeTreeSkipIndexReader::MergeTreeSkipIndexReader(
     UsefulSkipIndexes skip_indexes_,
+    std::optional<KeyCondition> & key_condition_rpn_template_,
+    bool use_for_disjunctions_,
     MarkCachePtr mark_cache_,
     UncompressedCachePtr uncompressed_cache_,
     VectorSimilarityIndexCachePtr vector_similarity_index_cache_,
     MergeTreeReaderSettings reader_settings_,
     LoggerPtr log_)
     : skip_indexes(std::move(skip_indexes_))
+    , key_condition_rpn_template(key_condition_rpn_template_)
+    , use_for_disjunctions(use_for_disjunctions_)
     , mark_cache(std::move(mark_cache_))
     , uncompressed_cache(std::move(uncompressed_cache_))
     , vector_similarity_index_cache(std::move(vector_similarity_index_cache_))
@@ -44,6 +48,9 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
 
     auto ranges = part.ranges;
     size_t ending_mark = ranges.empty() ? 0 : ranges.back().end;
+    MergeTreeDataSelectExecutor::PartialDisjunctionResult partial_eval_results;
+    if (use_for_disjunctions)
+        partial_eval_results.resize(part.data_part->index_granularity->getMarksCountWithoutFinal() * MergeTreeDataSelectExecutor::MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT, true);
     for (const auto & index_and_condition : skip_indexes.useful_indices)
     {
         if (is_cancelled)
@@ -57,6 +64,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
         ranges = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             index_and_condition.index,
             index_and_condition.condition,
+            key_condition_rpn_template,
             part.data_part,
             ranges,
             part.read_hints,
@@ -64,7 +72,16 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
             mark_cache.get(),
             uncompressed_cache.get(),
             vector_similarity_index_cache.get(),
+            use_for_disjunctions,
+            partial_eval_results,
             log).first;
+    }
+
+    if (use_for_disjunctions)
+    {
+        ranges = MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions(
+                            part.data_part, ranges, key_condition_rpn_template.value(),
+                            partial_eval_results, reader_settings, log);
     }
 
     for (const auto & indices_and_condition : skip_indexes.merged_indices)
@@ -340,16 +357,15 @@ ProjectionIndexBitmapPtr SingleProjectionIndexReader::read(const RangesInDataPar
 {
     bool can_use_32bit_part_offset = ranges.parent_ranges.max_part_offset <= std::numeric_limits<UInt32>::max();
 
-    /// Prepare the read processor with the current part and its read ranges.
-    /// This sets up internal state needed to read the projection data.
-    assert_cast<MergeTreeProjectionIndexSelectAlgorithm &>(*processor->algorithm).preparePartToRead(&ranges);
+    auto task = projection_index_read_pool->getTask(ranges);
+    MergeTreeProjectionIndexSelectAlgorithm algorithm;
     auto res = can_use_32bit_part_offset ? ProjectionIndexBitmap::create32() : ProjectionIndexBitmap::create64();
 
     /// Start reading chunks from the projection index reader.
     /// Each chunk contains a column of UInt64 offsets that we insert into the bitmap.
-    while (true)
+    while (!processor->is_cancelled && !task->isFinished())
     {
-        auto chunk = processor->read();
+        auto chunk = processor->readCurrentTask(*task, algorithm);
         if (chunk.chunk)
         {
             if (chunk.chunk.getNumRows() > 0)
@@ -380,9 +396,6 @@ ProjectionIndexBitmapPtr SingleProjectionIndexReader::read(const RangesInDataPar
                     add_offsets(UInt64{});
             }
         }
-
-        if (chunk.is_finished)
-            break;
     }
 
     /// If the read was cancelled, return nullptr to avoid using an incomplete index bitmap.

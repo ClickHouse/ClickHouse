@@ -22,3 +22,4 @@ WHERE current_database = currentDatabase() AND log_comment LIKE '03176_q_' AND t
 ORDER BY log_comment;
 
 DROP TABLE t_03176;
+

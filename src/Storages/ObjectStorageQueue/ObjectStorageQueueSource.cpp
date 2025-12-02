@@ -15,7 +15,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Disks/ObjectStorages/ObjectStorageIterator.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 
@@ -114,7 +114,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     }
 
     const auto globbed_key = reading_path.path;
-    object_storage_iterator = object_storage->iterate(reading_path.cutGlobs(configuration->supportsPartialPathPrefix()), list_objects_batch_size_);
+    object_storage_iterator = object_storage->iterate(reading_path.cutGlobs(configuration->supportsPartialPathPrefix()), list_objects_batch_size_, /*with_tags=*/ false);
 
     matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_key));
     if (!matcher->ok())
@@ -289,19 +289,29 @@ ObjectStorageQueueSource::FileIterator::next()
                         }
                         else
                         {
-                            String data;
-                            for (const auto & path : processing_paths)
+                            auto processing_paths_responses = zk_client->tryGet(processing_paths);
+                            for (size_t i = 0; i < processing_paths_responses.size(); ++i)
                             {
-                                if (!zk_client->tryGet(path, data))
+                                const auto & response = processing_paths_responses[i];
+                                if (response.error == Coordination::Error::ZNONODE)
                                 {
-                                    LOG_TEST(log, "Path {} does not exist", path);
+                                    LOG_TEST(log, "Path {} does not exist", processing_paths[i]);
                                     failed = true;
                                     break;
                                 }
-
-                                LOG_TEST(log, "Having {}, current processor: {}", data, processor_info);
-                                if (data != processor_info)
+                                if (response.error == Coordination::Error::ZOK)
                                 {
+                                    LOG_TEST(log, "Having {}, current processor: {}", response.data, processor_info);
+                                    if (response.data != processor_info)
+                                    {
+                                        failed = true;
+                                        break;
+                                    }
+                                }
+                                else
+                                {
+                                    LOG_WARNING(log, "Unexpected error: {}, path: {}", response.error, processing_paths[i]);
+                                    chassert(false);
                                     failed = true;
                                     break;
                                 }
@@ -780,6 +790,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     const std::optional<FormatSettings> & format_settings_,
     FormatParserSharedResourcesPtr parser_shared_resources_,
     const CommitSettings & commit_settings_,
+    const AfterProcessingSettings & after_processing_settings_,
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
     ContextPtr context_,
     size_t max_block_size_,
@@ -801,6 +812,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , format_settings(format_settings_)
     , parser_shared_resources(std::move(parser_shared_resources_))
     , commit_settings(commit_settings_)
+    , after_processing_settings(after_processing_settings_)
     , files_metadata(files_metadata_)
     , max_block_size(max_block_size_)
     , mode(files_metadata->getTableMetadata().getMode())
@@ -1247,51 +1259,63 @@ void ObjectStorageQueueSource::finalizeCommit(
     if (processed_files.empty())
         return;
 
+    std::exception_ptr finalize_exception;
     for (const auto & [file_state, file_metadata, exception_during_read] : processed_files)
     {
-        switch (file_state)
+        try
         {
-            case FileState::Processed:
+            switch (file_state)
             {
-                if (insert_succeeded)
+                case FileState::Processed:
                 {
-                    file_metadata->finalizeProcessed();
+                    if (insert_succeeded)
+                    {
+                        file_metadata->finalizeProcessed();
+                    }
+                    else
+                    {
+                        file_metadata->finalizeFailed(exception_message);
+                    }
+                    break;
                 }
-                else
+                case FileState::Cancelled: [[fallthrough]];
+                case FileState::Processing:
                 {
+                    if (insert_succeeded)
+                    {
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Unexpected state {} of file {} while insert succeeded",
+                            file_state, file_metadata->getPath());
+                    }
+
                     file_metadata->finalizeFailed(exception_message);
+                    break;
                 }
-                break;
-            }
-            case FileState::Cancelled: [[fallthrough]];
-            case FileState::Processing:
-            {
-                if (insert_succeeded)
+                case FileState::ErrorOnRead:
                 {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Unexpected state {} of file {} while insert succeeded",
-                        file_state, file_metadata->getPath());
+                    chassert(!exception_during_read.empty());
+                    file_metadata->finalizeFailed(exception_during_read);
+                    break;
                 }
+            }
 
-                file_metadata->finalizeFailed(exception_message);
-                break;
-            }
-            case FileState::ErrorOnRead:
-            {
-                chassert(!exception_during_read.empty());
-                file_metadata->finalizeFailed(exception_during_read);
-                break;
-            }
+            appendLogElement(
+                file_metadata,
+                /* processed */insert_succeeded && file_state == FileState::Processed,
+                commit_id,
+                commit_time,
+                transaction_start_time_);
         }
-
-        appendLogElement(
-            file_metadata,
-            /* processed */insert_succeeded && file_state == FileState::Processed,
-            commit_id,
-            commit_time,
-            transaction_start_time_);
+        catch (...)
+        {
+            tryLogCurrentException(log);
+            if (!finalize_exception)
+                finalize_exception = std::current_exception();
+        }
     }
+    if (finalize_exception)
+        std::rethrow_exception(finalize_exception);
 }
 
 void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string & exception_message)
@@ -1304,11 +1328,16 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
     prepareCommitRequests(requests, insert_succeeded, successful_objects, exception_message);
 
     if (!successful_objects.empty()
-        && files_metadata->getTableMetadata().after_processing == ObjectStorageQueueAction::DELETE)
+        && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
     {
-        /// We do need to apply after-processing action before committing requests to keeper.
-        /// See explanation in ObjectStorageQueueSource::FileIterator::nextImpl().
-        object_storage->removeObjectsIfExist(successful_objects);
+        auto postProcessor = ObjectStorageQueuePostProcessor(
+            getContext(),
+            configuration->getType(),
+            object_storage,
+            getName(),
+            files_metadata->getTableMetadata(),
+            after_processing_settings);
+        postProcessor.process(successful_objects);
     }
 
     auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);

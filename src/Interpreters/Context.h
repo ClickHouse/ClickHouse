@@ -19,7 +19,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
-#include <Interpreters/AggregatedZooKeeperLog.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/IStorage_fwd.h>
@@ -119,6 +118,7 @@ class QueryMetricLog;
 class QueryThreadLog;
 class QueryViewsLog;
 class PartLog;
+class BackgroundSchedulePoolLog;
 class TextLog;
 class TraceLog;
 class MetricLog;
@@ -127,6 +127,7 @@ class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
 class ZooKeeperConnectionLog;
+class AggregatedZooKeeperLog;
 class IcebergMetadataLog;
 class DeltaMetadataLog;
 class SessionLog;
@@ -171,7 +172,7 @@ class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 class DiskSelector;
 using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
-using DisksMap = std::map<String, DiskPtr>;
+using DisksMap = std::map<String, DiskPtr, std::less<>>;
 class IStoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
@@ -261,6 +262,9 @@ using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
+class ReverseLookupCache;
+using ReverseLookupCachePtr = std::shared_ptr<ReverseLookupCache>;
+
 class ContextTimeSeriesTagsCollector;
 
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
@@ -347,6 +351,9 @@ protected:
 
     using FileProgressCallback = std::function<void(const FileProgress & progress)>;
     FileProgressCallback file_progress_callback; /// Callback for tracking progress of file loading.
+
+    using InteractiveCancelCallback = std::function<bool()>;
+    InteractiveCancelCallback interactive_cancel_callback; /// Callback for usage in interactive sessions with CompletedPipelineExecutor
 
     std::weak_ptr<QueryStatus> process_list_elem;  /// For tracking total resource usage for query.
     bool has_process_list_elem = false;     /// It's impossible to check if weak_ptr was initialized or not
@@ -539,6 +546,10 @@ protected:
     /// mutation tasks of one mutation executed against different parts of the same table.
     PreparedSetsCachePtr prepared_sets_cache;
 
+    /// Cache for reverse lookups of serialized dictionary keys used in `dictGetKeys` function.
+    /// This is a per query cache and not shared across queries.
+    mutable ReverseLookupCachePtr reverse_lookup_cache;
+
     /// this is a mode of parallel replicas where we set parallel_replicas_count and parallel_replicas_offset
     /// and generate specific filters on the replicas (e.g. when using parallel replicas with sample key)
     /// if we already use a different mode of parallel replicas we want to disable this mode
@@ -653,6 +664,7 @@ public:
     static ContextMutablePtr createCopy(const ContextPtr & other);
     static SharedContextHolder createShared();
 
+
     ~Context();
 
     String getPath() const;
@@ -760,8 +772,8 @@ public:
     void setUsersConfig(const ConfigurationPtr & config);
     ConfigurationPtr getUsersConfig();
 
-    /// Sets the current user assuming that he/she is already authenticated.
-    /// WARNING: This function doesn't check password!
+    /// Sets the current user, assuming they are already authenticated.
+    /// WARNING: This function doesn't check the password!
     void setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_ = {});
     UserPtr getUser() const;
 
@@ -1169,6 +1181,9 @@ public:
     void setFileProgressCallback(FileProgressCallback && callback) { file_progress_callback = callback; }
     FileProgressCallback getFileProgressCallback() const { return file_progress_callback; }
 
+    void setInteractiveCancelCallback(InteractiveCancelCallback && callback) { interactive_cancel_callback = callback; }
+    InteractiveCancelCallback getInteractiveCancelCallback() const { return interactive_cancel_callback; }
+
     /** Set in executeQuery and InterpreterSelectQuery. Then it is used in QueryPipeline,
       *  to update and monitor information about the total number of resources spent for the query.
       */
@@ -1421,6 +1436,8 @@ public:
     /// Provide table name to make required checks.
     std::shared_ptr<PartLog> getPartLog(const String & part_database) const;
 
+    std::shared_ptr<BackgroundSchedulePoolLog> getBackgroundSchedulePoolLog() const;
+
     const MergeTreeSettings & getMergeTreeSettings() const;
     const MergeTreeSettings & getReplicatedMergeTreeSettings() const;
     const DatabaseReplicatedSettings & getDatabaseReplicatedSettings() const;
@@ -1622,6 +1639,8 @@ public:
 
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
     PreparedSetsCachePtr getPreparedSetsCache() const;
+
+    ReverseLookupCache & getReverseLookupCache() const;
 
     /// IRuntimeFilterLookup allows to store and find per-query runtime filters under unique names. Those are used
     /// to optimize some JOINs by early pre-filtering left side of the JOIN by a filter built form the right side.

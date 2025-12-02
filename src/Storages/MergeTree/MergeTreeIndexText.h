@@ -143,7 +143,6 @@ public:
     /// Information required to read the posting list.
     struct FuturePostings
     {
-        MergeTreeIndexDeserializationState state;
         UInt64 header = 0;
         UInt64 offset_in_file = 0;
         UInt32 cardinality = 0;
@@ -179,7 +178,7 @@ struct DictionaryBlockBase
     bool empty() const;
     size_t size() const;
 
-    size_t upperBound(const StringRef & token) const;
+    size_t upperBound(std::string_view token) const;
 };
 
 struct DictionaryBlock : public DictionaryBlockBase
@@ -233,7 +232,7 @@ using TextIndexHeaderPtr = std::shared_ptr<TextIndexHeader>;
 struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
 {
 public:
-    using TokenToPostingsInfosMap = absl::flat_hash_map<StringRef, TokenPostingsInfo>;
+    using TokenToPostingsInfosMap = absl::flat_hash_map<std::string_view, TokenPostingsInfo>;
 
     explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_);
     ~MergeTreeIndexGranuleText() override = default;
@@ -245,8 +244,9 @@ public:
     bool empty() const override { return header->numberOfTokens() == 0; }
     size_t memoryUsageBytes() const override;
 
-    bool hasAnyTokenFromQuery(const TextSearchQuery & query) const;
-    bool hasAllTokensFromQuery(const TextSearchQuery & query) const;
+    bool hasAnyQueryTokens(const TextSearchQuery & query) const;
+    bool hasAllQueryTokens(const TextSearchQuery & query) const;
+    bool hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const;
 
     const TokenToPostingsInfosMap & getRemainingTokens() const { return remaining_tokens; }
     void resetAfterAnalysis();
@@ -257,16 +257,19 @@ private:
     /// Reads dictionary blocks and analyzes them for tokens remaining after bloom filter analysis.
     void analyzeDictionary(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
 
+    /// If adding significantly large members here make sure to add them to memoryUsageBytes()
+    /// ---------------------------------------
     MergeTreeIndexTextParams params;
     /// Header of the text index contains the number of tokens, bloom filter and sparse index.
     TextIndexHeaderPtr header;
     /// Tokens that are in the index granule after analysis.
     TokenToPostingsInfosMap remaining_tokens;
+    /// ---------------------------------------
 };
 
 /// Save BulkContext to optimize consecutive insertions into the posting list.
 using TokenToPostingsMap = StringHashMap<PostingListBuilder>;
-using SortedTokensAndPostings = std::vector<std::pair<StringRef, PostingListBuilder *>>;
+using SortedTokensAndPostings = std::vector<std::pair<std::string_view, PostingListBuilder *>>;
 
 /// Text index granule created on writing of the index.
 /// It differs from MergeTreeIndexGranuleText because it
@@ -288,18 +291,20 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
     bool empty() const override { return tokens_and_postings.empty(); }
-    size_t memoryUsageBytes() const override { return 0; }
+    size_t memoryUsageBytes() const override;
 
+    /// If adding significantly large members here make sure to add them to memoryUsageBytes()
+    /// ---------------------------------------
     MergeTreeIndexTextParams params;
     BloomFilter bloom_filter;
     /// Pointers to tokens and posting lists in the granule.
     SortedTokensAndPostings tokens_and_postings;
-
     /// tokens_and_postings has references to data held in the fields below.
     TokenToPostingsMap tokens_map;
     std::list<PostingList> posting_lists;
     std::unique_ptr<Arena> arena;
     LoggerPtr logger;
+    /// ---------------------------------------
 };
 
 struct MergeTreeIndexTextGranuleBuilder
@@ -309,7 +314,7 @@ struct MergeTreeIndexTextGranuleBuilder
         TokenExtractorPtr token_extractor_);
 
     /// Extracts tokens from the document and adds them to the granule.
-    void addDocument(StringRef document);
+    void addDocument(std::string_view document);
     void incrementCurrentRow() { ++current_row; }
 
     std::unique_ptr<MergeTreeIndexGranuleTextWritable> build();
@@ -367,7 +372,7 @@ public:
     MergeTreeIndexFormat getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const override;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
     /// This function parses the arguments of a text index. Text indexes have a special syntax with complex arguments.

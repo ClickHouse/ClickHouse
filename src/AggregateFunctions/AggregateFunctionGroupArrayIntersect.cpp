@@ -21,6 +21,7 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/KeyHolderHelpers.h>
 
 #include <memory>
 
@@ -182,7 +183,7 @@ public:
 /// Generic implementation, it uses serialized representation as object descriptor.
 struct AggregateFunctionGroupArrayIntersectGenericData
 {
-    using Set = HashSet<StringRef>;
+    using Set = HashSet<std::string_view>;
 
     Set value;
     UInt64 version = 0;
@@ -235,8 +236,9 @@ public:
                 else
                 {
                     const char * begin = nullptr;
-                    StringRef serialized = data_column->serializeAggregationStateValueIntoArena(offset + i, *arena, begin);
-                    chassert(serialized.data != nullptr);
+                    auto settings = IColumn::SerializationSettings::createForAggregationState();
+                    auto serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin, &settings);
+                    chassert(!serialized.empty());
                     set.emplace(SerializedKeyHolder{serialized, *arena}, it, inserted);
                 }
             }
@@ -255,8 +257,9 @@ public:
                 else
                 {
                     const char * begin = nullptr;
-                    StringRef serialized = data_column->serializeAggregationStateValueIntoArena(offset + i, *arena, begin);
-                    chassert(serialized.data != nullptr);
+                    auto settings = IColumn::SerializationSettings::createForAggregationState();
+                    auto serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin, &settings);
+                    chassert(!serialized.empty());
                     it = set.find(serialized);
 
                     if (it != nullptr)
@@ -341,10 +344,7 @@ public:
 
         for (auto & elem : set)
         {
-            if constexpr (is_plain_column)
-                data_to.insertData(elem.getValue().data, elem.getValue().size);
-            else
-                std::ignore = data_to.deserializeAndInsertAggregationStateValueFromArena(elem.getValue().data);
+            deserializeAndInsert<is_plain_column>(elem.getValue(), data_to);
         }
     }
 };

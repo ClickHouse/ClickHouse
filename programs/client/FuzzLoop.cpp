@@ -602,7 +602,7 @@ bool Client::buzzHouse()
         String full_query3;
         std::vector<BuzzHouse::SQLQuery> peer_queries;
         bool has_cloud_features = true;
-        BuzzHouse::RandomGenerator rg(fuzz_config->seed, fuzz_config->min_string_length, fuzz_config->max_string_length);
+        BuzzHouse::RandomGenerator rg(fuzz_config->seed, fuzz_config->min_string_length, fuzz_config->max_string_length, fuzz_config->random_limited_values);
         BuzzHouse::SQLQuery sq1;
         BuzzHouse::SQLQuery sq2;
         BuzzHouse::SQLQuery sq3;
@@ -736,7 +736,7 @@ bool Client::buzzHouse()
 
                     sq4.Clear();
                     full_query3.resize(0);
-                    qo.maybeUpdateOracleSelectQuery(rg, sq2, sq4);
+                    qo.maybeUpdateOracleSelectQuery(rg, gen, sq2, sq4);
                     BuzzHouse::SQLQueryToString(full_query3, sq4);
                     fuzz_config->outf << full_query3 << std::endl;
                     server_up &= processBuzzHouseQuery(full_query3);
@@ -864,7 +864,7 @@ bool Client::buzzHouse()
                     external_call
                     && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + restart_client + external_call + 1))
                 {
-                    const uint64_t nseed = rg.nextRandomUInt64();
+                    const uint64_t nseed = rg.nextInFullRange();
                     const auto & tbl
                         = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_for_external_call)).get();
                     const auto & ndname = tbl.getSparkCatalogName();

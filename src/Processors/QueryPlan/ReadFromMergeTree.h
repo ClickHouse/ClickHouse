@@ -154,7 +154,7 @@ public:
     using AnalysisResultPtr = std::shared_ptr<AnalysisResult>;
 
     ReadFromMergeTree(
-        RangesInDataParts parts_,
+        RangesInDataPartsPtr parts_,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot_,
         Names all_column_names_,
         const MergeTreeData & data_,
@@ -208,20 +208,23 @@ public:
         explicit Indexes(KeyCondition key_condition_)
             : key_condition(std::move(key_condition_))
             , use_skip_indexes(false)
+            , use_skip_indexes_for_disjunctions(false)
         {}
 
         KeyCondition key_condition;
+        std::optional<KeyCondition> key_condition_rpn_template; /// skeleton of the key condition without resolved columns
         std::optional<PartitionPruner> partition_pruner;
         std::optional<KeyCondition> minmax_idx_condition;
         std::optional<KeyCondition> part_offset_condition;
         std::optional<KeyCondition> total_offset_condition;
         UsefulSkipIndexes skip_indexes;
         bool use_skip_indexes;
+        bool use_skip_indexes_for_disjunctions;
         std::optional<std::unordered_set<String>> part_values;
     };
 
     static AnalysisResultPtr selectRangesToRead(
-        RangesInDataParts parts,
+        const RangesInDataParts & parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const std::optional<VectorSearchParameters> & vector_search_parameters,
         const StorageMetadataPtr & metadata_snapshot,
@@ -262,7 +265,7 @@ public:
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
 
-    const RangesInDataParts & getParts() const { return analyzed_result_ptr ? analyzed_result_ptr->parts_with_ranges : prepared_parts; }
+    const RangesInDataParts & getParts() const { return analyzed_result_ptr ? analyzed_result_ptr->parts_with_ranges : *prepared_parts; }
     MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot() const { return mutations_snapshot; }
 
     const MergeTreeData & getMergeTreeData() const { return data; }
@@ -284,7 +287,7 @@ public:
 
     /// Adds virtual columns for reading from text index.
     /// Removes physical text columns that were eliminated by direct read from text index.
-    void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns);
+    void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final);
 
     const std::optional<Indexes> & getIndexes() const { return indexes; }
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator() const;
@@ -295,7 +298,7 @@ public:
 private:
     MergeTreeReaderSettings reader_settings;
 
-    RangesInDataParts prepared_parts;
+    RangesInDataPartsPtr prepared_parts;
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot;
 
     Names all_column_names;
