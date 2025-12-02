@@ -7,7 +7,7 @@
 #include <Poco/JSON/Parser.h>
 
 #include <Core/Types.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>

@@ -106,7 +106,7 @@ public:
         data.resize_assume_reserved(data.size() - n);
     }
 
-    void deserializeAndInsertFromArena(ReadBuffer & in) override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
     void skipSerializedInArena(ReadBuffer & in) const override;
 
@@ -276,9 +276,9 @@ public:
         return {reinterpret_cast<const char*>(data.data()), byteSize()};
     }
 
-    StringRef getDataAt(size_t n) const override
+    std::string_view getDataAt(size_t n) const override
     {
-        return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
+        return std::string_view(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
     }
 
     bool isDefaultAt(size_t n) const override { return data[n] == T{}; }
