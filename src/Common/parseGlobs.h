@@ -30,18 +30,34 @@ struct Range
 {
     size_t start = 0;
     size_t end = 0;
+
+    bool start_zero_padded = false;
+    size_t start_digit_count = 0;
+
+    bool end_zero_padded = false;
+    size_t end_digit_count = 0;
 };
 
-enum class ExpressionType {
+enum class WildcardType
+{
+    QUESTION,
+    SINGLE_ASTERISK,
+    DOUBLE_ASTERISK,
+};
+
+enum class ExpressionType
+{
     RANGE,
     CONSTANT,
     ENUM,
+    WILDCARD,
 };
 
 using ExpressionData = std::variant<
     Range,
     std::string_view,
-    std::vector<std::string_view>
+    std::vector<std::string_view>,
+    WildcardType
 >;
 
 class Expression
@@ -49,23 +65,41 @@ class Expression
 public:
     explicit Expression (ExpressionData input): data(input) {}
 
-    ExpressionType type() const {
+    ExpressionType type() const
+    {
         return static_cast<ExpressionType>(data.index());
     }
 
-    // const ExpressionData& getData() const { return data; }
+    const ExpressionData& getData() const { return data; }
+
+    std::string dump() const;
+    std::string asRegex() const;
+
+    size_t cardinality() const;
 
 private:
+    std::string dumpRange() const;
+    std::string dumpEnum(char separator = ',') const;
+    std::string dumpWildcard() const;
+    std::string rangeAsRegex() const;
+    std::string enumAsRegex() const;
+    std::string wildcardAsRegex() const;
+
+    std::string escape(std::string_view input) const;
+
     ExpressionData data;
 };
 
 class GlobString
 {
 public:
-    explicit GlobString(std::string input): input_data(std::move(input)) {}
+    explicit GlobString(std::string input);
 
     void parse();
     const std::vector<Expression> & getExpressions() const { return expressions; }
+
+    std::string dump() const;
+    std::string asRegex() const;
 
 private:
     std::string_view consumeConstantExpression(const std::string_view & input) const;
