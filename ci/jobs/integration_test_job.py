@@ -235,7 +235,7 @@ def main():
             for file in changed_files:
                 if (
                     file.startswith("tests/integration/test")
-                    and Path(file).name.startswith("test_")
+                    and Path(file).name.startswith("test")
                     and file.endswith(".py")
                     and Path(file).is_file()
                 ):
@@ -257,6 +257,11 @@ def main():
                 verbose=True,
                 strict=True,
             )
+
+    if is_bugfix_validation or is_flaky_check:
+        assert (
+            changed_test_modules
+        ), "No changed test modules found, either job must be skipped or bug in changed test search logic"
 
     Shell.check(f"chmod +x {clickhouse_path}", verbose=True, strict=True)
     Shell.check(f"{clickhouse_path} --version", verbose=True, strict=True)
