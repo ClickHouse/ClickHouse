@@ -56,6 +56,9 @@ node7 = cluster.add_instance(
     main_configs=["configs/listen_host.xml", "configs/dns_update_long.xml"],
     with_zookeeper=True,
     stay_alive=True,
+    # Disable `with_remote_database_disk` as the instance may break the DNS resolution, which might cause the S3 unreachable
+    # when using S3 to store database metadata
+    with_remote_database_disk=False,
     ipv6_address="2001:3984:3989::1:1117",
     ipv4_address="10.5.95.17",
 )
