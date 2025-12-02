@@ -59,6 +59,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_inverse_dictionary_lookup", false, true, "New setting"},
             {"automatic_parallel_replicas_mode", 0, 0, "New setting"},
             {"automatic_parallel_replicas_min_bytes_per_replica", 0, 0, "New setting"},
+            {"cluster_for_parallel_replicas", "", "parallel_replicas", "Testing"},
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
