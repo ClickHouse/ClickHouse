@@ -489,27 +489,19 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     const auto & patch_parts = global_ctx->future_part->patch_parts;
 
-    /// TODO: default columns may have dependencies, use the following code to check
-    // for (const ColumnDescription & column : all_columns)
-    // {
-    //     const auto & default_expression = column.default_desc.expression;
-    //     if (default_expression)
-    //     {
-    //         ASTPtr query = default_expression->clone();
-    //         auto syntax_result = TreeRewriter(context).analyze(query, all_columns.getAll());
-    //         const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
-    //         const auto required_columns = actions->getRequiredColumns();
-
-    //         if (required_columns.end() != std::find(required_columns.begin(), required_columns.end(), command.column_name))
-    //             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot drop column {}, because column {} depends on it",
-    //                     backQuote(command.column_name), backQuote(column.name));
-    //     }
-    // }
-    //
-    // evaluateMissingDefaults
-
-    /// Determine columns that are absent in all source parts, either fully expired or never written, and mark them as
-    /// expired to avoid reading or writing unnecessary data.
+    /// Determine columns that are absent in all source parts—either fully expired or never written—and mark them as
+    /// expired to avoid unnecessary reads or writes during merges.
+    ///
+    /// NOTE:
+    /// Handling missing columns that have default expressions is non-trivial and currently unresolved
+    /// (see https://github.com/ClickHouse/ClickHouse/issues/91127).
+    /// For now, we conservatively avoid expiring such columns.
+    ///
+    /// The main challenges include:
+    /// 1. A default expression may depend on other columns, which themselves may be missing or expired,
+    ///    making it unclear whether the default should be materialized or recomputed.
+    /// 2. Default expressions may introduce semantic changes if re-evaluated during merges, leading to
+    ///    non-deterministic results across parts.
     {
         NameSet columns_present_in_parts;
         columns_present_in_parts.reserve(global_ctx->storage_columns.size());
@@ -521,10 +513,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 columns_present_in_parts.emplace(col.name);
         }
 
-        /// Any storage column not present in any part is considered expired
+        const auto & columns_desc = global_ctx->metadata_snapshot->getColumns();
+
+        /// Any storage column not present in any part and without a default expression is considered expired
         for (const auto & storage_column : global_ctx->storage_columns)
         {
-            if (!columns_present_in_parts.contains(storage_column.name))
+            if (!columns_present_in_parts.contains(storage_column.name) && !columns_desc.getDefault(storage_column.name))
                 global_ctx->new_data_part->expired_columns.emplace(storage_column.name);
         }
     }
