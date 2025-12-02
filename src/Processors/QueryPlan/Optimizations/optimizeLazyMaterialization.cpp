@@ -82,8 +82,7 @@ std::vector<bool> getRequiredInputPositions(const ActionsDAG & dag, const Block 
             stack.push(dag.getOutputs()[i]);
     }
 
-    std::vector<bool> required_input_positions = required_output_positions;
-    required_input_positions.assign(header.columns(), false);
+    std::vector<bool> required_input_positions(header.columns(), false);
 
     while (!stack.empty())
     {
@@ -104,8 +103,9 @@ std::vector<bool> getRequiredInputPositions(const ActionsDAG & dag, const Block 
         if (required_nodes.contains(inputs[i]))
             required_input_positions[header_positions[i]] = true;
 
-    for (size_t i = 0; dag.getOutputs().size() + i < header.columns(); ++i)
-        if (required_output_positions[i + dag.getOutputs().size()])
+    size_t num_outputs = dag.getOutputs().size();
+    for (size_t i = 0; num_outputs + i < required_output_positions.size(); ++i)
+        if (required_output_positions[num_outputs + i])
             required_input_positions[non_mapped[i]] = true;
 
     return required_input_positions;
