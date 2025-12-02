@@ -7148,6 +7148,9 @@ Possible values:
 - skip - Skip the file if it already exists.
 - error - Throw an error if the file already exists.
 - overwrite - Overwrite the file.
+)", 0)
+    DECLARE(Bool, serialize_string_in_memory_with_zero_byte, true, R"(
+Serialize String values during aggregation with zero byte at the end. Enable to keep compatibility when querying cluster of incompatible versions.
 )", 0) \
     \
     /* ####################################################### */ \

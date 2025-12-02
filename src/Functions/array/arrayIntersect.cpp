@@ -614,7 +614,7 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
                     else
                     {
                         const char * data = nullptr;
-                        value = &map[columns[arg_num]->serializeValueIntoArena(i, arena, data)];
+                        value = &map[columns[arg_num]->serializeValueIntoArena(i, arena, data, nullptr)];
                     }
 
                     /// Here we count the number of element appearances, but no more than once per array.
@@ -712,7 +712,7 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
                 else
                 {
                     const char * data = nullptr;
-                    pair = map.find(columns[0]->serializeValueIntoArena(i, arena, data));
+                    pair = map.find(columns[0]->serializeValueIntoArena(i, arena, data, nullptr));
                 }
 
                 if (!current_has_nullable)
@@ -755,7 +755,7 @@ void FunctionArrayIntersect<Mode>::insertElement(typename Map::LookupResult & pa
     else
     {
         ReadBufferFromString in(pair->getKey());
-        result_data.deserializeAndInsertFromArena(in);
+        result_data.deserializeAndInsertFromArena(in, /*settings=*/nullptr);
     }
     if (use_null_map)
         null_map.push_back(0);
