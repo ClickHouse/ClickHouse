@@ -377,15 +377,15 @@ SELECT accurateCastOrDefault('abc', 'UInt32')
     factory.registerFunction<FunctionCastOrDefault>(accurateCastOrDefault_documentation);
 
     FunctionDocumentation::Description toUInt8OrDefault_description = R"(
-Like [`toUInt8`](#touint8), this function converts an input value to a value of type [UInt8](../data-types/int-uint.md) but returns the default value in case of an error.
+Like [`toUInt8`](#toUint8), this function converts an input value to a value of type [UInt8](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toUInt8OrDefault_syntax = "toUInt8OrDefault(expr[, default])";
     FunctionDocumentation::Arguments toUInt8OrDefault_arguments = {
-        {"expr", "Expression returning a number or a string representation of a number.", {"String", "Int", "Float"}},
+        {"expr", "Expression returning a number or a string representation of a number.", {"String", "(U)Int*", "Float*"}},
         {"default", "Optional. The default value to return if parsing is unsuccessful.", {"UInt8"}}
     };
-    FunctionDocumentation::ReturnedValue toUInt8OrDefault_returned_value = {"Value of type UInt8 if successful, otherwise returns the default value if passed or 0 if not.", {"UInt8"}};
+    FunctionDocumentation::ReturnedValue toUInt8OrDefault_returned_value = {"Returns a value of type UInt8 if successful, otherwise returns the default value if passed, or 0 if not.", {"UInt8"}};
     FunctionDocumentation::Examples toUInt8OrDefault_examples = {
         {"Successful conversion", "SELECT toUInt8OrDefault('8', CAST('0', 'UInt8'))", "8"},
         {"Failed conversion", "SELECT toUInt8OrDefault('abc', CAST('0', 'UInt8'))", "0"}
@@ -398,15 +398,15 @@ If no `default` value is passed then `0` is returned in case of an error.
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt8OrDefault", std::make_shared<DataTypeUInt8>()); },
         toUInt8OrDefault_documentation);
     FunctionDocumentation::Description toUInt16OrDefault_description = R"(
-Like [`toUInt16`](#touint16), this function converts an input value to a value of type [UInt16](../data-types/int-uint.md) but returns the default value in case of an error.
+Like [`toUInt16`](#toUInt16), this function converts an input value to a value of type [UInt16](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toUInt16OrDefault_syntax = "toUInt16OrDefault(expr[, default])";
     FunctionDocumentation::Arguments toUInt16OrDefault_arguments = {
-        {"expr", "Expression returning a number or a string representation of a number.", {"String", "Int", "Float"}},
+        {"expr", "Expression returning a number or a string representation of a number.", {"String", "(U)Int*", "Float*"}},
         {"default", "Optional. The default value to return if parsing is unsuccessful.", {"UInt16"}}
     };
-    FunctionDocumentation::ReturnedValue toUInt16OrDefault_returned_value = {"Value of type UInt16 if successful, otherwise returns the default value if passed or 0 if not.", {"UInt16"}};
+    FunctionDocumentation::ReturnedValue toUInt16OrDefault_returned_value = {"Returns a value of type UInt16 if successful, otherwise returns the default value if passed, or 0 if not.", {"UInt16"}};
     FunctionDocumentation::Examples toUInt16OrDefault_examples = {
         {"Successful conversion", "SELECT toUInt16OrDefault('16', CAST('0', 'UInt16'))", "16"},
         {"Failed conversion", "SELECT toUInt16OrDefault('abc', CAST('0', 'UInt16'))", "0"}
@@ -419,15 +419,15 @@ If no `default` value is passed then `0` is returned in case of an error.
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt16OrDefault", std::make_shared<DataTypeUInt16>()); },
         toUInt16OrDefault_documentation);
     FunctionDocumentation::Description toUInt32OrDefault_description = R"(
-Like [`toUInt32`](#touint32), this function converts an input value to a value of type [UInt32](../data-types/int-uint.md) but returns the default value in case of an error.
+Like [`toUInt32`](#toUInt32), this function converts an input value to a value of type [UInt32](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toUInt32OrDefault_syntax = "toUInt32OrDefault(expr[, default])";
     FunctionDocumentation::Arguments toUInt32OrDefault_arguments = {
-        {"expr", "Expression returning a number or a string representation of a number.", {"String", "Int", "Float"}},
+        {"expr", "Expression returning a number or a string representation of a number.", {"String", "(U)Int*", "Float*"}},
         {"default", "Optional. The default value to return if parsing is unsuccessful.", {"UInt32"}}
     };
-    FunctionDocumentation::ReturnedValue toUInt32OrDefault_returned_value = {"Value of type UInt32 if successful, otherwise returns the default value if passed or 0 if not.", {"UInt32"}};
+    FunctionDocumentation::ReturnedValue toUInt32OrDefault_returned_value = {"Returns a value of type UInt32 if successful, otherwise returns the default value if passed, or 0 if not.", {"UInt32"}};
     FunctionDocumentation::Examples toUInt32OrDefault_examples = {
         {"Successful conversion", "SELECT toUInt32OrDefault('32', CAST('0', 'UInt32'))", "32"},
         {"Failed conversion", "SELECT toUInt32OrDefault('abc', CAST('0', 'UInt32'))", "0"}
@@ -440,15 +440,15 @@ If no `default` value is passed then `0` is returned in case of an error.
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt32OrDefault", std::make_shared<DataTypeUInt32>()); },
         toUInt32OrDefault_documentation);
     FunctionDocumentation::Description toUInt64OrDefault_description = R"(
-Like [`toUInt64`](#touint64), this function converts an input value to a value of type [UInt64](../data-types/int-uint.md) but returns the default value in case of an error.
+Like [`toUInt64`](#toUInt64), this function converts an input value to a value of type [UInt64](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toUInt64OrDefault_syntax = "toUInt64OrDefault(expr[, default])";
     FunctionDocumentation::Arguments toUInt64OrDefault_arguments = {
-        {"expr", "Expression returning a number or a string representation of a number.", {"String", "Int", "Float"}},
+        {"expr", "Expression returning a number or a string representation of a number.", {"String", "(U)Int*", "Float*"}},
         {"default", "Optional. The default value to return if parsing is unsuccessful.", {"UInt64"}}
     };
-    FunctionDocumentation::ReturnedValue toUInt64OrDefault_returned_value = {"Value of type UInt64 if successful, otherwise returns the default value if passed or 0 if not.", {"UInt64"}};
+    FunctionDocumentation::ReturnedValue toUInt64OrDefault_returned_value = {"Returns a value of type UInt64 if successful, otherwise returns the default value if passed, or 0 if not.", {"UInt64"}};
     FunctionDocumentation::Examples toUInt64OrDefault_examples = {
         {"Successful conversion", "SELECT toUInt64OrDefault('64', CAST('0', 'UInt64'))", "64"},
         {"Failed conversion", "SELECT toUInt64OrDefault('abc', CAST('0', 'UInt64'))", "0"}
@@ -461,15 +461,15 @@ If no `default` value is passed then `0` is returned in case of an error.
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt64OrDefault", std::make_shared<DataTypeUInt64>()); },
         toUInt64OrDefault_documentation);
     FunctionDocumentation::Description toUInt128OrDefault_description = R"(
-Like [`toUInt128`](#touint128), this function converts an input value to a value of type [UInt128](../data-types/int-uint.md) but returns the default value in case of an error.
+Like [`toUInt128`](#toUInt128), this function converts an input value to a value of type [`UInt128`](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toUInt128OrDefault_syntax = "toUInt128OrDefault(expr[, default])";
     FunctionDocumentation::Arguments toUInt128OrDefault_arguments = {
-        {"expr", "Expression returning a number or a string representation of a number.", {"String", "Int", "Float"}},
+        {"expr", "Expression returning a number or a string representation of a number.", {"String", "(U)Int*", "Float*"}},
         {"default", "Optional. The default value to return if parsing is unsuccessful.", {"UInt128"}}
     };
-    FunctionDocumentation::ReturnedValue toUInt128OrDefault_returned_value = {"Value of type UInt128 if successful, otherwise returns the default value if passed or 0 if not.", {"UInt128"}};
+    FunctionDocumentation::ReturnedValue toUInt128OrDefault_returned_value = {"Returns a value of type UInt128 if successful, otherwise returns the default value if passed, or 0 if not.", {"UInt128"}};
     FunctionDocumentation::Examples toUInt128OrDefault_examples = {
         {"Successful conversion", "SELECT toUInt128OrDefault('128', CAST('0', 'UInt128'))", "128"},
         {"Failed conversion", "SELECT toUInt128OrDefault('abc', CAST('0', 'UInt128'))", "0"}
@@ -482,15 +482,15 @@ If no `default` value is passed then `0` is returned in case of an error.
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt128OrDefault", std::make_shared<DataTypeUInt128>()); },
         toUInt128OrDefault_documentation);
     FunctionDocumentation::Description toUInt256OrDefault_description = R"(
-Like [`toUInt256`](#touint256), this function converts an input value to a value of type [UInt256](../data-types/int-uint.md) but returns the default value in case of an error.
+Like [`toUInt256`](#toUInt256), this function converts an input value to a value of type [UInt256](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toUInt256OrDefault_syntax = "toUInt256OrDefault(expr[, default])";
     FunctionDocumentation::Arguments toUInt256OrDefault_arguments = {
-        {"expr", "Expression returning a number or a string representation of a number.", {"String", "Int", "Float"}},
+        {"expr", "Expression returning a number or a string representation of a number.", {"String", "(U)Int*", "Float*"}},
         {"default", "Optional. The default value to return if parsing is unsuccessful.", {"UInt256"}}
     };
-    FunctionDocumentation::ReturnedValue toUInt256OrDefault_returned_value = {"Value of type UInt256 if successful, otherwise returns the default value if passed or 0 if not.", {"UInt256"}};
+    FunctionDocumentation::ReturnedValue toUInt256OrDefault_returned_value = {"Returns a value of type UInt256 if successful, otherwise returns the default value if passed, or 0 if not.", {"UInt256"}};
     FunctionDocumentation::Examples toUInt256OrDefault_examples = {
         {"Successful conversion", "SELECT toUInt256OrDefault('-256', CAST('0', 'UInt256'))", "0"},
         {"Failed conversion", "SELECT toUInt256OrDefault('abc', CAST('0', 'UInt256'))", "0"}
@@ -504,15 +504,15 @@ If no `default` value is passed then `0` is returned in case of an error.
         toUInt256OrDefault_documentation);
 
     FunctionDocumentation::Description toInt8OrDefault_description = R"(
-Like [`toInt8`](#toint8), this function converts an input value to a value of type [Int8](../data-types/int-uint.md) but returns the default value in case of an error.
+Like [`toInt8`](#toInt8), this function converts an input value to a value of type [Int8](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toInt8OrDefault_syntax = "toInt8OrDefault(expr[, default])";
     FunctionDocumentation::Arguments toInt8OrDefault_arguments = {
-        {"expr", "Expression returning a number or a string representation of a number.", {"String", "Int", "Float"}},
+        {"expr", "Expression returning a number or a string representation of a number.", {"String", "(U)Int*", "Float*"}},
         {"default", "Optional. The default value to return if parsing is unsuccessful.", {"Int8"}}
     };
-    FunctionDocumentation::ReturnedValue toInt8OrDefault_returned_value = {"Value of type Int8 if successful, otherwise returns the default value if passed or 0 if not.", {"Int8"}};
+    FunctionDocumentation::ReturnedValue toInt8OrDefault_returned_value = {"Returns a value of type Int8 if successful, otherwise returns the default value if passed, or 0 if not.", {"Int8"}};
     FunctionDocumentation::Examples toInt8OrDefault_examples = {
         {"Successful conversion", "SELECT toInt8OrDefault('-8', CAST('-1', 'Int8'))", "-8"},
         {"Failed conversion", "SELECT toInt8OrDefault('abc', CAST('-1', 'Int8'))", "-1"}
@@ -525,15 +525,15 @@ If no `default` value is passed then `0` is returned in case of an error.
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt8OrDefault", std::make_shared<DataTypeInt8>()); },
         toInt8OrDefault_documentation);
     FunctionDocumentation::Description toInt16OrDefault_description = R"(
-Like [`toInt16`](#toint16), this function converts an input value to a value of type [Int16](../data-types/int-uint.md) but returns the default value in case of an error.
+Like [`toInt16`](#toInt16), this function converts an input value to a value of type [Int16](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toInt16OrDefault_syntax = "toInt16OrDefault(expr[, default])";
     FunctionDocumentation::Arguments toInt16OrDefault_arguments = {
-        {"expr", "Expression returning a number or a string representation of a number.", {"String", "Int", "Float"}},
+        {"expr", "Expression returning a number or a string representation of a number.", {"String", "(U)Int*", "Float*"}},
         {"default", "Optional. The default value to return if parsing is unsuccessful.", {"Int16"}}
     };
-    FunctionDocumentation::ReturnedValue toInt16OrDefault_returned_value = {"Value of type Int16 if successful, otherwise returns the default value if passed or 0 if not.", {"Int16"}};
+    FunctionDocumentation::ReturnedValue toInt16OrDefault_returned_value = {"Returns a value of type Int16 if successful, otherwise returns the default value if passed, or 0 if not.", {"Int16"}};
     FunctionDocumentation::Examples toInt16OrDefault_examples = {
         {"Successful conversion", "SELECT toInt16OrDefault('-16', CAST('-1', 'Int16'))", "-16"},
         {"Failed conversion", "SELECT toInt16OrDefault('abc', CAST('-1', 'Int16'))", "-1"}
@@ -546,15 +546,15 @@ If no `default` value is passed then `0` is returned in case of an error.
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt16OrDefault", std::make_shared<DataTypeInt16>()); },
         toInt16OrDefault_documentation);
     FunctionDocumentation::Description toInt32OrDefault_description = R"(
-Like [`toInt32`](#toint32), this function converts an input value to a value of type [Int32](../data-types/int-uint.md) but returns the default value in case of an error.
+Like [`toInt32`](#toInt32), this function converts an input value to a value of type [Int32](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toInt32OrDefault_syntax = "toInt32OrDefault(expr[, default])";
     FunctionDocumentation::Arguments toInt32OrDefault_arguments = {
-        {"expr", "Expression returning a number or a string representation of a number.", {"String", "Int", "Float"}},
+        {"expr", "Expression returning a number or a string representation of a number.", {"String", "(U)Int*", "Float*"}},
         {"default", "Optional. The default value to return if parsing is unsuccessful.", {"Int32"}}
     };
-    FunctionDocumentation::ReturnedValue toInt32OrDefault_returned_value = {"Value of type Int32 if successful, otherwise returns the default value if passed or 0 if not.", {"Int32"}};
+    FunctionDocumentation::ReturnedValue toInt32OrDefault_returned_value = {"Returns a value of type Int32 if successful, otherwise returns the default value if passed or 0 if not.", {"Int32"}};
     FunctionDocumentation::Examples toInt32OrDefault_examples = {
         {"Successful conversion", "SELECT toInt32OrDefault('-32', CAST('-1', 'Int32'))", "-32"},
         {"Failed conversion", "SELECT toInt32OrDefault('abc', CAST('-1', 'Int32'))", "-1"}
@@ -567,15 +567,15 @@ If no `default` value is passed then `0` is returned in case of an error.
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt32OrDefault", std::make_shared<DataTypeInt32>()); },
         toInt32OrDefault_documentation);
     FunctionDocumentation::Description toInt64OrDefault_description = R"(
-Like [`toInt64`](#toint64), this function converts an input value to a value of type [Int64](../data-types/int-uint.md) but returns the default value in case of an error.
+Like [`toInt64`](#toInt64), this function converts an input value to a value of type [Int64](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toInt64OrDefault_syntax = "toInt64OrDefault(expr[, default])";
     FunctionDocumentation::Arguments toInt64OrDefault_arguments = {
-        {"expr", "Expression returning a number or a string representation of a number.", {"String", "Int", "Float"}},
+        {"expr", "Expression returning a number or a string representation of a number.", {"String", "(U)Int*", "Float*"}},
         {"default", "Optional. The default value to return if parsing is unsuccessful.", {"Int64"}}
     };
-    FunctionDocumentation::ReturnedValue toInt64OrDefault_returned_value = {"Value of type Int64 if successful, otherwise returns the default value if passed or 0 if not.", {"Int64"}};
+    FunctionDocumentation::ReturnedValue toInt64OrDefault_returned_value = {"Returns a value of type Int64 if successful, otherwise returns the default value if passed, or 0 if not.", {"Int64"}};
     FunctionDocumentation::Examples toInt64OrDefault_examples = {
         {"Successful conversion", "SELECT toInt64OrDefault('-64', CAST('-1', 'Int64'))", "-64"},
         {"Failed conversion", "SELECT toInt64OrDefault('abc', CAST('-1', 'Int64'))", "-1"}
@@ -588,15 +588,15 @@ If no `default` value is passed then `0` is returned in case of an error.
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt64OrDefault", std::make_shared<DataTypeInt64>()); },
         toInt64OrDefault_documentation);
     FunctionDocumentation::Description toInt128OrDefault_description = R"(
-Like [`toInt128`](#toint128), this function converts an input value to a value of type [Int128](../data-types/int-uint.md) but returns the default value in case of an error.
+Like [`toInt128`](#toInt128), this function converts an input value to a value of type [Int128](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toInt128OrDefault_syntax = "toInt128OrDefault(expr[, default])";
     FunctionDocumentation::Arguments toInt128OrDefault_arguments = {
-        {"expr", "Expression returning a number or a string representation of a number.", {"String", "Int", "Float"}},
+        {"expr", "Expression returning a number or a string representation of a number.", {"String", "(U)Int*", "Float*"}},
         {"default", "Optional. The default value to return if parsing is unsuccessful.", {"Int128"}}
     };
-    FunctionDocumentation::ReturnedValue toInt128OrDefault_returned_value = {"Value of type Int128 if successful, otherwise returns the default value if passed or 0 if not.", {"Int128"}};
+    FunctionDocumentation::ReturnedValue toInt128OrDefault_returned_value = {"Returns a value of type Int128 if successful, otherwise returns the default value if passed, or 0 if not.", {"Int128"}};
     FunctionDocumentation::Examples toInt128OrDefault_examples = {
         {"Successful conversion", "SELECT toInt128OrDefault('-128', CAST('-1', 'Int128'))", "-128"},
         {"Failed conversion", "SELECT toInt128OrDefault('abc', CAST('-1', 'Int128'))", "-1"}
@@ -609,15 +609,15 @@ If no `default` value is passed then `0` is returned in case of an error.
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt128OrDefault", std::make_shared<DataTypeInt128>()); },
         toInt128OrDefault_documentation);
     FunctionDocumentation::Description toInt256OrDefault_description = R"(
-Like [`toInt256`](#toint256), this function converts an input value to a value of type [Int256](../data-types/int-uint.md) but returns the default value in case of an error.
+Like [`toInt256`](#toInt256), this function converts an input value to a value of type [Int256](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toInt256OrDefault_syntax = "toInt256OrDefault(expr[, default])";
     FunctionDocumentation::Arguments toInt256OrDefault_arguments = {
-        {"expr", "Expression returning a number or a string representation of a number.", {"String", "Int", "Float"}},
+        {"expr", "Expression returning a number or a string representation of a number.", {"String", "(U)Int*", "Float*"}},
         {"default", "Optional. The default value to return if parsing is unsuccessful.", {"Int256"}}
     };
-    FunctionDocumentation::ReturnedValue toInt256OrDefault_returned_value = {"Value of type Int256 if successful, otherwise returns the default value if passed or 0 if not.", {"Int256"}};
+    FunctionDocumentation::ReturnedValue toInt256OrDefault_returned_value = {"Returns a value of type Int256 if successful, otherwise returns the default value if passed, or 0 if not.", {"Int256"}};
     FunctionDocumentation::Examples toInt256OrDefault_examples = {
         {"Successful conversion", "SELECT toInt256OrDefault('-256', CAST('-1', 'Int256'))", "-256"},
         {"Failed conversion", "SELECT toInt256OrDefault('abc', CAST('-1', 'Int256'))", "-1"}
@@ -631,15 +631,15 @@ If no `default` value is passed then `0` is returned in case of an error.
         toInt256OrDefault_documentation);
 
     FunctionDocumentation::Description toFloat32OrDefault_description = R"(
-Like [`toFloat32`](#tofloat32), this function converts an input value to a value of type [Float32](../data-types/float.md) but returns the default value in case of an error.
+Like [`toFloat32`](#toFloat32), this function converts an input value to a value of type [Float32](../data-types/float.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toFloat32OrDefault_syntax = "toFloat32OrDefault(expr[, default])";
     FunctionDocumentation::Arguments toFloat32OrDefault_arguments = {
-        {"expr", "Expression returning a number or a string representation of a number.", {"String", "Int", "Float"}},
+        {"expr", "Expression returning a number or a string representation of a number.", {"String", "(U)Int*", "Float*"}},
         {"default", "Optional. The default value to return if parsing is unsuccessful.", {"Float32"}}
     };
-    FunctionDocumentation::ReturnedValue toFloat32OrDefault_returned_value = {"Value of type Float32 if successful, otherwise returns the default value if passed or 0 if not.", {"Float32"}};
+    FunctionDocumentation::ReturnedValue toFloat32OrDefault_returned_value = {"Returns a value of type Float32 if successful, otherwise returns the default value if passed or 0 if not.", {"Float32"}};
     FunctionDocumentation::Examples toFloat32OrDefault_examples = {
         {"Successful conversion", "SELECT toFloat32OrDefault('8', CAST('0', 'Float32'))", "8"},
         {"Failed conversion", "SELECT toFloat32OrDefault('abc', CAST('0', 'Float32'))", "0"}
@@ -652,15 +652,15 @@ If no `default` value is passed then `0` is returned in case of an error.
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toFloat32OrDefault", std::make_shared<DataTypeFloat32>()); },
         toFloat32OrDefault_documentation);
     FunctionDocumentation::Description toFloat64OrDefault_description = R"(
-Like [`toFloat64`](#tofloat64), this function converts an input value to a value of type [Float64](../data-types/float.md) but returns the default value in case of an error.
+Like [`toFloat64`](#toFloat64), this function converts an input value to a value of type [Float64](../data-types/float.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toFloat64OrDefault_syntax = "toFloat64OrDefault(expr[, default])";
     FunctionDocumentation::Arguments toFloat64OrDefault_arguments = {
-        {"expr", "Expression returning a number or a string representation of a number.", {"String", "Int", "Float"}},
+        {"expr", "Expression returning a number or a string representation of a number.", {"String", "(U)Int*", "Float*"}},
         {"default", "Optional. The default value to return if parsing is unsuccessful.", {"Float64"}}
     };
-    FunctionDocumentation::ReturnedValue toFloat64OrDefault_returned_value = {"Value of type Float64 if successful, otherwise returns the default value if passed or 0 if not.", {"Float64"}};
+    FunctionDocumentation::ReturnedValue toFloat64OrDefault_returned_value = {"Returns a value of type Float64 if successful, otherwise returns the default value if passed or 0 if not.", {"Float64"}};
     FunctionDocumentation::Examples toFloat64OrDefault_examples = {
         {"Successful conversion", "SELECT toFloat64OrDefault('8', CAST('0', 'Float64'))", "8"},
         {"Failed conversion", "SELECT toFloat64OrDefault('abc', CAST('0', 'Float64'))", "0"}
@@ -674,11 +674,11 @@ If no `default` value is passed then `0` is returned in case of an error.
         toFloat64OrDefault_documentation);
 
     FunctionDocumentation::Description toDateOrDefault_description = R"(
-Like [toDate](#todate) but if unsuccessful, returns a default value which is either the second argument (if specified), or otherwise the lower boundary of [Date](../data-types/date.md).
+Like [toDate](#toDate) but if unsuccessful, returns a default value which is either the second argument (if specified), or otherwise the lower boundary of [Date](../data-types/date.md).
     )";
     FunctionDocumentation::Syntax toDateOrDefault_syntax = "toDateOrDefault(expr[, default])";
     FunctionDocumentation::Arguments toDateOrDefault_arguments = {
-        {"expr", "Expression returning a number or a string representation of a number.", {"String", "Int", "Float"}},
+        {"expr", "Expression returning a number or a string representation of a number.", {"String", "(U)Int*", "Float*"}},
         {"default", "Optional. The default value to return if parsing is unsuccessful.", {"Date"}}
     };
     FunctionDocumentation::ReturnedValue toDateOrDefault_returned_value = {"Value of type Date if successful, otherwise returns the default value if passed or 1970-01-01 if not.", {"Date"}};
@@ -698,7 +698,7 @@ Converts the argument to the [Date32](../data-types/date32.md) data type. If the
     )";
     FunctionDocumentation::Syntax toDate32OrDefault_syntax = "toDate32OrDefault(expr[, default])";
     FunctionDocumentation::Arguments toDate32OrDefault_arguments = {
-        {"expr", "Expression returning a number or a string representation of a number.", {"String", "Int", "Float"}},
+        {"expr", "Expression returning a number or a string representation of a number.", {"String", "(U)Int*", "Float*"}},
         {"default", "Optional. The default value to return if parsing is unsuccessful.", {"Date32"}}
     };
     FunctionDocumentation::ReturnedValue toDate32OrDefault_returned_value = {"Value of type Date32 if successful, otherwise returns the default value if passed or 1900-01-01 if not.", {"Date32"}};
@@ -718,7 +718,7 @@ Like [toDateTime](#todatetime) but if unsuccessful, returns a default value whic
     )";
     FunctionDocumentation::Syntax toDateTimeOrDefault_syntax = "toDateTimeOrDefault(expr[, timezone, default])";
     FunctionDocumentation::Arguments toDateTimeOrDefault_arguments = {
-        {"expr", "Expression returning a number or a string representation of a number.", {"String", "Int", "Float"}},
+        {"expr", "Expression returning a number or a string representation of a number.", {"String", "(U)Int*", "Float*"}},
         {"timezone", "Optional. Time zone.", {"String"}},
         {"default", "Optional. The default value to return if parsing is unsuccessful.", {"DateTime"}}
     };
@@ -740,7 +740,7 @@ or the provided default if an invalid argument is received.
     )";
     FunctionDocumentation::Syntax toDateTime64OrDefault_syntax = "toDateTime64OrDefault(expr, scale[, timezone, default])";
     FunctionDocumentation::Arguments toDateTime64OrDefault_arguments = {
-        {"expr", "Expression returning a number or a string representation of a number.", {"String", "Int", "Float"}},
+        {"expr", "Expression returning a number or a string representation of a number.", {"String", "(U)Int*", "Float*"}},
         {"scale", "Tick size (precision): 10^-precision seconds.", {"UInt8"}},
         {"timezone", "Optional. Time zone.", {"String"}},
         {"default", "Optional. The default value to return if parsing is unsuccessful.", {"DateTime64"}}
@@ -759,7 +759,7 @@ or the provided default if an invalid argument is received.
         toDateTime64OrDefault_documentation);
 
     FunctionDocumentation::Description toDecimal32OrDefault_description = R"(
-Like [`toDecimal32`](#todecimal32), this function converts an input value to a value of type [Decimal(9, S)](../data-types/decimal.md) but returns the default value in case of an error.
+Like [`toDecimal32`](#toDecimal32), this function converts an input value to a value of type [Decimal(9, S)](../data-types/decimal.md) but returns the default value in case of an error.
     )";
     FunctionDocumentation::Syntax toDecimal32OrDefault_syntax = "toDecimal32OrDefault(expr, S[, default])";
     FunctionDocumentation::Arguments toDecimal32OrDefault_arguments = {
@@ -781,7 +781,7 @@ Like [`toDecimal32`](#todecimal32), this function converts an input value to a v
         toDecimal32OrDefault_documentation);
 
     FunctionDocumentation::Description toDecimal64OrDefault_description = R"(
-Like [`toDecimal64`](#todecimal64), this function converts an input value to a value of type [Decimal(18, S)](../data-types/decimal.md) but returns the default value in case of an error.
+Like [`toDecimal64`](#toDecimal64), this function converts an input value to a value of type [Decimal(18, S)](../data-types/decimal.md) but returns the default value in case of an error.
     )";
     FunctionDocumentation::Syntax toDecimal64OrDefault_syntax = "toDecimal64OrDefault(expr, S[, default])";
     FunctionDocumentation::Arguments toDecimal64OrDefault_arguments = {
@@ -803,7 +803,7 @@ Like [`toDecimal64`](#todecimal64), this function converts an input value to a v
         toDecimal64OrDefault_documentation);
 
     FunctionDocumentation::Description toDecimal128OrDefault_description = R"(
-Like [`toDecimal128`](#todecimal128), this function converts an input value to a value of type [Decimal(38, S)](../data-types/decimal.md) but returns the default value in case of an error.
+Like [`toDecimal128`](#toDecimal128), this function converts an input value to a value of type [Decimal(38, S)](../data-types/decimal.md) but returns the default value in case of an error.
     )";
     FunctionDocumentation::Syntax toDecimal128OrDefault_syntax = "toDecimal128OrDefault(expr, S[, default])";
     FunctionDocumentation::Arguments toDecimal128OrDefault_arguments = {
@@ -825,7 +825,7 @@ Like [`toDecimal128`](#todecimal128), this function converts an input value to a
         toDecimal128OrDefault_documentation);
 
     FunctionDocumentation::Description toDecimal256OrDefault_description = R"(
-Like [`toDecimal256`](#todecimal256), this function converts an input value to a value of type [Decimal(76, S)](../data-types/decimal.md) but returns the default value in case of an error.
+Like [`toDecimal256`](#toDecimal256), this function converts an input value to a value of type [Decimal(76, S)](../data-types/decimal.md) but returns the default value in case of an error.
     )";
     FunctionDocumentation::Syntax toDecimal256OrDefault_syntax = "toDecimal256OrDefault(expr, S[, default])";
     FunctionDocumentation::Arguments toDecimal256OrDefault_arguments = {
