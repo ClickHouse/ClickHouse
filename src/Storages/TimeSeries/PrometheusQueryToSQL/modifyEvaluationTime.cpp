@@ -70,7 +70,7 @@ namespace
 
                 auto & subqueries = context.subqueries;
                 subqueries.emplace_back(SQLSubquery{subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE});
-                params.from_subquery = subqueries.back().name;
+                params.from_table = subqueries.back().name;
 
                 expression.select_query = buildSelectQuery(std::move(params));
 
@@ -138,7 +138,7 @@ namespace
 
                 auto & subqueries = context.subqueries;
                 subqueries.emplace_back(SQLSubquery{subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE});
-                params.from_subquery = subqueries.back().name;
+                params.from_table = subqueries.back().name;
 
                 expression.select_query = buildSelectQuery(std::move(params));
 
@@ -172,7 +172,7 @@ namespace
 
                 auto & subqueries = context.subqueries;
                 subqueries.emplace_back(SQLSubquery{subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE});
-                params.from_subquery = subqueries.back().name;
+                params.from_table = subqueries.back().name;
 
                 expression.select_query = buildSelectQuery(std::move(params));
 

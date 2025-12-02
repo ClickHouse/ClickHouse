@@ -7,6 +7,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/addParametersToAggregateFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/buildSelectQuery.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
@@ -55,25 +56,6 @@ namespace
     bool shouldDropMetricName(const String & promql_function_name)
     {
         return promql_function_name != "last_over_time";
-    }
-
-
-    void addParametersToAggregateFunction(
-        ASTFunction & function,
-        DecimalField<DateTime64> start_time,
-        DecimalField<DateTime64> end_time,
-        DecimalField<Decimal64> step,
-        DecimalField<Decimal64> window)
-    {
-        if (!function.parameters)
-        {
-            function.parameters = std::make_shared<ASTExpressionList>();
-            function.children.push_back(function.parameters);
-        }
-        function.parameters->children.push_back(timeseriesTimeToAST(start_time));
-        function.parameters->children.push_back(timeseriesTimeToAST(end_time));
-        function.parameters->children.push_back(timeseriesDurationToAST(step));
-        function.parameters->children.push_back(timeseriesDurationToAST(window));
     }
 }
 
@@ -147,20 +129,23 @@ SQLQueryPiece applyFunctionOverRange(
             ///                             arrayResize([], <count_of_time_steps>, <scalar_value>)) AS values
             SelectQueryParams params;
 
-            auto aggregate_function = makeASTFunction(
-                getSQLFunctionName(promql_function_name),
+            auto aggregate_function = addParametersToAggregateFunction(
                 makeASTFunction(
-                    "timeSeriesRange",
-                    timeseriesTimeToAST(argument.start_time),
-                    timeseriesTimeToAST(argument.end_time),
-                    timeseriesDurationToAST(argument.step)),
-                makeASTFunction(
-                    "arrayResize",
-                    std::make_shared<ASTLiteral>(Array{}),
-                    std::make_shared<ASTLiteral>(countTimeseriesSteps(argument.start_time, argument.end_time, argument.step)),
-                    std::make_shared<ASTLiteral>(argument.scalar_value)));
-
-            addParametersToAggregateFunction(*aggregate_function, start_time, end_time, step, window);
+                    getSQLFunctionName(promql_function_name),
+                    makeASTFunction(
+                        "timeSeriesRange",
+                        timeseriesTimeToAST(argument.start_time),
+                        timeseriesTimeToAST(argument.end_time),
+                        timeseriesDurationToAST(argument.step)),
+                    makeASTFunction(
+                        "arrayResize",
+                        std::make_shared<ASTLiteral>(Array{}),
+                        std::make_shared<ASTLiteral>(countTimeseriesSteps(argument.start_time, argument.end_time, argument.step)),
+                        std::make_shared<ASTLiteral>(argument.scalar_value))),
+                start_time,
+                end_time,
+                step,
+                window);
 
             params.select_list.push_back(aggregate_function);
             params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
@@ -217,8 +202,12 @@ SQLQueryPiece applyFunctionOverRange(
                     "tupleElement", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries), std::make_shared<ASTLiteral>(2));
             }
 
-            auto aggregate_function = makeASTFunction(getSQLFunctionName(promql_function_name), timestamps_argument, values_argument);
-            addParametersToAggregateFunction(*aggregate_function, start_time, end_time, step, window);
+            auto aggregate_function = addParametersToAggregateFunction(
+                makeASTFunction(getSQLFunctionName(promql_function_name), timestamps_argument, values_argument),
+                start_time,
+                end_time,
+                step,
+                window);
 
             params.select_list.push_back(aggregate_function);
             params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
@@ -228,7 +217,7 @@ SQLQueryPiece applyFunctionOverRange(
 
             auto & subqueries = context.subqueries;
             subqueries.emplace_back(SQLSubquery{subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE});
-            params.from_subquery = subqueries.back().name;
+            params.from_table = subqueries.back().name;
 
             res.select_query = buildSelectQuery(std::move(params));
             res.start_time = start_time;
@@ -251,12 +240,15 @@ SQLQueryPiece applyFunctionOverRange(
 
             params.select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
 
-            auto aggregate_function = makeASTFunction(
-                getSQLFunctionName(promql_function_name),
-                std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
-                std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Value));
-
-            addParametersToAggregateFunction(*aggregate_function, start_time, end_time, step, window);
+            auto aggregate_function = addParametersToAggregateFunction(
+                makeASTFunction(
+                    getSQLFunctionName(promql_function_name),
+                    std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
+                    std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Value)),
+                start_time,
+                end_time,
+                step,
+                window);
 
             params.select_list.push_back(aggregate_function);
             params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
@@ -265,7 +257,7 @@ SQLQueryPiece applyFunctionOverRange(
 
             auto & subqueries = context.subqueries;
             subqueries.emplace_back(subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE);
-            params.from_subquery = subqueries.back().name;
+            params.from_table = subqueries.back().name;
 
             res.select_query = buildSelectQuery(std::move(params));
 

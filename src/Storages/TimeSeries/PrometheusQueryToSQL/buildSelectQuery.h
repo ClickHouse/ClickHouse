@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Joins.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SQLSubquery.h>
 #include <base/types.h>
@@ -11,15 +12,18 @@ namespace DB::PrometheusQueryToSQL
 struct SelectQueryParams
 {
     ASTs select_list;
-    String from_subquery;
+    String from_table;
     ASTPtr from_table_function;
     ASTPtr where;
     ASTs group_by;
     ASTs order_by;
-    String inner_join;
-    ASTPtr on;
-    int order_direction = 0; /// 1 for ASC, -1 for DESC
     std::optional<size_t> limit;
+    int order_direction = 0; /// 1 for ASC, -1 for DESC
+    String join_table;
+    JoinKind join_kind = JoinKind::Inner;
+    JoinStrictness join_strictness = JoinStrictness::Unspecified;
+    ASTPtr join_on;
+    String union_table;
     SQLSubqueries with;
 };
 

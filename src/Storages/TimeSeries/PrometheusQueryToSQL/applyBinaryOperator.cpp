@@ -290,7 +290,7 @@ namespace
                 params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
 
                 context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(other_argument.select_query), SQLSubqueryType::TABLE});
-                params.from_subquery = context.subqueries.back().name;
+                params.from_tabl = context.subqueries.back().name;
 
                 res.select_query = buildSelectQuery(std::move(params));
 
@@ -353,7 +353,7 @@ namespace
                 params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
 
                 context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE});
-                params.from_subquery = context.subqueries.back().name;
+                params.from_tabl = context.subqueries.back().name;
 
                 res.select_query = buildSelectQuery(std::move(params));
 
@@ -396,7 +396,7 @@ namespace
                 params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
 
                 context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(other_argument.select_query), SQLSubqueryType::TABLE});
-                params.from_subquery = context.subqueries.back().name;
+                params.from_table = context.subqueries.back().name;
 
                 res.select_query = buildSelectQuery(std::move(params));
 
@@ -448,7 +448,7 @@ namespace
                 bool metric_name_dropped = (std::find(tags.begin(), tags.end(), "__name__") == tags.end());
                 return {
                     .ast = makeASTFunction(
-                        "timeSeriesRemoveAllTagsExcept", group, std::make_shared<ASTLiteral>(Array{tags.begin(), tags.end()})),
+                        "timeSeriesRemoveAllTagsExcept", group.ast, std::make_shared<ASTLiteral>(Array{tags.begin(), tags.end()})),
                     .metric_name_dropped = metric_name_dropped};
             }
         }
@@ -469,6 +469,11 @@ namespace
         {
             return group;
         }
+    }
+
+    ASTPtr makeJoinGroupAST(const PrometheusQueryTree::BinaryOperator * operator_node, ASTPtr group)
+    {
+        return makeJoinGroupAST(operator_node, GroupAST{.ast = group, .metric_name_dropped = false}).ast;
     }
 
     GroupAST makeResultGroupASTImpl(
@@ -550,7 +555,7 @@ namespace
                 params.select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values));
 
                 context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE});
-                params.from_subquery = context.subqueries.back().name;
+                params.from_table = context.subqueries.back().name;
 
                 argument.select_query = buildSelectQuery(std::move(params));
                 argument.store_method = StoreMethod::VECTOR_GRID;
@@ -568,7 +573,7 @@ namespace
                 params.select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values));
 
                 context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE});
-                params.from_subquery = context.subqueries.back().name;
+                params.from_table = context.subqueries.back().name;
 
                 argument.select_query = buildSelectQuery(std::move(params));
                 argument.store_method = StoreMethod::VECTOR_GRID;
@@ -595,51 +600,67 @@ namespace
     }
 
 
-    /// Applies a binary operator both of the arguments are instant vectors represented by StoreMethod::VECTOR_GRID.
+    /// Applies a binary operator if both of the arguments are instant vectors.
     SQLQueryPiece binaryOperatorWithVectors(
         const PrometheusQueryTree::BinaryOperator * operator_node,
         SQLQueryPiece && left_argument,
         SQLQueryPiece && right_argument,
         ConverterContext & context)
     {
-        SelectQueryParams params;
+        left_argument = toVectorGrid(operator_node, std::move(left_argument), context);
+        right_argument = toVectorGrid(operator_node, std::move(right_argument), context);
 
         context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(left_argument.select_query), SQLSubqueryType::TABLE});
-        String left_table = context.subqueries.back().name;
+        String left = context.subqueries.back().name;
 
         context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(right_argument.select_query), SQLSubqueryType::TABLE});
-        String right_table = context.subqueries.back().name;
+        String right = context.subqueries.back().name;
 
         auto join_group = makeJoinGroupAST(
             operator_node,
-            GroupAST{.ast = std::make_shared<ASTIdentifier>(Strings{left_table, TimeSeriesColumnNames::Group}), .metric_name_dropped = left_argument.metric_name_dropped});
-        join_group.ast->setAlias("join_group");
-        auto join_group_ref = GroupAST{.ast = std::make_shared<ASTIdentifier>("join_group"), .metric_name_dropped = join_group.metric_name_dropped};
+            GroupAST{.ast = std::make_shared<ASTIdentifier>(Strings{left, TimeSeriesColumnNames::Group}), .metric_name_dropped = left_argument.metric_name_dropped});
 
-        auto other_join_group = makeJoinGroupAST(
+        auto result_group = makeResultGroupAST(
             operator_node,
-            GroupAST{.ast = std::make_shared<ASTIdentifier>(Strings{right_table, TimeSeriesColumnNames::Group}), .metric_name_dropped = right_argument.metric_name_dropped});
+            GroupAST{.ast = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::JoinGroup), .metric_name_dropped = join_group.metric_name_dropped},
+            left_argument,
+            right_argument);
 
-        auto result_group = makeResultGroupAST(operator_node, join_group_ref, left_argument, right_argument);
-        result_group.ast->setAlias(TimeSeriesColumnNames::Group);
+        /// SELECT timeSeriesCopyTags(join_group, left.group, tags_to_copy) AS group,
+        ///        timeSeriesCoalesceGridValues('throw')(arrayMap(x, y -> x + y, left.values, right.values) AS values
+        /// FROM left INNER ALL JOIN right
+        /// ON (timeSeriesRemoveTags(left.group, on_tags) AS join_group) == timeSeriesRemoveTags(right.group, on_tags)
+        /// GROUP BY group
+
+        SelectQueryParams params;
+
         params.select_list.push_back(result_group.ast);
+        params.select_list.back()->setAlias(TimeSeriesColumnNames::Group);
 
-        ASTPtr new_values = makeASTFunction(
-            "timeSeriesCoalesceGridValues",
-            makeOperatorASTForTwoArrays(
-                operator_node,
-                std::make_shared<ASTIdentifier>(Strings{left_table, TimeSeriesColumnNames::Values}),
-                std::make_shared<ASTIdentifier>(Strings{right_table, TimeSeriesColumnNames::Values}),
-                /* left_to_right = */ true,
-                /* return_array_argument_if_match = */ true));
+        params.select_list.push_back(addParameterToAggregateFunction(
+            makeASTFunction(
+                "timeSeriesCoalesceGridValues",
+                makeOperatorASTForTwoArrays(
+                    operator_node,
+                    std::make_shared<ASTIdentifier>(Strings{left, TimeSeriesColumnNames::Values}),
+                    std::make_shared<ASTIdentifier>(Strings{right, TimeSeriesColumnNames::Values}),
+                    /* left_to_right = */ true,
+                    /* return_array_argument_if_match = */ true)),
+            "throw"));
 
-        addParameterToAggregateFunction(*new_values, "throw_if_conflict");
-        new_values->setAlias(TimeSeriesColumnNames::Values);
-        params.select_list.push_back(new_values);
+        params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
 
-        params.from_subquery = left_table;
-        params.inner_join = right_table;
-        params.on = makeASTFunction("equals", join_group, other_join_group);
+        params.from_table = left;
+        params.join_kind = JoinKind::Inner;
+        params.join_strictness = JoinStrictness::All;
+        params.join_table = right;
+
+        ASTPtr join_group_with_alias = join_group.ast;
+        join_group_with_alias->setAlias(TimeSeriesColumnNames::JoinGroup);
+        params.join_on = makeASTFunction(
+            "equals",
+            join_group_with_alias,
+            makeJoinGroupAST(operator_node, std::make_shared<ASTIdentifier>(Strings{right, TimeSeriesColumnNames::Group})));
 
         params.group_by.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
 
@@ -651,6 +672,357 @@ namespace
 
         return res;
     }
+
+
+    /// Applies the binary operator "and".
+    SQLQueryPiece binaryOperatorAnd(
+        const PrometheusQueryTree::BinaryOperator * operator_node,
+        SQLQueryPiece && left_argument,
+        SQLQueryPiece && right_argument,
+        ConverterContext & context)
+    {
+        if ((left_argument.store_method == StoreMethod::EMPTY) || (right_argument.store_method == StoreMethod::EMPTY))
+        {
+            /// If one of the arguments has no data, the result also has no data.
+            return SQLQueryPiece(operator_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY);
+        }
+
+        left_argument = toVectorGrid(operator_node, std::move(left_argument), context);
+        right_argument = toVectorGrid(operator_node, std::move(right_argument), context);
+
+        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(left_argument.select_query), SQLSubqueryType::TABLE});
+        String left = context.subqueries.back().name;
+
+        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(right_argument.select_query), SQLSubqueryType::TABLE});
+        String right = context.subqueries.back().name;
+
+        /// Step 1:
+        /// SELECT timeSeriesRemoveAllTagsExcept(right.group, on_tags) AS join_group,
+        ///        timeSeriesCoalesce('any')(right.values) AS values
+        /// GROUP BY join_group
+        /// FROM right
+        String step1;
+        {
+            SelectQueryParams params;
+
+            params.select_list.push_back(makeJoinGroupAST(operator_node, std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group)));
+            params.select_list.back()->setAlias(TimeSeriesColumnNames::JoinGroup);
+
+            params.select_list.push_back(addParameterToAggregateFunction(
+                makeASTFunction("timeSeriesCoalesceGridValues", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values)), "any"));
+            params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
+
+            params.group_by.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::JoinGroup));
+
+            params.from_table = right;
+
+            ASTPtr step1_ast = buildSelectQuery(std::move(params));
+            context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(step1_ast), SQLSubqueryType::TABLE});
+            step1 = context.subqueries.back().name;
+        }
+
+        /// Step 2:
+        /// SELECT left.group AS group,
+        ///        arrayMap(x, y -> if(isNull(y), NULL, x), left.values, step1.values) AS values
+        /// FROM left LEFT SEMI JOIN step1
+        /// ON timeSeriesRemoveAllTagsExcept(left.group, on_tags) == step1.join_group
+        ASTPtr step2;
+        {
+            SelectQueryParams params;
+
+            params.select_list.push_back(std::make_shared<ASTIdentifier>(Strings{left, TimeSeriesColumnNames::Group}));
+            params.select_list.back()->setAlias(TimeSeriesColumnNames::Group);
+
+            params.select_list.push_back(makeASTFunction(
+                "arrayMap",
+                makeASTFunction(
+                    "lambda",
+                    makeASTFunction("tuple", std::make_shared<ASTIdentifier>("x"), std::make_shared<ASTIdentifier>("y")),
+                    makeASTFunction(
+                        "if",
+                        makeASTFunction("isNull", std::make_shared<ASTIdentifier>("y")),
+                        std::make_shared<ASTLiteral>(Field{} /* NULL */),
+                        std::make_shared<ASTIdentifier>("x")),
+                    std::make_shared<ASTIdentifier>(Strings{left, TimeSeriesColumnNames::Values}),
+                    std::make_shared<ASTIdentifier>(Strings{step1, TimeSeriesColumnNames::Values}))));
+            params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
+
+            params.from_table = left;
+            params.join_kind = JoinKind::Left;
+            params.join_strictness = JoinStrictness::Semi;
+            params.join_table = step1;
+
+            params.join_on = makeASTFunction(
+                "equals",
+                makeJoinGroupAST(std::make_shared<ASTIdentifier>(Strings{left, TimeSeriesColumnNames::Group})),
+                std::make_shared<ASTIdentifier>(Strings{step1, TimeSeriesColumnNames::JoinGroup}));
+
+            step2 = buildSelectQuery(std::move(params));
+        }
+
+        SQLQueryPiece res = left_argument;
+        res.node = operator_node;
+        res.select_query = std::move(step2);
+        return res;
+    }
+
+
+    /// Applies the binary operator "unless".
+    SQLQueryPiece binaryOperatorUnless(
+        const PrometheusQueryTree::BinaryOperator * operator_node,
+        SQLQueryPiece && left_argument,
+        SQLQueryPiece && right_argument,
+        ConverterContext & context)
+    {
+        if (left_argument.store_method == StoreMethod::EMPTY)
+            return SQLQueryPiece(operator_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY);
+
+        if (right_argument.store_method == StoreMethod::EMPTY)
+        {
+            left_argument.node = operator_node;
+            return std::move(left_argument);
+        }
+
+        left_argument = toVectorGrid(operator_node, std::move(left_argument), context);
+        right_argument = toVectorGrid(operator_node, std::move(right_argument), context);
+
+        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(left_argument.select_query), SQLSubqueryType::TABLE});
+        String left = context.subqueries.back().name;
+
+        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(right_argument.select_query), SQLSubqueryType::TABLE});
+        String right = context.subqueries.back().name;
+
+        /// Step 1:
+        /// SELECT timeSeriesRemoveAllTagsExcept(right.group, on_tags) AS join_group,
+        ///        timeSeriesCoalesce('any')(right.values) AS values
+        /// GROUP BY join_group
+        /// FROM right
+        String step1;
+        {
+            SelectQueryParams params;
+
+            params.select_list.push_back(makeJoinGroupAST(operator_node, std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group)));
+            params.select_list.back()->setAlias(TimeSeriesColumnNames::JoinGroup);
+
+            params.select_list.push_back(addParameterToAggregateFunction(
+                makeASTFunction("timeSeriesCoalesceGridValues", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values)), "any"));
+            params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
+
+            params.group_by.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::JoinGroup))
+
+            params.from_table = right;
+
+            ASTPtr step1_ast = buildSelectQuery(std::move(params));
+            context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(step1_ast), SQLSubqueryType::TABLE});
+            step1 = context.subqueries.back().name;
+        }
+
+        /// Step 2:
+        /// SELECT left.group AS group,
+        ///        if(empty(step1.values), left.values, arrayMap(x, y -> if(isNull(y), x, NULL), left.values, step1.values)) AS values
+        /// FROM left LEFT ANY JOIN step1
+        /// ON timeSeriesRemoveAllTagsExcept(left.group, on_tags) == step1.join_group
+        ASTPtr step2;
+        {
+            SelectQueryParams params;
+
+            params.select_list.push_back(std::make_shared<ASTIdentifier>(Strings{left, TimeSeriesColumnNames::Group}));
+            params.select_list.back()->setAlias(TimeSeriesColumnNames::Group);
+
+            params.select_list.push_back(makeASTFunction(
+                "if",
+                makeASTFunction("empty", std::make_shared<ASTIdentifier>(Strings{step1, TimeSeriesColumnNames::Values})),
+                std::make_shared<ASTIdentifier>(Strings{left, TimeSeriesColumnNames::Values}),
+                makeASTFunction(
+                    "arrayMap",
+                    makeASTFunction(
+                        "lambda",
+                        makeASTFunction("tuple", std::make_shared<ASTIdentifier>("x"), std::make_shared<ASTIdentifier>("y")),
+                        makeASTFunction(
+                            "if",
+                            makeASTFunction("isNull", std::make_shared<ASTIdentifier>("y")),
+                            std::make_shared<ASTIdentifier>("x"),
+                            std::make_shared<ASTLiteral>(Field{} /* NULL */)),
+                        std::make_shared<ASTIdentifier>(Strings{left, TimeSeriesColumnNames::Values}),
+                        std::make_shared<ASTIdentifier>(Strings{step1, TimeSeriesColumnNames::Values})))));
+            params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
+
+            params.from_table = left;
+            params.join_kind = JoinKind::Left;
+            params.join_strictness = JoinStrictness::Any;
+            params.join_table = step1;
+
+            params.join_on = makeASTFunction(
+                "equals",
+                makeJoinGroupAST(std::make_shared<ASTIdentifier>(Strings{left, TimeSeriesColumnNames::Group})),
+                std::make_shared<ASTIdentifier>(Strings{step1, TimeSeriesColumnNames::JoinGroup}));
+
+            step2 = buildSelectQuery(std::move(params));
+        }
+
+        SQLQueryPiece res = left_argument;
+        res.node = operator_node;
+        res.select_query = std::move(step2);
+        return res;
+    }
+
+
+    /// Applies the binary operator "or".
+    SQLQueryPiece binaryOperatorOr(
+        const PrometheusQueryTree::BinaryOperator * operator_node,
+        SQLQueryPiece && left_argument,
+        SQLQueryPiece && right_argument,
+        ConverterContext & context)
+    {
+        if (left_argument.store_method == StoreMethod::EMPTY)
+        {
+            right_argument.node = operator_node;
+            return std::move(right_argument);
+        }
+
+        if (right_argument.store_method == StoreMethod::EMPTY)
+        {
+            left_argument.node = operator_node;
+            return std::move(left_argument);
+        }
+
+        left_argument = toVectorGrid(operator_node, std::move(left_argument), context);
+        right_argument = toVectorGrid(operator_node, std::move(right_argument), context);
+
+        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(left_argument.select_query), SQLSubqueryType::TABLE});
+        String left = context.subqueries.back().name;
+
+        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(right_argument.select_query), SQLSubqueryType::TABLE});
+        String right = context.subqueries.back().name;
+
+        /// Step 1:
+        /// SELECT group,
+        ///        arrayMap(x, y -> if(isNull(x), y, x), left.values, right.values) AS values
+        /// FROM left LEFT SEMI JOIN right
+        /// ON left.group == right.group
+        String step1;
+        {
+            SelectQueryParams params;
+
+            params.select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
+
+            params.select_list.push_back(makeASTFunction(
+                "arrayMap",
+                makeASTFunction(
+                    "lambda",
+                    makeASTFunction("tuple", std::make_shared<ASTIdentifier>("x"), std::make_shared<ASTIdentifier>("y")),
+                    makeASTFunction(
+                        "if",
+                        makeASTFunction("isNull", std::make_shared<ASTIdentifier>("x")),
+                        std::make_shared<ASTIdentifier>("y"),
+                        std::make_shared<ASTIdentifier>("x")),
+                    std::make_shared<ASTIdentifier>(Strings{left, TimeSeriesColumnNames::Values}),
+                    std::make_shared<ASTIdentifier>(Strings{right, TimeSeriesColumnNames::Values}))));
+            params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
+
+            params.from_table = left;
+            params.join_kind = JoinKind::Left;
+            params.join_strictness = JoinStrictness::Semi;
+            params.join_table = right;
+
+            params.join_on = makeASTFunction(
+                "equals",
+                std::make_shared<ASTIdentifier>(Strings{left, TimeSeriesColumnNames::Group}),
+                std::make_shared<ASTIdentifier>(Strings{right, TimeSeriesColumnNames::Group}));
+
+            ASTPtr step1_ast = buildSelectQuery(std::move(params));
+            context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(step1_ast), SQLSubqueryType::TABLE});
+            step1 = context.subqueries.back().name;
+        }
+
+        /// Step 2:
+        /// SELECT timeSeriesRemoveAllTagsExcept(step1.group, on_tags) AS join_group,
+        ///        timeSeriesCoalesce('any')(step1.values) AS values
+        /// GROUP BY join_group
+        /// FROM step1
+        String step1;
+        {
+            SelectQueryParams params;
+
+            params.select_list.push_back(makeJoinGroupAST(operator_node, std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group)));
+            params.select_list.back()->setAlias(TimeSeriesColumnNames::JoinGroup);
+
+            params.select_list.push_back(addParameterToAggregateFunction(
+                makeASTFunction("timeSeriesCoalesceGridValues", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values)), "any"));
+            params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
+
+            params.group_by.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::JoinGroup));
+
+            params.from_table = step1;
+
+            ASTPtr step2_ast = buildSelectQuery(std::move(params));
+            context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(step2_ast), SQLSubqueryType::TABLE});
+            step2 = context.subqueries.back().name;
+        }
+
+        /// Step 3:
+        /// SELECT right.group AS group,
+        ///        if(empty(step2.values), right.values, arrayMap(x, y -> if(isNull(x), y, NULL), step2.values, right.values)) AS values
+        /// FROM step2 RIGHT ANY JOIN right
+        /// ON step2.join_group == timeSeriesRemoveAllTagsExcept(right.group, on_tags)
+        String step3;
+        {
+            SelectQueryParams params;
+
+            params.select_list.push_back(std::make_shared<ASTIdentifier>(Strings{right, TimeSeriesColumnNames::Group}));
+            params.select_list.back()->setAlias(TimeSeriesColumnNames::Group);
+
+            params.select_list.push_back(makeASTFunction(
+                "if",
+                makeASTFunction("empty", std::make_shared<ASTIdentifier>(Strings{step2, TimeSeriesColumnNames::Values})),
+                std::make_shared<ASTIdentifier>(Strings{right, TimeSeriesColumnNames::Values}),
+                makeASTFunction(
+                    "arrayMap",
+                    makeASTFunction(
+                        "lambda",
+                        makeASTFunction("tuple", std::make_shared<ASTIdentifier>("x"), std::make_shared<ASTIdentifier>("y")),
+                        makeASTFunction(
+                            "if",
+                            makeASTFunction("isNull", std::make_shared<ASTIdentifier>("x")),
+                            std::make_shared<ASTIdentifier>("y"),
+                            std::make_shared<ASTLiteral>(Field{} /* NULL */)),
+                        std::make_shared<ASTIdentifier>(Strings{step2, TimeSeriesColumnNames::Values}),
+                        std::make_shared<ASTIdentifier>(Strings{right, TimeSeriesColumnNames::Values})))));
+            params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
+
+            params.from_table = step2;
+            params.join_kind = JoinKind::Right;
+            params.join_strictness = JoinStrictness::Any;
+            params.join_table = right;
+
+            params.join_on = makeASTFunction(
+                "equals",
+                std::make_shared<ASTIdentifier>(Strings{step2, TimeSeriesColumnNames::JoinGroup}),
+                makeJoinGroupAST(std::make_shared<ASTIdentifier>(Strings{right, TimeSeriesColumnNames::Group})));
+
+            ASTPtr step3_ast = buildSelectQuery(std::move(params));
+            context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(step3_ast), SQLSubqueryType::TABLE});
+            step3 = context.subqueries.back().name;
+        }
+
+        /// Step4:
+        /// SELECT group, values FROM step1 UNION ALL SELECT group, values FROM step3
+        ASTPtr step4;
+        {
+            SelectQueryParams params;
+            params.select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
+            params.select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values));
+            params.from_table = step1;
+            params.union_table = step3;
+            step4 = buildSelectQuery(std::move(params));
+        }
+
+        SQLQueryPiece res = left_argument;
+        res.node = operator_node;
+        res.select_query = step4;
+        res.metric_name_dropped &= right_argument.metric_name_dropped;
+        return res;
+    }
 }
 
 
@@ -660,8 +1032,18 @@ SQLQueryPiece applyBinaryOperator(
     SQLQueryPiece && right_argument,
     ConverterContext & context)
 {
+    std::string_view operator_name = operator_node->operator_name;
     checkArgumentTypes(operator_node, left_argument, right_argument, context);
-    const auto & operator_name = operator_node->operator_name;
+
+    /// The set binary operators.
+    if (operator_name == "and")
+        return applyBinaryOperatorAnd(operator_node, std::move(left_argument), std::move(right_argument), context);
+    if (operator_name == "or")
+        return applyBinaryOperatorOr(operator_node, std::move(left_argument), std::move(right_argument), context);
+    if (operator_name == "unless")
+        return applyBinaryOperatorUnless(operator_node, std::move(left_argument), std::move(right_argument), context);
+
+    /// Any other binary operators.
 
     if ((left_argument.store_method == StoreMethod::EMPTY) || (right_argument.store_method == StoreMethod::EMPTY))
     {

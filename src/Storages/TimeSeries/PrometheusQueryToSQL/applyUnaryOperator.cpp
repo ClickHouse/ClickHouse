@@ -94,7 +94,7 @@ SQLQueryPiece applyUnaryOperator(
             params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
 
             context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE});
-            params.from_subquery = context.subqueries.back().name;
+            params.from_table = context.subqueries.back().name;
 
             res.select_query = buildSelectQuery(std::move(params));
 

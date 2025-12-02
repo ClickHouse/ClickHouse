@@ -85,7 +85,7 @@ namespace
 
                 params.with = std::move(context.subqueries);
                 params.with.emplace_back(SQLSubquery{params.with.size(), std::move(result.select_query), SQLSubqueryType::TABLE});
-                params.from_subquery = params.with.back().name;
+                params.from_table = params.with.back().name;
 
                 params.limit = context.limit;
 
@@ -215,7 +215,7 @@ namespace
 
                 params.with = std::move(context.subqueries);
                 params.with.emplace_back(SQLSubquery{params.with.size(), std::move(result.select_query), SQLSubqueryType::TABLE});
-                params.from_subquery = params.with.back().name;
+                params.from_table = params.with.back().name;
 
                 params.limit = context.limit;
 
@@ -248,7 +248,7 @@ namespace
 
                 params.with = std::move(context.subqueries);
                 params.with.emplace_back(SQLSubquery{params.with.size(), std::move(result.select_query), SQLSubqueryType::TABLE});
-                params.from_subquery = params.with.back().name;
+                params.from_table = params.with.back().name;
 
                 params.where = makeASTFunction(
                     "isNotNull",
@@ -371,7 +371,7 @@ namespace
 
                 params.with = std::move(context.subqueries);
                 params.with.emplace_back(SQLSubquery{params.with.size(), std::move(result.select_query), SQLSubqueryType::TABLE});
-                params.from_subquery = params.with.back().name;
+                params.from_table = params.with.back().name;
 
                 params.limit = context.limit;
 
@@ -406,7 +406,7 @@ namespace
 
                 params.with = std::move(context.subqueries);
                 params.with.emplace_back(SQLSubquery{params.with.size(), std::move(result.select_query), SQLSubqueryType::TABLE});
-                params.from_subquery = params.with.back().name;
+                params.from_table = params.with.back().name;
 
                 const auto & result_sorting = context.result_sorting;
                 if (result_sorting.mode == ResultSorting::Mode::ORDERED_BY_TAGS)
@@ -446,7 +446,7 @@ namespace
 
                 params.with = std::move(context.subqueries);
                 params.with.emplace_back(SQLSubquery{params.with.size(), std::move(result.select_query), SQLSubqueryType::TABLE});
-                params.from_subquery = params.with.back().name;
+                params.from_table = params.with.back().name;
 
                 params.group_by.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
 
