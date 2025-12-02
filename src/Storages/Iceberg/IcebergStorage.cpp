@@ -1,6 +1,7 @@
 #include <thread>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Processors/QueryPlan/ReadFromIcebergStorageStep.h>
+#include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 #include <Common/Exception.h>
@@ -58,6 +59,24 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+namespace Setting
+{
+extern const SettingsNonZeroUInt64 max_block_size;
+extern const SettingsUInt64 max_bytes_in_set;
+extern const SettingsUInt64 max_rows_in_set;
+extern const SettingsOverflowMode set_overflow_mode;
+extern const SettingsInt64 iceberg_timestamp_ms;
+extern const SettingsInt64 iceberg_snapshot_id;
+extern const SettingsBool use_iceberg_metadata_files_cache;
+extern const SettingsBool use_iceberg_partition_pruning;
+extern const SettingsBool write_full_path_in_iceberg_metadata;
+extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
+extern const SettingsString iceberg_metadata_compression_method;
+extern const SettingsBool allow_experimental_insert_into_iceberg;
+extern const SettingsBool allow_experimental_iceberg_compaction;
+extern const SettingsBool iceberg_delete_data_on_drop;
+}
+
 
 void data_lake_general_initialization_code() {
 //     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
@@ -70,9 +89,15 @@ void data_lake_general_initialization_code() {
 
 //     if (!is_table_function && !columns_in_table_or_function_definition.empty() && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE)
 //     {
-//         LOG_DEBUG(log, "Creating new storage with specified columns");
-//         configuration->create(
-//             object_storage, context, columns_in_table_or_function_definition, partition_by_, if_not_exists_, catalog, storage_id);
+            if (object_storage->getType() == ObjectStorageType::Local)
+            {
+                auto user_files_path = local_context->getUserFilesPath();
+                if (!fileOrSymlinkPathStartsWith(this->getPathForRead().path, user_files_path))
+                    throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
+            }
+            BaseStorageConfiguration::update(object_storage, local_context, true);
+
+            DataLakeMetadata::createInitial(object_storage, weak_from_this(), local_context, columns, partition_by, if_not_exists, catalog, table_id_);
 //     }
 
 //     bool updated_configuration = false;
@@ -197,43 +222,32 @@ std::optional<NameSet> IcebergStorage::supportedPrewhereColumns() const
 {
     return std::nullopt;
 }
-IDataLakeMetadata * IcebergStorage::getExternalMetadata(ContextPtr query_context)
-{
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */ false);
-
-    return configuration->getExternalMetadata();
-}
 
 void IcebergStorage::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
 {
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */ true);
-    auto metadata_snapshot = iceberg_metadata.getStorageSnapshotMetadata(query_context);
+    lazyInitializeIcebergMetadata(query_context);
+    auto metadata_snapshot = iceberg_metadata->getStorageSnapshotMetadata(query_context);
     setInMemoryMetadata(metadata_snapshot);
 }
 
+void IcebergStorage::lazyInitializeIcebergMetadata(ContextPtr context) const
+{
+    if (!iceberg_metadata)
+    {
+        iceberg_metadata = IcebergMetadata::create(object_storage, configuration, context);
+    }
+}
 
 std::optional<UInt64> IcebergStorage::totalRows(ContextPtr query_context) const
 {
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */ false);
-    return configuration->totalRows(query_context);
+    lazyInitializeIcebergMetadata(query_context);
+    return iceberg_metadata->totalRows(query_context);
 }
 
 std::optional<UInt64> IcebergStorage::totalBytes(ContextPtr query_context) const
 {
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */ false);
-    return configuration->totalBytes(query_context);
+    lazyInitializeIcebergMetadata(query_context);
+    return iceberg_metadata->totalBytes(query_context);
 }
 
 void IcebergStorage::read(
@@ -246,30 +260,8 @@ void IcebergStorage::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    /// We did configuration->update() in constructor,
-    /// so in case of table function there is no need to do the same here again.
-    if (update_configuration_on_read_write)
-    {
-        configuration->update(
-            object_storage,
-            local_context,
-            /* if_not_updated_before */ false);
-    }
-
-    if (configuration->partition_strategy && configuration->partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Reading from a partitioned {} storage is not implemented yet",
-                        getName());
-    }
-
-    auto read_from_format_info = DB::prepareReadingFromFormat(
-        object_storage,
-        column_names,
-        storage_snapshot,
-        supportsSubsetOfColumns(local_context),
-        supports_tuple_elements,
-        local_context);
+    chassert(iceberg_metadata);
+    auto read_from_format_info = DB::prepareReadingFromFormat(column_names, storage_snapshot, local_context, false, false, {});
 
     if (query_info.prewhere_info || query_info.row_level_filter)
         read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
@@ -306,60 +298,16 @@ SinkToStoragePtr IcebergStorage::write(
     ContextPtr local_context,
     bool /* async_insert */)
 {
-    if (update_configuration_on_read_write)
-    {
-        configuration->update(
-            object_storage,
-            local_context,
-            /* if_not_updated_before */ false);
-    }
-
+    assert(iceberg_metadata);
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
-    const auto & settings = configuration->getQuerySettings(local_context);
-
-    const auto raw_path = configuration->getRawPath();
-
-    if (configuration->isArchive())
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Path '{}' contains archive. Write into archive is not supported",
-                        raw_path.path);
-    }
-
-    if (raw_path.hasGlobsIgnorePartitionWildcard())
-    {
-        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
-                        "Non partitioned table with path '{}' that contains globs, the table is in readonly mode",
-                        configuration->getRawPath().path);
-    }
-
-    if (!configuration->supportsWrites())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
-
-    if (configuration->isDataLakeConfiguration() && configuration->supportsWrites())
-        return configuration->write(sample_block, storage_id, object_storage, format_settings, local_context, catalog);
-
-    /// Not a data lake, just raw object storage
-
-    if (configuration->partition_strategy)
-    {
-        return std::make_shared<PartitionedStorageObjectStorageSink>(object_storage, configuration, format_settings, sample_block, local_context);
-    }
-
-    auto paths = configuration->getPaths();
-    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, paths.front().path, paths.size()))
-    {
-        paths.push_back({*new_key});
-    }
-    configuration->setPaths(paths);
-
-    return std::make_shared<StorageObjectStorageSink>(
-        paths.back().path,
+    return iceberg_metadata->write(
+        sample_block,
+        storage_id,
         object_storage,
         configuration,
-        format_settings,
-        sample_block,
-        local_context);
+        format_settings.has_value() ? *format_settings : FormatSettings{},
+        local_context,
+        catalog);
 }
 
 bool IcebergStorage::optimize(
@@ -372,66 +320,30 @@ bool IcebergStorage::optimize(
     bool /*cleanup*/,
     [[maybe_unused]] ContextPtr context)
 {
-    return configuration->optimize(metadata_snapshot, context, format_settings);
-}
-
-void IcebergStorage::truncate(
-    const ASTPtr & /* query */,
-    const StorageMetadataPtr & /* metadata_snapshot */,
-    ContextPtr /* context */,
-    TableExclusiveLockHolder & /* table_holder */)
-{
-    const auto path = configuration->getRawPath();
-
-    if (configuration->isArchive())
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Path '{}' contains archive. Table cannot be truncated",
-                        path.path);
-    }
-
-    if (path.hasGlobs())
-    {
-        throw Exception(
-            ErrorCodes::DATABASE_ACCESS_DENIED,
-            "{} key '{}' contains globs, so the table is in readonly mode and cannot be truncated",
-            getName(), path.path);
-    }
-
-    StoredObjects objects;
-    for (const auto & key : configuration->getPaths())
-    {
-        objects.emplace_back(key.path);
-    }
-    object_storage->removeObjectsIfExist(objects);
+    return iceberg_metadata->optimize(metadata_snapshot, context, format_settings);
 }
 
 void IcebergStorage::drop()
 {
-    if (catalog)
-    {
-        const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-        catalog->dropTable(namespace_name, table_name);
-    }
-    /// We cannot use query context here, because drop is executed in the background.
-    configuration->drop(Context::getGlobalContextInstance());
+    iceberg_metadata->drop(Context::getGlobalContext());
 }
 
-void IcebergStorage::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
-{
-    configuration->addStructureAndFormatToArgsIfNeeded(args, "", configuration->format, context, /*with_structure=*/false);
-}
+// I wonder if we need this method at all for IcebergStorage.
+// void IcebergStorage::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
+// {
+//     configuration->addStructureAndFormatToArgsIfNeeded(args, "", configuration->format, context, /*with_structure=*/false);
+// }
 
 void IcebergStorage::mutate([[maybe_unused]] const MutationCommands & commands, [[maybe_unused]] ContextPtr context_)
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto storage = getStorageID();
-    iceberg_metadata.mutate(commands, context_, storage, metadata_snapshot, catalog, format_settings);
+    iceberg_metadata->mutate(commands, context_, storage, metadata_snapshot, catalog, format_settings);
 }
 
 void IcebergStorage::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
 {
-    iceberg_metadata.checkMutationIsPossible(commands);
+    iceberg_metadata->checkMutationIsPossible(commands);
 }
 
 void IcebergStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
@@ -439,7 +351,7 @@ void IcebergStorage::alter(const AlterCommands & params, ContextPtr context, Alt
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     params.apply(new_metadata, context);
 
-    iceberg_metadata.alter(params, context);
+    iceberg_metadata->alter(params, context);
 
     DatabaseCatalog::instance()
         .getDatabase(storage_id.database_name)
@@ -447,9 +359,14 @@ void IcebergStorage::alter(const AlterCommands & params, ContextPtr context, Alt
     setInMemoryMetadata(new_metadata);
 }
 
+IcebergMetadata::IcebergHistory IcebergStorage::getHistory(ContextPtr context)
+{
+    return iceberg_metadata->getHistory(context);
+}
+
 void IcebergStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /*context*/) const
 {
-    iceberg_metadata.checkAlterIsPossible(commands);
+    iceberg_metadata->checkAlterIsPossible(commands);
 }
 
 }

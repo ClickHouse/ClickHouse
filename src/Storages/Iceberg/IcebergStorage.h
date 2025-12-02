@@ -75,12 +75,6 @@ public:
         ContextPtr context,
         bool async_insert) override;
 
-    void truncate(
-        const ASTPtr & query,
-        const StorageMetadataPtr & metadata_snapshot,
-        ContextPtr local_context,
-        TableExclusiveLockHolder &) override;
-
     void drop() override;
 
     bool supportsPartitionBy() const override { return true; }
@@ -93,11 +87,11 @@ public:
 
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
-    bool isDataLake() const override { return configuration->isDataLakeConfiguration(); }
+    bool isDataLake() const override { return true; }
 
     bool isObjectStorage() const override { return true; }
 
-    bool supportsReplication() const override { return configuration->isDataLakeConfiguration(); }
+    bool supportsReplication() const override { return true; }
 
     /// Things required for PREWHERE.
     bool supportsPrewhere() const override;
@@ -112,8 +106,6 @@ public:
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
     void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
-
-    IDataLakeMetadata * getExternalMetadata(ContextPtr query_context);
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
@@ -139,12 +131,14 @@ public:
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
-protected:
+    IcebergMetadata::IcebergHistory getHistory(ContextPtr context);
+
+private:
     /// Storage configuration (S3, Azure, HDFS, Local).
     /// Contains information about table engine configuration
     /// and underlying storage access.
     StorageObjectStorageConfigurationPtr configuration;
-    IcebergMetadata iceberg_metadata;
+    mutable IcebergMetadataPtr iceberg_metadata;
     String write_format;
     /// `object_storage` to allow direct access to data storage.
     const ObjectStoragePtr object_storage;
@@ -152,8 +146,6 @@ protected:
     /// Whether this engine is a part of according Cluster engine implementation.
     /// (One of the reading replicas, not the initiator).
     const bool distributed_processing;
-    bool supports_prewhere = false;
-    bool supports_tuple_elements = false;
     /// Whether we need to call `configuration->update()`
     /// (e.g. refresh configuration) on each read() method call.
     bool update_configuration_on_read_write = true;
@@ -163,6 +155,8 @@ protected:
 
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID storage_id;
+
+    void lazyInitializeIcebergMetadata(ContextPtr context) const;
 };
 
 }
