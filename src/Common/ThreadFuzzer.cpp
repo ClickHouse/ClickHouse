@@ -52,8 +52,13 @@ namespace ErrorCodes
 ThreadFuzzer::ThreadFuzzer()
 {
     initConfiguration();
-    if (isEffective())
-        started.store(true, std::memory_order_relaxed);
+
+    if (!isEffective())
+    {
+        /// It has no effect - disable it
+        stop();
+        return;
+    }
 }
 
 template <typename T>
@@ -366,7 +371,7 @@ void ThreadFuzzer::setup() const
 
 /// Starting from glibc 2.34 there are no internal symbols without version,
 /// so not __pthread_mutex_lock but __pthread_mutex_lock@2.2.5
-#if defined(OS_LINUX) and !defined(USE_MUSL) and !defined(__loongarch64) and !defined(__e2k__)
+#if defined(OS_LINUX) and !defined(USE_MUSL) and !defined(__loongarch64)
     /// You can get version from glibc/sysdeps/unix/sysv/linux/$ARCH/$BITS_OR_BYTE_ORDER/libc.abilist
     #if defined(__amd64__)
     #    define GLIBC_SYMVER "GLIBC_2.2.5"
@@ -389,7 +394,7 @@ void ThreadFuzzer::setup() const
 #endif
 
 /// The loongarch64's glibc_version is 2.36
-#if defined(ADDRESS_SANITIZER) || defined(__loongarch64) || defined(__e2k__)
+#if defined(ADDRESS_SANITIZER) || defined(__loongarch64)
 #if USE_JEMALLOC
 #error "ASan cannot be used with jemalloc"
 #endif

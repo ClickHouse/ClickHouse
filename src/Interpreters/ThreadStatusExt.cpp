@@ -1,7 +1,5 @@
 #include <memory>
 #include <mutex>
-#include <Common/OSThreadNiceValue.h>
-#include <Common/Jemalloc.h>
 #include <Common/ThreadStatus.h>
 
 #include <Interpreters/Context.h>
@@ -28,6 +26,8 @@
 #include <Core/ServerSettings.h>
 
 #if defined(OS_LINUX)
+#   include <Common/hasLinuxCapability.h>
+
 #   include <sys/time.h>
 #   include <sys/resource.h>
 #endif
@@ -56,31 +56,23 @@ namespace Setting
     extern const SettingsFloat memory_tracker_fault_probability;
     extern const SettingsBool metrics_perf_events_enabled;
     extern const SettingsString metrics_perf_events_list;
+    extern const SettingsInt64 os_thread_priority;
     extern const SettingsUInt64 query_profiler_cpu_time_period_ns;
     extern const SettingsUInt64 query_profiler_real_time_period_ns;
     extern const SettingsBool enable_adaptive_memory_spill_scheduler;
-    extern const SettingsBool jemalloc_enable_profiler;
-    extern const SettingsBool jemalloc_collect_profile_samples_in_trace_log;
-    extern const SettingsInt32 os_threads_nice_value_query;
-    extern const SettingsInt32 os_threads_nice_value_materialized_view;
-}
-
-namespace ServerSetting
-{
-    extern const ServerSettingsInt32 os_threads_nice_value_merge_mutate;
 }
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_SET_THREAD_PRIORITY;
 }
 
-ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_)
+ThreadGroup::ThreadGroup(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_)
     : master_thread_id(CurrentThread::get().thread_id)
     , query_context(query_context_)
     , global_context(query_context_->getGlobalContext())
     , fatal_error_callback(fatal_error_callback_)
-    , os_threads_nice_value(os_threads_nice_value_)
     , memory_spill_scheduler(std::make_shared<MemorySpillScheduler>(query_context_->getSettingsRef()[Setting::enable_adaptive_memory_spill_scheduler]))
 {
     shared_data.query_is_canceled_predicate = [this] () -> bool {
@@ -98,7 +90,6 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent)
     , query_context(parent->query_context)
     , global_context(parent->global_context)
     , fatal_error_callback(parent->fatal_error_callback)
-    , os_threads_nice_value(parent->os_threads_nice_value)
     , memory_spill_scheduler(parent->memory_spill_scheduler)
     , performance_counters(VariableContext::Process, &parent->performance_counters)
     , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
@@ -149,15 +140,14 @@ void ThreadGroup::unlinkThread(UInt64 elapsed_thread_counter_ms)
 
 ThreadGroupPtr ThreadGroup::createForQuery(ContextPtr query_context_, std::function<void()> fatal_error_callback_)
 {
-    const Int32 os_threads_nice_value = query_context_->getSettingsRef()[Setting::os_threads_nice_value_query];
-    auto group = std::make_shared<ThreadGroup>(query_context_, os_threads_nice_value, std::move(fatal_error_callback_));
+    auto group = std::make_shared<ThreadGroup>(query_context_, std::move(fatal_error_callback_));
     group->memory_tracker.setDescription("Query");
     return group;
 }
 
-ThreadGroupPtr ThreadGroup::create(ContextPtr context, Int32 os_threads_nice_value)
+ThreadGroupPtr ThreadGroup::create(ContextPtr context)
 {
-    auto group = std::make_shared<ThreadGroup>(context, os_threads_nice_value);
+    auto group = std::make_shared<ThreadGroup>(context);
 
     /// However settings from storage context have to be applied
     const Settings & settings = context->getSettingsRef();
@@ -174,8 +164,7 @@ ThreadGroupPtr ThreadGroup::create(ContextPtr context, Int32 os_threads_nice_val
 
 ThreadGroupPtr ThreadGroup::createForMergeMutate(ContextPtr storage_context)
 {
-    const Int32 os_threads_nice_value = storage_context->getServerSettings()[ServerSetting::os_threads_nice_value_merge_mutate];
-    auto group = create(storage_context, os_threads_nice_value);
+    auto group = create(storage_context);
     group->memory_tracker.setDescription("Background process (mutate/merge)");
     group->memory_tracker.setParent(&background_memory_tracker);
     return group;
@@ -185,14 +174,9 @@ ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
 {
     ThreadGroupPtr res_group;
     if (auto current_group = CurrentThread::getGroup())
-    {
         res_group = std::make_shared<ThreadGroup>(current_group);
-    }
     else
-    {
-        const Int32 os_threads_nice_value = context->getSettingsRef()[Setting::os_threads_nice_value_materialized_view];
-        res_group = create(context, os_threads_nice_value);
-    }
+        res_group = create(context);
     res_group->memory_tracker.setDescription("MaterializeView");
     return res_group;
 }
@@ -223,7 +207,7 @@ void ThreadGroup::attachInternalProfileEventsQueue(const InternalProfileEventsQu
     shared_data.profile_queue_ptr = profile_queue;
 }
 
-ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group) noexcept
+ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, const char * thread_name, bool allow_existing_group) noexcept
     : thread_group(std::move(thread_group_))
 {
     try
@@ -253,7 +237,8 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
         LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
         CurrentThread::attachToGroup(thread_group);
-        setThreadName(thread_name);
+        if (thread_name[0] != '\0')
+            setThreadName(thread_name);
     }
     catch (...)
     {
@@ -344,15 +329,18 @@ void ThreadStatus::applyQuerySettings()
     if (settings[Setting::memory_profiler_step] && settings[Setting::memory_profiler_step] < static_cast<UInt64>(untracked_memory_limit))
         untracked_memory_limit = settings[Setting::memory_profiler_step];
 
-#if USE_JEMALLOC
-    if (settings[Setting::jemalloc_enable_profiler])
+#if defined(OS_LINUX)
+    /// Set "nice" value if required.
+    Int32 new_os_thread_priority = static_cast<Int32>(settings[Setting::os_thread_priority]);
+    if (new_os_thread_priority && hasLinuxCapability(CAP_SYS_NICE))
     {
-        jemalloc_profiler_enabled = true;
-        Jemalloc::getThreadProfileActiveMib().setValue(true);
-    }
+        LOG_TRACE(log, "Setting nice to {}", new_os_thread_priority);
 
-    if (settings[Setting::jemalloc_collect_profile_samples_in_trace_log])
-        Jemalloc::setCollectLocalProfileSamplesInTraceLog(true);
+        if (0 != setpriority(PRIO_PROCESS, static_cast<unsigned>(thread_id), new_os_thread_priority))
+            throw ErrnoException(ErrorCodes::CANNOT_SET_THREAD_PRIORITY, "Cannot 'setpriority'");
+
+        os_thread_priority = new_os_thread_priority;
+    }
 #endif
 }
 
@@ -377,11 +365,6 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
     applyGlobalSettings();
     applyQuerySettings();
     initPerformanceCounters();
-
-    if (thread_group->os_threads_nice_value != 0)
-    {
-        OSThreadNiceValue::set(thread_group->os_threads_nice_value);
-    }
 }
 
 void ThreadStatus::detachFromGroup()
@@ -405,18 +388,7 @@ void ThreadStatus::detachFromGroup()
 
     thread_group->unlinkThread(thread_attach_time.elapsedMilliseconds());
 
-    if (thread_group->os_threads_nice_value != 0)
-    {
-        OSThreadNiceValue::set(0);
-    }
-
     thread_group.reset();
-
-#if USE_JEMALLOC
-    if (std::exchange(jemalloc_profiler_enabled, false))
-        Jemalloc::getThreadProfileActiveMib().setValue(Jemalloc::getThreadProfileInitMib().getValue());
-    Jemalloc::setCollectLocalProfileSamplesInTraceLog(false);
-#endif
 
     query_id.clear();
     query_context.reset();
@@ -425,6 +397,17 @@ void ThreadStatus::detachFromGroup()
 
     fatal_error_callback = {};
 
+#if defined(OS_LINUX)
+    if (os_thread_priority)
+    {
+        LOG_TRACE(log, "Resetting nice");
+
+        if (0 != setpriority(PRIO_PROCESS, static_cast<int>(thread_id), 0))
+            LOG_ERROR(log, "Cannot 'setpriority' back to zero: {}", errnoToString());
+
+        os_thread_priority = 0;
+    }
+#endif
 }
 
 void ThreadStatus::attachToGroup(const ThreadGroupPtr & thread_group_, bool check_detached)
@@ -532,7 +515,7 @@ void ThreadStatus::initPerformanceCounters()
         }
     }
     if (taskstats)
-        (*taskstats).reset();
+        taskstats->reset();
 }
 
 void ThreadStatus::finalizePerformanceCounters()
@@ -591,7 +574,7 @@ void ThreadStatus::resetPerformanceCountersLastUsage()
 {
     *last_rusage = RUsageCounters::current();
     if (taskstats)
-        (*taskstats).reset();
+        taskstats->reset();
 }
 
 void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_real_time_period, [[maybe_unused]] UInt64 global_profiler_cpu_time_period)

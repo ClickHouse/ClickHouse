@@ -256,22 +256,19 @@ Chunk KafkaSource::generateImpl()
                 auto storage_id = storage.getStorageID();
 
                 auto dead_letter_queue = context->getDeadLetterQueue();
-                if (!dead_letter_queue)
-                    LOG_WARNING(log, "Table system.dead_letter_queue is not configured, skipping message");
-                else
-                    dead_letter_queue->add(DeadLetterQueueElement{
-                            .table_engine = DeadLetterQueueElement::StreamType::Kafka,
-                            .event_time = timeInSeconds(time_now),
-                            .event_time_microseconds = timeInMicroseconds(time_now),
-                            .database = storage_id.database_name,
-                            .table = storage_id.table_name,
-                            .raw_message = consumer->currentPayload(),
-                            .error = exception_message.value(),
-                            .details = DeadLetterQueueElement::KafkaDetails{
-                                .topic_name = consumer->currentTopic(),
-                                .partition = consumer->currentPartition(),
-                                .offset = consumer->currentPartition(),
-                                .key = consumer->currentKey()}});
+                dead_letter_queue->add(DeadLetterQueueElement{
+                        .table_engine = DeadLetterQueueElement::StreamType::Kafka,
+                        .event_time = timeInSeconds(time_now),
+                        .event_time_microseconds = timeInMicroseconds(time_now),
+                        .database = storage_id.database_name,
+                        .table = storage_id.table_name,
+                        .raw_message = consumer->currentPayload(),
+                        .error = exception_message.value(),
+                        .details = DeadLetterQueueElement::KafkaDetails{
+                            .topic_name = consumer->currentTopic(),
+                            .partition = consumer->currentPartition(),
+                            .offset = consumer->currentPartition(),
+                            .key = consumer->currentKey()}});
             }
 
             total_rows = total_rows + new_rows;
@@ -335,8 +332,7 @@ Chunk KafkaSource::generateImpl()
     auto converting_dag = ActionsDAG::makeConvertingActions(
         result_block.cloneEmpty().getColumnsWithTypeAndName(),
         getPort().getHeader().getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name,
-        context);
+        ActionsDAG::MatchColumnsMode::Name);
 
     auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
     converting_actions->execute(result_block);

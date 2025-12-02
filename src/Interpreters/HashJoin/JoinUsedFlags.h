@@ -13,7 +13,6 @@ namespace JoinStuff
 /// Flags needed to implement RIGHT and FULL JOINs.
 class JoinUsedFlags
 {
-public:
     using RawColumnsPtr = const Columns *;
     using UsedFlagsForColumns = std::vector<std::atomic_bool>;
 
@@ -26,6 +25,7 @@ public:
 
     bool need_flags;
 
+public:
     /// Update size for vector with flags.
     /// Calling this method invalidates existing flags.
     /// It can be called several times, but all of them should happen before using this structure.
@@ -77,10 +77,10 @@ public:
             if constexpr (std::is_same_v<std::decay_t<decltype(mapped)>, RowRefList>)
             {
                 for (auto it = mapped.begin(); it.ok(); ++it)
-                    per_row_flags[&it->columns_info->columns][it->row_num].store(true, std::memory_order_relaxed);
+                    per_row_flags[it->columns][it->row_num].store(true, std::memory_order_relaxed);
             }
             else
-                per_row_flags[&mapped.columns_info->columns][mapped.row_num].store(true, std::memory_order_relaxed);
+                per_row_flags[mapped.columns][mapped.row_num].store(true, std::memory_order_relaxed);
         }
         else
         {
@@ -114,12 +114,13 @@ public:
         if constexpr (flag_per_row)
         {
             auto & mapped = f.getMapped();
-            return per_row_flags[&mapped.columns_info->columns][mapped.row_num].load();
+            return per_row_flags[mapped.columns][mapped.row_num].load();
         }
         else
         {
             return per_offset_flags[f.getOffset()].load();
         }
+
     }
 
     template <bool use_flags, bool flag_per_row, typename FindResult>
@@ -133,11 +134,11 @@ public:
             auto & mapped = f.getMapped();
 
             /// fast check to prevent heavy CAS with seq_cst order
-            if (per_row_flags[&mapped.columns_info->columns][mapped.row_num].load(std::memory_order_relaxed))
+            if (per_row_flags[mapped.columns][mapped.row_num].load(std::memory_order_relaxed))
                 return false;
 
             bool expected = false;
-            return per_row_flags[&mapped.columns_info->columns][mapped.row_num].compare_exchange_strong(expected, true);
+            return per_row_flags[mapped.columns][mapped.row_num].compare_exchange_strong(expected, true);
         }
         else
         {
@@ -177,15 +178,6 @@ public:
             bool expected = false;
             return per_offset_flags[offset].compare_exchange_strong(expected, true);
         }
-    }
-
-    /// Are all offset flags set? (index 0 is skipped as it is a service index)
-    bool allOffsetFlagsSet() const noexcept
-    {
-        for (const auto & per_offset_flag : per_offset_flags)
-            if (!per_offset_flag.load(std::memory_order_relaxed))
-                return false;
-        return true;
     }
 };
 

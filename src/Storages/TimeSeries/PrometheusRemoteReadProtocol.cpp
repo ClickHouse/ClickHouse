@@ -62,7 +62,7 @@ namespace
     /// Makes an AST for condition `data_table.timestamp >= min_timestamp_ms`
     ASTPtr makeASTTimestampGreaterOrEquals(Int64 min_timestamp_ms, const StorageID & data_table_id)
     {
-        return makeASTOperator("greaterOrEquals",
+        return makeASTFunction("greaterOrEquals",
                                makeASTColumn(data_table_id, TimeSeriesColumnNames::Timestamp),
                                std::make_shared<ASTLiteral>(Field{DecimalField<DateTime64>{DateTime64{min_timestamp_ms}, 3}}));
     }
@@ -70,7 +70,7 @@ namespace
     /// Makes an AST for condition `data_table.timestamp <= max_timestamp_ms`
     ASTPtr makeASTTimestampLessOrEquals(Int64 max_timestamp_ms, const StorageID & data_table_id)
     {
-        return makeASTOperator("lessOrEquals",
+        return makeASTFunction("lessOrEquals",
                                makeASTColumn(data_table_id, TimeSeriesColumnNames::Timestamp),
                                std::make_shared<ASTLiteral>(Field{DecimalField<DateTime64>{DateTime64{max_timestamp_ms}, 3}}));
     }
@@ -78,7 +78,7 @@ namespace
     /// Makes an AST for condition `tags_table.max_time >= min_timestamp_ms`
     ASTPtr makeASTMaxTimeGreaterOrEquals(Int64 min_timestamp_ms, const StorageID & tags_table_id)
     {
-        return makeASTOperator("greaterOrEquals",
+        return makeASTFunction("greaterOrEquals",
                                makeASTColumn(tags_table_id, TimeSeriesColumnNames::MaxTime),
                                std::make_shared<ASTLiteral>(Field{DecimalField<DateTime64>{DateTime64{min_timestamp_ms}, 3}}));
     }
@@ -86,7 +86,7 @@ namespace
     /// Makes an AST for condition `tags_table.min_time <= max_timestamp_ms`
     ASTPtr makeASTMinTimeLessOrEquals(Int64 max_timestamp_ms, const StorageID & tags_table_id)
     {
-        return makeASTOperator("lessOrEquals",
+        return makeASTFunction("lessOrEquals",
                                makeASTColumn(tags_table_id, TimeSeriesColumnNames::MinTime),
                                std::make_shared<ASTLiteral>(Field{DecimalField<DateTime64>{DateTime64{max_timestamp_ms}, 3}}));
     }
@@ -102,7 +102,7 @@ namespace
             return makeASTColumn(tags_table_id, it->second);
 
         /// arrayElement() can be used to extract a value from a Map too.
-        return makeASTOperator("arrayElement", makeASTColumn(tags_table_id, TimeSeriesColumnNames::Tags), std::make_shared<ASTLiteral>(label_name));
+        return makeASTFunction("arrayElement", makeASTColumn(tags_table_id, TimeSeriesColumnNames::Tags), std::make_shared<ASTLiteral>(label_name));
     }
 
     /// Makes an AST for a label matcher, for example `metric_name == 'value'` or `NOT match(labels['label_name'], 'regexp')`.
@@ -116,9 +116,9 @@ namespace
         auto type = label_matcher.type();
 
         if (type == prometheus::LabelMatcher::EQ)
-            return makeASTOperator("equals", makeASTLabelName(label_name, tags_table_id, column_name_by_tag_name), std::make_shared<ASTLiteral>(label_value));
+            return makeASTFunction("equals", makeASTLabelName(label_name, tags_table_id, column_name_by_tag_name), std::make_shared<ASTLiteral>(label_value));
         if (type == prometheus::LabelMatcher::NEQ)
-            return makeASTOperator(
+            return makeASTFunction(
                 "notEquals",
                 makeASTLabelName(label_name, tags_table_id, column_name_by_tag_name),
                 std::make_shared<ASTLiteral>(label_value));
@@ -126,7 +126,7 @@ namespace
             return makeASTFunction(
                 "match", makeASTLabelName(label_name, tags_table_id, column_name_by_tag_name), std::make_shared<ASTLiteral>(label_value));
         if (type == prometheus::LabelMatcher::NRE)
-            return makeASTOperator(
+            return makeASTFunction(
                 "not",
                 makeASTFunction(
                     "match",
@@ -224,7 +224,7 @@ namespace
 
             exp_list->children.push_back(
                 makeASTFunction("groupArray",
-                                makeASTOperator("tuple",
+                                makeASTFunction("tuple",
                                                 makeASTFunction("CAST", makeASTColumn(data_table_id, TimeSeriesColumnNames::Timestamp), std::make_shared<ASTLiteral>("DateTime64(3)")),
                                                 makeASTFunction("CAST", makeASTColumn(data_table_id, TimeSeriesColumnNames::Value), std::make_shared<ASTLiteral>("Float64")))));
 
@@ -252,7 +252,7 @@ namespace
             table_join->kind = JoinKind::Left;
             table_join->strictness = JoinStrictness::Semi;
 
-            table_join->on_expression = makeASTOperator("equals", makeASTColumn(data_table_id, TimeSeriesColumnNames::ID), makeASTColumn(tags_table_id, TimeSeriesColumnNames::ID));
+            table_join->on_expression = makeASTFunction("equals", makeASTColumn(data_table_id, TimeSeriesColumnNames::ID), makeASTColumn(tags_table_id, TimeSeriesColumnNames::ID));
             table_join->children.push_back(table_join->on_expression);
             table->table_join = table_join;
 

@@ -30,7 +30,7 @@ namespace ErrorCodes
 
 bool FilterTransform::canUseType(const DataTypePtr & filter_type)
 {
-    return filter_type->canBeUsedInBooleanContext();
+    return filter_type->onlyNull() || isUInt8(removeLowCardinalityAndNullable(filter_type));
 }
 
 auto incrementProfileEvents = [](size_t num_rows, const Columns & columns)
