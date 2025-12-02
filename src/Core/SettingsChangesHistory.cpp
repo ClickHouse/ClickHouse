@@ -56,6 +56,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"aggregate_function_input_format", "state", "state", "New setting to control AggregateFunction input format during INSERT operations. Setting Value set to state by default"},
             {"delta_lake_snapshot_start_version", -1, -1, "New setting."},
             {"delta_lake_snapshot_end_version", -1, -1, "New setting."},
+            {"use_join_disjunctions_push_down", false, true, "Change the default value of the setting"},
             {"serialize_string_in_memory_with_zero_byte", true, true, "New setting"},
             {"optimize_inverse_dictionary_lookup", false, true, "New setting"},
         });

@@ -60,7 +60,7 @@ namespace DB
     DECLARE(UInt64, min_joined_block_size_bytes, 524288, "Minimum block size in bytes for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.)", 0) \
     DECLARE(Bool, joined_block_split_single_row, false, "Allow to chunk hash join result by rows corresponding to single row from left table.", 0) \
     \
-    DECLARE(Bool, use_join_disjunctions_push_down, false, "Enable JOIN disjunction pushdown: allows pushing safe OR-branch predicates from JOIN conditions down to the respective left/right inputs so storages can pre-filter. Applied only when each top-level OR branch contributes a deterministic predicate for the target side.", 0) \
+    DECLARE(Bool, use_join_disjunctions_push_down, true, "Enable JOIN disjunction pushdown: allows pushing safe OR-branch predicates from JOIN conditions down to the respective left/right inputs so storages can pre-filter. Applied only when each top-level OR branch contributes a deterministic predicate for the target side.", 0) \
     \
     DECLARE(OverflowMode, join_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.", 0) \
     DECLARE(Bool, join_any_take_last_row, false, "Changes the behaviour of join operations with `ANY` strictness.", 0) \
