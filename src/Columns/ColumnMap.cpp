@@ -151,34 +151,24 @@ void ColumnMap::popBack(size_t n)
     nested->popBack(n);
 }
 
-StringRef ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
-    return nested->serializeValueIntoArena(n, arena, begin);
+    return nested->serializeValueIntoArena(n, arena, begin, settings);
 }
 
-StringRef ColumnMap::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+char * ColumnMap::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
-    return nested->serializeAggregationStateValueIntoArena(n, arena, begin);
+    return nested->serializeValueIntoMemory(n, memory, settings);
 }
 
-char * ColumnMap::serializeValueIntoMemory(size_t n, char * memory) const
+std::optional<size_t> ColumnMap::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
-    return nested->serializeValueIntoMemory(n, memory);
+    return nested->getSerializedValueSize(n, settings);
 }
 
-std::optional<size_t> ColumnMap::getSerializedValueSize(size_t n) const
+void ColumnMap::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
-    return nested->getSerializedValueSize(n);
-}
-
-void ColumnMap::deserializeAndInsertFromArena(ReadBuffer & in)
-{
-    nested->deserializeAndInsertFromArena(in);
-}
-
-void ColumnMap::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
-{
-    nested->deserializeAndInsertAggregationStateValueFromArena(in);
+    nested->deserializeAndInsertFromArena(in, settings);
 }
 
 void ColumnMap::skipSerializedInArena(ReadBuffer & in) const
