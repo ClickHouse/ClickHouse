@@ -2695,7 +2695,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
 
     const uint32_t reload_embedded_dictionaries = 1;
     const uint32_t reload_dictionaries = 3;
-    const uint32_t reload_models = 3;
+    const uint32_t reload_models = 0;
     const uint32_t reload_functions = 3;
     const uint32_t reload_function = 0 * static_cast<uint32_t>(!functions.empty());
     const uint32_t reload_asynchronous_metrics = 3;
