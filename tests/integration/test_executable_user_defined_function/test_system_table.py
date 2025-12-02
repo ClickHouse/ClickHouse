@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", stay_alive=True, main_configs=[])
@@ -137,17 +138,21 @@ def test_system_user_defined_functions_loaded_status(started_cluster):
     expected = "test_working_udf\tSUCCESS\texecutable\tworking_script.sh\tTabSeparated\tString\t"
     assert result.strip() == expected.strip()
 
-    # Query pool UDF configuration
+    # Query pool UDF configuration with more deterministic fields
     result = node.query(
         """
         SELECT
             name,
+            status,
             type,
+            format,
+            return_type,
+            argument_types,
+            argument_names,
             pool_size,
             max_command_execution_time,
             send_chunk_header,
-            deterministic,
-            argument_names
+            deterministic
         FROM system.user_defined_functions
         WHERE name = 'test_working_pool_udf'
         FORMAT TSV
@@ -157,8 +162,7 @@ def test_system_user_defined_functions_loaded_status(started_cluster):
     print("\nPool UDF configuration:")
     print(result)
 
-    expected = "test_working_pool_udf\texecutable_pool\t4\t30\t1\t1\t['value']"
-    assert result.strip() == expected.strip()
+    assert TSV(result) == TSV([["test_working_pool_udf", "SUCCESS", "executable_pool", "JSONEachRow", "String", "['UInt64']", "['value']", 4, 30, 1, 1]])
 
 
 def test_system_user_defined_functions_failed_status(started_cluster):
@@ -207,10 +211,7 @@ def test_system_user_defined_functions_list_all_statuses(started_cluster):
     print(result)
 
     # Should have both SUCCESS (2 working UDFs) and FAILED (1 broken UDF)
-    lines = result.strip().split('\n')
-    assert len(lines) == 2
-    assert lines[0] == "SUCCESS\t2"
-    assert lines[1] == "FAILED\t1"
+    assert TSV(result) == TSV([["FAILED", 1], ["SUCCESS", 2]])
 
     # List all failed UDFs
     result = node.query(
