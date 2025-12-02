@@ -57,7 +57,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"delta_lake_snapshot_start_version", -1, -1, "New setting."},
             {"delta_lake_snapshot_end_version", -1, -1, "New setting."},
             {"optimize_inverse_dictionary_lookup", false, true, "New setting"},
-            {"allow_experimental_nullable_tuple_type", false, true, "New experimental setting"},
+            {"allow_experimental_nullable_tuple_type", false, false, "New experimental setting"},
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
