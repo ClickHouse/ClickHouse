@@ -472,7 +472,11 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
         }
     }
 
-    return dp_table[BitSet::allSet(total_relations_count)];
+    auto best_full_plan = dp_table.find(BitSet::allSet(total_relations_count));
+    if (best_full_plan != dp_table.end())
+        return best_full_plan->second;
+
+    return nullptr;
 }
 
 std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrder(const BitSet & left_mask, const BitSet & right_mask) const
