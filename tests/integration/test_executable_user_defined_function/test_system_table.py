@@ -30,17 +30,23 @@ config = """<clickhouse>
     <user_defined_executable_functions_config>/etc/clickhouse-server/functions/*.xml</user_defined_executable_functions_config>
 </clickhouse>"""
 
-# Working UDF config
+# Working UDF config with comprehensive configuration options
 working_udf_config = """<functions>
     <function>
         <type>executable</type>
         <name>test_working_udf</name>
         <return_type>String</return_type>
+        <return_name>result</return_name>
         <argument>
             <type>UInt64</type>
         </argument>
         <format>TabSeparated</format>
         <command>working_script.sh</command>
+        <execute_direct>0</execute_direct>
+        <command_termination_timeout>5</command_termination_timeout>
+        <command_read_timeout>2000</command_read_timeout>
+        <command_write_timeout>1500</command_write_timeout>
+        <lifetime>300</lifetime>
     </function>
 
     <function>
@@ -125,30 +131,40 @@ def test_system_user_defined_functions_loaded_status(started_cluster):
     """Test querying LOADED UDFs and their configuration"""
     skip_test_msan(node)
 
-    # Query working UDF with LOADED status
+    # Test all System/Non-Config Fields + key config fields for executable type
     result = node.query(
         """
         SELECT
             name,
             status,
+            loading_error_message,
+            last_loading_time > 0 AS has_loading_time,
+            last_successful_update_time > 0 AS has_update_time,
+            loading_duration >= 0 AS has_duration,
+            error_count,
             type,
             command,
             format,
             return_type,
-            loading_error_message
+            return_name,
+            execute_direct,
+            command_termination_timeout,
+            command_read_timeout,
+            command_write_timeout,
+            lifetime
         FROM system.user_defined_functions
         WHERE name = 'test_working_udf'
         FORMAT TSV
         """
     )
 
-    print("LOADED UDF result:")
+    print("Executable UDF with all system fields:")
     print(result)
 
-    expected = "test_working_udf\tSUCCESS\texecutable\tworking_script.sh\tTabSeparated\tString\t"
+    expected = "test_working_udf\tSUCCESS\t\t1\t1\t1\t0\texecutable\tworking_script.sh\tTabSeparated\tString\tresult\t0\t5\t2000\t1500\t300"
     assert result.strip() == expected.strip()
 
-    # Query pool UDF configuration with more deterministic fields
+    # Test pool UDF configuration with all relevant fields
     result = node.query(
         """
         SELECT
@@ -162,7 +178,8 @@ def test_system_user_defined_functions_loaded_status(started_cluster):
             pool_size,
             max_command_execution_time,
             send_chunk_header,
-            deterministic
+            deterministic,
+            error_count
         FROM system.user_defined_functions
         WHERE name = 'test_working_pool_udf'
         FORMAT TSV
@@ -172,7 +189,7 @@ def test_system_user_defined_functions_loaded_status(started_cluster):
     print("\nPool UDF configuration:")
     print(result)
 
-    assert TSV(result) == TSV([["test_working_pool_udf", "SUCCESS", "executable_pool", "JSONEachRow", "String", "['UInt64']", "['value']", 4, 30, 1, 1]])
+    assert TSV(result) == TSV([["test_working_pool_udf", "SUCCESS", "executable_pool", "JSONEachRow", "String", "['UInt64']", "['value']", 4, 30, 1, 1, 0]])
 
 
 def test_system_user_defined_functions_failed_status(started_cluster):
@@ -241,7 +258,7 @@ def test_system_user_defined_functions_list_all_statuses(started_cluster):
 
 
 def test_system_user_defined_functions_columns(started_cluster):
-    """Verify all expected columns exist"""
+    """Verify all expected columns exist in correct order (system fields first, then config fields)"""
     skip_test_msan(node)
 
     result = node.query(
@@ -249,39 +266,42 @@ def test_system_user_defined_functions_columns(started_cluster):
         SELECT name
         FROM system.columns
         WHERE database = 'system' AND table = 'user_defined_functions'
-        ORDER BY name
+        ORDER BY position
         FORMAT TSV
         """
     )
 
-    print("Table columns:")
+    print("Table columns (in definition order):")
     print(result)
 
-    expected_columns = [
-        "argument_names",
-        "argument_types",
-        "command",
-        "command_read_timeout",
-        "command_termination_timeout",
-        "command_write_timeout",
-        "deterministic",
-        "error_count",
-        "execute_direct",
-        "format",
+    # Expected order: System/Non-Config Fields first, then UDF Configuration Fields
+    expected_columns_in_order = [
+        # System/Non-Config Fields
+        "name",
+        "status",
+        "loading_error_message",
         "last_loading_time",
         "last_successful_update_time",
-        "lifetime",
         "loading_duration",
-        "loading_error_message",
-        "max_command_execution_time",
-        "name",
-        "pool_size",
-        "return_name",
-        "return_type",
-        "send_chunk_header",
-        "status",
+        "error_count",
+        # UDF Configuration Fields
         "type",
+        "command",
+        "format",
+        "return_type",
+        "return_name",
+        "argument_types",
+        "argument_names",
+        "max_command_execution_time",
+        "command_termination_timeout",
+        "command_read_timeout",
+        "command_write_timeout",
+        "pool_size",
+        "send_chunk_header",
+        "execute_direct",
+        "lifetime",
+        "deterministic",
     ]
 
     actual_columns = result.strip().split('\n')
-    assert actual_columns == expected_columns
+    assert actual_columns == expected_columns_in_order
