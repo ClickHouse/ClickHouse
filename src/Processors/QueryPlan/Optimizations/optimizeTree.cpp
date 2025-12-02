@@ -181,6 +181,11 @@ void traverseQueryPlan(Stack & stack, QueryPlan::Node & root, Func1 && on_enter,
     }
 }
 
+void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void optimizeExchanges(QueryPlan::Node & root);
 
 void optimizeTreeSecondPass(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
@@ -289,6 +294,17 @@ void optimizeTreeSecondPass(
 
             if (optimization_settings.distinct_in_order)
                 optimizeDistinctInOrder(frame_node, nodes);
+        },
+        [&](auto & frame_node)
+        {
+            /// After all children were processed, try to apply distributed read, join and aggregation optimizations.
+            if (optimization_settings.make_distributed_plan)
+            {
+                tryMakeDistributedJoin(frame_node, nodes, optimization_settings);
+                tryMakeDistributedAggregation(frame_node, nodes, optimization_settings);
+                tryMakeDistributedSorting(frame_node, nodes, optimization_settings);
+                tryMakeDistributedRead(frame_node, nodes, optimization_settings);
+            }
         });
 
     stack.push_back({.node = &root});
@@ -398,6 +414,9 @@ void optimizeTreeSecondPass(
     // local plan can contain redundant sorting
     if (read_from_local_parallel_replica_plan && optimization_settings.remove_redundant_sorting)
         tryRemoveRedundantSorting(&root);
+    /// Optimize exchanges
+    if (optimization_settings.make_distributed_plan && optimization_settings.distributed_plan_optimize_exchanges)
+        optimizeExchanges(root);
 
     /// Vector search first pass optimization sets up everything for vector index usage.
     /// In the 2nd pass, we optimize further by attempting to do an "index-only scan".
