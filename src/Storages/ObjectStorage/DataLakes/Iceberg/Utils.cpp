@@ -937,11 +937,18 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
 
     if (metadata_files_with_versions.empty())
     {
+        if (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
+        {
+            throw Exception(
+                ErrorCodes::FILE_DOESNT_EXIST,
+                "The metadata file for Iceberg table with path {} and table UUID {} doesn't exist",
+                table_path,
+                table_uuid.value());
+        }
         throw Exception(
             ErrorCodes::FILE_DOESNT_EXIST,
-            "The metadata file for Iceberg table with path {} and table UUID {} doesn't exist",
-            configuration_ptr->getPathForRead().path,
-            table_uuid.has_value() ? table_uuid.value() : "null");
+            "The metadata file for Iceberg table with path {} doesn't exist",
+            table_path);
     }
 
     /// Get the latest version of metadata file: v<V>.metadata.json
