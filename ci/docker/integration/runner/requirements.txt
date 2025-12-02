@@ -63,7 +63,7 @@ packaging==24.2
 pandas==2.2.3
 paramiko==3.4.0
 pika==1.2.0
-pip==25.0.1
+pip==25.3
 pluggy==1.5.0
 protobuf==4.25.8
 psycopg-binary==3.2.4
