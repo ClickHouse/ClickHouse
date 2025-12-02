@@ -1299,6 +1299,18 @@
         <flush_on_crash>false</flush_on_crash>
     </error_log>
 
+    <!-- Instrumentation trace log contains rows with profile information of functions produced using XRay that we can export to Chrome trace format. -->
+    <instrumentation_trace_log>
+        <database>system</database>
+        <table>instrumentation_trace_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <flush_on_crash>false</flush_on_crash>
+    </instrumentation_trace_log>
+
     <!-- Query metric log contains history of memory and metric values from table system.events for individual queries, periodically flushed to disk
     every "collect_interval_milliseconds" interval-->
     <query_metric_log>
