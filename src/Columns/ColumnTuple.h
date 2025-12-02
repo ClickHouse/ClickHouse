@@ -59,10 +59,10 @@ public:
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
 
     bool isDefaultAt(size_t n) const override;
-    std::string_view getDataAt(size_t n) const override;
+    StringRef getDataAt(size_t n) const override;
     void insertData(const char * pos, size_t length) override;
     void insert(const Field & x) override;
     bool tryInsert(const Field & x) override;
@@ -77,8 +77,8 @@ public:
 
     void insertDefault() override;
     void popBack(size_t n) override;
-    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    std::string_view serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
     std::optional<size_t> getSerializedValueSize(size_t n) const override;
     void deserializeAndInsertFromArena(ReadBuffer & in) override;
@@ -148,7 +148,7 @@ public:
 
     bool hasDynamicStructure() const override;
     bool dynamicStructureEquals(const IColumn & rhs) const override;
-    void takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
+    void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
     void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
     void fixDynamicStructure() override;
 

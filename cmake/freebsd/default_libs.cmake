@@ -22,11 +22,9 @@ if (BUILTINS_LIBRARY STREQUAL "libclang_rt.builtins-${system_processor}.a")
         COMMAND_ERROR_IS_FATAL ANY
         OUTPUT_STRIP_TRAILING_WHITESPACE)
 endif()
-
-if (NOT EXISTS "${BUILTINS_LIBRARY}")
-    include (cmake/build_clang_builtin.cmake)
-    build_clang_builtin(${CMAKE_CXX_COMPILER_TARGET} BUILTINS_LIBRARY)
-endif ()
+if (BUILTINS_LIBRARY STREQUAL "libclang_rt.builtins.a")
+    message(FATAL_ERROR "libclang_rt.builtins had not been found")
+endif()
 
 set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -lrt -lpthread")
 
@@ -35,8 +33,10 @@ message(STATUS "Default libraries: ${DEFAULT_LIBS}")
 set(CMAKE_CXX_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 
-add_library(Threads::Threads INTERFACE IMPORTED)
-set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES pthread)
+# Unfortunately '-pthread' doesn't work with '-nodefaultlibs'.
+# Just make sure we have pthreads at all.
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
 
 include (cmake/unwind.cmake)
 include (cmake/cxx.cmake)

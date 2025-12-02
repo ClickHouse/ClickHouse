@@ -87,9 +87,9 @@ public:
         return res;
     }
 
-    String getTypeNameFromSharedVariantValue(std::string_view value) const
+    String getTypeNameFromSharedVariantValue(StringRef value) const
     {
-        ReadBufferFromMemory buf(value);
+        ReadBufferFromMemory buf(value.data, value.size);
         return decodeDataType(buf)->getName();
     }
 };
