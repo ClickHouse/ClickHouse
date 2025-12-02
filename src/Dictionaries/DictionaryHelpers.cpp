@@ -21,7 +21,7 @@ MutableColumns deserializeColumnsFromKeys(
         ReadBufferFromString in(key);
 
         for (auto & result_column : result_columns)
-            result_column->deserializeAndInsertFromArena(in);
+            result_column->deserializeAndInsertFromArena(in, nullptr);
     }
 
     return result_columns;

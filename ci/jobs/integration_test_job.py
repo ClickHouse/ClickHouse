@@ -235,8 +235,9 @@ def main():
             for file in changed_files:
                 if (
                     file.startswith("tests/integration/test")
+                    and Path(file).name.startswith("test")
                     and file.endswith(".py")
-                    and not file.endswith("__init__.py")
+                    and Path(file).is_file()
                 ):
                     changed_test_modules.append(file.removeprefix("tests/integration/"))
 
@@ -256,6 +257,11 @@ def main():
                 verbose=True,
                 strict=True,
             )
+
+    if is_bugfix_validation or is_flaky_check:
+        assert (
+            changed_test_modules
+        ), "No changed test modules found, either job must be skipped or bug in changed test search logic"
 
     Shell.check(f"chmod +x {clickhouse_path}", verbose=True, strict=True)
     Shell.check(f"{clickhouse_path} --version", verbose=True, strict=True)
@@ -341,7 +347,7 @@ def main():
         for attempt in range(module_repeat_cnt):
             log_file = f"{temp_path}/pytest_parallel.log"
             test_result_parallel = Result.from_pytest_run(
-                command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option}",
+                command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout=5400",
                 cwd="./tests/integration/",
                 env=test_env,
                 pytest_report_file=f"{temp_path}/pytest_parallel.jsonl",
@@ -367,7 +373,7 @@ def main():
         for attempt in range(module_repeat_cnt):
             log_file = f"{temp_path}/pytest_sequential.log"
             test_result_sequential = Result.from_pytest_run(
-                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile",
+                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout=5400",
                 env=test_env,
                 cwd="./tests/integration/",
                 pytest_report_file=f"{temp_path}/pytest_sequential.jsonl",
@@ -419,7 +425,7 @@ def main():
         is_flaky_check or is_bugfix_validation or is_targeted_check or info.is_local_run
     ):
         test_result_retries = Result.from_pytest_run(
-            command=f"{' '.join(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile",
+            command=f"{' '.join(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=1200",
             env=test_env,
             cwd="./tests/integration/",
             pytest_report_file=f"{temp_path}/pytest_retries.jsonl",

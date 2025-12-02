@@ -463,16 +463,8 @@ class Runner:
             info = f"ERROR: {ResultInfo.KILLED}"
             print(info)
             result.set_info(info).set_status(Result.Status.ERROR).dump()
-        elif (
-            not result.is_ok()
-            and workflow.enable_merge_ready_status
-            and not job.allow_merge_on_failure
-        ):
-            print("set required label")
-            result.set_required_label()
 
         result.update_duration()
-        # if result.is_error():
         result.set_files([Settings.RUN_LOG])
 
         job_outputs = env.JOB_KV_DATA

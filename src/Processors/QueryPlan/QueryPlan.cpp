@@ -41,6 +41,8 @@ SettingsChanges ExplainPlanOptions::toSettingsChanges() const
     changes.emplace_back("projections", int(projections));
     changes.emplace_back("sorting", int(sorting));
     changes.emplace_back("distributed", int(distributed));
+    changes.emplace_back("input_headers", int(input_headers));
+    changes.emplace_back("column_structure", int(column_structure));
 
     return changes;
 }
@@ -358,9 +360,13 @@ static void explainStep(
 
     settings.out.write('\n');
 
-    const auto dump_column = [&out = settings.out](const ColumnWithTypeAndName & column)
+    const auto dump_column = [&out = settings.out, dump_structure = options.column_structure](const ColumnWithTypeAndName & column)
     {
-        column.dumpNameAndType(out);
+        if (dump_structure)
+            column.dumpStructure(out);
+        else
+            column.dumpNameAndType(out);
+
         if (column.column && isColumnLazy(*column.column.get()))
             out << " (Lazy)";
     };
