@@ -57,6 +57,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"delta_lake_snapshot_start_version", -1, -1, "New setting."},
             {"delta_lake_snapshot_end_version", -1, -1, "New setting."},
             {"optimize_inverse_dictionary_lookup", false, true, "New setting"},
+            {"ytsaurus_check_table_schema", false, true, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
@@ -87,7 +88,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"database_shared_drop_table_delay_seconds", 8 * 60 * 60, 8 * 60 * 60, "New setting."},
             {"filesystem_cache_allow_background_download", true, true, "New setting to control background downloads in filesystem cache per query."},
             {"show_processlist_include_internal", false, true, "New setting."},
-            {"ytsaurus_check_table_schema", true, true, "A new setting."},
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {
