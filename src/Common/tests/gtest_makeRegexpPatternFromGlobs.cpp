@@ -151,11 +151,11 @@ INSTANTIATE_TEST_SUITE_P(
         "{0..0}{0..0}",
         "f{1..2}{1..2}",
         "{a,b}{1,2}",
-        "prefix{a,b}middle{1,2}suffix"
+        "prefix{a,b}middle{1,2}suffix",
 
         // Complex patterns
-        // "*_{{a,b,c,d}}/?.csv",
-        // "{1,2,3}blabla{a.x,b.x,c.x}smth[]_else{aa,bb}?*"
+        "*_{{a,b,c,d}}/?.csv",
+        "{1,2,3}blabla{a.x,b.x,c.x}smth[]_else{aa,bb}?*"
     )
 );
 
