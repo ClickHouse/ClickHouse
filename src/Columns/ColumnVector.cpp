@@ -58,7 +58,7 @@ namespace ErrorCodes
 }
 
 template <typename T>
-void ColumnVector<T>::deserializeAndInsertFromArena(ReadBuffer & in)
+void ColumnVector<T>::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings *)
 {
     T element;
     readBinaryLittleEndian<T>(element, in);

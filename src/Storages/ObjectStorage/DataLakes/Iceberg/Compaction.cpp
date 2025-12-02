@@ -110,22 +110,30 @@ struct Plan
 
 Plan getPlan(
     IcebergHistory snapshots_info,
+    const DataLakeStorageSettings & data_lake_settings,
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration,
+    const String & write_format,
     ContextPtr context,
     CompressionMethod compression_method)
 {
     LoggerPtr log = getLogger("IcebergCompaction::getPlan");
 
     Plan plan;
-    plan.generator = FileNamesGenerator(configuration->getRawPath().path, configuration->getRawPath().path, false, compression_method, configuration->format);
+    plan.generator = FileNamesGenerator(
+        persistent_table_components.table_path, persistent_table_components.table_path, false, compression_method, write_format);
 
-    const auto [metadata_version, metadata_file_path, _]
-        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration, nullptr, context, log.get());
+    const auto [metadata_version, metadata_file_path, _] = getLatestOrExplicitMetadataFileAndVersion(
+        object_storage,
+        persistent_table_components.table_path,
+        data_lake_settings,
+        persistent_table_components.metadata_cache,
+        context,
+        log.get(),
+        persistent_table_components.table_uuid);
 
     Poco::JSON::Object::Ptr initial_metadata_object
-        = getMetadataJSONObject(metadata_file_path, object_storage, configuration, nullptr, context, log, compression_method);
+        = getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
 
     if (initial_metadata_object->getValue<Int32>(Iceberg::f_format_version) < 2)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Compaction is supported only for format_version 2.");
@@ -147,8 +155,7 @@ Plan getPlan(
     std::unordered_map<String, std::shared_ptr<ManifestFilePlan>> manifest_files;
     for (const auto & snapshot : snapshots_info)
     {
-        auto manifest_list
-            = getManifestList(object_storage, configuration, persistent_table_components, context, snapshot.manifest_list_path, log);
+        auto manifest_list = getManifestList(object_storage, persistent_table_components, context, snapshot.manifest_list_path, log);
         for (const auto & manifest_file : manifest_list)
         {
             plan.manifest_list_to_manifest_files[snapshot.manifest_list_path].push_back(manifest_file.manifest_file_path);
@@ -156,7 +163,6 @@ Plan getPlan(
                 plan.manifest_file_to_first_snapshot[manifest_file.manifest_file_path] = snapshot.snapshot_id;
             auto manifest_file_content = getManifestFile(
                 object_storage,
-                configuration,
                 persistent_table_components,
                 context,
                 log,
@@ -219,13 +225,14 @@ Plan getPlan(
     return plan;
 }
 
-void writeDataFiles(
+static void writeDataFiles(
     Plan & initial_plan,
     SharedHeader sample_block,
     ObjectStoragePtr object_storage,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context,
-    StorageObjectStorageConfigurationPtr configuration)
+    const String & write_format,
+    CompressionMethod write_compression_method)
 {
     for (auto & [_, data_file] : initial_plan.path_to_data_file)
     {
@@ -241,7 +248,7 @@ void writeDataFiles(
             /*num_streams_=*/1);
 
         auto input_format = FormatFactory::instance().getInput(
-            data_file->data_object_info->getFileFormat().value_or(configuration->format),
+            data_file->data_object_info->getFileFormat().value_or(write_format),
             *read_buffer,
             *sample_block,
             context,
@@ -250,7 +257,7 @@ void writeDataFiles(
             parser_shared_resources,
             std::make_shared<FormatFilterInfo>(nullptr, context, nullptr, nullptr, nullptr),
             true /* is_remote_fs */,
-            chooseCompressionMethod(data_file->data_object_info->getPath(), configuration->compression_method),
+            chooseCompressionMethod(data_file->data_object_info->getPath(), toContentEncodingName(write_compression_method)),
             false);
 
         auto write_buffer = object_storage->writeObject(
@@ -261,7 +268,7 @@ void writeDataFiles(
             context->getWriteSettings());
 
         auto output_format
-            = FormatFactory::instance().getOutputFormat(configuration->format, *write_buffer, *sample_block, context, format_settings);
+            = FormatFactory::instance().getOutputFormat(write_format, *write_buffer, *sample_block, context, format_settings);
 
         while (true)
         {
@@ -288,16 +295,12 @@ void writeDataFiles(
 }
 
 void writeMetadataFiles(
-    Plan & plan,
-    ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration,
-    ContextPtr context,
-    SharedHeader sample_block_)
+    Plan & plan, ObjectStoragePtr object_storage, ContextPtr context, SharedHeader sample_block_, String write_format, String table_path)
 {
     auto log = getLogger("IcebergCompaction");
 
     ColumnsDescription columns_description = ColumnsDescription::fromNamesAndTypes(sample_block_->getNamesAndTypes());
-    auto [metadata_object, metadata_object_str] = createEmptyMetadataFile(configuration->getRawPath().path, columns_description, nullptr, nullptr, context);
+    auto [metadata_object, metadata_object_str] = createEmptyMetadataFile(table_path, columns_description, nullptr, nullptr, context);
 
     auto current_schema_id = metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
     Poco::JSON::Object::Ptr current_schema;
@@ -412,7 +415,7 @@ void writeMetadataFiles(
                 manifest_entry->statistics,
                 sample_block_,
                 snapshot,
-                configuration->format,
+                write_format,
                 partititon_spec,
                 partition_spec_id,
                 *buffer_manifest_entry,
@@ -484,12 +487,10 @@ void writeMetadataFiles(
     }
 }
 
-std::vector<String> getOldFiles(
-    ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration)
+std::vector<String> getOldFiles(ObjectStoragePtr object_storage, const String & table_path)
 {
-    auto metadata_files = listFiles(*object_storage, *configuration, "metadata", "");
-    auto data_files = listFiles(*object_storage, *configuration, "data", "");
+    auto metadata_files = listFiles(*object_storage, table_path, "metadata", "");
+    auto data_files = listFiles(*object_storage, table_path, "data", "");
 
     for (auto && data_file : data_files)
         metadata_files.push_back(data_file);
@@ -509,19 +510,32 @@ void compactIcebergTable(
     IcebergHistory snapshots_info,
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage_,
-    StorageObjectStorageConfigurationPtr configuration_,
+    const DataLakeStorageSettings & data_lake_settings,
     const std::optional<FormatSettings> & format_settings_,
     SharedHeader sample_block_,
     ContextPtr context_,
-    CompressionMethod compression_method_)
+    const String & write_format)
 {
-    auto plan
-        = getPlan(std::move(snapshots_info), persistent_table_components, object_storage_, configuration_, context_, compression_method_);
+    auto plan = getPlan(
+        std::move(snapshots_info),
+        data_lake_settings,
+        persistent_table_components,
+        object_storage_,
+        write_format,
+        context_,
+        persistent_table_components.metadata_compression_method);
     if (plan.need_optimize)
     {
-        auto old_files = getOldFiles(object_storage_, configuration_);
-        writeDataFiles(plan, sample_block_, object_storage_, format_settings_, context_, configuration_);
-        writeMetadataFiles(plan, object_storage_, configuration_, context_, sample_block_);
+        auto old_files = getOldFiles(object_storage_, persistent_table_components.table_path);
+        writeDataFiles(
+            plan,
+            sample_block_,
+            object_storage_,
+            format_settings_,
+            context_,
+            write_format,
+            persistent_table_components.metadata_compression_method);
+        writeMetadataFiles(plan, object_storage_, context_, sample_block_, write_format, persistent_table_components.table_path);
         clearOldFiles(object_storage_, old_files);
     }
 }

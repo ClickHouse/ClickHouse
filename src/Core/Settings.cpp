@@ -7148,6 +7148,9 @@ Possible values:
 - 0 — always,
 - negative integer - never.
 )", 0) \
+    DECLARE(Bool, serialize_string_in_memory_with_zero_byte, true, R"(
+Serialize String values during aggregation with zero byte at the end. Enable to keep compatibility when querying cluster of incompatible versions.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
@@ -7293,7 +7296,7 @@ Make distributed query plan.
     DECLARE(Bool, distributed_plan_execute_locally, false, R"(
 Run all tasks of a distributed query plan locally. Useful for testing and debugging.
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, distributed_plan_default_shuffle_join_bucket_count, 8, R"(
+    DECLARE(NonZeroUInt64, distributed_plan_default_shuffle_join_bucket_count, 8, R"(
 Default number of buckets for distributed shuffle-hash-join.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, distributed_plan_default_reader_bucket_count, 8, R"(
