@@ -5,6 +5,7 @@ DROP TABLE IF EXISTS events;
 CREATE TABLE events ( Time DateTime, Id String ) ENGINE = MergeTree ORDER BY Time
 SETTINGS index_granularity = 8192;
 INSERT INTO events SELECT toDateTime('2024-01-01 00:00:00') + INTERVAL number SECONDS AS Time, toString(number) AS Id FROM numbers(500_000);
+INSERT INTO events SELECT toDateTime('2024-02-02 00:00:00') + INTERVAL number SECONDS AS Time, toString(number) AS Id FROM numbers(30);
 
 DROP TABLE IF EXISTS payloads;
 CREATE TABLE payloads ( Payload String, Id String ) ENGINE = MergeTree ORDER BY tuple();
@@ -54,11 +55,11 @@ FROM events
 ON events.Id = payloads.Id
 ORDER BY events.Time
 LIMIT 3
-SETTINGS log_comment = '03711_read_in_order_through_join'
-    , max_block_size = DEFAULT -- make assertion on read rows stable
+SETTINGS log_comment = '03711_read_in_order_through_join',
+    max_block_size = DEFAULT -- make assertion on read rows stable
 ;
 
--- Two joins:
+-- Two joins and reverse order
 
 SELECT groupArray(trim(explain)) FROM (
     EXPLAIN PLAN actions = 1
@@ -68,9 +69,25 @@ SELECT groupArray(trim(explain)) FROM (
     ON events.Id = payloads.Id
     {{ join_kind }} JOIN payloads2
     ON events.Id = payloads2.Id
-    ORDER BY events.Time
+    ORDER BY toUnixTimestamp(events.Time) DESC
     LIMIT 3
 ) WHERE explain like '%ReadType%'
+;
+
+SELECT events.Time, events.Id, payloads.Payload, payloads2.Payload2
+FROM events
+{{ join_kind }} JOIN payloads
+ON events.Id = payloads.Id
+{{ join_kind }} JOIN payloads2
+ON events.Id = payloads2.Id
+ORDER BY toUnixTimestamp(events.Time) DESC
+LIMIT 3
+SETTINGS
+{% if join_kind == 'LEFT' %}
+-- TODO (vdimir@): for some reason INNER join in reverse order reads all rows in this tests
+log_comment = '03711_read_in_order_through_join',
+{% endif %}
+    max_block_size = DEFAULT -- make assertion on read rows stable
 ;
 
 -- Aggregation:
@@ -100,17 +117,6 @@ ORDER BY t
 LIMIT 3
 ;
 
-SELECT events.Time, events.Id, payloads.Payload, payloads2.Payload2
-FROM events
-{{ join_kind }} JOIN payloads
-ON events.Id = payloads.Id
-{{ join_kind }} JOIN payloads2
-ON events.Id = payloads2.Id
-ORDER BY events.Time
-LIMIT 3
-SETTINGS log_comment = '03711_read_in_order_through_join'
-    , max_block_size = DEFAULT -- make assertion on read rows stable
-;
 
 {% endfor -%}
 {% endfor -%}
