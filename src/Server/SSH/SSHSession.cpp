@@ -40,9 +40,9 @@ SSHSession::SSHSession(SSHSession && rhs) noexcept
 SSHSession & SSHSession::operator=(SSHSession && rhs) noexcept
 {
     this->session = rhs.session;
-    this->disconnected.store(rhs.disconnected.load());
+    this->disconnected = rhs.disconnected;
     rhs.session = nullptr;
-    rhs.disconnected.store(true);
+    rhs.disconnected =true;
     return *this;
 }
 
@@ -101,11 +101,15 @@ void SSHSession::handleKeyExchange()
 
 void SSHSession::disconnect()
 {
-    bool expected = false;
-    if (disconnected.compare_exchange_strong(expected, true))
+    std::lock_guard<std::mutex> lock(disconnect_mutex);
+    if (!disconnected)
     {
+        // Ensure disconnect is called only once per session
+        disconnected = true;
+        // Use global mutex to prevent concurrent ssh_disconnect() calls across ALL sessions
+        // because libssh has shared global state that is not thread-safe
         static std::mutex global_disconnect_mutex;
-        std::lock_guard<std::mutex> lock(global_disconnect_mutex);
+        std::lock_guard<std::mutex> global_lock(global_disconnect_mutex);
         ssh_disconnect(session);
     }
 }
