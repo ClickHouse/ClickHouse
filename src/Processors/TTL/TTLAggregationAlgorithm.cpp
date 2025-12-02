@@ -66,6 +66,7 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         /*only_merge=*/false,
         settings[Setting::optimize_group_by_constant_keys],
         settings[Setting::min_chunk_bytes_for_parallel_parsing],
+        /*stats_collecting_params_=*/{},
         settings[Setting::serialize_string_in_memory_with_zero_byte]);
 
     aggregator = std::make_unique<Aggregator>(header, params);

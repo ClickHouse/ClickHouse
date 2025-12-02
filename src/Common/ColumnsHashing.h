@@ -369,7 +369,7 @@ struct HashMethodSerialized
     PaddedPODArray<UInt64> row_sizes;
     size_t total_size = 0;
     IColumn::SerializationSettings serialization_settings;
-    PaddedPODArray<char> serialized_buffer;
+    PODArray<char> serialized_buffer;
     std::vector<StringRef> serialized_keys;
 
     HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr & context)

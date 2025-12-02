@@ -52,12 +52,8 @@ template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithNullableUIn
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64KeyTwoLevel>;
 
 template <typename TData, bool nullable>
-<<<<<<< HEAD
 void AggregationMethodStringNoCache<TData, nullable>::insertKeyIntoColumns(
-    std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings *)
-=======
-void AggregationMethodStringNoCache<TData, nullable>::insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
->>>>>>> backport/25.8/90880
+    StringRef key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings *)
 {
     if constexpr (nullable)
     {
@@ -76,12 +72,8 @@ template struct AggregationMethodStringNoCache<AggregatedDataWithNullableShortSt
 template struct AggregationMethodStringNoCache<AggregatedDataWithNullableShortStringKeyTwoLevel, true>;
 
 template <typename TData>
-<<<<<<< HEAD
 void AggregationMethodFixedString<TData>::insertKeyIntoColumns(
-    std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings *)
-=======
-void AggregationMethodFixedString<TData>::insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
->>>>>>> backport/25.8/90880
+    StringRef key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings *)
 {
     assert_cast<ColumnFixedString &>(*key_columns[0]).insertData(key.data, key.size);
 }
@@ -91,11 +83,7 @@ template struct AggregationMethodFixedString<AggregatedDataWithNullableStringKey
 
 
 template <typename TData, bool nullable>
-<<<<<<< HEAD
-void AggregationMethodFixedStringNoCache<TData, nullable>::insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings *)
-=======
-void AggregationMethodFixedStringNoCache<TData, nullable>::insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
->>>>>>> backport/25.8/90880
+void AggregationMethodFixedStringNoCache<TData, nullable>::insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings *)
 {
     if constexpr (nullable)
         assert_cast<ColumnNullable &>(*key_columns[0]).insertData(key.data, key.size);
@@ -211,12 +199,8 @@ template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel, fa
 
 
 template <typename TData, bool nullable, bool prealloc>
-<<<<<<< HEAD
 void AggregationMethodSerialized<TData, nullable, prealloc>::insertKeyIntoColumns(
-    std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings * settings)
-=======
-void AggregationMethodSerialized<TData, nullable, prealloc>::insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
->>>>>>> backport/25.8/90880
+    StringRef key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings * settings)
 {
     ReadBufferFromString buf({key.data, key.size});
     for (auto & column : key_columns)

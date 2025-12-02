@@ -457,12 +457,8 @@ void ColumnUnique<ColumnType>::collectSerializedValueSizes(PaddedPODArray<UInt64
 }
 
 template <typename ColumnType>
-<<<<<<< HEAD
-std::string_view ColumnUnique<ColumnType>::serializeValueIntoArena(
+StringRef ColumnUnique<ColumnType>::serializeValueIntoArena(
     size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
-=======
-StringRef ColumnUnique<ColumnType>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
->>>>>>> backport/25.8/90880
 {
     if (is_nullable)
     {
@@ -502,34 +498,7 @@ char * ColumnUnique<ColumnType>::serializeValueIntoMemory(size_t n, char * memor
 }
 
 template <typename ColumnType>
-<<<<<<< HEAD
 size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
-=======
-StringRef ColumnUnique<ColumnType>::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
-{
-    if (is_nullable)
-    {
-        static constexpr auto s = sizeof(UInt8);
-
-        auto * pos = arena.allocContinue(s, begin);
-        UInt8 flag = (n == getNullValueIndex() ? 1 : 0);
-        unalignedStore<UInt8>(pos, flag);
-
-        if (n == getNullValueIndex())
-            return StringRef(pos, s);
-
-        auto nested_ref = column_holder->serializeAggregationStateValueIntoArena(n, arena, begin);
-
-        /// serializeAggregationStateValueIntoArena may reallocate memory. Have to use ptr from nested_ref.data and move it back.
-        return StringRef(nested_ref.data - s, nested_ref.size + s);
-    }
-
-    return column_holder->serializeAggregationStateValueIntoArena(n, arena, begin);
-}
-
-template <typename ColumnType>
-size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(ReadBuffer & in)
->>>>>>> backport/25.8/90880
 {
     if (is_nullable)
     {
