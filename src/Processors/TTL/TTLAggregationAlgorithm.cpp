@@ -22,6 +22,7 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
     extern const SettingsBool optimize_group_by_constant_keys;
+    extern const SettingsBool serialize_string_in_memory_with_zero_byte;
 }
 
 TTLAggregationAlgorithm::TTLAggregationAlgorithm(
@@ -65,7 +66,7 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         /*only_merge=*/false,
         settings[Setting::optimize_group_by_constant_keys],
         settings[Setting::min_chunk_bytes_for_parallel_parsing],
-        /*stats_collecting_params_=*/{});
+        settings[Setting::serialize_string_in_memory_with_zero_byte]);
 
     aggregator = std::make_unique<Aggregator>(header, params);
 
