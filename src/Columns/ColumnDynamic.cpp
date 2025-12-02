@@ -727,7 +727,7 @@ void ColumnDynamic::serializeValueIntoSharedVariant(
     shared_variant.getOffsets().push_back(chars.size());
 }
 
-StringRef ColumnDynamic::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings *) const
+StringRef ColumnDynamic::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin, const IColumn::SerializationSettings *) const
 {
     /// We cannot use Variant serialization here as it serializes discriminator + value,
     /// but Dynamic doesn't have fixed mapping discriminator <-> variant type

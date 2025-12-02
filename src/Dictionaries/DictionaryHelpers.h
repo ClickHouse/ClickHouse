@@ -479,7 +479,7 @@ public:
             for (const auto & column : key_columns)
             {
                 StringRef serialized_data = column->serializeValueIntoArena(current_key_index, *complex_key_arena, block_start, nullptr);
-                allocated_size_for_columns += serialized_data.size();
+                allocated_size_for_columns += serialized_data.size;
             }
 
             ++current_key_index;

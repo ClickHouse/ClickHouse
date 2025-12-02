@@ -344,32 +344,7 @@ StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char con
     return res;
 }
 
-<<<<<<< HEAD
 char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
-=======
-StringRef ColumnTuple::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
-{
-    if (columns.empty())
-    {
-        /// Has to put one useless byte into Arena, because serialization into zero number of bytes is ambiguous.
-        char * res = arena.allocContinue(1, begin);
-        *res = 0;
-        return { res, 1 };
-    }
-
-    StringRef res(begin, 0);
-    for (const auto & column : columns)
-    {
-        auto value_ref = column->serializeAggregationStateValueIntoArena(n, arena, begin);
-        res.data = value_ref.data - res.size;
-        res.size += value_ref.size;
-    }
-
-    return res;
-}
-
-char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory) const
->>>>>>> backport/25.10/90880
 {
     if (columns.empty())
     {

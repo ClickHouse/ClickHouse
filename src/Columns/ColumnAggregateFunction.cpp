@@ -601,12 +601,8 @@ void ColumnAggregateFunction::insertDefault()
     pushBackAndCreateState(data, arena, func.get());
 }
 
-<<<<<<< HEAD
-std::string_view ColumnAggregateFunction::serializeValueIntoArena(
+StringRef ColumnAggregateFunction::serializeValueIntoArena(
     size_t n, Arena & arena, const char *& begin, const IColumn::SerializationSettings *) const
-=======
-StringRef ColumnAggregateFunction::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin) const
->>>>>>> backport/25.10/90880
 {
     WriteBufferFromArena out(arena, begin);
     func->serialize(data[n], out, version);

@@ -164,11 +164,7 @@ StringRef ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char co
     return values->serializeValueIntoArena(getValueIndex(n), arena, begin, settings);
 }
 
-<<<<<<< HEAD
 char * ColumnSparse::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
-=======
-StringRef ColumnSparse::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
->>>>>>> backport/25.10/90880
 {
     return values->serializeValueIntoMemory(getValueIndex(n), memory, settings);
 }
