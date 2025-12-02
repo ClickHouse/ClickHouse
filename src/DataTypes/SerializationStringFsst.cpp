@@ -12,28 +12,6 @@
 
 namespace DB
 {
-
-void SerializationStringFsst::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    nested->serializeBinary(field, ostr, settings);
-}
-
-
-void SerializationStringFsst::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    nested->deserializeBinary(field, istr, settings);
-}
-
-
-void SerializationStringFsst::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    nested->serializeBinary(column, row_num, ostr, settings);
-}
-
-void SerializationStringFsst::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const {
-    nested->deserializeBinary(column, istr, settings);
-}
-
 void SerializationStringFsst::enumerateStreams(
     EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const
 {
