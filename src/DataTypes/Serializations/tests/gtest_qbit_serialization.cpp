@@ -11,22 +11,12 @@
 
 using namespace DB;
 
-class QBitSerializationTest : public ::testing::Test
+TEST(QBitSerialization, FieldBinarySerializationFloat32)
 {
-protected:
-    void SetUp() override
-    {
-        auto float32_type = DataTypeFactory::instance().get("Float32");
-        qbit_type_float32 = std::static_pointer_cast<DataTypeQBit>(std::make_shared<DataTypeQBit>(float32_type, 5));
-        serialization_float32 = qbit_type_float32->getDefaultSerialization();
-    }
+    auto float32_type = DataTypeFactory::instance().get("Float32");
+    auto qbit_type_float32 = std::static_pointer_cast<DataTypeQBit>(std::make_shared<DataTypeQBit>(float32_type, 5));
+    auto serialization_float32 = qbit_type_float32->getDefaultSerialization();
 
-    std::shared_ptr<DataTypeQBit> qbit_type_float32;
-    SerializationPtr serialization_float32;
-};
-
-TEST_F(QBitSerializationTest, FieldBinarySerializationFloat32)
-{
     const size_t bytes_per_fixedstring = 1;
 
     Tuple tuple_elements;
