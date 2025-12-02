@@ -4,7 +4,6 @@ sidebar_label: 'Array(T)'
 sidebar_position: 32
 slug: /sql-reference/data-types/array
 title: 'Array(T)'
-doc_type: 'reference'
 ---
 
 # Array(T)

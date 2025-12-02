@@ -6,16 +6,9 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
-#include <Storages/ObjectStorage/Common.h>
 
 namespace DB
 {
-
-namespace DataLakeStorageSetting
-{
-    extern const DataLakeStorageSettingsString disk;
-}
 
 namespace ErrorCodes
 {
@@ -24,25 +17,28 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void StorageObjectStorageConfiguration::update( ///NOLINT
+bool StorageObjectStorageConfiguration::update( ///NOLINT
     ObjectStoragePtr object_storage_ptr,
     ContextPtr context,
-    bool /* if_not_updated_before */)
+    bool /* if_not_updated_before */,
+    bool /* check_consistent_with_previous_metadata */)
 {
     IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
+    return true;
 }
 
 void StorageObjectStorageConfiguration::create( ///NOLINT
-    ObjectStoragePtr /*object_storage_ptr*/,
-    ContextPtr /*context*/,
+    ObjectStoragePtr object_storage_ptr,
+    ContextPtr context,
     const std::optional<ColumnsDescription> & /*columns*/,
     ASTPtr /*partition_by*/,
-    ASTPtr /*order_by*/,
     bool /*if_not_exists*/,
     std::shared_ptr<DataLake::ICatalog> /*catalog*/,
         const StorageID & /*table_id_*/)
 {
+    IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
+    object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
 }
 
 ReadFromFormatInfo StorageObjectStorageConfiguration::prepareReadingFromFormat(
@@ -57,16 +53,10 @@ ReadFromFormatInfo StorageObjectStorageConfiguration::prepareReadingFromFormat(
     return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns, supports_tuple_elements, hive_parameters);
 }
 
-std::optional<ColumnsDescription> StorageObjectStorageConfiguration::tryGetTableStructureFromMetadata(ContextPtr) const
+std::optional<ColumnsDescription> StorageObjectStorageConfiguration::tryGetTableStructureFromMetadata() const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method tryGetTableStructureFromMetadata is not implemented for basic configuration");
 }
-
-StorageInMemoryMetadata StorageObjectStorageConfiguration::getStorageSnapshotMetadata(ContextPtr) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getStorageSnapshotMetadata is not implemented for basic configuration");
-}
-
 
 void StorageObjectStorageConfiguration::initialize(
     StorageObjectStorageConfiguration & configuration_to_initialize,
@@ -74,17 +64,7 @@ void StorageObjectStorageConfiguration::initialize(
     ContextPtr local_context,
     bool with_table_structure)
 {
-    std::string disk_name;
-    if (configuration_to_initialize.isDataLakeConfiguration())
-    {
-        const auto & storage_settings = configuration_to_initialize.getDataLakeSettings();
-        disk_name = storage_settings[DataLakeStorageSetting::disk].changed
-            ? storage_settings[DataLakeStorageSetting::disk].value
-            : "";
-    }
-    if (!disk_name.empty())
-        configuration_to_initialize.fromDisk(disk_name, engine_args, local_context, with_table_structure);
-    else if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
         configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
     else
         configuration_to_initialize.fromAST(engine_args, local_context, with_table_structure);
@@ -127,10 +107,7 @@ void StorageObjectStorageConfiguration::initialize(
         FormatFactory::instance().checkFormatName(configuration_to_initialize.format);
 
     /// It might be changed on `StorageObjectStorageConfiguration::initPartitionStrategy`
-    /// We shouldn't set path for disk setup because path prefix is already set in used object_storage.
-    if (disk_name.empty())
-        configuration_to_initialize.read_path = configuration_to_initialize.getRawPath();
-
+    configuration_to_initialize.read_path = configuration_to_initialize.getRawPath();
     configuration_to_initialize.initialized = true;
 }
 
@@ -238,13 +215,4 @@ void StorageObjectStorageConfiguration::addDeleteTransformers(
 {
 }
 
-void StorageObjectStorageConfiguration::initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments)
-{
-    format = parsed_arguments.format;
-    compression_method = parsed_arguments.compression_method;
-    structure = parsed_arguments.structure;
-    partition_strategy_type = parsed_arguments.partition_strategy_type;
-    partition_columns_in_data_file = parsed_arguments.partition_columns_in_data_file;
-    partition_strategy = parsed_arguments.partition_strategy;
-}
 }

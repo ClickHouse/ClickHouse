@@ -425,7 +425,7 @@ size_t ColumnVector<T>::estimateCardinalityInPermutedRange(const IColumn::Permut
     for (size_t i = equal_range.from; i < equal_range.to; ++i)
     {
         size_t permuted_i = permutation[i];
-        std::string_view value = getDataAt(permuted_i);
+        StringRef value = getDataAt(permuted_i);
         elements.emplace(value, inserted);
     }
     return elements.size();
@@ -452,13 +452,11 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
 }
 
 template <typename T>
-DataTypePtr ColumnVector<T>::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options & options) const
+std::pair<String, DataTypePtr> ColumnVector<T>::getValueNameAndType(size_t n) const
 {
     chassert(n < data.size()); /// This assert is more strict than the corresponding assert inside PODArray.
     const auto & val = castToNearestFieldType(data[n]);
-    if (options.notFull(name_buf))
-        name_buf << FieldVisitorToString()(val);
-    return FieldToDataType()(val);
+    return {FieldVisitorToString()(val), FieldToDataType()(val)};
 }
 
 template <typename T>

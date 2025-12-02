@@ -475,21 +475,22 @@ void ColumnAggregateFunction::get(size_t n, Field & res) const
     res = operator[](n);
 }
 
-DataTypePtr ColumnAggregateFunction::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+std::pair<String, DataTypePtr> ColumnAggregateFunction::getValueNameAndType(size_t n) const
 {
-    if (options.notFull(name_buf))
+    String state;
     {
         WriteBufferFromOwnString buffer;
         func->serialize(data[n], buffer, version);
-        writeQuoted(buffer.str(), name_buf);
+        WriteBufferFromString wb(state);
+        writeQuoted(buffer.str(), wb);
     }
 
-    return DataTypeFactory::instance().get(type_string);
+    return {state, DataTypeFactory::instance().get(type_string)};
 }
 
-std::string_view ColumnAggregateFunction::getDataAt(size_t n) const
+StringRef ColumnAggregateFunction::getDataAt(size_t n) const
 {
-    return {reinterpret_cast<const char *>(&data[n]), sizeof(data[n])};
+    return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
 }
 
 void ColumnAggregateFunction::insertData(const char * pos, size_t /*length*/)
@@ -600,7 +601,7 @@ void ColumnAggregateFunction::insertDefault()
     pushBackAndCreateState(data, arena, func.get());
 }
 
-std::string_view ColumnAggregateFunction::serializeValueIntoArena(
+StringRef ColumnAggregateFunction::serializeValueIntoArena(
     size_t n, Arena & arena, const char *& begin, const IColumn::SerializationSettings *) const
 {
     WriteBufferFromArena out(arena, begin);
@@ -664,7 +665,7 @@ ColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets & offsets) c
     return res;
 }
 
-MutableColumns ColumnAggregateFunction::scatter(size_t num_columns, const IColumn::Selector & selector) const
+MutableColumns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const
 {
     /// Columns with scattered values will point to this column as the owner of values.
     MutableColumns columns(num_columns);
