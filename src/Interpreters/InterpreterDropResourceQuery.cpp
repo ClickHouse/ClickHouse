@@ -54,7 +54,7 @@ void registerInterpreterDropResourceQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterDropResourceQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterDropResourceQuery", create_fn);
+    factory.registerInterpreter(InterpreterOperation::DropResourceQuery, create_fn);
 }
 
 }

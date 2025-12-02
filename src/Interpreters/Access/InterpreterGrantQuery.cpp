@@ -520,7 +520,7 @@ void registerInterpreterGrantQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterGrantQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterGrantQuery", create_fn);
+    factory.registerInterpreter(InterpreterOperation::GrantQuery, create_fn);
 }
 
 }

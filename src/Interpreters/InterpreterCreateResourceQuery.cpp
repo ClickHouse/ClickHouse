@@ -62,7 +62,7 @@ void registerInterpreterCreateResourceQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterCreateResourceQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterCreateResourceQuery", create_fn);
+    factory.registerInterpreter(InterpreterOperation::CreateResourceQuery, create_fn);
 }
 
 }

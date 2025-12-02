@@ -36,7 +36,7 @@ void registerInterpreterAlterNamedCollectionQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterAlterNamedCollectionQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterAlterNamedCollectionQuery", create_fn);
+    factory.registerInterpreter(InterpreterOperation::AlterNamedCollectionQuery, create_fn);
 }
 
 }

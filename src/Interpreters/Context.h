@@ -18,6 +18,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
@@ -185,6 +186,7 @@ class AsyncLoader;
 class HTTPHeaderFilter;
 struct AsyncReadCounters;
 struct ICgroupsReader;
+class OpenPolicyAgentAccess;
 
 struct TemporaryTableHolder;
 using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHolder>>;
@@ -343,6 +345,8 @@ protected:
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> settings_constraints_and_current_profiles;
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
+    mutable bool opa_enabled = true;
+    mutable std::shared_ptr<const OpenPolicyAgentAccess> open_policy_agent;
     String current_database;
     std::unique_ptr<Settings> settings{};  /// Setting for query execution.
 
@@ -414,6 +418,7 @@ public:
             partitions = rhs.partitions;
             projections = rhs.projections;
             views = rhs.views;
+            operations = rhs.operations;
         }
 
         QueryAccessInfo(QueryAccessInfo && rhs) = delete;
@@ -434,6 +439,7 @@ public:
             std::swap(partitions, rhs.partitions);
             std::swap(projections, rhs.projections);
             std::swap(views, rhs.views);
+            std::swap(operations, rhs.operations);
         }
 
         /// To prevent a race between copy-constructor and other uses of this structure.
@@ -444,6 +450,7 @@ public:
         std::set<std::string> partitions TSA_GUARDED_BY(mutex){};
         std::set<std::string> projections TSA_GUARDED_BY(mutex){};
         std::set<std::string> views TSA_GUARDED_BY(mutex){};
+        std::vector<InterpreterOperation> operations TSA_GUARDED_BY(mutex){};
     };
     using QueryAccessInfoPtr = std::shared_ptr<QueryAccessInfo>;
 
@@ -810,6 +817,7 @@ public:
     void checkAccess(const AccessRightsElements & elements) const;
 
     std::shared_ptr<const ContextAccessWrapper> getAccess() const;
+    std::shared_ptr<const OpenPolicyAgentAccess> getOpenPolicyAgent() const;
 
     RowPolicyFilterPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
 
@@ -944,6 +952,7 @@ public:
     };
 
     void addQueryAccessInfo(const QualifiedProjectionName & qualified_projection_name);
+    void addQueryAccessInfo(const InterpreterOperation operation);
 
     /// Supported factories for records in query_log
     enum class QueryLogFactories : uint8_t

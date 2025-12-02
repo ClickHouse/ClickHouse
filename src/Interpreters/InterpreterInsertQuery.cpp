@@ -986,7 +986,7 @@ void registerInterpreterInsertQuery(InterpreterFactory & factory)
             /* no_destination */false,
             /* async_insert */false);
     };
-    factory.registerInterpreter("InterpreterInsertQuery", create_fn);
+    factory.registerInterpreter(InterpreterOperation::InsertQuery, create_fn);
 }
 
 

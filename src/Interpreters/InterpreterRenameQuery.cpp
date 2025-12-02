@@ -254,7 +254,7 @@ void registerInterpreterRenameQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterRenameQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterRenameQuery", create_fn);
+    factory.registerInterpreter(InterpreterOperation::RenameQuery, create_fn);
 }
 
 }

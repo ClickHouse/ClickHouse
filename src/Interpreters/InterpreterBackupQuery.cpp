@@ -59,7 +59,7 @@ void registerInterpreterBackupQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterBackupQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterBackupQuery", create_fn);
+    factory.registerInterpreter(InterpreterOperation::BackupQuery, create_fn);
 }
 
 }

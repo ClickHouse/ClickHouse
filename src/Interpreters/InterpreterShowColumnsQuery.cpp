@@ -184,7 +184,7 @@ void registerInterpreterShowColumnsQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterShowColumnsQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterShowColumnsQuery", create_fn);
+    factory.registerInterpreter(InterpreterOperation::ShowColumnsQuery, create_fn);
 }
 
 }

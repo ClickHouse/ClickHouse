@@ -62,7 +62,7 @@ void registerInterpreterCreateWorkloadQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterCreateWorkloadQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterCreateWorkloadQuery", create_fn);
+    factory.registerInterpreter(InterpreterOperation::CreateWorkloadQuery, create_fn);
 }
 
 }

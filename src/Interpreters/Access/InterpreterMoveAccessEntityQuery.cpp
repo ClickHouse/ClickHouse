@@ -104,7 +104,7 @@ void registerInterpreterMoveAccessEntityQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterMoveAccessEntityQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterMoveAccessEntityQuery", create_fn);
+    factory.registerInterpreter(InterpreterOperation::MoveAccessEntityQuery, create_fn);
 }
 
 }

@@ -61,7 +61,7 @@ void registerInterpreterCreateNamedCollectionQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterCreateNamedCollectionQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterCreateNamedCollectionQuery", create_fn);
+    factory.registerInterpreter(InterpreterOperation::CreateNamedCollectionQuery, create_fn);
 }
 
 }

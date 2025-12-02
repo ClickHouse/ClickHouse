@@ -37,7 +37,7 @@ void registerInterpreterDropNamedCollectionQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterDropNamedCollectionQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterDropNamedCollectionQuery", create_fn);
+    factory.registerInterpreter(InterpreterOperation::DropNamedCollectionQuery, create_fn);
 }
 
 }
