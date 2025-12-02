@@ -2419,6 +2419,49 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationUpdateMaxWaitingQueries)
     }
 }
 
+// ---------- AllocationLimit ---------- //
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationUpdateMaxMemory)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+
+    for (int i = 0; i < 3; i++)
+    {
+        t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_memory = 100");
+        ClassifierPtr c = t.manager->acquire("all");
+        ResourceLink link = c->get("memory");
+
+        TestAllocation a1(link, "A1", 80);
+        a1.waitSync();
+        TestAllocation a2(link, "A2", 30);
+        TestAllocation a3(link, "A3", 20);
+        TestAllocation a4(link, "A4", 10);
+        a2.assertIncreaseEnqueued();
+        a3.assertIncreaseEnqueued();
+        a4.assertIncreaseEnqueued();
+
+        // Increase limit: this should allow the two last waiting allocations to proceed
+        t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_memory = 135");
+        a2.waitSync();
+        a3.waitSync();
+        a4.assertIncreaseEnqueued();
+
+        // Decrease limit: this should kill some queries to respect the new limit
+        t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_memory = 40");
+
+        // For now to trigger eviction we need a memory pressure event, so we try increase size of running allocation
+        a3.setSize(21); // it should kill both a1 and a2
+        a1.waitKilled();
+        a2.waitKilled();
+        a3.waitSync();
+
+        // There should be enough memory for the last waiting allocation after eviction
+        a1.waitSync();
+    }
+}
+
 // ---------- FairAllocation ---------- //
 
 TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseFairnessBetweenWorkloads)

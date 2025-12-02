@@ -26,8 +26,11 @@ AllocationLimit::~AllocationLimit()
 
 void AllocationLimit::updateLimit(UInt64 new_max_allocated)
 {
-    /// TODO(serxa): Update limit.
-    UNUSED(new_max_allocated);
+    max_allocated = new_max_allocated;
+    // WARNING: We do not force eviction here in cases there is no pending increase request to simplify logic.
+    // WARNING: Eventually on the first increase request the limit will be applied.
+    if (setIncrease(child->increase, true))
+        propagate(Update().setIncrease(increase));
 }
 
 ResourceCost AllocationLimit::getLimit() const
