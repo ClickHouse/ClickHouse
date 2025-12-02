@@ -294,7 +294,6 @@ std::shared_ptr<ReadBufferFromFileBase> getRemoteReadBuffer(
         {
             if (info.remote_file_reader && offset == info.remote_file_reader->getFileOffsetOfBufferEnd())
             {
-                info.remote_file_reader->seek(offset, SEEK_SET);
                 return info.remote_file_reader;
             }
 
@@ -306,7 +305,6 @@ std::shared_ptr<ReadBufferFromFileBase> getRemoteReadBuffer(
             else
                 info.remote_file_reader = info.implementation_buffer_creator();
 
-            info.remote_file_reader->seek(offset, SEEK_SET);
             return info.remote_file_reader;
         }
         default:
@@ -1021,12 +1019,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         }
     }
 
-    // Pass a valid external buffer for implementation_buffer to read into.
-    // We then take it back with another swap() after reading is done.
-    // (If we get an exception in between, we'll be left with an invalid internal_buffer. That's ok, as long as
-    // the caller doesn't try to use this CachedOnDiskReadBufferFromFile after it threw an exception.)
-    std::optional<SwapHelper> swap;
-    swap.emplace(*this, *state->buf);
+    state->buf->set(internal_buffer.begin(), internal_buffer.size());
 
     const auto size = readFromFileSegment(
         file_segment,
@@ -1045,9 +1038,9 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         chassert(state->buf->available());
     }
 
-    chassert(!state->buf->internalBuffer().empty());
-    swap.reset();
-    chassert(!internal_buffer.empty());
+    chassert(internal_buffer.begin() == state->buf->buffer().begin());
+    working_buffer = Buffer(internal_buffer.begin(), internal_buffer.begin() + state->buf->available());
+    state->buf->position() = state->buf->buffer().end();
 
     if (file_segment.isDownloader())
         file_segment.completePartAndResetDownloader();
@@ -1096,8 +1089,6 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
             chassert(offset == static_cast<size_t>(state.buf->getFileOffsetOfBufferEnd()));
         }
     }
-
-    chassert(!state.buf->internalBuffer().empty());
 
     auto do_download = state.read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
     if (do_download != file_segment.isDownloader())
@@ -1169,7 +1160,6 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
         }
     }
 
-    chassert(!state.buf->internalBuffer().empty());
     if (size)
         chassert(state.buf->available());
 
@@ -1251,7 +1241,6 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
                         info.file_segments->size(), info.file_segments->toString(true)));
     }
 
-    chassert(!state.buf->internalBuffer().empty());
     if (size)
         chassert(state.buf->available());
 
