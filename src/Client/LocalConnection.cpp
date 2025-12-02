@@ -35,6 +35,7 @@ namespace Setting
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -240,7 +241,10 @@ void LocalConnection::sendQuery(
         }
 
         chassert(in, "ReadBuffer should be initialized");
-        auto source = context->getInputFormat(current_format, *in, sample, context->getSettingsRef()[Setting::max_insert_block_size]);
+
+        UInt64 max_insert_block_size_rows_setting = settings[Setting::max_insert_block_size];
+        UInt64 max_insert_block_size_bytes_setting = settings[Setting::max_insert_block_size_bytes];
+        auto source = context->getInputFormat(current_format, *in, sample, max_insert_block_size_rows_setting, std::nullopt, max_insert_block_size_bytes_setting);
         Pipe pipe(source);
 
         auto columns_description = metadata_snapshot->getColumns();

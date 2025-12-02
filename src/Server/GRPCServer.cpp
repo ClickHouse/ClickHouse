@@ -75,6 +75,7 @@ namespace Setting
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsString send_logs_source_regexp;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -1138,8 +1139,13 @@ namespace
         read_buffer = wrapReadBufferWithCompressionMethod(std::move(read_buffer), input_compression_method);
 
         assert(!pipeline);
+        
+        const Settings & settings = query_context->getSettingsRef();
+        UInt64 max_insert_block_size_rows_setting = settings[Setting::max_insert_block_size];
+        UInt64 max_insert_block_size_bytes_setting = settings[Setting::max_insert_block_size_bytes];
+
         auto source
-            = query_context->getInputFormat(input_format, *read_buffer, header, query_context->getSettingsRef()[Setting::max_insert_block_size]);
+            = query_context->getInputFormat(input_format, *read_buffer, header, max_insert_block_size_rows_setting, std::nullopt, max_insert_block_size_bytes_setting);
 
         pipeline = std::make_unique<QueryPipeline>(std::move(source));
         pipeline_executor = std::make_unique<PullingPipelineExecutor>(*pipeline);
@@ -1206,8 +1212,12 @@ namespace
                         external_table_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
                         external_table_context->applySettingsChanges(settings_changes);
                     }
+                    const Settings & settings = external_table_context->getSettingsRef();
+                    UInt64 max_insert_block_size_rows_setting = settings[Setting::max_insert_block_size];
+                    UInt64 max_insert_block_size_bytes_setting = settings[Setting::max_insert_block_size_bytes];
+
                     auto in = external_table_context->getInputFormat(
-                        format, *buf, metadata_snapshot->getSampleBlock(), external_table_context->getSettingsRef()[Setting::max_insert_block_size]);
+                        format, *buf, metadata_snapshot->getSampleBlock(), max_insert_block_size_rows_setting, std::nullopt, max_insert_block_size_bytes_setting);
 
                     QueryPipelineBuilder cur_pipeline;
                     cur_pipeline.init(Pipe(std::move(in)));

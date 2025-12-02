@@ -2035,19 +2035,19 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
             current_format = insert->format;
     }
 
+    const Settings & settings = client_context->getSettingsRef();
     /// Setting value from cmd arg overrides one from config.
-    size_t insert_format_max_block_size = client_context->getSettingsRef()[Setting::max_insert_block_size];
-    if (!client_context->getSettingsRef()[Setting::max_insert_block_size].changed &&
+    size_t insert_format_max_block_size_rows = settings[Setting::max_insert_block_size];
+    if (!settings[Setting::max_insert_block_size].changed &&
         insert_format_max_block_size_rows_from_config.has_value())
-        insert_format_max_block_size = insert_format_max_block_size_rows_from_config.value();
+        insert_format_max_block_size_rows = insert_format_max_block_size_rows_from_config.value();
 
-    size_t insert_format_max_block_size_bytes = client_context->getSettingsRef()[Setting::max_insert_block_size_bytes];
-    if (!client_context->getSettingsRef()[Setting::max_insert_block_size_bytes].changed &&
+    size_t insert_format_max_block_size_bytes = settings[Setting::max_insert_block_size_bytes];
+    if (!settings[Setting::max_insert_block_size_bytes].changed &&
         insert_format_max_block_size_bytes_from_config.has_value())
         insert_format_max_block_size_bytes = insert_format_max_block_size_bytes_from_config.value();
-
-    (void)insert_format_max_block_size_bytes;
-    auto source = client_context->getInputFormat(current_format, buf, sample, insert_format_max_block_size/*, insert_format_max_block_size_bytes*/);
+        
+    auto source = client_context->getInputFormat(current_format, buf, sample, insert_format_max_block_size_rows, std::nullopt, insert_format_max_block_size_bytes);
     Pipe pipe(source);
 
     if (columns_description.hasDefaults())

@@ -116,7 +116,10 @@ Chunk ValuesBlockInputFormat::read()
     size_t chunk_start = getDataOffsetMaybeCompressed(*buf);
 
     size_t rows_in_block = 0;
-    for (; rows_in_block < params.max_block_size; ++rows_in_block)
+    size_t bytes_in_block = 0;
+    const size_t max_block_size_bytes_param = params.max_block_size_bytes;
+
+    for (; rows_in_block < params.max_block_size && (!max_block_size_bytes_param || bytes_in_block < max_block_size_bytes_param); ++rows_in_block)
     {
         try
         {
@@ -126,7 +129,16 @@ Chunk ValuesBlockInputFormat::read()
             if (need_only_count)
                 skipToNextRow(buf.get(), 1, 0);
             else
+            {
                 readRow(columns, rows_in_block);
+
+                if (max_block_size_bytes_param)
+                {
+                    bytes_in_block = 0;
+                    for (const auto & column : columns)
+                        bytes_in_block += column->byteSize();
+                }
+            }            
         }
         catch (Exception & e)
         {
@@ -262,6 +274,7 @@ bool ValuesBlockInputFormat::tryParseExpressionUsingTemplate(MutableColumnPtr & 
     const auto & settings = context->getSettingsRef();
     if (templates[column_idx]->parseExpression(*buf, *token_iterator, format_settings, settings))
     {
+        LOG_TRACE(getLogger("Values"), "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx: we try parsing via template and not add row");
         ++rows_parsed_using_template[column_idx];
         return true;
     }
