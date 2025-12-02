@@ -416,7 +416,7 @@ void GlobString::parse()
 
             auto enum_matcher = tryParseEnumMatcher(matcher_expression);
 
-            if (enum_matcher.size() == 0)
+            if (enum_matcher.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected an enum expression, but read 0 bytes.");  // FIXME
 
             position += matcher_expression.length();
@@ -428,7 +428,7 @@ void GlobString::parse()
         {
             auto constant_expression = consumeConstantExpression(input.substr(position));
 
-            if (constant_expression.length() == 0)
+            if (constant_expression.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a constant expression, but read 0 bytes.");  // FIXME
 
             position += constant_expression.length();
