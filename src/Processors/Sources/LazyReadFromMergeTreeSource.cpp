@@ -88,8 +88,8 @@ RangesInDataParts LazyReadFromMergeTreeSource::splitRanges(RangesInDataParts par
 
                 bool split_range =
                     range_marks + added_marks > marks_per_stream  /// range overflows limit
-                    && range_marks >= 2 * min_marks_for_concurrent_read /// range is big enouth for 2 concurrent reads
-                    && (range_marks + added_marks - marks_per_stream) > min_marks_for_concurrent_read; /// what's rest is big enouth for concurrent read
+                    && range_marks >= 2 * min_marks_for_concurrent_read /// range is big enough for 2 concurrent reads
+                    && (range_marks + added_marks - marks_per_stream) > min_marks_for_concurrent_read; /// what's rest is big enough for concurrent read
 
                 if (split_range)
                 {
