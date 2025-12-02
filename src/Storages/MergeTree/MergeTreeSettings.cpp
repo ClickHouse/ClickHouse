@@ -220,7 +220,7 @@ namespace ErrorCodes
     Only available in ClickHouse Cloud. Maximal number of bytes to write in a
     single stripe in compact parts
     )", 0) \
-    DECLARE(UInt64, compact_parts_max_granules_to_buffer, 128, R"(
+    DECLARE(NonZeroUInt64, compact_parts_max_granules_to_buffer, 128, R"(
     Only available in ClickHouse Cloud. Maximal number of granules to write in a
     single stripe in compact parts
     )", 0) \
@@ -945,7 +945,7 @@ namespace ErrorCodes
     Allow to use adaptive writer buffers during writing dynamic subcolumns to
     reduce memory usage
     )", 0) \
-    DECLARE(UInt64, adaptive_write_buffer_initial_size, 16 * 1024, R"(
+    DECLARE(NonZeroUInt64, adaptive_write_buffer_initial_size, 16 * 1024, R"(
     Initial size of an adaptive write buffer
     )", 0) \
     DECLARE(UInt64, min_free_disk_bytes_to_perform_insert, 0, R"(
