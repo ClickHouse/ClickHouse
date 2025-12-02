@@ -1,10 +1,8 @@
 #pragma once
 
 #include <base/memcmpSmall.h>
-#include <Common/TargetSpecific.h>
 #include <Common/assert_cast.h>
-#include <Common/checkStackSize.h>
-#include <Common/quoteString.h>
+#include <Common/TargetSpecific.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
@@ -44,11 +42,13 @@
 #include <IO/ReadHelpers.h>
 
 #include <type_traits>
+
 namespace DB
 {
 
 namespace Setting
 {
+    extern const SettingsBool allow_not_comparable_types_in_comparison_functions;
     extern const SettingsBool validate_enum_literals_in_operators;
 }
 
@@ -68,8 +68,6 @@ static inline bool callOnAtLeastOneDecimalType(TypeIndex type_num1, TypeIndex ty
     {
         case TypeIndex::DateTime64:
             return callOnBasicType<DateTime64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
-        case TypeIndex::Time64:
-            return callOnBasicType<Time64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
         case TypeIndex::Decimal32:
             return callOnBasicType<Decimal32, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
         case TypeIndex::Decimal64:
@@ -86,8 +84,6 @@ static inline bool callOnAtLeastOneDecimalType(TypeIndex type_num1, TypeIndex ty
     {
         case TypeIndex::DateTime64:
             return callOnBasicTypeSecondArg<DateTime64, _int, _float, _decimal, _datetime>(type_num1, std::forward<F>(f));
-        case TypeIndex::Time64:
-            return callOnBasicTypeSecondArg<Time64, _int, _float, _decimal, _datetime>(type_num1, std::forward<F>(f));
         case TypeIndex::Decimal32:
             return callOnBasicTypeSecondArg<Decimal32, _int, _float, _decimal, _datetime>(type_num1, std::forward<F>(f));
         case TypeIndex::Decimal64:
@@ -280,8 +276,8 @@ struct StringComparisonImpl
         for (size_t i = 0; i < size; ++i)
         {
             c[i] = Op::apply(memcmpSmallAllowOverflow15(
-                a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset,
-                b_data.data() + prev_b_offset, b_offsets[i] - prev_b_offset), 0);
+                a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset - 1,
+                b_data.data() + prev_b_offset, b_offsets[i] - prev_b_offset - 1), 0);
 
             prev_a_offset = a_offsets[i];
             prev_b_offset = b_offsets[i];
@@ -299,7 +295,7 @@ struct StringComparisonImpl
         for (size_t i = 0; i < size; ++i)
         {
             c[i] = Op::apply(memcmpSmallLikeZeroPaddedAllowOverflow15(
-                a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset,
+                a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset - 1,
                 b_data.data() + i * b_n, b_n), 0);
 
             prev_a_offset = a_offsets[i];
@@ -317,7 +313,7 @@ struct StringComparisonImpl
         for (size_t i = 0; i < size; ++i)
         {
             c[i] = Op::apply(memcmpSmallAllowOverflow15(
-                a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset,
+                a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset - 1,
                 b_data.data(), b_size), 0);
 
             prev_a_offset = a_offsets[i];
@@ -437,8 +433,8 @@ struct StringEqualsImpl
 
         for (size_t i = 0; i < size; ++i)
         {
-            auto a_size = a_offsets[i] - prev_a_offset;
-            auto b_size = b_offsets[i] - prev_b_offset;
+            auto a_size = a_offsets[i] - prev_a_offset - 1;
+            auto b_size = b_offsets[i] - prev_b_offset - 1;
 
             c[i] = positive == memequalSmallAllowOverflow15(
                 a_data.data() + prev_a_offset, a_size,
@@ -459,7 +455,7 @@ struct StringEqualsImpl
 
         for (size_t i = 0; i < size; ++i)
         {
-            auto a_size = a_offsets[i] - prev_a_offset;
+            auto a_size = a_offsets[i] - prev_a_offset - 1;
 
             c[i] = positive == memequalSmallLikeZeroPaddedAllowOverflow15(
                 a_data.data() + prev_a_offset, a_size,
@@ -487,7 +483,7 @@ struct StringEqualsImpl
              */
             for (size_t i = 0; i < size; ++i)
             {
-                auto a_size = a_offsets[i] - prev_a_offset;
+                auto a_size = a_offsets[i] - prev_a_offset - 1;
 
                 if (a_size == 0)
                     c[i] = positive;
@@ -501,7 +497,7 @@ struct StringEqualsImpl
         {
             for (size_t i = 0; i < size; ++i)
             {
-                auto a_size = a_offsets[i] - prev_a_offset;
+                auto a_size = a_offsets[i] - prev_a_offset - 1;
 
                 c[i] = positive == memequalSmallAllowOverflow15(
                     a_data.data() + prev_a_offset, a_size,
@@ -653,16 +649,18 @@ struct ComparisonParams
 {
     bool check_decimal_overflow = false;
     bool validate_enum_literals_in_operators = false;
+    bool allow_not_comparable_types = false;
 
     explicit ComparisonParams(const ContextPtr & context)
         : check_decimal_overflow(decimalCheckComparisonOverflow(context))
         , validate_enum_literals_in_operators(context->getSettingsRef()[Setting::validate_enum_literals_in_operators])
+        , allow_not_comparable_types(context->getSettingsRef()[Setting::allow_not_comparable_types_in_comparison_functions])
     {}
 
     ComparisonParams() = default;
 };
 
-template <template <typename, typename> class Op, typename Name, bool is_null_safe_cmp_mode = false>
+template <template <typename, typename> class Op, typename Name>
 class FunctionComparison : public IFunction
 {
 public:
@@ -672,7 +670,6 @@ public:
 
     explicit FunctionComparison(ComparisonParams params_) : params(std::move(params_)) {}
 
-    bool ALWAYS_INLINE  useDefaultImplementationForNulls() const override { return is_null_safe_cmp_mode ? false : true; }
 private:
     const ComparisonParams params;
 
@@ -780,8 +777,6 @@ private:
 
     ColumnPtr executeString(const IColumn * c0, const IColumn * c1) const
     {
-        checkStackSize();
-
         const ColumnString * c0_string = checkAndGetColumn<ColumnString>(c0);
         const ColumnString * c1_string = checkAndGetColumn<ColumnString>(c1);
         const ColumnFixedString * c0_fixed_string = checkAndGetColumn<ColumnFixedString>(c0);
@@ -806,7 +801,7 @@ private:
             if (c0_const_string)
             {
                 c0_const_chars = &c0_const_string->getChars();
-                c0_const_size = c0_const_string->getDataAt(0).size();
+                c0_const_size = c0_const_string->getDataAt(0).size;
             }
             else if (c0_const_fixed_string)
             {
@@ -825,7 +820,7 @@ private:
             if (c1_const_string)
             {
                 c1_const_chars = &c1_const_string->getChars();
-                c1_const_size = c1_const_string->getDataAt(0).size();
+                c1_const_size = c1_const_string->getDataAt(0).size;
             }
             else if (c1_const_fixed_string)
             {
@@ -894,8 +889,6 @@ private:
             const DataTypePtr & result_type, const IColumn * col_left_untyped, const IColumn * col_right_untyped,
             const DataTypePtr & left_type, const DataTypePtr & right_type, size_t input_rows_count) const
     {
-        checkStackSize();
-
         /// To compare something with const string, we cast constant to appropriate type and compare as usual.
         /// It is ok to throw exception if value is not convertible.
         /// We should deal with possible overflows, e.g. toUInt8(1) = '257' should return false.
@@ -964,6 +957,7 @@ private:
           *
           * x >= y:  x1 > y1 || (x1 == y1 && (x2 > y2 || (x2 == y2 ... && xn >= yn))
           */
+
         const size_t tuple_size = typeid_cast<const DataTypeTuple &>(*c0.type).getElements().size();
 
         if (0 == tuple_size)
@@ -1153,6 +1147,7 @@ private:
     ColumnPtr executeGeneric(const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1) const
     {
         DataTypePtr common_type = getLeastSupertype(DataTypes{c0.type, c1.type});
+
         ColumnPtr c0_converted = castColumn(c0, common_type);
         ColumnPtr c1_converted = castColumn(c1, common_type);
 
@@ -1172,24 +1167,29 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if ((name == NameEquals::name || name == NameNotEquals::name))
+        if (!params.allow_not_comparable_types)
         {
-            if (!arguments[0]->isComparableForEquality() || !arguments[1]->isComparableForEquality())
+            if ((name == NameEquals::name || name == NameNotEquals::name))
+            {
+                if (!arguments[0]->isComparableForEquality() || !arguments[1]->isComparableForEquality())
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable for equality."
+                        "Set setting allow_not_comparable_types_in_comparison_functions = 1 in order to allow it",
+                        arguments[0]->getName(),
+                        arguments[1]->getName(),
+                        getName());
+            }
+            else if (!arguments[0]->isComparable() || !arguments[1]->isComparable())
+            {
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable for equality",
-                    backQuote(arguments[0]->getName()),
-                    backQuote(arguments[1]->getName()),
-                    backQuote(getName()));
-        }
-        else if (!arguments[0]->isComparable() || !arguments[1]->isComparable())
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable",
-                backQuote(arguments[0]->getName()),
-                backQuote(arguments[1]->getName()),
-                backQuote(getName()));
+                    "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable."
+                    "Set setting allow_not_comparable_types_in_comparison_functions = 1 in order to allow it",
+                    arguments[0]->getName(),
+                    arguments[1]->getName(),
+                    getName());
+            }
         }
 
         WhichDataType left(arguments[0].get());
@@ -1213,7 +1213,7 @@ public:
         {
             if (!tryGetLeastSupertype(arguments))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments ({}, {})"
-                    " of function {}", backQuote(arguments[0]->getName()), backQuote(arguments[1]->getName()), backQuote(getName()));
+                    " of function {}", arguments[0]->getName(), arguments[1]->getName(), getName());
         }
 
         bool both_tuples = left_tuple && right_tuple;
@@ -1223,7 +1223,6 @@ public:
 
             bool has_nullable = false;
             bool has_null = false;
-            bool has_nothing = false;
 
             const DataTypeTuple * any_tuple = left_tuple ? left_tuple : right_tuple;
             size_t size = any_tuple->getElements().size();
@@ -1237,20 +1236,9 @@ public:
                     element_type = func->build(args)->getResultType();
                 }
                 has_nullable = has_nullable || element_type->isNullable() || isDynamic(element_type);
-
-                /// Nullable(Nothing)
                 has_null = has_null || element_type->onlyNull();
-
-                /// Nothing
-                has_nothing = has_nothing || isNothing(element_type);
             }
 
-            if (has_nothing)
-                return std::make_shared<DataTypeNothing>();
-
-            // In null-safe cmp mode, return DataTypeUInt8
-            if (is_null_safe_cmp_mode)
-                return std::make_shared<DataTypeUInt8>();
             /// If any element comparison is nullable, return type will also be nullable.
             /// We useDefaultImplementationForNulls, but it doesn't work for tuples.
             if (has_null)
@@ -1269,8 +1257,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        checkStackSize();
-
         const auto & col_with_type_and_name_left = arguments[0];
         const auto & col_with_type_and_name_right = arguments[1];
         const IColumn * col_left_untyped = col_with_type_and_name_left.column.get();
@@ -1331,8 +1317,8 @@ public:
                 assert_cast<const DataTypeFixedString &>(*left_type).getN() :
                 (right_is_fixed_string ? assert_cast<const DataTypeFixedString &>(*right_type).getN() : 0);
 
-        bool date_and_time_datetime = (which_left.idx != which_right.idx) && (which_left.isDate() || which_left.isDate32() || which_left.isTime() || which_left.isTime64() || which_left.isDateTime() || which_left.isDateTime64())
-            && (which_right.isDate() || which_right.isDate32() || which_right.isTime() || which_right.isTime64() || which_right.isDateTime() || which_right.isDateTime64());
+        bool date_and_datetime = (which_left.idx != which_right.idx) && (which_left.isDate() || which_left.isDate32() || which_left.isDateTime() || which_left.isDateTime64())
+            && (which_right.isDate() || which_right.isDate32() || which_right.isDateTime() || which_right.isDateTime64());
 
         /// Interval data types can be compared only when having equal units.
         bool left_is_interval = which_left.isInterval();
@@ -1341,7 +1327,7 @@ public:
         bool types_equal = left_type->equals(*right_type);
 
         ColumnPtr res;
-        if (left_is_num && right_is_num && !date_and_time_datetime
+        if (left_is_num && right_is_num && !date_and_datetime
             && (!left_is_interval || !right_is_interval || types_equal))
         {
             if (!((res = executeNumLeftType<UInt8>(col_left_untyped, col_right_untyped))
@@ -1391,7 +1377,7 @@ public:
         if ((isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type)))
         {
             // Comparing Date/Date32 and DateTime64 requires implicit conversion,
-            if (date_and_time_datetime && (isDateOrDate32(left_type) || isDateOrDate32(right_type)))
+            if (date_and_datetime && (isDateOrDate32(left_type) || isDateOrDate32(right_type)))
             {
                 DataTypePtr common_type = getLeastSupertype(DataTypes{left_type, right_type});
                 ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, common_type);
@@ -1401,7 +1387,7 @@ public:
             }
 
             /// Check does another data type is comparable to Decimal, includes Int and Float.
-            if (!allowDecimalComparison(left_type, right_type) && !date_and_time_datetime)
+            if (!allowDecimalComparison(left_type, right_type) && !date_and_datetime)
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "No operation {} between {} and {}",
@@ -1422,7 +1408,7 @@ public:
             }
             return executeDecimal<Op, Name>(col_with_type_and_name_left, col_with_type_and_name_right, params.check_decimal_overflow);
         }
-        if (date_and_time_datetime)
+        if (date_and_datetime)
         {
             DataTypePtr common_type = getLeastSupertype(DataTypes{left_type, right_type});
             ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, common_type);
@@ -1441,22 +1427,6 @@ public:
         }
 
         return executeGeneric(col_with_type_and_name_left, col_with_type_and_name_right);
-    }
-
-    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
-    {
-        for (const auto & argument : arguments)
-        {
-            ColumnPtr column = argument.column;
-
-            if (!column || !isColumnConst(*column))
-                continue;
-
-            if (column->isNullAt(0))
-                return result_type->createColumnConst(1, Null());
-        }
-
-        return nullptr;
     }
 };
 
