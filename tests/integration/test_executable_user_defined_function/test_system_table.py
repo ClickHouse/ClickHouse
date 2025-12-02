@@ -85,6 +85,11 @@ def started_cluster():
             config,
         )
 
+        # Create functions directory if it doesn't exist
+        node.exec_in_container(
+            ["bash", "-c", "mkdir -p /etc/clickhouse-server/functions"]
+        )
+
         # Write working UDF config
         node.exec_in_container(
             ["bash", "-c", f"echo '{working_udf_config}' > /etc/clickhouse-server/functions/working_udf.xml"]
@@ -93,6 +98,11 @@ def started_cluster():
         # Write broken UDF config
         node.exec_in_container(
             ["bash", "-c", f"echo '{broken_udf_config}' > /etc/clickhouse-server/functions/broken_udf.xml"]
+        )
+
+        # Create user_scripts directory if it doesn't exist
+        node.exec_in_container(
+            ["bash", "-c", "mkdir -p /var/lib/clickhouse/user_scripts"]
         )
 
         # Create working script
@@ -211,7 +221,8 @@ def test_system_user_defined_functions_list_all_statuses(started_cluster):
     print(result)
 
     # Should have both SUCCESS (2 working UDFs) and FAILED (1 broken UDF)
-    assert TSV(result) == TSV([["FAILED", 1], ["SUCCESS", 2]])
+    # Note: ORDER BY status sorts by enum value: SUCCESS(0) < FAILED(1)
+    assert TSV(result) == TSV([["SUCCESS", 2], ["FAILED", 1]])
 
     # List all failed UDFs
     result = node.query(
