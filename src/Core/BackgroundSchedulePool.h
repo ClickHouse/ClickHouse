@@ -6,12 +6,14 @@
 #include <map>
 #include <mutex>
 #include <vector>
+#include <Interpreters/StorageID.h>
 #include <base/defines.h>
 #include <boost/noncopyable.hpp>
 #include <Poco/Notification.h>
 #include <Poco/NotificationQueue.h>
 #include <Poco/Timestamp.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Stopwatch.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/callOnce.h>
@@ -49,7 +51,7 @@ public:
     using TaskFunc = std::function<void()>;
     using TaskHolder = BackgroundSchedulePoolTaskHolder;
 
-    TaskHolder createTask(const std::string & log_name, const TaskFunc & function);
+    TaskHolder createTask(const StorageID & storage, const std::string & log_name, const TaskFunc & function);
 
     /// As for MergeTreeBackgroundExecutor we refuse to implement tasks eviction, because it will
     /// be error prone. We support only increasing number of threads at runtime.
@@ -61,6 +63,20 @@ public:
     /// Shutdown the pool (set flag, destroy threads)
     /// Should be called explicitly before destroying object.
     void join();
+
+    struct TaskInfoSnapshot
+    {
+        StorageID storage;
+        String log_name;
+        String query_id;
+        UInt64 elapsed_ms;
+        bool deactivated;
+        bool scheduled;
+        bool delayed;
+        bool executing;
+    };
+
+    std::vector<TaskInfoSnapshot> getTasks();
 
 private:
     using TaskInfoPtr = std::shared_ptr<TaskInfo>;
@@ -150,14 +166,15 @@ private:
     friend class TaskNotification;
     friend class BackgroundSchedulePool;
 
-    BackgroundSchedulePoolTaskInfo(BackgroundSchedulePoolWeakPtr pool_, const std::string & log_name_, const BackgroundSchedulePool::TaskFunc & function_);
+    BackgroundSchedulePoolTaskInfo(BackgroundSchedulePoolWeakPtr pool_, const StorageID & storage_, const std::string & log_name_, const BackgroundSchedulePool::TaskFunc & function_);
 
     void execute(BackgroundSchedulePool & pool);
 
     bool scheduleImpl(std::lock_guard<std::mutex> & schedule_mutex_lock);
 
     BackgroundSchedulePoolWeakPtr pool_ref;
-    std::string log_name;
+    const StorageID storage;
+    const std::string log_name;
     BackgroundSchedulePool::TaskFunc function;
 
     OnceFlag watch_callback_initialized;
@@ -173,6 +190,9 @@ private:
     bool scheduled TSA_GUARDED_BY(schedule_mutex) = false;
     bool delayed TSA_GUARDED_BY(schedule_mutex) = false;
     bool executing TSA_GUARDED_BY(schedule_mutex) = false;
+
+    std::string query_id TSA_GUARDED_BY(schedule_mutex);
+    AtomicStopwatch watch;
 
     /// If the task is scheduled with delay, points to element of delayed_tasks.
     BackgroundSchedulePool::DelayedTasks::iterator iterator;
