@@ -334,7 +334,7 @@ private:
         const UInt32 sample_count = std::min<UInt32>(float_count, PARAMS_ESTIMATIONS_SAMPLE_FLOATS);
         const UInt32 sample_step = std::max(float_count / sample_count, 1u);
         for (UInt32 i = 0; i < sample_count; ++i)
-            unalignedStoreLittleEndian<T>(sample[i * sizeof(T)], unalignedLoadLittleEndian<T>(source + i * sample_step * sizeof(T)));
+            unalignedStoreLittleEndian<T>(&sample[i * sizeof(T)], unalignedLoadLittleEndian<T>(&source[i * sample_step * sizeof(T)]));
 
         EncodingParams best_params = {0, 0, 0};
         size_t best_size = std::numeric_limits<size_t>::max();
@@ -359,11 +359,9 @@ private:
 
     void estimateParamCandidates(const char * source, const UInt32 float_count)
     {
-        param_candidates.clear();
-
         std::unordered_map<UInt16, EncodingParams> params_map;
 
-        size_t sample_step = float_count > PARAMS_ESTIMATIONS_SAMPLES * PARAMS_ESTIMATIONS_SAMPLE_FLOATS
+        UInt32 sample_step = float_count > PARAMS_ESTIMATIONS_SAMPLES * PARAMS_ESTIMATIONS_SAMPLE_FLOATS
             ? (float_count - PARAMS_ESTIMATIONS_SAMPLES * PARAMS_ESTIMATIONS_SAMPLE_FLOATS) / PARAMS_ESTIMATIONS_SAMPLES
             : PARAMS_ESTIMATIONS_SAMPLE_FLOATS;
 
@@ -373,7 +371,7 @@ private:
             if (sample_start_float >= float_count)
                 break;
 
-            EncodingParams best_params{0, 0, 1};
+            EncodingParams best_params = {0, 0, 0};
             size_t best_size = std::numeric_limits<size_t>::max();
 
             const char * sample_start = source + sample_start_float * sizeof(T);
@@ -397,11 +395,12 @@ private:
             const UInt16 key = (static_cast<UInt16>(best_params.magnitude_index) << 8) | static_cast<UInt16>(best_params.fraction_index);
             auto it = params_map.find(key);
             if (it != params_map.end())
-                it->second.occurred_times += 1;
+                ++(it->second.occurred_times);
             else
                 params_map[key] = best_params;
         }
 
+        param_candidates.clear();
         for (const auto & [_, params] : params_map)
             param_candidates.push_back(params);
 
@@ -414,7 +413,7 @@ private:
                         return a.fraction_index < b.fraction_index;
                     return a.magnitude_index < b.magnitude_index;
                 }
-                return a.occurred_times > b.occurred_times;
+                return a.occurred_times < b.occurred_times;
             });
 
         param_candidates.resize(std::min<size_t>(param_candidates.size(), PARAMS_ESTIMATIONS_CANDIDATES));
@@ -426,7 +425,7 @@ private:
         Int64 enc_max = std::numeric_limits<Int64>::min();
         size_t exception_count = 0;
 
-        for (const char * source_end = source + float_count; source < source_end; source += sizeof(T))
+        for (const char * source_end = source + float_count * sizeof(T); source < source_end; source += sizeof(T))
         {
             const T value = unalignedLoadLittleEndian<T>(source);
             const Int64 value_enc = ALPCodec<T>::encodeValue(value, params.magnitude_index, params.fraction_index);
@@ -451,12 +450,11 @@ private:
 
     static size_t getFrameOfReferenceBitWidth(const Int64 min_value, const Int64 max_value)
     {
-        const size_t leading_zero_bits = getLeadingZeroBits(max_value - min_value);
-        const size_t bit_width = sizeof(Int64) * 8 - leading_zero_bits;
-
-        if (unlikely(bit_width == 0))
+        const Int64 values_diff = max_value - min_value;
+        if (values_diff == 0)
             return 1; // Edge case when all values are identical, need at least 1 bit to represent.
 
+        const size_t bit_width = sizeof(Int64) * 8 - getLeadingZeroBitsUnsafe<UInt64>(static_cast<UInt64>(values_diff));
         return bit_width;
     }
 };
