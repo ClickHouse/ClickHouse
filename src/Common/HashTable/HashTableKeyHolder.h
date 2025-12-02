@@ -160,13 +160,13 @@ concept CouldPrefetchKey = requires(CellType * cell)
     { keyPrefetch(cell->getKey()) };
 };
 
-inline void mappedPrefetch(const void * mapped)
+inline void mappedPrefetch(char * mapped)
 {
     __builtin_prefetch(mapped);
 }
 
-template <typename CellType, typename Mapped = typename CellType::Mapped>
-concept CouldPrefetchMapped = requires(CellType * cell, Mapped *)
+template <typename CellType>
+concept CouldPrefetchMapped = requires(CellType * cell)
 {
     { mappedPrefetch(cell->getMapped()) };
 };

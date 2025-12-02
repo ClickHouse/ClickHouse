@@ -676,7 +676,7 @@ protected:
 
         void prefetch()
         {
-            static_assert(CouldPrefetchKey<cell_type>);
+            static_assert(CouldPrefetchKey<cell_type> || CouldPrefetchMapped<cell_type>);
             auto * buf_end = container->buf + container->grower.bufSize();
             iter_count++;
             if (prefetch_ptr < buf_end && prefetched_count < prefetch_ahead) [[likely]]
@@ -702,7 +702,8 @@ protected:
 
                 if (last_ptr) [[likely]]
                 {
-                    keyPrefetch(last_ptr->getKey());
+                    if constexpr (CouldPrefetchKey<cell_type>)
+                        keyPrefetch(last_ptr->getKey());
                     if constexpr (CouldPrefetchMapped<cell_type>)
                         mappedPrefetch(last_ptr->getMapped());
                 }
@@ -943,7 +944,7 @@ public:
     template<bool prefetch = false>
     auto begin() const
     {
-        using ConstIterator = std::conditional_t<prefetch && CouldPrefetchKey<cell_type>, const_prefetching_iterator, const_iterator>;
+        using ConstIterator = std::conditional_t<prefetch && (CouldPrefetchKey<cell_type> || CouldPrefetchMapped<cell_type>), const_prefetching_iterator, const_iterator>;
         if (!buf)
             return end<prefetch>();
 
@@ -964,7 +965,7 @@ public:
     template<bool prefetch = false>
     auto begin()
     {
-        using Iterator = std::conditional_t<prefetch && CouldPrefetchKey<cell_type>, prefetching_iterator, iterator>;
+        using Iterator = std::conditional_t<prefetch && (CouldPrefetchKey<cell_type> || CouldPrefetchMapped<cell_type>), prefetching_iterator, iterator>;
         if (!buf)
             return end<prefetch>();
 
@@ -982,7 +983,7 @@ public:
     template <bool prefetch = false>
     auto end() const
     {
-        using ConstIterator = std::conditional_t<prefetch && CouldPrefetchKey<cell_type>, const_prefetching_iterator, const_iterator>;
+        using ConstIterator = std::conditional_t<prefetch && (CouldPrefetchKey<cell_type> || CouldPrefetchMapped<cell_type>), const_prefetching_iterator, const_iterator>;
         /// Avoid UBSan warning about adding zero to nullptr. It is valid in C++20 (and earlier) but not valid in C.
         return ConstIterator(this, buf ? buf + grower.bufSize() : buf);
     }
@@ -996,7 +997,7 @@ public:
     template <bool prefetch = false>
     auto end()
     {
-        using Iterator = std::conditional_t<prefetch && CouldPrefetchKey<cell_type>, prefetching_iterator, iterator>;
+        using Iterator = std::conditional_t<prefetch && (CouldPrefetchKey<cell_type> || CouldPrefetchMapped<cell_type>), prefetching_iterator, iterator>;
         return Iterator(this, buf ? buf + grower.bufSize() : buf);
     }
 
