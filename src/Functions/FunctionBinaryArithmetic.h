@@ -994,7 +994,7 @@ class FunctionBinaryArithmetic : public IFunction
     static FunctionOverloadResolverPtr
     getFunctionForTupleArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
     {
-        if (!isTuple(type0) || !isTuple(type1))
+        if (!isTuple(removeNullable(type0)) || !isTuple(removeNullable(type1)))
             return {};
 
         /// Special case when the function is plus, minus or multiply, both arguments are tuples.
@@ -1023,7 +1023,8 @@ class FunctionBinaryArithmetic : public IFunction
     static FunctionOverloadResolverPtr
     getFunctionForTupleAndNumberArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
     {
-        if (!(isTuple(type0) && isNumber(type1)) && !(isTuple(type1) && isNumber(type0)))
+        if (!(isTuple(removeNullable(type0)) && isNumber(removeNullable(type1)))
+            && !(isTuple(removeNullable(type1)) && isNumber(removeNullable(type0))))
             return {};
 
         /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.
