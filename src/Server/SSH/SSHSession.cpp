@@ -42,7 +42,7 @@ SSHSession & SSHSession::operator=(SSHSession && rhs) noexcept
     this->session = rhs.session;
     this->disconnected = rhs.disconnected;
     rhs.session = nullptr;
-    rhs.disconnected =true;
+    rhs.disconnected = true;
     return *this;
 }
 
