@@ -3,7 +3,6 @@
 #include <base/scope_guard.h>
 #include <boost/container/flat_set.hpp>
 #include <boost/range/adaptor/map.hpp>
-#include "base/types.h"
 
 
 namespace DB
