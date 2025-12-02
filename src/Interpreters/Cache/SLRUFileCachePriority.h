@@ -89,11 +89,6 @@ public:
 
     FileCachePriorityPtr copy() const;
 
-protected:
-    size_t getHoldSize() override { return protected_queue.getHoldSize() + probationary_queue.getHoldSize(); }
-
-    size_t getHoldElements() override { return protected_queue.getHoldElements() + probationary_queue.getHoldElements(); }
-
 private:
     using LRUIterator = LRUFileCachePriority::LRUIterator;
     using LRUQueue = std::list<Entry>;

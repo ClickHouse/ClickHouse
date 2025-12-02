@@ -156,7 +156,7 @@ void Lz4DeflatingWriteBuffer::nextImpl()
     }
 }
 
-void Lz4DeflatingWriteBuffer::finalFlushBefore()
+void Lz4DeflatingWriteBuffer::finalizeBefore()
 {
     next();
 
@@ -181,7 +181,7 @@ void Lz4DeflatingWriteBuffer::finalFlushBefore()
     sink.finalize();
 }
 
-void Lz4DeflatingWriteBuffer::finalFlushAfter()
+void Lz4DeflatingWriteBuffer::finalizeAfter()
 {
     LZ4F_freeCompressionContext(ctx);
     ctx = nullptr;

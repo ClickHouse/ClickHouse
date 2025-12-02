@@ -110,18 +110,8 @@ class Client:
             command += ["--password", password]
         if database is not None:
             command += ["--database", database]
-
         if host is not None:
-            replaced = False
-            for i, token in enumerate(command):
-                if token == "--host" and i + 1 < len(command):
-                    command[i + 1] = host
-                    replaced = True
-                    break
-            if not replaced:
-                # Should not happen normally, but keep fallback
-                command += ["--host", host]
-
+            command += ["--host", host]
         if query_id is not None:
             command += ["--query_id", query_id]
         if parse:

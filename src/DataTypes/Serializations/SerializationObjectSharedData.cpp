@@ -1332,9 +1332,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
 
             /// Read array sizes.
             settings.path.push_back(Substream::ObjectSharedDataCopySizes);
-            if (!SerializationArray::deserializeOffsetsBinaryBulk(offsets_column, rows_offset + limit, settings, cache))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for object shared data copy sizes");
-
+            SerializationArray::deserializeOffsetsBinaryBulk(offsets_column, rows_offset + limit, settings, cache);
             settings.path.pop_back();
 
             /// Read paths indexes.

@@ -22,6 +22,12 @@ SCRIPT_DIR=$(dirname "${SCRIPT_PATH}")
 GIT_DIR=$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)
 cd $GIT_DIR
 
+# Exclude from contribs some garbage subdirs that we don't need.
+# It reduces the checked out files size about 3 times and therefore speeds up indexing in IDEs and searching.
+# NOTE .git/ still contains everything that we don't check out (although, it's compressed)
+# See also https://git-scm.com/docs/git-sparse-checkout
+contrib/sparse-checkout/setup-sparse-checkout.sh
+
 git submodule init
 git submodule sync
 
@@ -33,11 +39,8 @@ git config --file .gitmodules --get-regexp '.*path' | sed 's/[^ ]* //' | xargs -
 
 # We don't want to depend on any third-party CMake files.
 # To check it, find and delete them.
-# llvm-project: Used to build llvm. Could be replaced with our own cmake files
-# corrosion: Used to build rust (Does not make sense to replace)
-# rust_vendor: Used to build rust
 grep -o -P '"contrib/[^"]+"' .gitmodules |
-  grep -v -P 'contrib/(llvm-project|corrosion|rust_vendor)' |
+  grep -v -P 'contrib/(llvm-project|google-protobuf|grpc|abseil-cpp|corrosion|aws-crt-cpp|rust_vendor)' |
   xargs -I@ find @ \
     -'(' -name 'CMakeLists.txt' -or -name '*.cmake' -')' -and -not -name '*.h.cmake' \
     -delete

@@ -118,10 +118,10 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    std::string_view getDataAt(size_t n) const override
+    StringRef getDataAt(size_t n) const override
     {
         chassert(n < size());
-        return std::string_view(reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n));
+        return StringRef(&chars[offsetAt(n)], sizeAt(n));
     }
 
     bool isDefaultAt(size_t n) const override

@@ -13,14 +13,14 @@ workflow = Workflow.Config(
     jobs=[
         Job.Config(
             name="Collect flaky tests",
-            command="python3 ./ci/jobs/collect_gh_issues.py",
+            command="python3 ./ci/jobs/fetch_flaky_tests_issues.py",
             runs_on=RunnerLabels.STYLE_CHECK_ARM,
         )
     ],
     secrets=SECRETS,
     enable_report=True,
     enable_cidb=False,
-    cron_schedules=["0 */1 * * 1-5"],
+    cron_schedules=["0 */3 * * 1-5"],
 )
 
 WORKFLOWS = [

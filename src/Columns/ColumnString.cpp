@@ -270,13 +270,15 @@ std::string_view ColumnString::serializeValueIntoArena(size_t n, Arena & arena, 
     size_t string_size = sizeAt(n) + serialize_string_with_zero_byte;
     size_t offset = offsetAt(n);
 
-    auto result_size = sizeof(string_size) + string_size;
-    char * pos = arena.allocContinue(result_size, begin);
+    StringRef res;
+    res.size = sizeof(string_size) + string_size;
+    char * pos = arena.allocContinue(res.size, begin);
     memcpy(pos, &string_size, sizeof(string_size));
     memcpy(pos + sizeof(string_size), &chars[offset], string_size - serialize_string_with_zero_byte);
     if (serialize_string_with_zero_byte)
         *(pos + sizeof(string_size) + string_size - 1) = 0;
-    return {pos, result_size};
+    res.data = pos;
+    return res;
 }
 
 ALWAYS_INLINE char * ColumnString::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
@@ -509,7 +511,7 @@ size_t ColumnString::estimateCardinalityInPermutedRange(const Permutation & perm
     for (size_t i = equal_range.from; i < equal_range.to; ++i)
     {
         size_t permuted_i = permutation[i];
-        auto value = getDataAt(permuted_i);
+        StringRef value = getDataAt(permuted_i);
         elements.emplace(value, inserted);
     }
     return elements.size();

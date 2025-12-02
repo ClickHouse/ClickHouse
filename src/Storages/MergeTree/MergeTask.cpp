@@ -61,7 +61,7 @@
 
 #if CLICKHOUSE_CLOUD
     #include <Interpreters/Cache/FileCacheFactory.h>
-    #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+    #include <Disks/ObjectStorages/DiskObjectStorage.h>
     #include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>
     #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #endif
@@ -129,7 +129,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64Auto merge_max_dynamic_subcolumns_in_wide_part;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
-    extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
 }
 
 namespace ErrorCodes
@@ -279,7 +278,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
             key_columns.insert(name);
         /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
         else
-            key_columns.insert(String(Nested::getColumnFromSubcolumn(name, storage_columns)));
+            key_columns.insert(Nested::splitName(name).first);
     }
 
     /// Force sign column for Collapsing mode
@@ -324,9 +323,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
             const auto & column_name = index_columns.front();
             if (storage_columns.contains(column_name))
                 global_ctx->skip_indexes_by_column[column_name].push_back(index);
-            /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
             else
-                global_ctx->skip_indexes_by_column[String(Nested::getColumnFromSubcolumn(column_name, storage_columns))].push_back(index);
+                global_ctx->skip_indexes_by_column[Nested::splitName(column_name).first].push_back(index);
         }
         else
         {
@@ -336,7 +334,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
                     key_columns.insert(index_column);
                 /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
                 else
-                    key_columns.insert(String(Nested::getColumnFromSubcolumn(index_column, storage_columns)));
+                    key_columns.insert(Nested::splitName(index_column).first);
             }
 
             global_ctx->merging_skip_indexes.push_back(index);
@@ -576,7 +574,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         true,
         (*merge_tree_settings)[MergeTreeSetting::serialization_info_version],
         (*merge_tree_settings)[MergeTreeSetting::string_serialization_version],
-        (*merge_tree_settings)[MergeTreeSetting::nullable_serialization_version],
     };
 
     SerializationInfoByName infos(global_ctx->storage_columns, info_settings);

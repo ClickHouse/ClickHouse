@@ -9,7 +9,7 @@
 namespace DB
 {
 
-using PostingsMap = absl::flat_hash_map<std::string_view, PostingListPtr>;
+using PostingsMap = absl::flat_hash_map<StringRef, PostingListPtr>;
 
 /// A part of "direct read from text index" optimization.
 /// This reader fills virtual columns for text search filters
@@ -23,8 +23,7 @@ public:
     MergeTreeReaderTextIndex(
         const IMergeTreeReader * main_reader_,
         MergeTreeIndexWithCondition index_,
-        NamesAndTypesList columns_,
-        bool can_skip_mark_);
+        NamesAndTypesList columns_);
 
     size_t readRows(
         size_t from_mark,
@@ -46,7 +45,6 @@ private:
         PostingsMap postings;
         bool may_be_true = true;
         bool need_read_postings = true;
-        std::vector<bool> is_always_true;
     };
 
     void updateAllIndexRanges();
@@ -55,12 +53,7 @@ private:
     void fillSkippedColumn(IColumn & column, size_t num_rows);
     void fillColumn(IColumn & column, Granule & granule, const String & column_name, size_t granule_offset, size_t num_rows);
 
-    using TokenToPostingsInfosMap = MergeTreeIndexGranuleText::TokenToPostingsInfosMap;
-    size_t getNumRowsInGranule(size_t index_mark) const;
-    double estimateCardinality(const TextSearchQuery & query, const TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const;
-
     MergeTreeIndexWithCondition index;
-    bool can_skip_mark;
     MarkRanges all_index_ranges;
     std::optional<MergeTreeIndexReader> index_reader;
 

@@ -6,15 +6,12 @@
 #include <Common/NamedCollections/NamedCollections_fwd.h>
 #include <Common/SettingsChanges.h>
 
-#include <Interpreters/Context_fwd.h>
-
 namespace DB
 {
 class ASTStorage;
 struct KafkaSettingsImpl;
 
-// How often we check for expired consumers in the pool
-const auto KAFKA_CONSUMERS_CLEANUP_CHECK_INTERVAL_MS = 500;
+const auto KAFKA_RESCHEDULE_MS = 500;
 // once per minute leave do reschedule (we can't lock threads in pool forever)
 const auto KAFKA_MAX_THREAD_WORK_DURATION_MS = 60000;
 // 10min
@@ -68,7 +65,7 @@ struct KafkaSettings
 
     SettingsChanges getFormatSettings() const;
 
-    void sanityCheck(ContextPtr global_context) const;
+    void sanityCheck() const;
 
     static bool hasBuiltin(std::string_view name);
 

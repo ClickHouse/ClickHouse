@@ -151,10 +151,10 @@ StorageNATS::StorageNATS(
         tryLogCurrentException(log);
     }
 
-    streaming_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "NATSStreamingTask", [this] { streamingToViewsFunc(); });
+    streaming_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSStreamingTask", [this] { streamingToViewsFunc(); });
     streaming_task->deactivate();
 
-    initialize_consumers_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "NATSInitializeConsumersTask", [this] { initializeConsumersFunc(); });
+    initialize_consumers_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSInitializeConsumersTask", [this] { initializeConsumersFunc(); });
     initialize_consumers_task->deactivate();
 }
 StorageNATS::~StorageNATS()

@@ -12,8 +12,7 @@ enum class ColumnSpecial
     NONE = 0,
     SIGN = 1,
     IS_DELETED = 2,
-    VERSION = 3,
-    TTL_COL = 4
+    VERSION = 3
 };
 
 enum class DetachStatus
@@ -200,8 +199,7 @@ struct SQLBase
 {
 public:
     String prefix;
-    bool is_temp = false, is_deterministic = false, has_metadata = false, has_partition_by = false, has_order_by = false,
-         random_engine = false;
+    bool is_temp = false, is_deterministic = false, has_metadata = false, has_partition_by = false, random_engine = false;
     uint32_t tname = 0;
     std::shared_ptr<SQLDatabase> db = nullptr;
     std::optional<String> cluster, file_comp, partition_strategy, partition_columns_in_data_file, storage_class_name, host_params,
@@ -224,10 +222,10 @@ public:
     SQLBase(SQLBase &&) = default;
     SQLBase & operator=(SQLBase &&) = default;
 
-    static void setDeterministic(const FuzzConfig & fc, RandomGenerator & rg, SQLBase & b)
+    static void setDeterministic(RandomGenerator & rg, SQLBase & b)
     {
-        b.is_deterministic = rg.nextMediumNumber() <= fc.deterministic_prob;
-        b.random_engine = !b.is_deterministic && rg.nextMediumNumber() < 6;
+        b.is_deterministic = rg.nextSmallNumber() < 8;
+        b.random_engine = !b.is_deterministic && rg.nextMediumNumber() < 16;
     }
 
     static bool supportsFinal(const TableEngineValues teng)
@@ -425,7 +423,7 @@ public:
     {
     }
 
-    size_t numberOfInsertableColumns(bool all) const;
+    size_t numberOfInsertableColumns() const;
 
     bool supportsFinal() const
     {

@@ -474,14 +474,6 @@ void IMergeTreeDataPart::removeIndexFromCache(PrimaryIndexCache * index_cache) c
     index_cache->remove(key);
 }
 
-void IMergeTreeDataPart::removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const
-{
-    if (!vector_similarity_index_cache)
-        return;
-
-    vector_similarity_index_cache->removeEntriesFromCache(getRelativePathOfActivePart());
-}
-
 void IMergeTreeDataPart::setIndex(Columns index_columns)
 {
     std::scoped_lock lock(index_mutex);
@@ -706,9 +698,6 @@ void IMergeTreeDataPart::clearCaches()
     /// even if the overall index size is much less.
     removeMarksFromCache(storage.getContext()->getMarkCache().get());
     removeIndexFromCache(storage.getPrimaryIndexCache().get());
-
-    /// Remove from other caches of secondary indexes
-    removeFromVectorIndexCache(storage.getContext()->getVectorSimilarityIndexCache().get());
 }
 
 bool IMergeTreeDataPart::mayStoreDataInCaches() const

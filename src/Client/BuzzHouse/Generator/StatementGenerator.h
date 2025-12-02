@@ -136,7 +136,6 @@ public:
 
 private:
     std::vector<TableEngineValues> likeEngsDeterministic, likeEngsNotDeterministic, likeEngsInfinite;
-    std::unordered_map<SQLFunc, uint32_t> dictFuncs;
     ExternalIntegrations & connections;
     const bool supports_cloud_features;
     const size_t deterministic_funcs_limit, deterministic_aggrs_limit;
@@ -194,7 +193,7 @@ private:
     String setMergeTableParameter(RandomGenerator & rg, const String & initial);
 
     template <typename T>
-    std::unordered_map<uint32_t, T> & getNextCollection()
+    const std::unordered_map<uint32_t, T> & getNextCollection() const
     {
         if constexpr (std::is_same_v<T, SQLTable>)
         {
@@ -220,9 +219,9 @@ private:
 
 public:
     template <typename T>
-    bool collectionHas(const std::function<bool(const T &)> func)
+    bool collectionHas(const std::function<bool(const T &)> func) const
     {
-        auto & input = getNextCollection<T>();
+        const auto & input = getNextCollection<T>();
 
         for (const auto & entry : input)
         {
@@ -236,10 +235,10 @@ public:
 
 private:
     template <typename T>
-    uint32_t collectionCount(const std::function<bool(const T &)> func)
+    uint32_t collectionCount(const std::function<bool(const T &)> func) const
     {
         uint32_t res = 0;
-        auto & input = getNextCollection<T>();
+        const auto & input = getNextCollection<T>();
 
         for (const auto & entry : input)
         {
@@ -286,7 +285,7 @@ public:
     template <typename T>
     std::vector<std::reference_wrapper<const T>> & filterCollection(const std::function<bool(const T &)> func)
     {
-        auto & input = getNextCollection<T>();
+        const auto & input = getNextCollection<T>();
         auto & res = getNextCollectionResult<T>();
 
         res.clear();
@@ -461,7 +460,7 @@ private:
     SQLType * bottomType(RandomGenerator & rg, uint64_t allowed_types, bool low_card, BottomTypeName * tp);
 
     void dropTable(bool staged, bool drop_peer, uint32_t tname);
-    void dropDatabase(uint32_t dname, bool all);
+    void dropDatabase(uint32_t dname);
 
     void generateNextTablePartition(RandomGenerator & rg, bool allow_parts, const SQLTable & t, PartitionExpr * pexpr);
 
@@ -547,7 +546,7 @@ private:
                 const InOutFormat next_format
                     = (b.file_format.has_value() && (!this->allow_not_deterministic || rg.nextMediumNumber() < 81))
                     ? b.file_format.value()
-                    : static_cast<InOutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
+                    : static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
 
                 next->set_key("format");
                 next->set_value(InOutFormat_Name(next_format).substr(6));

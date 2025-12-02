@@ -15,7 +15,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
@@ -93,11 +92,11 @@ size_t DictionaryBlockBase::size() const
     return tokens ? tokens->size() : 0;
 }
 
-size_t DictionaryBlockBase::upperBound(const std::string_view token) const
+size_t DictionaryBlockBase::upperBound(const StringRef & token) const
 {
     auto range = collections::range(0, tokens->size());
 
-    auto it = std::upper_bound(range.begin(), range.end(), token, [this](const std::string_view lhs_ref, size_t rhs_idx)
+    auto it = std::upper_bound(range.begin(), range.end(), token, [this](const StringRef & lhs_ref, size_t rhs_idx)
     {
         return lhs_ref < assert_cast<const ColumnString &>(*tokens).getDataAt(rhs_idx);
     });
@@ -319,7 +318,7 @@ TextIndexHeaderPtr deserializeHeader(
 
     if (condition_text.useHeaderCache())
         return condition_text.headerCache()->getOrSet(
-            TextIndexHeaderCache::hash(state.part.getDataPartStorage().getFullPath(), state.index.getFileName(), state.index_mark), load_header);
+            TextIndexHeaderCache::hash(state.path_to_data_part, state.index_name, state.index_mark), load_header);
 
     return load_header();
 }
@@ -440,7 +439,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
 
     const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
     auto global_search_mode = condition_text.getGlobalSearchMode();
-    std::map<size_t, std::vector<std::string_view>> block_to_tokens;
+    std::map<size_t, std::vector<StringRef>> block_to_tokens;
 
     for (const auto & [token, _] : remaining_tokens)
     {
@@ -467,7 +466,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
 
         if (condition_text.useDictionaryBlockCache())
             return condition_text.dictionaryBlockCache()->getOrSet(
-                TextIndexDictionaryBlockCache::hash(state.part.getDataPartStorage().getFullPath(), state.index.getFileName(), state.index_mark, block_id),
+                TextIndexDictionaryBlockCache::hash(state.path_to_data_part, state.index_name, state.index_mark, block_id),
                 load_dictionary_block);
 
         return load_dictionary_block();
@@ -480,7 +479,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
         {
             auto it = remaining_tokens.find(token);
             chassert(it != remaining_tokens.end());
-            auto * token_info = dictionary_block->getTokenInfo(token);
+            auto * token_info = dictionary_block->getTokenInfo(token.toView());
 
             if (token_info)
             {
@@ -510,27 +509,17 @@ size_t MergeTreeIndexGranuleText::memoryUsageBytes() const
         + remaining_tokens.capacity() * sizeof(*remaining_tokens.begin());
 }
 
-bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query) const
+bool MergeTreeIndexGranuleText::hasAnyTokenFromQuery(const TextSearchQuery & query) const
 {
     for (const auto & token : query.tokens)
     {
         if (remaining_tokens.contains(token))
             return true;
     }
-    return false;
+    return query.tokens.empty();
 }
 
-bool MergeTreeIndexGranuleText::hasAllQueryTokens(const TextSearchQuery & query) const
-{
-    for (const auto & token : query.tokens)
-    {
-        if (!remaining_tokens.contains(token))
-            return false;
-    }
-    return !query.tokens.empty(); /// return false in case of no tokens
-}
-
-bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const
+bool MergeTreeIndexGranuleText::hasAllTokensFromQuery(const TextSearchQuery & query) const
 {
     for (const auto & token : query.tokens)
     {
@@ -585,11 +574,11 @@ struct SerializationStats
     }
 };
 
-size_t computeCommonPrefixLength(const std::string_view lhs, const std::string_view rhs)
+size_t computeCommonPrefixLength(const StringRef & lhs, const StringRef & rhs)
 {
     size_t common_prefix_length = 0;
-    for (size_t max_length = std::min(lhs.size(), rhs.size());
-         common_prefix_length < max_length && lhs[common_prefix_length] == rhs[common_prefix_length];
+    for (size_t max_length = std::min(lhs.size, rhs.size);
+         common_prefix_length < max_length && lhs.data[common_prefix_length] == rhs.data[common_prefix_length];
          ++common_prefix_length)
         ;
     return common_prefix_length;
@@ -608,11 +597,11 @@ void serializeTokensRaw(
     for (size_t i = block_begin; i < block_end; ++i)
     {
         auto current_token = tokens_and_postings[i].first;
-        writeVarUInt(current_token.size(), write_buffer);
-        write_buffer.write(current_token.data(), current_token.size());
+        writeVarUInt(current_token.size, write_buffer);
+        write_buffer.write(current_token.data, current_token.size);
 
-        stats.raw_strings_size += getLengthOfVarUInt(current_token.size());
-        stats.raw_strings_size += (current_token.size());
+        stats.raw_strings_size += getLengthOfVarUInt(current_token.size);
+        stats.raw_strings_size += (current_token.size);
     }
 }
 
@@ -629,24 +618,24 @@ void serializeTokensFrontCoding(
     size_t block_end)
 {
     const auto & first_token = tokens_and_postings[block_begin].first;
-    writeVarUInt(first_token.size(), write_buffer);
-    write_buffer.write(first_token.data(), first_token.size());
+    writeVarUInt(first_token.size, write_buffer);
+    write_buffer.write(first_token.data, first_token.size);
 
-    std::string_view previous_token = first_token;
+    StringRef previous_token = first_token;
     for (size_t i = block_begin + 1; i < block_end; ++i)
     {
         auto current_token = tokens_and_postings[i].first;
         auto lcp = computeCommonPrefixLength(previous_token, current_token);
         writeVarUInt(lcp, write_buffer);
-        writeVarUInt(current_token.size() - lcp, write_buffer);
-        write_buffer.write(current_token.data() + lcp, current_token.size() - lcp);
+        writeVarUInt(current_token.size - lcp, write_buffer);
+        write_buffer.write(current_token.data + lcp, current_token.size - lcp);
         previous_token = current_token;
 
-        stats.raw_strings_size += getLengthOfVarUInt(current_token.size());
-        stats.raw_strings_size += (current_token.size());
+        stats.raw_strings_size += getLengthOfVarUInt(current_token.size);
+        stats.raw_strings_size += (current_token.size);
         stats.front_coded_strings_size += getLengthOfVarUInt(lcp);
-        stats.front_coded_strings_size += getLengthOfVarUInt(current_token.size() - lcp);
-        stats.front_coded_strings_size += (current_token.size() - lcp);
+        stats.front_coded_strings_size += getLengthOfVarUInt(current_token.size - lcp);
+        stats.front_coded_strings_size += (current_token.size - lcp);
     }
 }
 }
@@ -688,7 +677,7 @@ TextIndexHeader::DictionarySparseIndex serializeTokensAndPostings(
 
         const auto & first_token = tokens_and_postings[block_begin].first;
         sparse_index_offsets_data.emplace_back(current_mark.offset_in_compressed_file);
-        sparse_index_str.insertData(first_token.data(), first_token.size());
+        sparse_index_str.insertData(first_token.data, first_token.size);
 
         size_t num_tokens_in_block = block_end - block_begin;
         writeVarUInt(static_cast<UInt64>(tokens_format), dictionary_stream.compressed_hashing);
@@ -853,24 +842,20 @@ void PostingListBuilder::add(UInt32 value, PostingListsHolder & postings_holder)
     }
 }
 
-void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
+void MergeTreeIndexTextGranuleBuilder::addDocument(StringRef document)
 {
-    forEachTokenPadded(
-        *token_extractor,
-        document.data(),
-        document.size(),
-        [&](const char * token_start, size_t token_length)
-        {
-            bool inserted;
-            TokenToPostingsMap::LookupResult it;
+    forEachTokenPadded(*token_extractor, document.data, document.size, [&](const char * token_start, size_t token_length)
+    {
+        bool inserted;
+        TokenToPostingsMap::LookupResult it;
 
-            ArenaKeyHolder key_holder{std::string_view(token_start, token_length), *arena};
-            tokens_map.emplace(key_holder, it, inserted);
+        ArenaKeyHolder key_holder{StringRef(token_start, token_length), *arena};
+        tokens_map.emplace(key_holder, it, inserted);
 
-            auto & posting_list_builder = it->getMapped();
-            posting_list_builder.add(current_row, posting_lists);
-            return false;
-        });
+        auto & posting_list_builder = it->getMapped();
+        posting_list_builder.add(current_row, posting_lists);
+        return false;
+    });
 }
 
 std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuilder::build()
@@ -884,7 +869,7 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
     tokens_map.forEachValue([&](const auto & key, auto & mapped)
     {
         sorted_values.emplace_back(key, &mapped);
-        bloom_filter.add(key.data(), key.size());
+        bloom_filter.add(key.data, key.size);
     });
 
     std::ranges::sort(sorted_values, [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
@@ -968,7 +953,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
 
         for (size_t i = 0; i < rows_read; ++i)
         {
-            const std::string_view ref = processed_column->getDataAt(offset + i);
+            const StringRef ref = processed_column->getDataAt(offset + i);
             granule_builder.addDocument(ref);
             granule_builder.incrementCurrentRow();
         }
@@ -1153,13 +1138,13 @@ std::pair<String, std::vector<Field>> extractTokenizer(std::unordered_map<String
 
 UInt64 extractNgramParam(const std::vector<Field> & params)
 {
-    assertParamsCount(NgramsTokenExtractor::getExternalName(), params.size(), 1);
+    assertParamsCount(NgramTokenExtractor::getExternalName(), params.size(), 1);
     return params.empty() ? DEFAULT_NGRAM_SIZE : castAs<UInt64>(params.at(0), "ngram_size");
 }
 
 std::vector<String> extractSplitByStringParam(const std::vector<Field> & params)
 {
-    assertParamsCount(SplitByStringTokenExtractor::getExternalName(), params.size(), 1);
+    assertParamsCount(SplitTokenExtractor::getExternalName(), params.size(), 1);
     if (params.empty())
         return std::vector<String>{" "};
 
@@ -1174,7 +1159,7 @@ std::vector<String> extractSplitByStringParam(const std::vector<Field> & params)
 
 std::tuple<UInt64, UInt64, std::optional<UInt64>> extractSparseGramsParams(const std::vector<Field> & params)
 {
-    assertParamsCount(SparseGramsTokenExtractor::getExternalName(), params.size(), 3);
+    assertParamsCount(SparseGramTokenExtractor::getExternalName(), params.size(), 3);
 
     UInt64 min_length = DEFAULT_SPARSE_GRAMS_MIN_LENGTH;
     UInt64 max_length = DEFAULT_SPARSE_GRAMS_MAX_LENGTH;
@@ -1200,28 +1185,28 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
     const auto [tokenizer, params] = extractTokenizer(options);
     std::unique_ptr<ITokenExtractor> token_extractor;
 
-    if (tokenizer == SplitByNonAlphaTokenExtractor::getExternalName())
+    if (tokenizer == DefaultTokenExtractor::getExternalName())
     {
-        token_extractor = std::make_unique<SplitByNonAlphaTokenExtractor>();
+        token_extractor = std::make_unique<DefaultTokenExtractor>();
     }
-    else if (tokenizer == NgramsTokenExtractor::getExternalName())
+    else if (tokenizer == NgramTokenExtractor::getExternalName())
     {
         auto ngram_size = extractNgramParam(params);
-        token_extractor = std::make_unique<NgramsTokenExtractor>(ngram_size);
+        token_extractor = std::make_unique<NgramTokenExtractor>(ngram_size);
     }
-    else if (tokenizer == SplitByStringTokenExtractor::getExternalName())
+    else if (tokenizer == SplitTokenExtractor::getExternalName())
     {
         auto separators = extractSplitByStringParam(params);
-        token_extractor = std::make_unique<SplitByStringTokenExtractor>(separators);
+        token_extractor = std::make_unique<SplitTokenExtractor>(separators);
     }
-    else if (tokenizer == ArrayTokenExtractor::getExternalName())
+    else if (tokenizer == NoOpTokenExtractor::getExternalName())
     {
-        token_extractor = std::make_unique<ArrayTokenExtractor>();
+        token_extractor = std::make_unique<NoOpTokenExtractor>();
     }
-    else if (tokenizer == SparseGramsTokenExtractor::getExternalName())
+    else if (tokenizer == SparseGramTokenExtractor::getExternalName())
     {
         auto [min_length, max_length, min_cutoff_length] = extractSparseGramsParams(params);
-        token_extractor = std::make_unique<SparseGramsTokenExtractor>(min_length, max_length, min_cutoff_length);
+        token_extractor = std::make_unique<SparseGramTokenExtractor>(min_length, max_length, min_cutoff_length);
     }
     else
     {
@@ -1255,11 +1240,11 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     const auto [tokenizer, params] = extractTokenizer(options);
 
     /// Check that tokenizer is supported
-    const bool is_supported_tokenizer = (tokenizer == SplitByNonAlphaTokenExtractor::getExternalName()
-                                      || tokenizer == NgramsTokenExtractor::getExternalName()
-                                      || tokenizer == SplitByStringTokenExtractor::getExternalName()
-                                      || tokenizer == ArrayTokenExtractor::getExternalName()
-                                      || tokenizer == SparseGramsTokenExtractor::getExternalName());
+    const bool is_supported_tokenizer = (tokenizer == DefaultTokenExtractor::getExternalName()
+                                      || tokenizer == NgramTokenExtractor::getExternalName()
+                                      || tokenizer == SplitTokenExtractor::getExternalName()
+                                      || tokenizer == NoOpTokenExtractor::getExternalName()
+                                      || tokenizer == SparseGramTokenExtractor::getExternalName());
     if (!is_supported_tokenizer)
     {
         throw Exception(
@@ -1269,11 +1254,11 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
             tokenizer);
     }
 
-    if (tokenizer == SplitByNonAlphaTokenExtractor::getExternalName() || tokenizer == ArrayTokenExtractor::getExternalName())
+    if (tokenizer == DefaultTokenExtractor::getExternalName() || tokenizer == NoOpTokenExtractor::getExternalName())
     {
         assertParamsCount(tokenizer, params.size(), 0);
     }
-    else if (tokenizer == NgramsTokenExtractor::getExternalName())
+    else if (tokenizer == NgramTokenExtractor::getExternalName())
     {
         auto ngram_size = extractNgramParam(params);
 
@@ -1284,7 +1269,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
                 tokenizer, ngram_size);
         }
     }
-    else if (tokenizer == SplitByStringTokenExtractor::getExternalName())
+    else if (tokenizer == SplitTokenExtractor::getExternalName())
     {
         auto separators = extractSplitByStringParam(params);
 
@@ -1295,7 +1280,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
                 tokenizer);
         }
     }
-    else if (tokenizer == SparseGramsTokenExtractor::getExternalName())
+    else if (tokenizer == SparseGramTokenExtractor::getExternalName())
     {
         auto [min_length, max_length, min_cutoff_length] = extractSparseGramsParams(params);
 

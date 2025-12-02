@@ -18,7 +18,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/IStoragePolicy.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
+#include <Disks/ObjectStorages/StoredObject.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
@@ -48,6 +48,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int FILE_DOESNT_EXIST;
+extern const int LOGICAL_ERROR;
 extern const int CANNOT_PARSE_NUMBER;
 }
 
@@ -91,19 +92,25 @@ PaimonSnapshot::PaimonSnapshot(const Poco::JSON::Object::Ptr & json_object)
     }
 }
 
-PaimonTableClient::PaimonTableClient(ObjectStoragePtr object_storage_, const String & table_location_, const DB::ContextPtr & context_)
+PaimonTableClient::PaimonTableClient(
+    ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, const DB::ContextPtr & context_)
     : WithContext(context_)
     , object_storage(object_storage_)
-    , table_location(table_location_)
+    , configuration(configuration_)
+    , table_location(configuration.lock()->getPathForRead().path)
     , log(getLogger("PaimonTableClient"))
 {}
 
 std::pair<Int32, String> PaimonTableClient::getLastestTableSchemaInfo()
 {
+    auto configuration_ptr = configuration.lock();
+    if (configuration_ptr == nullptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired.");
+
     /// list all schema files
     const auto schema_files = listFiles(
         *object_storage,
-        table_location,
+        *configuration_ptr,
         PAIMON_SCHEMA_DIR,
         [](const RelativePathWithMetadata & path_with_metadata)
         {
@@ -155,6 +162,9 @@ Poco::JSON::Object::Ptr PaimonTableClient::getTableSchemaJSON(const std::pair<In
 
 std::pair<Int64, String> PaimonTableClient::getLastestTableSnapshotInfo()
 {
+    auto configuration_ptr = configuration.lock();
+    if (configuration_ptr == nullptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired.");
     /// read latest hint
     Int64 snapshot_version;
     RelativePathWithMetadata relative_path_with_metadata(
@@ -181,7 +191,7 @@ std::pair<Int64, String> PaimonTableClient::getLastestTableSnapshotInfo()
     {
         auto snapshot_files = listFiles(
             *object_storage,
-            table_location,
+            *configuration_ptr,
             PAIMON_SNAPSHOT_DIR,
             [](const RelativePathWithMetadata & path_with_metadata)
             {
