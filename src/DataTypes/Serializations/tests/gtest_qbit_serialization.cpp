@@ -53,3 +53,9 @@ TEST(QBitSerialization, FieldBinarySerializationFloat32)
         ASSERT_EQ(fixed_string[0], static_cast<char>(i));
     }
 }
+
+TEST(QBitSerialization, RejectInvalidElementType)
+{
+    auto int32_type = DataTypeFactory::instance().get("Int32");
+    EXPECT_THROW(std::make_shared<DataTypeQBit>(int32_type, 5), DB::Exception);
+}
