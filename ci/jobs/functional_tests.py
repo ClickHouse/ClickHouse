@@ -136,6 +136,7 @@ def main():
     is_shared_catalog = False
     is_encrypted_storage = random.choice([True, False])
     is_parallel_replicas = False
+    is_llvm_coverage = False
     is_coverage = False
     runner_options = ""
     # optimal value for most of the jobs
@@ -153,21 +154,19 @@ def main():
             or to.startswith("arm_")
             or "flaky" in to
             or "targeted" in to
-            or "llvm_coverage_build" in to
         ):
             pass
         elif to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
-            print(
-                f"NOTE: Enabled test runner option [{OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}]"
-            )
-        else:
-            assert False, f"Unknown option [{to}]"
-
-        if to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
             if to in ("parallel", "sequential") and args.test:
                 # skip setting up parallel/sequential if specific tests are provided
                 continue
-            runner_options += f" {OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}"
+            else:
+                runner_options += f" {OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}"
+                print(
+                    f"NOTE: Enabled test runner option [{OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}]"
+                )
+        else:
+            assert False, f"Unknown option [{to}]"           
 
         if "targeted" in to:
             is_targeted_check = True
@@ -176,11 +175,9 @@ def main():
         elif "BugfixValidation" in to:
             is_bugfix_validation = True
         elif "coverage" in to:
-            if "llvm" in to:
-                is_coverage = False
-            else:
-                is_coverage = True
-
+            is_coverage = True
+        elif "llvm coverage" in to:
+            is_llvm_coverage = True
         if "s3 storage" in to:
             is_s3_storage = True
         if "azure" in to:

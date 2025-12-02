@@ -263,11 +263,11 @@ jobs:
             python3 -m praktika run 'Build (llvm_coverage_build)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_llvm_coverage_build_1_8:
+  stateless_tests_llvm_coverage_1_8:
     runs-on: [self-hosted, amd-small]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_llvm_coverage_build]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChsbHZtX2NvdmVyYWdlX2J1aWxkLCAxLzgp') }}
-    name: "Stateless tests (llvm_coverage_build, 1/8)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChsbHZtIGNvdmVyYWdlLCAxLzgp') }}
+    name: "Stateless tests (llvm coverage, 1/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status }}
@@ -299,16 +299,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (llvm_coverage_build, 1/8)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (llvm coverage, 1/8)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (llvm_coverage_build, 1/8)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (llvm coverage, 1/8)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_llvm_coverage_build_2_8:
+  stateless_tests_llvm_coverage_2_8:
     runs-on: [self-hosted, amd-small]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_llvm_coverage_build]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChsbHZtX2NvdmVyYWdlX2J1aWxkLCAyLzgp') }}
-    name: "Stateless tests (llvm_coverage_build, 2/8)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChsbHZtIGNvdmVyYWdlLCAyLzgp') }}
+    name: "Stateless tests (llvm coverage, 2/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status }}
@@ -340,16 +340,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (llvm_coverage_build, 2/8)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (llvm coverage, 2/8)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (llvm_coverage_build, 2/8)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (llvm coverage, 2/8)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_llvm_coverage_build_3_8:
+  stateless_tests_llvm_coverage_3_8:
     runs-on: [self-hosted, amd-small]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_llvm_coverage_build]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChsbHZtX2NvdmVyYWdlX2J1aWxkLCAzLzgp') }}
-    name: "Stateless tests (llvm_coverage_build, 3/8)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChsbHZtIGNvdmVyYWdlLCAzLzgp') }}
+    name: "Stateless tests (llvm coverage, 3/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status }}
@@ -381,16 +381,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (llvm_coverage_build, 3/8)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (llvm coverage, 3/8)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (llvm_coverage_build, 3/8)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (llvm coverage, 3/8)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_llvm_coverage_build_4_8:
+  stateless_tests_llvm_coverage_4_8:
     runs-on: [self-hosted, amd-small]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_llvm_coverage_build]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChsbHZtX2NvdmVyYWdlX2J1aWxkLCA0Lzgp') }}
-    name: "Stateless tests (llvm_coverage_build, 4/8)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChsbHZtIGNvdmVyYWdlLCA0Lzgp') }}
+    name: "Stateless tests (llvm coverage, 4/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status }}
@@ -422,16 +422,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (llvm_coverage_build, 4/8)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (llvm coverage, 4/8)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (llvm_coverage_build, 4/8)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (llvm coverage, 4/8)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_llvm_coverage_build_5_8:
+  stateless_tests_llvm_coverage_5_8:
     runs-on: [self-hosted, amd-small]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_llvm_coverage_build]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChsbHZtX2NvdmVyYWdlX2J1aWxkLCA1Lzgp') }}
-    name: "Stateless tests (llvm_coverage_build, 5/8)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChsbHZtIGNvdmVyYWdlLCA1Lzgp') }}
+    name: "Stateless tests (llvm coverage, 5/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status }}
@@ -463,16 +463,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (llvm_coverage_build, 5/8)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (llvm coverage, 5/8)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (llvm_coverage_build, 5/8)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (llvm coverage, 5/8)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_llvm_coverage_build_6_8:
+  stateless_tests_llvm_coverage_6_8:
     runs-on: [self-hosted, amd-small]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_llvm_coverage_build]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChsbHZtX2NvdmVyYWdlX2J1aWxkLCA2Lzgp') }}
-    name: "Stateless tests (llvm_coverage_build, 6/8)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChsbHZtIGNvdmVyYWdlLCA2Lzgp') }}
+    name: "Stateless tests (llvm coverage, 6/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status }}
@@ -504,16 +504,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (llvm_coverage_build, 6/8)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (llvm coverage, 6/8)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (llvm_coverage_build, 6/8)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (llvm coverage, 6/8)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_llvm_coverage_build_7_8:
+  stateless_tests_llvm_coverage_7_8:
     runs-on: [self-hosted, amd-small]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_llvm_coverage_build]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChsbHZtX2NvdmVyYWdlX2J1aWxkLCA3Lzgp') }}
-    name: "Stateless tests (llvm_coverage_build, 7/8)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChsbHZtIGNvdmVyYWdlLCA3Lzgp') }}
+    name: "Stateless tests (llvm coverage, 7/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status }}
@@ -545,16 +545,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (llvm_coverage_build, 7/8)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (llvm coverage, 7/8)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (llvm_coverage_build, 7/8)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (llvm coverage, 7/8)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_llvm_coverage_build_8_8:
+  stateless_tests_llvm_coverage_8_8:
     runs-on: [self-hosted, amd-small]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_llvm_coverage_build]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChsbHZtX2NvdmVyYWdlX2J1aWxkLCA4Lzgp') }}
-    name: "Stateless tests (llvm_coverage_build, 8/8)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChsbHZtIGNvdmVyYWdlLCA4Lzgp') }}
+    name: "Stateless tests (llvm coverage, 8/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status }}
@@ -586,9 +586,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (llvm_coverage_build, 8/8)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (llvm coverage, 8/8)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (llvm_coverage_build, 8/8)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (llvm coverage, 8/8)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
   integration_tests_llvm_coverage_1_5:
@@ -839,7 +839,7 @@ jobs:
 
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, build_llvm_coverage_build, stateless_tests_llvm_coverage_build_1_8, stateless_tests_llvm_coverage_build_2_8, stateless_tests_llvm_coverage_build_3_8, stateless_tests_llvm_coverage_build_4_8, stateless_tests_llvm_coverage_build_5_8, stateless_tests_llvm_coverage_build_6_8, stateless_tests_llvm_coverage_build_7_8, stateless_tests_llvm_coverage_build_8_8, integration_tests_llvm_coverage_1_5, integration_tests_llvm_coverage_2_5, integration_tests_llvm_coverage_3_5, integration_tests_llvm_coverage_4_5, integration_tests_llvm_coverage_5_5, unit_tests_llvm_coverage]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, build_llvm_coverage_build, stateless_tests_llvm_coverage_1_8, stateless_tests_llvm_coverage_2_8, stateless_tests_llvm_coverage_3_8, stateless_tests_llvm_coverage_4_8, stateless_tests_llvm_coverage_5_8, stateless_tests_llvm_coverage_6_8, stateless_tests_llvm_coverage_7_8, stateless_tests_llvm_coverage_8_8, integration_tests_llvm_coverage_1_5, integration_tests_llvm_coverage_2_5, integration_tests_llvm_coverage_3_5, integration_tests_llvm_coverage_4_5, integration_tests_llvm_coverage_5_5, unit_tests_llvm_coverage]
     if: ${{ !cancelled() }}
     name: "Finish Workflow"
     outputs:
