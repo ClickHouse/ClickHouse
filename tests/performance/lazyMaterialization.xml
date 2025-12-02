@@ -1,4 +1,5 @@
 <test>
     <query>SELECT * FROM test.hits ORDER BY EventTime LIMIT 1 FORMAT Null</query>
     <query>SELECT * FROM test.hits WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 1 FORMAT Null</query>
+    <query>SELECT * FROM test.hits WHERE URL LIKE '%google%' ORDER BY CounterID, EventDate LIMIT 1 FORMAT Null</query>
 </test>

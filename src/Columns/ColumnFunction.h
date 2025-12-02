@@ -65,7 +65,7 @@ public:
 
     DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
 
-    StringRef getDataAt(size_t) const override
+    std::string_view getDataAt(size_t) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value from {}", getName());
     }
@@ -106,17 +106,17 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert into {}", getName());
     }
 
-    StringRef serializeValueIntoArena(size_t, Arena &, char const *&) const override
+    std::string_view serializeValueIntoArena(size_t, Arena &, char const *&) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot serialize from {}", getName());
     }
 
-    const char * deserializeAndInsertFromArena(const char *) override
+    void deserializeAndInsertFromArena(ReadBuffer &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot deserialize to {}", getName());
     }
 
-    const char * skipSerializedInArena(const char*) const override
+    void skipSerializedInArena(ReadBuffer &) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot skip serialized {}", getName());
     }

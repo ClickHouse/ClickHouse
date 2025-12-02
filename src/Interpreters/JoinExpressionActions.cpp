@@ -200,6 +200,11 @@ std::shared_ptr<ActionsDAG> JoinExpressionActions::getActionsDAG() const
     return std::shared_ptr<ActionsDAG>(data, &data->actions_dag);
 }
 
+void JoinExpressionActions::resetNodeSources(NodeToSourceMapping expression_sources)
+{
+    data->expression_sources = std::move(expression_sources);
+}
+
 void JoinExpressionActions::setNodeSources(const NodeToSourceMapping & expression_sources)
 {
     data->expression_sources.insert(expression_sources.begin(), expression_sources.end());

@@ -1659,7 +1659,10 @@ def test_kill_while_insert(start_cluster):
         )
         long_select.start()
 
+        sleep_start_time = time.time()
         time.sleep(0.5)
+        # long SELECT query might have finished if sleep was too long
+        assert time.time() - sleep_start_time < 1.5
 
         node1.query(
             "ALTER TABLE {name} MOVE PARTITION tuple() TO DISK 'external'".format(

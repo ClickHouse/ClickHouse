@@ -341,7 +341,18 @@ QueryResultCache::Key::Key(
     const String & query_id_,
     std::optional<UUID> user_id_,
     const std::vector<UUID> & current_user_roles_)
-    : QueryResultCache::Key(ast_, current_database, settings, std::make_shared<const Block>(Block{}), query_id_, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), std::chrono::system_clock::from_time_t(1), false)
+    : QueryResultCache::Key(
+            ast_,
+            current_database,
+            settings,
+            std::make_shared<const Block>(Block{}),
+            query_id_,
+            user_id_,
+            current_user_roles_,
+            false,
+            std::chrono::system_clock::from_time_t(1),
+            std::chrono::system_clock::from_time_t(1),
+            false)
     /// ^^ dummy values for everything except AST, current database, query_id, user name/roles
 {
 }
@@ -570,6 +581,7 @@ void QueryResultCacheWriter::finalizeWrite()
 /// Creates a source processor which serves result chunks stored in the query result cache, and separate sources for optional totals/extremes.
 void QueryResultCacheReader::buildSourceFromChunks(SharedHeader header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes)
 {
+    /// Some bookkeeping for profile events
     size_t total_rows = 0;
     size_t total_bytes = 0;
     for (const auto & chunk : chunks)
@@ -607,27 +619,27 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key 
         return;
     }
 
-    entry_key.emplace(entry->key);
+    const auto & entry_key = entry->key;
     const auto & entry_mapped = entry->mapped;
 
-    const bool is_same_user_id = ((!entry_key->user_id.has_value() && !key.user_id.has_value()) || (entry_key->user_id.has_value() && key.user_id.has_value() && *entry_key->user_id == *key.user_id));
-    const bool is_same_current_user_roles = (entry_key->current_user_roles == key.current_user_roles);
-    if (!entry_key->is_shared && (!is_same_user_id || !is_same_current_user_roles))
+    const bool is_same_user_id = ((!entry_key.user_id.has_value() && !key.user_id.has_value()) || (entry_key.user_id.has_value() && key.user_id.has_value() && *entry_key.user_id == *key.user_id));
+    const bool is_same_current_user_roles = (entry_key.current_user_roles == key.current_user_roles);
+    if (!entry_key.is_shared && (!is_same_user_id || !is_same_current_user_roles))
     {
         LOG_TRACE(logger, "Inaccessible query result found for query {}", doubleQuoteString(key.query_string));
         return;
     }
 
-    auto age = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - entry_key->created_at).count();
-    ProfileEvents::increment(ProfileEvents::QueryCacheAgeSeconds, age);
-
-    if (QueryResultCache::IsStale()(*entry_key))
+    if (QueryResultCache::IsStale()(entry_key))
     {
         LOG_TRACE(logger, "Stale query result found for query {}", doubleQuoteString(key.query_string));
         return;
     }
 
-    if (!entry_key->is_compressed)
+    auto age = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - entry_key.created_at).count();
+    ProfileEvents::increment(ProfileEvents::QueryCacheAgeSeconds, age);
+
+    if (!entry_key.is_compressed)
     {
         // Cloning chunks isn't exactly great. It could be avoided by another indirection, i.e. wrapping Entry's members chunks, totals and
         // extremes into shared_ptrs and assuming that the lifecycle of these shared_ptrs coincides with the lifecycle of the Entry
@@ -639,7 +651,7 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key 
         for (const auto & chunk : entry_mapped->chunks)
             cloned_chunks.push_back(chunk.clone());
 
-        buildSourceFromChunks(entry_key->header, std::move(cloned_chunks), entry_mapped->totals, entry_mapped->extremes);
+        buildSourceFromChunks(entry_key.header, std::move(cloned_chunks), entry_mapped->totals, entry_mapped->extremes);
     }
     else
     {
@@ -658,27 +670,41 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key 
             decompressed_chunks.push_back(std::move(decompressed_chunk));
         }
 
-        buildSourceFromChunks(entry_key->header, std::move(decompressed_chunks), entry_mapped->totals, entry_mapped->extremes);
+        buildSourceFromChunks(entry_key.header, std::move(decompressed_chunks), entry_mapped->totals, entry_mapped->extremes);
     }
+
+    created_at = entry_key.created_at;
+    expires_at = entry_key.expires_at;
 
     LOG_TRACE(logger, "Query result found for query {}", doubleQuoteString(key.query_string));
 }
 
-bool QueryResultCacheReader::hasCacheEntryForKey() const
+bool QueryResultCacheReader::hasCacheEntryForKey(bool update_profile_events) const
 {
     bool has_entry = (source_from_chunks != nullptr);
 
-    if (has_entry)
-        ProfileEvents::increment(ProfileEvents::QueryCacheHits);
-    else
-        ProfileEvents::increment(ProfileEvents::QueryCacheMisses);
+    if (update_profile_events)
+    {
+        if (has_entry)
+            ProfileEvents::increment(ProfileEvents::QueryCacheHits);
+        else
+            ProfileEvents::increment(ProfileEvents::QueryCacheMisses);
+    }
 
     return has_entry;
 }
 
-const std::optional<QueryResultCache::Key> & QueryResultCacheReader::getKey() const
+
+std::chrono::time_point<std::chrono::system_clock> QueryResultCacheReader::entryCreatedAt()
 {
-    return entry_key;
+    chassert(hasCacheEntryForKey(false));
+    return created_at;
+}
+
+std::chrono::time_point<std::chrono::system_clock> QueryResultCacheReader::entryExpiresAt()
+{
+    chassert(hasCacheEntryForKey(false));
+    return expires_at;
 }
 
 std::unique_ptr<SourceFromChunks> QueryResultCacheReader::getSource()

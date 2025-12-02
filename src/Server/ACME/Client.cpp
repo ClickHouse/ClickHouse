@@ -169,9 +169,9 @@ void Client::initialize(const Poco::Util::AbstractConfiguration & config)
 
     BackgroundSchedulePool & bgpool = Context::getGlobalContextInstance()->getSchedulePool();
 
-    refresh_certificates_task = bgpool.createTask("ACME::refreshCertificatesTask", [this, &config] { refreshCertificatesTask(config); });
-    authentication_task = bgpool.createTask("ACME::authenticationTask", [this] { authenticationTask(); });
-    refresh_key_task = bgpool.createTask("ACME::refreshKeyTask", [this] { refreshKeyTask(); });
+    refresh_certificates_task = bgpool.createTask(StorageID::createEmpty(), "ACME::refreshCertificatesTask", [this, &config] { refreshCertificatesTask(config); });
+    authentication_task = bgpool.createTask(StorageID::createEmpty(), "ACME::authenticationTask", [this] { authenticationTask(); });
+    refresh_key_task = bgpool.createTask(StorageID::createEmpty(), "ACME::refreshKeyTask", [this] { refreshKeyTask(); });
 
     {
         std::lock_guard key_lock(private_acme_key_mutex);
