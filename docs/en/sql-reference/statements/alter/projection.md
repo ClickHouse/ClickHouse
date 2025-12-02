@@ -190,7 +190,7 @@ The following operations with [projections](/engines/table-engines/mergetree-fam
 
 `ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY] ) [OPTIONS ( option_name1 = option_value1, option_name2 = option_value2, ...)]` - Adds projection description to tables metadata.
 
-### `WITH SETTINGS` Clause
+### `WITH SETTINGS` Clause {#with-settings}
 
 `WITH SETTINGS` defines **projection-level settings**, which customize how the projection stores data (for example, `index_granularity` or `index_granularity_bytes`).
 These correspond directly to **MergeTree table settings**, but apply **only to this projection**.
