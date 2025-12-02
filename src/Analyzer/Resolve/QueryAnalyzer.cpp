@@ -4889,15 +4889,14 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     resolveQueryJoinTreeNode(query_node_typed.getJoinTree(), scope, visitor);
 
-     if (!scope.group_by_use_nulls)
-         scope.identifier_to_resolved_expression_cache.enable();
-
     /// Resolve query node sections.
 
     NamesAndTypes projection_columns;
 
     if (!scope.group_by_use_nulls)
     {
+        scope.identifier_to_resolved_expression_cache.enable();
+
         projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
         if (query_node_typed.getProjection().getNodes().empty())
             throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
@@ -4907,7 +4906,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (auto & prewhere_node = query_node_typed.getPrewhere())
     {
-        scope.identifier_to_resolved_expression_cache.clear();
+        scope.identifier_to_resolved_expression_cache.disable();
 
         bool allow_resolve_from_using = scope.allow_resolve_from_using;
         scope.allow_resolve_from_using = false;
@@ -4925,6 +4924,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         prewhere_node = prewhere_node->clone();
         ReplaceColumnsVisitor replace_visitor(scope.join_columns_with_changed_types, scope.context);
         replace_visitor.visit(prewhere_node);
+
+        if (!scope.group_by_use_nulls)
+            scope.identifier_to_resolved_expression_cache.enable();
     }
 
     if (query_node_typed.getWhere())
