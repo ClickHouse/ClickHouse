@@ -126,6 +126,7 @@ class FuzzerLogParser:
             failed_query = self.get_failed_query()
             if failed_query:
                 reproduce_commands = self.get_reproduce_commands(failed_query)
+            result_name += f" (STID: {stack_trace_id})"
         elif is_killed_by_signal or is_segfault:
             result_name += f" (STID: {stack_trace_id})"
         elif is_sanitizer_error:
@@ -381,7 +382,9 @@ class FuzzerLogParser:
         assert failure_first_line, "No failure first line found in server log"
         print(f"Failure first line: {failure_first_line}")
         query_id = failure_first_line.split(" ] {")[1].split("}")[0]
-        assert query_id, "No query id found in server log"
+        if not query_id:
+            print("ERROR: Query id not found")
+            return None
         print(f"Query id: {query_id}")
         query_command = Shell.get_output(
             f"grep -a '{query_id}' {self.server_log} | head -n1"

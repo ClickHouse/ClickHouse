@@ -1,6 +1,7 @@
 import json
 import re
 import sys
+import time
 import traceback
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
@@ -99,11 +100,11 @@ class CIFailure:
         self.cidb_link = self.praktika_result.get_hlabel_link("cidb") or ""
 
     def __str__(self):
-        res = f"  {self.test_status or self.job_status}: {self.job_name}: {self.test_name if self.test_name else 'N/A'}\n"
+        res = f"  {self.test_status or self.job_status}: {self.test_name or self.job_name}"
         if self.labels:
-            res += f"    Flags: {', '.join(self.labels)}\n"
+            res += f"\n    Flags: {', '.join(self.labels)}"
         if self.issue_url:
-            res += f"    Issue: {self.issue_url}\n"
+            res += f"\n    Issue: {self.issue_url}"
         return res
 
     def __repr__(self):
@@ -209,8 +210,170 @@ Test output:
             raise Exception("Failed to create issue")
         return True
 
+    def create_issue(self):
+        """
+        Interactively create GitHub issues for failures that don't have existing issues.
+
+        Returns:
+            bool: True if issue was created successfully, False otherwise
+        """
+        if self.issue_url:
+            raise AssertionError(
+                "BUG: Issue URL is already set, this should be a known issue"
+            )
+
+        print(repr(self))
+
+        if self.job_type in (JobTypes.STATELESS, JobTypes.INTEGRATION):
+            if not re.match(r"^(\d{5}|test)_", self.test_name):
+                raise Exception(f"Unsupported test name format: {self.test_name}")
+            if self.create_gh_issue_on_flaky_or_broken_test():
+                self.praktika_result.set_comment("ISSUE CREATED")
+                return True
+        elif self.job_type in (JobTypes.BUZZ_FUZZER, JobTypes.AST_FUZZER):
+            if self.create_gh_issue_on_fuzzer_or_stress_finding():
+                self.praktika_result.set_comment("ISSUE CREATED")
+                return True
+        else:
+            raise Exception(f"Unsupported job type: {self.job_type}")
+        return False
+
+    def check_issue(self):
+        """
+        Check if this failure has an existing open GitHub issue.
+
+        Returns:
+            bool: True if an existing issue was found and linked, False otherwise
+        """
+        if self.job_type == JobTypes.BUILD:
+            search_in_title = self.job_name
+            labels = ["build"]
+        elif self.job_type in (JobTypes.STATELESS, JobTypes.INTEGRATION):
+            if not re.match(r"^(\d{5}|test)_", self.test_name):
+                raise Exception(f"Unexpected test name format: {self.test_name}")
+            search_in_title = self.test_name
+            labels = ["flaky test"]
+        elif self.job_type in (JobTypes.BUZZ_FUZZER, JobTypes.AST_FUZZER):
+            if not self.test_name:
+                if self.job_status != Result.Status.ERROR:
+                    raise Exception(f"Unexpected job status: {self.job_status}")
+                print("      --> Looks like infrastructure problem - cannot handle it")
+                return False
+            search_in_title = self.test_name
+            labels = ["fuzz"]
+        elif self.job_type == JobTypes.PERFORMANCE:
+            print("      --> Performance tests - not yet supported")
+            return False
+        else:
+            raise Exception(f"Unsupported job type: {self.job_type}")
+
+        issues = GH.find_issue(
+            title=search_in_title,
+            labels=labels,
+            repo="ClickHouse/ClickHouse",
+        )
+
+        if issues and len(issues) > 1:
+            print("WARNING: Multiple issues found - check for duplicates")
+            for issue in issues:
+                print(f"  #{issue.number}: {issue.title}")
+
+        issue = issues[0] if issues else None
+        if issue:
+            print(f"Found existing issue #{issue.number}: {issue.title}")
+            self.issue_url = issue.html_url
+            self.praktika_result.set_clickable_label("issue", issue.html_url)
+            return True
+
+        return False
+
+
+@dataclass
+class JobFailuresList:
+    job_name: str
+    known_failures: List[CIFailure]
+    unknown_failures: List[CIFailure]
+    unprocessed_failures: List[CIFailure]
+    is_finished: bool
+
 
 class JobResultProcessor:
+
+    @staticmethod
+    def process_job_failures(job_failures: JobFailuresList):
+        """
+        Process and categorize job failures interactively.
+
+        Handles known, unknown, and unprocessed failures for a job.
+        Allows user to check for existing issues or create new ones.
+
+        Args:
+            job_failures: JobFailuresList containing all failure types for a job
+        """
+        print(f"\n----- {job_failures.job_name} -----")
+
+        # Skip jobs with too many unknown failures to avoid overwhelming the user
+        if len(job_failures.unknown_failures) > 7:
+            print(
+                f"  Too many unknown failures ({len(job_failures.unknown_failures)}), skipping"
+            )
+            return
+
+        # Display known failures summary
+        if job_failures.known_failures:
+            print(f"  Known failures ({len(job_failures.known_failures)}):")
+            for failure in job_failures.known_failures:
+                print(failure)
+
+        # Display unprocessed failures summary
+        if job_failures.unprocessed_failures:
+            print(f"  Unprocessed failures ({len(job_failures.unprocessed_failures)}):")
+            for failure in job_failures.unprocessed_failures:
+                print(failure)
+
+        # Process unknown failures
+        if not job_failures.unknown_failures:
+            print(f"  No unknown failures to process")
+            return
+
+        if job_failures.unknown_failures:
+            print(f"  Unknown failures ({len(job_failures.unknown_failures)}):")
+            for failure in job_failures.unknown_failures:
+                print(failure)
+
+        still_unknown = []
+        for failure in job_failures.unknown_failures:
+
+            if not UserPrompt.confirm(
+                "Create GitHub issue for this failure (if not exist yet)?"
+            ):
+                still_unknown.append(failure)
+                continue
+
+            # Try to find existing issue first
+            if failure.check_issue():
+                print(f"Linked to existing issue: {failure.issue_url}")
+                job_failures.known_failures.append(failure)
+                # let user read resolution before moving to the next failure
+                time.sleep(3)
+                continue
+
+            # Create new issue if user confirms
+            if UserPrompt.confirm("Create GitHub issue for this failure?"):
+                if failure.create_issue():
+                    print(f"Issue created: {failure.issue_url}")
+                    job_failures.known_failures.append(failure)
+                    global issues_created
+                    issues_created += 1
+                else:
+                    print("ERROR: Failed to create issue")
+                    still_unknown.append(failure)
+                # let user read resolution before moving to the next failure
+                time.sleep(3)
+            else:
+                still_unknown.append(failure)
+
+        job_failures.unknown_failures = still_unknown
 
     @staticmethod
     def process_job_result(job_result: Result):
@@ -258,49 +421,23 @@ class JobResultProcessor:
         return Result.from_file("/tmp/result_pr.json")
 
     @staticmethod
-    def collect_all_failures(pr_result, failures):
-        success_job_cnt = 0
-        failed_job_cnt = 0
-        skipped_job_cnt = 0
-        dropped_job_cnt = 0
-        running_job_cnt = 0
-        pending_job_cnt = 0
-        error_job_cnt = 0
+    def collect_all_failures(pr_result):
+        """
+        Collect all failures from PR result into a flat list of CIFailure objects.
+
+        Args:
+            pr_result: Result object containing job results
+
+        Returns:
+            List of CIFailure objects representing all failures
+        """
+        failures = []
         for job_result in pr_result.results:
-            if job_result.is_success():
-                success_job_cnt += 1
-            elif job_result.is_failure():
-                failed_job_cnt += 1
-            elif job_result.is_skipped():
-                skipped_job_cnt += 1
-            elif job_result.is_dropped():
-                dropped_job_cnt += 1
-            elif job_result.is_running():
-                running_job_cnt += 1
-            elif job_result.is_pending():
-                pending_job_cnt += 1
-            elif job_result.is_error():
-                error_job_cnt += 1
-            else:
-                raise Exception(f"Unknown job result status: {job_result.status}")
-        assert (
-            success_job_cnt
-            + failed_job_cnt
-            + skipped_job_cnt
-            + dropped_job_cnt
-            + running_job_cnt
-            + pending_job_cnt
-            + error_job_cnt
-            == len(pr_result.results)
-        )
-        if pr_result.is_ok():
-            print(f"All jobs are successful - ready to merge")
-        else:
-            print(f"Not all jobs are successful - proceed with caution")
-            for job_result in pr_result.results:
-                if not job_result.is_ok():
-                    if job_result.results:
-                        for test_result in job_result.results:
+            if not job_result.is_ok():
+                if job_result.results:
+                    # Job has test-level failures
+                    for test_result in job_result.results:
+                        if not test_result.is_ok():
                             failures.append(
                                 CIFailure(
                                     job_name=job_result.name,
@@ -311,17 +448,19 @@ class JobResultProcessor:
                                     praktika_result=test_result,
                                 )
                             )
-                    else:
-                        failures.append(
-                            CIFailure(
-                                job_name=job_result.name,
-                                job_status=job_result.status,
-                                test_name="",
-                                test_status="",
-                                test_info=job_result.info,
-                                praktika_result=job_result,
-                            )
+                else:
+                    # Job-level failure without test results
+                    failures.append(
+                        CIFailure(
+                            job_name=job_result.name,
+                            job_status=job_result.status,
+                            test_name="",
+                            test_status="",
+                            test_info=job_result.info,
+                            praktika_result=job_result,
                         )
+                    )
+        return failures
 
     @staticmethod
     def process_sync_status(commit_status_data: GH.CommitStatus, sha: str):
@@ -384,130 +523,6 @@ class JobResultProcessor:
             )
 
 
-def find_existing_issues_for_failures(failures: list[CIFailure]):
-    """
-    Check if any of the provided failures have existing open GitHub issues.
-
-    Args:
-        failures: List of CIFailure objects to check against open GitHub issues
-
-    Returns:
-        Tuple of (failures_with_open_issue, unknown_failures) where:
-        - failures_with_open_issue: failures that have existing GitHub issues
-        - unknown_failures: failures without existing GitHub issues
-    """
-    job_failures_pairs = CIFailure.group_by_job(failures)
-    failures_with_open_issue = []
-    unknown_failures = []
-    for job_name, job_failures in job_failures_pairs:
-        print(f"\n  - {job_name}: status {len(job_failures)} failures")
-        for failure in job_failures:
-            if failure.test_name:
-                print(f"    - {failure.test_name}: {failure.test_status}")
-            else:
-                print(f"    - {failure.job_name}: {failure.job_status}")
-
-            # if not failure.test_name:
-            #     print(
-            #         f"      --> It's looks like infrastracture problem - cannot handle it"
-            #     )
-            #     continue
-
-            if failure.job_type == JobTypes.BUILD:
-                search_in_title = failure.job_name
-                labels = ["build"]
-            elif failure.job_type in (JobTypes.STATELESS, JobTypes.INTEGRATION):
-                assert re.match(
-                    r"^(\d{5}|test)_", failure.test_name
-                ), f"Unexpected test name format: {failure.test_name}"
-                search_in_title = failure.test_name
-                labels = ["flaky test"]
-            elif failure.job_type in (JobTypes.BUZZ_FUZZER, JobTypes.AST_FUZZER):
-                if not failure.test_name:
-                    assert (
-                        failure.job_status == Result.Status.ERROR
-                    ), f"Unexpected job status: {failure.job_status}"
-                    print(
-                        f"      --> It's looks like infrastracture problem - cannot handle it"
-                    )
-                    continue
-                search_in_title = failure.test_name
-                labels = ["fuzz"]
-            elif failure.job_type in (JobTypes.PERFORMANCE):
-                # TODO:
-                # search_in_title = failure.test_name
-                # labels = ["performance"]
-                print(
-                    f"      --> It's looks like Performance tests - not yet supported"
-                )
-                continue
-            else:
-                raise Exception(f"Unexpected job type: {failure.job_type}")
-
-            issues = GH.find_issue(
-                title=search_in_title,
-                labels=labels,
-                repo="ClickHouse/ClickHouse",
-            )
-            if issues and len(issues) > 1:
-                print("WARNING: More than one issue found: check duplicates")
-                for issue in issues:
-                    print(f"  {issue.number}: {issue.title}")
-            issue = issues[0] if issues else None
-            if issue:
-                print(f"      --> Issue {issue.html_url} already exists")
-                failure.issue_url = issue.html_url
-                failure.praktika_result.set_clickable_label("issue", issue.html_url)
-                failure.praktika_result.set_comment("ISSUE EXISTS")
-                failures_with_open_issue.append(failure)
-            else:
-                print(f"      --> No existing issue found for {failure.test_name}")
-                unknown_failures.append(failure)
-
-    return failures_with_open_issue, unknown_failures
-
-
-def create_issues_for_failures(failures: list[CIFailure]):
-    """
-    Interactively create GitHub issues for failures that don't have existing issues.
-
-    Args:
-        failures: List of CIFailure objects to create issues for
-
-    Returns:
-        List of failures that still need issues (those for which issues were not created)
-    """
-    failures_with_created_issues = []
-    job_failures_pairs = CIFailure.group_by_job(failures)
-    print(f"There are failures in [{len(job_failures_pairs)}] jobs")
-    for job_name, job_failures in job_failures_pairs:
-        print(f"  - {job_name}: {len(job_failures)} failures")
-        for failure in job_failures:
-            print(f"    - {failure.test_name}: {failure.test_status}")
-            # Check if this is a standard test name format (e.g., 12345_test_name or test_name)
-            if failure.job_type in (JobTypes.STATELESS, JobTypes.INTEGRATION):
-                if re.match(r"^(\d{5}|test)_", failure.test_name):
-                    assert (
-                        not failure.issue_url
-                    ), "BUG: Issue URL is already set, this should be a known issue"
-                    print(repr(failure))
-                    if failure.create_gh_issue_on_flaky_or_broken_test():
-                        failure.praktika_result.set_comment("ISSUE CREATED")
-                        failures_with_created_issues.append(failure)
-                else:
-                    raise Exception(
-                        f"Unsupported test name format: {failure.test_name}"
-                    )
-            elif failure.job_type in (JobTypes.BUZZ_FUZZER, JobTypes.AST_FUZZER):
-                if failure.create_gh_issue_on_fuzzer_or_stress_finding():
-                    failure.praktika_result.set_comment("ISSUE CREATED")
-                    failures_with_created_issues.append(failure)
-            else:
-                # Non-standard test name format - needs special handling
-                raise Exception(f"Unsupported job type: {failure.job_type}")
-    return [f for f in failures if f not in failures_with_created_issues]
-
-
 def get_commit_statuses(head_sha: str) -> dict:
     """
     Fetch and filter commit statuses for the given commit SHA.
@@ -553,6 +568,9 @@ def get_commit_statuses(head_sha: str) -> dict:
     print("")
 
     return status_map
+
+
+issues_created = 0
 
 
 def main():
@@ -623,15 +641,11 @@ def main():
         sync_status = None
         mergeable_check_status = None
 
-    ci_failures = []
     workflow_result = JobResultProcessor.get_ci_praktika_result(
         pr_number if not is_master_commit else 0, head_sha
     )
 
-    JobResultProcessor.collect_all_failures(
-        workflow_result,
-        failures=ci_failures,
-    )
+    ci_failures = JobResultProcessor.collect_all_failures(workflow_result)
 
     not_finished_jobs = []
     known_failures = []
@@ -649,32 +663,57 @@ def main():
     pre_existing_issues_count = len(known_failures)
 
     if not_finished_jobs:
-        if FORCE_MERGE:
-            print(f"Not finished jobs:")
-            for failure in not_finished_jobs:
-                print(failure)
-            if not UserPrompt.confirm("Proceed without waiting for not finished jobs?"):
-                sys.exit(0)
-        else:
-            print(
-                f"There are {len(not_finished_jobs)} not finished jobs. Cannot proceed"
-            )
+        if not UserPrompt.confirm(
+            f"Proceed without waiting for {len(not_finished_jobs)} not finished job(s)?"
+        ):
             sys.exit(0)
 
-    if unknown_failures:
-        print("\nUnknown failures:")
-        for failure in unknown_failures:
-            print(failure)
-        if UserPrompt.confirm(
-            f"There are {len(unknown_failures)} unknown failures. Check for existing GitHub issues?"
-        ):
-            failures_with_open_issue, unknown_failures = (
-                find_existing_issues_for_failures(unknown_failures)
+    job_to_failures = {}
+
+    def add_failure_to_job(failure, failure_type):
+        if failure.job_name not in job_to_failures:
+            job_to_failures[failure.job_name] = JobFailuresList(
+                job_name=failure.job_name,
+                known_failures=[],
+                unknown_failures=[],
+                unprocessed_failures=[],
+                is_finished=True,
             )
-            known_failures.extend(failures_with_open_issue)
-            pre_existing_issues_count += len(failures_with_open_issue)
-        else:
-            sys.exit(0)
+        getattr(job_to_failures[failure.job_name], failure_type).append(failure)
+        job_to_failures[failure.job_name].is_finished = (
+            job_to_failures[failure.job_name].is_finished
+            and failure.praktika_result.is_completed()
+        )
+
+    for failure in unknown_failures:
+        add_failure_to_job(failure, "unknown_failures")
+
+    for failure in known_failures:
+        add_failure_to_job(failure, "known_failures")
+
+    for failure in unprocessed_failures:
+        add_failure_to_job(failure, "unprocessed_failures")
+
+    visited_jobs = set()
+    job_failures_pairs = []
+    for failure in ci_failures:
+        if failure.job_name not in visited_jobs:
+            job_failures_pairs.append(
+                (failure.job_name, job_to_failures[failure.job_name])
+            )
+            visited_jobs.add(failure.job_name)
+
+    print("\nStart processing job failures one by one:\n")
+    for job_name, failures in job_failures_pairs:
+        JobResultProcessor.process_job_failures(failures)
+
+    known_failures = []
+    unknown_failures = []
+    unprocessed_failures = []
+    for job_name, failures in job_failures_pairs:
+        known_failures.extend(failures.known_failures)
+        unknown_failures.extend(failures.unknown_failures)
+        unprocessed_failures.extend(failures.unprocessed_failures)
 
     print("\nCI failures:")
     if known_failures:
@@ -682,21 +721,10 @@ def main():
         for failure in known_failures:
             print(failure)
 
-    newly_created_issues_count = 0
     if unknown_failures:
         print("\n--- Unknown problems ---")
         for failure in unknown_failures:
             print(failure)
-
-        if UserPrompt.confirm(
-            f"There are {len(unknown_failures)} unknown failures. Do you want to create an issue for any of them?"
-        ):
-            unknown_failures_before_creation = len(unknown_failures)
-            unknown_failures = create_issues_for_failures(unknown_failures)
-            newly_created_issues_count = unknown_failures_before_creation - len(
-                unknown_failures
-            )
-            print("All failures processed")
 
     if is_master_commit:
         sys.exit(0)
@@ -709,8 +737,9 @@ def main():
                 print(failure)
         question = "CI status:\n"
         if (
-            unprocessed_failures
-            or newly_created_issues_count > 0
+            unknown_failures
+            or unprocessed_failures
+            or issues_created > 0
             or pre_existing_issues_count > 0
         ):
             should_update_PR_comment = True
