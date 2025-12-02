@@ -229,7 +229,7 @@ String FormatSchemaInfo::querySchema(const String & query)
         auto & column = block.getByPosition(0).column;
         if (const auto * col_str = typeid_cast<const ColumnString *>(column.get()))
         {
-            result = col_str->getDataAt(0).toString();
+            result = col_str->getDataAt(0);
             continue;
         }
 
@@ -237,7 +237,7 @@ String FormatSchemaInfo::querySchema(const String & query)
         {
             if (const auto * col_str_const = typeid_cast<const ColumnString *>(col_const->getDataColumnPtr().get()))
             {
-                result = col_str_const->getDataAt(0).toString();
+                result = col_str_const->getDataAt(0);
                 continue;
             }
         }
