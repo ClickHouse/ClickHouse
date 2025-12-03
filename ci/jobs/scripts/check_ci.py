@@ -41,6 +41,7 @@ class JobTypes:
     UPGRADE = "Upgrade"
     PERFORMANCE = "Performance"
     FINISH_WORKFLOW = "Finish Workflow"
+    DOCKER_TEST_IMAGES = "Docker test images"
 
 
 @dataclass
@@ -74,7 +75,7 @@ class CIFailure:
             self.job_type = JobTypes.AST_FUZZER
         elif "Buzz" in self.job_name:
             self.job_type = JobTypes.BUZZ_FUZZER
-        elif "Build" in self.job_name:
+        elif self.job_name.startswith("Build"):
             self.job_type = JobTypes.BUILD
         elif (
             "Docker server image" in self.job_name
@@ -91,11 +92,20 @@ class CIFailure:
             self.job_type = JobTypes.UPGRADE
         elif "Performance" in self.job_name:
             self.job_type = JobTypes.PERFORMANCE
+        elif self.job_name.startswith("Dockers Build"):
+            self.job_type = JobTypes.DOCKER_TEST_IMAGES
         elif "Finish Workflow" in self.job_name:
             self.job_type = JobTypes.FINISH_WORKFLOW
         else:
             raise Exception(f"Unknown job type for job name: {self.job_name}")
-        self.issue_url = self.praktika_result.get_hlabel_link("flaky") or ""
+
+        if self.job_status in (Result.Status.RUNNING, Result.Status.PENDING, Result.Status.DROPPED):
+            # User agreed to proceed with running job
+            self.ignorable = True
+            self.praktika_result.set_comment("IGNORED")
+
+        # self.issue_url = self.praktika_result.get_hlabel_link("issue") or ""
+        self.issue_url = ""  # do not set issue_url for now to fetch it from GH and match the failure reason from the issue boddy
         self.labels = self.praktika_result.ext.get("labels", [])
         self.cidb_link = self.praktika_result.get_hlabel_link("cidb") or ""
 
@@ -111,7 +121,7 @@ class CIFailure:
         job_res = Result(
             name=self.job_name, status=self.job_status, results=[self.praktika_result]
         )
-        res = job_res.to_stdout_formatted(
+        res = job_res.get_info_truncated(
             truncate_from_top=False, max_info_lines_cnt=20, max_line_length=200
         )
         res += f"\n - flags: {', '.join(self.labels) or 'not flaged'}"
@@ -147,13 +157,44 @@ class CIFailure:
             res += f"&name_1={quoted_job_name}"
         return res
 
+    def _create_and_link_gh_issue(
+        self, title: str, body: str, labels: List[str]
+    ) -> bool:
+        """
+        Helper method to create a GitHub issue and link it to this failure.
+
+        Args:
+            title: Issue title
+            body: Issue body (markdown)
+            labels: List of labels to apply
+
+        Returns:
+            bool: True if issue was created successfully, False otherwise
+        """
+        print(f"\nIssue to create:")
+        print(f"Title: {title}")
+        print(f"Labels: {', '.join(labels)}")
+        print(f"Body:\n{body}")
+
+        if not UserPrompt.confirm("Proceed with issue creation?"):
+            return False
+
+        issue_url = GH.create_issue(
+            title, body, labels, repo="ClickHouse/ClickHouse", verbose=True
+        )
+        if issue_url:
+            print(f"Issue {issue_url} created")
+            self.issue_url = issue_url
+            self.praktika_result.set_clickable_label("issue", issue_url)
+        else:
+            raise Exception("Failed to create issue")
+        return True
+
     def create_gh_issue_on_flaky_or_broken_test(self):
         if self.issue_url:
             assert False, "BUG"
 
-        if not UserPrompt.confirm("Do you want to create an issue for this failure?"):
-            return False
-
+        print(repr(self))
         failure_reason = UserPrompt.get_string(
             "Enter failure keyword from the test output identifying the problem (e.g. 'Timeout exceeded', 'Logical error', 'Result differs', etc.)",
             validator=lambda x: x in self.praktika_result.info,
@@ -166,27 +207,16 @@ CIDB statistics: [cidb]({self.cidb_link})
 
 Test output:
 ```
-{self.praktika_result.to_stdout_formatted(truncate_from_top=False, max_info_lines_cnt=50, max_line_length=200)}
+{self.praktika_result.get_info_truncated(truncate_from_top=False, max_info_lines_cnt=50, max_line_length=200)}
 ```
 """
         labels = ["testing", "flaky test"]
-        issue_url = GH.create_issue(
-            title, body, labels, repo="ClickHouse/ClickHouse", verbose=True
-        )
-        if issue_url:
-            print(f"Issue {issue_url} created")
-            self.issue_url = issue_url
-            self.praktika_result.set_clickable_label("issue", issue_url)
-        else:
-            raise Exception("Failed to create issue")
-        return True
+
+        return self._create_and_link_gh_issue(title, body, labels)
 
     def create_gh_issue_on_fuzzer_or_stress_finding(self):
         if self.issue_url:
             assert False, "BUG"
-
-        if not UserPrompt.confirm("Do you want to create an issue for this failure?"):
-            return False
 
         title = self.test_name
         body = f"""\
@@ -195,20 +225,12 @@ CIDB statistics: [cidb]({self.cidb_link})
 
 Test output:
 ```
-{self.praktika_result.to_stdout_formatted(truncate_from_top=False, max_info_lines_cnt=200, max_line_length=200)}
+{self.praktika_result.get_info_truncated(truncate_from_top=False, max_info_lines_cnt=200, max_line_length=200)}
 ```
 """
         labels = ["testing", "fuzz"]
-        issue_url = GH.create_issue(
-            title, body, labels, repo="ClickHouse/ClickHouse", verbose=True
-        )
-        if issue_url:
-            print(f"Issue {issue_url} created")
-            self.issue_url = issue_url
-            self.praktika_result.set_clickable_label("issue", issue_url)
-        else:
-            raise Exception("Failed to create issue")
-        return True
+
+        return self._create_and_link_gh_issue(title, body, labels)
 
     def create_issue(self):
         """
@@ -221,8 +243,6 @@ Test output:
             raise AssertionError(
                 "BUG: Issue URL is already set, this should be a known issue"
             )
-
-        print(repr(self))
 
         if self.job_type in (JobTypes.STATELESS, JobTypes.INTEGRATION):
             if not re.match(r"^(\d{5}|test)_", self.test_name):
@@ -238,6 +258,18 @@ Test output:
             raise Exception(f"Unsupported job type: {self.job_type}")
         return False
 
+    def can_process(self):
+        if self.job_type in (JobTypes.DOCKER_TEST_IMAGES):
+            print("It's likely infrastructure problem - cannot handle it")
+            return False
+        if self.job_type in (JobTypes.PERFORMANCE, JobTypes.STRESS):
+            print("Job type is not supported yet")
+            return False
+        if self.job_type in (JobTypes.FINISH_WORKFLOW):
+            print("This issue should be fixed before merge - cannot handle it")
+            return False
+        return True
+
     def check_issue(self):
         """
         Check if this failure has an existing open GitHub issue.
@@ -245,6 +277,8 @@ Test output:
         Returns:
             bool: True if an existing issue was found and linked, False otherwise
         """
+        check_failure_reason = False  # Flag to check if failure reason matches
+
         if self.job_type == JobTypes.BUILD:
             search_in_title = self.job_name
             labels = ["build"]
@@ -253,6 +287,7 @@ Test output:
                 raise Exception(f"Unexpected test name format: {self.test_name}")
             search_in_title = self.test_name
             labels = ["flaky test"]
+            check_failure_reason = True  # Flag to check if failure reason matches
         elif self.job_type in (JobTypes.BUZZ_FUZZER, JobTypes.AST_FUZZER):
             if not self.test_name:
                 if self.job_status != Result.Status.ERROR:
@@ -271,6 +306,7 @@ Test output:
             title=search_in_title,
             labels=labels,
             repo="ClickHouse/ClickHouse",
+            verbose=False,
         )
 
         if issues and len(issues) > 1:
@@ -281,6 +317,43 @@ Test output:
         issue = issues[0] if issues else None
         if issue:
             print(f"Found existing issue #{issue.number}: {issue.title}")
+
+            # For flaky tests, verify the failure reason matches
+            if check_failure_reason:
+                # Extract failure reason from issue body
+                # Pattern: "Failure reason: <reason>" or "Failure reason: Reason: <reason>"
+                failure_reason_match = re.search(
+                    r"Failure reason:\s*(?:Reason:\s*)?(.+?)(?:\n|$)",
+                    issue.body or "",
+                    re.IGNORECASE,
+                )
+
+                if failure_reason_match:
+                    expected_reason = failure_reason_match.group(1).strip()
+                    current_info = self.praktika_result.info or ""
+
+                    if expected_reason in current_info:
+                        print(f"      --> Failure reason matches: '{expected_reason}'")
+                        self.issue_url = issue.html_url
+                        self.praktika_result.set_clickable_label(
+                            "issue", issue.html_url
+                        )
+                        return True
+                    else:
+                        print(
+                            f"      --> WARNING: Issue exists but failure reason does not match"
+                        )
+                        print(f"      --> Expected reason: '{expected_reason}'")
+                        print(
+                            f"      --> Current failure info does not contain this reason"
+                        )
+                        return False
+                else:
+                    print(
+                        f"      --> WARNING: Could not extract failure reason from issue body"
+                    )
+
+            # For other job types or if no reason check needed, just link the issue
             self.issue_url = issue.html_url
             self.praktika_result.set_clickable_label("issue", issue.html_url)
             return True
@@ -315,7 +388,7 @@ class JobResultProcessor:
         # Skip jobs with too many unknown failures to avoid overwhelming the user
         if len(job_failures.unknown_failures) > 7:
             print(
-                f"  Too many unknown failures ({len(job_failures.unknown_failures)}), skipping"
+                f"  Too many failures ({len(job_failures.unknown_failures)}), skipping"
             )
             return
 
@@ -336,80 +409,50 @@ class JobResultProcessor:
             print(f"  No unknown failures to process")
             return
 
-        if job_failures.unknown_failures:
-            print(f"  Unknown failures ({len(job_failures.unknown_failures)}):")
-            for failure in job_failures.unknown_failures:
-                print(failure)
-
         still_unknown = []
-        for failure in job_failures.unknown_failures:
+        if job_failures.unknown_failures:
+            print(f"Unknown failures ({len(job_failures.unknown_failures)}):")
+            for i, failure in enumerate(job_failures.unknown_failures):
+                print("")
+                print(f"{i+1}. {failure}")
 
-            if not UserPrompt.confirm(
-                "Create GitHub issue for this failure (if not exist yet)?"
-            ):
-                still_unknown.append(failure)
-                continue
-
-            # Try to find existing issue first
-            if failure.check_issue():
-                print(f"Linked to existing issue: {failure.issue_url}")
-                job_failures.known_failures.append(failure)
-                # let user read resolution before moving to the next failure
-                time.sleep(3)
-                continue
-
-            # Create new issue if user confirms
-            if UserPrompt.confirm("Create GitHub issue for this failure?"):
-                if failure.create_issue():
-                    print(f"Issue created: {failure.issue_url}")
-                    job_failures.known_failures.append(failure)
-                    global issues_created
-                    issues_created += 1
-                else:
-                    print("ERROR: Failed to create issue")
+                if not failure.can_process():
                     still_unknown.append(failure)
-                # let user read resolution before moving to the next failure
-                time.sleep(3)
-            else:
-                still_unknown.append(failure)
+                    time.sleep(3)
+                    continue
+
+                if not UserPrompt.confirm(
+                    "Check existing GitHub issue for this failure?"
+                ):
+                    still_unknown.append(failure)
+                    continue
+
+                # Try to find existing issue first
+                if failure.check_issue():
+                    print(f"Linked to existing issue: {failure.issue_url}")
+                    job_failures.known_failures.append(failure)
+                    # let user read resolution before moving to the next failure
+                    time.sleep(3)
+                    continue
+                else:
+                    print("Issue not found")
+
+                # Create new issue if user confirms
+                if UserPrompt.confirm("Create GitHub issue for this failure?"):
+                    if failure.create_issue():
+                        print(f"Issue created: {failure.issue_url}")
+                        job_failures.known_failures.append(failure)
+                        global issues_created
+                        issues_created += 1
+                    else:
+                        print("ERROR: Failed to create issue")
+                        still_unknown.append(failure)
+                    # let user read resolution before moving to the next failure
+                    time.sleep(3)
+                else:
+                    still_unknown.append(failure)
 
         job_failures.unknown_failures = still_unknown
-
-    @staticmethod
-    def process_job_result(job_result: Result):
-        print(f"Job {job_result.name} status is {job_result.status}")
-        if "Stateless" in job_result.name:
-            JobResultProcessor.process_stateless_job(job_result)
-        elif "Integration" in job_result.name:
-            JobResultProcessor.process_integration_job(job_result)
-        elif "AST" in job_result.name:
-            JobResultProcessor.process_ast_fuzzer_job(job_result)
-        else:
-            raise Exception(f"Unknown job type: {job_result.name}")
-
-    @staticmethod
-    def process_stateless_job(job_result: Result):
-        print(f"Failed tests:")
-        for test in job_result.results:
-            print(
-                test.to_stdout_formatted(
-                    truncate_from_top=False, max_info_lines_cnt=20, max_line_length=200
-                )
-            )
-
-    @staticmethod
-    def process_integration_job(job_result: Result):
-        print(f"Failed tests:")
-        for test in job_result.results:
-            print(
-                test.to_stdout_formatted(
-                    truncate_from_top=False, max_info_lines_cnt=20, max_line_length=200
-                )
-            )
-
-    @staticmethod
-    def process_ast_fuzzer_job(job_result: Result):
-        assert False, "TODO"
 
     @staticmethod
     def get_ci_praktika_result(pr_number, commit_sha):
@@ -755,8 +798,8 @@ def main():
             if unprocessed_failures:
                 unprocessed_count = len(unprocessed_failures)
                 question += f" - {unprocessed_count} unprocessed failure{'s' if unprocessed_count != 1 else ''}\n"
-            if newly_created_issues_count > 0:
-                question += f" - {newly_created_issues_count} issue{'s' if newly_created_issues_count != 1 else ''} just created\n"
+            if issues_created > 0:
+                question += f" - {issues_created} issue{'s' if issues_created != 1 else ''} just created\n"
             if pre_existing_issues_count > 0:
                 question += f" - {pre_existing_issues_count} pre-existing issue{'s' if pre_existing_issues_count != 1 else ''}\n"
             question += " - all other checks passed\n"

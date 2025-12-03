@@ -487,7 +487,7 @@ class GH:
 
     @classmethod
     def find_issue(
-        cls, title, labels: List[str] = None, repo=""
+        cls, title, labels: List[str] = None, repo="", verbose=False
     ) -> Optional["GH.GHIssue"]:
         if not repo:
             repo = _Environment.get().REPOSITORY
@@ -506,7 +506,7 @@ class GH:
 
         safe_title = shlex.quote(search_query)
         cmd = f"gh issue list --json title,body,labels,author,url,updatedAt,createdAt,number --repo {repo} --search {safe_title} {label_cmd}"
-        output = Shell.get_output(cmd, verbose=False)
+        output = Shell.get_output(cmd, verbose=verbose)
         try:
             issues = json.loads(output)
             if not issues:
