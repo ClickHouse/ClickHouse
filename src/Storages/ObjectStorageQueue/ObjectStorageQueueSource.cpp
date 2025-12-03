@@ -576,7 +576,7 @@ std::string ObjectStorageQueueSource::FileIterator::bucketHoldersToString() cons
         if (!processors_infos.empty())
             processors_infos += ", ";
 
-        processors_infos += fmt::format("processor {} -> {} buckets", processor, bucket_holder.size());
+        processors_infos += fmt::format("processor {} -> {} buckets ", processor, bucket_holder.size());
         if (!bucket_holder.empty())
         {
             processors_infos += "(";
