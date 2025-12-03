@@ -333,7 +333,14 @@ def main():
         "CLICKHOUSE_USE_DATABASE_DISK": "1" if use_database_disk else "0",
         "PYTEST_CLEANUP_CONTAINERS": "1",
         "JAVA_PATH": java_path,
+        # "LLVM_PROFILE_FILE" :f"it-{batch_num}.profraw"
     }
+    if is_llvm_coverage:
+        test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}.profraw"
+        print(
+            f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
+        )
+
     test_results = []
     failed_tests_files = []
 
@@ -349,8 +356,6 @@ def main():
     if parallel_test_modules:
         for attempt in range(module_repeat_cnt):
             log_file = f"{temp_path}/pytest_parallel.log"
-            if is_llvm_coverage:
-                test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}-parallel.profraw"
             test_result_parallel = Result.from_pytest_run(
                 command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout=7200",
                 cwd="./tests/integration/",
@@ -377,8 +382,6 @@ def main():
     if sequential_test_modules and fail_num < MAX_FAILS_BEFORE_DROP and not has_error:
         for attempt in range(module_repeat_cnt):
             log_file = f"{temp_path}/pytest_sequential.log"
-            if is_llvm_coverage:
-                test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}-sequential.profraw"
             test_result_sequential = Result.from_pytest_run(
                 command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout=7200",
                 env=test_env,
@@ -441,6 +444,11 @@ def main():
     if 0 < len(failed_test_cases) < 10 and not (
         is_flaky_check or is_bugfix_validation or is_targeted_check or info.is_local_run
     ):
+        if is_llvm_coverage:
+            test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}-rerun.profraw"
+            print(
+                f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
+            )
         test_result_retries = Result.from_pytest_run(
             command=f"{' '.join(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=1200",
             env=test_env,

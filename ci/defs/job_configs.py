@@ -1,7 +1,7 @@
 from praktika import Job
 from praktika.utils import Utils
 
-from ci.defs.defs import ArtifactNames, BuildTypes, JobNames, RunnerLabels
+from ci.defs.defs import LLVM_ARTIFACTS_LIST, ArtifactConfigs, ArtifactNames, BuildTypes, JobNames, RunnerLabels
 
 LIMITED_MEM = Utils.physical_memory() - 2 * 1024**3
 
@@ -593,7 +593,7 @@ class JobConfigs:
                 parameter=f"llvm coverage, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_SMALL,
                 requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
-                provides=[ArtifactNames.AMD_LLVM_COVERAGE_FILE + f"_ft_{batch}"],
+                provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_{batch}"],
             )
             for total_batches in (8,)
             for batch in range(1, total_batches + 1)
@@ -655,7 +655,7 @@ class JobConfigs:
             parameter="llvm coverage",
             runs_on=RunnerLabels.AMD_LARGE,
             requires=[ArtifactNames.UNITTEST_LLVM_COVERAGE],
-            provides=[ArtifactNames.AMD_LLVM_COVERAGE_FILE],
+            provides=[ArtifactNames.LLVM_COVERAGE_FILE],
         ),
     )
     # stress_test_jobs = common_stress_job_config.parametrize(
@@ -813,7 +813,7 @@ class JobConfigs:
                 parameter=f"llvm coverage, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
-                provides=[ArtifactNames.AMD_LLVM_COVERAGE_FILE + f"_it_{batch}"],
+                provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_it_{batch}"],
             )
             for total_batches in (5,)
             for batch in range(1, total_batches + 1)
@@ -1115,3 +1115,15 @@ class JobConfigs:
     #     run_in_docker="clickhouse/performance-comparison",
     #     command="python3 ./ci/jobs/vector_search_stress_tests.py",
     # )
+
+    llvm_coverage_merge_job = Job.Config(
+        name=JobNames.LLVM_COVERAGE_MERGE,
+        runs_on=RunnerLabels.AMD_MEDIUM,
+        requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD, ArtifactNames.UNITTEST_LLVM_COVERAGE, *LLVM_ARTIFACTS_LIST],
+        provides=[ArtifactNames.LLVM_COVERAGE_HTML_REPORT],
+        command="./ci/jobs/merge_llvm_coverage.sh",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./ci/jobs/merge_llvm_coverage.sh"],
+        ),
+        timeout=3600,
+    )

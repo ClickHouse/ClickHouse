@@ -341,6 +341,7 @@ class JobNames:
     DOCKER_KEEPER = "Docker keeper image"
     SQL_TEST = "SQLTest"
     SQLANCER = "SQLancer"
+    LLVM_COVERAGE_MERGE = "LLVM Coverage Merge"
     INSTALL_TEST = "Install packages"
     ASTFUZZER = "AST fuzzer"
     BUZZHOUSE = "BuzzHouse"
@@ -364,7 +365,8 @@ class ToolSet:
 class ArtifactNames:
     CH_AMD_DEBUG = "CH_AMD_DEBUG"
     CH_AMD_LLVM_COVERAGE_BUILD = "CH_AMD_LLVM_COVERAGE_BUILD" # this is llvm coverage!!
-    AMD_LLVM_COVERAGE_FILE = "AMD_LLVM_COVERAGE_FILE"  # this is llvm coverage!!
+    LLVM_COVERAGE_FILE = "LLVM_COVERAGE_FILE"  # this is llvm coverage!!
+    LLVM_COVERAGE_HTML_REPORT = "LLVM_COVERAGE_HTML_REPORT"
     CH_AMD_RELEASE = "CH_AMD_RELEASE"
     CH_AMD_ASAN = "CH_AMD_ASAN"
     CH_AMD_TSAN = "CH_AMD_TSAN"
@@ -414,6 +416,20 @@ class ArtifactNames:
     ARM_FUZZERS = "ARM_FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
 
+LLVM_FT_ARTIFACTS_LIST = [
+        # defualt.profraw files for 8 batches from Stateless(Functional) tests
+        ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_{batch}"
+        for total_batches in (8,)
+        for batch in range(1, total_batches + 1)
+    ] 
+
+LLVM_IT_ARTIFACTS_LIST = [
+        # defualt.profraw files for 5 batches from Integration tests
+        ArtifactNames.LLVM_COVERAGE_FILE + f"_it_{batch}"
+        for total_batches in (5,)
+        for batch in range(1, total_batches + 1)
+    ] 
+LLVM_ARTIFACTS_LIST = LLVM_FT_ARTIFACTS_LIST + LLVM_IT_ARTIFACTS_LIST + [ArtifactNames.LLVM_COVERAGE_FILE]
 
 class ArtifactConfigs:
     clickhouse_binaries = Artifact.Config(
@@ -458,19 +474,13 @@ class ArtifactConfigs:
             # f"./build/src/unit_tests_dbms/*.profraw",
         ]
     ).parametrize(
-        names=[
-            ArtifactNames.AMD_LLVM_COVERAGE_FILE,
-        ] + [
-            # defualt.profraw files for 8 batches from Stateless(Functional) tests
-            ArtifactNames.AMD_LLVM_COVERAGE_FILE + f"_ft_{batch}"
-            for total_batches in (8,)
-            for batch in range(1, total_batches + 1)
-        ] + [
-            # defualt.profraw files for 5 batches from Integration tests
-            ArtifactNames.AMD_LLVM_COVERAGE_FILE + f"_it_{batch}"
-            for total_batches in (5,)
-            for batch in range(1, total_batches + 1)
-        ]
+        names=LLVM_ARTIFACTS_LIST
+    )
+
+    llvm_coverage_html_report = Artifact.Config(
+        name=ArtifactNames.LLVM_COVERAGE_HTML_REPORT,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/clickhouse_coverage.zip",
     )
     clickhouse_debians = Artifact.Config(
         name="*",
