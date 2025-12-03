@@ -7,8 +7,11 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+#include <Poco/String.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/InstrumentationManager.h>
 
 #include <base/EnumReflection.h>
 
@@ -748,6 +751,92 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
             break;
         }
+
+#if USE_XRAY
+        case Type::INSTRUMENT_REMOVE:
+        {
+            ASTPtr temporary_identifier;
+
+            if (ParserSubquery{}.parse(pos, temporary_identifier, expected))
+            {
+                if (!temporary_identifier->children.empty())
+                {
+                    WriteBufferFromOwnString query_buffer;
+                    IAST::FormatSettings settings(true);
+                    temporary_identifier->children[0]->format(query_buffer, settings);
+                    res->instrumentation_subquery = query_buffer.str();
+                }
+                break;
+            }
+
+            if (!ParserLiteral{}.parse(pos, temporary_identifier, expected))
+            {
+                if (!ParserIdentifier{}.parse(pos, temporary_identifier, expected))
+                    return false;
+
+                if (Poco::toLower(temporary_identifier->as<ASTIdentifier &>().name()) != "all")
+                    return false;
+
+                res->instrumentation_point_id = true;
+                break;
+            }
+
+            res->instrumentation_point_id = temporary_identifier->as<ASTLiteral>()->value.safeGet<UInt64>();
+            break;
+        }
+        case Type::INSTRUMENT_ADD:
+        {
+            ASTPtr temporary_identifier;
+            if (ParserIdentifier{}.parse(pos, temporary_identifier, expected))
+                res->instrumentation_function_name = temporary_identifier->as<ASTIdentifier &>().name();
+            else
+                return false;
+
+            if (ParserIdentifier{}.parse(pos, temporary_identifier, expected))
+                res->instrumentation_handler_name = temporary_identifier->as<ASTIdentifier &>().name();
+            else
+                return false;
+
+            if (Poco::toLower(res->instrumentation_handler_name) == "profile")
+            {
+                res->instrumentation_entry_type = Instrumentation::EntryType::ENTRY_AND_EXIT;
+                break;
+            }
+
+            if (ParserIdentifier{}.parse(pos, temporary_identifier, expected))
+            {
+                String entry_type = temporary_identifier->as<ASTIdentifier &>().name();
+                if (Poco::toLower(entry_type) == "entry")
+                    res->instrumentation_entry_type = Instrumentation::EntryType::ENTRY;
+                else if (Poco::toLower(entry_type) == "exit")
+                    res->instrumentation_entry_type = Instrumentation::EntryType::EXIT;
+                else
+                    return false;
+            }
+            else
+                return false;
+
+            ASTPtr params_ast;
+            while (ParserLiteral{}.parse(pos, params_ast, expected))
+            {
+                const auto & value = params_ast->as<ASTLiteral &>().value;
+                if (value.getType() == Field::Types::String)
+                    res->instrumentation_parameters.emplace_back(value.safeGet<String>());
+                else if (value.getType() == Field::Types::Int64)
+                    res->instrumentation_parameters.emplace_back(value.safeGet<Int64>());
+                else if (value.getType() == Field::Types::UInt64)
+                    res->instrumentation_parameters.emplace_back(static_cast<Int64>(value.safeGet<UInt64>()));
+                else if (value.getType() == Field::Types::Float64)
+                    res->instrumentation_parameters.emplace_back(value.safeGet<Float64>());
+            }
+
+            if (res->instrumentation_parameters.empty())
+                return false;
+
+            break;
+        }
+#endif
+
 #if USE_JEMALLOC
         case Type::JEMALLOC_FLUSH_PROFILE:
         {
