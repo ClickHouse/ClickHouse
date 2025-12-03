@@ -256,6 +256,7 @@ void), compareColumnImpl, MULTITARGET_FUNCTION_BODY((
 {
     auto * result_data = compare_results.data();
     size_t num_rows = data.size();
+    /// 2 independent loops, otherwise the compiler does not vectorize it
     if (direction < 0)
     {
         for (size_t row = 0; row < num_rows; row++)
@@ -288,6 +289,10 @@ void ColumnVector<T>::compareColumn(
     const auto & rhs_derived = static_cast<const ColumnVector<T> &>(rhs);
     T value = rhs_derived.data[rhs_row_num];
 
+    /// We don't push the row_indexes part into compareColumnImpl because the code is not vectorized as-is, as it needs to
+    /// jump over the different indices to compare them
+    /// It could be rewritten to allow vectorization by reading all memory and then discarding results not in row_indexes
+    /// but I did not expect it to be worth the risk
     if (row_indexes)
     {
         auto * result_data = compare_results.data();
@@ -319,6 +324,7 @@ void ColumnVector<T>::compareColumn(
 
         size_t equal_row_indexes_size = next_index - row_indexes->data();
         row_indexes->resize(equal_row_indexes_size);
+        return;
     }
 
 #if USE_MULTITARGET_CODE
