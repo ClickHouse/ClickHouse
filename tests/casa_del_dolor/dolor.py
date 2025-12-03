@@ -319,6 +319,11 @@ parser.add_argument(
     default=(20, 30),
     help="In seconds. Two ordered integers separated by comma (e.g., 30,60)",
 )
+parser.add_argument(
+    "--set-shared-mergetree-disk",
+    action="store_true",
+    help="Set shared merge tree disk or policy",
+)
 
 args = parser.parse_args()
 

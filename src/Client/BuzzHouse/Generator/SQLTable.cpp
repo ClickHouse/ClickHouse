@@ -1494,7 +1494,8 @@ void StatementGenerator::generateEngineDetails(
             sv->set_property("mode");
             sv->set_value(fmt::format("'{}ordered'", rg.nextBool() ? "un" : ""));
         }
-        if ((b.isMergeTreeFamily() || b.isLogFamily() || b.isShared()) && (b.isShared() || rg.nextSmallNumber() < 3)
+        const bool smt_disk = (b.isShared() && fc.set_smt_disk);
+        if ((b.isMergeTreeFamily() || b.isLogFamily() || smt_disk) && (smt_disk || rg.nextSmallNumber() < 3)
             && (!fc.storage_policies.empty() || !fc.keeper_disks.empty())
             && (!svs
                 || (svs->set_value().property() != "storage_policy" && svs->set_value().property() != "disk"

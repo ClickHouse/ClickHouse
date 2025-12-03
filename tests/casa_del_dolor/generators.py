@@ -142,6 +142,8 @@ class BuzzHouseGenerator(Generator):
             }
         if args.add_keeper_map_prefix:
             buzz_config["keeper_map_path_prefix"] = "/keeper_map_tables"
+        # Set SMT disk only when property.py doesn't do it
+        buzz_config["set_smt_disk"] = not args.set_shared_mergetree_disk
         if (
             args.with_spark
             or args.with_glue
