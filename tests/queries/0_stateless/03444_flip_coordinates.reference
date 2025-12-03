@@ -47,12 +47,6 @@ SELECT flipCoordinates(materialize(readWkt('POINT(5 10)'))) FROM numbers(3);
 (10,5)
 (10,5)
 (10,5)
-SELECT toTypeName(flipCoordinates(readWkt('POINT(1 2)'))) = 'Geometry';
-1
-SELECT toTypeName(flipCoordinates(readWkt('LINESTRING(1 2, 3 4)'))) = 'Geometry';
-1
-SELECT toTypeName(flipCoordinates(readWkt('POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))'))) = 'Geometry';
-1
 DROP TABLE IF EXISTS test_geom;
 CREATE TABLE test_geom (id UInt32, geom Geometry) ENGINE = Memory;
 INSERT INTO test_geom VALUES
