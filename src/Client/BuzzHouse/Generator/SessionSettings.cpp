@@ -253,6 +253,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"use_page_cache_with_distributed_cache", trueOrFalseSetting},
        {"use_query_condition_cache", trueOrFalseSetting},
        {"use_skip_indexes", trueOrFalseSetting},
+       {"use_skip_indexes_for_disjunctions", trueOrFalseSetting},
        {"use_skip_indexes_if_final", trueOrFalseSetting},
        {"use_skip_indexes_on_data_read", trueOrFalseSetting},
        {"use_statistics_cache", trueOrFalseSetting},
@@ -260,6 +261,15 @@ std::unordered_map<String, CHSetting> performanceSettings
 
 std::unordered_map<String, CHSetting> serverSettings = {
     {"add_http_cors_header", trueOrFalseSettingNoOracle},
+    {"aggregate_function_input_format",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings & choices = {"'state'", "'value'", "'array'"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
     {"aggregate_functions_null_for_empty", trueOrFalseSettingNoOracle},
     {"aggregation_memory_efficient_merge_threads", threadSetting},
     {"allow_archive_path_syntax", trueOrFalseSettingNoOracle},
@@ -1029,6 +1039,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"query_plan_max_step_description_length",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 1000)); }, {}, false)},
+    {"query_plan_text_index_add_hint", trueOrFalseSetting},
     {"query_plan_use_logical_join_step", trueOrFalseSetting},
     /// ClickHouse cloud setting
     {"read_from_distributed_cache_if_exists_otherwise_bypass_cache", trueOrFalseSetting},
@@ -1128,6 +1139,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"table_function_remote_max_addresses",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, 1, 100)); }, {}, false)},
+    {"text_index_hint_max_selectivity", probRangeSetting},
     {"throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert", trueOrFalseSettingNoOracle},
     {"throw_if_no_data_to_insert", trueOrFalseSettingNoOracle},
     {"throw_on_error_from_cache_on_write_operations", trueOrFalseSettingNoOracle},
