@@ -1929,6 +1929,7 @@ enqueued
 enum
 enum's
 enums
+ephemerals
 erfc
 errorCodeToName
 estimateCompressionRatio
