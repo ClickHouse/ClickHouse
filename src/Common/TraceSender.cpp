@@ -1,5 +1,6 @@
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
 #include <IO/WriteHelpers.h>
+#include <Common/CPUID.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/StackTrace.h>
@@ -65,6 +66,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
     WriteBufferFromFileDescriptorDiscardOnFailure out(pipe.fds_rw[1], buf_size, buffer);
 
     std::string_view query_id;
+    UInt64 cpu_id = CPU::get_cpuid();
     UInt64 thread_id;
 
     if (CurrentThread::isInitialized())
@@ -92,6 +94,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
         writePODBinary(stack_trace.getFramePointers()[i], out);
 
     writePODBinary(trace_type, out);
+    writePODBinary(cpu_id, out);
     writePODBinary(thread_id, out);
     writePODBinary(UInt8(getThreadName()), out);
 
