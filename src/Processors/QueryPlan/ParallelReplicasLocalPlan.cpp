@@ -22,18 +22,14 @@ namespace FailPoints
     extern const char slowdown_parallel_replicas_local_plan_read[];
 }
 
-std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
+std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
     const ASTPtr & query_ast,
     const Block & header,
     ContextPtr context,
-    QueryProcessingStage::Enum processed_stage,
-    ParallelReplicasReadingCoordinatorPtr coordinator,
-    QueryPlanStepPtr analyzed_read_from_merge_tree,
-    size_t replica_number)
+    QueryProcessingStage::Enum processed_stage)
 {
     checkStackSize();
 
-    auto query_plan = std::make_unique<QueryPlan>();
     auto new_context = Context::createCopy(context);
 
     /// Do not push down limit to local plan, as it will break `rows_before_limit_at_least` counter.
@@ -52,7 +48,40 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     new_context->setSetting("enable_positional_arguments", Field(false));
     new_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
     auto interpreter = InterpreterSelectQueryAnalyzer(query_ast, new_context, select_query_options);
-    query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
+    auto query_plan = std::make_shared<QueryPlan>(std::move(interpreter).extractQueryPlan());
+    addConvertingActions(*query_plan, header, /*has_missing_objects=*/false);
+    return query_plan;
+}
+
+std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
+    const ASTPtr & query_ast,
+    const Block & header,
+    ContextPtr context,
+    QueryProcessingStage::Enum processed_stage,
+    ParallelReplicasReadingCoordinatorPtr coordinator,
+    QueryPlanStepPtr analyzed_read_from_merge_tree,
+    size_t replica_number)
+{
+    checkStackSize();
+
+    /// Do not push down limit to local plan, as it will break `rows_before_limit_at_least` counter.
+    if (processed_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit)
+        processed_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
+
+    /// Do not apply AST optimizations, because query
+    /// is already optimized and some optimizations
+    /// can be applied only for non-distributed tables
+    /// and we can produce query, inconsistent with remote plans.
+    auto select_query_options = SelectQueryOptions(processed_stage).ignoreASTOptimizations();
+
+    /// For Analyzer, identifier in GROUP BY/ORDER BY/LIMIT BY lists has been resolved to
+    /// ConstantNode in QueryTree if it is an alias of a constant, so we should not replace
+    /// ConstantNode with ProjectionNode again(https://github.com/ClickHouse/ClickHouse/issues/62289).
+    auto new_context = Context::createCopy(context);
+    new_context->setSetting("enable_positional_arguments", Field(false));
+    new_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+    auto interpreter = InterpreterSelectQueryAnalyzer(query_ast, new_context, select_query_options);
+    auto query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
 
     QueryPlan::Node * node = query_plan->getRootNode();
     ReadFromMergeTree * reading = nullptr;
