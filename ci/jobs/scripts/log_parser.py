@@ -55,6 +55,7 @@ class FuzzerLogParser:
         is_sanitizer_error = False
         is_killed_by_signal = False
         is_segfault = False
+        is_memory_limit_exceeded = False
         error_patterns = [
             (
                 "Sanitizer",
@@ -77,6 +78,11 @@ class FuzzerLogParser:
                 "Signal",
                 "is_killed_by_signal",
                 r"Received signal.*|.*Child process was terminated by signal 9.*",
+            ),
+            (
+                "Memory limit exceeded",
+                "is_memory_limit_exceeded",
+                r".*\(total\) memory limit exceeded.*",
             ),
         ]
 
@@ -103,6 +109,8 @@ class FuzzerLogParser:
                     is_killed_by_signal = True
                 elif flag_name == "is_segfault":
                     is_segfault = True
+                elif flag_name == "is_memory_limit_exceeded":
+                    is_memory_limit_exceeded = True
                 break
 
         if not error_output:
@@ -129,6 +137,8 @@ class FuzzerLogParser:
             result_name += f" (STID: {stack_trace_id})"
         elif is_killed_by_signal or is_segfault:
             result_name += f" (STID: {stack_trace_id})"
+        elif is_memory_limit_exceeded:
+            result_name = "Server unresponsive: memory limit exceeded"
         elif is_sanitizer_error:
             stack_trace = self.get_sanitizer_stack_trace()
             if not stack_trace:
