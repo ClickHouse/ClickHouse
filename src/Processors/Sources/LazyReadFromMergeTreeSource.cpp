@@ -59,7 +59,7 @@ LazyReadFromMergeTreeSource::~LazyReadFromMergeTreeSource() = default;
 
 RangesInDataParts LazyReadFromMergeTreeSource::splitRanges(RangesInDataParts parts_with_ranges, size_t total_marks) const
 {
-    const size_t marks_per_stream = total_marks / std::max<size_t>(max_threads, 1);
+    const size_t marks_per_stream = total_marks / std::max<size_t>(max_threads, 1) + 1;
 
     RangesInDataParts split_parts_and_ranges;
 
