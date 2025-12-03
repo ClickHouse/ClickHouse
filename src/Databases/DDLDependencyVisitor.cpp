@@ -248,7 +248,7 @@ namespace
                 visitDistributedTableEngine(table_engine);
 
             /// Alias(table_name) or Alias(db_name, table_name)
-            if (table_engine.name == "Alias")
+            if (table_engine.name == "Alias" && table_engine.arguments)
             {
                 if (table_engine.arguments->children.size() == 1)
                     addQualifiedNameFromArgument(table_engine, 0);
