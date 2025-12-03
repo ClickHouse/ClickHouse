@@ -2842,7 +2842,7 @@ public:
     }
     bool canBeExecutedOnDefaultArguments() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & weird_result_type, size_t input_rows_count) const override
     {
         /// FunctionCast does something complicated and sometimes ends up calling FunctionConvert::executeImpl
         /// with `result_type` argument that doesn't come from a corresponding getReturnTypeImpl call.
@@ -2850,7 +2850,9 @@ public:
         /// executeImpl to return a ColumnNullable anyway.
         /// Maybe it's a bug, or maybe there's some logic behind it that I couldn't comprehend.
         /// For now, here's a workaround.
-        DataTypePtr result_type = getReturnTypeImpl(arguments);
+        DataTypePtr result_type = weird_result_type;
+        if (getNullPresense(arguments).has_nullable && !isNullableOrLowCardinalityNullable(result_type))
+            result_type = std::make_shared<DataTypeNullable>(std::move(result_type));
 
         try
         {
