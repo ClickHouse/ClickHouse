@@ -31,7 +31,7 @@ SET max_block_size = 9;
 SELECT * FROM numbers(30);
 
 -- When reaching row limits, make sure we don't do a large amount of range scans and continue
--- processing all parts when we don't need to. For instance, we create 3 parts below with 100,000 rows in each
+-- processing all parts when we don't need to. For instance, we create 3 parts below with 10,000 rows in each
 -- and we have a row limit <= 1000, we shouldn't exceed this value when max_threads = 1.
 -- (process_part in MergeTreeDataSelectExecutor uses a thread pool the size of max_threads to read data,
 -- so we can exceed it slightly if max_threads > 1, but we'll still prevent a lot of scans and part processing)
@@ -48,9 +48,12 @@ SET max_rows_to_read = 0; -- so we don't hit row limits when populating data
 
 -- Insert multiple parts with significant data. Multiple parts is important because row limit checks
 -- are checked per part when determining what ranges need to be read for the query.
-INSERT INTO row_limits_fail_fast SELECT number, toString(number) FROM numbers(100000);
-INSERT INTO row_limits_fail_fast SELECT number + 100000, toString(number) FROM numbers(100000);
-INSERT INTO row_limits_fail_fast SELECT number + 200000, toString(number) FROM numbers(100000);
+INSERT INTO row_limits_fail_fast SELECT number, toString(number) FROM numbers(10000);
+INSERT INTO row_limits_fail_fast SELECT number + 10000, toString(number) FROM numbers(10000);
+INSERT INTO row_limits_fail_fast SELECT number + 20000, toString(number) FROM numbers(10000);
+
+-- to keep the number of parts predictable
+SYSTEM STOP MERGES row_limits_fail_fast;
 
 SET max_rows_to_read = 1000;
 SET read_overflow_mode = 'throw';
