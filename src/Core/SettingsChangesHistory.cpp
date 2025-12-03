@@ -50,6 +50,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_statistics_optimize", false, true, "Enable this optimization by default."},
             {"allow_statistic_optimize", false, true, "Enable this optimization by default."},
             {"query_plan_text_index_add_hint", true, true, "New setting"},
+            {"query_plan_read_in_order_through_join", false, true, "New setting"},
             {"text_index_hint_max_selectivity", 0.2, 0.2, "New setting"},
             {"allow_experimental_time_time64_type", false, true, "Enable Time and Time64 type by default"},
             {"enable_time_time64_type", false, true, "Enable Time and Time64 type by default"},
