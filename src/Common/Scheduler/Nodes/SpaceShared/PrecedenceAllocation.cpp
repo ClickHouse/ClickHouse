@@ -57,7 +57,7 @@ ISchedulerNode * PrecedenceAllocation::getChild(const String & child_name)
     return nullptr;
 }
 
-ResourceAllocation * PrecedenceAllocation::selectAllocationToKill(IncreaseRequest * killer, ResourceCost limit)
+ResourceAllocation * PrecedenceAllocation::selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details)
 {
     // Cases to consider:
     // 1. Killer is not part of this node:
@@ -73,7 +73,7 @@ ResourceAllocation * PrecedenceAllocation::selectAllocationToKill(IncreaseReques
     if (running_children.empty())
         return nullptr;
     ISpaceSharedNode & victim_child = *running_children.rbegin();
-    return victim_child.selectAllocationToKill(killer, limit);
+    return victim_child.selectAllocationToKill(killer, limit, details);
 }
 
 void PrecedenceAllocation::approveIncrease()

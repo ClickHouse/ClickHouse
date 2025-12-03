@@ -54,6 +54,7 @@ namespace DB
 {
     extern const int LOGICAL_ERROR;
     extern const int SERVER_OVERLOADED;
+    extern const int RESOURCE_LIMIT_EXCEEDED;
 }
 
 }
@@ -1822,6 +1823,15 @@ public:
         ASSERT_EQ(kill_reason != nullptr, true);
     }
 
+    void throwReason()
+    {
+        std::unique_lock lock(mutex);
+        if (fail_reason)
+            std::rethrow_exception(fail_reason);
+        if (kill_reason)
+            std::rethrow_exception(kill_reason);
+    }
+
     void assertIncreaseEnqueued()
     {
         std::unique_lock lock(mutex);
@@ -2168,6 +2178,17 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationSelfKilled)
         a1.waitSync();
         a1.setSize(150); // Exceeds limit
         a1.waitKilled();
+        try {
+            a1.throwReason();
+            GTEST_FAIL() << "Expected RESOURCE_LIMIT_EXCEEDED exception";
+        }
+        catch (const DB::Exception & e)
+        {
+            ASSERT_EQ(e.code(), ErrorCodes::RESOURCE_LIMIT_EXCEEDED);
+            ASSERT_NE(e.displayText().find("all"), std::string::npos);
+            ASSERT_NE(e.displayText().find("memory"), std::string::npos);
+            ASSERT_NE(e.displayText().find("to satisfy its own increase"), std::string::npos);
+        }
     }
 }
 
@@ -2190,6 +2211,17 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationKillsOther)
         a2.setSize(50); // Exceeds limit
         a1.waitKilled();
         a2.waitSync();
+        try {
+            a1.throwReason();
+            GTEST_FAIL() << "Expected RESOURCE_LIMIT_EXCEEDED exception";
+        }
+        catch (const DB::Exception & e)
+        {
+            ASSERT_EQ(e.code(), ErrorCodes::RESOURCE_LIMIT_EXCEEDED);
+            ASSERT_NE(e.displayText().find("all"), std::string::npos);
+            ASSERT_NE(e.displayText().find("memory"), std::string::npos);
+            ASSERT_NE(e.displayText().find("to satisfy increase of a smaller allocation"), std::string::npos);
+        }
     }
 }
 

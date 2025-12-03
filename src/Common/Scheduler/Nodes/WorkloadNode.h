@@ -511,12 +511,14 @@ protected:
         QueueOrChildrenBranch branch;
         WorkloadSettings settings;
         CostUnit unit;
+        String resource;
 
         // Should be called after constructor, before any other methods
-        [[nodiscard]] NodePtr initialize(IWorkloadNode * self, EventQueue & event_queue_, const WorkloadSettings & settings_, CostUnit unit_)
+        [[nodiscard]] NodePtr initialize(IWorkloadNode * self, EventQueue & event_queue_, const WorkloadSettings & settings_, CostUnit unit_, const String & resource_)
         {
             settings = settings_;
             unit = unit_;
+            resource = resource_;
             NodePtr node = branch.initialize(self, event_queue_, settings, unit);
             if (Traits::hasSemaphore(settings, unit))
             {
@@ -641,9 +643,19 @@ public:
     /// Sharing-mode specific implementation of scheduling settings propagation
     virtual void propagateUpdateSchedulingSettings() = 0;
 
+    CostUnit getCostUnit() const final
+    {
+        return impl.unit;
+    }
+
     const String & getWorkload() const final
     {
         return this->basename;
+    }
+
+    const String & getResource() const final
+    {
+        return impl.resource;
     }
 
     const WorkloadSettings & getSettings() const final
@@ -724,10 +736,10 @@ protected: // Hide all the ISchedulerNode interface methods as an implementation
 class TimeSharedWorkloadNode final : public WorkloadNodeCommon<ITimeSharedNode>
 {
 public:
-    TimeSharedWorkloadNode(EventQueue & event_queue_, const WorkloadSettings & settings, CostUnit unit)
+    TimeSharedWorkloadNode(EventQueue & event_queue_, const WorkloadSettings & settings, CostUnit unit, const String & resource)
         : WorkloadNodeCommon(event_queue_, settings)
     {
-        child = impl.initialize(this, event_queue_, settings, unit);
+        child = impl.initialize(this, event_queue_, settings, unit, resource);
         reparent(child, this);
     }
 
@@ -816,10 +828,10 @@ private:
 class SpaceSharedWorkloadNode final : public WorkloadNodeCommon<ISpaceSharedNode>
 {
 public:
-    SpaceSharedWorkloadNode(EventQueue & event_queue_, const WorkloadSettings & settings, CostUnit unit)
+    SpaceSharedWorkloadNode(EventQueue & event_queue_, const WorkloadSettings & settings, CostUnit unit, const String & resource)
         : WorkloadNodeCommon(event_queue_, settings)
     {
-        child = impl.initialize(this, event_queue_, settings, unit);
+        child = impl.initialize(this, event_queue_, settings, unit, resource);
         reparent(child, this);
     }
 
@@ -895,10 +907,10 @@ private:
         decrease = child->decrease;
     }
 
-    ResourceAllocation * selectAllocationToKill(IncreaseRequest * killer, ResourceCost limit) override
+    ResourceAllocation * selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details) override
     {
         chassert(child);
-        return child->selectAllocationToKill(killer, limit);
+        return child->selectAllocationToKill(killer, limit, details);
     }
 
     void propagateUpdateSchedulingSettings() override

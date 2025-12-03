@@ -1,6 +1,7 @@
 #include <Common/Scheduler/ISchedulerNode.h>
 #include <Common/Scheduler/IWorkloadNode.h>
 #include <Common/Scheduler/EventQueue.h>
+#include <Common/Scheduler/CostUnit.h>
 #include <Common/EventRateMeter.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
@@ -124,8 +125,21 @@ const String & ISchedulerNode::getWorkloadName() const
 {
     if (workload)
         return workload->getWorkload();
-    static const String empty_workload;
-    return empty_workload;
+    static const String empty;
+    return empty;
+}
+
+const String & ISchedulerNode::getResourceName() const
+{
+    if (workload)
+        return workload->getResource();
+    static const String empty;
+    return empty;
+}
+
+String ISchedulerNode::formatReadableCost(ResourceCost cost) const
+{
+    return DB::formatReadableCost(cost, workload ? workload->getCostUnit() : CostUnit::IOByte);
 }
 
 void ISchedulerNode::scheduleActivation()

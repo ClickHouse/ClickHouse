@@ -73,9 +73,9 @@ ISchedulerNode * AllocationLimit::getChild(const String & child_name)
     return nullptr;
 }
 
-ResourceAllocation * AllocationLimit::selectAllocationToKill(IncreaseRequest * killer, ResourceCost limit)
+ResourceAllocation * AllocationLimit::selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details)
 {
-    return child->selectAllocationToKill(killer, limit);
+    return child->selectAllocationToKill(killer, limit, details);
 }
 
 void AllocationLimit::approveIncrease()
@@ -158,14 +158,15 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
             // Limit would be violated, so we have to reclaim resource
             if (!allocation_to_kill)
             {
-                allocation_to_kill = selectAllocationToKill(new_increase, max_allocated);
+                String details;
+                allocation_to_kill = selectAllocationToKill(*new_increase, max_allocated, details);
                 if (allocation_to_kill)
                 {
                     SCHED_DBG("{} -- killing(allocated={}, increase_size={}, max={}, increasing={}, killing={})",
                         getPath(), allocated, new_increase->size, max_allocated, new_increase->allocation.id, allocation_to_kill->id);
                     allocation_to_kill->killAllocation(std::make_exception_ptr(
                         Exception(ErrorCodes::RESOURCE_LIMIT_EXCEEDED,
-                            "Resource limit exceeded"))); // TODO(serxa): add limit details, resource name, path
+                            "Workload '{}' limit is hit for resource '{}': {}", getWorkloadName(), getResourceName(), details)));
                 }
             }
             // Block until there is enough resource to process child's increase request

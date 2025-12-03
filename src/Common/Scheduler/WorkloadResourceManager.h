@@ -220,9 +220,9 @@ private:
             {
                 std::static_pointer_cast<Scheduler>(root)->stop();
             };
-            make_workload_node = [] (EventQueue & event_queue, const NodeInfo & info) -> std::pair<WorkloadNodePtr, SchedulerNodePtr>
+            make_workload_node = [this] (EventQueue & event_queue, const NodeInfo & info) -> std::pair<WorkloadNodePtr, SchedulerNodePtr>
             {
-                auto result = std::make_shared<Node>(event_queue, info.settings, info.unit);
+                auto result = std::make_shared<Node>(event_queue, info.settings, info.unit, resource_name);
                 result->basename = info.name;
                 // We return pointers to the same workload node for both independent base classes to erase type time-shared vs. space-shared
                 // This is safe as pointers will share the same control block

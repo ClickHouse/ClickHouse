@@ -60,7 +60,7 @@ ISchedulerNode * FairAllocation::getChild(const String & child_name)
     return nullptr;
 }
 
-ResourceAllocation * FairAllocation::selectAllocationToKill(IncreaseRequest * killer, ResourceCost limit)
+ResourceAllocation * FairAllocation::selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details)
 {
     // Cases to consider:
     // 1. Killer is not part of this node.
@@ -87,11 +87,11 @@ ResourceAllocation * FairAllocation::selectAllocationToKill(IncreaseRequest * ki
     // - fair shares based on `limit` (expensive to compute in a hierarchy);
     // - and accumulated unfairness in term of ResourceCost * Time (requires tracking time).
     // - tolerance thresholds limiting the unfairness.
-    if (killer->pending_allocation && killer == increase && victim_child.increase != killer)
+    if (killer.pending_allocation && &killer == increase && victim_child.increase != &killer)
         return nullptr;
 
     /// Kill the allocation from the largest child. It is the last as the set is ordered by usage.
-    return victim_child.selectAllocationToKill(killer, limit);
+    return victim_child.selectAllocationToKill(killer, limit, details);
 }
 
 void FairAllocation::approveIncrease()

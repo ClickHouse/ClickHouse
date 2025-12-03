@@ -3,6 +3,7 @@
 #include <Common/Scheduler/ISchedulerNode.h>
 #include <Common/Scheduler/WorkloadSettings.h>
 #include <Common/Scheduler/ResourceLink.h>
+#include <Common/Scheduler/CostUnit.h>
 
 #include <memory>
 
@@ -75,8 +76,14 @@ public:
         }
     }
 
+    /// Returns the cost units of the resource associated with this node
+    virtual CostUnit getCostUnit() const = 0;
+
     /// Returns the name of the workload associated with this node
     virtual const String & getWorkload() const = 0;
+
+    /// Returns the name of the resource associated with this node
+    virtual const String & getResource() const = 0;
 
     /// Returns current settings of this workload node
     virtual const WorkloadSettings & getSettings() const = 0;

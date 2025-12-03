@@ -135,7 +135,7 @@ public:
         decrease = child->decrease;
     }
 
-    ResourceAllocation * selectAllocationToKill(IncreaseRequest *, ResourceCost) override
+    ResourceAllocation * selectAllocationToKill(IncreaseRequest &, ResourceCost, String &) override
     {
         chassert(false);
         return nullptr;

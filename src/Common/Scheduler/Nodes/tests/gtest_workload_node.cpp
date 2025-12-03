@@ -17,7 +17,7 @@ TEST(TimeSharedWorkloadNode, Smoke)
 {
     ResourceTest t;
 
-    t.addCustom<TimeSharedWorkloadNode>("/", WorkloadSettings{}, CostUnit::IOByte);
+    t.addCustom<TimeSharedWorkloadNode>("/", WorkloadSettings{}, CostUnit::IOByte, "test_resource");
 
     t.enqueue("/fifo", {10, 10});
     t.dequeue(2);

@@ -4,6 +4,7 @@
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
 
+#include <fmt/format.h>
 
 namespace DB
 {
@@ -211,19 +212,33 @@ void AllocationQueue::approveDecrease()
     setDecrease();
 }
 
-ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest * killer, ResourceCost limit)
+ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details)
 {
     UNUSED(limit);
 
     // It is important not to kill allocation due to pending allocation in the same queue
-    if (killer->pending_allocation && &killer->allocation.queue == this)
+    if (killer.pending_allocation && &killer.allocation.queue == this)
         return nullptr;
 
     std::lock_guard lock(mutex);
     if (running_allocations.empty())
         return nullptr;
+
     // Kill the largest allocation. It is the last as the set is ordered by size.
-    return &*running_allocations.rbegin();
+    ResourceAllocation & victim = *running_allocations.rbegin();
+
+    // If this is the least common ancestor of killer and victim - add details
+    if (&killer.allocation.queue == this)
+    {
+        if (&killer.allocation == &victim)
+            details = fmt::format("Evicting the largest allocation of size {} in workload '{}' to satisfy its own increase for {}.",
+                getWorkloadName(), formatReadableCost(victim.allocated), formatReadableCost(killer.size));
+        else
+            details = fmt::format("Evicting the largest allocation of size {} in workload '{}' to satisfy increase of a smaller allocation.",
+                getWorkloadName(), formatReadableCost(victim.allocated));
+    }
+
+    return &victim;
 }
 
 void AllocationQueue::processActivation()

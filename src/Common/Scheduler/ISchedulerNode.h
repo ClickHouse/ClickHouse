@@ -140,6 +140,12 @@ public:
     /// Return workload name this node belongs to (if any)
     const String & getWorkloadName() const;
 
+    /// Return resource name this node belongs to (if any)
+    const String & getResourceName() const;
+
+    /// Return readable string for a cost value
+    String formatReadableCost(ResourceCost cost) const;
+
     EventQueue & event_queue;
     String basename;
     SchedulerNodeInfo info;

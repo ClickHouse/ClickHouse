@@ -142,7 +142,7 @@ public:
 
     TimeSharedWorkloadNodePtr createUnifiedNode(const String & basename, const TimeSharedWorkloadNodePtr & parent, const WorkloadSettings & settings = {})
     {
-        auto node = std::make_shared<TimeSharedWorkloadNode>(event_queue, settings, CostUnit::IOByte);
+        auto node = std::make_shared<TimeSharedWorkloadNode>(event_queue, settings, CostUnit::IOByte, "test_resource");
         node->basename = basename;
         if (parent)
         {

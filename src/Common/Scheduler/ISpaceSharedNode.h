@@ -93,7 +93,7 @@ public:
     ///     -- acquire order -->
     ///  A0 A1 A2 A3 A4 A5 A6 A7 A8 - ResourceAllocations
     ///    <-- killing order --
-    virtual ResourceAllocation * selectAllocationToKill(IncreaseRequest * killer, ResourceCost limit) = 0;
+    virtual ResourceAllocation * selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details) = 0;
 
     /// For parent only. Sets the usage key.
     void setUsageKey(double value, size_t tie_breaker)
