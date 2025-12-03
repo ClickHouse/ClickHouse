@@ -170,22 +170,25 @@ def three_to_five_reconfig(started_cluster):
 
 def test_reconfig_option1(started_cluster):
     zk = keeper_utils.get_fake_zk(cluster, "node3", timeout=30)
-    zk.create("/test_reconfig_option1", b"data")
+    zk.create("/test_reconfig_option1", b"data1")
     content = zk.get("/keeper/config")[0].decode("utf-8")
     if 'server.1' in content:
         five_to_three_reconfig(started_cluster)
     else:
         three_to_five_reconfig(started_cluster)
+
+    assert zk.get("/test_reconfig_option1")[0] == b"data1"
 
 def test_reconfig_option2(started_cluster):
     zk = keeper_utils.get_fake_zk(cluster, "node3", timeout=30)
-    zk.create("/test_reconfig_option2", b"data")
+    zk.create("/test_reconfig_option2", b"data2")
     content = zk.get("/keeper/config")[0].decode("utf-8")
     if 'server.1' in content:
         five_to_three_reconfig(started_cluster)
     else:
         three_to_five_reconfig(started_cluster)
 
+    assert zk.get("/test_reconfig_option2")[0] == b"data2"
 
 def test_no_remove_itself(started_cluster):
     command = {
