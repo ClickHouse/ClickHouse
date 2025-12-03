@@ -163,12 +163,43 @@ size_t SparseFilterDescription::countBytesInFilter() const
 
 SparseFilterDescription::SparseFilterDescription(const IColumn & column)
 {
-    const auto * column_sparse = typeid_cast<const ColumnSparse *>(&column);
-    if (!column_sparse || !typeid_cast<const ColumnUInt8 *>(&column_sparse->getValuesColumn()))
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-            "Illegal type {} of column for sparse filter. Must be Sparse(UInt8)", column.getName());
+    auto throw_invalid_type = [&column]()
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+            "Illegal type {} of column for sparse filter. Must be Sparse(UInt8) or Sparse(Nullable(UInt8))",
+            column.getName());
+    };
 
-    filter_indices = &assert_cast<const ColumnUInt64 &>(column_sparse->getOffsetsColumn());
+    const auto * column_sparse = typeid_cast<const ColumnSparse *>(&column);
+    if (!column_sparse)
+        throw_invalid_type();
+
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column_sparse->getValuesColumn()))
+    {
+        const auto * values = typeid_cast<const ColumnUInt8 *>(&nullable->getNestedColumn());
+        if (!values)
+            throw_invalid_type();
+
+        const auto & offsets = column_sparse->getOffsetsData();
+        ColumnUInt64::MutablePtr mutable_valid_offsets = ColumnUInt64::create();
+        mutable_valid_offsets->reserve(offsets.size());
+        for (size_t i = 0; i < offsets.size(); ++i)
+        {
+            if (values->getBool(i + 1))
+                mutable_valid_offsets->insertValue(offsets[i]);
+        }
+
+        valid_offsets = std::move(mutable_valid_offsets);
+        filter_indices = &assert_cast<const ColumnUInt64 &>(*valid_offsets);
+    }
+    else
+    {
+        if (!typeid_cast<const ColumnUInt8 *>(&column_sparse->getValuesColumn()))
+            throw_invalid_type();
+
+        filter_indices = &assert_cast<const ColumnUInt64 &>(column_sparse->getOffsetsColumn());
+    }
 }
 
 }

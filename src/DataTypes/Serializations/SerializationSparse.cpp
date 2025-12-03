@@ -1,12 +1,18 @@
 #include <DataTypes/Serializations/SerializationSparse.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Columns/IColumn.h>
-#include <Columns/ColumnVector.h>
+
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
-#include <Common/assert_cast.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/IColumn.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/Serializations/SerializationNamed.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <IO/VarInt.h>
+#include <IO/WriteHelpers.h>
+#include <Common/assert_cast.h>
 
 namespace DB
 {
@@ -24,6 +30,8 @@ constexpr auto END_OF_GRANULE_FLAG = 1ULL << 62;
 
 struct DeserializeStateSparse : public ISerialization::DeserializeBinaryBulkState
 {
+    /// Column offsets from previous read.
+    ColumnPtr column_offsets;
     /// Number of default values, that remain from previous read.
     size_t num_trailing_defaults = 0;
     /// Do we have non-default value after @num_trailing_defaults?
@@ -62,8 +70,14 @@ void serializeOffsets(const IColumn::Offsets & offsets, WriteBuffer & ostr, size
 
 /// Returns number of read rows.
 /// @start is the size of column before reading offsets.
-size_t deserializeOffsets(IColumn::Offsets & offsets,
-    ReadBuffer & istr, size_t start, size_t offset, size_t limit, size_t & skipped_values_rows, DeserializeStateSparse & state)
+size_t deserializeOffsets(
+    IColumn::Offsets & offsets,
+    ReadBuffer & istr,
+    size_t start,
+    size_t offset,
+    size_t limit,
+    size_t & skipped_values_rows,
+    DeserializeStateSparse & state)
 {
     skipped_values_rows = 0;
     size_t max_rows_to_read = offset + limit;
@@ -157,11 +171,61 @@ size_t deserializeOffsets(IColumn::Offsets & offsets,
     return total_rows > offset ? total_rows - offset : 0;
 }
 
+size_t readOrGetCachedSparseOffsets(
+    ISerialization::DeserializeBinaryBulkSettings & settings,
+    ISerialization::SubstreamsCache * cache,
+    DeserializeStateSparse & state_sparse,
+    size_t prev_size,
+    size_t rows_offset,
+    size_t limit,
+    size_t & read_rows,
+    size_t & skipped_values_rows)
+{
+    settings.path.push_back(ISerialization::Substream::SparseOffsets);
+    const auto * cached_element = ISerialization::getElementFromSubstreamsCache(cache, settings.path);
+
+    size_t old_size = 0;
+    if (cached_element)
+    {
+        /// Reuse cached offsets info
+        const auto & cached_offsets_element = assert_cast<const SubstreamsCacheSparseOffsetsElement &>(*cached_element);
+        state_sparse.column_offsets = cached_offsets_element.offsets;
+        old_size = cached_offsets_element.old_size;
+        read_rows = cached_offsets_element.read_rows;
+        skipped_values_rows = cached_offsets_element.skipped_values_rows;
+    }
+    else if (auto * stream = settings.getter(settings.path))
+    {
+        if (!settings.continuous_reading)
+            state_sparse.reset();
+
+        if (!state_sparse.column_offsets || prev_size == 0)
+            state_sparse.column_offsets = ColumnUInt64::create();
+
+        auto & offsets_data = assert_cast<ColumnUInt64 &>(state_sparse.column_offsets->assumeMutableRef()).getData();
+        old_size = offsets_data.size();
+        read_rows = deserializeOffsets(offsets_data, *stream, prev_size, rows_offset, limit, skipped_values_rows, state_sparse);
+
+        ISerialization::addElementToSubstreamsCache(
+            cache,
+            settings.path,
+            std::make_unique<SubstreamsCacheSparseOffsetsElement>(state_sparse.column_offsets, old_size, read_rows, skipped_values_rows));
+    }
+
+    settings.path.pop_back();
+    return state_sparse.column_offsets->size() - old_size;
+}
+
 }
 
 SerializationSparse::SerializationSparse(const SerializationPtr & nested_)
     : nested(nested_)
 {
+    if (const auto * nested_nullable = typeid_cast<const SerializationNullable *>(nested.get()))
+    {
+        nested = std::make_shared<SerializationNullable>(nested_nullable->getNested(), true /* use_default_null_map */);
+        sparse_null_map = std::make_shared<SerializationSparseNullMap>();
+    }
 }
 
 ISerialization::KindStack SerializationSparse::getKindStack() const
@@ -181,40 +245,60 @@ ColumnPtr SerializationSparse::SubcolumnCreator::create(const ColumnPtr & prev) 
     return ColumnSparse::create(prev, offsets, size);
 }
 
+ColumnPtr SerializationSparse::NullMapSubcolumnCreator::create(const ColumnPtr & /* prev */) const
+{
+    auto null_map_col = ColumnUInt8::create();
+    auto & null_map_data = null_map_col->getData();
+    null_map_data.resize_fill(size, static_cast<UInt8>(1));
+    const auto & offsets_data = assert_cast<const ColumnUInt64 &>(*offsets).getData();
+    for (UInt64 offset : offsets_data)
+        null_map_data[offset] = 0;
+    return null_map_col;
+}
+
 void SerializationSparse::enumerateStreams(
-    EnumerateStreamsSettings & settings,
-    const StreamCallback & callback,
-    const SubstreamData & data) const
+    EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const
 {
     const auto * column_sparse = data.column ? typeid_cast<const ColumnSparse *>(data.column.get()) : nullptr;
     size_t column_size = column_sparse ? column_sparse->size() : 0;
 
     settings.path.push_back(Substream::SparseOffsets);
     auto offsets_data = SubstreamData(std::make_shared<SerializationNumber<UInt64>>())
-        .withType(data.type ? std::make_shared<DataTypeUInt64>() : nullptr)
-        .withColumn(column_sparse ? column_sparse->getOffsetsPtr() : nullptr)
-        .withSerializationInfo(data.serialization_info);
+                            .withType(data.type ? std::make_shared<DataTypeUInt64>() : nullptr)
+                            .withColumn(column_sparse ? column_sparse->getOffsetsPtr() : nullptr)
+                            .withSerializationInfo(data.serialization_info);
 
     settings.path.back().data = offsets_data;
     callback(settings.path);
+
+    if (sparse_null_map)
+    {
+        const auto * type_nullable = data.type ? &assert_cast<const DataTypeNullable &>(*data.type) : nullptr;
+        settings.path.back() = Substream::SparseNullMap;
+        settings.path.back().creator = std::make_shared<NullMapSubcolumnCreator>(offsets_data.column, column_size);
+        auto null_map_data = SubstreamData(sparse_null_map)
+                                 .withType(type_nullable ? std::make_shared<DataTypeUInt8>() : nullptr)
+                                 .withColumn(nullptr) /// subcolumn will be created in NullMapSubcolumnCreator based on offsets
+                                 .withSerializationInfo(data.serialization_info);
+        settings.path.back().data = null_map_data;
+        callback(settings.path);
+    }
 
     settings.path.back() = Substream::SparseElements;
     settings.path.back().creator = std::make_shared<SubcolumnCreator>(offsets_data.column, column_size);
     settings.path.back().data = data;
 
     auto next_data = SubstreamData(nested)
-        .withType(data.type)
-        .withColumn(column_sparse ? column_sparse->getValuesPtr() : data.column)
-        .withSerializationInfo(data.serialization_info);
+                         .withType(data.type)
+                         .withColumn(column_sparse ? column_sparse->getValuesPtr() : data.column)
+                         .withSerializationInfo(data.serialization_info);
 
     nested->enumerateStreams(settings, callback, next_data);
     settings.path.pop_back();
 }
 
 void SerializationSparse::serializeBinaryBulkStatePrefix(
-    const IColumn & column,
-    SerializeBinaryBulkSettings & settings,
-    SerializeBinaryBulkStatePtr & state) const
+    const IColumn & column, SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const
 {
     settings.path.push_back(Substream::SparseElements);
     if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(&column))
@@ -226,11 +310,7 @@ void SerializationSparse::serializeBinaryBulkStatePrefix(
 }
 
 void SerializationSparse::serializeBinaryBulkWithMultipleStreams(
-    const IColumn & column,
-    size_t offset,
-    size_t limit,
-    SerializeBinaryBulkSettings & settings,
-    SerializeBinaryBulkStatePtr & state) const
+    const IColumn & column, size_t offset, size_t limit, SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const
 {
     size_t size = column.size();
 
@@ -270,9 +350,7 @@ void SerializationSparse::serializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 }
 
-void SerializationSparse::serializeBinaryBulkStateSuffix(
-    SerializeBinaryBulkSettings & settings,
-    SerializeBinaryBulkStatePtr & state) const
+void SerializationSparse::serializeBinaryBulkStateSuffix(SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const
 {
     settings.path.push_back(Substream::SparseElements);
     nested->serializeBinaryBulkStateSuffix(settings, state);
@@ -280,17 +358,24 @@ void SerializationSparse::serializeBinaryBulkStateSuffix(
 }
 
 void SerializationSparse::deserializeBinaryBulkStatePrefix(
-    DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state,
-    SubstreamsDeserializeStatesCache * cache) const
+    DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const
 {
-    auto state_sparse = std::make_shared<DeserializeStateSparse>();
+    /// Use Substream::SparseOffsets as the cache key for SparseState,
+    /// because this state is also shared by the SparseNullMap substream.
+    settings.path.push_back(Substream::SparseOffsets);
+    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
+    {
+        state = cached_state;
+    }
+    else
+    {
+        state = std::make_shared<DeserializeStateSparse>();
+        addToSubstreamsDeserializeStatesCache(cache, settings.path, state);
+    }
 
-    settings.path.push_back(Substream::SparseElements);
-    nested->deserializeBinaryBulkStatePrefix(settings, state_sparse->nested, cache);
+    settings.path.back() = Substream::SparseElements;
+    nested->deserializeBinaryBulkStatePrefix(settings, checkAndGetState<DeserializeStateSparse>(state)->nested, cache);
     settings.path.pop_back();
-
-    state = std::move(state_sparse);
 }
 
 void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
@@ -306,55 +391,35 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
     if (insertDataFromSubstreamsCacheIfAny(cache, settings, column))
         return;
 
-    if (!settings.continuous_reading)
-        state_sparse->reset();
+    /// Reading SparseOffsets first.
 
     size_t prev_size = column->size();
-    auto mutable_column = column->assumeMutable();
-    auto & column_sparse = assert_cast<ColumnSparse &>(*mutable_column);
-
-    size_t old_size = 0;
     size_t read_rows = 0;
     size_t skipped_values_rows = 0;
-    settings.path.push_back(Substream::SparseOffsets);
+    size_t num_read_offsets
+        = readOrGetCachedSparseOffsets(settings, cache, *state_sparse, prev_size, rows_offset, limit, read_rows, skipped_values_rows);
 
-    const auto * cached_element = getElementFromSubstreamsCache(cache, settings.path);
-    if (cached_element)
-    {
-        const auto & cached_offsets_element = assert_cast<const SubstreamsCacheSparseOffsetsElement &>(*cached_element);
-        column_sparse.getOffsetsPtr() = cached_offsets_element.offsets;
-        old_size = cached_offsets_element.old_size;
-        read_rows = cached_offsets_element.read_rows;
-        skipped_values_rows = cached_offsets_element.skipped_values_rows;
-    }
-    else
-    {
-        if (auto * stream = settings.getter(settings.path))
-        {
-            auto & offsets_data = column_sparse.getOffsetsData();
-            old_size = offsets_data.size();
-            read_rows = deserializeOffsets(
-                offsets_data, *stream, column_sparse.size(), rows_offset, limit, skipped_values_rows, *state_sparse);
+    /// Reading SparseValues and constructing ColumnSparse.
 
-            addElementToSubstreamsCache(
-                cache,
-                settings.path,
-                std::make_unique<SubstreamsCacheSparseOffsetsElement>(
-                    column_sparse.getOffsetsPtr(), old_size, read_rows, skipped_values_rows));
-        }
-    }
-
+    auto mutable_column = column->assumeMutable();
+    auto & column_sparse = assert_cast<ColumnSparse &>(*mutable_column);
+    insertDataFromCachedColumn(settings, column_sparse.getOffsetsPtr(), state_sparse->column_offsets, num_read_offsets, cache);
     auto & offsets_data = column_sparse.getOffsetsData();
     auto & values_column = column_sparse.getValuesPtr();
-    size_t values_limit = offsets_data.size() - old_size;
 
-    settings.path.back() = Substream::SparseElements;
-    nested->deserializeBinaryBulkWithMultipleStreams(values_column, skipped_values_rows, values_limit, settings, state_sparse->nested, cache);
+    settings.path.push_back(Substream::SparseElements);
+    nested->deserializeBinaryBulkWithMultipleStreams(
+        values_column, skipped_values_rows, num_read_offsets, settings, state_sparse->nested, cache);
     settings.path.pop_back();
 
     if (offsets_data.size() + 1 != values_column->size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent sizes of values and offsets in SerializationSparse."
-        " Offsets size: {}, values size: {}", offsets_data.size(), values_column->size());
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Inconsistent sizes of values and offsets in SerializationSparse. Offsets size: {}, values size: {}",
+            offsets_data.size(),
+            values_column->size());
+    }
 
     /// 'insertManyDefaults' just increases size of column.
     column_sparse.insertManyDefaults(read_rows);
@@ -479,6 +544,98 @@ void SerializationSparse::serializeTextXML(const IColumn & column, size_t row_nu
 {
     const auto & column_sparse = assert_cast<const ColumnSparse &>(column);
     nested->serializeTextXML(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr, settings);
+}
+
+void SerializationSparseNullMap::assertSettings(const SerializeBinaryBulkSettings & settings)
+{
+    if (settings.position_independent_encoding)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "SerializationSparseNullMap does not support serialization with position independent encoding");
+    }
+}
+
+void SerializationSparseNullMap::serializeBinaryBulkStatePrefix(
+    const IColumn & column, SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const
+{
+    assertSettings(settings);
+    Base::serializeBinaryBulkStatePrefix(column, settings, state);
+}
+
+void SerializationSparseNullMap::serializeBinaryBulkStateSuffix(
+    SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const
+{
+    assertSettings(settings);
+    Base::serializeBinaryBulkStateSuffix(settings, state);
+}
+
+void SerializationSparseNullMap::serializeBinaryBulkWithMultipleStreams(
+    const IColumn & column, size_t offset, size_t limit, SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const
+{
+    assertSettings(settings);
+    Base::serializeBinaryBulkWithMultipleStreams(column, offset, limit, settings, state);
+}
+
+void SerializationSparseNullMap::enumerateStreams(
+    EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const
+{
+    settings.path.push_back(Substream::SparseNullMap);
+    settings.path.back().data = data;
+    callback(settings.path);
+    settings.path.pop_back();
+}
+
+void SerializationSparseNullMap::deserializeBinaryBulkStatePrefix(
+    DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const
+{
+    /// Use Substream::SparseOffsets as the cache key for SparseState,
+    /// because this state is also shared by the Sparse stream.
+    settings.path.push_back(Substream::SparseOffsets);
+    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
+    {
+        state = cached_state;
+    }
+    else
+    {
+        state = std::make_shared<DeserializeStateSparse>();
+        addToSubstreamsDeserializeStatesCache(cache, settings.path, state);
+    }
+}
+
+void SerializationSparseNullMap::deserializeBinaryBulkWithMultipleStreams(
+    ColumnPtr & column,
+    size_t rows_offset,
+    size_t limit,
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsCache * cache) const
+{
+    auto * state_sparse = checkAndGetState<DeserializeStateSparse>(state);
+
+    /// Reading SparseOffsets first.
+
+    size_t prev_size = column->size();
+    size_t read_rows = 0;
+    size_t skipped_values_rows = 0;
+    size_t num_read_offsets
+        = readOrGetCachedSparseOffsets(settings, cache, *state_sparse, prev_size, rows_offset, limit, read_rows, skipped_values_rows);
+
+    /// Converting SparseOffsets to NullMap.
+
+    if (read_rows)
+    {
+        auto mutable_column = column->assumeMutable();
+        auto & null_map_data = assert_cast<ColumnUInt8 &>(*mutable_column).getData();
+        const auto & offsets_data = assert_cast<const ColumnUInt64 &>(*state_sparse->column_offsets).getData();
+
+        /// Restore null map from offsets.
+        null_map_data.resize_fill(null_map_data.size() + read_rows, static_cast<UInt8>(1));
+        size_t total_offsets = offsets_data.size();
+        for (size_t i = total_offsets - num_read_offsets; i < total_offsets; ++i)
+            null_map_data[offsets_data[i]] = 0;
+
+        column = std::move(mutable_column);
+    }
 }
 
 }
