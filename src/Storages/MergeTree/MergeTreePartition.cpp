@@ -466,6 +466,22 @@ void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Bl
     }
 }
 
+Block MergeTreePartition::getBlockWithPartitionValues(const NamesAndTypesList & partition_columns) const
+{
+    chassert(partition_columns.size() == value.size());
+
+    Block result;
+
+    std::size_t i = 0;
+    for (const auto & partition_column : partition_columns)
+    {
+        auto column = partition_column.type->createColumnConst(1, value[i++]);
+        result.insert({column, partition_column.type, partition_column.name});
+    }
+
+    return result;
+}
+
 NamesAndTypesList MergeTreePartition::executePartitionByExpression(const StorageMetadataPtr & metadata_snapshot, Block & block, ContextPtr context)
 {
     auto adjusted_partition_key = adjustPartitionKey(metadata_snapshot, context);

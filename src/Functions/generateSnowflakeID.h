@@ -7,4 +7,6 @@ namespace DB
 
 uint64_t generateSnowflakeID();
 
+String generateSnowflakeIDString();
+
 }

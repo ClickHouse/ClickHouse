@@ -30,6 +30,7 @@ struct PartLogElement
         MOVE_PART = 6,
         MERGE_PARTS_START = 7,
         MUTATE_PART_START = 8,
+        EXPORT_PART = 9,
     };
 
     /// Copy of MergeAlgorithm since values are written to disk.

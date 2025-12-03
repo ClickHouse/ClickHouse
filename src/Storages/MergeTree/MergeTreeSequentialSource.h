@@ -15,6 +15,7 @@ enum MergeTreeSequentialSourceType
 {
     Mutation,
     Merge,
+    Export,
 };
 
 /// Create stream for reading single part from MergeTree.

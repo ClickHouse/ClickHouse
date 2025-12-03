@@ -289,8 +289,6 @@ private:
     std::unique_ptr<PlainCommittingBlockHolder> fillNewPartName(MutableDataPartPtr & part, DataPartsLock & lock);
     std::unique_ptr<PlainCommittingBlockHolder> fillNewPartNameAndResetLevel(MutableDataPartPtr & part, DataPartsLock & lock);
 
-    void startBackgroundMovesIfNeeded() override;
-
     BackupEntries backupMutations(UInt64 version, const String & data_path_in_backup) const;
 
     /// Attaches restored parts to the storage.

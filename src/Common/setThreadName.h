@@ -79,6 +79,7 @@ namespace DB
     M(LOCAL_SERVER_PTY, "LocalServerPty") \
     M(MEMORY_WORKER, "MemoryWorker") \
     M(MERGE_MUTATE, "MergeMutate") \
+    M(EXPORT_PART, "ExportPart") \
     M(MERGETREE_COMMON, "Common") \
     M(MERGETREE_FETCH, "Fetch") \
     M(MERGETREE_FETCH_PARTITION, "FetchPartition") \

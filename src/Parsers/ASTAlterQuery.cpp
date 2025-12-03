@@ -368,6 +368,26 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
             ostr << quoteString(move_destination_name);
         }
     }
+    else if (type == ASTAlterCommand::EXPORT_PART)
+    {
+        ostr << "EXPORT PART ";
+        partition->format(ostr, settings, state, frame);
+        ostr << " TO ";
+        switch (move_destination_type)
+        {
+            case DataDestinationType::TABLE:
+                ostr << "TABLE ";
+                if (!to_database.empty())
+                {
+                    ostr << backQuoteIfNeed(to_database) << ".";
+                }
+                ostr << backQuoteIfNeed(to_table);
+                return;
+            default:
+                break;
+        }
+
+    }
     else if (type == ASTAlterCommand::REPLACE_PARTITION)
     {
         ostr << (replace ? "REPLACE" : "ATTACH") << " PARTITION "
@@ -644,6 +664,11 @@ bool ASTAlterQuery::isMovePartitionToDiskOrVolumeAlter() const
         return true;
     }
     return false;
+}
+
+bool ASTAlterQuery::isExportPartAlter() const
+{
+    return isOneCommandTypeOnly(ASTAlterCommand::EXPORT_PART);
 }
 
 

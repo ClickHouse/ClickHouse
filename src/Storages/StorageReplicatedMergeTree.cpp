@@ -5633,7 +5633,7 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread, const ZooK
             restarting_thread.start(true);
         });
 
-        startBackgroundMovesIfNeeded();
+        startBackgroundMoves();
 
         part_moves_between_shards_orchestrator.start();
 
@@ -5801,6 +5801,12 @@ void StorageReplicatedMergeTree::shutdown(bool)
         /// Wait for all of them
         std::lock_guard lock(data_parts_exchange_ptr->rwlock);
     }
+
+    {
+        std::lock_guard lock(export_manifests_mutex);
+        export_manifests.clear();
+    }
+
     LOG_TRACE(log, "Shutdown finished");
 }
 
@@ -9839,13 +9845,6 @@ MutationCounters StorageReplicatedMergeTree::getMutationCounters() const
 {
     return queue.getMutationCounters();
 }
-
-void StorageReplicatedMergeTree::startBackgroundMovesIfNeeded()
-{
-    if (areBackgroundMovesNeeded())
-        background_moves_assignee.start();
-}
-
 
 std::unique_ptr<MergeTreeSettings> StorageReplicatedMergeTree::getDefaultSettings() const
 {

@@ -129,6 +129,7 @@ struct RelativePathWithMetadata
     ~RelativePathWithMetadata() = default;
 
     std::string getFileName() const { return std::filesystem::path(relative_path).filename(); }
+    std::string getFileNameWithoutExtension() const { return std::filesystem::path(relative_path).stem(); }
     std::string getPath() const { return relative_path; }
 };
 

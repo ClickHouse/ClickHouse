@@ -33,6 +33,7 @@ struct PartitionCommand
         UNFREEZE_ALL_PARTITIONS,
         UNFREEZE_PARTITION,
         REPLACE_PARTITION,
+        EXPORT_PART,
     };
 
     Type type = UNKNOWN;

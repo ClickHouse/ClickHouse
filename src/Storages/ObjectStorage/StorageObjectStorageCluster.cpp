@@ -1,3 +1,4 @@
+#include <optional>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 
 #include <Common/Exception.h>
@@ -110,6 +111,11 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
         /* format_settings */std::nullopt,
         configuration->partition_strategy_type,
         sample_path));
+
+    if (configuration->partition_strategy)
+    {
+        metadata.partition_key = configuration->partition_strategy->getPartitionKeyDescription();
+    }
 
     setInMemoryMetadata(metadata);
 

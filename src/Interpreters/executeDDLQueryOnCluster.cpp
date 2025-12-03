@@ -60,6 +60,8 @@ bool isSupportedAlterTypeForOnClusterDDLQuery(int type)
         ASTAlterCommand::ATTACH_PARTITION,
         /// Usually followed by ATTACH PARTITION
         ASTAlterCommand::FETCH_PARTITION,
+        /// Data operation that should be executed locally on each replica
+        ASTAlterCommand::EXPORT_PART,
         /// Logical error
         ASTAlterCommand::NO_TYPE,
     };
