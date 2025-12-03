@@ -146,7 +146,7 @@ private:
     /// Called for each individual entry being evicted from cache
     void onEntryRemoval(const size_t weight_loss, const MappedPtr & mapped_ptr) override
     {
-        LOG_DEBUG(log, "cache evict {} | {}", mapped_ptr->metadata->path(), mapped_ptr->metadata->file_attributes());
+        LOG_DEBUG(log, "cache eviction");
         ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheWeightLost, weight_loss);
         UNUSED(mapped_ptr);
     }
@@ -233,7 +233,7 @@ private:
     /// Called for each individual entry being evicted from cache
     void onEntryRemoval(const size_t weight_loss, const MappedPtr & mapped_ptr) override
     {
-        LOG_DEBUG(log, "cache evict {} | {}", mapped_ptr->metadata.path(), mapped_ptr->metadata.file_attributes());
+        LOG_DEBUG(log, "cache eviction");
         ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheWeightLost, weight_loss);
         UNUSED(mapped_ptr);
     }
