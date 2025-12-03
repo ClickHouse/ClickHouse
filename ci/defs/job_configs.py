@@ -62,7 +62,6 @@ common_ft_job_config = Job.Config(
             "./tests/config",
             "./tests/*.txt",
             "./ci/docker/stateless-test",
-            "./ci/defs/job_configs.py",
         ],
     ),
     result_name_for_cidb="Tests",

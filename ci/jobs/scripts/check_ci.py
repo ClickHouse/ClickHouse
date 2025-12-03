@@ -467,18 +467,25 @@ class JobResultProcessor:
         if commit_status_data.state in (Result.Status.SUCCESS,):
             pass
         elif commit_status_data.state in (Result.Status.FAILED,):
-            print(f"\nCH Sync failed for commit {commit_status_data.context}")
-            if UserPrompt.confirm("You sure it can be ignored?"):
-                GH.post_commit_status(
-                    commit_status_data.context,
-                    Result.Status.SUCCESS,
-                    "Ignored",
-                    commit_status_data.url,
-                    sha=sha,
-                    repo="ClickHouse/ClickHouse",
+            if commit_status_data.description == "tests failed":
+                print(
+                    f"\nCH Sync failed for commit, description: {commit_status_data.description}"
                 )
+                if UserPrompt.confirm("You sure it can be ignored?"):
+                    GH.post_commit_status(
+                        commit_status_data.context,
+                        Result.Status.SUCCESS,
+                        "Ignored",
+                        commit_status_data.url,
+                        sha=sha,
+                        repo="ClickHouse/ClickHouse",
+                    )
+                else:
+                    sys.exit(0)
             else:
-                sys.exit(0)
+                raise Exception(
+                    f"CH Sync commit status state: {commit_status_data.state} and description: {commit_status_data.description} - cannot proceed"
+                )
         elif commit_status_data.state in (Result.Status.PENDING,):
             if commit_status_data.description == "tests started":
                 print(
