@@ -894,11 +894,11 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
     /// Scenario:
     /// 1. mutation_1 (txn 1)  is submitted
     /// 2. mutation_2 (no txn) is submitted - will wait for mutation_1 (txn 1) to commit or rollback
-    /// 3. mutation_3 (txn 1)  is submitted - will wait for mutation_2 to finish: Deadlock!!!
+    /// 3. mutation_3 (txn 1)  is submitted - will wait for mutation_2 to finish: Deadlock!
     if (txn && !from_another_mutation)
     {
         /// Scan backwards to find the most recent mutation from the same transaction
-        for (auto it = current_mutation_it; it != current_mutations_by_version.begin(); )
+        for (auto it = current_mutation_it; it != current_mutations_by_version.begin();)
         {
             --it;
 
