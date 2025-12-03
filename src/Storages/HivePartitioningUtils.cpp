@@ -154,7 +154,7 @@ void sanityCheckSchemaAndHivePartitionColumns(
         }
     }
 
-    if (storage_columns.size() == hive_partition_columns_to_read_from_file_path.size())
+    if (storage_columns.getOrdinary().getNameSet() == hive_partition_columns_to_read_from_file_path.getNameSet())
     {
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
@@ -163,17 +163,17 @@ void sanityCheckSchemaAndHivePartitionColumns(
     }
 }
 
-void extractPartitionColumnsFromPathAndEnrichStorageColumns(
+NamesAndTypesList extractPartitionColumnsFromPathAndEnrichStorageColumns(
     ColumnsDescription & storage_columns,
-    NamesAndTypesList & hive_partition_columns_to_read_from_file_path,
     const std::string & path,
     bool inferred_schema,
     std::optional<FormatSettings> format_settings,
     ContextPtr context)
 {
-    hive_partition_columns_to_read_from_file_path = extractHivePartitionColumnsFromPath(storage_columns, path, format_settings, context);
+    auto hive_partition_columns_to_read_from_file_path = extractHivePartitionColumnsFromPath(storage_columns, path, format_settings, context);
 
-    /// If the structure was inferred (not present in `columns_`), then we might need to enrich the schema with partition columns
+    /// If the structure was inferred (not present in `columns_`),
+    /// then we might need to enrich the schema with partition columns.
     /// Because they might not be present in the data and exist only in the path
     if (inferred_schema)
     {
@@ -185,6 +185,7 @@ void extractPartitionColumnsFromPathAndEnrichStorageColumns(
             }
         }
     }
+    return hive_partition_columns_to_read_from_file_path;
 }
 
 HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForObjectStorage(
@@ -212,9 +213,8 @@ HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForObjectStorage(
     }
     else if (context->getSettingsRef()[Setting::use_hive_partitioning])
     {
-        extractPartitionColumnsFromPathAndEnrichStorageColumns(
+        hive_partition_columns_to_read_from_file_path = extractPartitionColumnsFromPathAndEnrichStorageColumns(
             columns,
-            hive_partition_columns_to_read_from_file_path,
             sample_path,
             inferred_schema,
             format_settings,
@@ -259,9 +259,8 @@ HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForFileURLLikeStora
 
     if (context->getSettingsRef()[Setting::use_hive_partitioning])
     {
-        extractPartitionColumnsFromPathAndEnrichStorageColumns(
+        hive_partition_columns_to_read_from_file_path = extractPartitionColumnsFromPathAndEnrichStorageColumns(
             columns,
-            hive_partition_columns_to_read_from_file_path,
             sample_path,
             inferred_schema,
             format_settings,
