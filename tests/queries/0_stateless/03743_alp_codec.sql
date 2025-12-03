@@ -1,8 +1,7 @@
-DROP TABLE IF EXISTS alp_vs_gorilla_base;
-DROP TABLE IF EXISTS alp_vs_gorilla_alp;
-DROP TABLE IF EXISTS alp_vs_gorilla_gorilla;
+DROP TABLE IF EXISTS base;
+DROP TABLE IF EXISTS alp;
 
-CREATE TABLE alp_vs_gorilla_base
+CREATE TABLE base
 (
     id   UInt32,
     f32  Float32,
@@ -11,7 +10,7 @@ CREATE TABLE alp_vs_gorilla_base
 ENGINE = MergeTree
 ORDER BY id;
 
-CREATE TABLE alp_vs_gorilla_alp
+CREATE TABLE alp
 (
     id   UInt32,
     f32  Float32 CODEC(ALP),
@@ -20,17 +19,8 @@ CREATE TABLE alp_vs_gorilla_alp
 ENGINE = MergeTree
 ORDER BY id;
 
-CREATE TABLE alp_vs_gorilla_gorilla
-(
-    id   UInt32,
-    f32  Float32 CODEC(Gorilla),
-    f64  Float64 CODEC(Gorilla)
-)
-ENGINE = MergeTree
-ORDER BY id;
-
--- 1M rows of deterministic "trend + seasonality + spikes" data
-INSERT INTO alp_vs_gorilla_base
+-- 100k rows of deterministic "trend + seasonality + spikes" data
+INSERT INTO base
 SELECT
     number AS id,
     -- Float: pseudo "CPU usage" in percent
@@ -54,34 +44,16 @@ SELECT
                 + if(number % 10000 = 0, 2000, 0)           -- rare spikes: +20.00%
             ) / 100.0                                       -- convert "cents" to float
     ) AS f64
-FROM numbers(1000000);
+FROM numbers(100000);
 
-INSERT INTO alp_vs_gorilla_alp
+INSERT INTO alp
 SELECT id, f32, f64
-FROM alp_vs_gorilla_base;
+FROM base;
 
-INSERT INTO alp_vs_gorilla_gorilla
-SELECT id, f32, f64
-FROM alp_vs_gorilla_base;
-
-OPTIMIZE TABLE alp_vs_gorilla_base FINAL;
-OPTIMIZE TABLE alp_vs_gorilla_alp FINAL;
-OPTIMIZE TABLE alp_vs_gorilla_gorilla FINAL;
+OPTIMIZE TABLE base FINAL;
+OPTIMIZE TABLE alp FINAL;
 
 SELECT SUM(a.f32 <> b.f32) AS f32_errors,
        SUM(a.f64 <> b.f64) AS f64_errors
-FROM alp_vs_gorilla_base AS b
-INNER JOIN alp_vs_gorilla_alp AS a USING id;
-
-SELECT
-    table,
-    column,
-    sum(data_compressed_bytes) AS compressed,
-    sum(data_uncompressed_bytes) AS uncompressed,
-    round(compressed / uncompressed * 100, 2) AS ratio_percent
-FROM system.parts_columns
-WHERE table LIKE 'alp_vs_gorilla_%'
-  AND active
-  AND column LIKE 'f%'
-GROUP BY table, column
-ORDER BY ratio_percent;
+FROM base AS b
+INNER JOIN alp AS a USING id;

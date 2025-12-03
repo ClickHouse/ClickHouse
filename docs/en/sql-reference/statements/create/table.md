@@ -442,7 +442,7 @@ These codecs are designed to make compression more effective by exploiting speci
 
 #### ALP {#alp}
 
-`ALP()` — Adaptive lossless compression for floating-point data based on decimal scaling. ALP attempts to represent each value as an exact scaled integer using decimal powers, then compresses the resulting integers with Frame-of-Reference and bit-packing. Values that cannot be represented exactly are stored as raw exceptions, ensuring full losslessness. Works best for numbers originating from decimals (e.g., measurements, currency). Supports `Float32` and `Float64`. For details, see [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334).
+`ALP()` — Adaptive lossless compression for floating-point data based on decimal scaling. ALP attempts to represent each value as an exact scaled integer using decimal powers, then compresses the resulting integers with Frame-of-Reference and bit-packing. Values that cannot be represented exactly are stored as raw exceptions. Works best for numbers originating from decimals (e.g., measurements, currency). Supports `Float32` and `Float64`. For details, see [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334).
 
 #### FPC {#fpc}
 
