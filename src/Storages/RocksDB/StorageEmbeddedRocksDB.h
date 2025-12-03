@@ -43,7 +43,7 @@ public:
         LoadingStrictnessLevel mode,
         ContextPtr context_,
         std::unique_ptr<RocksDBSettings> settings_,
-        Names primary_key_,
+        Names primary_keys_,
         Int32 ttl_ = 0,
         String rocksdb_dir_ = "",
         bool read_only_ = false);
