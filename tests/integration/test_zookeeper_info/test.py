@@ -35,7 +35,11 @@ def started_cluster():
 
 
 def test_select(started_cluster):
-    response = node1.query("SELECT * from system.zookeeper_info")
+    count = node1.query("SELECT count() FROM system.zookeeper_info")
+    assert (count == "3\n")
+    response = node1.query("SELECT * FROM system.zookeeper_info")
     print(response)
-    name = node1.query("SELECT zookeeper_cluster_name from system.zookeeper_info limit 1")
-    assert (name == "default\n")
+    name = node1.query("SELECT zookeeper_cluster_name FROM system.zookeeper_info limit 1")
+    assert (name == "zookeeper\n")
+    indices = node1.query("SELECT index FROM system.zookeeper_info")
+    assert (indices == "1\n2\n3\n")
