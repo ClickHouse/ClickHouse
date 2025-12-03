@@ -65,7 +65,6 @@ def test_system_logs_recreate():
                 <{table}>
                     <engine>ENGINE = Null</engine>
                     <partition_by remove='remove'/>
-                    <settings remove='remove'/>
                 </{table}>
             </clickhouse>
             " > /etc/clickhouse-server/config.d/zzz-override-{table}.xml

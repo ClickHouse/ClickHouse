@@ -1287,7 +1287,6 @@
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
         <flush_on_crash>false</flush_on_crash>
-        <settings>min_bytes_for_wide_part = 134217728, vertical_merge_algorithm_min_bytes_to_activate=134217728</settings>
     </metric_log>
 
     <!-- Error log contains rows with current values of errors collected with "collect_interval_milliseconds" interval. -->
