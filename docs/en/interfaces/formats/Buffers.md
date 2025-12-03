@@ -20,7 +20,7 @@ doc_type: 'reference'
 Unlike [Native](./Native.md), it does **not** store column names, column types, or any extra metadata.
 
 In this format, data is written and read by [blocks](/development/architecture#block) in a binary format.
-For each block, the number of columns, the size of each column in bytes, and then the raw bytes of each column are recorded one after another.
+For each block, the number of columns, the number of rows, the size of each column in bytes, and then the raw bytes of each column are recorded one after another.
 
 ## Example usage {#example-usage}
 

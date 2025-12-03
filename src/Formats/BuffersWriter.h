@@ -13,13 +13,14 @@ class WriteBuffer;
   *
   * For each block:
   *   Number of buffers (UInt64, little-endian)
+  *   Number of rows (UInt64, little-endian)
   *   Size of each buffer in bytes (UInt64 * number of buffers, little-endian)
   *   Contents of each buffer (raw bytes, concatenated)
   */
 class BuffersWriter
 {
 public:
-    BuffersWriter(WriteBuffer & ostr_, SharedHeader header_, std::optional<FormatSettings> format_settings_ = std::nullopt);
+    BuffersWriter(WriteBuffer & ostr_, SharedHeader header_, std::optional<FormatSettings> format_settings_);
 
     SharedHeader getHeader() const { return header; }
 

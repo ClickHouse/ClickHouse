@@ -14,6 +14,7 @@ class ReadBuffer;
   *
   * For each block:
   *   Number of buffers (UInt64, little-endian)
+  *   Number of rows (UInt64, little-endian)
   *   Size of each buffer in bytes (UInt64 * number of buffers, little-endian)
   *   Contents of each buffer (raw bytes, concatenated)
   *
@@ -23,7 +24,7 @@ class ReadBuffer;
 class BuffersReader
 {
 public:
-    BuffersReader(ReadBuffer & istr_, const Block & header_, std::optional<FormatSettings> format_settings_ = std::nullopt);
+    BuffersReader(ReadBuffer & istr_, const Block & header_, std::optional<FormatSettings> format_settings_);
 
     Block getHeader() const;
 
