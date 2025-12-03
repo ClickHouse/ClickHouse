@@ -18,7 +18,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 
-
 namespace DB
 {
 namespace Setting
@@ -107,6 +106,8 @@ bool ValuesBlockInputFormat::skipToNextRow(ReadBuffer * buf, size_t min_chunk_by
 
 Chunk ValuesBlockInputFormat::read()
 {
+    LOG_TRACE(getLogger("Bytes in a block"), "??????????????????????? Entered READ");
+
     if (total_rows == 0)
         readPrefix();
 
@@ -274,7 +275,6 @@ bool ValuesBlockInputFormat::tryParseExpressionUsingTemplate(MutableColumnPtr & 
     const auto & settings = context->getSettingsRef();
     if (templates[column_idx]->parseExpression(*buf, *token_iterator, format_settings, settings))
     {
-        LOG_TRACE(getLogger("Values"), "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx: we try parsing via template and not add row");
         ++rows_parsed_using_template[column_idx];
         return true;
     }
