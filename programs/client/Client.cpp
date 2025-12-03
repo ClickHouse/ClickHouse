@@ -894,14 +894,14 @@ void Client::processOptions(
         config().setBool("login", true);
         config().setString("user", "");
     }
-    if (options.count("oauth-url"))
+    if (options.contains("oauth-url"))
         config().setString("oauth-url", options["oauth-url"].as<std::string>());
-    if (options.count("oauth-client-id"))
+    if (options.contains("oauth-client-id"))
         config().setString("oauth-client-id", options["oauth-client-id"].as<std::string>());
-    if (options.count("oauth-audience"))
+    if (options.contains("oauth-audience"))
         config().setString("oauth-audience", options["oauth-audience"].as<std::string>());
 #endif
-    if (options.count("accept-invalid-certificate"))
+    if (options.contains("accept-invalid-certificate"))
     {
         config().setString("openSSL.client.invalidCertificateHandler.name", "AcceptCertificateHandler");
         config().setString("openSSL.client.verificationMode", "none");
