@@ -663,7 +663,8 @@ FileCache::getOrSet(
 
     assertInitialized();
 
-    FileSegment::Range initial_range(offset, std::min(offset + size, file_size) - 1);
+    size_t initial_range_right_offset = (file_size ? std::min(offset + size, file_size) : offset + size) - 1;
+    FileSegment::Range initial_range(offset, initial_range_right_offset);
     /// result_range is initial range, which will be adjusted according to
     /// 1. aligned_offset, aligned_end_offset
     /// 2. max_file_segments_limit
@@ -671,7 +672,9 @@ FileCache::getOrSet(
 
     const size_t alignment = boundary_alignment_.value_or(boundary_alignment);
     const auto aligned_offset = FileCacheUtils::roundDownToMultiple(initial_range.left, alignment);
-    auto aligned_end_offset = std::min(FileCacheUtils::roundUpToMultiple(initial_range.right + 1, alignment), file_size) - 1;
+    auto aligned_end_offset = (file_size
+        ? std::min(FileCacheUtils::roundUpToMultiple(initial_range.right + 1, alignment), file_size)
+        : FileCacheUtils::roundUpToMultiple(initial_range.right + 1, alignment)) - 1;
 
     chassert(aligned_offset <= initial_range.left);
     chassert(aligned_end_offset >= initial_range.right);

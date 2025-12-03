@@ -689,6 +689,9 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
         return;
     }
 
+    LOG_TEST(log, "Shrinking file segment {} -> {} (downloaded size: {})",
+             range().size(), result_size, downloaded_size.load());
+
     if (downloaded_size == result_size)
         setDownloadState(State::DOWNLOADED, lock);
     else
@@ -907,7 +910,8 @@ String FileSegment::getInfoForLogUnlocked(const FileSegmentGuard::Lock &) const
     info << "current write offset: " << getCurrentWriteOffset() << ", ";
     info << "caller id: " << getCallerId() << ", ";
     info << "kind: " << toString(segment_kind) << ", ";
-    info << "unbound: " << is_unbound;
+    info << "unbound: " << is_unbound << ", ";
+    info << "background download: " << background_download_enabled;
 
     return info.str();
 }
