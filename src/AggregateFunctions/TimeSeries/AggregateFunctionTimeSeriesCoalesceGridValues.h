@@ -1,16 +1,17 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeTuple.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
 #include <Common/Arena.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ContextTimeSeriesTagsCollector.h>
 
 
 namespace DB
@@ -25,18 +26,18 @@ namespace ErrorCodes
 
 enum class AggregateFunctionTimeSeriesCoalesceGridValuesMode
 {
-    /// The function returns the first value it finds at every position.
+    /// The function returns the first non-null value it meets at each position.
     kAny,
 
-    /// The function returns `NULL` if there are two values at the same position (even if they're equal).
+    /// The function returns `NULL` if there are two non-null values at the same position (even if they're equal).
     kNull,
 
-    /// The function throws an exception (`Found duplicate series`) if there are two values at the same position (even if they're equal).
+    /// The function throws an exception (`Found duplicate series`) if there are two non-null values at the same position (even if they're equal).
     kThrow,
 };
 
 /// Combines non-NULL values in arrays from different rows into a single array.
-template<typename ValueType>
+template <typename ValueType>
 class AggregateFunctionTimeSeriesCoalesceGridValues final
     : public IAggregateFunctionHelper<AggregateFunctionTimeSeriesCoalesceGridValues<ValueType>>,
       private WithContext
@@ -45,7 +46,7 @@ public:
     using Base = IAggregateFunctionHelper<AggregateFunctionTimeSeriesCoalesceGridValues<ValueType>>;
     using Mode = AggregateFunctionTimeSeriesCoalesceGridValuesMode;
 
-    using ColVecType = ColumnVectorOrDecimal<ValueType>;
+    using ColVecType = ColumnVector<ValueType>;
     using Group = UInt64;
 
     String getName() const override { return "timeSeriesCoalesceGridValues"; }
@@ -53,10 +54,10 @@ public:
     /// Information about each position in source arrays.
     struct Element
     {
-        ValueType value = {};
-        bool is_null = true;
-        bool is_set = false;
-        Group group = 0;
+        ValueType value;
+        bool is_null;
+        bool is_set;
+        Group group;
     };
 
     struct Data
@@ -64,7 +65,7 @@ public:
         Element * elements;
         size_t size = 0;
 
-        void resize(size_t new_size)
+        void resize(size_t new_size, Arena * arena)
         {
             if (new_size == size)
                 return;
@@ -75,7 +76,13 @@ public:
                 if (new_size > size)
                 {
                     for (size_t i = size; i != new_size; ++i)
-                        elements[i].num_values = 0;
+                    {
+                        auto & element = elements[i];
+                        element.value = {};
+                        element.is_null = true;
+                        element.is_set = false;
+                        element.group = 0;
+                    }
                 }
             }
             else
@@ -113,7 +120,7 @@ public:
                 }
                 else if (function.mode == Mode::kThrow)
                 {
-                    function.throwDuplicateTimeSeries(element.group, group);
+                    function.throwFoundDuplicateSeries(element.group, group);
                 }
             }
         }
@@ -141,24 +148,24 @@ public:
                 }
                 else if (function.mode == Mode::kThrow)
                 {
-                    function.throwDuplicateTimeSeries(element.group, rhs_element.group);
+                    function.throwFoundDuplicateSeries(element.group, rhs_element.group);
                 }
             }
         }
     };
 
     explicit AggregateFunctionTimeSeriesCoalesceGridValues(ContextPtr context_, const DataTypes & argument_types_, Mode mode_)
-        : Base(argument_types_, {}, createResultType(argument_types_))
-        , WithContext(context_) {}
+        : Base(argument_types_, {}, createResultType(argument_types_, mode_))
+        , WithContext(context_)
         , mode(mode_)
         , has_group_argument(argument_types_.size() == 2)
     {
     }
 
-    static DataTypePtr createResultType(const DataTypes & argument_types_)
+    static DataTypePtr createResultType(const DataTypes & argument_types_, Mode mode_)
     {
         auto element_type = typeid_cast<const DataTypeArray *>(argument_types_[0].get())->getNestedType();
-        if (mode == Mode::kNull)
+        if (mode_ == Mode::kNull)
             element_type = makeNullable(element_type);
         return std::make_shared<DataTypeArray>(element_type);
     }
@@ -400,8 +407,8 @@ public:
         NullMap * null_map = nullptr;
         if (auto * nullable_column = typeid_cast<ColumnNullable *>(&column_array.getData()))
         {
-            values = typeid_cast<ColVecType *>(&nullable_column->getNestedColumn()).getData();
-            null_map = &nullable_column.getNullMapData();
+            values = typeid_cast<ColVecType *>(&nullable_column->getNestedColumn());
+            null_map = &nullable_column->getNullMapData();
         }
         else
         {
@@ -413,7 +420,7 @@ public:
         for (size_t i = 0; i != data.size; ++i)
         {
             const auto & element = data.elements[i];
-            values->push_back(element.value);
+            values->insertValue(element.value);
             chassert(null_map || !element.is_null);
             if (null_map)
                 null_map->push_back(element.is_null);
@@ -422,20 +429,20 @@ public:
         offsets.push_back(values->size());
     }
 
-    void throwDuplicateTimeSeries(Group first_group, Group second_group) const
+    [[noreturn]] void throwFoundDuplicateSeries(Group first_group, Group second_group) const
     {
         String extra_info;
-        if (has_group_argument && context)
+        if (has_group_argument)
         {
             auto context_ptr = getContext();
-            auto first_tags = context->getTimeSeriesTagsCollector().getTagsByGroup(first_group);
-            auto second_tags = context->getTimeSeriesTagsCollector().getTagsByGroup(second_group);
+            auto first_tags = context_ptr->getTimeSeriesTagsCollector().getTagsByGroup(first_group);
+            auto second_tags = context_ptr->getTimeSeriesTagsCollector().getTagsByGroup(second_group);
             extra_info = fmt::format(": {} and {}", ContextTimeSeriesTagsCollector::toString(first_tags), ContextTimeSeriesTagsCollector::toString(second_tags));
         }
 
         throw Exception(
             ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-            "Instant vector cannot contain metrics with the same tags: found duplicate series {}", extra_info);
+            "Instant vector cannot contain metrics with the same groups of tags: found duplicate series {}", extra_info);
     }
 
 private:

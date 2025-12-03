@@ -565,6 +565,11 @@ String ContextTimeSeriesTagsCollector::toString(const TagNamesAndValues & tags)
     return ostr.str();
 }
 
+String ContextTimeSeriesTagsCollector::toString(const TagNamesAndValuesPtr & tags)
+{
+    return toString(*tags);
+}
+
 
 bool ContextTimeSeriesTagsCollector::Equal::operator()(const TagNamesAndValuesPtr & left, const TagNamesAndValuesPtr & right) const
 {

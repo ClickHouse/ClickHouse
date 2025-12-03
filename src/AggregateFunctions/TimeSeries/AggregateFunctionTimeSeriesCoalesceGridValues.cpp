@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <Common/CurrentThread.h>
 #include <Core/Settings.h>
 
 
@@ -10,6 +11,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int UNKNOWN_AGGREGATE_FUNCTION;
 }
@@ -47,9 +49,9 @@ namespace
     }
 
     template <typename ValueType>
-    AggregateFunctionPtr createWithValueType(const DataTypes & argument_types, Mode mode)
+    AggregateFunctionPtr createWithValueType(ContextPtr context, const DataTypes & argument_types, Mode mode)
     {
-        return std::make_shared<AggregateFunctionTimeSeriesCoalesceGridValues<ValueType>>(argument_types, mode);
+        return std::make_shared<AggregateFunctionTimeSeriesCoalesceGridValues<ValueType>>(context, argument_types, mode);
     }
 
     AggregateFunctionPtr createAggregateFunctionTimeSeriesCoalesceGridValues(const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
@@ -88,11 +90,11 @@ namespace
         AggregateFunctionPtr res;
         if (value_type->getTypeId() == TypeIndex::Float64)
         {
-            res = createWithValueType<Float64>(argument_types, mode);
+            res = createWithValueType<Float64>(query_context, argument_types, mode);
         }
         else if (value_type->getTypeId() == TypeIndex::Float32)
         {
-            res = createWithValueType<Float32>(argument_types, mode);
+            res = createWithValueType<Float32>(query_context, argument_types, mode);
         }
         else
         {

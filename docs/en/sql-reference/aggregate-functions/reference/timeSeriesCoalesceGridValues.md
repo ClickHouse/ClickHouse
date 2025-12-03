@@ -13,11 +13,11 @@ such non-NULL values extracted from different rows into a single result array
 retaining the positions of these values. For example,
 
 ```sql
-CREATE TABLE mytable(a Array(Nullable(Float64))) ENGINE=MergeTree ORDER BY tuple();
+CREATE TABLE mytable(values Array(Nullable(Float64))) ENGINE=MergeTree ORDER BY tuple();
 INSERT INTO mytable VALUES ([100, NULL, NULL]);
 INSERT INTO mytable VALUES ([NULL, 200, NULL]);
 INSERT INTO mytable VALUES ([NULL, NULL, 300]);
-SELECT timeSeriesCoalesceGridValues('throw')(a) AS result FROM mytable;
+SELECT timeSeriesCoalesceGridValues('throw')(values) AS result FROM mytable;
 ```
 
 ```response
@@ -44,9 +44,9 @@ timeSeriesCoalesceGridValues(mode)(values, [, group])
 
 | `mode` | Description |
 | --- | --- |
-| `'any'` | The function returns the first value it finds at every position. |
-| `'null'` | The function returns `NULL` if there are two values at the same position (even if they're equal) |
-| `'throw'` | The function throws an exception (`Found duplicate series`) if there are two values at the same position (even if they're equal), with optional information about these time series in case the argument `group` is provided |
+| `'any'` | The function returns the first non-null value it meets at each position. |
+| `'null'` | The function returns `NULL` if there are two non-null values at the same position (even if they're equal) |
+| `'throw'` | The function throws an exception (`Found duplicate series`) if there are two non-null values at the same position (even if they're equal), with optional information about these time series in case the argument `group` is provided |
 
 **Arguments**
 
@@ -60,59 +60,83 @@ The function returns a new array of nullable floating-point values.
 **Example**
 
 ```sql
-WITH [[1., NULL, 3., NULL, 5], [NULL, 2., NULL, NULL, 5]] AS data
-SELECT timeSeriesCoalesceGridValues('any')(arrayJoin(data));
+WITH data AS
+    (
+        SELECT arrayJoin([[1., NULL, 3., NULL, 5], [NULL, 2., NULL, NULL, 5]]) AS values
+    )
+SELECT timeSeriesCoalesceGridValues('any')(values)
+FROM data
 ```
 
 Response:
 
 ```response
-┌─timeSeriesCoalesceGridValues('any')(arrayJoin(data))─┐
-│ [1,2,3,NULL,5]                                       │
-└──────────────────────────────────────────────────────┘
+┌─timeSeriesCoalesceGridValues('any')(values)─┐
+│ [1,2,3,NULL,5]                              │
+└─────────────────────────────────────────────┘
 ```
 
 The fifth element in both rows is `5`, so if we set `mode` to `null` the function will return `NULL` at the fifth position:
 
 
 ```sql
-WITH [[1., NULL, 3., NULL, 5], [NULL, 2., NULL, NULL, 5]] AS data
-SELECT timeSeriesCoalesceGridValues('null')(arrayJoin(data));
+WITH data AS
+    (
+        SELECT arrayJoin([[1., NULL, 3., NULL, 5], [NULL, 2., NULL, NULL, 5]]) AS values
+    )
+SELECT timeSeriesCoalesceGridValues('null')(values)
+FROM data
 ```
 
 Response:
 
 ```response
-┌─timeSeriesCoalesceGridValues('null')(arrayJoin(data))─┐
-│ [1,2,3,NULL,NULL]                                     │
-└───────────────────────────────────────────────────────┘
+┌─timeSeriesCoalesceGridValues('null')(values)─┐
+│ [1,2,3,NULL,NULL]                            │
+└──────────────────────────────────────────────┘
 ```
 
 And setting `mode` to `throw` will make the function throw an exception:
 
 ```sql
-WITH [[1., NULL, 3., NULL, 5], [NULL, 2., NULL, NULL, 5]] AS data
-SELECT timeSeriesCoalesceGridValues('throw')(arrayJoin(data));
+WITH data AS
+    (
+        SELECT arrayJoin([[1., NULL, 3., NULL, 5], [NULL, 2., NULL, NULL, 5]]) AS values
+    )
+SELECT timeSeriesCoalesceGridValues('throw')(values)
+FROM data
 ```
 
 Response:
 
 ```response
-Code: 36. DB::Exception: Found duplicate time series. (BAD_ARGUMENTS)
+DB::Exception: Instant vector cannot contain metrics with the same groups of tags: found duplicate series
 ```
 
 Optional argument `group` is used to provide extra information in the error message:
 
 ```sql
-WITH [[1., NULL, 3., NULL, 5], [NULL, 2., NULL, NULL, 5]] AS data,
-     (SELECT timeSeriesTagsToGroup([("__name__", "up")])) AS group
-SELECT timeSeriesCoalesceGridValues('throw')(arrayJoin(data), group);
+WITH
+    (
+        SELECT timeSeriesTagsToGroup([('__name__', 'up')])
+    ) AS group1,
+    (
+        SELECT timeSeriesTagsToGroup([('__name__', 'http_errors')])
+    ) AS group2,
+    data AS
+    (
+        SELECT
+            (arrayJoin([([1., NULL, 3., NULL, 5], group1), ([NULL, 2., NULL, NULL, 5], group2)]) AS t).1 AS values,
+            t.2 AS group
+    )
+SELECT timeSeriesCoalesceGridValues('throw')(values, group)
+FROM data
 ```
 
 Response:
 
 ```response
-Code: 36. DB::Exception: Found duplicate time series. (BAD_ARGUMENTS)
+DB::Exception: Instant vector cannot contain metrics with the same groups of tags: found duplicate series : {'__name__': 'up'} and {'__name__': 'http_errors'}
 ```
 
 :::note
