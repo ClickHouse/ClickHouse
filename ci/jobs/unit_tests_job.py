@@ -1,5 +1,6 @@
 from ci.praktika.info import Info
 from ci.praktika.result import Result
+import os
 
 if __name__ == "__main__":
     # Note, LSan does not compatible with debugger
@@ -9,6 +10,7 @@ if __name__ == "__main__":
     else:
         command_launcher = ""
 
+    os.environ["LLVM_PROFILE_FILE"] = "unit-test.profraw"
     Result.from_gtest_run(
         unit_tests_path="./ci/tmp/unit_tests_dbms",
         command_launcher=command_launcher,

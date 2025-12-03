@@ -118,7 +118,7 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
     "flaky check": "--flaky-check",
-    "llvm coverage": "--no-random-settings --no-random-merge-tree-settings",
+    "llvm coverage": "--no-random-settings --no-random-merge-tree-settings --no-long --no-debug",
 }
 
 
@@ -236,6 +236,8 @@ def main():
         config_installs_args += " --encrypted-storage"
         runner_options += f" --encrypted-storage"
 
+    if is_llvm_coverage:
+        os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}.profraw"
     if is_bugfix_validation:
         os.environ["GLOBAL_TAGS"] = "no-random-settings"
         ch_path = temp_dir
