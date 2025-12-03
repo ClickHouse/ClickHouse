@@ -84,6 +84,7 @@ extern const int SAMPLING_NOT_SUPPORTED;
 extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 extern const int STORAGE_REQUIRES_PARAMETER;
+extern const int UNKNOWN_DATABASE;
 }
 
 namespace
@@ -1155,7 +1156,7 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
         return nullptr;
 
     QueryPlanOptimizationSettings optimization_settings(context);
-    /// All optimisations will be done at plans creation
+    /// All optimizations will be done at plans creation
     optimization_settings.optimize_plan = false;
     auto builder = child.plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
 
@@ -1509,8 +1510,6 @@ void ReadFromMerge::convertAndFilterSourceStream(
     {
         for (const auto & alias : aliases)
         {
-            pipe_columns.emplace_back(NameAndTypePair(alias.name, alias.type));
-
             ActionsDAG actions_dag(pipe_columns);
 
             QueryTreeNodePtr query_tree = buildQueryTree(alias.expression, local_context);
@@ -1630,7 +1629,7 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_)
     auto request_read_in_order = [order_info_](ReadFromMergeTree & read_from_merge_tree)
     {
         return read_from_merge_tree.requestReadingInOrder(
-            order_info_->used_prefix_of_sorting_key_size, order_info_->direction, order_info_->limit, {});
+            order_info_->used_prefix_of_sorting_key_size, order_info_->direction, order_info_->limit);
     };
 
     bool ok = true;
@@ -1679,6 +1678,20 @@ IStorage::ColumnSizeByName StorageMerge::getColumnSizes() const
     });
 
     return column_sizes;
+}
+
+std::optional<IStorage::ColumnSizeByName> StorageMerge::tryGetColumnSizes() const
+{
+    try
+    {
+        return getColumnSizes();
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::UNKNOWN_DATABASE)
+            return std::nullopt;
+        throw;
+    }
 }
 
 

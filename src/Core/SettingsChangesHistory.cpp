@@ -39,8 +39,32 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "25.12",
+        {
+            {"max_reverse_dictionary_lookup_cache_size_bytes", 100 * 1024 * 1024, 100 * 1024 * 1024, "New setting. Maximum size in bytes of the per-query reverse dictionary lookup cache used by the function `dictGetKeys`. The cache stores serialized key tuples per attribute value to avoid re-scanning the dictionary within the same query."},
+            {"query_plan_remove_unused_columns", false, true, "New setting. Add optimization to remove unused columns in query plan."},
+            {"query_plan_optimize_join_order_limit", 1, 10, "Allow JOIN reordering with more tables by default"},
+            {"iceberg_insert_max_partitions", 100, 100, "New setting."},
+            {"use_paimon_partition_pruning", false, false, "New setting."},
+            {"use_skip_indexes_for_disjunctions", false, true, "New setting"},
+            {"allow_statistics_optimize", false, true, "Enable this optimization by default."},
+            {"allow_statistic_optimize", false, true, "Enable this optimization by default."},
+            {"query_plan_text_index_add_hint", true, true, "New setting"},
+            {"query_plan_read_in_order_through_join", false, true, "New setting"},
+            {"text_index_hint_max_selectivity", 0.2, 0.2, "New setting"},
+            {"allow_experimental_time_time64_type", false, true, "Enable Time and Time64 type by default"},
+            {"enable_time_time64_type", false, true, "Enable Time and Time64 type by default"},
+            {"aggregate_function_input_format", "state", "state", "New setting to control AggregateFunction input format during INSERT operations. Setting Value set to state by default"},
+            {"delta_lake_snapshot_start_version", -1, -1, "New setting."},
+            {"delta_lake_snapshot_end_version", -1, -1, "New setting."},
+            {"compatibility_s3_presigned_url_query_in_path", false, false, "New setting."},
+            {"serialize_string_in_memory_with_zero_byte", true, true, "New setting"},
+            {"optimize_inverse_dictionary_lookup", false, true, "New setting"},
+        });
         addSettingsChanges(settings_changes_history, "25.11",
         {
+            {"query_plan_max_limit_for_lazy_materialization", 10, 100, "More optimal"},
+            {"create_table_empty_primary_key_by_default", false, true, "Better usability"},
             {"cluster_table_function_split_granularity", "file", "file", "New setting."},
             {"cluster_table_function_buckets_batch_size", 0, 0, "New setting."},
             {"arrow_flight_request_descriptor_type", "path", "path", "New setting. Type of descriptor to use for Arrow Flight requests: 'path' or 'command'. Dremio requires 'command'."},
@@ -185,7 +209,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_ytsaurus_table_function", false, false, "New setting."},
             {"allow_experimental_ytsaurus_dictionary_source", false, false, "New setting."},
             {"per_part_index_stats", false, false, "New setting."},
-            {"allow_experimental_iceberg_compaction", 0, 0, "New setting "},
+            {"allow_experimental_iceberg_compaction", 0, 0, "New setting"},
             {"delta_lake_snapshot_version", -1, -1, "New setting"},
             {"use_roaring_bitmap_iceberg_positional_deletes", false, false, "New setting"},
             {"iceberg_metadata_compression_method", "", "", "New setting"},
@@ -197,6 +221,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_lightweight_update", false, true, "Lightweight updates were moved to Beta. Added an alias for setting 'allow_experimental_lightweight_update'."},
             {"allow_experimental_lightweight_update", false, true, "Lightweight updates were moved to Beta."},
             {"s3_slow_all_threads_after_retryable_error", false, false, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
+            {"serialize_string_in_memory_with_zero_byte", true, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
@@ -940,6 +965,11 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "25.12",
+        {
+            {"alter_column_secondary_index_mode", "compatibility", "rebuild", "Change the behaviour to allow ALTER `column` when they have dependent secondary indices"},
+            {"nullable_serialization_version", "basic", "basic", "New setting"},
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.11",
         {
             {"merge_max_dynamic_subcolumns_in_wide_part", "auto", "auto", "Add a new setting to limit number of dynamic subcolumns in Wide part after merge regardless the parameters specified in the data type"},

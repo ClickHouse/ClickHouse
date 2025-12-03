@@ -38,7 +38,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/hasNullable.h>
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
@@ -114,6 +114,7 @@
 #include <unordered_set>
 #include <filesystem>
 
+#include <boost/container_hash/hash.hpp>
 #include <fmt/format.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/NetException.h>
@@ -168,6 +169,7 @@ namespace CurrentMetrics
     extern const Metric FreezePartThreads;
     extern const Metric FreezePartThreadsActive;
     extern const Metric FreezePartThreadsScheduled;
+    extern const Metric ColumnsDescriptionsCacheSize;
 }
 
 
@@ -222,6 +224,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool async_insert;
     extern const MergeTreeSettingsBool check_sample_column_is_correct;
     extern const MergeTreeSettingsBool compatibility_allow_sampling_expression_not_in_primary_key;
+    extern const MergeTreeSettingsAlterColumnSecondaryIndexMode alter_column_secondary_index_mode;
     extern const MergeTreeSettingsUInt64 concurrent_part_removal_threshold;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsBool disable_freeze_partition_for_zero_copy_replication;
@@ -280,6 +283,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
+    extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsUInt32 min_level_for_wide_part;
 }
 
@@ -644,6 +648,7 @@ MergeTreeData::MergeTreeData(
     , format_version(date_column_name.empty() ? MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING : MERGE_TREE_DATA_OLD_FORMAT_VERSION)
     , merging_params(merging_params_)
     , require_part_metadata(require_part_metadata_)
+    , columns_descriptions_metric_handle(CurrentMetrics::ColumnsDescriptionsCacheSize)
     , broken_part_callback(broken_part_callback_)
     , log(table_id_.getNameForLogs())
     , storage_settings(std::move(storage_settings_))
@@ -1006,16 +1011,25 @@ void MergeTreeData::checkProperties(
 
         for (const auto & index : new_metadata.secondary_indices)
         {
-            if (!allow_suspicious_indices && !attach)
+            try
             {
-                const auto * index_ast = typeid_cast<const ASTIndexDeclaration *>(index.definition_ast.get());
-                ASTPtr index_expression = index_ast ? index_ast->getExpression() : nullptr;
-                const auto * index_expression_ptr = index_expression ? typeid_cast<const ASTFunction *>(index_expression.get()) : nullptr;
-                if (index_expression_ptr)
-                    checkSuspiciousIndices(index_expression_ptr);
-            }
+                if (!allow_suspicious_indices && !attach)
+                {
+                    const auto * index_ast = typeid_cast<const ASTIndexDeclaration *>(index.definition_ast.get());
+                    ASTPtr index_expression = index_ast ? index_ast->getExpression() : nullptr;
+                    const auto * index_expression_ptr
+                        = index_expression ? typeid_cast<const ASTFunction *>(index_expression.get()) : nullptr;
+                    if (index_expression_ptr)
+                        checkSuspiciousIndices(index_expression_ptr);
+                }
 
-            MergeTreeIndexFactory::instance().validate(index, attach);
+                MergeTreeIndexFactory::instance().validate(index, attach);
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("When validating secondary index {}", backQuote(index.name));
+                throw;
+            }
 
             if (indices_names.contains(index.name))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with name {} already exists", backQuote(index.name));
@@ -2410,7 +2424,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         }
 
         unexpected_data_parts_loading_task = getContext()->getSchedulePool().createTask(
-            "MergeTreeData::loadUnexpectedDataParts",
+            getStorageID(), "MergeTreeData::loadUnexpectedDataParts",
             [this] { loadUnexpectedDataParts(); });
     }
 
@@ -2432,7 +2446,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         }
 
         outdated_data_parts_loading_task = getContext()->getSchedulePool().createTask(
-            "MergeTreeData::loadOutdatedDataParts",
+            getStorageID(), "MergeTreeData::loadOutdatedDataParts",
             [this] { loadOutdatedDataParts(/*is_async=*/ true); });
     }
 
@@ -2446,7 +2460,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     if (all_disks_are_readonly && refresh_parts_interval && !refresh_parts_task)
     {
         refresh_parts_task = getContext()->getSchedulePool().createTask(
-            "MergeTreeData::refreshDataParts",
+            getStorageID(), "MergeTreeData::refreshDataParts",
             [this, refresh_parts_interval] { refreshDataParts(refresh_parts_interval); });
 
         refresh_parts_task->scheduleAfter(refresh_parts_interval);
@@ -2456,7 +2470,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     if (refresh_statistics_seconds && !refresh_stats_task)
     {
         refresh_stats_task = getContext()->getSchedulePool().createTask(
-            "MergeTreeData::refreshStatistics",
+            getStorageID(), "MergeTreeData::refreshStatistics",
             [this, refresh_statistics_seconds] { refreshStatistics(refresh_statistics_seconds); });
 
         refresh_stats_task->activateAndSchedule();
@@ -4180,6 +4194,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     NamesAndTypesList columns_to_check_conversion;
 
+    const auto index_mode = (*settings_from_storage)[MergeTreeSetting::alter_column_secondary_index_mode];
     auto unfinished_mutations = getUnfinishedMutationCommands();
     std::optional<NameDependencies> name_deps{};
     for (const AlterCommand & command : commands)
@@ -4283,7 +4298,18 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     boost::join(column_to_subcolumns_used_in_keys[command.column_name], ", "));
             }
 
-            /// Don't check columns in indices here. RENAME works fine with index columns.
+            if (index_mode == AlterColumnSecondaryIndexMode::THROW)
+            {
+                if (auto it = columns_in_indices.find(command.column_name); it != columns_in_indices.end())
+                {
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "The ALTER of the column '{}' is forbidden because it is used by the index '{}'. Check the MergeTree setting "
+                        "'alter_column_secondary_index_mode' to change this behaviour",
+                        backQuoteIfNeed(command.column_name),
+                        it->second);
+                }
+            }
 
             if (auto it = columns_in_projections.find(command.column_name); it != columns_in_projections.end())
             {
@@ -4368,13 +4394,17 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     boost::join(column_to_subcolumns_used_in_keys[command.column_name], ", "));
             }
 
-            if (auto it = columns_in_indices.find(command.column_name); it != columns_in_indices.end())
+            if (index_mode == AlterColumnSecondaryIndexMode::THROW || index_mode == AlterColumnSecondaryIndexMode::COMPATIBILITY)
             {
-                throw Exception(
-                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "Trying to ALTER {} column which is a part of index {}",
-                    backQuoteIfNeed(command.column_name),
-                    it->second);
+                if (auto it = columns_in_indices.find(command.column_name); it != columns_in_indices.end())
+                {
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "The ALTER of the column '{}' is forbidden because it is used by the index '{}'. Check the MergeTree setting "
+                        "'alter_column_secondary_index_mode' to change this behaviour",
+                        backQuoteIfNeed(command.column_name),
+                        it->second);
+                }
             }
 
             /// Don't check columns in projections here. If required columns of projections get
@@ -4522,11 +4552,25 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 }
 
 
-void MergeTreeData::checkMutationIsPossible(const MutationCommands & /*commands*/, const Settings & /*settings*/) const
+void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, const Settings & /*settings*/) const
 {
     for (const auto & disk : getDisks())
         if (!disk->supportsHardLinks())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Mutations are not supported for immutable disk '{}'", disk->getName());
+
+    const auto index_mode = (*getSettings())[MergeTreeSetting::alter_column_secondary_index_mode];
+    if (index_mode == AlterColumnSecondaryIndexMode::THROW && getInMemoryMetadata().hasSecondaryIndices())
+    {
+        for (const auto & command : commands)
+        {
+            if (command.type == MutationCommand::UPDATE || command.type == MutationCommand::DELETE)
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "UPDATE or DELETE over the table '{}' is forbidden because it has secondary indexes. Check the MergeTree setting "
+                    "'alter_column_secondary_index_mode' to change this behaviour",
+                    getStorageID().getNameForLogs());
+        }
+    }
 }
 
 MergeTreeDataPartFormat MergeTreeData::choosePartFormat(size_t bytes_uncompressed, size_t rows_count, UInt32 part_level) const
@@ -4653,7 +4697,7 @@ void MergeTreeData::PartsTemporaryRename::tryRenameAll()
             if (old_name.empty() || new_name.empty())
                 throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Empty part name. Most likely it's a bug.");
             const auto full_path = fs::path(storage.relative_data_path) / source_dir;
-            disk->moveFile(fs::path(full_path) / old_name, fs::path(full_path) / new_name);
+            disk->moveDirectory(fs::path(full_path) / old_name, fs::path(full_path) / new_name);
         }
         catch (...)
         {
@@ -5154,7 +5198,7 @@ DataPartsVector MergeTreeData::grabActivePartsToRemoveForDropRange(
 }
 
 MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(
-        MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock, bool create_empty_part)
+    MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock, bool create_empty_part, bool clone_to_detached)
 {
 #ifndef NDEBUG
     {
@@ -5172,6 +5216,18 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
     /// and add these parts to list of parts to remove from ZooKeeper
     auto inactive_parts_to_remove_immediately = getDataPartsVectorInPartitionForInternalUsage(
         {DataPartState::Outdated, DataPartState::Deleting}, drop_range.getPartitionId(), lock);
+
+    if (clone_to_detached)
+    {
+        auto metadata_snapshot = getInMemoryMetadataPtr();
+        for (const auto & part : parts_to_remove)
+        {
+            String part_dir = part->getDataPartStorage().getPartDirectory();
+            LOG_INFO(log, "Detaching {}", part_dir);
+            auto holder = getTemporaryPartDirectoryHolder(fs::path(DETACHED_DIR_NAME) / part_dir);
+            part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
+        }
+    }
 
     /// FIXME refactor removePartsFromWorkingSet(...), do not remove parts twice
     removePartsFromWorkingSet(txn, parts_to_remove, clear_without_timeout, lock);
@@ -8482,6 +8538,7 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
         false,
         settings[MergeTreeSetting::serialization_info_version],
         settings[MergeTreeSetting::string_serialization_version],
+        settings[MergeTreeSetting::nullable_serialization_version],
     };
 
     for (const auto & column : columns_list)
@@ -9890,6 +9947,7 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
         true,
         (*getSettings())[MergeTreeSetting::serialization_info_version],
         (*getSettings())[MergeTreeSetting::string_serialization_version],
+        (*getSettings())[MergeTreeSetting::nullable_serialization_version],
     };
 
     const auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -10105,6 +10163,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         false,
         (*settings)[MergeTreeSetting::serialization_info_version],
         (*settings)[MergeTreeSetting::string_serialization_version],
+        (*settings)[MergeTreeSetting::nullable_serialization_version],
     };
 
     new_data_part->setColumns(columns, SerializationInfoByName{info_settings}, metadata_snapshot->getMetadataVersion());
@@ -10286,6 +10345,60 @@ void MergeTreeData::verifySortingKey(const KeyDescription & sorting_key)
             throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_KEY, "Column with type {} is not allowed in key expression", data_type->getCustomName()->getName());
     }
 }
+
+size_t MergeTreeData::NamesAndTypesListHash::operator()(const NamesAndTypesList & list) const noexcept
+{
+    size_t hash = 0;
+    for (const auto & name_type : list)
+        boost::hash_combine(hash, StringViewHash{}(name_type.name));
+    return hash;
+}
+
+MergeTreeData::ColumnsDescriptionCache MergeTreeData::getColumnsDescriptionForColumns(const NamesAndTypesList & columns) const
+{
+    std::lock_guard lock(columns_descriptions_cache_mutex);
+    if (auto it = columns_descriptions_cache.find(columns); it != columns_descriptions_cache.end())
+        return it->second;
+
+    ColumnsDescriptionCache cache
+    {
+        .original = std::make_shared<ColumnsDescription>(columns),
+        .with_collected_nested = std::make_shared<ColumnsDescription>(Nested::collect(columns)),
+    };
+    if (*cache.with_collected_nested == *cache.original)
+        cache.with_collected_nested = cache.original;
+    auto [_, inserted] = columns_descriptions_cache.emplace(columns, cache);
+    columns_descriptions_metric_handle.add(inserted);
+    return cache;
+}
+
+void MergeTreeData::decrefColumnsDescriptionForColumns(const NamesAndTypesList & columns) const
+{
+    std::lock_guard lock(columns_descriptions_cache_mutex);
+    if (auto it = columns_descriptions_cache.find(columns); it != columns_descriptions_cache.end())
+    {
+        /// 1 in the container + 1 in the iterator
+        ///
+        /// Note, we cannot check original.use_count() == with_collected_nested.use_count(),
+        /// since in IMergeTreeDataPart::setColumns() there is a tiny window when it is not correct.
+        ///
+        /// But, if original.use_count() == 2 then it is **always** safe to delete,
+        /// since this means that there are no other references to the shared_ptr
+        /// except in the columns_descriptions_cache and local copy here in iterator.
+        if (it->second.original.use_count() == 2)
+        {
+            columns_descriptions_cache.erase(it);
+            columns_descriptions_metric_handle.sub(1);
+        }
+    }
+}
+
+size_t MergeTreeData::getColumnsDescriptionsCacheSize() const
+{
+    std::lock_guard lock(columns_descriptions_cache_mutex);
+    return columns_descriptions_cache.size();
+}
+
 
 static void updateMutationsCounters(MutationCounters & mutation_counters, const MutationCommands & commands, Int64 increment)
 {

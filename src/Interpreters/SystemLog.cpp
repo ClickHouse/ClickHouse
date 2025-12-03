@@ -29,6 +29,7 @@
 #include <Interpreters/TransposedMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/BackgroundSchedulePoolLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryMetricLog.h>
@@ -422,6 +423,12 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
                                                                 DEFAULT_AGGREGATED_ZOOKEEPER_LOG_COLLECT_INTERVAL_MILLISECONDS);
         aggregated_zookeeper_log->startCollect(ThreadName::AGGREGATED_ZOOKEEPER_LOG, collect_interval_milliseconds);
     }
+
+    if (background_schedule_pool_log)
+    {
+        size_t duration_threshold_ms = config.getUInt64("background_schedule_pool_log.duration_threshold_ms", 0);
+        background_schedule_pool_log->setDurationMillisecondsThreshold(duration_threshold_ms);
+    }
 }
 
 std::vector<ISystemLog *> SystemLogs::getAllLogs() const
@@ -478,7 +485,7 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
             log->flushBufferToLog(std::chrono::system_clock::now());
 
             auto last_log_index = log->getLastLogIndex();
-            logs_to_wait.push_back({log, log->getLastLogIndex()});
+            logs_to_wait.push_back({log, last_log_index});
             log->notifyFlush(last_log_index, should_prepare_tables_anyway);
         }
     }

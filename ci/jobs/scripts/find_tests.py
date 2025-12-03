@@ -53,7 +53,6 @@ class Targeting:
     STATELESS_JOB_TYPE = "Stateless"
 
     def __init__(self, info: Info):
-        assert info.pr_number > 0, "Targeting is applicable only for PRs"
         self.info = info
         if "stateless" in info.job_name.lower():
             self.job_type = self.STATELESS_JOB_TYPE
@@ -100,6 +99,9 @@ class Targeting:
         from ci.praktika.settings import Settings
 
         assert self.job_type, "Unsupported job type"
+        assert (
+            self.info.pr_number > 0
+        ), "Find tests by previous failures applicable only for PRs"
 
         tests = []
         cidb = CIDB(url=Settings.CI_DB_READ_URL, user="play", passwd="")
@@ -118,55 +120,6 @@ class Targeting:
         print(f"Parsed {len(tests)} test names: {tests}")
         tests = list(set(tests))
         return sorted(tests)
-
-    def get_changed_symbols_with_info(self, path):
-        name = "changed_symbols"
-        dts = DiffToSymbols(path, self.info.pr_number)
-        file_no_to_address_symbol = dts.get_map_line_to_symbol()
-        if not file_no_to_address_symbol:
-            return [], Result(
-                name=name,
-                status=Result.StatusExtended.OK,
-                info="No changes in source files",
-            )
-        symbols = set()
-        map_results = []
-        all_resolved = True
-        not_resolved_file_line_map = {}
-        for (file_, line_), (
-            address,
-            linkage_name,
-            symbol,
-        ) in file_no_to_address_symbol.items():
-            if symbol in symbols:
-                continue
-            if not symbol:
-                all_resolved = False
-                if file_ not in not_resolved_file_line_map:
-                    not_resolved_file_line_map[file_] = set()
-                not_resolved_file_line_map[file_].add(line_)
-            else:
-                symbols.add(symbol)
-        info = f"Resolved {len(symbols)} symbols:\n"
-        for symbol in symbols[:10]:
-            info += f" - {symbol}\n"
-        if len(symbols) > 10:
-            info += "...\n"
-        info += "\n"
-        info += (
-            f"Failed to resolve symbols in {len(not_resolved_file_line_map)} files:\n"
-        )
-        for file_, lines in not_resolved_file_line_map.items():
-            for line in lines:
-                if line - 1 in lines:  # skip consecutive lines
-                    continue
-                info += f" - {file_}: {line}\n"
-
-        return list(symbols), Result(
-            name=name,
-            status=Result.StatusExtended.OK,
-            info=info,
-        )
 
     def get_tests_by_changed_symbols(self, symbols):
         """
@@ -227,7 +180,7 @@ class Targeting:
         Returns:
             dict: {(file, line): (symbol or None, [tests])}
         """
-
+        assert self.info.pr_number > 0, "Find tests by diff applicable for PRs only"
         dts = DiffToSymbols(binary_path, self.info.pr_number)
         file_line_to_address_linkagename_symbol = dts.get_map_line_to_symbol()
         not_resolved_file_lines = {}

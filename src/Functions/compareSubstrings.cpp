@@ -89,9 +89,9 @@ public:
         if (col_str1 && col_str2)
             executeStringString(*col_str1, *col_str2, str1_offset, str2_offset, num_bytes, input_rows_count, result);
         else if (col_str1 && col_str2_const)
-            executeStringConst<false>(*col_str1, col_str2_const->getDataAt(0).toView(), str1_offset, str2_offset, num_bytes, input_rows_count, result);
+            executeStringConst<false>(*col_str1, col_str2_const->getDataAt(0), str1_offset, str2_offset, num_bytes, input_rows_count, result);
         else if (col_str1_const && col_str2)
-            executeStringConst<true>(*col_str2, col_str1_const->getDataAt(0).toView(), str2_offset, str1_offset, num_bytes, input_rows_count, result);
+            executeStringConst<true>(*col_str2, col_str1_const->getDataAt(0), str2_offset, str1_offset, num_bytes, input_rows_count, result);
         else if (fixed_str1_col && fixed_str2_col)
             executeFixedStringFixedString(*fixed_str1_col, *fixed_str2_col, str1_offset, str2_offset, num_bytes, input_rows_count, result);
         else if (col_str1 && fixed_str2_col)
@@ -99,9 +99,9 @@ public:
         else if (fixed_str1_col && col_str2)
             executeFixedStringString<false>(*fixed_str1_col, *col_str2, str1_offset, str2_offset, num_bytes, input_rows_count, result);
         else if (fixed_str1_col && col_str2_const)
-            executeFixedStringConst<false>(*fixed_str1_col, col_str2_const->getDataAt(0).toView(), str1_offset, str2_offset, num_bytes, input_rows_count, result);
+            executeFixedStringConst<false>(*fixed_str1_col, col_str2_const->getDataAt(0), str1_offset, str2_offset, num_bytes, input_rows_count, result);
         else if (col_str1_const && fixed_str2_col)
-            executeFixedStringConst<true>(*fixed_str2_col, col_str1_const->getDataAt(0).toView(), str2_offset, str1_offset, num_bytes, input_rows_count, result);
+            executeFixedStringConst<true>(*fixed_str2_col, col_str1_const->getDataAt(0), str2_offset, str1_offset, num_bytes, input_rows_count, result);
         else
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,

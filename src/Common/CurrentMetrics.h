@@ -59,6 +59,11 @@ namespace CurrentMetrics
         add(metric, -value);
     }
 
+    inline bool cas(Metric metric, Value expected, Value desired)
+    {
+        return values[metric].compare_exchange_strong(expected, desired, std::memory_order_relaxed);
+    }
+
     /// For lifetime of object, add amount for specified metric. Then subtract.
     class Increment
     {

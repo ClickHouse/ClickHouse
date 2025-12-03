@@ -6,27 +6,26 @@ import sys
 from pathlib import Path
 
 from ci.jobs.scripts.docker_image import DockerImage
-from ci.jobs.scripts.stack_trace_reader import StackTraceReader
+from ci.jobs.scripts.log_parser import FuzzerLogParser
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
 IMAGE_NAME = "clickhouse/fuzzer"
 
+# Maximum number of reproduce commands to display inline before writing to file
+MAX_INLINE_REPRODUCE_COMMANDS = 20
+
 cwd = Utils.cwd()
-temp_dir = Path(f"{cwd}/ci/tmp/")
 
 
 def get_run_command(
     workspace_path: Path,
     image: DockerImage,
-    check_name: str,
+    buzzhouse: bool,
 ) -> str:
-    fuzzer_name = (
-        "BuzzHouse" if check_name.lower().startswith("buzzhouse") else "AST Fuzzer"
-    )
     envs = [
-        f"-e FUZZER_TO_RUN='{fuzzer_name}'",
+        f"-e FUZZER_TO_RUN='{'BuzzHouse' if buzzhouse else 'AST Fuzzer'}'",
     ]
 
     env_str = " ".join(envs)
@@ -36,7 +35,7 @@ def get_run_command(
         # For sysctl
         "--privileged "
         "--network=host "
-        "--tmpfs /tmp/clickhouse "
+        "--tmpfs /tmp/clickhouse:mode=1777 "
         f"--volume={workspace_path}:/workspace "
         f"--volume={cwd}:/repo "
         f"{env_str} "
@@ -46,14 +45,11 @@ def get_run_command(
     )
 
 
-def main():
+def run_fuzz_job(check_name: str):
     logging.basicConfig(level=logging.INFO)
+    buzzhouse: bool = check_name.lower().startswith("buzzhouse")
 
-    check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
-    assert (
-        check_name
-    ), "Check name must be provided as an input arg or in CHECK_NAME env"
-
+    temp_dir = Path(f"{cwd}/ci/tmp/")
     assert Path(f"{temp_dir}/clickhouse").exists(), "ClickHouse binary not found"
 
     docker_image = DockerImage.get_docker_image(IMAGE_NAME).pull_image()
@@ -61,88 +57,149 @@ def main():
     workspace_path = temp_dir / "workspace"
     workspace_path.mkdir(parents=True, exist_ok=True)
 
-    run_command = get_run_command(workspace_path, docker_image, check_name)
+    run_command = get_run_command(workspace_path, docker_image, buzzhouse)
     logging.info("Going to run %s", run_command)
 
     info = Info()
+    is_sanitized = "san" in info.job_name
 
     with open(workspace_path / "ci-changed-files.txt", "w") as f:
         f.write("\n".join(info.get_changed_files()))
 
     Shell.check(command=run_command, verbose=True)
-    result = Result.from_fs(name=info.job_name)
-    result.status = Result.Status.SUCCESS
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_dir}", shell=True)
 
     fuzzer_log = workspace_path / "fuzzer.log"
     dmesg_log = workspace_path / "dmesg.log"
     fatal_log = workspace_path / "fatal.log"
+    server_log = workspace_path / "server.log"
     paths = [
         workspace_path / "core.zst",
         workspace_path / "dmesg.log",
         fatal_log,
         workspace_path / "stderr.log",
-        workspace_path / "server.log",
-        workspace_path / "fuzzer_out.sql",
+        server_log,
         fuzzer_log,
         dmesg_log,
     ]
+    if buzzhouse:
+        paths.extend([workspace_path / "fuzzerout.sql", workspace_path / "fuzz.json"])
 
+    server_died = False
+    server_exit_code = 0
+    fuzzer_exit_code = 0
     try:
-        with open(workspace_path / "status.txt", "r", encoding="utf-8") as status_f:
-            status = status_f.readline().rstrip("\n")
-
-        with open(workspace_path / "description.txt", "r", encoding="utf-8") as desc_f:
-            description = desc_f.readline().rstrip("\n")
-        result_ = Result(name=description, status=status)
-        if not result_.is_ok():
-            result.results = [result_]
-            result.set_status(Result.Status.FAILED)
-        else:
-            pass
-    except:
+        with open(workspace_path / "status.tsv", "r", encoding="utf-8") as status_f:
+            server_died, server_exit_code, fuzzer_exit_code = (
+                status_f.readline().rstrip("\n").split("\t")
+            )
+            server_died = bool(int(server_died))
+            server_exit_code = int(server_exit_code)
+            fuzzer_exit_code = int(fuzzer_exit_code)
+    except Exception:
         result.set_status(Result.Status.ERROR)
-        result.results = [
-            Result(name="Unknown error", status=Result.StatusExtended.ERROR)
-        ]
+        result.set_info("Unknown error in fuzzer runner script")
+        result.complete_job()
+        sys.exit(1)
 
-    info = ""
-    if not result.is_ok():
-        if fuzzer_log.exists():
-            fuzzer_query = StackTraceReader.get_fuzzer_query(fuzzer_log)
-            if fuzzer_query:
-                info = f"Query: {fuzzer_query}"
-            else:
-                info = "Fuzzer log:\n ~~~\n" + Shell.get_output(
-                    f"tail {fuzzer_log}", verbose=False
-                )
-            info += "\n---\n"
-        if fatal_log.exists():
-            stack_trace = StackTraceReader.get_stack_trace(fatal_log)
-            if stack_trace:
-                info += "Stack trace:\n" + stack_trace
-        if result.results:
-            result.results[-1].info = info
+    # parse runner script exit status
+    status = Result.Status.FAILED
+    result_name = ""
+    info = []
+    is_failed = True
+    if server_died:
+        # Server died - status will be determined after OOM checks
+        is_failed = True
+    elif fuzzer_exit_code in (0, 143):
+        # normal exit with timeout
+        is_failed = False
+        status = Result.Status.SUCCESS
+    elif fuzzer_exit_code in (227,):
+        # BuzzHouse exception, it means a query oracle failed, or
+        # an unwanted exception was found
+        status = Result.Status.ERROR
+        error_info = (
+            Shell.get_output(
+                f"rg --text -o 'DB::Exception: Found disallowed error code.*' {fuzzer_log}"
+            )
+            or "BuzzHouse fuzzer exception not found, fuzzer issue?"
+        )
+        info.append(f"ERROR: {error_info}")
+    else:
+        status = Result.Status.ERROR
+        if fuzzer_exit_code == 137:
+            # Killed.
+            info.append("ERROR: Fuzzer killed")
         else:
-            result.info = info
+            # The server was alive, but the fuzzer returned some error. This might
+            # be some client-side error detected by fuzzing, or a problem in the
+            # fuzzer itself. Don't grep the server log in this case, because we will
+            # find a message about normal server termination (Received signal 15),
+            # which is confusing.
+            info.append("Client failure (see logs)")
+            info.append("---\nFuzzer log (last 200 lines):")
+            info.extend(
+                Shell.get_output(f"tail -n200 {fuzzer_log}", verbose=False).splitlines()
+            )
 
-        if Shell.check(f"dmesg > {dmesg_log}"):
-            result.results.append(
-                Result.from_commands_run(
-                    name="OOM in dmesg",
-                    command=f"! cat {dmesg_log} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
+    if is_failed:
+        if is_sanitized:
+            sanitizer_oom = Shell.get_output(
+                f"rg --text 'Sanitizer:? (out-of-memory|out of memory|failed to allocate)|Child process was terminated by signal 9' {server_log}"
+            )
+            if sanitizer_oom:
+                print("Sanitizer OOM")
+                info.append("WARNING: Sanitizer OOM - test considered passed")
+                status = Result.Status.SUCCESS
+                is_failed = False
+        else:
+            # Check for OOM in dmesg for non-sanitized builds
+            if Shell.check(f"dmesg > {dmesg_log}", verbose=True):
+                if Shell.check(
+                    f"cat {dmesg_log} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
+                    verbose=True,
+                ):
+                    info.append("ERROR: OOM in dmesg")
+                    status = Result.Status.ERROR
+            else:
+                print("WARNING: dmesg not enabled")
+
+    results = []
+    if is_failed and status != Result.Status.ERROR:
+        # died server - lets fetch failure from log
+        fuzzer_log_parser = FuzzerLogParser(
+            str(server_log),
+            str(workspace_path / "fuzzerout.sql" if buzzhouse else fuzzer_log),
+        )
+        parsed_name, parsed_info = fuzzer_log_parser.parse_failure()
+
+        if parsed_name:
+            results.append(
+                Result(
+                    name=parsed_name,
+                    info=parsed_info,
+                    status=Result.StatusExtended.FAIL,
                 )
             )
-        else:
-            print("WARNING: dmesg not enabled")
 
-    if not result.is_ok():
+    result = Result.create_from(
+        results=results, status=status if not results else None, info=info
+    )
+
+    if is_failed:
+        # generate fatal log
+        Shell.check(f"rg --text '\s<Fatal>\s' {server_log} > {fatal_log}")
         for file in paths:
-            if file.exists():
+            if file.exists() and file.stat().st_size > 0:
                 result.set_files(file)
 
     result.complete_job()
 
 
 if __name__ == "__main__":
-    main()
+    check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
+    assert (
+        check_name
+    ), "Check name must be provided as an input arg or in CHECK_NAME env"
+
+    run_fuzz_job(check_name)
