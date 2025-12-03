@@ -1251,23 +1251,20 @@ try
             {
                 int32_t member_id = member_id_json.convert<int32_t>();
                 RemoveRaftServer remove_action{member_id};
-                auto remove_callback = [member_id](KeeperServer * server_) -> bool
+                auto remove_callback = [this, member_id](KeeperServer * server_) -> bool
                 {
                     auto config = server_->getKeeperStateMachine()->getClusterConfig();
 
                     if (config->get_server(member_id) == nullptr)
                     {
-                        LOG_INFO(
-                            &Poco::Logger::get("KeeperDispatcher"),
-                                 "Skip removing server id {} from cluster because it's not present in current configuration: {}",
+                        LOG_INFO(log, "Skip removing server id {} from cluster because it's not present in current configuration: {}",
                             member_id, serializeClusterConfig(config));
                         return true;
                     }
                     else
                     {
                         LOG_INFO(
-                            &Poco::Logger::get("KeeperDispatcher"),
-                                 "Waiting for removing server id {} from cluster configuration: {}",
+                            log, "Waiting for removing server id {} from cluster configuration: {}",
                             member_id, serializeClusterConfig(config));
                         return false;
                     }
@@ -1287,22 +1284,20 @@ try
                 bool learner = member_obj->has("learner") ? member_obj->getValue<bool>("learner") : false;
                 int priority = member_obj->has("priority") ? member_obj->getValue<int>("priority") : 1;
                 AddRaftServer add_action({RaftServerConfig{member_id, endpoint, learner, priority}});
-                auto add_callback = [member_id](KeeperServer * server_) -> bool
+                auto add_callback = [this, member_id](KeeperServer * server_) -> bool
                 {
                     auto config = server_->getKeeperStateMachine()->getClusterConfig();
                     if (config->get_server(member_id) != nullptr)
                     {
                         LOG_INFO(
-                            &Poco::Logger::get("KeeperDispatcher"),
-                            "Skip adding server id {} to cluster because it's already present in current configuration",
+                            log, "Skip adding server id {} to cluster because it's already present in current configuration",
                             member_id);
                         return true;
                     }
                     else
                     {
                         LOG_INFO(
-                            &Poco::Logger::get("KeeperDispatcher"),
-                            "Waiting for adding server id {} to cluster configuration",
+                            log, "Waiting for adding server id {} to cluster configuration",
                             member_id);
                         return false;
                     }
@@ -1321,21 +1316,19 @@ try
 
             int32_t new_leader_id = leader_ids.front();
             TransferLeadership transfer_action{new_leader_id};
-            auto check_callback = [new_leader_id](KeeperServer * server_) -> bool
+            auto check_callback = [this, new_leader_id](KeeperServer * server_) -> bool
             {
                 if (server_->getLeaderID() == new_leader_id)
                 {
                     LOG_INFO(
-                        &Poco::Logger::get("KeeperDispatcher"),
-                        "Leadership successfully transferred to server id {}",
+                        log, "Leadership successfully transferred to server id {}",
                         new_leader_id);
                     return true;
                 }
                 else
                 {
                 LOG_INFO(
-                    &Poco::Logger::get("KeeperDispatcher"),
-                    "Waiting for leadership transfer to server id {}. Current leader id is {}",
+                    log, "Waiting for leadership transfer to server id {}. Current leader id is {}",
                     new_leader_id,
                     server_->getLeaderID());
 
@@ -1354,34 +1347,28 @@ try
                 int member_id = priority_change_obj->getValue<int>("id");
                 int priority = priority_change_obj->getValue<int>("priority");
                 UpdateRaftServerPriority update_priority_action{member_id, priority};
-                auto priority_callback = [member_id, priority](KeeperServer * server_) -> bool
+                auto priority_callback = [this, member_id, priority](KeeperServer * server_) -> bool
                 {
                     auto config = server_->getKeeperStateMachine()->getClusterConfig();
                     auto server_in_config = config->get_server(member_id);
                     if (server_in_config == nullptr)
                     {
                         LOG_INFO(
-                            &Poco::Logger::get("KeeperDispatcher"),
-                            "Cannot set priority for server id {} because it's not present in current configuration",
+                            log, "Cannot set priority for server id {} because it's not present in current configuration",
                             member_id);
                         return true;
                     }
                     else if (server_in_config->get_priority() == priority)
                     {
                         LOG_INFO(
-                            &Poco::Logger::get("KeeperDispatcher"),
-                            "Priority for server id {} successfully changed to {}",
-                            member_id,
-                            priority);
+                            log, "Priority for server id {} successfully changed to {}", member_id, priority);
                         return true;
                     }
                     else
                     {
                         LOG_INFO(
-                            &Poco::Logger::get("KeeperDispatcher"),
-                            "Waiting for setting priority {} for server id {} in cluster configuration, current {}",
-                            priority,
-                            member_id, server_in_config->get_priority());
+                            log,
+                            "Waiting for setting priority {} for server id {} in cluster configuration, current {}", priority, member_id, server_in_config->get_priority());
                         return false;
                     }
                 };
