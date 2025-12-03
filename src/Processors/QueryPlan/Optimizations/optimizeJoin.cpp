@@ -1,28 +1,39 @@
+#include <Common/logger_useful.h>
+#include <Common/safe_cast.h>
+
+#include <Core/Joins.h>
 #include <Core/Settings.h>
+
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/MergeJoin.h>
+#include <Interpreters/TableJoin.h>
+
+#include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
-#include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Processors/QueryPlan/Optimizations/Utils.h>
-#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/SortingStep.h>
-#include <Storages/StorageMemory.h>
-
-#include <Processors/QueryPlan/LimitStep.h>
-
-#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Interpreters/FullSortingMergeJoin.h>
+#include <Processors/QueryPlan/SortingStep.h>
 
-#include <Interpreters/Context.h>
-#include <Interpreters/TableJoin.h>
-#include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
+#include <Processors/QueryPlan/Optimizations/joinOrder.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
+
+#include <Storages/StorageMemory.h>
 
 #include <algorithm>
 #include <limits>
@@ -32,19 +43,7 @@
 #include <unordered_map>
 #include <vector>
 #include <ranges>
-#include <Core/Joins.h>
-#include <Interpreters/HashTablesStatistics.h>
-#include "Common/typeid_cast.h"
-#include <Common/logger_useful.h>
-#include <Common/safe_cast.h>
-#include "Processors/QueryPlan/CommonSubplanReferenceStep.h"
-#include "Processors/QueryPlan/ReadFromCommonBufferStep.h"
 #include <base/types.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Interpreters/JoinExpressionActions.h>
-#include <Processors/QueryPlan/Optimizations/joinOrder.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-
 
 namespace ProfileEvents
 {
