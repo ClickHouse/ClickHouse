@@ -39,11 +39,8 @@ void writeData(
     ISerialization::SerializeBinaryBulkSettings settings;
     settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
     settings.position_independent_encoding = false;
-    settings.low_cardinality_max_dictionary_size = 0;
     settings.native_format = false;
-    settings.format_settings = format_settings ? &*format_settings : nullptr;
-    settings.dynamic_serialization_version = MergeTreeDynamicSerializationVersion::V2;
-    settings.object_serialization_version = MergeTreeObjectSerializationVersion::V2;
+    settings.format_settings = format_settings.has_value() ? &format_settings.value() : nullptr;
 
     ISerialization::SerializeBinaryBulkStatePtr state;
     serialization.serializeBinaryBulkStatePrefix(*full_column, settings, state);
@@ -65,7 +62,7 @@ size_t BuffersWriter::write(const Block & block)
 
     for (size_t i = 0; i < num_columns; ++i)
     {
-        auto column = block.safeGetByPosition(i);
+        const auto & column = block.safeGetByPosition(i);
 
         auto serialization = column.type->getDefaultSerialization();
         chassert(serialization != nullptr);
@@ -81,6 +78,11 @@ size_t BuffersWriter::write(const Block & block)
 
     /// Number of buffers (UInt64)
     writeBinary(num_buffers, ostr);
+
+    const UInt64 num_rows = static_cast<UInt64>(block.rows());
+
+    /// Number of rows (UInt64)
+    writeBinary(num_rows, ostr);
 
     /// Size of each buffer (UInt64 * number of buffers)
     for (const auto & data : column_buffers)

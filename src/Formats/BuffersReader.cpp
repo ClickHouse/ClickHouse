@@ -33,18 +33,19 @@ Block BuffersReader::getHeader() const
     return header;
 }
 
-void readData(const ISerialization & serialization, ColumnPtr & column, ReadBuffer & istr, const FormatSettings * format_settings)
+void readData(
+    const ISerialization & serialization, ColumnPtr & column, ReadBuffer & istr, UInt64 num_rows, const std::optional<FormatSettings> & format_settings)
 {
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
     settings.position_independent_encoding = false;
     settings.native_format = false;
-    settings.format_settings = format_settings;
+    settings.format_settings = format_settings.has_value() ? &format_settings.value() : nullptr;
 
     ISerialization::DeserializeBinaryBulkStatePtr state;
 
     serialization.deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-    serialization.deserializeBinaryBulkWithMultipleStreams(column, 0, 0, settings, state, nullptr);
+    serialization.deserializeBinaryBulkWithMultipleStreams(column, 0, num_rows, settings, state, nullptr);
 }
 
 Block BuffersReader::read()
@@ -57,6 +58,9 @@ Block BuffersReader::read()
     /// Number of buffers (UInt64)
     UInt64 num_buffers = 0;
     readBinary(num_buffers, istr);
+
+    UInt64 num_rows = 0;
+    readBinary(num_rows, istr);
 
     if (num_buffers == 0)
         return Block{};
@@ -79,9 +83,6 @@ Block BuffersReader::read()
             istr.readStrict(raw_buffers[i].data(), buffer_sizes[i]);
     }
 
-    FormatSettings default_settings;
-    const FormatSettings & used_settings = format_settings ? *format_settings : default_settings;
-
     for (size_t i = 0; i < num_buffers; ++i)
     {
         const auto & header_col = header.getByPosition(i);
@@ -97,8 +98,16 @@ Block BuffersReader::read()
 
         ReadBufferFromString buffer(raw_buffers[i]);
 
-        NameAndTypePair name_and_type = {column.name, column.type};
-        readData(*serialization, read_column, buffer, &used_settings);
+        readData(*serialization, read_column, buffer, num_rows, format_settings);
+
+        if (buffer.available() != 0)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Cannot read all data for column {} of type {}, expected to read {} bytes, but read {} bytes",
+                column.name,
+                column.type->getName(),
+                buffer_sizes[i],
+                buffer.count());
 
         column.column = std::move(read_column);
         res.insert(std::move(column));
