@@ -118,7 +118,7 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
     "flaky check": "--flaky-check",
-    "llvm coverage": "--no-random-settings --no-random-merge-tree-settings --no-long --no-debug",
+    "llvm coverage": "--no-random-settings --no-random-merge-tree-settings --no-long",
 }
 
 
