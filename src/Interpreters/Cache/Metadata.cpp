@@ -376,7 +376,15 @@ public:
             const auto & key = key_it.value()->second;
 
             if (!key_lock)
-                key_lock = key->lock();
+            {
+                /// Will lock only if key is in state ACTIVE.
+                key_lock = key->tryLock();
+                if (!key_lock)
+                {
+                    ++key_it.value();
+                    continue;
+                }
+            }
 
             if (!file_segment_it.has_value())
                 file_segment_it = key->begin();
@@ -425,9 +433,12 @@ public:
             auto bucket_lock = bucket_it->lock();
             for (const auto & [_, key_metadata] : *bucket_it)
             {
-                auto key_lock = key_metadata->lock();
-                result |= key_metadata->size();
+                /// Will lock only if key is in state ACTIVE.
+                auto key_lock = key_metadata->tryLock();
+                if (!key_lock)
+                    continue;
 
+                result |= key_metadata->size();
                 for (const auto & [_, file_segment_metadata] : *key_metadata)
                     func(FileSegment::getInfo(file_segment_metadata->file_segment));
             }
