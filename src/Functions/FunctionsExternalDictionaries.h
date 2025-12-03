@@ -1324,6 +1324,9 @@ public:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
         auto dictionary = dictionary_helper->getDictionary(arguments[0].column);
+
+        FunctionDictHelper::checkDictionaryHierarchySupport(dictionary);
+
         auto hierarchical_parent_to_child_index = dictionary->getHierarchicalIndex();
 
         size_t level = Strategy::default_level;
