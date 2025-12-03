@@ -2834,7 +2834,9 @@ public:
     {
         if constexpr (std::is_same_v<ToDataType, DataTypeString>)
             return {};
-        else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+        /// Note: If ToDataType is DateTime, return type may be either DateTime or DateTime64, determined at runtime.
+        ///       Then why is ToDataType == DataTypeDateTime64 allowed, instead of always using DateTime? I don't know.
+        else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeDateTime>)
             return {1, 2};
         return {1};
     }
