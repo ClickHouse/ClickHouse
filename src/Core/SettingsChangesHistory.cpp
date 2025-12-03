@@ -62,6 +62,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_inverse_dictionary_lookup", false, true, "New setting"},
             {"type_json_skip_invalid_typed_paths", false, false, "Allow skipping typed paths that fail type coercion in JSON columns"},
             {"query_plan_optimize_join_order_algorithm", "greedy", "greedy", "New experimentsl setting."},
+            {"query_plan_optimize_join_order_algorithm", "greedy", "greedy", "New experimental setting."},
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {

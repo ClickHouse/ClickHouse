@@ -212,7 +212,8 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
     if (!best_plan)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find a valid join order");
 
-    LOG_TRACE(log, "Optimized join order in {:.2f} ms", watch.elapsed() / 1000.0);
+    LOG_TRACE(log, "Optimized join order in {:.2f} ms, best plan cost: {}, estimated cardinality: {}",
+        watch.elapsed() / 1000.0, best_plan->cost, best_plan->estimated_rows ? toString(*best_plan->estimated_rows) : "unknown");
     return best_plan;
 }
 
@@ -381,7 +382,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
 {
     const size_t total_relations_count = query_graph.relation_stats.size();
 
-    /// Components by size (index 0 is not used that why the size is is N+1)
+    /// Components by size (index 0 is not used that why the size is N+1)
     std::vector<std::unordered_map<BitSet, DPJoinEntryPtr>> components(total_relations_count + 1);
 
     /// Populate DP table for components of size=1
@@ -476,6 +477,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
     if (best_full_plan != dp_table.end())
         return best_full_plan->second;
 
+    LOG_TRACE(log, "Failed to find best plan using DPsize algorithm");
     return nullptr;
 }
 
