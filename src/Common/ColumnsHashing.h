@@ -19,7 +19,6 @@
 #include <Core/Defines.h>
 #include <memory>
 #include <cassert>
-#include <Common/HashTable/Hash.h>
 
 namespace DB
 {
@@ -332,15 +331,6 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     }
 };
 
-class HashMethodSerializedContext : public HashMethodContext
-{
-public:
-    explicit HashMethodSerializedContext(const HashMethodContextSettings & settings_)
-        : settings(settings_)
-    {}
-
-    HashMethodContextSettings settings;
-};
 
 /** Hash by concatenating serialized key values.
   * The serialized value differs in that it uniquely allows to deserialize it, having only the position with which it starts.
@@ -354,11 +344,6 @@ struct HashMethodSerialized
     using Self = HashMethodSerialized<Value, Mapped, nullable, prealloc>;
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
 
-    static HashMethodContextPtr createContext(const HashMethodContextSettings & settings)
-    {
-        return std::make_shared<HashMethodSerializedContext>(settings);
-    }
-
     static constexpr bool has_cheap_key_calculation = false;
 
     ColumnRawPtrs key_columns;
@@ -368,23 +353,12 @@ struct HashMethodSerialized
     /// Only used if prealloc is true.
     PaddedPODArray<UInt64> row_sizes;
     size_t total_size = 0;
-    bool use_batch_serialize = false;
-    IColumn::SerializationSettings serialization_settings;
-    PaddedPODArray<char> serialized_buffer;
-    std::vector<std::string_view> serialized_keys;
+    PODArray<char> serialized_buffer;
+    std::vector<StringRef> serialized_keys;
 
-    HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr & context)
+    HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
         : key_columns(key_columns_), keys_size(key_columns_.size())
     {
-        const auto * hash_serialized_context = typeid_cast<const HashMethodSerializedContext *>(context.get());
-        if (!hash_serialized_context)
-        {
-            const auto & cached_val = *context;
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid type for HashMethodSerialized context: {}",
-                            demangle(typeid(cached_val).name()));
-        }
-
-        serialization_settings.serialize_string_with_zero_byte = hash_serialized_context->settings.serialize_string_with_zero_byte;
         if constexpr (nullable)
         {
             null_maps.resize(keys_size, nullptr);
@@ -404,55 +378,34 @@ struct HashMethodSerialized
 
             /// Calculate serialized value size for each key column in each row.
             for (size_t i = 0; i < keys_size; ++i)
-                key_columns[i]->collectSerializedValueSizes(row_sizes, null_maps[i], &serialization_settings);
+                key_columns[i]->collectSerializedValueSizes(row_sizes, null_maps[i]);
 
             for (auto row_size : row_sizes)
                 total_size += row_size;
 
-            use_batch_serialize = shouldUseBatchSerialize();
-            if (use_batch_serialize)
+            serialized_buffer.resize(total_size);
+
+            const size_t rows = row_sizes.size();
+            char * memory = serialized_buffer.data();
+            std::vector<char *> memories(rows);
+            serialized_keys.resize(rows);
+            for (size_t i = 0; i < row_sizes.size(); ++i)
             {
-                serialized_buffer.resize(total_size);
+                memories[i] = memory;
+                serialized_keys[i].data = memory;
+                serialized_keys[i].size = row_sizes[i];
 
-                const size_t rows = row_sizes.size();
-                char * memory = serialized_buffer.data();
-                std::vector<char *> memories(rows);
-                serialized_keys.resize(rows);
-                for (size_t i = 0; i < row_sizes.size(); ++i)
-                {
-                    memories[i] = memory;
-                    serialized_keys[i] = std::string_view(memory, row_sizes[i]);
+                memory += row_sizes[i];
+            }
 
-                    memory += row_sizes[i];
-                }
-
-                for (size_t i = 0; i < keys_size; ++i)
-                {
-                    if constexpr (nullable)
-                        key_columns[i]->batchSerializeValueIntoMemoryWithNull(memories, null_maps[i], &serialization_settings);
-                    else
-                        key_columns[i]->batchSerializeValueIntoMemory(memories, &serialization_settings);
-                }
+            for (size_t i = 0; i < keys_size; ++i)
+            {
+                if constexpr (nullable)
+                    key_columns[i]->batchSerializeValueIntoMemoryWithNull(memories, null_maps[i]);
+                else
+                    key_columns[i]->batchSerializeValueIntoMemory(memories);
             }
         }
-    }
-
-    bool shouldUseBatchSerialize() const
-    {
-#if defined(__aarch64__)
-        // On ARM64 architectures, always use batch serialization, otherwise it would cause performance degradation in related perf tests.
-        return true;
-#endif
-
-        size_t l2_size = 256 * 1024;
-#if defined(OS_LINUX) && defined(_SC_LEVEL2_CACHE_SIZE)
-        if (auto ret = sysconf(_SC_LEVEL2_CACHE_SIZE); ret != -1)
-            l2_size = ret;
-#endif
-        // Calculate the average row size.
-        size_t avg_row_size = total_size / std::max(row_sizes.size(), 1UL);
-        // Use batch serialization only if total size fits in 4x L2 cache and average row size is small.
-        return total_size <= 4 * l2_size && avg_row_size < 128;
     }
 
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
@@ -460,23 +413,7 @@ struct HashMethodSerialized
     ALWAYS_INLINE ArenaKeyHolder getKeyHolder(size_t row, Arena & pool) const
     requires(prealloc)
     {
-        if (use_batch_serialize)
-            return ArenaKeyHolder{serialized_keys[row], pool};
-        else
-        {
-            std::unique_ptr<char[]> holder = std::make_unique<char[]>(row_sizes[row]);
-            char * memory = holder.get();
-            std::string_view key(memory, row_sizes[row]);
-            for (size_t j = 0; j < keys_size; ++j)
-            {
-                if constexpr (nullable)
-                    memory = key_columns[j]->serializeValueIntoMemoryWithNull(row, memory, null_maps[j], &serialization_settings);
-                else
-                    memory = key_columns[j]->serializeValueIntoMemory(row, memory, &serialization_settings);
-            }
-
-            return ArenaKeyHolder{key, pool, std::move(holder)};
-        }
+        return ArenaKeyHolder{serialized_keys[row], pool};
     }
 
     ALWAYS_INLINE SerializedKeyHolder getKeyHolder(size_t row, Arena & pool) const
@@ -488,13 +425,13 @@ struct HashMethodSerialized
 
             size_t sum_size = 0;
             for (size_t j = 0; j < keys_size; ++j)
-                sum_size += key_columns[j]->serializeValueIntoArenaWithNull(row, pool, begin, null_maps[j], &serialization_settings).size();
+                sum_size += key_columns[j]->serializeValueIntoArenaWithNull(row, pool, begin, null_maps[j]).size;
 
             return SerializedKeyHolder{{begin, sum_size}, pool};
         }
 
         return SerializedKeyHolder{
-            serializeKeysToPoolContiguous(row, keys_size, key_columns, pool, &serialization_settings),
+            serializeKeysToPoolContiguous(row, keys_size, key_columns, pool),
             pool};
     }
 };

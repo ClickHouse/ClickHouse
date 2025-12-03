@@ -6,9 +6,6 @@
 #include <Coordination/KeeperLogStore.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 
-#include <thread>
-
-
 template<typename TestType>
 class CoordinationChangelogTest : public ::testing::Test
 {

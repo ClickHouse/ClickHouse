@@ -10,7 +10,6 @@
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/MaskOperations.h>
-#include <IO/Operators.h>
 
 #if USE_EMBEDDED_COMPILER
 #include <DataTypes/Native.h>
@@ -43,7 +42,7 @@ ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumn
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnNullable cannot have constant null map");
 }
 
-std::string_view ColumnNullable::getDataAt(size_t n) const
+StringRef ColumnNullable::getDataAt(size_t n) const
 {
     if (!isNullAt(n))
         return getNestedColumn().getDataAt(n);
@@ -117,16 +116,12 @@ void ColumnNullable::get(size_t n, Field & res) const
         getNestedColumn().get(n, res);
 }
 
-DataTypePtr ColumnNullable::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+std::pair<String, DataTypePtr> ColumnNullable::getValueNameAndType(size_t n) const
 {
     if (isNullAt(n))
-    {
-        if (options.notFull(name_buf))
-            name_buf << "NULL";
-        return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
-    }
+        return {"NULL", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())};
 
-    return getNestedColumn().getValueNameAndTypeImpl(name_buf, n, options);
+    return getNestedColumn().getValueNameAndType(n);
 }
 
 Float64 ColumnNullable::getFloat64(size_t n) const
@@ -171,7 +166,7 @@ void ColumnNullable::insertData(const char * pos, size_t length)
     }
 }
 
-std::string_view ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
+StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     const auto & arr = getNullMapData();
 
@@ -181,16 +176,35 @@ std::string_view ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena
 
     /// If the value is NULL, that's it.
     if (arr[n])
-        return std::string_view(pos, 1);
+        return StringRef(pos, 1);
 
     /// Now serialize the nested value. Note that it also uses allocContinue so that the memory range remains contiguous.
-    auto nested_ref = getNestedColumn().serializeValueIntoArena(n, arena, begin, settings);
+    auto nested_ref = getNestedColumn().serializeValueIntoArena(n, arena, begin);
 
     /// serializeValueIntoArena may reallocate memory. Have to use ptr from nested_ref.data and move it back.
-    return std::string_view(nested_ref.data() - 1, nested_ref.size() + 1);
+    return StringRef(nested_ref.data - 1, nested_ref.size + 1);
 }
 
-char * ColumnNullable::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
+StringRef ColumnNullable::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+{
+    const auto & arr = getNullMapData();
+
+    /// First serialize the NULL map byte.
+    auto * pos = arena.allocContinue(1, begin);
+    *pos = arr[n];
+
+    /// If the value is NULL, that's it.
+    if (arr[n])
+        return StringRef(pos, 1);
+
+    /// Now serialize the nested value. Note that it also uses allocContinue so that the memory range remains contiguous.
+    auto nested_ref = getNestedColumn().serializeAggregationStateValueIntoArena(n, arena, begin);
+
+    /// serializeAggregationStateValueIntoArena may reallocate memory. Have to use ptr from nested_ref.data and move it back.
+    return StringRef(nested_ref.data - 1, nested_ref.size + 1);
+}
+
+char * ColumnNullable::serializeValueIntoMemory(size_t n, char * memory) const
 {
     const auto & arr = getNullMapData();
 
@@ -200,18 +214,18 @@ char * ColumnNullable::serializeValueIntoMemory(size_t n, char * memory, const I
     if (arr[n])
         return memory;
 
-    return getNestedColumn().serializeValueIntoMemory(n, memory, settings);
+    return getNestedColumn().serializeValueIntoMemory(n, memory);
 }
 
-std::optional<size_t> ColumnNullable::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
+std::optional<size_t> ColumnNullable::getSerializedValueSize(size_t n) const
 {
-    auto nested_size = getNestedColumn().getSerializedValueSize(n, settings);
+    auto nested_size = getNestedColumn().getSerializedValueSize(n);
     if (!nested_size)
         return std::nullopt;
     return 1 + *nested_size; /// +1 for null mask byte.
 }
 
-void ColumnNullable::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
+void ColumnNullable::deserializeAndInsertFromArena(ReadBuffer & in)
 {
     UInt8 val;
     readBinaryLittleEndian<UInt8>(val, in);
@@ -219,7 +233,20 @@ void ColumnNullable::deserializeAndInsertFromArena(ReadBuffer & in, const IColum
     getNullMapData().push_back(val);
 
     if (val == 0)
-        getNestedColumn().deserializeAndInsertFromArena(in, settings);
+        getNestedColumn().deserializeAndInsertFromArena(in);
+    else
+        getNestedColumn().insertDefault();
+}
+
+void ColumnNullable::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
+{
+    UInt8 val;
+    readBinaryLittleEndian<UInt8>(val, in);
+
+    getNullMapData().push_back(val);
+
+    if (val == 0)
+        getNestedColumn().deserializeAndInsertAggregationStateValueFromArena(in);
     else
         getNestedColumn().insertDefault();
 }
@@ -727,7 +754,7 @@ size_t ColumnNullable::estimateCardinalityInPermutedRange(const Permutation & pe
         }
         else
         {
-            auto value = getDataAt(permuted_i);
+            StringRef value = getDataAt(permuted_i);
             elements.emplace(value, inserted);
         }
     }
@@ -917,9 +944,6 @@ void ColumnNullable::checkConsistency() const
 
 ColumnPtr ColumnNullable::createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
 {
-    if (empty())
-        return cloneEmpty();
-
     ColumnPtr new_values;
     ColumnPtr new_null_map;
 
@@ -973,13 +997,13 @@ ColumnPtr ColumnNullable::getNestedColumnWithDefaultOnNull() const
     return res;
 }
 
-void ColumnNullable::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnNullable::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
 {
     Columns nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
         nested_source_columns.push_back(assert_cast<const ColumnNullable &>(*source_column).getNestedColumnPtr());
-    nested_column->takeDynamicStructureFromSourceColumns(nested_source_columns, max_dynamic_subcolumns);
+    nested_column->takeDynamicStructureFromSourceColumns(nested_source_columns);
 }
 
 void ColumnNullable::takeDynamicStructureFromColumn(const ColumnPtr & source_column)

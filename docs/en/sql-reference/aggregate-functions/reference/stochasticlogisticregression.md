@@ -5,7 +5,6 @@ description: 'This function implements stochastic logistic regression. It can be
 sidebar_position: 193
 slug: /sql-reference/aggregate-functions/reference/stochasticlogisticregression
 title: 'stochasticLogisticRegression'
-doc_type: 'reference'
 ---
 
 # stochasticLogisticRegression

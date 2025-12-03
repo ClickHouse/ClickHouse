@@ -300,11 +300,10 @@ MergeSelectorChoices chooseMergesFrom(
 
         for (size_t i = 0; i < choices.size(); ++i)
         {
-            const auto & merge_type = choices[i].merge_type;
             const auto & range = choices[i].range;
             const auto & range_patches = choices[i].range_patches;
             ProfileEvents::increment(ProfileEvents::MergerMutatorSelectRangePartsCount, range.size());
-            LOG_TRACE(log, "Merge #{} type {} with {} parts from {} to {} with {} patches", i, merge_type, range.size(), range.front().name, range.back().name, range_patches.size());
+            LOG_TRACE(log, "Merge #{} with {} parts from {} to {} with {} patches", i, range.size(), range.front().name, range.back().name, range_patches.size());
         }
     }
 
@@ -329,11 +328,8 @@ void MergeTreeDataMergerMutator::updateTTLMergeTimes(const MergeSelectorChoices 
         switch (choice.merge_type)
         {
             case MergeType::Regular:
-            case MergeType::TTLDrop:
-            {
-                /// Do not update anything for regular and drop merges.
+                /// Do not update anything for regular merge.
                 return;
-            }
             case MergeType::TTLDelete:
             {
                 next_delete_ttl_merge_times_by_partition[partition_id] = current_time + (*settings)[MergeTreeSetting::merge_with_ttl_timeout];
@@ -348,10 +344,8 @@ void MergeTreeDataMergerMutator::updateTTLMergeTimes(const MergeSelectorChoices 
                 return;
             }
             case MergeType::TTLRecompress:
-            {
                 next_recompress_ttl_merge_times_by_partition[partition_id] = current_time + (*settings)[MergeTreeSetting::merge_with_recompression_ttl_timeout];
                 return;
-            }
         }
     }
 }
