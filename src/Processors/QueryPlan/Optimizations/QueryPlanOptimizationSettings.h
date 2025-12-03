@@ -119,6 +119,7 @@ struct QueryPlanOptimizationSettings
 
     /// If full text search using index in payload is enabled.
     bool direct_read_from_text_index;
+    bool allow_experimental_full_text_index;
 
     /// Setting needed for Sets (JOIN -> IN optimization)
 
