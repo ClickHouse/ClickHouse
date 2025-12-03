@@ -203,6 +203,7 @@ public:
     bool hasDynamicStructure() const override { throwInapplicable(); }
     void takeDynamicStructureFromSourceColumns(const Columns &) override { throwInapplicable(); }
     void takeDynamicStructureFromColumn(const ColumnPtr &) override { throwInapplicable(); }
+    void fixDynamicStructure() override { throwInapplicable(); }
 
 private:
     /// Compressed and serialized representation of the wrapped column.

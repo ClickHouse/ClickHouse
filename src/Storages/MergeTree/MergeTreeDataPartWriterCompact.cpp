@@ -503,7 +503,11 @@ void MergeTreeDataPartWriterCompact::ColumnsBuffer::add(MutableColumns && column
     else
     {
         for (size_t i = 0; i < columns.size(); ++i)
+        {
+            /// Fix dynamic structure so it won't changed after insertion of new rows.
+            accumulated_columns[i]->fixDynamicStructure();
             accumulated_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
+        }
     }
 }
 
