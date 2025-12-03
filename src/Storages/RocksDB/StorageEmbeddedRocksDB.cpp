@@ -2,6 +2,8 @@
 #include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Storages/AlterCommands.h>
@@ -52,7 +54,6 @@
 #include <filesystem>
 #include <memory>
 #include <utility>
-
 
 namespace DB
 {
@@ -854,16 +855,26 @@ Chunk StorageEmbeddedRocksDB::getByKeys(
         throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Key column number mismatch, expected {}, got {}.", primary_key.size(), keys.size());
 
     for (size_t i = 0; i < keys.size(); ++i)
-        if (!keys[i].type->equals(*primary_key_types[i]))
+    {
+        // Remove Nullable and LowCardinality wrappers for comparison
+        DataTypePtr key_type = removeNullable(recursiveRemoveLowCardinality(keys[i].type));
+        DataTypePtr primary_key_type = removeNullable(recursiveRemoveLowCardinality(primary_key_types[i]));
+
+        if (!key_type->equals(*primary_key_type))
             throw DB::Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Primary key type mismatch, expected {}, got {}.",
                 primary_key_types[i]->getName(),
                 keys[i].type->getName());
+    }
+
+    const size_t num_rows{keys[0].column->size()};
+    null_map.clear();
+    null_map.resize_fill(num_rows, 1);
 
     std::vector<std::string> raw_keys;
-    raw_keys.reserve(keys[0].column->size());
-    for (size_t i = 0; i < keys[0].column->size(); ++i)
+    raw_keys.reserve(num_rows);
+    for (size_t i = 0; i < num_rows; ++i)
     {
         std::string & serialized_key = raw_keys.emplace_back();
         WriteBufferFromString wb(serialized_key);
@@ -871,6 +882,11 @@ Chunk StorageEmbeddedRocksDB::getByKeys(
         {
             Field field;
             key.column->get(i, field);
+            if (field.isNull())
+            {
+                null_map[i] = 0;
+                break;
+            }
             key.type->getDefaultSerialization()->serializeBinary(field, wb, {});
         }
         wb.finalize();
@@ -898,20 +914,25 @@ Chunk StorageEmbeddedRocksDB::getBySerializedKeys(const std::vector<std::string>
         slices_keys.emplace_back(key);
 
     auto statuses = multiGet(slices_keys, values);
-    if (null_map)
-    {
-        null_map->clear();
-        null_map->resize_fill(statuses.size(), 1);
-    }
-
     for (size_t i = 0; i < statuses.size(); ++i)
     {
+        if (null_map && !(*null_map)[i])
+        {
+            for (size_t col_idx = 0; col_idx < sample_block.columns(); ++col_idx)
+            {
+                columns[col_idx]->insert(sample_block.getByPosition(col_idx).type->getDefault());
+            }
+            continue;
+        }
+
         if (statuses[i].ok())
         {
             fillColumns(slices_keys[i], getPrimaryKeyPos(), sample_block, columns);
             fillColumns(values[i], getValueColumnPos(), sample_block, columns);
+            continue;
         }
-        else if (statuses[i].IsNotFound())
+
+        if (statuses[i].IsNotFound())
         {
             if (null_map)
             {
