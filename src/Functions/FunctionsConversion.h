@@ -2840,14 +2840,22 @@ public:
     }
     bool canBeExecutedOnDefaultArguments() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
+        /// FunctionCast does something complicated and sometimes ends up calling FunctionConvert::executeImpl
+        /// with `result_type` argument that doesn't come from a corresponding getReturnTypeImpl call.
+        /// In particular, with non-nullable result_type when arguments are nullable; it then expects
+        /// executeImpl to return a ColumnNullable anyway.
+        /// Maybe it's a bug, or maybe there's some logic behind it that I couldn't comprehend.
+        /// For now, here's a workaround.
+        DataTypePtr result_type = getReturnTypeImpl(arguments);
+
         try
         {
             /// Do something like IExecutableFunction::defaultImplementationForNulls.
             /// We can't just enable default implementation for nulls because we need to know
             /// whether the result is nullable (`to_nullable`).
-            if (result_type->isNullable())
+            if (result_type->isNullable() && !std::is_same_v<ToDataType, DataTypeString>)
             {
                 if (result_type->onlyNull())
                     return result_type->createColumnConstWithDefaultValue(input_rows_count);
@@ -2887,7 +2895,7 @@ public:
             }
             else
             {
-                return executeInternal(arguments, result_type, input_rows_count, /*to_nullable=*/ false);
+                return executeInternal(arguments, result_type, input_rows_count, result_type->isNullable());
             }
         }
         catch (Exception & e)

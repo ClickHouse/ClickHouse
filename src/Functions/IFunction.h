@@ -443,6 +443,11 @@ public:
 
     virtual String getName() const = 0;
 
+    /// (Does `result_type` always come from a corresponding `getReturnTypeImpl` call?
+    ///  No: FunctionCast::prepareRemoveNullable does something complicated and ends up not respecting
+    ///  getReturnTypeImpl sometimes; I didn't understand it. This only applies to conversion functions,
+    ///  not any IFunction. Are there other cases where getReturnTypeImpl result is not passed through?
+    ///  I don't know. If you know, consider documenting it here.)
     virtual ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
     virtual ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
