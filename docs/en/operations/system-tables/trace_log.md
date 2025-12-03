@@ -93,6 +93,8 @@ entry_type:              Exit
 duration_nanoseconds:   58435
 ```
 
+## Converting to Chrome Event Trace Format {#chrome-event-trace-format}
+
 The profiling data can be converted to Chrome's Event Trace Format with the following query. Save the query to a `chrome_trace.sql` file:
 
 ```sql
@@ -132,5 +134,6 @@ We can omit the stack part if we want a more compact but less informative trace.
 
 **See also**
 
-- [SYSTEM INSTRUMENT](../../sql-reference/statements/system.md) — Add or remove instrumentation points.
-- [system.instrumentation](../../operations/system-tables/instrumentation.md) - Inspect instrumented functions.
+- [SYSTEM INSTRUMENT](../../sql-reference/statements/system.md#instrument) — Add or remove instrumentation points.
+- [system.instrumentation](../../operations/system-tables/instrumentation.md) — Inspect instrumented points.
+- [system.symbols](../../operations/system-tables/symbols.md) — Inspect symbols to add instrumentation points.

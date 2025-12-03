@@ -14,6 +14,5 @@
     ORDER BY (event_date, event_time)
     SETTINGS ttl_only_drop_parts=1, merge_selecting_sleep_ms='50000'
     </engine>
-        <settings remove='remove'/>
     </metric_log>
 </clickhouse>

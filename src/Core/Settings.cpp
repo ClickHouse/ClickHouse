@@ -598,6 +598,11 @@ Possible values:
 - 1 — validate settings.
 - 0 — do not validate settings.
 )", 0) \
+    DECLARE(Bool, compatibility_s3_presigned_url_query_in_path, false, R"(
+Compatibility: when enabled, folds pre-signed URL query parameters (e.g. X-Amz-*) into the S3 key (legacy behavior),
+so '?' acts as a wildcard in the path. When disabled (default), pre-signed URL query parameters are kept in the URL query
+to avoid interpreting '?' as a wildcard.
+)", 0) \
     DECLARE(Bool, s3_disable_checksum, S3::DEFAULT_DISABLE_CHECKSUM, R"(
 Do not calculate a checksum when sending a file to S3. This speeds up writes by avoiding excessive processing passes on a file. It is mostly safe as the data of MergeTree tables is checksummed by ClickHouse anyway, and when S3 is accessed with HTTPS, the TLS layer already provides integrity while transferring through the network. While additional checksums on S3 give defense in depth.
 )", 0) \
@@ -5634,6 +5639,7 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
+    DECLARE(Bool, query_plan_read_in_order_through_join, true, "Keep reading in order from the left table in JOIN operations, which can be utilized by subsequent steps.", 0) \
     DECLARE(Bool, query_plan_aggregation_in_order, true, R"(
 Toggles the aggregation in-order query-plan-level optimization.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
