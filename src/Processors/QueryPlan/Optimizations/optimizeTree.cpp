@@ -329,6 +329,9 @@ void considerEnablingParallelReplicas(
     if (optimization_settings.force_use_projection)
         return;
 
+    if (optimization_settings.allow_experimental_full_text_index)
+        return;
+
     Stack stack;
     bool should_apply_optimization = true;
     traverseQueryPlan(

@@ -75,6 +75,7 @@ namespace Setting
     extern const SettingsBool query_plan_direct_read_from_text_index;
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_on_data_read;
+    extern const SettingsBool allow_experimental_full_text_index;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
@@ -144,6 +145,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
     query_condition_cache_store_conditions_as_plaintext = from[Setting::query_condition_cache_store_conditions_as_plaintext];
     direct_read_from_text_index = from[Setting::query_plan_direct_read_from_text_index] && from[Setting::use_skip_indexes] && from[Setting::use_skip_indexes_on_data_read];
+    allow_experimental_full_text_index = from[Setting::allow_experimental_full_text_index];
 
     optimize_use_implicit_projections = optimize_projection && from[Setting::optimize_use_implicit_projections];
     force_use_projection = optimize_projection && from[Setting::force_optimize_projection];
