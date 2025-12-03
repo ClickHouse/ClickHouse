@@ -30,7 +30,7 @@ class CapnProtoRowOutputFormat final : public IRowOutputFormat
 public:
     CapnProtoRowOutputFormat(
         WriteBuffer & out_,
-        SharedHeader header_,
+        const Block & header_,
         const CapnProtoSchemaInfo & info,
         const FormatSettings & format_settings);
 

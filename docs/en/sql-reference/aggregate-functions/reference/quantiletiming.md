@@ -4,7 +4,6 @@ description: 'With the determined precision computes the quantile of a numeric d
 sidebar_position: 180
 slug: /sql-reference/aggregate-functions/reference/quantiletiming
 title: 'quantileTiming'
-doc_type: 'reference'
 ---
 
 # quantileTiming
@@ -17,7 +16,7 @@ When using multiple `quantile*` functions with different levels in a query, the 
 
 **Syntax**
 
-```sql
+``` sql
 quantileTiming(level)(expr)
 ```
 
@@ -29,8 +28,8 @@ Alias: `medianTiming`.
 
 - `expr` — [Expression](/sql-reference/syntax#expressions) over a column values returning a [Float\*](../../../sql-reference/data-types/float.md)-type number.
 
-  - If negative values are passed to the function, the behavior is undefined.
-  - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
+    - If negative values are passed to the function, the behavior is undefined.
+    - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
 
 **Accuracy**
 
@@ -59,7 +58,7 @@ If no values are passed to the function (when using `quantileTimingIf`), [NaN](/
 
 Input table:
 
-```text
+``` text
 ┌─response_time─┐
 │            72 │
 │           112 │
@@ -75,13 +74,13 @@ Input table:
 
 Query:
 
-```sql
+``` sql
 SELECT quantileTiming(response_time) FROM t
 ```
 
 Result:
 
-```text
+``` text
 ┌─quantileTiming(response_time)─┐
 │                           126 │
 └───────────────────────────────┘

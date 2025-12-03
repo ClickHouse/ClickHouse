@@ -17,7 +17,7 @@ class TTLCalcTransform : public IAccumulatingTransform
 public:
     TTLCalcTransform(
         const ContextPtr & context,
-        SharedHeader header_,
+        const Block & header_,
         const MergeTreeData & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const MergeTreeData::MutableDataPartPtr & data_part_,

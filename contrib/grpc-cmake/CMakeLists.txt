@@ -13,8 +13,6 @@ set(_gRPC_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/grpc")
 
 if(TARGET OpenSSL::SSL)
   set(gRPC_USE_UNSECURE_LIBRARIES FALSE)
-
-  add_definitions(-DOPENSSL_NO_ENGINE)
 else()
   set(gRPC_USE_UNSECURE_LIBRARIES TRUE)
 endif()
@@ -49,8 +47,9 @@ add_library(ch_contrib::grpc ALIAS _ch_contrib_grpc)
 if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
     OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
 
-    # First we need to build openssl for host platform
+    # First we need to build openssl for host plaform
     set(OPENSSL_BUILD_DIR "${_gRPC_BINARY_DIR}/build_openssl")
+
     set(OPENSSL_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/openssl-cmake")
 
     execute_process(
@@ -82,8 +81,6 @@ if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
             "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
             "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
             "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
-            "-DCMAKE_C_COMPILER_LAUNCHER=${CMAKE_C_COMPILER_LAUNCHER}"
-            "-DCMAKE_CXX_COMPILER_LAUNCHER=${CMAKE_CXX_COMPILER_LAUNCHER}"
             "-DARCH_AMD64=${HOST_ARCH_AMD64}"
             "-DARCH_AARCH64=${HOST_ARCH_AARCH64}"
             "-DARCH_PPC64LE=${HOST_ARCH_PPC64LE}"
@@ -100,7 +97,13 @@ if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
     )
 
     execute_process(
-        COMMAND ${CMAKE_COMMAND} --build "${OPENSSL_BUILD_DIR}" --target install
+        COMMAND ${CMAKE_COMMAND} --build "${OPENSSL_BUILD_DIR}"
+        COMMAND_ECHO STDOUT
+        COMMAND_ERROR_IS_FATAL ANY
+    )
+
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} --install "${OPENSSL_BUILD_DIR}"
         COMMAND_ECHO STDOUT
         COMMAND_ERROR_IS_FATAL ANY
     )
@@ -134,8 +137,6 @@ if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
             "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
             "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
             "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
-            "-DCMAKE_C_COMPILER_LAUNCHER=${CMAKE_C_COMPILER_LAUNCHER}"
-            "-DCMAKE_CXX_COMPILER_LAUNCHER=${CMAKE_CXX_COMPILER_LAUNCHER}"
             "-DABSL_ROOT_DIR=${abseil_source_dir}"
             "-DCMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES=${zlib_config_source_dir}"
             "-DgRPC_INSTALL=0"
@@ -143,13 +144,10 @@ if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
             "-DPROTOBUF_ROOT_DIR=${protobuf_source_dir}"
             "-DRE2_ROOT_DIR=${re2_source_dir}"
             "-DCARES_ROOT_DIR=${cares_source_dir}"
-            "-DgRPC_SSL_PROVIDER=package"
             "-DOPENSSL_ROOT_DIR=${OPENSSL_BUILD_DIR}"
             "-DOPENSSL_INCLUDE_DIR=${OPENSSL_BUILD_DIR}/include"
             "-DZLIB_ROOT_DIR=${zlib_source_dir}"
-            "-DgRPC_DOWNLOAD_ARCHIVES=False"
-            # TODO: Bump c-ares
-            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+            "-DgRPC_SSL_PROVIDER=package"
             "${_gRPC_SOURCE_DIR}"
         WORKING_DIRECTORY "${GRPC_CPP_PLUGIN_BUILD_DIR}"
         COMMAND_ECHO STDOUT
@@ -157,7 +155,7 @@ if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
     )
 
     execute_process(
-        COMMAND ${CMAKE_COMMAND} --build "${GRPC_CPP_PLUGIN_BUILD_DIR}" --target grpc_cpp_plugin
+        COMMAND ${CMAKE_COMMAND} --build "${GRPC_CPP_PLUGIN_BUILD_DIR}"
         COMMAND_ECHO STDOUT
         COMMAND_ERROR_IS_FATAL ANY
     )
