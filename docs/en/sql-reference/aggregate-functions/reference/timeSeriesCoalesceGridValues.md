@@ -45,8 +45,8 @@ timeSeriesCoalesceGridValues(mode)(values, [, group])
 | `mode` | Description |
 | --- | --- |
 | `'any'` | The function returns the first non-null value it meets at each position. |
-| `'null'` | The function returns `NULL` if there are two non-null values at the same position (even if they're equal) |
-| `'throw'` | The function throws an exception (`Found duplicate series`) if there are two non-null values at the same position (even if they're equal), with optional information about these time series in case the argument `group` is provided |
+| `'nan'` | The function returns `NaN` if there are multiple non-null values at the same position (even if they're equal) |
+| `'throw'` | The function throws an exception (`Found duplicate series`) if there are multiple non-null values at the same position (even if they're equal), with optional information about these time series in case the argument `group` is provided |
 
 **Arguments**
 
@@ -76,7 +76,7 @@ Response:
 └─────────────────────────────────────────────┘
 ```
 
-The fifth element in both rows is `5`, so if we set `mode` to `null` the function will return `NULL` at the fifth position:
+The fifth element in both rows is `5`, so if we set `mode` to `nan` the function will return `NaN` at the fifth position:
 
 
 ```sql
@@ -84,16 +84,16 @@ WITH data AS
     (
         SELECT arrayJoin([[1., NULL, 3., NULL, 5], [NULL, 2., NULL, NULL, 5]]) AS values
     )
-SELECT timeSeriesCoalesceGridValues('null')(values)
+SELECT timeSeriesCoalesceGridValues('nan')(values)
 FROM data
 ```
 
 Response:
 
 ```response
-┌─timeSeriesCoalesceGridValues('null')(values)─┐
-│ [1,2,3,NULL,NULL]                            │
-└──────────────────────────────────────────────┘
+┌─timeSeriesCoalesceGridValues('nan')(values)─┐
+│ [1,2,3,NULL,nan ]                           │
+└─────────────────────────────────────────────┘
 ```
 
 And setting `mode` to `throw` will make the function throw an exception:

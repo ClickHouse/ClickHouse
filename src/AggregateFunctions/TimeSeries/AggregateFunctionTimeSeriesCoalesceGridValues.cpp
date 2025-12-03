@@ -39,8 +39,8 @@ namespace
 
         if (string_value == "any")
             return Mode::kAny;
-        else if (string_value == "null")
-            return Mode::kNull;
+        else if (string_value == "nan")
+            return Mode::kNaN;
         else if (string_value == "throw")
             return Mode::kThrow;
         else

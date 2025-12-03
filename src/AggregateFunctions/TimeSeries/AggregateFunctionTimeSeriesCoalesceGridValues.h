@@ -29,10 +29,12 @@ enum class AggregateFunctionTimeSeriesCoalesceGridValuesMode
     /// The function returns the first non-null value it meets at each position.
     kAny,
 
-    /// The function returns `NULL` if there are two non-null values at the same position (even if they're equal).
-    kNull,
+    /// The function returns `NaN` if there are multiple non-null values at the same position
+    /// (even if they're equal).
+    kNaN,
 
-    /// The function throws an exception (`Found duplicate series`) if there are two non-null values at the same position (even if they're equal).
+    /// The function throws an exception (`Found duplicate series`) if there are multiple non-null values at the same position
+    /// (even if they're equal).
     kThrow,
 };
 
@@ -56,7 +58,6 @@ public:
     {
         ValueType value;
         bool is_null;
-        bool is_set;
         Group group;
     };
 
@@ -80,7 +81,6 @@ public:
                         auto & element = elements[i];
                         element.value = {};
                         element.is_null = true;
-                        element.is_set = false;
                         element.group = 0;
                     }
                 }
@@ -106,17 +106,15 @@ public:
                 if (null_map && null_map[i])
                     continue;
                 auto & element = elements[i];
-                if (!element.is_set)
+                if (element.is_null)
                 {
                     element.value = values[i];
                     element.is_null = false;
-                    element.is_set = true;
                     element.group = group;
                 }
-                else if (function.mode == Mode::kNull)
+                else if (function.mode == Mode::kNaN)
                 {
-                    element.is_null = true;
-                    element.value = ValueType{};
+                    element.value = std::numeric_limits<ValueType>::quiet_NaN();
                 }
                 else if (function.mode == Mode::kThrow)
                 {
@@ -135,16 +133,15 @@ public:
             {
                 auto & element = elements[i];
                 const auto & rhs_element = rhs.elements[i];
-                if (!rhs_element.is_set)
+                if (rhs_element.is_null)
                     continue;
-                if (!element.is_set)
+                if (element.is_null)
                 {
                     element = rhs_element;
                 }
-                else if (function.mode == Mode::kNull)
+                else if (function.mode == Mode::kNaN)
                 {
-                    element.is_null = true;
-                    element.value = ValueType{};
+                    element.value = std::numeric_limits<ValueType>::quiet_NaN();
                 }
                 else if (function.mode == Mode::kThrow)
                 {
@@ -155,19 +152,16 @@ public:
     };
 
     explicit AggregateFunctionTimeSeriesCoalesceGridValues(ContextPtr context_, const DataTypes & argument_types_, Mode mode_)
-        : Base(argument_types_, {}, createResultType(argument_types_, mode_))
+        : Base(argument_types_, {}, createResultType(argument_types_))
         , WithContext(context_)
         , mode(mode_)
         , has_group_argument(argument_types_.size() == 2)
     {
     }
 
-    static DataTypePtr createResultType(const DataTypes & argument_types_, Mode mode_)
+    static DataTypePtr createResultType(const DataTypes & argument_types_)
     {
-        auto element_type = typeid_cast<const DataTypeArray *>(argument_types_[0].get())->getNestedType();
-        if (mode_ == Mode::kNull)
-            element_type = makeNullable(element_type);
-        return std::make_shared<DataTypeArray>(element_type);
+        return argument_types_[0];
     }
 
     bool allocatesMemoryInArena() const override { return true; }
@@ -362,9 +356,6 @@ public:
             writeBinaryLittleEndian(data.elements[i].is_null, buf);
 
         for (size_t i = 0; i < data.size; ++i)
-            writeBinaryLittleEndian(data.elements[i].is_set, buf);
-
-        for (size_t i = 0; i < data.size; ++i)
             writeBinaryLittleEndian(data.elements[i].group, buf);
     }
 
@@ -390,9 +381,6 @@ public:
 
         for (size_t i = 0; i < size; ++i)
             readBinaryLittleEndian(data.elements[i].is_null, buf);
-
-        for (size_t i = 0; i < size; ++i)
-            readBinaryLittleEndian(data.elements[i].is_set, buf);
 
         for (size_t i = 0; i < size; ++i)
             readBinaryLittleEndian(data.elements[i].group, buf);
