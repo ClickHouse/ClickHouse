@@ -154,6 +154,10 @@ void sanityCheckSchemaAndHivePartitionColumns(
         }
     }
 
+    /// Check by names, not just by sized, because if table structure
+    /// was manually specified and check_contained_in_schema == false,
+    /// then partition columns might not be fully contained in schema (storage_columns)
+    /// (which we allow for compatibility).
     if (storage_columns.getOrdinary().getNameSet() == hive_partition_columns_to_read_from_file_path.getNameSet())
     {
         throw Exception(
