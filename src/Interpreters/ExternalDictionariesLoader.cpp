@@ -1,3 +1,4 @@
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
@@ -6,6 +7,9 @@
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
+#include <Common/Exception.h>
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <Core/Settings.h>
 
 #include "config.h"
@@ -81,7 +85,7 @@ void ExternalDictionariesLoader::updateObjectFromConfigWithoutReloading(IExterna
 
 ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::getDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
-    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase(), local_context);
+    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context);
     auto dictionary = std::static_pointer_cast<const IDictionary>(load(resolved_dictionary_name));
 
     if (local_context->hasQueryContext() && local_context->getSettingsRef()[Setting::log_queries])
@@ -92,7 +96,7 @@ ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::getDictionary(co
 
 ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::tryGetDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
-    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase(), local_context);
+    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context);
     auto dictionary = std::static_pointer_cast<const IDictionary>(tryLoad(resolved_dictionary_name));
 
     if (local_context->hasQueryContext() && local_context->getSettingsRef()[Setting::log_queries] && dictionary)
@@ -104,13 +108,13 @@ ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::tryGetDictionary
 
 void ExternalDictionariesLoader::reloadDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
-    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase(), local_context);
+    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context);
     loadOrReload(resolved_dictionary_name);
 }
 
 DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std::string & dictionary_name, ContextPtr query_context) const
 {
-    std::string resolved_name = resolveDictionaryName(dictionary_name, query_context->getCurrentDatabase(), query_context);
+    std::string resolved_name = resolveDictionaryName(dictionary_name, query_context);
 
     auto load_result = getLoadResult(resolved_name);
 
@@ -155,11 +159,9 @@ QualifiedTableName ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase
     return *qualified_name;
 }
 
-std::string ExternalDictionariesLoader::resolveDictionaryName(const std::string & dictionary_name, const std::string & current_database_name, ContextPtr local_context) const
-{
-    auto logger = getLogger("ExternalDictionariesLoader");
-    
-    if (has(dictionary_name))
+std::string ExternalDictionariesLoader::resolveDictionaryName(const std::string & dictionary_name, ContextPtr local_context) const
+{  
+    if (has(dictionary_name)) 
         return dictionary_name;
 
     auto qualified_name = QualifiedTableName::tryParseFromString(dictionary_name);
@@ -173,7 +175,8 @@ std::string ExternalDictionariesLoader::resolveDictionaryName(const std::string 
         );
     }
 
-    if (!qualified_name->database.empty()) {
+    if (!qualified_name->database.empty()) 
+    {
         std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(
             qualified_name->table,
             qualified_name->database
@@ -190,27 +193,36 @@ std::string ExternalDictionariesLoader::resolveDictionaryName(const std::string 
         );
     }
 
-    std::string dict_table_name = qualified_name->table;
-    std::string default_dict_db = local_context ? local_context->getDefaultDictionaryDatabase() : "";
-
-    if (!default_dict_db.empty() && default_dict_db != current_database_name) 
-    { 
-        std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(
-            dict_table_name,
-            default_dict_db
+    if (!local_context) 
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Local context is empty"
         );
-
-        if (has(resolved_name))
-            return resolved_name;
     }
     
-    if (!current_database_name.empty()) {
+    std::string dict_table_name = qualified_name->table;
+    std::string current_database_name = local_context->getCurrentDatabase();
+    if (!current_database_name.empty()) 
+    {
         std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(
             dict_table_name,
             current_database_name  
         );
 
-        if (has(resolved_name))
+        if (has(resolved_name)) 
+            return resolved_name;
+    }
+
+    std::string default_dict_db = local_context->getDefaultDictionaryDatabase();
+    if (!default_dict_db.empty() && default_dict_db != current_database_name) 
+    {
+        std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(
+            dict_table_name,
+            default_dict_db
+        );
+
+        if (has(resolved_name)) 
             return resolved_name;
     }
 
