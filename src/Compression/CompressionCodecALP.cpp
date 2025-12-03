@@ -352,14 +352,16 @@ private:
     EncodingParams selectBlockParams(const char * source, const UInt32 float_count)
     {
         assert(param_candidates.size() > 0);
+        if (param_candidates.size() == 1)
+            return param_candidates[0];
 
         // Sample up to ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS values from the block for local parameter estimation.
         // Evenly select sample values across the block and copy them into a temporary buffer for evaluation.
-        char * sample[ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS * sizeof(T)];
+        T sample[ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS];
         const UInt32 sample_count = std::min<UInt32>(float_count, ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS);
         const UInt32 sample_step = std::max(float_count / sample_count, 1u);
         for (UInt32 i = 0; i < sample_count; ++i)
-            unalignedStoreLittleEndian<T>(&sample[i * sizeof(T)], unalignedLoadLittleEndian<T>(&source[i * sample_step * sizeof(T)]));
+            sample[i] = unalignedLoadLittleEndian<T>(&source[i * sample_step * sizeof(T)]);
 
         EncodingParams best_params = {0, 0};
         size_t best_size = std::numeric_limits<size_t>::max();
@@ -367,7 +369,7 @@ private:
 
         for (const auto & params : param_candidates)
         {
-            const size_t estimated_size = estimateEncodingSize(reinterpret_cast<char *>(sample), sample_count, params);
+            const size_t estimated_size = estimateEncodingSize(sample, sample_count, params);
             if (estimated_size < best_size)
             {
                 best_size = estimated_size;
@@ -400,6 +402,8 @@ private:
             ? (float_count - ALP_PARAMS_ESTIMATION_SAMPLES * ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS) / ALP_PARAMS_ESTIMATION_SAMPLES
             : ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS;
 
+        T sample[ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS];
+
         // For each sample, brute-force over all valid (exponent, fraction) pairs to find the best parameters for that sample.
         for (UInt32 i = 0; i < ALP_PARAMS_ESTIMATION_SAMPLES; ++i)
         {
@@ -407,18 +411,21 @@ private:
             if (sample_start_index >= float_count)
                 break;
 
+            const char * sample_pos = source + sample_start_index * sizeof(T);
+            const UInt16 sample_float_count = std::min<UInt16>(ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS, float_count - sample_start_index);
+
+            for (UInt32 j = 0; j < sample_float_count; ++j, sample_pos += sizeof(T))
+                sample[j] = unalignedLoadLittleEndian<T>(sample_pos);
+
             Estimation best_estimation = {{0, 0}, 0};
             size_t best_size = std::numeric_limits<size_t>::max();
-
-            const char * sample_start = source + sample_start_index * sizeof(T);
-            const UInt16 sample_float_count = std::min<UInt16>(ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS, float_count - sample_start_index);
 
             for (UInt8 magnitude = 0; magnitude < ALPFloatTraits<T>::EXPONENT_COUNT; ++magnitude)
             {
                 for (UInt8 fraction = 0; fraction <= magnitude; ++fraction)
                 {
                     const Estimation estimation{{magnitude, fraction}, 1};
-                    const size_t estimated_size = estimateEncodingSize(sample_start, sample_float_count, estimation.params);
+                    const size_t estimated_size = estimateEncodingSize(sample, sample_float_count, estimation.params);
 
                     if (estimated_size < best_size)
                     {
@@ -460,15 +467,15 @@ private:
             param_candidates.push_back(estimations[i].params);
     }
 
-    size_t estimateEncodingSize(const char * source, const UInt32 float_count, const EncodingParams & params)
+    size_t estimateEncodingSize(const T * const source, const UInt32 float_count, const EncodingParams & params)
     {
         Int64 min = std::numeric_limits<Int64>::max();
         Int64 max = std::numeric_limits<Int64>::min();
         size_t exception_count = 0;
 
-        for (const char * source_end = source + float_count * sizeof(T); source < source_end; source += sizeof(T))
+        for (UInt32 i = 0; i < float_count; ++i)
         {
-            const T value = unalignedLoadLittleEndian<T>(source);
+            const T value = source[i];
             const Int64 value_enc = ALPFloatUtils<T>::encodeValue(value, params.exponent, params.fraction);
             const T value_dec = ALPFloatUtils<T>::decodeValue(value_enc, params.exponent, params.fraction);
 
@@ -558,48 +565,18 @@ private:
         UInt16 remaining_encoded_float_count = encoded_float_count;
         UInt16 remaining_exception_count = exception_count;
 
-        UInt16 value_index = 0;
+        UInt16 output_index = 0;
 
-        // Keep track of the next exception to insert
-        UInt16 exception_index;
-        T exception_value;
-        if (remaining_exception_count > 0)
+        // Decode interleaved encoded values and exceptions
+        while (remaining_encoded_float_count > 0 && remaining_exception_count > 0)
         {
-            exception_index = unalignedLoadLittleEndian<UInt16>(source);
+            const UInt16 exception_index = unalignedLoadLittleEndian<UInt16>(source);
             source += sizeof(UInt16);
-            exception_value = unalignedLoadLittleEndian<T>(source);
+
+            const T exception_value = unalignedLoadLittleEndian<T>(source);
             source += sizeof(T);
-        }
-        else
-        {
-            exception_index = UINT16_MAX;
-            exception_value = static_cast<T>(0);
-        }
 
-        for (; remaining_encoded_float_count > 0; ++value_index)
-        {
-            if (value_index == exception_index)
-            {
-                unalignedStoreLittleEndian<T>(dest, exception_value);
-                dest += sizeof(T);
-
-                --remaining_exception_count;
-
-                if (remaining_exception_count > 0)
-                {
-                    exception_index = unalignedLoadLittleEndian<UInt16>(source);
-                    source += sizeof(UInt16);
-
-                    exception_value = unalignedLoadLittleEndian<T>(source);
-                    source += sizeof(T);
-                }
-                else
-                {
-                    exception_index = UINT16_MAX;
-                    exception_value = static_cast<T>(0);
-                }
-            }
-            else
+            for (; exception_index < output_index; ++output_index)
             {
                 const Int64 encoded_value = frame_of_reference + static_cast<Int64>(bit_reader.readBits(bit_width));
                 const T decoded_value = ALPFloatUtils<T>::decodeValue(encoded_value, exponent, fraction);
@@ -609,26 +586,36 @@ private:
 
                 --remaining_encoded_float_count;
             }
-        }
 
-        if (remaining_exception_count > 0)
-        {
             unalignedStoreLittleEndian<T>(dest, exception_value);
             dest += sizeof(T);
 
             --remaining_exception_count;
+        }
 
-            while (remaining_exception_count > 0)
-            {
-                source += sizeof(UInt16); // Skip exception index
-                exception_value = unalignedLoadLittleEndian<T>(source);
-                source += sizeof(T);
+        // Decode remaining encoded values
+        while (remaining_encoded_float_count > 0)
+        {
+            const Int64 encoded_value = frame_of_reference + static_cast<Int64>(bit_reader.readBits(bit_width));
+            const T decoded_value = ALPFloatUtils<T>::decodeValue(encoded_value, exponent, fraction);
 
-                unalignedStoreLittleEndian<T>(dest, exception_value);
-                dest += sizeof(T);
+            unalignedStoreLittleEndian<T>(dest, decoded_value);
+            dest += sizeof(T);
 
-                --remaining_exception_count;
-            }
+            --remaining_encoded_float_count;
+        }
+
+        // Copy remaining exceptions
+        while (remaining_exception_count > 0)
+        {
+            source += sizeof(UInt16); // Skip exception index
+            const T exception_value = unalignedLoadLittleEndian<T>(source);
+            source += sizeof(T);
+
+            unalignedStoreLittleEndian<T>(dest, exception_value);
+            dest += sizeof(T);
+
+            --remaining_exception_count;
         }
     }
 
