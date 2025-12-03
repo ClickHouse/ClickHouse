@@ -93,7 +93,7 @@ entry_type:              Exit
 duration_nanoseconds:   58435
 ```
 
-# Converting to Chrome Event Trace Format {#chrome-event-trace-format}
+## Converting to Chrome Event Trace Format {#chrome-event-trace-format}
 
 The profiling data can be converted to Chrome's Event Trace Format with the following query. Save the query to a `chrome_trace.sql` file:
 
