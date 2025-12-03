@@ -45,6 +45,7 @@ INSERT INTO 03720_three_columns VALUES (1, 1, 1, 'a'), (1, 1, 2, 'b'), (1, 2, 1,
 SELECT val FROM 03720_three_columns WHERE (k1, k2, k3) = (1, 1, 1) ORDER BY val;
 SELECT val FROM 03720_three_columns WHERE (k1, k2, k3) IN ((1, 1, 1), (2, 1, 1)) ORDER BY val;
 SELECT COUNT(*) FROM 03720_three_columns WHERE k1 = 1 AND k2 = 1 AND k3 IN (1, 2); -- Cartesian with 3 keys
+SELECT COUNT(*) FROM 03720_three_columns WHERE (k1 = 1 AND k2 = 1 AND k3 = 1) OR (k1 = 1 AND k2 = 2 AND k3 = 1); -- OR with all 3 keys specified
 
 DROP TABLE 03720_three_columns;
 
@@ -173,4 +174,198 @@ INSERT INTO 03720_partial_key SELECT intDiv(number, 10), number % 10, number % 3
 SELECT COUNT(*) FROM 03720_partial_key WHERE k1 = 1;
 
 DROP TABLE 03720_partial_key;
+
+-- DELETE operations with multi-column primary keys
+DROP TABLE IF EXISTS 03720_deletes;
+CREATE TABLE 03720_deletes (k1 UInt32, k2 UInt32, val String) ENGINE=EmbeddedRocksDB PRIMARY KEY (k1, k2);
+INSERT INTO 03720_deletes VALUES (1, 1, 'a'), (1, 2, 'b'), (2, 1, 'c'), (2, 2, 'd'), (3, 3, 'e');
+
+-- Delete single row with full key
+DELETE FROM 03720_deletes WHERE k1 = 1 AND k2 = 1;
+SELECT COUNT(*) FROM 03720_deletes; -- Should be 4
+SELECT val FROM 03720_deletes WHERE k1 = 1 ORDER BY val; -- Should be 'b'
+
+-- Delete using tuple equality
+DELETE FROM 03720_deletes WHERE (k1, k2) = (2, 2);
+SELECT COUNT(*) FROM 03720_deletes; -- Should be 3
+SELECT val FROM 03720_deletes WHERE k1 = 2 ORDER BY val; -- Should be 'c'
+
+-- Delete using tuple IN
+DELETE FROM 03720_deletes WHERE (k1, k2) IN ((1, 2), (3, 3));
+SELECT COUNT(*) FROM 03720_deletes; -- Should be 1
+SELECT val FROM 03720_deletes ORDER BY val; -- Should be 'c'
+
+DROP TABLE 03720_deletes;
+
+-- DELETE with three-column primary key
+DROP TABLE IF EXISTS 03720_deletes_three_col;
+CREATE TABLE 03720_deletes_three_col (k1 UInt32, k2 UInt32, k3 UInt32, val String) ENGINE=EmbeddedRocksDB PRIMARY KEY (k1, k2, k3);
+INSERT INTO 03720_deletes_three_col VALUES (1, 1, 1, 'a'), (1, 1, 2, 'b'), (1, 2, 1, 'c'), (2, 1, 1, 'd');
+
+DELETE FROM 03720_deletes_three_col WHERE (k1, k2, k3) = (1, 1, 1);
+SELECT COUNT(*) FROM 03720_deletes_three_col; -- Should be 3
+
+DELETE FROM 03720_deletes_three_col WHERE (k1, k2, k3) IN ((1, 1, 2), (2, 1, 1));
+SELECT COUNT(*) FROM 03720_deletes_three_col; -- Should be 1
+SELECT val FROM 03720_deletes_three_col ORDER BY val; -- Should be 'c'
+
+DROP TABLE 03720_deletes_three_col;
+
+-- DELETE with string keys
+DROP TABLE IF EXISTS 03720_deletes_string;
+CREATE TABLE 03720_deletes_string (k1 String, k2 String, val UInt32) ENGINE=EmbeddedRocksDB PRIMARY KEY (k1, k2);
+INSERT INTO 03720_deletes_string VALUES ('foo', 'bar', 1), ('foo', 'baz', 2), ('qux', 'bar', 3);
+
+DELETE FROM 03720_deletes_string WHERE k1 = 'foo' AND k2 = 'bar';
+SELECT COUNT(*) FROM 03720_deletes_string; -- Should be 2
+SELECT val FROM 03720_deletes_string WHERE k1 = 'foo' ORDER BY val; -- Should be 2
+
+DROP TABLE 03720_deletes_string;
+
+-- UPDATE operations using ALTER TABLE
+DROP TABLE IF EXISTS 03720_updates;
+CREATE TABLE 03720_updates (k1 UInt32, k2 UInt32, val String) ENGINE=EmbeddedRocksDB PRIMARY KEY (k1, k2);
+INSERT INTO 03720_updates VALUES (1, 1, 'original'), (1, 2, 'data'), (2, 1, 'test');
+
+-- Update using ALTER TABLE
+ALTER TABLE 03720_updates UPDATE val = 'updated' WHERE k1 = 1 AND k2 = 1;
+ALTER TABLE 03720_updates UPDATE val = 'modified' WHERE k1 = 1 AND k2 = 2;
+SELECT val FROM 03720_updates WHERE (k1, k2) = (1, 1); -- Should be 'updated'
+SELECT val FROM 03720_updates WHERE (k1, k2) = (1, 2); -- Should be 'modified'
+SELECT val FROM 03720_updates WHERE (k1, k2) = (2, 1); -- Should be 'test'
+SELECT COUNT(*) FROM 03720_updates; -- Should be 3
+
+-- Update with tuple equality
+ALTER TABLE 03720_updates UPDATE val = 'changed' WHERE (k1, k2) = (2, 1);
+SELECT val FROM 03720_updates WHERE (k1, k2) = (2, 1); -- Should be 'changed'
+
+DROP TABLE 03720_updates;
+
+-- UPDATE with three-column primary key
+DROP TABLE IF EXISTS 03720_updates_three_col;
+CREATE TABLE 03720_updates_three_col (k1 UInt32, k2 UInt32, k3 UInt32, val String) ENGINE=EmbeddedRocksDB PRIMARY KEY (k1, k2, k3);
+INSERT INTO 03720_updates_three_col VALUES (1, 1, 1, 'v1'), (1, 1, 2, 'v2'), (1, 2, 1, 'v3');
+
+ALTER TABLE 03720_updates_three_col UPDATE val = 'updated_v1' WHERE (k1, k2, k3) = (1, 1, 1);
+SELECT val FROM 03720_updates_three_col WHERE (k1, k2, k3) = (1, 1, 1); -- Should be 'updated_v1'
+SELECT COUNT(*) FROM 03720_updates_three_col; -- Should be 3
+
+DROP TABLE 03720_updates_three_col;
+
+-- UPDATE with string keys
+DROP TABLE IF EXISTS 03720_updates_string;
+CREATE TABLE 03720_updates_string (k1 String, k2 String, val UInt32) ENGINE=EmbeddedRocksDB PRIMARY KEY (k1, k2);
+INSERT INTO 03720_updates_string VALUES ('foo', 'bar', 100), ('foo', 'baz', 200);
+
+ALTER TABLE 03720_updates_string UPDATE val = 999 WHERE k1 = 'foo' AND k2 = 'bar';
+SELECT val FROM 03720_updates_string WHERE (k1, k2) = ('foo', 'bar'); -- Should be 999
+SELECT COUNT(*) FROM 03720_updates_string; -- Should be 2
+
+DROP TABLE 03720_updates_string;
+
+-- UPSERT operations (INSERT for new + update existing via INSERT)
+DROP TABLE IF EXISTS 03720_upsert;
+CREATE TABLE 03720_upsert (k1 UInt32, k2 UInt32, val String) ENGINE=EmbeddedRocksDB PRIMARY KEY (k1, k2);
+INSERT INTO 03720_upsert VALUES (1, 1, 'original'), (1, 2, 'data');
+
+-- Upsert: insert new and overwrite existing
+INSERT INTO 03720_upsert VALUES (1, 1, 'upserted'), (2, 2, 'new');
+SELECT val FROM 03720_upsert WHERE (k1, k2) = (1, 1); -- Should be 'upserted'
+SELECT val FROM 03720_upsert WHERE (k1, k2) = (2, 2); -- Should be 'new'
+SELECT COUNT(*) FROM 03720_upsert; -- Should be 3
+
+DROP TABLE 03720_upsert;
+
+-- JOIN operations with multi-column primary keys
+SET join_algorithm = 'direct, hash';
+DROP TABLE IF EXISTS 03720_join_left;
+DROP TABLE IF EXISTS 03720_join_right;
+
+CREATE TABLE 03720_join_left (k1 UInt32, k2 UInt32, val String) ENGINE=EmbeddedRocksDB PRIMARY KEY (k1, k2);
+CREATE TABLE 03720_join_right (k1 UInt32, k2 UInt32, info String) ENGINE=EmbeddedRocksDB PRIMARY KEY (k1, k2);
+
+INSERT INTO 03720_join_left VALUES (1, 1, 'a'), (1, 2, 'b'), (2, 1, 'c'), (3, 3, 'd');
+INSERT INTO 03720_join_right VALUES (1, 1, 'info_a'), (1, 2, 'info_b'), (2, 1, 'info_c'), (4, 4, 'info_e');
+
+-- INNER JOIN on multi-column keys
+SELECT l.val, r.info
+FROM 03720_join_left AS l
+INNER JOIN 03720_join_right AS r ON l.k1 = r.k1 AND l.k2 = r.k2
+ORDER BY l.val;
+
+-- LEFT JOIN on multi-column keys
+SELECT l.val, r.info
+FROM 03720_join_left AS l
+LEFT JOIN 03720_join_right AS r ON l.k1 = r.k1 AND l.k2 = r.k2
+ORDER BY l.val;
+
+-- COUNT with INNER JOIN
+SELECT COUNT(*) FROM 03720_join_left AS l
+INNER JOIN 03720_join_right AS r ON l.k1 = r.k1 AND l.k2 = r.k2;
+
+DROP TABLE 03720_join_left;
+DROP TABLE 03720_join_right;
+
+-- JOIN with three-column primary keys
+DROP TABLE IF EXISTS 03720_join_three_left;
+DROP TABLE IF EXISTS 03720_join_three_right;
+
+CREATE TABLE 03720_join_three_left (k1 UInt32, k2 UInt32, k3 UInt32, val String) ENGINE=EmbeddedRocksDB PRIMARY KEY (k1, k2, k3);
+CREATE TABLE 03720_join_three_right (k1 UInt32, k2 UInt32, k3 UInt32, info String) ENGINE=EmbeddedRocksDB PRIMARY KEY (k1, k2, k3);
+
+INSERT INTO 03720_join_three_left VALUES (1, 1, 1, 'x'), (1, 1, 2, 'y'), (1, 2, 1, 'z');
+INSERT INTO 03720_join_three_right VALUES (1, 1, 1, 'data_x'), (1, 1, 2, 'data_y'), (2, 1, 1, 'data_w');
+
+SELECT l.val, r.info
+FROM 03720_join_three_left AS l
+INNER JOIN 03720_join_three_right AS r ON l.k1 = r.k1 AND l.k2 = r.k2 AND l.k3 = r.k3
+ORDER BY l.val;
+
+SELECT COUNT(*) FROM 03720_join_three_left AS l
+LEFT JOIN 03720_join_three_right AS r ON l.k1 = r.k1 AND l.k2 = r.k2 AND l.k3 = r.k3;
+
+DROP TABLE 03720_join_three_left;
+DROP TABLE 03720_join_three_right;
+
+-- JOIN with string keys
+DROP TABLE IF EXISTS 03720_join_str_left;
+DROP TABLE IF EXISTS 03720_join_str_right;
+
+CREATE TABLE 03720_join_str_left (k1 String, k2 String, val UInt32) ENGINE=EmbeddedRocksDB PRIMARY KEY (k1, k2);
+CREATE TABLE 03720_join_str_right (k1 String, k2 String, val UInt32) ENGINE=EmbeddedRocksDB PRIMARY KEY (k1, k2);
+
+INSERT INTO 03720_join_str_left VALUES ('foo', 'bar', 1), ('foo', 'baz', 2), ('qux', 'bar', 3);
+INSERT INTO 03720_join_str_right VALUES ('foo', 'bar', 10), ('foo', 'baz', 20), ('xyz', 'abc', 30);
+
+SELECT l.val, r.val
+FROM 03720_join_str_left AS l
+INNER JOIN 03720_join_str_right AS r ON l.k1 = r.k1 AND l.k2 = r.k2
+ORDER BY l.val;
+
+SELECT COUNT(*) FROM 03720_join_str_left AS l
+LEFT JOIN 03720_join_str_right AS r ON l.k1 = r.k1 AND l.k2 = r.k2;
+
+DROP TABLE 03720_join_str_left;
+DROP TABLE 03720_join_str_right;
+
+-- JOIN with mixed table types (RocksDB + MergeTree)
+DROP TABLE IF EXISTS 03720_join_rocks;
+DROP TABLE IF EXISTS 03720_join_merge;
+
+CREATE TABLE 03720_join_rocks (k1 UInt32, k2 UInt32, val String) ENGINE=EmbeddedRocksDB PRIMARY KEY (k1, k2);
+CREATE TABLE 03720_join_merge (k1 UInt32, k2 UInt32, info String) ENGINE=MergeTree() ORDER BY (k1, k2);
+
+INSERT INTO 03720_join_rocks VALUES (1, 1, 'r1'), (1, 2, 'r2'), (2, 1, 'r3');
+INSERT INTO 03720_join_merge VALUES (1, 1, 'm1'), (1, 2, 'm2'), (3, 3, 'm3');
+
+SELECT r.val, m.info
+FROM 03720_join_rocks AS r
+INNER JOIN 03720_join_merge AS m ON r.k1 = m.k1 AND r.k2 = m.k2
+ORDER BY r.val;
+
+SELECT COUNT(*) FROM 03720_join_rocks AS r
+LEFT JOIN 03720_join_merge AS m ON r.k1 = m.k1 AND r.k2 = m.k2;
+
+DROP TABLE 03720_join_rocks;
+DROP TABLE 03720_join_merge;
 

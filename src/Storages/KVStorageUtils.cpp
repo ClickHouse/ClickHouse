@@ -576,7 +576,7 @@ std::vector<std::string> serializeKeysToRawString(const ColumnWithTypeAndName & 
     return result;
 }
 
-/// In current implementation rocks db/redis can have key with only one column.
+/// In current implementation redis / keeper can have key with only one column.
 size_t getPrimaryKeyPos(const Block & header, const Names & primary_key)
 {
     if (primary_key.size() != 1)
