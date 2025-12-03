@@ -79,7 +79,7 @@ public:
 
     void serializeSettings(QueryPlanSerializationSettings & settings) const override;
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    bool isSerializable() const override { return sort_description_for_merging.empty(); }
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
@@ -101,7 +101,12 @@ public:
     bool shouldProduceResultsInBucketOrder() const noexcept { return should_produce_results_in_order_of_bucket_number; }
     bool usingMemoryBoundMerging() const noexcept { return memory_bound_merging_of_aggregation_results_enabled; }
 
-    bool supportsDataflowStatisticsCollection() const override { return true; }
+    bool supportsDataflowStatisticsCollection() const override
+    {
+        // Serialization is done internally in `calculateHashTableCacheKeys`.
+        // No strong reason to depend on it, just the current implementation detail.
+        return isSerializable();
+    }
 
 private:
     void updateOutputHeader() override;
