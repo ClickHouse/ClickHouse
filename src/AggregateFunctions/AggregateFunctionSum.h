@@ -163,18 +163,17 @@ struct AggregateFunctionSumData
         }
         else if constexpr (is_over_big_int<T>)
         {
+            alignas(64) const uint64_t masks[2] = {0, ~0ULL};
             T local_sum{};
-
             for (size_t i = 0; i < count; ++i)
             {
                 uint8_t flag = (condition_map[i] != add_if_zero);
 
                 T mask{};
-                std::memset(&mask, flag ? 0xFF : 0x00, sizeof(T));
+                std::memset(&mask, masks[flag], sizeof(T));
 
                 Impl::add(local_sum, ptr[i] & mask);
             }
-
             Impl::add(sum, local_sum);
             return;
         }
