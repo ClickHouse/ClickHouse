@@ -82,8 +82,14 @@ struct IndicesDescription : public std::vector<IndexDescription>, IHints<>
     bool has(const String & name) const;
     /// Index with type exists
     bool hasType(const String & type) const;
-    /// Convert description to string
-    String toString() const;
+
+    /// Convert description to string. Includes only explicitly created indices
+    String explicitToString() const;
+
+    /// Convert description to string. Includes all indices.
+    /// It should only used for compatibility or debugging. Otherwise prefer explicitToString()
+    String allToString() const;
+
     /// Parse description from string
     static IndicesDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr context);
 

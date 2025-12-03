@@ -121,7 +121,7 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
 
 void IndexDescription::recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr context)
 {
-    *this = getIndexFromAST(definition_ast, new_columns, /* is_implicitly_created */ false, context);
+    *this = getIndexFromAST(definition_ast, new_columns, is_implicitly_created, context);
 }
 
 void IndexDescription::initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context)
@@ -186,7 +186,22 @@ bool IndicesDescription::hasType(const String & type) const
     return false;
 }
 
-String IndicesDescription::toString() const
+String IndicesDescription::explicitToString() const
+{
+    if (empty())
+        return {};
+
+    ASTExpressionList list;
+    for (const auto & index : *this)
+    {
+        if (!index.isImplicitlyCreated())
+            list.children.push_back(index.definition_ast);
+    }
+
+    return list.formatWithSecretsOneLine();
+}
+
+String IndicesDescription::allToString() const
 {
     if (empty())
         return {};
