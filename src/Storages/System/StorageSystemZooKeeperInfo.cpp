@@ -166,7 +166,7 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
 
             if (clickhouse_config.configuration->hasProperty(prefix + ".index"))
             {
-                LOG_INFO(getLogger("StorageSystemZooKeeperInfo"), "index found " );
+                LOG_INFO(getLogger("StorageSystemZooKeeperInfo"), "index found");
                 auto index = clickhouse_config.configuration->getUInt(prefix + ".index");
                 LOG_INFO(getLogger("StorageSystemZooKeeperInfo"), "index found value {} ", index);
                 res_columns[3]->insert(index);
