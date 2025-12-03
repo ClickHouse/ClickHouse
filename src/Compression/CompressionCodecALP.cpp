@@ -527,7 +527,7 @@ public:
 private:
     void decodeBlock(const char * & source, const char * source_end, char * & dest, const char * dest_end)
     {
-        if (source + ALP_BLOCK_HEADER_SIZE > source_end)
+        if (source + sizeof(UInt16) > source_end)
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ALP-encoded data. Incomplete block header");
 
         const UInt16 header_first_word = unalignedLoadLittleEndian<UInt16>(source);
@@ -541,6 +541,9 @@ private:
             processUnencodedBlock(source, source_end, dest, dest_end, float_count);
             return;
         }
+
+        if (source + (ALP_BLOCK_HEADER_SIZE - sizeof(UInt16)) > source_end)
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ALP-encoded data. Incomplete block header");
 
         const UInt8 exponent = static_cast<UInt8>(*source++);
         const UInt8 fraction = static_cast<UInt8>(*source++);
@@ -562,8 +565,8 @@ private:
         // Move source pointer past encoded values, to the exceptions section
         source += encoded_bytes;
 
-        UInt16 remaining_encoded_float_count = encoded_float_count;
-        UInt16 remaining_exception_count = exception_count;
+        Int32 remaining_encoded_float_count = encoded_float_count;
+        Int32 remaining_exception_count = exception_count;
 
         UInt16 output_index = 0;
 
@@ -576,7 +579,7 @@ private:
             const T exception_value = unalignedLoadLittleEndian<T>(source);
             source += sizeof(T);
 
-            for (; exception_index < output_index; ++output_index)
+            for (; output_index < exception_index; ++output_index)
             {
                 const Int64 encoded_value = frame_of_reference + static_cast<Int64>(bit_reader.readBits(bit_width));
                 const T decoded_value = ALPFloatUtils<T>::decodeValue(encoded_value, exponent, fraction);
@@ -591,6 +594,7 @@ private:
             dest += sizeof(T);
 
             --remaining_exception_count;
+            ++output_index;
         }
 
         // Decode remaining encoded values
