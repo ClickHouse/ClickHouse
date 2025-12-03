@@ -2,7 +2,10 @@
 
 #include "config.h"
 #include <base/types.h>
+
+#if USE_XRAY
 #include <xray/xray_interface.h>
+#endif
 
 namespace DB
 {
@@ -16,8 +19,10 @@ enum class EntryType : UInt8
     ENTRY_AND_EXIT
 };
 
+#if USE_XRAY
 EntryType fromXRayEntryType(XRayEntryType entry_type);
 String entryTypeToString(EntryType entry_type);
+#endif
 
 }
 }

@@ -6,7 +6,10 @@
 #include <Common/quoteString.h>
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
+
+#if USE_XRAY
 #include <xray/xray_interface.h>
+#endif
 
 namespace DB
 {
