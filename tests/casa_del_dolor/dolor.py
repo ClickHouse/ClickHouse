@@ -490,7 +490,7 @@ catalog_server = create_spark_http_server(cluster, args.with_unity, test_env_var
 # Start the load generator, at the moment only BuzzHouse is available
 generator: Generator = Generator(pathlib.Path(), pathlib.Path(), None)
 if args.generator == "buzzhouse":
-    generator = BuzzHouseGenerator(args, cluster, catalog_server)
+    generator = BuzzHouseGenerator(args, cluster, catalog_server, server_settings)
 logger.info("Start load generator")
 client = generator.run_generator(servers[0], logger, args)
 
