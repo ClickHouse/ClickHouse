@@ -53,6 +53,10 @@ public:
     /// Used only for unit test.
     const ImplPtr & getImpl() { return impl; }
 
+    bool supportsReadAt() override { return impl->supportsReadAt(); }
+
+    size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
+
 private:
     const ImplPtr impl;
     const ReadSettings read_settings;

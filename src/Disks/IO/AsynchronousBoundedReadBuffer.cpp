@@ -418,4 +418,11 @@ void AsynchronousBoundedReadBuffer::resetPrefetch(FilesystemPrefetchState state)
     }
 }
 
+size_t AsynchronousBoundedReadBuffer::readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & ) const {
+    if (impl->supportsReadAt())
+        return impl->readBigAt(to, n, range_begin, nullptr);
+    else
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readBigAt() not implemented for a given implementation");
+}
+
 }
