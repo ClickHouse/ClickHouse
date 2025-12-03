@@ -17,7 +17,7 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
-    extern const MergeTreeSettingsUInt64 adaptive_write_buffer_initial_size;
+    extern const MergeTreeSettingsNonZeroUInt64 adaptive_write_buffer_initial_size;
     extern const MergeTreeSettingsBool compress_primary_key;
     extern const MergeTreeSettingsUInt64 marks_compress_block_size;
     extern const MergeTreeSettingsString marks_compression_codec;
