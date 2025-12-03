@@ -7,13 +7,15 @@
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <Core/Joins.h>
-#include <Interpreters/JoinExpressionActions.h>
-#include <base/defines.h>
 #include <IO/Operators.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/JoinOperator.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Common/safe_cast.h>
+#include <base/defines.h>
 #include <ranges>
 #include <stack>
 #include <unordered_map>
@@ -74,6 +76,12 @@ public:
         : query_graph(std::move(query_graph_))
         , enabled_algorithms(enabled_algorithms_)
     {
+        auto context = CurrentThread::getQueryContext();
+        if (context)
+        {
+            query_status = context->getProcessListElementSafe();
+            interactive_cancel_callback = context->getInteractiveCancelCallback();
+        }
     }
 
     std::shared_ptr<DPJoinEntry> solve();
@@ -90,6 +98,9 @@ private:
     double computeSelectivity(const std::vector<JoinActionRef *> & edges);
     size_t getColumnStats(BitSet rels, const String & column_name);
 
+    /// Peridically called from potentially long running optimization to check time limits and send progress
+    void checkLimits();
+
     constexpr static auto APPLY_DP_THRESHOLD = 10;
 
     QueryGraph query_graph;
@@ -99,8 +110,18 @@ private:
 
     const std::vector<JoinOrderAlgorithm> enabled_algorithms;
     LoggerPtr log = getLogger("JoinOrderOptimizer");
+
+    QueryStatusPtr query_status;
+    std::function<bool()> interactive_cancel_callback;
 };
 
+void JoinOrderOptimizer::checkLimits()
+{
+    if (query_status)
+        query_status->checkTimeLimit();
+    if (interactive_cancel_callback)
+        interactive_cancel_callback();
+}
 
 size_t JoinOrderOptimizer::getColumnStats(BitSet rels, const String & column_name)
 {
@@ -403,6 +424,8 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
 
             for (const auto & [_, right] : components[smaller_component_size])
             {
+                checkLimits();
+
                 for (const auto & [_, left] : components[bigger_component_size])
                 {
                     /// Do components overlap?
