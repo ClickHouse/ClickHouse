@@ -46,7 +46,7 @@ timeSeriesCoalesceGridValues(mode)(values, [, group])
 | --- | --- |
 | `'any'` | The function returns the first value it finds at every position. |
 | `'null'` | The function returns `NULL` if there are two values at the same position (even if they're equal) |
-| `'throw'` | The function throws an exception (`Found duplicate series`) with information about these time series in case the argument `group` is provided |
+| `'throw'` | The function throws an exception (`Found duplicate series`) if there are two values at the same position (even if they're equal), with optional information about these time series in case the argument `group` is provided |
 
 **Arguments**
 

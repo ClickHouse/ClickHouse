@@ -25,46 +25,42 @@ namespace ErrorCodes
 
 enum class AggregateFunctionTimeSeriesCoalesceGridValuesMode
 {
-    NULL_IF_CONFLICT,
-    THROW_IF_CONFLICT,
+    kAny,
+    kNull,
+    kThrow,
 };
 
 /// Combines non-NULL values in arrays from different rows into a single array.
 
-template <typename ValueType>
-class AggregateFunctionTimeSeriesCoalesceGridValues final :
-    public IAggregateFunctionHelper<AggregateFunctionTimeSeriesCoalesceGridValues<ValueType>>
+class AggregateFunctionTimeSeriesCoalesceGridValues final
+    : public IAggregateFunctionHelper<AggregateFunctionTimeSeriesCoalesceGridValues>,
+      private WithContext
 {
 public:
-    using Base = IAggregateFunctionHelper<AggregateFunctionTimeSeriesCoalesceGridValues<ValueType>>;
+    using Base = IAggregateFunctionHelper<AggregateFunctionTimeSeriesCoalesceGridValues>;
     using Mode = AggregateFunctionTimeSeriesCoalesceGridValuesMode;
 
     using ColVecType = ColumnVectorOrDecimal<ValueType>;
 
     String getName() const override { return "timeSeriesCoalesceGridValues"; }
 
-    struct Element
-    {
-        /// Number of non-null values for a specific position.
-        size_t num_values = 0;
-
-        /// The last non-null value we've met so far.
-        /// `last_value` does matter only if `num_values == 1`
-        ValueType last_value = {};
-    };
-
     /// Stores number of non-null values for each position and the last such value.
     struct Data
     {
-        Element * elements = nullptr;
         size_t size = 0;
+        MutableColumnPtr values_column;
+        MutableColumnPtr null_map_column;
+        NullMap * null_map = nullptr;
+        std::vector<UInt64> groups;
 
-        void resize(size_t new_size, Arena * arena)
+        void resize(DataTypePtr size_t new_size)
         {
             if (new_size == size)
                 return;
             if (new_size)
             {
+                if (value)
+                values_column->cloneResized()
                 elements = reinterpret_cast<Element *>(arena->alignedRealloc(
                     reinterpret_cast<char *>(elements), size * sizeof(Element), new_size * sizeof(Element), alignof(Element)));
                 if (new_size > size)
@@ -80,7 +76,7 @@ public:
             size = new_size;
         }
 
-        void add(size_t count, const ValueType * values, const UInt8 * null_map, Arena * arena)
+        void add(size_t count, const ColumnPtr & values, const UInt8 * null_map, Arena * arena)
         {
             if (count > size)
                 resize(count, arena);
@@ -95,7 +91,7 @@ public:
             }
         }
 
-        void merge(const Data & rhs, Arena * arena)
+        void merge(const Data & rhs, Mode mode)
         {
             if (rhs.size > size)
                 resize(rhs.size, arena);
@@ -112,8 +108,9 @@ public:
         }
     };
 
-    explicit AggregateFunctionTimeSeriesCoalesceGridValues(const DataTypes & argument_types_, Mode mode_)
+    explicit AggregateFunctionTimeSeriesCoalesceGridValues(ContextPtr context_, const DataTypes & argument_types_, Mode mode_)
         : Base(argument_types_, {}, createResultType(argument_types_))
+        , WithContext(context_) {}
         , mode(mode_)
     {
     }
@@ -121,6 +118,7 @@ public:
     static DataTypePtr createResultType(const DataTypes & argument_types_)
     {
         const auto & values_type = argument_types_[0];
+
         return values_type;
     }
 
@@ -361,5 +359,4 @@ private:
     static constexpr UInt16 FORMAT_VERSION = 1;
     Mode mode;
 };
-
 }

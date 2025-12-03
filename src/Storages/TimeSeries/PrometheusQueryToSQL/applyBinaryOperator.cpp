@@ -550,7 +550,7 @@ namespace
                     "arrayResize",
                     std::make_shared<ASTLiteral>(Array{}),
                     std::make_shared<ASTLiteral>(countTimeseriesSteps(argument.start_time, argument.end_time, argument.step)),
-                    std::make_shared<ASTLiteral>(argument.scalar_value)));
+                    makeASTFunction("toNullable", std::make_shared<ASTLiteral>(argument.scalar_value))));
 
                 params.select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values));
 
@@ -570,7 +570,8 @@ namespace
                 params.select_list.push_back(std::make_shared<ASTLiteral>(0u));
                 params.select_list.back()->setAlias(TimeSeriesColumnNames::Group);
 
-                params.select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values));
+                params.select_list.push_back(
+                    makeASTFunction("CAST", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values), "Array(Nullable(Float64))"));
 
                 context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE});
                 params.from_table = context.subqueries.back().name;
@@ -627,7 +628,7 @@ namespace
             right_argument);
 
         /// SELECT timeSeriesCopyTags(join_group, left.group, tags_to_copy) AS group,
-        ///        timeSeriesCoalesceGridValues('throw')(arrayMap(x, y -> x + y, left.values, right.values) AS values
+        ///        timeSeriesCoalesceGridValues('throw')(arrayMap(x, y -> x + y, left.values, right.values), group) AS values
         /// FROM left INNER ALL JOIN right
         /// ON (timeSeriesRemoveTags(left.group, on_tags) AS join_group) == timeSeriesRemoveTags(right.group, on_tags)
         /// GROUP BY group
@@ -645,7 +646,8 @@ namespace
                     std::make_shared<ASTIdentifier>(Strings{left, TimeSeriesColumnNames::Values}),
                     std::make_shared<ASTIdentifier>(Strings{right, TimeSeriesColumnNames::Values}),
                     /* left_to_right = */ true,
-                    /* return_array_argument_if_match = */ true)),
+                    /* return_array_argument_if_match = */ true),
+                std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group)),
             "throw"));
 
         params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);

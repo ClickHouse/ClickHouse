@@ -49,8 +49,11 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
             params.select_list.back()->setAlias(TimeSeriesColumnNames::Group);
 
             auto coalesce_function = addParameterToAggregateFunction(
-                makeASTFunction("timeSeriesCoalesceGridValues", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values)),
-                "throw_if_conflict");
+                makeASTFunction(
+                    "timeSeriesCoalesceGridValues",
+                    std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values),
+                    std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group)),
+                "throw");
 
             params.select_list.push_back(std::move(coalesce_function));
             params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
