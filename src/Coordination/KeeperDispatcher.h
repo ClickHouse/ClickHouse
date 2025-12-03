@@ -104,6 +104,10 @@ private:
     using ConfigCheckCallback = std::function<bool(KeeperServer * server)>;
     void executeClusterUpdateActionAndWaitConfigChange(const ClusterUpdateAction & action, ConfigCheckCallback check_callback, size_t max_action_wait_time_ms);
 
+    /// Verify some logical issues in command, like duplicate ids, wrong leadership transfer and etc
+    void checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr reconfig_command);
+    void checkReconfigCommandActions(Poco::JSON::Object::Ptr reconfig_command);
+
 public:
     std::mutex read_request_queue_mutex;
 
@@ -136,6 +140,7 @@ public:
     void pushClusterUpdates(ClusterUpdateActions && actions);
     bool reconfigEnabled() const;
 
+    /// Process reconfiguration 4LW command: rcfg, it's another option to update cluster configuration
     Poco::JSON::Object::Ptr reconfigureClusterFromReconfigureCommand(Poco::JSON::Object::Ptr reconfig_command);
 
     /// Shutdown internal keeper parts (server, state machine, log storage, etc)

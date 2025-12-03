@@ -505,6 +505,7 @@ struct ToggleRequestLogging : public IFourLetterCommand
     ~ToggleRequestLogging() override = default;
 };
 
+/// Command which allow complex reconfiguration via 4lw command with argument
 struct ReconfigureCommand : public IFourLetterCommand
 {
     explicit ReconfigureCommand(KeeperDispatcher & keeper_dispatcher_)

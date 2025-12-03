@@ -1055,8 +1055,7 @@ void KeeperDispatcher::executeClusterUpdateActionAndWaitConfigChange(const Clust
     throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded waiting for configuration update {} to happen", action);
 }
 
-Poco::JSON::Object::Ptr KeeperDispatcher::reconfigureClusterFromReconfigureCommand(Poco::JSON::Object::Ptr reconfig_command)
-try
+void KeeperDispatcher::checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr reconfig_command)
 {
     if (reconfig_command->has("preconditions"))
     {
@@ -1104,10 +1103,31 @@ try
                     server->getLeaderID());
         }
     }
+
+}
+void KeeperDispatcher::checkReconfigCommandActions(Poco::JSON::Object::Ptr reconfig_command)
+{
     if (!reconfig_command->has("actions"))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Reconfigure command must have 'changes' field");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Reconfigure command must have 'actions' field");
 
     auto actions = reconfig_command->getArray("actions");
+    /// sever_id -> leader
+    std::unordered_map<int32_t, bool> state_model;
+
+    auto config = server->getKeeperStateMachine()->getClusterConfig();
+    for (const auto & srv : config->get_servers())
+    {
+        int32_t server_id = srv->get_id();
+        state_model[server_id] = server_id == server->getLeaderID();
+    }
+    auto is_leader = [&state_model](int32_t server_id) -> bool
+    {
+        auto it = state_model.find(server_id);
+        if (it == state_model.end())
+            return false;
+        return it->second;
+    };
+
     for (const auto & action_json : *actions)
     {
         const auto & action_obj = action_json.extract<Poco::JSON::Object::Ptr>();
@@ -1120,12 +1140,95 @@ try
                 if (member_id == server->getServerID())
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Reconfigure command cannot remove current server id {} from cluster",
+                        "Reconfigure command cannot remove current server id {} from cluster because it would make other servers ignore all the commands from this one",
                         member_id);
+                }
+                if (is_leader(member_id))
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Reconfigure command cannot remove leader server id {} from cluster, transfer leadership first and than remove it",
+                        member_id);
+                }
+                if (auto it = state_model.find(member_id); it != state_model.end())
+                    state_model.erase(it);
+            }
+        }
+        if (action_obj->has("add_members"))
+        {
+            auto add_members = action_obj->getArray("add_members");
+            for (const auto & member_id_json : *add_members)
+            {
+                const auto & member_obj = member_id_json.extract<Poco::JSON::Object::Ptr>();
+                int32_t member_id = member_obj->getValue<int32_t>("id");
+                if (state_model.contains(member_id))
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Reconfigure command cannot add server id {} to cluster because it's already present",
+                        member_id);
+                }
+                state_model[member_id] = false;
+            }
+        }
+        if (action_obj->has("transfer_leadership"))
+        {
+            bool found = false;
+            std::vector<int32_t> leader_ids;
+            const auto & leader_ids_array = action_obj->getArray("transfer_leadership");
+            if (leader_ids_array->size() == 0)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Reconfigure command 'transfer_leadership' action must have non-empty list of server ids");
+            }
+
+            /// Leader is going to be transfered, reset state model
+            for (auto & [server_id, _] : state_model)
+            {
+                state_model[server_id] = false;
+            }
+
+            for (const auto & leader_id_json : *leader_ids_array)
+            {
+                int32_t leader_id = leader_id_json.convert<int32_t>();
+                leader_ids.push_back(leader_id);
+                if (state_model.contains(leader_id))
+                {
+                    found = true;
+                    state_model[leader_id] = true;
+                }
+            }
+
+            if (!found)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Reconfigure command cannot transfer leadership to any of server ids [{}] because they are not present in cluster",
+                    fmt::join(leader_ids, ", "));
+            }
+        }
+        if (action_obj->has("set_priority"))
+        {
+            const auto & set_priority_obj = action_obj->getArray("set_priority");
+            for (const auto & priority_change: *set_priority_obj)
+            {
+                const auto & priority_change_obj = priority_change.extract<Poco::JSON::Object::Ptr>();
+                int member_id = priority_change_obj->getValue<int>("id");
+                int priority = priority_change_obj->getValue<int>("priority");
+                if (is_leader(member_id) && priority == 0)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Reconfigure command cannot set priority 0 for server {}, because it can be potentially a leader", member_id);
                 }
             }
         }
     }
+}
+
+Poco::JSON::Object::Ptr KeeperDispatcher::reconfigureClusterFromReconfigureCommand(Poco::JSON::Object::Ptr reconfig_command)
+try
+{
+    if (!server->isLeaderAlive())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot reconfigure cluster because there is no active leader");
+
+    checkReconfigCommandPreconditions(reconfig_command);
+    checkReconfigCommandActions(reconfig_command);
 
     LOG_DEBUG(log, "Preconditions passed, executing reconfiguration");
     size_t max_action_wait_time_ms = reconfig_command->has("max_action_wait_time_ms")
@@ -1136,6 +1239,7 @@ try
         ? reconfig_command->getValue<size_t>("max_total_wait_time_ms")
         : 300000;
 
+    auto actions = reconfig_command->getArray("actions");
     Stopwatch total_watch;
     for (const auto & action_json : *actions)
     {

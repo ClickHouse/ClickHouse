@@ -75,6 +75,7 @@ def five_to_three_reconfig(started_cluster):
     print(zk.get("/keeper/config"))
 
     result_str = keeper_utils.send_4lw_cmd(started_cluster, node3, cmd="rcfg", port=9181, argument=json_command)
+    print("Result:", result_str)
     result = json.loads(result_str)
     assert result["status"] == "ok"
 
@@ -148,6 +149,7 @@ def three_to_five_reconfig(started_cluster):
     print(zk.get("/keeper/config"))
 
     result_str = keeper_utils.send_4lw_cmd(started_cluster, node5, cmd="rcfg", port=9181, argument=json_command)
+    print("Result:", result_str)
     result = json.loads(result_str)
     assert result["status"] == "ok"
     waiter1.wait()
