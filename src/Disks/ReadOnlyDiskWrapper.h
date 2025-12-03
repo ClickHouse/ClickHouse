@@ -111,6 +111,7 @@ public:
     void removeSharedFile(const String &, bool) override { throwNotAllowed(); }
     void removeSharedFileIfExists(const String &, bool) override { throwNotAllowed(); }
     void removeSharedRecursive(const String &, bool, const NameSet &) override { throwNotAllowed(); }
+    void clearDirectory(const String &) override { throwNotAllowed(); }
     void moveDirectory(const String &, const String &) override { throwNotAllowed(); }
     void removeDirectory(const String &) override { throwNotAllowed(); }
     void setLastModified(const String &, const Poco::Timestamp &) override { throwNotAllowed(); }

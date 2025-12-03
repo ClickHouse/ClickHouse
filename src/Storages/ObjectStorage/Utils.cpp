@@ -3,7 +3,7 @@
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/IO/getThreadPoolReader.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCacheKey.h>
@@ -82,7 +82,7 @@ void resolveSchemaAndFormat(
     {
         if (configuration->isDataLakeConfiguration())
         {
-            auto table_structure = configuration->tryGetTableStructureFromMetadata(context);
+            auto table_structure = configuration->tryGetTableStructureFromMetadata();
             if (table_structure)
                 columns = table_structure.value();
         }

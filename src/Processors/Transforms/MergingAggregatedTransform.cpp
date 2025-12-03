@@ -90,8 +90,7 @@ MergingAggregatedTransform::MergingAggregatedTransform(
                 params.overflow_row,
                 params.max_threads,
                 params.max_block_size,
-                params.min_hit_rate_to_use_consecutive_keys_optimization,
-                params.serialize_string_with_zero_byte);
+                params.min_hit_rate_to_use_consecutive_keys_optimization);
 
             auto transform_params = std::make_shared<AggregatingTransformParams>(std::make_shared<const Block>(reordering.updateHeader(in_header)), std::move(set_params), final);
 

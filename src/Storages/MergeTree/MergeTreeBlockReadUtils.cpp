@@ -81,7 +81,7 @@ bool injectRequiredColumnsRecursively(
             }
         }
         /// TODO: correctly determine whether the index is present in the part
-        else if (isTextIndexVirtualColumn(column_name_in_part))
+        else if (column_name_in_part.starts_with(TEXT_INDEX_VIRTUAL_COLUMN_PREFIX))
         {
             add_column(column_name);
             return true;
@@ -129,6 +129,7 @@ NameSet injectRequiredColumns(
         alter_conversions = data_part_info_for_reader.getAlterConversions();
 
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
+        .withExtendedObjects()
         .withVirtuals()
         .withSubcolumns(with_subcolumns);
 
@@ -378,6 +379,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     injectRequiredColumns(data_part_info_for_reader, storage_snapshot, with_subcolumns, column_to_read_after_prewhere);
 
     auto options = GetColumnsOptions(GetColumnsOptions::All)
+        .withExtendedObjects()
         .withVirtuals()
         .withSubcolumns(with_subcolumns);
 

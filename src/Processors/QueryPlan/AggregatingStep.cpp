@@ -52,7 +52,6 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const QueryPlanSerializationSettingsBool optimize_group_by_constant_keys;
     extern const QueryPlanSerializationSettingsBool enable_producing_buckets_out_of_order_in_aggregation;
-    extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
 }
 
 namespace ErrorCodes
@@ -871,8 +870,7 @@ std::unique_ptr<IQueryPlanStep> AggregatingStep::deserialize(Deserialization & c
         ctx.settings[QueryPlanSerializationSetting::optimize_group_by_constant_keys],
         ctx.settings[QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization],
         stats_collecting_params,
-        ctx.settings[QueryPlanSerializationSetting::enable_producing_buckets_out_of_order_in_aggregation],
-        ctx.settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte]};
+        ctx.settings[QueryPlanSerializationSetting::enable_producing_buckets_out_of_order_in_aggregation]};
 
     SortDescription sort_description_for_merging;
 
