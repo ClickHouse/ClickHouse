@@ -1,4 +1,3 @@
-#include <Core/Block.h>
 #include <Formats/BuffersWriter.h>
 
 #include <IO/WriteBuffer.h>
@@ -7,6 +6,8 @@
 
 #include <Columns/ColumnLazy.h>
 #include <Columns/ColumnTuple.h>
+
+#include <Core/Block.h>
 
 namespace DB
 {
@@ -71,7 +72,7 @@ size_t BuffersWriter::write(const Block & block)
 
         writeData(*serialization, column.column, buffer, format_settings);
 
-        column_buffers[i] = buffer.str();
+        column_buffers[i] = std::move(buffer.str());
     }
 
     const UInt64 num_buffers = static_cast<UInt64>(column_buffers.size());
@@ -82,9 +83,10 @@ size_t BuffersWriter::write(const Block & block)
     const UInt64 num_rows = static_cast<UInt64>(block.rows());
 
     /// Number of rows (UInt64)
+    /// We encode number of rows because we need it to deserialize each column
     writeBinary(num_rows, ostr);
 
-    /// Size of each buffer (UInt64 * number of buffers)
+    /// Size of each buffer in bytes (UInt64)
     for (const auto & data : column_buffers)
     {
         const UInt64 sz = static_cast<UInt64>(data.size());
@@ -94,8 +96,7 @@ size_t BuffersWriter::write(const Block & block)
     /// Contents of each buffer (raw bytes, concatenated)
     for (const auto & data : column_buffers)
     {
-        if (!data.empty())
-            ostr.write(data.data(), data.size());
+        ostr.write(data.data(), data.size());
     }
 
     const size_t written_after = ostr.count();

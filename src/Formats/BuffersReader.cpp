@@ -1,13 +1,9 @@
+#include <Common/Exception.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
 #include <Formats/BuffersReader.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <Common/Exception.h>
-
-#include <optional>
-#include <vector>
-
 
 namespace DB
 {
