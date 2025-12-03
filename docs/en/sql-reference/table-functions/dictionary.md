@@ -5,32 +5,31 @@ sidebar_label: 'dictionary'
 sidebar_position: 47
 slug: /sql-reference/table-functions/dictionary
 title: 'dictionary'
-doc_type: 'reference'
 ---
 
 # dictionary Table Function
 
 Displays the [dictionary](../../sql-reference/dictionaries/index.md) data as a ClickHouse table. Works the same way as [Dictionary](../../engines/table-engines/special/dictionary.md) engine.
 
-## Syntax {#syntax}
+**Syntax**
 
-```sql
+``` sql
 dictionary('dict')
 ```
 
-## Arguments {#arguments}
+**Arguments**
 
 - `dict` — A dictionary name. [String](../../sql-reference/data-types/string.md).
 
-## Returned value {#returned_value}
+**Returned value**
 
 A ClickHouse table.
 
-## Examples {#examples}
+**Example**
 
 Input table `dictionary_source_table`:
 
-```text
+``` text
 ┌─id─┬─value─┐
 │  0 │     0 │
 │  1 │     1 │
@@ -39,26 +38,26 @@ Input table `dictionary_source_table`:
 
 Create a dictionary:
 
-```sql
+``` sql
 CREATE DICTIONARY new_dictionary(id UInt64, value UInt64 DEFAULT 0) PRIMARY KEY id
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'dictionary_source_table')) LAYOUT(DIRECT());
 ```
 
 Query:
 
-```sql
+``` sql
 SELECT * FROM dictionary('new_dictionary');
 ```
 
 Result:
 
-```text
+``` text
 ┌─id─┬─value─┐
 │  0 │     0 │
 │  1 │     1 │
 └────┴───────┘
 ```
 
-## Related {#related}
+**See Also**
 
 - [Dictionary engine](/engines/table-engines/special/dictionary)

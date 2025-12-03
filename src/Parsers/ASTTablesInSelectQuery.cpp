@@ -5,6 +5,7 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
 
+
 namespace DB
 {
 
@@ -148,20 +149,20 @@ void ASTTableExpression::formatImpl(WriteBuffer & ostr, const FormatSettings & s
 
     if (final)
     {
-        ostr << settings.nl_or_ws << indent_str
-            << "FINAL";
+        ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << indent_str
+            << "FINAL" << (settings.hilite ? hilite_none : "");
     }
 
     if (sample_size)
     {
-        ostr << settings.nl_or_ws << indent_str
-            << "SAMPLE ";
+        ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << indent_str
+            << "SAMPLE " << (settings.hilite ? hilite_none : "");
         sample_size->format(ostr, settings, state, frame);
 
         if (sample_offset)
         {
-            ostr << ' '
-                << "OFFSET ";
+            ostr << (settings.hilite ? hilite_keyword : "") << ' '
+                << "OFFSET " << (settings.hilite ? hilite_none : "");
             sample_offset->format(ostr, settings, state, frame);
         }
     }
@@ -170,10 +171,13 @@ void ASTTableExpression::formatImpl(WriteBuffer & ostr, const FormatSettings & s
 
 void ASTTableJoin::formatImplBeforeTable(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked frame) const
 {
+    ostr << (settings.hilite ? hilite_keyword : "");
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
     if (kind != JoinKind::Comma)
+    {
         ostr << settings.nl_or_ws << indent_str;
+    }
 
     switch (locality)
     {
@@ -234,6 +238,8 @@ void ASTTableJoin::formatImplBeforeTable(WriteBuffer & ostr, const FormatSetting
             ostr << "PASTE JOIN";
             break;
     }
+
+    ostr << (settings.hilite ? hilite_none : "");
 }
 
 
@@ -244,18 +250,14 @@ void ASTTableJoin::formatImplAfterTable(WriteBuffer & ostr, const FormatSettings
 
     if (using_expression_list)
     {
-        ostr << " USING ";
+        ostr << (settings.hilite ? hilite_keyword : "") << " USING " << (settings.hilite ? hilite_none : "");
         ostr << "(";
-        /// We should always print alias for 'USING (a AS b)' syntax (supported with analyzer only).
-        /// Otherwise query like 'SELECT a AS b FROM t1 JOIN t2 USING (a AS b)' will be broken.
-        /// See 03448_analyzer_array_join_alias_in_join_using_bug.sql
-        frame.ignore_printed_asts_with_alias = true;
         using_expression_list->format(ostr, settings, state, frame);
         ostr << ")";
     }
     else if (on_expression)
     {
-        ostr << " ON ";
+        ostr << (settings.hilite ? hilite_keyword : "") << " ON " << (settings.hilite ? hilite_none : "");
         /// If there is an alias for the whole expression parens should be added, otherwise it will be invalid syntax
         bool on_has_alias = !on_expression->tryGetAlias().empty();
         if (on_has_alias)
@@ -280,10 +282,10 @@ void ASTArrayJoin::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
     frame.expression_list_prepend_whitespace = true;
 
-    ostr
+    ostr << (settings.hilite ? hilite_keyword : "")
         << settings.nl_or_ws
         << indent_str
-        << (kind == Kind::Left ? "LEFT " : "") << "ARRAY JOIN";
+        << (kind == Kind::Left ? "LEFT " : "") << "ARRAY JOIN" << (settings.hilite ? hilite_none : "");
 
     settings.one_line
         ? expression_list->format(ostr, settings, state, frame)

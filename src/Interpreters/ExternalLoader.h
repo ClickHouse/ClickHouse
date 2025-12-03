@@ -74,7 +74,6 @@ public:
         LoadablePtr object;
         TimePoint loading_start_time;
         TimePoint last_successful_update_time;
-        size_t error_count;
         Duration loading_duration;
         std::exception_ptr exception;
         std::shared_ptr<const ObjectConfig> config;

@@ -3,8 +3,8 @@
 #include <Columns/IColumn_fwd.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
-#include <Processors/Formats/Impl/Parquet/ParquetColumnReader.h>
-#include <Processors/Formats/Impl/Parquet/ParquetDataValuesReader.h>
+#include "ParquetColumnReader.h"
+#include "ParquetDataValuesReader.h"
 
 namespace parquet
 {

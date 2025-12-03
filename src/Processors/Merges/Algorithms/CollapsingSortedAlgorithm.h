@@ -27,14 +27,13 @@ class CollapsingSortedAlgorithm final : public IMergingAlgorithmWithSharedChunks
 {
 public:
     CollapsingSortedAlgorithm(
-        SharedHeader header,
+        const Block & header,
         size_t num_inputs,
         SortDescription description_,
         const String & sign_column,
         bool only_positive_sign_, /// For select final. Skip rows with sum(sign) < 0.
         size_t max_block_size_rows_,
         size_t max_block_size_bytes_,
-        std::optional<size_t> max_dynamic_subcolumns_,
         LoggerPtr log_,
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false,

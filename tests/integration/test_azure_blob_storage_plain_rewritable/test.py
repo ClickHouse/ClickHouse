@@ -30,6 +30,7 @@ def generate_cluster_def(port, node_name):
                 <metadata_type>plain_rewritable</metadata_type>
                 <endpoint>http://azurite1:{port}/devstoreaccount1/cont</endpoint>
                 <endpoint_subpath>{node_name}</endpoint_subpath>
+                <skip_access_check>true</skip_access_check>
                 <account_name>devstoreaccount1</account_name>
                 <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
                 <max_single_part_upload_size>100000</max_single_part_upload_size>
@@ -37,19 +38,6 @@ def generate_cluster_def(port, node_name):
                 <max_single_download_retries>10</max_single_download_retries>
                 <max_single_read_retries>10</max_single_read_retries>
             </blob_storage_disk>
-            <blob_storage_cache_disk>
-                <type>cache</type>
-                <disk>blob_storage_disk</disk>
-                <path>disks/blob_storage_cache/</path>
-                <max_size>1000000000</max_size>
-                <cache_on_write_operations>1</cache_on_write_operations>
-            </blob_storage_cache_disk>
-            <blob_storage_encrypted_disk>
-                <type>encrypted</type>
-                <disk>blob_storage_cache_disk</disk>
-                <key>1234567812345678</key>
-                <path></path>
-            </blob_storage_encrypted_disk>
         </disks>
         <policies>
             <blob_storage_policy>
@@ -59,20 +47,6 @@ def generate_cluster_def(port, node_name):
                     </main>
                 </volumes>
             </blob_storage_policy>
-            <blob_storage_cache_policy>
-                <volumes>
-                    <main>
-                        <disk>blob_storage_cache_disk</disk>
-                    </main>
-                </volumes>
-            </blob_storage_cache_policy>
-            <blob_storage_encrypted_policy>
-                <volumes>
-                    <main>
-                        <disk>blob_storage_encrypted_disk</disk>
-                    </main>
-                </volumes>
-            </blob_storage_encrypted_policy>
         </policies>
     </storage_configuration>
 </clickhouse>
@@ -119,30 +93,26 @@ def cluster():
 
 
 @pytest.mark.parametrize(
-    "storage_policy,min_bytes_for_wide_part",
-    [
-        pytest.param("blob_storage_policy", 0),
-        pytest.param("blob_storage_cache_policy", 0),
-        pytest.param("blob_storage_encrypted_policy", 0),
-        pytest.param("blob_storage_policy", 1 << 20),
-    ],
+    "min_bytes_for_wide_part", [pytest.param(0), pytest.param(1 << 20)]
 )
-def test_insert_select(cluster, storage_policy, min_bytes_for_wide_part):
+def test_insert_select(cluster, min_bytes_for_wide_part):
     node = cluster.instances[NODE_NAME]
 
     for index, value in enumerate(insert_values):
         azure_query(
             node,
-            f"""
-            CREATE TABLE test_{index} (
+            """
+            CREATE TABLE test_{} (
                 id Int64,
                 data String,
                 empty String
             ) ENGINE=MergeTree()
             ORDER BY id
-            SETTINGS storage_policy = '{storage_policy}',
-            min_bytes_for_wide_part = {min_bytes_for_wide_part}
-            """,
+            SETTINGS storage_policy='blob_storage_policy',
+            min_bytes_for_wide_part = {}
+            """.format(
+                index, min_bytes_for_wide_part
+            ),
         )
 
         azure_query(

@@ -14,7 +14,7 @@ class AddingDefaultsTransform : public ISimpleTransform
 {
 public:
     AddingDefaultsTransform(
-        SharedHeader header,
+        const Block & header,
         const ColumnsDescription & columns_,
         IInputFormat & input_format_,
         ContextPtr context_);

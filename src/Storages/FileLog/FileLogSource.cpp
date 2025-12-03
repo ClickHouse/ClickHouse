@@ -22,7 +22,7 @@ FileLogSource::FileLogSource(
     size_t stream_number_,
     size_t max_streams_number_,
     StreamingHandleErrorMode handle_error_mode_)
-    : ISource(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns)))
+    : ISource(storage_snapshot_->getSampleBlockForColumns(columns))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , context(context_)
@@ -51,7 +51,7 @@ FileLogSource::~FileLogSource()
     try
     {
         if (!finished)
-            close();
+            onFinish();
     }
     catch (...)
     {
@@ -59,7 +59,7 @@ FileLogSource::~FileLogSource()
     }
 }
 
-void FileLogSource::close()
+void FileLogSource::onFinish()
 {
     storage.closeFilesAndStoreMeta(start, end);
     storage.reduceStreams();
@@ -73,9 +73,9 @@ Chunk FileLogSource::generate()
 
     if (!consumer || consumer->noRecords())
     {
-        /// There is no close for ISource, we call it
+        /// There is no onFinish for ISource, we call it
         /// when no records return to close files
-        close();
+        onFinish();
         return {};
     }
 
@@ -83,13 +83,7 @@ Chunk FileLogSource::generate()
 
     EmptyReadBuffer empty_buf;
     auto input_format = FormatFactory::instance().getInput(
-        storage.getFormatName(),
-        empty_buf,
-        non_virtual_header,
-        context,
-        max_block_size,
-        std::nullopt,
-        FormatParserSharedResources::singleThreaded(context->getSettingsRef()));
+        storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, 1);
 
     std::optional<String> exception_message;
     size_t total_rows = 0;
@@ -166,7 +160,7 @@ Chunk FileLogSource::generate()
 
     if (total_rows == 0)
     {
-        close();
+        onFinish();
         return {};
     }
 
@@ -179,8 +173,7 @@ Chunk FileLogSource::generate()
     auto converting_dag = ActionsDAG::makeConvertingActions(
         result_block.cloneEmpty().getColumnsWithTypeAndName(),
         getPort().getHeader().getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name,
-        context);
+        ActionsDAG::MatchColumnsMode::Name);
 
     auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
     converting_actions->execute(result_block);

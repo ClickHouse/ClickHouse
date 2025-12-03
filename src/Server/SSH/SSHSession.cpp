@@ -3,7 +3,6 @@
 #if USE_SSH && defined(OS_LINUX)
 
 #include <fmt/format.h>
-#include <mutex>
 #include <Common/Exception.h>
 #include <Common/clibssh.h>
 
@@ -20,7 +19,7 @@ namespace ErrorCodes
 namespace ssh
 {
 
-SSHSession::SSHSession() : session(ssh_new()), disconnected(false)
+SSHSession::SSHSession() : session(ssh_new())
 {
     if (!session)
         throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION, "Failed to create ssh_session");
@@ -40,9 +39,7 @@ SSHSession::SSHSession(SSHSession && rhs) noexcept
 SSHSession & SSHSession::operator=(SSHSession && rhs) noexcept
 {
     this->session = rhs.session;
-    this->disconnected = rhs.disconnected;
     rhs.session = nullptr;
-    rhs.disconnected = true;
     return *this;
 }
 
@@ -65,6 +62,14 @@ void SSHSession::disableDefaultConfig()
     int rc = ssh_options_set(session, SSH_OPTIONS_PROCESS_CONFIG, &enable);
     if (rc != SSH_OK)
         throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION, "Failed disabling default config for ssh session due due to {}", getError());
+}
+
+void SSHSession::disableSocketOwning()
+{
+    bool owns_socket = false;
+    int rc = ssh_options_set(session, SSH_OPTIONS_OWNS_SOCKET, &owns_socket);
+    if (rc != SSH_OK)
+        throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION, "Failed disabling socket owning for ssh session due to {}", getError());
 }
 
 void SSHSession::setPeerHost(const String & host)
@@ -101,17 +106,7 @@ void SSHSession::handleKeyExchange()
 
 void SSHSession::disconnect()
 {
-    std::lock_guard<std::mutex> lock(disconnect_mutex);
-    if (!disconnected)
-    {
-        // Ensure disconnect is called only once per session
-        disconnected = true;
-        // Use global mutex to prevent concurrent ssh_disconnect() calls across ALL sessions
-        // because libssh has shared global state that is not thread-safe
-        static std::mutex global_disconnect_mutex;
-        std::lock_guard<std::mutex> global_lock(global_disconnect_mutex);
-        ssh_disconnect(session);
-    }
+    ssh_disconnect(session);
 }
 
 String SSHSession::getError()
