@@ -127,7 +127,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int FAULT_INJECTED;
     extern const int KEEPER_EXCEPTION;
-    extern const int TABLE_ALREADY_EXISTS;
 }
 
 namespace
