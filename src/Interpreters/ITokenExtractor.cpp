@@ -1,4 +1,5 @@
 #include <Interpreters/ITokenExtractor.h>
+#include <Storages/IndicesDescription.h>
 
 #include <boost/algorithm/string.hpp>
 
@@ -19,6 +20,56 @@ namespace ErrorCodes
 
 namespace DB
 {
+
+std::unique_ptr<ITokenExtractor> TokenExtractorFactory::createTokenExtractor(const IndexDescription & index)
+{
+    if (std::ranges::find(allowed_types, index.type) == allowed_types.end())
+    {
+        std::ostringstream oss;
+        for (size_t i = 0; i < allowed_types.size(); ++i)
+        {
+            if (i < allowed_types.size())
+                oss << "'" << allowed_types[i] << "', ";
+            else
+                oss << "and '" << allowed_types[i] << "'";
+        }
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only {} tokenizers are supported, received '{}'", oss.str(), index.type);
+    }
+
+
+    if (index.type == NgramsTokenExtractor::getName())
+    {
+        size_t n = index.arguments[0].safeGet<size_t>();
+
+        return std::make_unique<NgramsTokenExtractor>(n);
+    }
+    if (index.type == SplitByNonAlphaTokenExtractor::getName())
+    {
+        return std::make_unique<SplitByNonAlphaTokenExtractor>();
+    }
+    if (index.type == SparseGramsTokenExtractor::getName() || index.type == SparseGramsTokenExtractor::getBloomFilterIndexName())
+    {
+        if (index.arguments.size() == 5)
+        {
+            size_t min_ngram_length = index.arguments[0].safeGet<size_t>();
+            size_t max_ngram_length = index.arguments[1].safeGet<size_t>();
+
+            return std::make_unique<SparseGramsTokenExtractor>(min_ngram_length, max_ngram_length);
+        }
+        else
+        {
+            size_t min_ngram_length = index.arguments[0].safeGet<size_t>();
+            size_t max_ngram_length = index.arguments[1].safeGet<size_t>();
+            size_t min_cutoff_length = index.arguments[2].safeGet<size_t>();
+
+            return std::make_unique<SparseGramsTokenExtractor>(min_ngram_length, max_ngram_length, min_cutoff_length);
+        }
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index type: '{}' for '{}'", index.type, index.name);
+}
+
 
 bool NgramsTokenExtractor::nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
 {

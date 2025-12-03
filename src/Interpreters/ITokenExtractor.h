@@ -158,6 +158,22 @@ private:
     }
 };
 
+struct IndexDescription;
+
+struct TokenExtractorFactory : public boost::noncopyable
+{
+    TokenExtractorFactory(std::vector<String> allowed_types_, bool is_bloom_filter_ = false)
+        : allowed_types(allowed_types_)
+        , is_bloom_filter(is_bloom_filter_)
+    {
+        chassert(!allowed_types.empty());
+    }
+
+    std::unique_ptr<ITokenExtractor> createTokenExtractor(const IndexDescription & index);
+
+    std::vector<String> allowed_types;
+    bool is_bloom_filter = false;
+};
 
 /// Parser extracting all ngrams from string.
 struct NgramsTokenExtractor final : public ITokenExtractorHelper<NgramsTokenExtractor>
