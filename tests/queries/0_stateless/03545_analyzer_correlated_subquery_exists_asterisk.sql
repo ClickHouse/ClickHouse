@@ -2,6 +2,7 @@ SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
 SET enable_parallel_replicas = 0;
 SET correlated_subqueries_default_join_kind = 'left';
+SET correlated_subqueries_use_in_memory_buffer = 0;
 
 -- Disable table swaps during query planning
 SET query_plan_join_swap_table = false;
