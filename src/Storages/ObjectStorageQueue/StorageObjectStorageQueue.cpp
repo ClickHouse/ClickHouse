@@ -539,7 +539,7 @@ void StorageObjectStorageQueue::read(
                         "To enable use setting `stream_like_engine_allow_direct_select`");
     }
 
-    if (mv_attached)
+    if (getDependencies() > 0)
     {
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
                         "Cannot read from {} with attached materialized views", getName());
@@ -692,9 +692,6 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
             const size_t dependencies_count = getDependencies();
             if (dependencies_count)
             {
-                mv_attached.store(true);
-                SCOPE_EXIT({ mv_attached.store(false); });
-
                 LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
 
                 files_metadata->registerActive(storage_id);
