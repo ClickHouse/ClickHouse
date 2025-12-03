@@ -20,7 +20,7 @@ namespace ServerSetting
 }
 
 ReplicasReconnector::ReplicasReconnector(ContextPtr context)
-    : task_handle(context->getSchedulePool().createTask("ReplicasReconnector", [this]{ run(); }))
+    : task_handle(context->getSchedulePool().createTask(StorageID::createEmpty(), "ReplicasReconnector", [this]{ run(); }))
     , log(getLogger("ReplicasReconnector"))
 {
 }

@@ -61,7 +61,7 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             auto str = column->getDataAt(i);
-            ReadBufferFromString in_buffer(std::string_view(str.data, str.size));
+            ReadBufferFromString in_buffer(str);
 
             auto object = parseWKBFormat(in_buffer);
             if (!std::holds_alternative<Geometry>(object))
@@ -159,7 +159,7 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             auto str = column->getDataAt(i);
-            ReadBufferFromString in_buffer(std::string_view(str.data, str.size));
+            ReadBufferFromString in_buffer(str);
 
             auto object = parseWKBFormat(in_buffer);
             UInt8 converted_type = -1;
@@ -189,7 +189,7 @@ public:
                 converted_type = static_cast<UInt8>(WKBTypes::MultiPolygon);
             }
             else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect WKB format value: {}", str.data);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect WKB format value: {}", str);
 
             discriminators_column->insertValue(converted_type);
         }

@@ -100,13 +100,109 @@ Default value: `ordered` in versions before 24.6. Starting with 24.6 there is no
 
 ### `after_processing` {#after_processing}
 
-Delete or keep file after successful processing.
+How to handle file after successful processing.
+
 Possible values:
 
 - keep.
 - delete.
+- move.
+- tag.
 
 Default value: `keep`.
+
+Move requires additional settings. In case of a move within the same bucket, a new path prefix must be provided as `after_processing_move_prefix`.
+
+Move to another S3 bucket requires the target bucket URI as `after_processing_move_uri`, S3 credentials as `after_processing_move_access_key_id` and `after_processing_move_secret_access_key`.
+
+Example:
+
+```sql
+CREATE TABLE s3queue_engine_table (name String, value UInt32)
+ENGINE=S3Queue('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/*', 'CSV', 'gzip')
+SETTINGS
+    mode = 'unordered',
+    after_processing = 'move',
+    after_processing_retries = 20,
+    after_processing_move_prefix = 'dst_prefix',
+    after_processing_move_uri = 'https://clickhouse-public-datasets.s3.amazonaws.com/dst-bucket',
+    after_processing_move_access_key_id = 'test',
+    after_processing_move_secret_access_key = 'test';
+```
+
+Move from an Azure container to another Azure container requires the Blob Storage connection string as `after_processing_move_connection_string` and the container name as `after_processing_move_container`. See [the AzureQueue settings](../../../engines/table-engines/integrations/azure-queue.md#settings).
+
+Tagging requires tag key and value provided as `after_processing_tag_key` and `after_processing_tag_value`.
+
+### `after_processing_retries` {#after_processing_retries}
+
+Number of retries for the requested after-processing action, before giving up.
+
+Possible values:
+
+- Non-negative integer.
+
+Default value: `10`.
+
+### `after_processing_move_access_key_id` {#after_processing_move_access_key_id}
+
+Access Key ID for S3 bucket to move successfully processed files to, if the destination is another S3 bucket.
+
+Possible values:
+
+- String.
+
+Default value: empty string.
+
+### `after_processing_move_prefix` {#after_processing_move_prefix}
+
+Path prefix to move successfully processed files to. It is applicable in both cases, move within the same and to another bucket.
+
+Possible values:
+
+- String.
+
+Default value: empty string.
+
+### `after_processing_move_secret_access_key` {#after_processing_move_secret_access_key}
+
+Secret Access Key for S3 bucket to move successfully processed files to, if the destination is another S3 bucket.
+
+Possible values:
+
+- String.
+
+Default value: empty string.
+
+### `after_processing_move_uri` {#after_processing_move_uri}
+
+URI of S3 bucket to move successfully processed files to, if the destination is another S3 bucket.
+
+Possible values:
+
+- String.
+
+Default value: empty string.
+
+### `after_processing_tag_key` {#after_processing_tag_key}
+
+Tag key to put tagging on successfully processed files, if `after_processing='tag'`.
+
+Possible values:
+
+- String.
+
+Default value: empty string.
+
+### `after_processing_tag_value` {#after_processing_tag_value}
+
+Tag value to put tagging on successfully processed files, if `after_processing='tag'`.
+
+Possible values:
+
+- String.
+
+Default value: empty string.
 
 ### `keeper_path` {#keeper_path}
 
@@ -219,7 +315,7 @@ For 'Ordered' mode. Available since `24.6`. If there are several replicas of S3Q
 
 ### `use_persistent_processing_nodes` {#use_persistent_processing_nodes}
 
-By default S3Queue table has always used ephemeral processing nodes, which could lead to duplicates in data in case zookeeper session expires before S3Queue commits processed files in zookeeper, but after it has started processing. This setting forces the server to eliminate possibility of duplicates in case of expired keeper session. 
+By default S3Queue table has always used ephemeral processing nodes, which could lead to duplicates in data in case zookeeper session expires before S3Queue commits processed files in zookeeper, but after it has started processing. This setting forces the server to eliminate possibility of duplicates in case of expired keeper session.
 
 ### `persistent_processing_nodes_ttl_seconds` {#persistent_processing_nodes_ttl_seconds}
 
@@ -246,10 +342,10 @@ CREATE TABLE s3_table
     value UInt64
 )
 ENGINE = S3Queue(
-                'https://<your_bucket>/*.csv', 
+                'https://<your_bucket>/*.csv',
                 extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/<your_role>')
                 ,'CSV')
-SETTINGS 
+SETTINGS
     ...
 ```
 

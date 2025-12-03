@@ -76,7 +76,7 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const auto & str = column_string.getDataAt(i).toString();
+            const std::string str{column_string.getDataAt(i)};
             readWKT(str, geometry);
             serializer.add(geometry);
         }
@@ -155,7 +155,7 @@ public:
         };
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const auto & str = column_string.getDataAt(i).toString();
+            const std::string str{column_string.getDataAt(i)};
             if (try_deserialize_type(
                     [&]
                     {

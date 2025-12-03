@@ -41,6 +41,8 @@ SettingsChanges ExplainPlanOptions::toSettingsChanges() const
     changes.emplace_back("projections", int(projections));
     changes.emplace_back("sorting", int(sorting));
     changes.emplace_back("distributed", int(distributed));
+    changes.emplace_back("input_headers", int(input_headers));
+    changes.emplace_back("column_structure", int(column_structure));
 
     return changes;
 }
@@ -344,23 +346,27 @@ static void explainStep(
     IQueryPlanStep & step,
     IQueryPlanStep::FormatSettings & settings,
     const ExplainPlanOptions & options,
-    size_t max_description_lengs)
+    size_t max_description_length)
 {
-    std::string prefix(settings.offset, ' ');
+    const std::string prefix(settings.offset, ' ');
     settings.out << prefix;
     settings.out << step.getName();
 
     auto description = step.getStepDescription();
-    if (max_description_lengs)
-        description = description.substr(0, max_description_lengs);
+    if (max_description_length)
+        description = description.substr(0, max_description_length);
     if (options.description && !description.empty())
         settings.out <<" (" << description << ')';
 
     settings.out.write('\n');
 
-    const auto dump_column = [&out = settings.out](const ColumnWithTypeAndName & column)
+    const auto dump_column = [&out = settings.out, dump_structure = options.column_structure](const ColumnWithTypeAndName & column)
     {
-        column.dumpNameAndType(out);
+        if (dump_structure)
+            column.dumpStructure(out);
+        else
+            column.dumpNameAndType(out);
+
         if (column.column && isColumnLazy(*column.column.get()))
             out << " (Lazy)";
     };
@@ -462,7 +468,15 @@ std::string debugExplainStep(IQueryPlanStep & step)
     return out.str();
 }
 
-void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent, size_t max_description_lengs) const
+std::string debugExplainPlan(const QueryPlan & plan)
+{
+    WriteBufferFromOwnString out;
+    ExplainPlanOptions options{.header = true, .actions = true};
+    plan.explainPlan(out, options);
+    return out.str();
+}
+
+void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent, size_t max_description_length) const
 {
     checkInitialized();
 
@@ -485,7 +499,7 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
         if (!frame.is_description_printed)
         {
             settings.offset = (indent + stack.size() - 1) * settings.indent;
-            explainStep(*frame.node->step, settings, options, max_description_lengs);
+            explainStep(*frame.node->step, settings, options, max_description_length);
             frame.is_description_printed = true;
         }
 
