@@ -153,6 +153,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int CANNOT_WRITE_TO_FILE;
     extern const int CANNOT_CREATE_DIRECTORY;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 }
@@ -1383,9 +1384,14 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
                     double elapsed = receive_watch.elapsedSeconds();
                     if (break_on_timeout && elapsed > receive_timeout.totalSeconds())
                     {
-                        output_stream << "Timeout exceeded while receiving data from server."
-                                    << " Waited for " << static_cast<size_t>(elapsed) << " seconds,"
-                                    << " timeout is " << receive_timeout.totalSeconds() << " seconds." << std::endl;
+                        std::string error_message = fmt::format(
+                            "Timeout exceeded while receiving data from server. Waited for {} seconds, timeout is {} seconds.",
+                            static_cast<size_t>(elapsed),
+                            receive_timeout.totalSeconds());
+
+                        client_exception = std::make_unique<Exception>(
+                            Exception::createRuntime(ErrorCodes::TIMEOUT_EXCEEDED, error_message));
+                        have_error = true;
 
                         cancelQuery();
                     }
