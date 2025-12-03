@@ -244,20 +244,13 @@ void optimizeTreeSecondPass(
         });
     }
 
-    if (optimization_settings.correlated_subqueries_use_in_memory_buffer)
-    {
-        traverseQueryPlan(stack, root, [&](auto & frame_node)
-        {
-            useMemoryBufferForCommonSubplanResults(frame_node, optimization_settings);
-        });
-    }
-
     bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {
             optimizeJoinLogical(frame_node, nodes, optimization_settings);
             optimizeJoinLegacy(frame_node, nodes, optimization_settings);
+            useMemoryBufferForCommonSubplanResults(frame_node, optimization_settings);
         },
         [&](auto & frame_node)
         {
@@ -265,14 +258,6 @@ void optimizeTreeSecondPass(
                 join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
             convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
         });
-
-    if (optimization_settings.correlated_subqueries_use_in_memory_buffer)
-    {
-        traverseQueryPlan(stack, root, [&](auto & frame_node)
-        {
-            useMemoryBufferForCommonSubplanResults(frame_node, optimization_settings);
-        });
-    }
 
     /// If join runtime filters were added re-run optimizePrewhere and filter push down optimizations
     /// to move newly added runtime filter as deep in the tree as possible
