@@ -2803,10 +2803,12 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
     const auto original_defined_columns = original_view_metadata->getColumns();
     if (!original_defined_columns.empty())
     {
-        auto throw_schema_mismatch = [table_name]() {
-            throw Exception(ErrorCodes::TYPE_MISMATCH,
-            "After parameters substitution of parameterized view {} the actual schema does not match the defined one",
-            backQuote(table_name));
+        auto throw_schema_mismatch = [table_name]()
+        {
+            throw Exception(
+                ErrorCodes::TYPE_MISMATCH,
+                "After parameters substitution of parameterized view {} the actual schema does not match the defined one",
+                backQuote(table_name));
         };
         if (original_defined_columns.size() != actual_names_and_types.size())
             throw_schema_mismatch();
