@@ -5,7 +5,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/buildSelectQuery.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
-#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 
 
 namespace DB::ErrorCodes
@@ -20,7 +19,7 @@ namespace DB::PrometheusQueryToSQL
 namespace
 {
     void checkArgumentTypes(
-        const PrometheusQueryTree::UnaryOperator * operator_node,
+        const PQT::UnaryOperator * operator_node,
         const SQLQueryPiece & argument,
         const ConverterContext & context)
     {
@@ -42,7 +41,7 @@ namespace
 
 
 SQLQueryPiece applyUnaryOperator(
-    const PrometheusQueryTree::UnaryOperator * operator_node, SQLQueryPiece && argument, ConverterContext & context)
+    const PQT::UnaryOperator * operator_node, SQLQueryPiece && argument, ConverterContext & context)
 {
     checkArgumentTypes(operator_node, argument, context);
     const auto & operator_name = operator_node->operator_name;
@@ -81,7 +80,7 @@ SQLQueryPiece applyUnaryOperator(
             /// FROM <vector_grid>
             SelectQueryParams params;
             if (argument.store_method == StoreMethod::VECTOR_GRID)
-                params.select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
+                params.select_list.push_back(std::make_shared<ASTIdentifier>(ColumnNames::Group));
 
             params.select_list.push_back(makeASTFunction(
                 "arrayMap",
@@ -89,9 +88,9 @@ SQLQueryPiece applyUnaryOperator(
                     "lambda",
                     makeASTFunction("tuple", std::make_shared<ASTIdentifier>("x")),
                     makeASTFunction("negate", std::make_shared<ASTIdentifier>("x"))),
-                std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values)));
+                std::make_shared<ASTIdentifier>(ColumnNames::Values)));
 
-            params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
+            params.select_list.back()->setAlias(ColumnNames::Values);
 
             context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE});
             params.from_table = context.subqueries.back().name;

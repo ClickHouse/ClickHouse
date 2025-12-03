@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SQLQueryPiece.h>
 
 
@@ -11,6 +10,6 @@ struct ConverterContext;
 
 /// Applies a subquery, for example
 /// <expression>[1h:5m]
-SQLQueryPiece modifyResultTypeAfterSubquery(const PrometheusQueryTree::Subquery * subquery_node, SQLQueryPiece && expression, ConverterContext & context);
+SQLQueryPiece modifyResultTypeAfterSubquery(const PQT::Subquery * subquery_node, SQLQueryPiece && expression, ConverterContext & context);
 
 }

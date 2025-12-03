@@ -16,21 +16,21 @@ namespace DB::PrometheusQueryToSQL
 namespace
 {
     template <typename DecimalType>
-    DecimalField<DecimalType> extractFromNode(const PrometheusQueryTree::Node * node, UInt32 default_scale)
+    DecimalField<DecimalType> extractFromNode(const Node * node, UInt32 default_scale)
     {
         constexpr bool result_is_timestamp = std::is_same_v<DecimalType, DateTime64>;
         constexpr std::string_view what = result_is_timestamp ? "timestamp" : "duration";
 
         switch (node->node_type)
         {
-            case PrometheusQueryTree::NodeType::IntervalLiteral:
+            case NodeType::IntervalLiteral:
             {
-                auto decimal64 = static_cast<const PrometheusQueryTree::IntervalLiteral *>(node)->interval;
+                auto decimal64 = static_cast<const PQT::IntervalLiteral *>(node)->interval;
                 return DecimalField<DecimalType>{decimal64.getValue(), decimal64.getScale()};
             }
-            case PrometheusQueryTree::NodeType::ScalarLiteral:
+            case NodeType::ScalarLiteral:
             {
-                auto scalar = static_cast<const PrometheusQueryTree::ScalarLiteral *>(node)->scalar;
+                auto scalar = static_cast<const PQT::ScalarLiteral *>(node)->scalar;
                 auto scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(default_scale);
                 return DecimalField<DecimalType>{static_cast<Int64>(scalar * scale_multiplier + 0.5), default_scale};
             }
@@ -43,12 +43,12 @@ namespace
     }
 }
 
-DecimalField<DateTime64> nodeToTime(const PrometheusQueryTree::Node * scalar_or_interval_node, UInt32 default_scale)
+DecimalField<DateTime64> nodeToTime(const Node * scalar_or_interval_node, UInt32 default_scale)
 {
     return extractFromNode<DateTime64>(scalar_or_interval_node, default_scale);
 }
 
-DecimalField<Decimal64> nodeToDuration(const PrometheusQueryTree::Node * scalar_or_interval_node, UInt32 default_scale)
+DecimalField<Decimal64> nodeToDuration(const Node * scalar_or_interval_node, UInt32 default_scale)
 {
     return extractFromNode<Decimal64>(scalar_or_interval_node, default_scale);
 }

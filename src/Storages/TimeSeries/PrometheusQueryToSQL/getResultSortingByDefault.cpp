@@ -1,6 +1,5 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getResultSortingByDefault.h>
 
-#include <Parsers/Prometheus/PrometheusQueryResultType.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ResultSorting.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getResultType.h>
 
@@ -8,12 +7,12 @@
 namespace DB::PrometheusQueryToSQL
 {
 
-ResultSorting getResultSortingByDefault(const PrometheusQueryTree & promql_tree, const PrometheusQueryEvaluationSettings & settings)
+ResultSorting getResultSortingByDefault(const PQT & promql_tree, const PrometheusQueryEvaluationSettings & settings)
 {
     ResultSorting result_sorting;
 
     auto result_type = getResultType(promql_tree, settings);
-    if (result_type == PrometheusQueryResultType::RANGE_VECTOR)
+    if (result_type == ResultType::RANGE_VECTOR)
     {
         /// Data from range queries comes sorted alphabetically by tags.
         result_sorting.mode = ResultSorting::Mode::ORDERED_BY_TAGS;

@@ -1,21 +1,19 @@
 #pragma once
 
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/Prometheus/PrometheusQueryResultType.h>
-#include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/TimeSeries/PrometheusQueryEvaluationSettings.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterDefs.h>
 
 
 namespace DB::PrometheusQueryToSQL
 {
-using ResultType = PrometheusQueryResultType;
 
 /// Converts a prometheus query to SQL.
 class Converter
 {
 public:
-    Converter(PrometheusQueryTree promql_tree_, PrometheusQueryEvaluationSettings settings_);
+    Converter(PQT promql_tree_, PrometheusQueryEvaluationSettings settings_);
 
     ResultType getResultType() const { return result_type; }
 
@@ -26,7 +24,7 @@ public:
     ASTPtr getSQL() const;
 
 private:
-    PrometheusQueryTree promql_tree;
+    PQT promql_tree;
     PrometheusQueryEvaluationSettings settings;
     ResultType result_type;
 };

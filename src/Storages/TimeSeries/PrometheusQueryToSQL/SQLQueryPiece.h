@@ -2,13 +2,11 @@
 
 #include <Core/Field.h>
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/Prometheus/PrometheusQueryTree.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterDefs.h>
 
 
 namespace DB::PrometheusQueryToSQL
 {
-
-using ResultType = PrometheusQueryResultType;
 struct ConverterContext;
 
 /// How data is stored in a QueryPiece.
@@ -50,10 +48,10 @@ enum class StoreMethod
 /// Represents a part of a promql query prepared to execute as an SQL query.
 struct SQLQueryPiece
 {
-    SQLQueryPiece(const PrometheusQueryTree::Node * node_, ResultType type_, StoreMethod store_method_)
+    SQLQueryPiece(const Node * node_, ResultType type_, StoreMethod store_method_)
         : node(node_), type(type_), store_method(store_method_) {}
 
-    const PrometheusQueryTree::Node * node;
+    const Node * node;
     ResultType type;
     StoreMethod store_method;
 

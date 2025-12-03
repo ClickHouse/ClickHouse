@@ -28,7 +28,7 @@ namespace
 }
 
 
-SQLQueryPiece modifyResultTypeAfterSubquery(const PrometheusQueryTree::Subquery * subquery_node, SQLQueryPiece && expression, ConverterContext & context)
+SQLQueryPiece modifyResultTypeAfterSubquery(const PQT::Subquery * subquery_node, SQLQueryPiece && expression, ConverterContext & context)
 {
     checkExpressionType(expression, context);
 

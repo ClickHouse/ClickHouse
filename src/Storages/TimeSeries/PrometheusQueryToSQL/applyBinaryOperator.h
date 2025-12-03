@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SQLQueryPiece.h>
 
 
@@ -10,7 +9,7 @@ struct ConverterContext;
 
 /// Applies a binary operator assuming that at least one of its arguments is a scalar.
 SQLQueryPiece applyBinaryOperator(
-    const PrometheusQueryTree::BinaryOperator * operator_node,
+    const PQT::BinaryOperator * operator_node,
     SQLQueryPiece && left_argument,
     SQLQueryPiece && right_argument,
     ConverterContext & context);

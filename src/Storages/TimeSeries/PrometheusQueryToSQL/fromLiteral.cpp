@@ -8,7 +8,7 @@
 namespace DB::PrometheusQueryToSQL
 {
 
-SQLQueryPiece fromLiteral(const PrometheusQueryTree::StringLiteral * string_node, ConverterContext & context)
+SQLQueryPiece fromLiteral(const PQT::StringLiteral * string_node, ConverterContext & context)
 {
     SQLQueryPiece res{string_node, ResultType::STRING, StoreMethod::CONST_STRING};
     res.string_value = string_node->string;
@@ -22,7 +22,7 @@ SQLQueryPiece fromLiteral(const PrometheusQueryTree::StringLiteral * string_node
 }
 
 
-SQLQueryPiece fromLiteral(const PrometheusQueryTree::ScalarLiteral * scalar_node, ConverterContext & context)
+SQLQueryPiece fromLiteral(const PQT::ScalarLiteral * scalar_node, ConverterContext & context)
 {
     SQLQueryPiece res{scalar_node, ResultType::SCALAR, StoreMethod::CONST_SCALAR};
     res.scalar_value = scalar_node->scalar;
@@ -36,7 +36,7 @@ SQLQueryPiece fromLiteral(const PrometheusQueryTree::ScalarLiteral * scalar_node
 }
 
 
-SQLQueryPiece fromLiteral(const PrometheusQueryTree::IntervalLiteral * interval_node, ConverterContext & context)
+SQLQueryPiece fromLiteral(const PQT::IntervalLiteral * interval_node, ConverterContext & context)
 {
     SQLQueryPiece res{interval_node, ResultType::SCALAR, StoreMethod::CONST_SCALAR};
     const auto & interval = interval_node->interval;

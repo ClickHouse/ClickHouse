@@ -10,7 +10,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/addParametersToAggregateFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/buildSelectQuery.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
-#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 
 
 namespace DB::ErrorCodes
@@ -95,7 +94,7 @@ bool isFunctionOverRange(const String & promql_function_name)
 SQLQueryPiece applyFunctionOverRange(
     const String & promql_function_name,
     SQLQueryPiece && argument,
-    const PrometheusQueryTree::Node * node,
+    const Node * node,
     ConverterContext & context)
 {
     checkArgumentTypes(promql_function_name, argument, context);
@@ -148,7 +147,7 @@ SQLQueryPiece applyFunctionOverRange(
                 window);
 
             params.select_list.push_back(aggregate_function);
-            params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
+            params.select_list.back()->setAlias(ColumnNames::Values);
 
             res.select_query = buildSelectQuery(std::move(params));
             res.scalar_value = {};
@@ -176,7 +175,7 @@ SQLQueryPiece applyFunctionOverRange(
             SelectQueryParams params;
 
             if (argument.store_method == StoreMethod::VECTOR_GRID)
-                params.select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
+                params.select_list.push_back(std::make_shared<ASTIdentifier>(ColumnNames::Group));
 
             ASTPtr timestamps_argument, values_argument;
             if (argument.store_method == StoreMethod::SCALAR_GRID)
@@ -186,7 +185,7 @@ SQLQueryPiece applyFunctionOverRange(
                     timeseriesTimeToAST(argument.start_time),
                     timeseriesTimeToAST(argument.end_time),
                     timeseriesDurationToAST(argument.step));
-                values_argument = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values);
+                values_argument = std::make_shared<ASTIdentifier>(ColumnNames::Values);
             }
             else
             {
@@ -195,11 +194,11 @@ SQLQueryPiece applyFunctionOverRange(
                     timeseriesTimeToAST(argument.start_time),
                     timeseriesTimeToAST(argument.end_time),
                     timeseriesDurationToAST(argument.step),
-                    std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values));
-                ts->setAlias(TimeSeriesColumnNames::TimeSeries);
+                    std::make_shared<ASTIdentifier>(ColumnNames::Values));
+                ts->setAlias(ColumnNames::TimeSeries);
                 timestamps_argument = makeASTFunction("tupleElement", std::move(ts), std::make_shared<ASTLiteral>(1));
                 values_argument = makeASTFunction(
-                    "tupleElement", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries), std::make_shared<ASTLiteral>(2));
+                    "tupleElement", std::make_shared<ASTIdentifier>(ColumnNames::TimeSeries), std::make_shared<ASTLiteral>(2));
             }
 
             auto aggregate_function = addParametersToAggregateFunction(
@@ -210,10 +209,10 @@ SQLQueryPiece applyFunctionOverRange(
                 window);
 
             params.select_list.push_back(aggregate_function);
-            params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
+            params.select_list.back()->setAlias(ColumnNames::Values);
 
             if (argument.store_method == StoreMethod::VECTOR_GRID)
-                params.group_by.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
+                params.group_by.push_back(std::make_shared<ASTIdentifier>(ColumnNames::Group));
 
             auto & subqueries = context.subqueries;
             subqueries.emplace_back(SQLSubquery{subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE});
@@ -238,22 +237,22 @@ SQLQueryPiece applyFunctionOverRange(
             /// GROUP BY group
             SelectQueryParams params;
 
-            params.select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
+            params.select_list.push_back(std::make_shared<ASTIdentifier>(ColumnNames::Group));
 
             auto aggregate_function = addParametersToAggregateFunction(
                 makeASTFunction(
                     getSQLFunctionName(promql_function_name),
-                    std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
-                    std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Value)),
+                    std::make_shared<ASTIdentifier>(ColumnNames::Timestamp),
+                    std::make_shared<ASTIdentifier>(ColumnNames::Value)),
                 start_time,
                 end_time,
                 step,
                 window);
 
             params.select_list.push_back(aggregate_function);
-            params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
+            params.select_list.back()->setAlias(ColumnNames::Values);
 
-            params.group_by.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
+            params.group_by.push_back(std::make_shared<ASTIdentifier>(ColumnNames::Group));
 
             auto & subqueries = context.subqueries;
             subqueries.emplace_back(subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE);

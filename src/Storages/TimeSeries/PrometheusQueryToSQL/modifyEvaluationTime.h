@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SQLQueryPiece.h>
 
 
@@ -13,6 +12,6 @@ struct ConverterContext;
 /// <expression> offset 1d
 /// or
 /// <expression> @ 1609746000
-SQLQueryPiece modifyEvaluationTime(const PrometheusQueryTree::At * at_node, SQLQueryPiece && expression, ConverterContext & context);
+SQLQueryPiece modifyEvaluationTime(const PQT::At * at_node, SQLQueryPiece && expression, ConverterContext & context);
 
 }

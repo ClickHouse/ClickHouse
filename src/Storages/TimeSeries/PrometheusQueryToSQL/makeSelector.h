@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SQLQueryPiece.h>
 
 
@@ -11,10 +10,10 @@ struct ConverterContext;
 
 /// Makes a SQL query to read from an instant selector, for example
 /// http_requests{job="prometheus"}
-SQLQueryPiece makeSelector(const PrometheusQueryTree::InstantSelector * instant_selector_node, ConverterContext & context);
+SQLQueryPiece makeSelector(const PQT::InstantSelector * instant_selector_node, ConverterContext & context);
 
 /// Makes a SQL query to read from a range selector, for example
 /// http_requests{job="prometheus"}[20m]
-SQLQueryPiece makeSelector(const PrometheusQueryTree::RangeSelector * range_selector_node, ConverterContext & context);
+SQLQueryPiece makeSelector(const PQT::RangeSelector * range_selector_node, ConverterContext & context);
 
 }

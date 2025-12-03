@@ -6,7 +6,7 @@
 namespace DB::PrometheusQueryToSQL
 {
 
-/// Represents evaluation times found for a node in PrometheusQueryTree.
+/// Represents evaluation times found for a node in PQT.
 struct NodeEvaluationRange
 {
     DecimalField<DateTime64> start_time;

@@ -14,7 +14,7 @@ namespace DB::ErrorCodes
 namespace DB::PrometheusQueryToSQL
 {
 
-NodeEvaluationRangeGetter::NodeEvaluationRangeGetter(const PrometheusQueryTree & promql_tree, const PrometheusQueryEvaluationSettings & settings)
+NodeEvaluationRangeGetter::NodeEvaluationRangeGetter(const PQT & promql_tree, const PrometheusQueryEvaluationSettings & settings)
 {
     const auto * root = promql_tree.getRoot();
     if (root)
@@ -43,9 +43,9 @@ NodeEvaluationRangeGetter::NodeEvaluationRangeGetter(const PrometheusQueryTree &
 
 
 void NodeEvaluationRangeGetter::visitNode(
-    const PrometheusQueryTree::Node * node,
+    const Node * node,
     const NodeEvaluationRange & range,
-    const PrometheusQueryTree & promql_tree,
+    const PQT & promql_tree,
     const PrometheusQueryEvaluationSettings & settings)
 {
     map[node] = range;
@@ -54,16 +54,16 @@ void NodeEvaluationRangeGetter::visitNode(
 
 
 void NodeEvaluationRangeGetter::visitChildren(
-    const PrometheusQueryTree::Node * node,
+    const Node * node,
     const NodeEvaluationRange & range,
-    const PrometheusQueryTree & promql_tree,
+    const PQT & promql_tree,
     const PrometheusQueryEvaluationSettings & settings)
 {
     switch (node->node_type)
     {
-        case PrometheusQueryTree::NodeType::At:
+        case NodeType::At:
         {
-            const auto * at_node = static_cast<const PrometheusQueryTree::At *>(node);
+            const auto * at_node = static_cast<const PQT::At *>(node);
             const auto * expression = at_node->getExpression();
             NodeEvaluationRange expression_range = range;
             if (const auto * at = at_node->getAt())
@@ -89,9 +89,9 @@ void NodeEvaluationRangeGetter::visitChildren(
             break;
         }
 
-        case PrometheusQueryTree::NodeType::Subquery:
+        case NodeType::Subquery:
         {
-            const auto * subquery_node = static_cast<const PrometheusQueryTree::Subquery *>(node);
+            const auto * subquery_node = static_cast<const PQT::Subquery *>(node);
             auto max_scale = getTimeseriesScale(settings.result_timestamp_type);
             auto subquery_range = nodeToDuration(subquery_node->getRange(), max_scale);
 
@@ -132,18 +132,18 @@ void NodeEvaluationRangeGetter::setWindows(const PrometheusQueryEvaluationSettin
     for (auto it = map.begin(); it != map.end(); ++it)
     {
         const auto * node = it->first;
-        if (node->node_type == PrometheusQueryTree::NodeType::RangeSelector)
+        if (node->node_type == NodeType::RangeSelector)
         {
             /// We've found a range selector, we propagate its window to a range-vector function
             /// (if this range selector is used in any range-vector function).
-            const auto * range_selector_node = static_cast<const PrometheusQueryTree::RangeSelector *>(node);
+            const auto * range_selector_node = static_cast<const PQT::RangeSelector *>(node);
             auto window = nodeToDuration(range_selector_node->getRange(), max_scale);
             it->second.window = window;
             const auto * parent = node->parent;
             while (parent)
             {
                 map.at(parent).window = window;
-                if (parent->result_type != PrometheusQueryResultType::RANGE_VECTOR)
+                if (parent->result_type != ResultType::RANGE_VECTOR)
                     break;
                 parent = parent->parent;
             }
@@ -152,7 +152,7 @@ void NodeEvaluationRangeGetter::setWindows(const PrometheusQueryEvaluationSettin
 }
 
 
-const NodeEvaluationRange & NodeEvaluationRangeGetter::get(const PrometheusQueryTree::Node * node) const
+const NodeEvaluationRange & NodeEvaluationRangeGetter::get(const Node * node) const
 {
     auto it = map.find(node);
     if (it == map.end())

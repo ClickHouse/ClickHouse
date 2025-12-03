@@ -8,7 +8,7 @@
 namespace DB::PrometheusQueryToSQL
 {
 
-ConverterContext::ConverterContext(const PrometheusQueryTree & promql_tree_, const PrometheusQueryEvaluationSettings & settings_)
+ConverterContext::ConverterContext(const PQT & promql_tree_, const PrometheusQueryEvaluationSettings & settings_)
     : promql_tree(promql_tree_)
     , time_series_storage_id(settings_.time_series_storage_id)
     , max_time_scale(getTimeseriesScale(settings_.result_timestamp_type))

@@ -9,7 +9,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/buildSelectQuery.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/nodeToTime.h>
-#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 
 
 namespace DB::PrometheusQueryToSQL
@@ -19,7 +18,7 @@ namespace
 {
     /// Applies an offset for the evaluation time: <expression> offset 1d
     SQLQueryPiece offsetEvaluationTime(
-        const PrometheusQueryTree::At * at_node,
+        const PQT::At * at_node,
         SQLQueryPiece && expression,
         const DecimalField<Decimal64> & offset,
         ConverterContext & context)
@@ -49,7 +48,7 @@ namespace
                 /// FROM <raw_data>
                 SelectQueryParams params;
 
-                params.select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
+                params.select_list.push_back(std::make_shared<ASTIdentifier>(ColumnNames::Group));
 
                 /// Round up the scale to next number divisible by 3 but not greater than 9 (nanoseconds scale).
                 UInt32 max_scale = std::max<UInt32>((context.max_time_scale + 2) / 3 * 3, 9);
@@ -60,13 +59,13 @@ namespace
 
                 ASTPtr new_timestamp = makeASTFunction(
                     "plus",
-                    std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
+                    std::make_shared<ASTIdentifier>(ColumnNames::Timestamp),
                     makeASTFunction(interval_function, std::make_shared<ASTLiteral>(scaled_offset)));
 
                 params.select_list.push_back(new_timestamp);
-                params.select_list.back()->setAlias(TimeSeriesColumnNames::Timestamp);
+                params.select_list.back()->setAlias(ColumnNames::Timestamp);
 
-                params.select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Value));
+                params.select_list.push_back(std::make_shared<ASTIdentifier>(ColumnNames::Value));
 
                 auto & subqueries = context.subqueries;
                 subqueries.emplace_back(SQLSubquery{subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE});
@@ -82,7 +81,7 @@ namespace
     }
 
     /// Applies setting a fixed evaluation time: <expression> @ 1609746000
-    SQLQueryPiece setEvaluationTime(const PrometheusQueryTree::At * at_node, SQLQueryPiece && expression, ConverterContext & context)
+    SQLQueryPiece setEvaluationTime(const PQT::At * at_node, SQLQueryPiece && expression, ConverterContext & context)
     {
         /// <expression> is expected to be calculated at a fixed evaluation time.
         checkStartTimeEqualsToEndTime(expression, context);
@@ -124,7 +123,7 @@ namespace
                 SelectQueryParams params;
 
                 if (expression.store_method == StoreMethod::VECTOR_GRID)
-                    params.select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
+                    params.select_list.push_back(std::make_shared<ASTIdentifier>(ColumnNames::Group));
 
                 params.select_list.push_back(makeASTFunction(
                     "arrayResize",
@@ -132,9 +131,9 @@ namespace
                     std::make_shared<ASTLiteral>(
                         countTimeseriesSteps(evaluation_range.start_time, evaluation_range.end_time, evaluation_range.step)),
                     makeASTFunction(
-                        "arrayElement", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values), std::make_shared<ASTLiteral>(1u))));
+                        "arrayElement", std::make_shared<ASTIdentifier>(ColumnNames::Values), std::make_shared<ASTLiteral>(1u))));
 
-                params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
+                params.select_list.back()->setAlias(ColumnNames::Values);
 
                 auto & subqueries = context.subqueries;
                 subqueries.emplace_back(SQLSubquery{subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE});
@@ -156,7 +155,7 @@ namespace
                 /// FROM <raw_data>
                 SelectQueryParams params;
 
-                params.select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
+                params.select_list.push_back(std::make_shared<ASTIdentifier>(ColumnNames::Group));
 
                 params.select_list.push_back(makeASTFunction(
                     "arrayJoin",
@@ -166,9 +165,9 @@ namespace
                         timeseriesTimeToAST(evaluation_range.end_time),
                         timeseriesDurationToAST(evaluation_range.step))));
 
-                params.select_list.back()->setAlias(TimeSeriesColumnNames::Timestamp);
+                params.select_list.back()->setAlias(ColumnNames::Timestamp);
 
-                params.select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Value));
+                params.select_list.push_back(std::make_shared<ASTIdentifier>(ColumnNames::Value));
 
                 auto & subqueries = context.subqueries;
                 subqueries.emplace_back(SQLSubquery{subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE});
@@ -184,7 +183,7 @@ namespace
     }
 }
 
-SQLQueryPiece modifyEvaluationTime(const PrometheusQueryTree::At * at_node, SQLQueryPiece && expression, ConverterContext & context)
+SQLQueryPiece modifyEvaluationTime(const PQT::At * at_node, SQLQueryPiece && expression, ConverterContext & context)
 {
     if (at_node->getAt())
     {

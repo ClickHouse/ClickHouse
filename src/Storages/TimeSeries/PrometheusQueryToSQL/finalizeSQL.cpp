@@ -7,7 +7,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/buildSelectQuery.h>
-#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 
 
 namespace DB::ErrorCodes
@@ -31,12 +30,12 @@ namespace
         {
             list.push_back(makeASTFunction(
                 "timeSeriesExtractTag",
-                std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group),
+                std::make_shared<ASTIdentifier>(ColumnNames::Group),
                 std::make_shared<ASTLiteral>(sorting_tag)));
         }
 
         /// then by all tags.
-        list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Tags));
+        list.push_back(std::make_shared<ASTIdentifier>(ColumnNames::Tags));
 
         return list;
     }
@@ -57,10 +56,10 @@ namespace
                 SelectQueryParams params;
 
                 params.select_list.push_back(timeseriesTimeToAST(result.start_time, context.result_timestamp_type));
-                params.select_list.back()->setAlias(TimeSeriesColumnNames::Timestamp);
+                params.select_list.back()->setAlias(ColumnNames::Timestamp);
 
                 params.select_list.push_back(std::make_shared<ASTLiteral>(result.scalar_value));
-                params.select_list.back()->setAlias(TimeSeriesColumnNames::Value);
+                params.select_list.back()->setAlias(ColumnNames::Value);
 
                 params.limit = context.limit;
 
@@ -75,13 +74,13 @@ namespace
                 SelectQueryParams params;
 
                 params.select_list.push_back(timeseriesTimeToAST(result.start_time, context.result_timestamp_type));
-                params.select_list.back()->setAlias(TimeSeriesColumnNames::Timestamp);
+                params.select_list.back()->setAlias(ColumnNames::Timestamp);
 
                 params.select_list.push_back(makeASTFunction(
                     "toFloat64",
                     makeASTFunction(
-                        "arrayElement", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values), std::make_shared<ASTLiteral>(1u))));
-                params.select_list.back()->setAlias(TimeSeriesColumnNames::Value);
+                        "arrayElement", std::make_shared<ASTIdentifier>(ColumnNames::Values), std::make_shared<ASTLiteral>(1u))));
+                params.select_list.back()->setAlias(ColumnNames::Value);
 
                 params.with = std::move(context.subqueries);
                 params.with.emplace_back(SQLSubquery{params.with.size(), std::move(result.select_query), SQLSubqueryType::TABLE});
@@ -124,10 +123,10 @@ namespace
         SelectQueryParams params;
 
         params.select_list.push_back(timeseriesTimeToAST(result.start_time, context.result_timestamp_type));
-        params.select_list.back()->setAlias(TimeSeriesColumnNames::Timestamp);
+        params.select_list.back()->setAlias(ColumnNames::Timestamp);
 
         params.select_list.push_back(std::make_shared<ASTLiteral>(result.string_value));
-        params.select_list.back()->setAlias(TimeSeriesColumnNames::Value);
+        params.select_list.back()->setAlias(ColumnNames::Value);
 
         params.limit = context.limit;
 
@@ -156,14 +155,14 @@ namespace
                         "CAST",
                         std::make_shared<ASTLiteral>(Array{}),
                         std::make_shared<ASTLiteral>("Array(Array(Tuple(String, String)))"))));
-                params.select_list.back()->setAlias(TimeSeriesColumnNames::Tags);
+                params.select_list.back()->setAlias(ColumnNames::Tags);
 
                 params.select_list.push_back(
                     makeASTFunction("defaultValueOfTypeName", std::make_shared<ASTLiteral>(context.result_timestamp_type->getName())));
-                params.select_list.back()->setAlias(TimeSeriesColumnNames::Timestamp);
+                params.select_list.back()->setAlias(ColumnNames::Timestamp);
 
                 params.select_list.push_back(makeASTFunction("defaultValueOfTypeName", std::make_shared<ASTLiteral>("Float64")));
-                params.select_list.back()->setAlias(TimeSeriesColumnNames::Value);
+                params.select_list.back()->setAlias(ColumnNames::Value);
 
                 return buildSelectQuery(std::move(params));
             }
@@ -178,13 +177,13 @@ namespace
 
                 params.select_list.push_back(makeASTFunction(
                     "CAST", std::make_shared<ASTLiteral>(Array{}), std::make_shared<ASTLiteral>("Array(Tuple(String, String))")));
-                params.select_list.back()->setAlias(TimeSeriesColumnNames::Tags);
+                params.select_list.back()->setAlias(ColumnNames::Tags);
 
                 params.select_list.push_back(timeseriesTimeToAST(result.start_time, context.result_timestamp_type));
-                params.select_list.back()->setAlias(TimeSeriesColumnNames::Timestamp);
+                params.select_list.back()->setAlias(ColumnNames::Timestamp);
 
                 params.select_list.push_back(std::make_shared<ASTLiteral>(result.scalar_value));
-                params.select_list.back()->setAlias(TimeSeriesColumnNames::Value);
+                params.select_list.back()->setAlias(ColumnNames::Value);
 
                 params.limit = context.limit;
 
@@ -202,16 +201,16 @@ namespace
 
                 params.select_list.push_back(makeASTFunction(
                     "CAST", std::make_shared<ASTLiteral>(Array{}), std::make_shared<ASTLiteral>("Array(Tuple(String, String))")));
-                params.select_list.back()->setAlias(TimeSeriesColumnNames::Tags);
+                params.select_list.back()->setAlias(ColumnNames::Tags);
 
                 params.select_list.push_back(timeseriesTimeToAST(result.start_time, context.result_timestamp_type));
-                params.select_list.back()->setAlias(TimeSeriesColumnNames::Timestamp);
+                params.select_list.back()->setAlias(ColumnNames::Timestamp);
 
                 params.select_list.push_back(makeASTFunction(
                     "toFloat64",
                     makeASTFunction(
-                        "arrayElement", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values), std::make_shared<ASTLiteral>(1u))));
-                params.select_list.back()->setAlias(TimeSeriesColumnNames::Value);
+                        "arrayElement", std::make_shared<ASTIdentifier>(ColumnNames::Values), std::make_shared<ASTLiteral>(1u))));
+                params.select_list.back()->setAlias(ColumnNames::Value);
 
                 params.with = std::move(context.subqueries);
                 params.with.emplace_back(SQLSubquery{params.with.size(), std::move(result.select_query), SQLSubqueryType::TABLE});
@@ -234,17 +233,17 @@ namespace
                 SelectQueryParams params;
 
                 params.select_list.push_back(
-                    makeASTFunction("timeSeriesGroupToTags", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group)));
-                params.select_list.back()->setAlias(TimeSeriesColumnNames::Tags);
+                    makeASTFunction("timeSeriesGroupToTags", std::make_shared<ASTIdentifier>(ColumnNames::Group)));
+                params.select_list.back()->setAlias(ColumnNames::Tags);
 
                 params.select_list.push_back(timeseriesTimeToAST(result.start_time, context.result_timestamp_type));
-                params.select_list.back()->setAlias(TimeSeriesColumnNames::Timestamp);
+                params.select_list.back()->setAlias(ColumnNames::Timestamp);
 
                 params.select_list.push_back(makeASTFunction(
                     "toFloat64",
                     makeASTFunction(
-                        "arrayElement", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values), std::make_shared<ASTLiteral>(1u))));
-                params.select_list.back()->setAlias(TimeSeriesColumnNames::Value);
+                        "arrayElement", std::make_shared<ASTIdentifier>(ColumnNames::Values), std::make_shared<ASTLiteral>(1u))));
+                params.select_list.back()->setAlias(ColumnNames::Value);
 
                 params.with = std::move(context.subqueries);
                 params.with.emplace_back(SQLSubquery{params.with.size(), std::move(result.select_query), SQLSubqueryType::TABLE});
@@ -253,7 +252,7 @@ namespace
                 params.where = makeASTFunction(
                     "isNotNull",
                     makeASTFunction(
-                        "arrayElement", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values), std::make_shared<ASTLiteral>(1u)));
+                        "arrayElement", std::make_shared<ASTIdentifier>(ColumnNames::Values), std::make_shared<ASTLiteral>(1u)));
 
                 const auto & result_sorting = context.result_sorting;
                 if (result_sorting.mode == ResultSorting::Mode::ORDERED_BY_TAGS)
@@ -263,7 +262,7 @@ namespace
                 }
                 else if (result_sorting.mode == ResultSorting::Mode::ORDERED_BY_VALUE)
                 {
-                    params.order_by.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Value));
+                    params.order_by.push_back(std::make_shared<ASTIdentifier>(ColumnNames::Value));
                     params.order_direction = result_sorting.direction;
                 }
 
@@ -304,12 +303,12 @@ namespace
                         "CAST",
                         std::make_shared<ASTLiteral>(Array{}),
                         std::make_shared<ASTLiteral>("Array(Array(Tuple(String, String)))"))));
-                params.select_list.back()->setAlias(TimeSeriesColumnNames::Tags);
+                params.select_list.back()->setAlias(ColumnNames::Tags);
 
                 params.select_list.push_back(makeASTFunction(
                     "defaultValueOfTypeName",
                     std::make_shared<ASTLiteral>(fmt::format("Array(Tuple({}, Float64))", context.result_timestamp_type->getName()))));
-                params.select_list.back()->setAlias(TimeSeriesColumnNames::TimeSeries);
+                params.select_list.back()->setAlias(ColumnNames::TimeSeries);
 
                 return buildSelectQuery(std::move(params));
             }
@@ -324,7 +323,7 @@ namespace
 
                 params.select_list.push_back(makeASTFunction(
                     "CAST", std::make_shared<ASTLiteral>(Array{}), std::make_shared<ASTLiteral>("Array(Tuple(String, String))")));
-                params.select_list.back()->setAlias(TimeSeriesColumnNames::Tags);
+                params.select_list.back()->setAlias(ColumnNames::Tags);
 
                 params.select_list.push_back(makeASTFunction(
                     "timeSeriesFromGrid",
@@ -337,7 +336,7 @@ namespace
                         std::make_shared<ASTLiteral>(countTimeseriesSteps(result.start_time, result.end_time, result.step)),
                         std::make_shared<ASTLiteral>(result.scalar_value))));
 
-                params.select_list.back()->setAlias(TimeSeriesColumnNames::TimeSeries);
+                params.select_list.back()->setAlias(ColumnNames::TimeSeries);
 
                 params.limit = context.limit;
 
@@ -355,7 +354,7 @@ namespace
 
                 params.select_list.push_back(makeASTFunction(
                     "CAST", std::make_shared<ASTLiteral>(Array{}), std::make_shared<ASTLiteral>("Array(Tuple(String, String))")));
-                params.select_list.back()->setAlias(TimeSeriesColumnNames::Tags);
+                params.select_list.back()->setAlias(ColumnNames::Tags);
 
                 params.select_list.push_back(makeASTFunction(
                     "timeSeriesFromGrid",
@@ -364,10 +363,10 @@ namespace
                     timeseriesDurationToAST(result.step),
                     makeASTFunction(
                         "CAST",
-                        std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values),
+                        std::make_shared<ASTIdentifier>(ColumnNames::Values),
                         std::make_shared<ASTLiteral>("Array(Float64)"))));
 
-                params.select_list.back()->setAlias(TimeSeriesColumnNames::TimeSeries);
+                params.select_list.back()->setAlias(ColumnNames::TimeSeries);
 
                 params.with = std::move(context.subqueries);
                 params.with.emplace_back(SQLSubquery{params.with.size(), std::move(result.select_query), SQLSubqueryType::TABLE});
@@ -389,8 +388,8 @@ namespace
                 SelectQueryParams params;
 
                 params.select_list.push_back(
-                    makeASTFunction("timeSeriesGroupToTags", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group)));
-                params.select_list.back()->setAlias(TimeSeriesColumnNames::Tags);
+                    makeASTFunction("timeSeriesGroupToTags", std::make_shared<ASTIdentifier>(ColumnNames::Group)));
+                params.select_list.back()->setAlias(ColumnNames::Tags);
 
                 params.select_list.push_back(makeASTFunction(
                     "timeSeriesFromGrid",
@@ -399,10 +398,10 @@ namespace
                     timeseriesDurationToAST(result.step),
                     makeASTFunction(
                         "CAST",
-                        std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values),
+                        std::make_shared<ASTIdentifier>(ColumnNames::Values),
                         std::make_shared<ASTLiteral>("Array(Nullable(Float64))"))));
 
-                params.select_list.back()->setAlias(TimeSeriesColumnNames::TimeSeries);
+                params.select_list.back()->setAlias(ColumnNames::TimeSeries);
 
                 params.with = std::move(context.subqueries);
                 params.with.emplace_back(SQLSubquery{params.with.size(), std::move(result.select_query), SQLSubqueryType::TABLE});
@@ -431,24 +430,24 @@ namespace
                 SelectQueryParams params;
 
                 params.select_list.push_back(
-                    makeASTFunction("timeSeriesGroupToTags", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group)));
-                params.select_list.back()->setAlias(TimeSeriesColumnNames::Tags);
+                    makeASTFunction("timeSeriesGroupToTags", std::make_shared<ASTIdentifier>(ColumnNames::Group)));
+                params.select_list.back()->setAlias(ColumnNames::Tags);
 
                 params.select_list.push_back(makeASTFunction(
                     "timeSeriesGroupArray",
                     makeASTFunction(
                         "CAST",
-                        std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
+                        std::make_shared<ASTIdentifier>(ColumnNames::Timestamp),
                         std::make_shared<ASTLiteral>(context.result_timestamp_type->getName())),
-                    makeASTFunction("toFloat64", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Value))));
+                    makeASTFunction("toFloat64", std::make_shared<ASTIdentifier>(ColumnNames::Value))));
 
-                params.select_list.back()->setAlias(TimeSeriesColumnNames::TimeSeries);
+                params.select_list.back()->setAlias(ColumnNames::TimeSeries);
 
                 params.with = std::move(context.subqueries);
                 params.with.emplace_back(SQLSubquery{params.with.size(), std::move(result.select_query), SQLSubqueryType::TABLE});
                 params.from_table = params.with.back().name;
 
-                params.group_by.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
+                params.group_by.push_back(std::make_shared<ASTIdentifier>(ColumnNames::Group));
 
                 const auto & result_sorting = context.result_sorting;
                 if (result_sorting.mode == ResultSorting::Mode::ORDERED_BY_TAGS)

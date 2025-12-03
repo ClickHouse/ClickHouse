@@ -12,3 +12,9 @@ namespace DB::PrometheusQueryToSQL
     using NodeType = PQT::NodeType;
     using ColumnNames = TimeSeriesColumnNames;
 }
+
+
+namespace DB
+{
+    struct PrometheusQueryEvaluationSettings;
+}

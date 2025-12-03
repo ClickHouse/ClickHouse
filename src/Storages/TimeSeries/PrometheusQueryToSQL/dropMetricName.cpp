@@ -6,7 +6,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/addParametersToAggregateFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/buildSelectQuery.h>
-#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 
 
 namespace DB::ErrorCodes
@@ -44,24 +43,24 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
 
             params.select_list.push_back(makeASTFunction(
                 "timeSeriesRemoveTag",
-                std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group),
+                std::make_shared<ASTIdentifier>(ColumnNames::Group),
                 std::make_shared<ASTLiteral>("__name__")));
-            params.select_list.back()->setAlias(TimeSeriesColumnNames::Group);
+            params.select_list.back()->setAlias(ColumnNames::Group);
 
             auto coalesce_function = addParameterToAggregateFunction(
                 makeASTFunction(
                     "timeSeriesCoalesceGridValues",
-                    std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values),
-                    std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group)),
+                    std::make_shared<ASTIdentifier>(ColumnNames::Values),
+                    std::make_shared<ASTIdentifier>(ColumnNames::Group)),
                 "throw");
 
             params.select_list.push_back(std::move(coalesce_function));
-            params.select_list.back()->setAlias(TimeSeriesColumnNames::Values);
+            params.select_list.back()->setAlias(ColumnNames::Values);
 
             context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(query_piece.select_query), SQLSubqueryType::TABLE});
             params.from_table = context.subqueries.back().name;
 
-            params.group_by.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
+            params.group_by.push_back(std::make_shared<ASTIdentifier>(ColumnNames::Group));
 
             query_piece.select_query = buildSelectQuery(std::move(params));
 
