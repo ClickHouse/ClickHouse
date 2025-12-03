@@ -46,6 +46,12 @@ namespace
                 "Cannot parse {} parameter for aggregate function {}", parameter_name, function_name);
     }
 
+    template <typename ValueType>
+    AggregateFunctionPtr createWithValueType(const DataTypes & argument_types, Mode mode)
+    {
+        return std::make_shared<AggregateFunctionTimeSeriesCoalesceGridValues<ValueType>>(argument_types, mode);
+    }
+
     AggregateFunctionPtr createAggregateFunctionTimeSeriesCoalesceGridValues(const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
     {
         if (settings && (*settings)[Setting::allow_experimental_time_series_aggregate_functions] == 0 && (*settings)[Setting::allow_experimental_time_series_table] == 0)
@@ -68,7 +74,7 @@ namespace
 
         if (argument_types[0]->getTypeId() != TypeIndex::Array)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Aggregate function {} expects one argument of type Array(Nullable(floating-point)), got type {}",
+                "Aggregate function {} expects the first argument of type Array(Nullable(floating-point)), got type {}",
                 name, argument_types[0]->getName());
 
         if ((argument_types.size() == 2) && (argument_types[1]->getTypeId() != TypeIndex::UInt64))
@@ -76,7 +82,26 @@ namespace
                 "Aggregate function {} expects the second argument of type UInt64, got type {}",
                 name, argument_types[1]->getName());
 
-        return std::make_shared<AggregateFunctionTimeSeriesCoalesceGridValues<ValueType>>(query_context, argument_types, mode);
+        auto element_type = typeid_cast<const DataTypeArray *>(argument_types[0].get())->getNestedType();
+        auto value_type = removeNullable(element_type);
+
+        AggregateFunctionPtr res;
+        if (value_type->getTypeId() == TypeIndex::Float64)
+        {
+            res = createWithValueType<Float64>(argument_types, mode);
+        }
+        else if (value_type->getTypeId() == TypeIndex::Float32)
+        {
+            res = createWithValueType<Float32>(argument_types, mode);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Aggregate function {} expects the first argument of type Array(Nullable(floating-point)), got type {}",
+                name, argument_types[0]->getName());
+        }
+
+        return res;
     }
 }
 

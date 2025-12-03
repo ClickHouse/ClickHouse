@@ -18,49 +18,58 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
 }
 
 enum class AggregateFunctionTimeSeriesCoalesceGridValuesMode
 {
+    /// The function returns the first value it finds at every position.
     kAny,
+
+    /// The function returns `NULL` if there are two values at the same position (even if they're equal).
     kNull,
+
+    /// The function throws an exception (`Found duplicate series`) if there are two values at the same position (even if they're equal).
     kThrow,
 };
 
 /// Combines non-NULL values in arrays from different rows into a single array.
-
+template<typename ValueType>
 class AggregateFunctionTimeSeriesCoalesceGridValues final
-    : public IAggregateFunctionHelper<AggregateFunctionTimeSeriesCoalesceGridValues>,
+    : public IAggregateFunctionHelper<AggregateFunctionTimeSeriesCoalesceGridValues<ValueType>>,
       private WithContext
 {
 public:
-    using Base = IAggregateFunctionHelper<AggregateFunctionTimeSeriesCoalesceGridValues>;
+    using Base = IAggregateFunctionHelper<AggregateFunctionTimeSeriesCoalesceGridValues<ValueType>>;
     using Mode = AggregateFunctionTimeSeriesCoalesceGridValuesMode;
 
     using ColVecType = ColumnVectorOrDecimal<ValueType>;
+    using Group = UInt64;
 
     String getName() const override { return "timeSeriesCoalesceGridValues"; }
 
-    /// Stores number of non-null values for each position and the last such value.
+    /// Information about each position in source arrays.
+    struct Element
+    {
+        ValueType value = {};
+        bool is_null = true;
+        bool is_set = false;
+        Group group = 0;
+    };
+
     struct Data
     {
+        Element * elements;
         size_t size = 0;
-        MutableColumnPtr values_column;
-        MutableColumnPtr null_map_column;
-        NullMap * null_map = nullptr;
-        std::vector<UInt64> groups;
 
-        void resize(DataTypePtr size_t new_size)
+        void resize(size_t new_size)
         {
             if (new_size == size)
                 return;
             if (new_size)
             {
-                if (value)
-                values_column->cloneResized()
                 elements = reinterpret_cast<Element *>(arena->alignedRealloc(
                     reinterpret_cast<char *>(elements), size * sizeof(Element), new_size * sizeof(Element), alignof(Element)));
                 if (new_size > size)
@@ -76,33 +85,63 @@ public:
             size = new_size;
         }
 
-        void add(size_t count, const ColumnPtr & values, const UInt8 * null_map, Arena * arena)
+        void add(size_t count,
+                 const ValueType * values,
+                 const UInt8 * null_map,
+                 Group group,
+                 const AggregateFunctionTimeSeriesCoalesceGridValues<ValueType> & function,
+                 Arena * arena)
         {
             if (count > size)
                 resize(count, arena);
             for (size_t i = 0; i != size; ++i)
             {
-                if (!null_map[i])
+                if (null_map && null_map[i])
+                    continue;
+                auto & element = elements[i];
+                if (!element.is_set)
                 {
-                    auto & element = elements[i];
-                    ++element.num_values;
-                    element.last_value = values[i];
+                    element.value = values[i];
+                    element.is_null = false;
+                    element.is_set = true;
+                    element.group = group;
+                }
+                else if (function.mode == Mode::kNull)
+                {
+                    element.is_null = true;
+                    element.value = ValueType{};
+                }
+                else if (function.mode == Mode::kThrow)
+                {
+                    function.throwDuplicateTimeSeries(element.group, group);
                 }
             }
         }
 
-        void merge(const Data & rhs, Mode mode)
+        void merge(const Data & rhs,
+                   const AggregateFunctionTimeSeriesCoalesceGridValues<ValueType> & function,
+                   Arena * arena)
         {
             if (rhs.size > size)
                 resize(rhs.size, arena);
             for (size_t i = 0; i != rhs.size; ++i)
             {
+                auto & element = elements[i];
                 const auto & rhs_element = rhs.elements[i];
-                if (rhs_element.num_values)
+                if (!rhs_element.is_set)
+                    continue;
+                if (!element.is_set)
                 {
-                    auto & element = elements[i];
-                    element.num_values += rhs_element.num_values;
-                    element.last_value = rhs_element.last_value;
+                    element = rhs_element;
+                }
+                else if (function.mode == Mode::kNull)
+                {
+                    element.is_null = true;
+                    element.value = ValueType{};
+                }
+                else if (function.mode == Mode::kThrow)
+                {
+                    function.throwDuplicateTimeSeries(element.group, rhs_element.group);
                 }
             }
         }
@@ -112,14 +151,16 @@ public:
         : Base(argument_types_, {}, createResultType(argument_types_))
         , WithContext(context_) {}
         , mode(mode_)
+        , has_group_argument(argument_types_.size() == 2)
     {
     }
 
     static DataTypePtr createResultType(const DataTypes & argument_types_)
     {
-        const auto & values_type = argument_types_[0];
-
-        return values_type;
+        auto element_type = typeid_cast<const DataTypeArray *>(argument_types_[0].get())->getNestedType();
+        if (mode == Mode::kNull)
+            element_type = makeNullable(element_type);
+        return std::make_shared<DataTypeArray>(element_type);
     }
 
     bool allocatesMemoryInArena() const override { return true; }
@@ -159,21 +200,30 @@ public:
         return *reinterpret_cast<const Data *>(place);
     }
 
-    void ALWAYS_INLINE add(AggregateDataPtr __restrict place, size_t count, const ValueType * values, const UInt8 * null_map, Arena * arena) const
+    void ALWAYS_INLINE add(AggregateDataPtr __restrict place, size_t count, const ValueType * values, const UInt8 * null_map, Group group, Arena * arena) const
     {
         Data & data = this->data(place);
-        data.add(count, values, null_map, arena);
+        data.add(count, values, null_map, group, *this, arena);
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         const auto & column_array = typeid_cast<const ColumnArray &>(*columns[0]);
         const auto & offsets = column_array.getOffsets();
-        const auto & nullable_column = typeid_cast<const ColumnNullable &>(column_array.getData());
-        const auto & values = typeid_cast<const ColVecType &>(nullable_column.getNestedColumn()).getData();
-        const auto & null_map = nullable_column.getNullMapData();
         size_t previous_offset = offsets[row_num - 1];
-        add(place, offsets[row_num] - previous_offset, values.data() + previous_offset, null_map.data() + previous_offset, arena);
+        Group group = has_group_argument ? columns[1]->get64(row_num) : 0;
+        const ValueType * values = nullptr;
+        const UInt8 * null_map = nullptr;
+        if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(&column_array.getData()))
+        {
+            null_map = nullable_column->getNullMapData().data() + previous_offset;
+            values = typeid_cast<const ColVecType &>(nullable_column->getNestedColumn()).getData().data() + previous_offset;
+        }
+        else
+        {
+            values = typeid_cast<const ColVecType &>(column_array.getData()).getData().data() + previous_offset;
+        }
+        add(place, offsets[row_num] - previous_offset, values, null_map, group, arena);
     }
 
     void addBatchSinglePlace(
@@ -211,16 +261,25 @@ public:
     {
         const auto & column_array = typeid_cast<const ColumnArray &>(*columns[0]);
         const auto & offsets = column_array.getOffsets();
-        const auto & nullable_column = typeid_cast<const ColumnNullable &>(column_array.getData());
-        const auto & values = typeid_cast<const ColVecType &>(nullable_column.getNestedColumn()).getData();
-        const auto & null_map = nullable_column.getNullMapData();
+        const ValueType * values = nullptr;
+        const UInt8 * null_map = nullptr;
+        if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(&column_array.getData()))
+        {
+            null_map = nullable_column->getNullMapData().data();
+            values = typeid_cast<const ColVecType &>(nullable_column->getNestedColumn()).getData().data();
+        }
+        else
+        {
+            values = typeid_cast<const ColVecType &>(column_array.getData()).getData().data();
+        }
 
         for (size_t i = row_begin; i != row_end; ++i)
         {
             if (!flags_data || (flags_data[i] == flag_value_to_include))
             {
                 size_t previous_offset = offsets[i - 1];
-                add(place, offsets[i] - previous_offset, values.data() + previous_offset, null_map.data() + previous_offset, arena);
+                Group group = has_group_argument ? columns[1]->get64(i) : 0;
+                add(place, offsets[i] - previous_offset, values + previous_offset, null_map ? (null_map + previous_offset) : nullptr, group, arena);
             }
         }
     }
@@ -279,7 +338,7 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        data(place).merge(data(rhs), arena);
+        data(place).merge(data(rhs), *this, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -290,13 +349,16 @@ public:
         writeBinaryLittleEndian(data.size, buf);
 
         for (size_t i = 0; i < data.size; ++i)
-            writeBinaryLittleEndian(data.elements[i].num_values, buf);
+            writeBinaryLittleEndian(data.elements[i].value, buf);
 
         for (size_t i = 0; i < data.size; ++i)
-        {
-            ValueType last_value = (data.elements[i].num_values == 1) ? data.elements[i].last_value : ValueType{};
-            writeBinaryLittleEndian(last_value, buf);
-        }
+            writeBinaryLittleEndian(data.elements[i].is_null, buf);
+
+        for (size_t i = 0; i < data.size; ++i)
+            writeBinaryLittleEndian(data.elements[i].is_set, buf);
+
+        for (size_t i = 0; i < data.size; ++i)
+            writeBinaryLittleEndian(data.elements[i].group, buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
@@ -317,46 +379,68 @@ public:
         data.resize(size, arena);
 
         for (size_t i = 0; i < size; ++i)
-            readBinaryLittleEndian(data.elements[i].num_values, buf);
+            readBinaryLittleEndian(data.elements[i].value, buf);
 
         for (size_t i = 0; i < size; ++i)
-            readBinaryLittleEndian(data.elements[i].last_value, buf);
+            readBinaryLittleEndian(data.elements[i].is_null, buf);
+
+        for (size_t i = 0; i < size; ++i)
+            readBinaryLittleEndian(data.elements[i].is_set, buf);
+
+        for (size_t i = 0; i < size; ++i)
+            readBinaryLittleEndian(data.elements[i].group, buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         auto & column_array = typeid_cast<ColumnArray &>(to);
         auto & offsets = column_array.getOffsets();
-        auto & nullable_column = typeid_cast<ColumnNullable &>(column_array.getData());
-        auto & values = typeid_cast<ColVecType &>(nullable_column.getNestedColumn()).getData();
-        auto & null_map = nullable_column.getNullMapData();
+
+        ColVecType * values = nullptr;
+        NullMap * null_map = nullptr;
+        if (auto * nullable_column = typeid_cast<ColumnNullable *>(&column_array.getData()))
+        {
+            values = typeid_cast<ColVecType *>(&nullable_column->getNestedColumn()).getData();
+            null_map = &nullable_column.getNullMapData();
+        }
+        else
+        {
+            values = typeid_cast<ColVecType *>(&column_array.getData());
+        }
 
         const Data & data = this->data(place);
 
         for (size_t i = 0; i != data.size; ++i)
         {
             const auto & element = data.elements[i];
-            if (element.num_values == 1)
-            {
-                values.push_back(element.last_value);
-                null_map.push_back(0);
-            }
-            else if ((element.num_values == 0) || (mode == Mode::NULL_IF_CONFLICT))
-            {
-                values.push_back(ValueType{});
-                null_map.push_back(1);
-            }
-            else
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Vector cannot contain metrics with the same labelset");
-            }
+            values->push_back(element.value);
+            chassert(null_map || !element.is_null);
+            if (null_map)
+                null_map->push_back(element.is_null);
         }
 
-        offsets.push_back(values.size());
+        offsets.push_back(values->size());
+    }
+
+    void throwDuplicateTimeSeries(Group first_group, Group second_group) const
+    {
+        String extra_info;
+        if (has_group_argument && context)
+        {
+            auto context_ptr = getContext();
+            auto first_tags = context->getTimeSeriesTagsCollector().getTagsByGroup(first_group);
+            auto second_tags = context->getTimeSeriesTagsCollector().getTagsByGroup(second_group);
+            extra_info = fmt::format(": {} and {}", ContextTimeSeriesTagsCollector::toString(first_tags), ContextTimeSeriesTagsCollector::toString(second_tags));
+        }
+
+        throw Exception(
+            ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+            "Instant vector cannot contain metrics with the same tags: found duplicate series {}", extra_info);
     }
 
 private:
     static constexpr UInt16 FORMAT_VERSION = 1;
     Mode mode;
+    bool has_group_argument;
 };
 }

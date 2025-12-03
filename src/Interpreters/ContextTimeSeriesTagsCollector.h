@@ -40,6 +40,7 @@ public:
     using TagNamesAndValuesPtr = std::shared_ptr<const TagNamesAndValues>;
 
     static String toString(const TagNamesAndValues & tags);
+    static String toString(const TagNamesAndValuesPtr & tags);
 
     /// A group is just an integer.
     using Group = UInt64;

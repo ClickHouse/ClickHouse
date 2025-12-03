@@ -1,3 +1,4 @@
+#if 0
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyUnaryOperator.h>
 
 #include <Parsers/ASTFunction.h>
@@ -550,7 +551,7 @@ namespace
                     "arrayResize",
                     std::make_shared<ASTLiteral>(Array{}),
                     std::make_shared<ASTLiteral>(countTimeseriesSteps(argument.start_time, argument.end_time, argument.step)),
-                    makeASTFunction("toNullable", std::make_shared<ASTLiteral>(argument.scalar_value))));
+                    std::make_shared<ASTLiteral>(argument.scalar_value)));
 
                 params.select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values));
 
@@ -570,8 +571,7 @@ namespace
                 params.select_list.push_back(std::make_shared<ASTLiteral>(0u));
                 params.select_list.back()->setAlias(TimeSeriesColumnNames::Group);
 
-                params.select_list.push_back(
-                    makeASTFunction("CAST", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values), "Array(Nullable(Float64))"));
+                params.select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Values));
 
                 context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE});
                 params.from_table = context.subqueries.back().name;
@@ -1089,3 +1089,4 @@ SQLQueryPiece applyBinaryOperator(
 }
 
 }
+#endif

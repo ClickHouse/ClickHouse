@@ -101,6 +101,20 @@ Response:
 Code: 36. DB::Exception: Found duplicate time series. (BAD_ARGUMENTS)
 ```
 
+Optional argument `group` is used to provide extra information in the error message:
+
+```sql
+WITH [[1., NULL, 3., NULL, 5], [NULL, 2., NULL, NULL, 5]] AS data,
+     (SELECT timeSeriesTagsToGroup([("__name__", "up")])) AS group
+SELECT timeSeriesCoalesceGridValues('throw')(arrayJoin(data), group);
+```
+
+Response:
+
+```response
+Code: 36. DB::Exception: Found duplicate time series. (BAD_ARGUMENTS)
+```
+
 :::note
 This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
 :::
