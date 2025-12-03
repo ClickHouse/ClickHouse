@@ -117,8 +117,11 @@ def main():
 
     # Generate configuration file
     # No PARALLEL WITH with slow sanitizers
+    # If hardcoded inserts are allowed, reduce insert size, so logs don't grow as much
+    allow_hardcoded_inserts = random.choice([True, False])
     min_nested_rows = random.randint(0, 5)
     min_insert_rows = random.randint(1, 100)
+    max_insert_rows = min_insert_rows + (10 if allow_hardcoded_inserts else 1000)
     min_string_length = random.randint(0, 100)
     buzz_config = {
         "seed": random.randint(1, 18446744073709551615),
@@ -132,7 +135,7 @@ def main():
         "min_nested_rows": min_nested_rows,
         "max_nested_rows": random.randint(min_nested_rows, min_nested_rows + 5),
         "min_insert_rows": min_insert_rows,
-        "max_insert_rows": random.randint(min_insert_rows, min_insert_rows + 400),
+        "max_insert_rows": random.randint(min_insert_rows, max_insert_rows),
         "min_string_length": min_string_length,
         "max_string_length": random.randint(min_string_length, min_string_length + 500),
         "max_parallel_queries": (
@@ -152,7 +155,7 @@ def main():
         "test_with_fill": False,  # Creating too many issues
         "compare_success_results": False,  # This can give false positives, so disable it
         "allow_infinite_tables": False,  # Creating too many issues
-        "allow_hardcoded_inserts": random.choice([True, False]),
+        "allow_hardcoded_inserts": allow_hardcoded_inserts,
         "client_file_path": "/var/lib/clickhouse/user_files",
         "server_file_path": "/var/lib/clickhouse/user_files",
         "log_path": "/workspace/fuzzerout.sql",
@@ -210,7 +213,7 @@ def main():
             "add_minmax_index_for_numeric_columns",
             "add_minmax_index_for_string_columns",
             "allow_coalescing_columns_in_partition_or_order_key",
-            #"allow_experimental_replacing_merge_with_cleanup",
+            # "allow_experimental_replacing_merge_with_cleanup",
             "allow_experimental_reverse_key",
             "allow_floating_point_partition_key",
             "allow_nullable_key",
