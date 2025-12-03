@@ -1091,12 +1091,14 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     auto strictness = join_operator.strictness;
     auto kind = join_operator.kind;
     auto locality = join_operator.locality;
-    if (!optimization_settings.query_plan_optimize_join_order_limit ||
-        (strictness != JoinStrictness::All && strictness != JoinStrictness::Any) ||
-        locality != JoinLocality::Unspecified ||
-        kind == JoinKind::Paste ||
-        kind == JoinKind::Full ||
-        !join_operator.residual_filter.empty())
+    if (!optimization_settings.query_plan_optimize_join_order_limit
+        || (strictness != JoinStrictness::All && strictness != JoinStrictness::Any)
+        || locality != JoinLocality::Unspecified
+        || kind == JoinKind::Paste
+        || kind == JoinKind::Full
+        || !join_operator.residual_filter.empty()
+        || (join_step->mayUseInMemoryInputStorage() && optimization_settings.correlated_subqueries_use_in_memory_buffer)
+    )
     {
         join_step->setOptimized();
         return;

@@ -577,6 +577,11 @@ QueryPlan buildLogicalJoin(
         JoinSettings(settings),
         SortingStep::Settings(settings));
     result_join->setStepDescription("JOIN to generate result stream");
+    /// Depending on correlated_subqueries_use_in_memory_buffer setting,
+    /// the RHS input stream can be buffered in memory.
+    /// In this case, we cannot reorder JOIN to ensure correlated subquery input
+    /// is evaluated before the subquery itself.
+    result_join->setMayUseInMemoryInputStorage();
 
     QueryPlan result_plan;
 
@@ -671,10 +676,7 @@ void addStepForResultRenaming(
  * Instead, it produces a query plan where almost every step has an analog from relational algebra.
  * This function implements a decorrelation algorithm using the ClickHouse query plan.
  *
- * TODO: Support scalar correlated subqueries.
  * TODO: Support decorrelation of all kinds of query plan steps.
- * TODO: Implement left table substitution optimization: T_left DEPENDENT JOIN T_right is a subset of T_right
- * if T_right has all the necessary columns of T_left.
  */
 void buildQueryPlanForCorrelatedSubquery(
     const PlannerContextPtr & planner_context,
