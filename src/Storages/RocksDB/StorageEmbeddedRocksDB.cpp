@@ -852,7 +852,8 @@ Chunk StorageEmbeddedRocksDB::getByKeys(
     IColumn::Offsets & /* out_offsets */) const
 {
     if (keys.size() != primary_keys.size())
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Key column number mismatch, expected {}, got {}.", primary_keys.size(), keys.size());
+        throw DB::Exception(
+            ErrorCodes::LOGICAL_ERROR, "Key column number mismatch, expected {}, got {}.", primary_keys.size(), keys.size());
 
     for (size_t i = 0; i < keys.size(); ++i)
     {
@@ -900,7 +901,7 @@ Block StorageEmbeddedRocksDB::getSampleBlock(const Names &) const
     return getInMemoryMetadataPtr()->getSampleBlock();
 }
 
-Chunk StorageEmbeddedRocksDB::getBySerializedKeys(const std::vector<std::string> & keys, PaddedPODArray<UInt8> * null_map) const
+Chunk StorageEmbeddedRocksDB::getBySerializedKeys(const std::vector<std::string> & keys, PaddedPODArray<UInt8> * in_out_null_map) const
 {
     std::vector<String> values;
     Block sample_block = getInMemoryMetadataPtr()->getSampleBlock();
@@ -916,7 +917,7 @@ Chunk StorageEmbeddedRocksDB::getBySerializedKeys(const std::vector<std::string>
     auto statuses = multiGet(slices_keys, values);
     for (size_t i = 0; i < statuses.size(); ++i)
     {
-        if (null_map && !(*null_map)[i])
+        if (in_out_null_map && !(*in_out_null_map)[i])
         {
             for (size_t col_idx = 0; col_idx < sample_block.columns(); ++col_idx)
             {
@@ -934,9 +935,9 @@ Chunk StorageEmbeddedRocksDB::getBySerializedKeys(const std::vector<std::string>
 
         if (statuses[i].IsNotFound())
         {
-            if (null_map)
+            if (in_out_null_map)
             {
-                (*null_map)[i] = 0;
+                (*in_out_null_map)[i] = 0;
                 for (size_t col_idx = 0; col_idx < sample_block.columns(); ++col_idx)
                 {
                     columns[col_idx]->insert(sample_block.getByPosition(col_idx).type->getDefault());

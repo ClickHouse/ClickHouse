@@ -95,9 +95,10 @@ public:
     Block getSampleBlock(const Names &) const override;
 
     /// Return chunk with data for given serialized keys.
-    /// If out_null_map is passed, fill it with 1/0 depending on key was/wasn't found. Result chunk may contain default values.
-    /// If out_null_map is not passed. Not found rows excluded from result chunk.
-    Chunk getBySerializedKeys(const std::vector<std::string> & keys, PaddedPODArray<UInt8> * out_null_map) const;
+    /// If in_out_null_map is passed, it should mark rows to skip on input (0 = skip, 1 = process).
+    /// On output, it will be updated with 1/0 depending on key was/wasn't found. Result chunk may contain default values.
+    /// If in_out_null_map is not passed, not found rows are excluded from result chunk.
+    Chunk getBySerializedKeys(const std::vector<std::string> & keys, PaddedPODArray<UInt8> * in_out_null_map) const;
 
     bool supportsDelete() const override { return true; }
 
