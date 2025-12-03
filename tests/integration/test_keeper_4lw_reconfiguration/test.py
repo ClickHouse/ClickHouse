@@ -72,6 +72,7 @@ def five_to_three_reconfig(started_cluster):
         ]
     }
     json_command = json.dumps(command)
+    print(json_command)
     print(zk.get("/keeper/config"))
 
     result_str = keeper_utils.send_4lw_cmd(started_cluster, node3, cmd="rcfg", port=9181, argument=json_command)
@@ -146,6 +147,7 @@ def three_to_five_reconfig(started_cluster):
         ]
     }
     json_command = json.dumps(command)
+    print(json_command)
     print(zk.get("/keeper/config"))
 
     result_str = keeper_utils.send_4lw_cmd(started_cluster, node5, cmd="rcfg", port=9181, argument=json_command)

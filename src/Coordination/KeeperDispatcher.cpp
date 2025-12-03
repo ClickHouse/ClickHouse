@@ -1244,6 +1244,11 @@ try
     Stopwatch total_watch;
     for (const auto & action_json : *actions)
     {
+        UInt64 time_left_for_action = max_action_wait_time_ms;
+        UInt64 time_spent = total_watch.elapsedMilliseconds();
+        UInt64 time_left_total = max_total_wait_time_ms > time_spent ? max_total_wait_time_ms - time_spent : 0;
+        UInt64 time_left = std::min(time_left_for_action, time_left_total);
+
         const auto & action_obj = action_json.extract<Poco::JSON::Object::Ptr>();
         if (action_obj->has("remove_members"))
         {
@@ -1270,7 +1275,6 @@ try
                         return false;
                     }
                 };
-                auto time_left = std::min(max_action_wait_time_ms, max_total_wait_time_ms - total_watch.elapsedMilliseconds());
                 executeClusterUpdateActionAndWaitConfigChange(remove_action, std::move(remove_callback), time_left);
             }
         }
@@ -1303,7 +1307,6 @@ try
                         return false;
                     }
                 };
-                auto time_left = std::min(max_action_wait_time_ms, max_total_wait_time_ms - total_watch.elapsedMilliseconds());
                 executeClusterUpdateActionAndWaitConfigChange(add_action, std::move(add_callback), time_left);
             }
         }
@@ -1336,7 +1339,6 @@ try
                     return false;
                 }
             };
-            auto time_left = std::min(max_action_wait_time_ms, max_total_wait_time_ms - total_watch.elapsedMilliseconds());
             executeClusterUpdateActionAndWaitConfigChange(transfer_action, std::move(check_callback), time_left);
         }
         else if (action_obj->has("set_priority"))
@@ -1373,7 +1375,6 @@ try
                         return false;
                     }
                 };
-                auto time_left = std::min(max_action_wait_time_ms, max_total_wait_time_ms - total_watch.elapsedMilliseconds());
                 executeClusterUpdateActionAndWaitConfigChange(update_priority_action, std::move(priority_callback), time_left);
             }
         }
