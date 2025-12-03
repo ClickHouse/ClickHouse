@@ -132,7 +132,7 @@ def started_cluster():
             with_minio=True,
             with_installed_binary=True,
             image="clickhouse/clickhouse-server",
-            tag="25.6.13.41",
+            tag="25.3.3.42",
             stay_alive=True,
             main_configs=[
                 "configs/remote_servers.xml",
@@ -2928,7 +2928,7 @@ def test_file_pruning_with_hive_style_partitioning(started_cluster):
 
     query_id = f"{table_name}_query_6"
     node_old = started_cluster.instances["dummy_old"]
-    if "25.6" not in node_old.query("SELECT version()"):
+    if "25.3" not in node_old.query("SELECT version()"):
         node_old.restart_with_original_version(clear_data_dir=True)
 
     node_old.query(
@@ -3102,7 +3102,7 @@ def test_file_pruning_with_hive_style_partitioning_2(started_cluster):
         )
 
     node_old = started_cluster.instances["dummy_old"]
-    if "25.6" not in node_old.query("SELECT version()"):
+    if "25.3" not in node_old.query("SELECT version()"):
         node_old.restart_with_original_version(clear_data_dir=True)
 
     node_old.query(
