@@ -1,13 +1,11 @@
-#include <Formats/BuffersReader.h>
-
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
+#include <Formats/BuffersReader.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Common/Exception.h>
 
 #include <optional>
-#include <string>
 #include <vector>
 
 
@@ -18,6 +16,7 @@ namespace ErrorCodes
 {
 extern const int INCORRECT_DATA;
 extern const int CANNOT_READ_ALL_DATA;
+extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 BuffersReader::BuffersReader(ReadBuffer & istr_, const Block & header_, std::optional<FormatSettings> format_settings_)
@@ -34,7 +33,11 @@ Block BuffersReader::getHeader() const
 }
 
 void readData(
-    const ISerialization & serialization, ColumnPtr & column, ReadBuffer & istr, UInt64 num_rows, const std::optional<FormatSettings> & format_settings)
+    const ISerialization & serialization,
+    ColumnPtr & column,
+    ReadBuffer & istr,
+    UInt64 num_rows,
+    const std::optional<FormatSettings> & format_settings)
 {
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
@@ -50,17 +53,12 @@ void readData(
 
 Block BuffersReader::read()
 {
-    Block res;
-
     if (istr.eof())
-        return res;
+        return Block{};
 
     /// Number of buffers (UInt64)
     UInt64 num_buffers = 0;
     readBinary(num_buffers, istr);
-
-    UInt64 num_rows = 0;
-    readBinary(num_rows, istr);
 
     if (num_buffers == 0)
         return Block{};
@@ -69,47 +67,48 @@ Block BuffersReader::read()
         throw Exception(
             ErrorCodes::INCORRECT_DATA, "Buffers block has {} buffers, but header has {} columns", num_buffers, header.columns());
 
+    if (num_buffers > 100'000'000uz)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Suspiciously many buffers in Buffers format: {}", num_buffers);
+
+    /// Number of rows (UInt64)
+    UInt64 num_rows = 0;
+    readBinary(num_rows, istr);
+
+    if (num_rows > 1'000'000'000'000uz)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Suspiciously many rows in Buffers format: {}", num_rows);
+
     /// Size of each buffer (UInt64 * number of buffers)
     std::vector<UInt64> buffer_sizes(num_buffers);
     for (size_t i = 0; i < num_buffers; ++i)
         readBinary(buffer_sizes[i], istr);
 
-    /// Read raw bytes for each buffer
-    std::vector<std::string> raw_buffers(num_buffers);
+    Block res;
     for (size_t i = 0; i < num_buffers; ++i)
     {
-        raw_buffers[i].resize(buffer_sizes[i]);
-        if (buffer_sizes[i] != 0)
-            istr.readStrict(raw_buffers[i].data(), buffer_sizes[i]);
-    }
+        auto column = header.getByPosition(i).cloneEmpty();
 
-    for (size_t i = 0; i < num_buffers; ++i)
-    {
-        const auto & header_col = header.getByPosition(i);
+        ColumnPtr & read_column = column.column;
 
-        ColumnWithTypeAndName column;
-        column.name = header_col.name;
-        column.type = header_col.type;
-
-        /// Create mutable column for deserialization
         auto serialization = column.type->getDefaultSerialization();
 
-        ColumnPtr read_column = column.type->createColumn(*serialization);
+        read_column = column.type->createColumn(*serialization);
 
-        ReadBufferFromString buffer(raw_buffers[i]);
+        const size_t before = istr.count();
+        readData(*serialization, read_column, istr, num_rows, format_settings);
+        const size_t after = istr.count();
 
-        readData(*serialization, read_column, buffer, num_rows, format_settings);
+        const size_t consumed = after - before;
 
-        if (buffer.available() != 0)
+        if (consumed != buffer_sizes[i])
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
-                "Cannot read all data for column {} of type {}, expected to read {} bytes, but read {} bytes",
+                "Cannot read all data for column {} of type {} from Buffer at position {}, expected to read {} bytes, but read {} bytes",
                 column.name,
                 column.type->getName(),
+                i,
                 buffer_sizes[i],
-                buffer.count());
+                consumed);
 
-        column.column = std::move(read_column);
         res.insert(std::move(column));
     }
 
