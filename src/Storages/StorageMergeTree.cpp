@@ -178,7 +178,6 @@ StorageMergeTree::StorageMergeTree(
           std::move(storage_settings_),
           false, /// require_part_metadata
           mode)
-    , reader(*this)
     , writer(*this)
     , merger_mutator(*this)
     , support_transaction(supportTransaction(getDisks(), log.load()))
@@ -328,7 +327,7 @@ void StorageMergeTree::read(
     const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower()
         && local_context->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree];
 
-    auto plan = reader.read(
+    auto plan = MergeTreeDataSelectExecutor(*this).read(
         column_names,
         storage_snapshot,
         query_info,

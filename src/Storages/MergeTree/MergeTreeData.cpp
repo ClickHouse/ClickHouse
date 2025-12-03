@@ -235,6 +235,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool fsync_part_directory;
     extern const MergeTreeSettingsUInt64 inactive_parts_to_delay_insert;
     extern const MergeTreeSettingsUInt64 inactive_parts_to_throw_insert;
+    extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
     extern const MergeTreeSettingsUInt64 max_avg_part_size_for_too_many_parts;
@@ -1085,6 +1086,18 @@ void MergeTreeData::checkProperties(
                 allow_reverse_key,
                 true /* allow_nullable_key */,
                 local_context);
+
+            if (projection.index_granularity || projection.index_granularity_bytes)
+            {
+                if (!canUseAdaptiveGranularity())
+                {
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Projection {} specifies index_granularity-related overrides, but the parent table uses fixed granularity. "
+                        "Such overrides are supported with adaptive granularity (e.g. index_granularity_bytes > 0)",
+                        projection.name);
+                }
+            }
             projections_names.insert(projection.name);
         }
     }
@@ -1092,11 +1105,13 @@ void MergeTreeData::checkProperties(
     for (const auto & projection : new_metadata.projections)
     {
         if (projection.with_parent_part_offset && !(*getSettings())[MergeTreeSetting::allow_part_offset_column_in_projections])
+        {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Projection {} uses `_part_offset` column, but MergeTree setting `allow_part_offset_column_in_projections` is disabled. "
                 "This projection cannot be used in this table",
                 projection.name);
+        }
     }
 
     String projection_with_parent_part_offset;
@@ -4573,13 +4588,14 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
     }
 }
 
-MergeTreeDataPartFormat MergeTreeData::choosePartFormat(size_t bytes_uncompressed, size_t rows_count, UInt32 part_level) const
+MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
+    size_t bytes_uncompressed, size_t rows_count, UInt32 part_level, ProjectionDescriptionRawPtr projection) const
 {
     using PartType = MergeTreeDataPartType;
     using PartStorageType = MergeTreeDataPartStorageType;
 
     String out_reason;
-    const auto settings = getSettings();
+    const auto settings = getSettings(projection);
     if (!canUsePolymorphicParts(*settings, out_reason))
         return {PartType::Wide, PartStorageType::Full};
 
@@ -6587,8 +6603,11 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
                 auto projection_storage = part->getDataPartStorage().getProjection(projection_name + proj_suffix);
                 if (projection_storage->existsFile("checksums.txt"))
                 {
-                    auto projection_part = const_cast<IMergeTreeDataPart &>(*part).getProjectionPartBuilder(
-                        projection_name, /* is_temp_projection */false).withPartFormatFromDisk().build();
+                    auto projection_part
+                        = const_cast<IMergeTreeDataPart &>(*part)
+                              .getProjectionPartBuilder(projection_name, /* projection */ nullptr, /* is_temp_projection */ false)
+                              .withPartFormatFromDisk()
+                              .build();
                     backup_projection(projection_part->getDataPartStorage(), *projection_part);
                 }
             }
@@ -10024,6 +10043,26 @@ MergeTreeData::PartitionIdToMinBlockPtr MergeTreeData::getMinDataVersionForEachP
     return std::make_shared<PartitionIdToMinBlock>(std::move(partition_to_min_data_version));
 }
 
+MergeTreeSettingsPtr MergeTreeData::getSettings(ProjectionDescriptionRawPtr projection) const
+{
+    auto data_settings = storage_settings.get();
+    if (projection)
+    {
+        if ((projection->index_granularity && (*projection->index_granularity != (*data_settings)[MergeTreeSetting::index_granularity]))
+            || (projection->index_granularity_bytes
+                && (*projection->index_granularity_bytes != (*data_settings)[MergeTreeSetting::index_granularity_bytes])))
+        {
+            auto new_data_settings = std::make_shared<MergeTreeSettings>(*data_settings);
+            if (projection->index_granularity)
+                (*new_data_settings)[MergeTreeSetting::index_granularity] = *projection->index_granularity;
+            if (projection->index_granularity_bytes)
+                (*new_data_settings)[MergeTreeSetting::index_granularity_bytes] = *projection->index_granularity_bytes;
+            data_settings = new_data_settings;
+        }
+    }
+    return data_settings;
+}
+
 StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr(bool bypass_metadata_cache) const /// NOLINT
 {
     if (bypass_metadata_cache)
@@ -10208,6 +10247,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     const auto & index_factory = MergeTreeIndexFactory::instance();
     MergedBlockOutputStream out(
         new_data_part,
+        getSettings(),
         metadata_snapshot,
         columns,
         index_factory.getMany(metadata_snapshot->getSecondaryIndices()),

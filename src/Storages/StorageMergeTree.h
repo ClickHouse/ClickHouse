@@ -126,7 +126,6 @@ private:
     std::mutex mutation_wait_mutex;
     std::condition_variable mutation_wait_event;
 
-    MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
     MergeTreeDataMergerMutator merger_mutator;
 
