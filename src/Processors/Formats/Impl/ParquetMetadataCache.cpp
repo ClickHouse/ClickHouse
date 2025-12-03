@@ -56,21 +56,26 @@ Lastly I will try to get the etag attribute if possible and use it
 as the final part of the hash key
 */
 {
+    auto log = getLogger("ParquetMetadataCache");
     /// Get the file name as the first part of the hash key
     String full_path = getFileNameFromReadBuffer(in);
+    LOG_DEBUG(log, "got file path: {}", full_path);
     String file_size;
     String etag;
     /// Get the file size as an optional part of the hash key
     if (auto maybe_size = tryGetFileSizeFromReadBuffer(in))
     {
         file_size = std::to_string(*maybe_size);
+        LOG_DEBUG(log, "got file size: {}", file_size);
     }
     /// Get the object metadata
     if (auto maybe_metadata = tryGetObjectMetadata(in))
     {
         etag = maybe_metadata->etag;
+        LOG_DEBUG(log, "got etag: {}", etag);
         return std::make_pair(full_path, etag);
     }
+    LOG_DEBUG(log, "unable to get etag so using file path and size");
     return std::make_pair(full_path, file_size);
 }
 }

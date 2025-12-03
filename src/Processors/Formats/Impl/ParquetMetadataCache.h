@@ -25,7 +25,7 @@ namespace ProfileEvents
     extern const Event ParquetMetadataCacheHits;
     extern const Event ParquetMetadataCacheWeightLost;
 }
-#
+
 namespace CurrentMetrics
 {
     extern const Metric ParquetMetadataCacheBytes;
@@ -35,22 +35,13 @@ namespace CurrentMetrics
 namespace DB
 {
 
-/*
-Right now this primarily supports downloaded parquet files.
-We rely on the file path and etag (entity tag) to identify the file uniquely for caching
-Later on, we can implement specific support for local parquet files, but this
-technically works if we pass additional unique data from the local file,
-like the modification time or size as the `etag` argument, but the caller has to
-know to do this.  There could be benefits to caching local parquet file metadata
-as we could potentially avoid IO on the local system.
-*/
 struct ParquetMetadataCacheKey
 {
     String file_path;
-    String etag;
+    String file_attr;
     bool operator==(const ParquetMetadataCacheKey & other) const
     {
-        return file_path == other.file_path && etag == other.etag;
+        return file_path == other.file_path && file_attr == other.file_attr;
     }
 };
 
@@ -59,7 +50,7 @@ struct ParquetMetadataCacheKeyHash
 {
     size_t operator()(const ParquetMetadataCacheKey & key) const
     {
-        return std::hash<String>{}(key.file_path + key.etag);
+        return std::hash<String>{}(key.file_path + key.file_attr);
     }
 };
 
@@ -82,12 +73,12 @@ private:
         if (!metadata)
             return 0;
         size_t size = sizeof(parquet::FileMetaData);
-        // Add schema size estimation
+        /// Add schema size estimation
         if (metadata->schema())
         {
             size += metadata->schema()->ToString().size();
         }
-        // Add row group metadata size estimation
+        /// Add row group metadata size estimation
         for (int i = 0; i < metadata->num_row_groups(); ++i)
         {
             size += sizeof(parquet::RowGroupMetaData);
@@ -118,11 +109,12 @@ public:
 
     ParquetMetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
         : Base(cache_policy, CurrentMetrics::ParquetMetadataCacheBytes, CurrentMetrics::ParquetMetadataCacheFiles, max_size_in_bytes, max_count, size_ratio)
+        , log(getLogger("ParquetMetadataCache"))
     {}
 
-    static ParquetMetadataCacheKey createKey(const String & file_path, const String & etag)
+    static ParquetMetadataCacheKey createKey(const String & file_path, const String & file_attr)
     {
-        return ParquetMetadataCacheKey{file_path, etag};
+        return ParquetMetadataCacheKey{file_path, file_attr};
     }
 
     /// Get or load Parquet metadata with caching
@@ -132,20 +124,29 @@ public:
         auto load_fn_wrapper = [&]()
         {
             auto metadata = load_fn();
+            LOG_DEBUG(log, "got metadata from cache {} | {}", key.file_path, key.file_attr);
             return std::make_shared<ParquetMetadataCacheCell>(metadata);
         };
         auto result = Base::getOrSet(key, load_fn_wrapper);
         if (result.second)
+        {
+            LOG_DEBUG(log, "cache miss {} | {}", key.file_path, key.file_attr);
             ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheMisses);
+        }
         else
+        {
+            LOG_DEBUG(log, "cache hit {} | {}", key.file_path, key.file_attr);
             ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheHits);
+        }
         return result.first->metadata;
     }
 
 private:
+    LoggerPtr log;
     /// Called for each individual entry being evicted from cache
     void onEntryRemoval(const size_t weight_loss, const MappedPtr & mapped_ptr) override
     {
+        LOG_DEBUG(log, "cache evict {} | {}", mapped_ptr->metadata->path(), mapped_ptr->metadata->file_attributes());
         ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheWeightLost, weight_loss);
         UNUSED(mapped_ptr);
     }
@@ -193,12 +194,13 @@ public:
 
     ParquetV3MetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
         : Base(cache_policy, CurrentMetrics::ParquetMetadataCacheBytes, CurrentMetrics::ParquetMetadataCacheFiles, max_size_in_bytes, max_count, size_ratio)
+        , log(getLogger("ParquetV3MetadataCache"))
     {}
 
     /// Same factory method as V2 - reuse the key creation logic
-    static ParquetMetadataCacheKey createKey(const String & file_path, const String & etag)
+    static ParquetMetadataCacheKey createKey(const String & file_path, const String & file_attr)
     {
-        return ParquetMetadataCacheKey{file_path, etag};
+        return ParquetMetadataCacheKey{file_path, file_attr};
     }
 
     /// Get or load V3 Parquet metadata with caching
@@ -208,21 +210,30 @@ public:
         auto load_fn_wrapper = [&]()
         {
             auto metadata = load_fn();
+            LOG_DEBUG(log, "got metadata from cache {} | {}", key.file_path, key.file_attr);
             return std::make_shared<ParquetV3MetadataCacheCell>(std::move(metadata));
         };
         auto result = Base::getOrSet(key, load_fn_wrapper);
         /// Reuse same ProfileEvents as V2 cache
         if (result.second)
+        {
+            LOG_DEBUG(log, "cache miss {} | {}", key.file_path, key.file_attr);
             ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheMisses);
+        }
         else
+        {
+            LOG_DEBUG(log, "cache hit {} | {}", key.file_path, key.file_attr);
             ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheHits);
+        }
         return result.first->metadata;
     }
 
 private:
+    LoggerPtr log;
     /// Called for each individual entry being evicted from cache
     void onEntryRemoval(const size_t weight_loss, const MappedPtr & mapped_ptr) override
     {
+        LOG_DEBUG(log, "cache evict {} | {}", mapped_ptr->metadata.path(), mapped_ptr->metadata.file_attributes());
         ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheWeightLost, weight_loss);
         UNUSED(mapped_ptr);
     }
@@ -230,8 +241,7 @@ private:
 
 using ParquetMetadataCachePtr = std::shared_ptr<ParquetMetadataCache>;
 using ParquetV3MetadataCachePtr = std::shared_ptr<ParquetV3MetadataCache>;
-/// Utility function to extract file path and ETag from ReadBuffer for cache key creation
-/// Returns pair of (file_path, etag) - works with S3 ReadBuffers
+
 std::pair<String, String> extractObjectAttributes(ReadBuffer & in);
 std::optional<ObjectMetadata> tryGetObjectMetadata(ReadBuffer & in);
 
