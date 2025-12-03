@@ -2007,7 +2007,7 @@ class ClickHouseCluster:
             with_remote_database_disk = False
 
         if with_remote_database_disk is None:
-            with_remote_database_disk = os.getenv("CLICKHOUSE_USE_DATABASE_DISK")
+            with_remote_database_disk = int(os.getenv("CLICKHOUSE_USE_DATABASE_DISK"))
 
         if with_remote_database_disk:
             logging.debug(f"Instance {name}, with_remote_database_disk enabled")
@@ -2603,6 +2603,16 @@ class ClickHouseCluster:
                 "bash",
                 "-c",
                 "rm {}".format(path),
+            ],
+        )
+
+    def remove_directory_from_container(self, container_id, path):
+        self.exec_in_container(
+            container_id,
+            [
+                "bash",
+                "-c",
+                "rm -rf {}".format(path),
             ],
         )
 
