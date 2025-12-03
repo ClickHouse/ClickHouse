@@ -201,7 +201,6 @@ Allows the entire tuple to be `NULL`, as opposed to `Tuple(Nullable(T1), Nullabl
 | `Nullable(Tuple(String, Int64))`           | ✅                | ❌                   |
 | `Tuple(Nullable(String), Nullable(Int64))` | ❌                | ✅                   |
 
-
 Example:
 
 ```sql
@@ -217,7 +216,7 @@ INSERT INTO test VALUES (1, ('hello', 42)), (2, NULL);
 SELECT * FROM test WHERE data IS NULL;
 ```
 
-```
+```txt
  ┌─id─┬─data─┐
  │  2 │ ᴺᵁᴸᴸ │
  └────┴──────┘
