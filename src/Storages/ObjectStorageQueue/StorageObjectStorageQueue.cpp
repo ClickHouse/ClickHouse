@@ -1,17 +1,13 @@
 #include <optional>
 
-#include <Common/Macros.h>
-#include <Common/ProfileEvents.h>
-#include <Common/FailPoint.h>
-#include <Common/randomSeed.h>
-#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
+#include <Formats/FormatFactory.h>
 #include <IO/CompressionMethod.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -21,19 +17,23 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Sources/NullSource.h>
-#include <Formats/FormatFactory.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
-#include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadataFactory.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
+#include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/prepareReadingFromFormat.h>
-#include <Storages/ObjectStorage/Utils.h>
-#include <Storages/AlterCommands.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/FailPoint.h>
+#include <Common/Macros.h>
+#include <Common/ProfileEvents.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
+#include <Common/randomSeed.h>
 
 #include <filesystem>
 
@@ -104,6 +104,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsUInt64 min_insert_block_size_rows_for_materialized_views;
     extern const ObjectStorageQueueSettingsUInt64 min_insert_block_size_bytes_for_materialized_views;
     extern const ObjectStorageQueueSettingsBool use_persistent_processing_nodes;
+    extern const ObjectStorageQueueSettingsBool commit_on_select;
     extern const ObjectStorageQueueSettingsUInt32 persistent_processing_node_ttl_seconds;
     extern const ObjectStorageQueueSettingsUInt32 after_processing_retries;
     extern const ObjectStorageQueueSettingsString after_processing_move_uri;
@@ -126,6 +127,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int FAULT_INJECTED;
     extern const int KEEPER_EXCEPTION;
+    extern const int TABLE_ALREADY_EXISTS;
 }
 
 namespace
@@ -147,10 +149,11 @@ namespace
 
         if (queue_settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] > queue_settings[ObjectStorageQueueSetting::cleanup_interval_max_ms])
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Setting `cleanup_interval_min_ms` ({}) must be less or equal to `cleanup_interval_max_ms` ({})",
-                            queue_settings[ObjectStorageQueueSetting::cleanup_interval_min_ms].value,
-                            queue_settings[ObjectStorageQueueSetting::cleanup_interval_max_ms].value);
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting `cleanup_interval_min_ms` ({}) must be less or equal to `cleanup_interval_max_ms` ({})",
+                queue_settings[ObjectStorageQueueSetting::cleanup_interval_min_ms].value,
+                queue_settings[ObjectStorageQueueSetting::cleanup_interval_max_ms].value);
         }
         if (queue_settings[ObjectStorageQueueSetting::after_processing] == ObjectStorageQueueAction::MOVE)
         {
@@ -269,6 +272,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         .after_processing_tag_key = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_tag_key],
         .after_processing_tag_value = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_tag_value],
     })
+    , commit_on_select((*queue_settings_)[ObjectStorageQueueSetting::commit_on_select])
     , min_insert_block_size_rows_for_materialized_views((*queue_settings_)[ObjectStorageQueueSetting::min_insert_block_size_rows_for_materialized_views])
     , min_insert_block_size_bytes_for_materialized_views((*queue_settings_)[ObjectStorageQueueSetting::min_insert_block_size_bytes_for_materialized_views])
     , configuration{configuration_}
@@ -473,7 +477,8 @@ public:
         SharedHeader sample_block,
         ReadFromFormatInfo info_,
         std::shared_ptr<StorageObjectStorageQueue> storage_,
-        size_t max_block_size_)
+        size_t max_block_size_,
+        bool commit_once_processed_)
         : SourceStepWithFilter(
             std::move(sample_block),
             column_names_,
@@ -483,13 +488,15 @@ public:
         , info(std::move(info_))
         , storage(std::move(storage_))
         , max_block_size(max_block_size_)
+        , commit_once_processed(commit_once_processed_)
     {
     }
 
 private:
-    ReadFromFormatInfo info;
-    std::shared_ptr<StorageObjectStorageQueue> storage;
-    size_t max_block_size;
+    const ReadFromFormatInfo info;
+    const std::shared_ptr<StorageObjectStorageQueue> storage;
+    const size_t max_block_size;
+    const bool commit_once_processed;
 
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> iterator;
 
@@ -540,6 +547,11 @@ void StorageObjectStorageQueue::read(
 
     auto this_ptr = std::static_pointer_cast<StorageObjectStorageQueue>(shared_from_this());
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context));
+    bool do_commit_on_select;
+    {
+        std::lock_guard lock(mutex);
+        do_commit_on_select = commit_on_select;
+    }
 
     auto reading = std::make_unique<ReadFromObjectStorageQueue>(
         column_names,
@@ -549,7 +561,8 @@ void StorageObjectStorageQueue::read(
         std::make_shared<const Block>(read_from_format_info.source_header),
         read_from_format_info,
         std::move(this_ptr),
-        max_block_size);
+        max_block_size,
+        do_commit_on_select);
 
     query_plan.addStep(std::move(reading));
 }
@@ -574,7 +587,7 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
             iterator,
             max_block_size,
             context,
-            true /* commit_once_processed */));
+            commit_once_processed));
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     if (pipe.empty())
@@ -964,7 +977,8 @@ void StorageObjectStorageQueue::commit(
         throw Exception(
             ErrorCodes::KEEPER_EXCEPTION,
             "Failed to commit files with {} retries, last error message: {}",
-            settings[Setting::keeper_max_retries].value, zk_retry.getLastKeeperErrorMessage());
+            settings[Setting::keeper_max_retries].value,
+            zk_retry.getLastKeeperErrorMessage());
     }
 
     chassert(code.value() == Coordination::Error::ZOK || Coordination::isUserError(code.value()));
@@ -1010,8 +1024,7 @@ UInt64 StorageObjectStorageQueue::generateCommitID()
     return rng();
 }
 
-static const std::unordered_set<std::string_view> changeable_settings_unordered_mode
-{
+static const std::unordered_set<std::string_view> changeable_settings_unordered_mode{
     "processing_threads_num",
     /// Is not allowed to change on fly:
     /// "parallel_inserts",
@@ -1043,10 +1056,10 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "after_processing_move_container",
     "after_processing_tag_key",
     "after_processing_tag_value",
+    "commit_on_select",
 };
 
-static const std::unordered_set<std::string_view> changeable_settings_ordered_mode
-{
+static const std::unordered_set<std::string_view> changeable_settings_ordered_mode{
     "loading_retries",
     "after_processing",
     "polling_min_timeout_ms",
@@ -1073,6 +1086,7 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "after_processing_move_container",
     "after_processing_tag_key",
     "after_processing_tag_value",
+    "commit_on_select",
 };
 
 static std::string normalizeSetting(const std::string & name)
@@ -1359,6 +1373,8 @@ void StorageObjectStorageQueue::alter(
                 after_processing_settings.after_processing_tag_key = change.value.safeGet<String>();
             else if (change.name == "after_processing_tag_value")
                 after_processing_settings.after_processing_tag_value = change.value.safeGet<String>();
+            else if (change.name == "commit_on_select")
+                commit_on_select = change.value.safeGet<UInt64>();
         }
 
         files_metadata->updateSettings(changed_settings);
@@ -1461,6 +1477,7 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
         settings[ObjectStorageQueueSetting::list_objects_batch_size] = list_objects_batch_size;
         settings[ObjectStorageQueueSetting::min_insert_block_size_rows_for_materialized_views] = min_insert_block_size_rows_for_materialized_views;
         settings[ObjectStorageQueueSetting::min_insert_block_size_bytes_for_materialized_views] = min_insert_block_size_bytes_for_materialized_views;
+        settings[ObjectStorageQueueSetting::commit_on_select] = commit_on_select;
     }
 
     return settings;
