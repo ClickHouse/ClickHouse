@@ -80,6 +80,15 @@ def parse_args():
         default=None,
         type=int,
     )
+    parser.add_argument(
+        "--param",
+        help=(
+            "Optional. Comma-separated KEY=VALUE pairs to inject as environment "
+            "variables for pytest (e.g. --param PYTEST_ADDOPTS=-vv,CUSTOM_FLAG=1)"
+        ),
+        type=str,
+        default="",
+    )
     return parser.parse_args()
 
 
@@ -150,6 +159,16 @@ def main():
     is_parallel = False
     is_sequential = False
     is_targeted_check = False
+
+    if args.param:
+        for item in args.param.split(","):
+            print(f"Setting env variable: {item}")
+            key, _, value = item.partition("=")
+            key = key.strip()
+            if not key:
+                continue
+            os.environ[key] = value.strip()
+
     java_path = Shell.get_output(
         "update-alternatives --config java | sed -n 's/.*(providing \/usr\/bin\/java): //p'",
         verbose=True,
@@ -235,7 +254,7 @@ def main():
             for file in changed_files:
                 if (
                     file.startswith("tests/integration/test")
-                    and Path(file).name.startswith("test_")
+                    and Path(file).name.startswith("test")
                     and file.endswith(".py")
                     and Path(file).is_file()
                 ):
@@ -257,6 +276,11 @@ def main():
                 verbose=True,
                 strict=True,
             )
+
+    if is_bugfix_validation or is_flaky_check:
+        assert (
+            changed_test_modules
+        ), "No changed test modules found, either job must be skipped or bug in changed test search logic"
 
     Shell.check(f"chmod +x {clickhouse_path}", verbose=True, strict=True)
     Shell.check(f"{clickhouse_path} --version", verbose=True, strict=True)
