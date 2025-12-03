@@ -59,7 +59,7 @@ public:
     const String & getKerberosRealm() const { return kerberos_realm; }
     void setKerberosRealm(const String & realm) { kerberos_realm = realm; }
 
-    /// Sets named collection fo JWK.
+    /// Sets named collection for JWKS.
     const String & getNamedCollection() const { return named_collection; }
     void setNamedCollection(const String & named_collection_) { named_collection = named_collection_; }
 
