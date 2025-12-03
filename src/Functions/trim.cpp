@@ -53,11 +53,11 @@ public:
             String trim_characters_string;
             if (const ColumnString * col_trim_characters = checkAndGetColumn<ColumnString>(arguments[1].column.get()))
             {
-                trim_characters_string = col_trim_characters->getDataAt(0).toString();
+                trim_characters_string = String(col_trim_characters->getDataAt(0));
             }
             else if (const ColumnConst * col_trim_characters_const = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
             {
-                trim_characters_string = col_trim_characters_const->getDataAt(0).toString();
+                trim_characters_string = String(col_trim_characters_const->getDataAt(0));
             }
             else
             {
