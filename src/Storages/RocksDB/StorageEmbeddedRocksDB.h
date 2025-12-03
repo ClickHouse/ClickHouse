@@ -88,7 +88,7 @@ public:
 
     std::shared_ptr<rocksdb::Statistics> getRocksDBStatistics() const;
     std::vector<rocksdb::Status> multiGet(const std::vector<rocksdb::Slice> & slices_keys, std::vector<String> & values) const;
-    Names getPrimaryKey() const override { return primary_key; }
+    Names getPrimaryKey() const override { return primary_keys; }
 
     Chunk getByKeys(const ColumnsWithTypeAndName & keys, const Names &, PaddedPODArray<UInt8> & null_map, IColumn::Offsets & /* out_offsets */) const override;
 
@@ -126,7 +126,7 @@ private:
     LoggerPtr log;
 
     MultiVersion<RocksDBSettings> storage_settings;
-    const Names primary_key;
+    const Names primary_keys;
     std::vector<size_t> primary_key_pos;
     DataTypes primary_key_types;
     std::vector<size_t> value_column_pos;

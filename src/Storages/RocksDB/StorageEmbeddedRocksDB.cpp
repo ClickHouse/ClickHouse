@@ -196,14 +196,14 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(
     LoadingStrictnessLevel mode,
     ContextPtr context_,
     std::unique_ptr<RocksDBSettings> settings_,
-    Names primary_key_,
+    Names primary_keys_,
     Int32 ttl_,
     String rocksdb_dir_,
     bool read_only_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , log(getLogger(fmt::format("StorageEmbeddedRocksDB ({})", getStorageID().getNameForLogs())))
-    , primary_key{std::move(primary_key_)}
+    , primary_keys{std::move(primary_keys_)}
     , rocksdb_dir(std::move(rocksdb_dir_))
     , ttl(ttl_)
     , read_only(read_only_)
@@ -234,17 +234,17 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(
     }
 
     const auto sample_block = getInMemoryMetadataPtr()->getSampleBlock();
-    primary_key_pos.reserve(primary_key.size());
-    primary_key_types.reserve(primary_key.size());
+    primary_key_pos.reserve(primary_keys.size());
+    primary_key_types.reserve(primary_keys.size());
     std::vector<bool> is_pk(sample_block.columns());
-    for (const auto & key_name : primary_key)
+    for (const auto & key_name : primary_keys)
     {
         const size_t key_pos{sample_block.getPositionByName(key_name)};
         primary_key_pos.push_back(key_pos);
         is_pk[key_pos] = true;
         primary_key_types.push_back(sample_block.getByPosition(key_pos).type);
     }
-    value_column_pos.reserve(primary_key.size() - primary_key_pos.size());
+    value_column_pos.reserve(primary_keys.size() - primary_key_pos.size());
     for (size_t i = 0; i < is_pk.size(); ++i)
     {
         if (!is_pk[i])
@@ -342,7 +342,7 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
     }
 
     chassert(commands.front().type == MutationCommand::Type::UPDATE);
-    for (const auto & key_name : primary_key)
+    for (const auto & key_name : primary_keys)
     {
         if (commands.front().column_to_update_expression.contains(key_name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated (cannot update column {})", key_name);
@@ -851,8 +851,8 @@ Chunk StorageEmbeddedRocksDB::getByKeys(
     PaddedPODArray<UInt8> & null_map,
     IColumn::Offsets & /* out_offsets */) const
 {
-    if (keys.size() != primary_key.size())
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Key column number mismatch, expected {}, got {}.", primary_key.size(), keys.size());
+    if (keys.size() != primary_keys.size())
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Key column number mismatch, expected {}, got {}.", primary_keys.size(), keys.size());
 
     for (size_t i = 0; i < keys.size(); ++i)
     {
