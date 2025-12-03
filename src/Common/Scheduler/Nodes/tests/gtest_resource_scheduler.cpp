@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 
-#include "Common/setThreadName.h"
 #include <Common/Scheduler/Nodes/SemaphoreConstraint.h>
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 
@@ -19,7 +18,7 @@ struct ResourceTest : public ResourceTestBase
 
     ResourceTest()
     {
-        scheduler.start(ThreadName::TEST_SCHEDULER);
+        scheduler.start();
     }
 
     ~ResourceTest()
@@ -181,7 +180,7 @@ TEST(SchedulerRoot, Budget)
 TEST(SchedulerRoot, Cancel)
 {
     // This barrier is used in the scheduler thread, so we should not destroy it before thread in ~ResourceTest
-    std::barrier<std::__empty_completion> destruct_sync(2);
+    std::barrier destruct_sync(2);
 
     ResourceTest t;
 
@@ -192,7 +191,7 @@ TEST(SchedulerRoot, Cancel)
     auto b = r1.addQueue("/prio/B", "<priority>2</priority>");
     r1.registerResource();
 
-    std::barrier<std::__empty_completion> sync(2);
+    std::barrier sync(2);
     std::thread consumer1([&]
     {
         MyRequest request(1,[&]

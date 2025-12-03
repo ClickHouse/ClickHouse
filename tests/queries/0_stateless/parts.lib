@@ -39,27 +39,7 @@ function wait_for_delete_inactive_parts()
     return 2
 }
 
-function wait_for_block_allocated()
-{
-    local path=$1
-    local block_number=$2
-
-    for _ in {0..100}; do
-        sleep 0.3
-        res=`$CLICKHOUSE_CLIENT --query "
-            SYSTEM FLUSH LOGS zookeeper_log;
-            SELECT count() FROM system.zookeeper_log WHERE type = 'Response' AND op_num = 'Create' AND path = '$path/block-' AND path_created = '$path/$block_number';
-        "`
-        if [[ "$res" -gt "0" ]]; then
-            return
-        fi
-    done
-
-    echo "Failed to wait for block $block_number allocation at path $path/block-"
-}
-
 export -f wait_for_delete_empty_parts
 export -f wait_for_delete_inactive_parts
-export -f wait_for_block_allocated
 
 # vi: ft=bash

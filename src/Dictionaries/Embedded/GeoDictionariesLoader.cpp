@@ -1,8 +1,8 @@
-#include <Dictionaries/Embedded/GeoDictionariesLoader.h>
+#include "GeoDictionariesLoader.h"
 
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Dictionaries/Embedded/GeodataProviders/HierarchiesProvider.h>
-#include <Dictionaries/Embedded/GeodataProviders/NamesProvider.h>
+#include "GeodataProviders/HierarchiesProvider.h"
+#include "GeodataProviders/NamesProvider.h"
 
 namespace DB
 {

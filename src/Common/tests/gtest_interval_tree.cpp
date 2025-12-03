@@ -84,7 +84,7 @@ template <typename IntervalType, typename Value>
 std::map<IntervalType, Value> intervalMapFindIntervals(const IntervalMap<IntervalType, Value> & interval_set, typename IntervalType::IntervalStorageType point)
 {
     std::map<IntervalType, Value> result;
-    CollectIntervalsMapCallback<IntervalType, Value> callback(result);
+    CollectIntervalsMapCallback callback(result);
 
     interval_set.find(point, callback);
 
