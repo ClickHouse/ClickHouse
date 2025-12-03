@@ -14,6 +14,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
+#include <Common/thread_local_rng.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperReconfiguration.h>
 
@@ -1180,7 +1181,7 @@ void KeeperDispatcher::checkReconfigCommandActions(Poco::JSON::Object::Ptr recon
                     "Reconfigure command 'transfer_leadership' action must have non-empty list of server ids");
             }
 
-            /// Leader is going to be transfered, reset state model
+            /// Leader is going to be transferred, reset state model
             for (auto & [server_id, _] : state_model)
             {
                 state_model[server_id] = false;
@@ -1312,7 +1313,7 @@ try
             std::vector<int32_t> leader_ids;
             for (const auto & leader_id_json : *potential_laders)
                 leader_ids.push_back(leader_id_json.convert<int32_t>());
-            std::shuffle(leader_ids.begin(), leader_ids.end(), std::mt19937{std::random_device{}()});
+            std::shuffle(leader_ids.begin(), leader_ids.end(), thread_local_rng);
 
             int32_t new_leader_id = leader_ids.front();
             TransferLeadership transfer_action{new_leader_id};
