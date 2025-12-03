@@ -499,7 +499,8 @@ public:
             ///                /             \
             ///     "" (leaf, USAGE)        "bar" (SELECT)
             const auto & [node, _] = tryGetLeafOrPrefix(name, /* return_parent_node= */ true);
-            return node.flags.contains(flags_to_check);
+            /// Check min_flags_with_children because wildcard allows to grant for all children.
+            return node.min_flags_with_children.contains(flags_to_check);
         }
 
         const auto & [node, final] = tryGetLeafOrPrefix(name);
