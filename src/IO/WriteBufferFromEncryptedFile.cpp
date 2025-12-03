@@ -27,7 +27,7 @@ WriteBufferFromEncryptedFile::~WriteBufferFromEncryptedFile()
         LOG_INFO(log, "WriteBufferFromEncryptedFile is not finalized in destructor");
 }
 
-void WriteBufferFromEncryptedFile::finalFlushBefore()
+void WriteBufferFromEncryptedFile::finalizeBefore()
 {
     /// If buffer has pending data - write it.
     next();

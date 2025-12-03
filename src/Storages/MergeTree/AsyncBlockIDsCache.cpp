@@ -4,7 +4,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Interpreters/Context.h>
 
 #include <unordered_set>
 
@@ -71,7 +70,7 @@ AsyncBlockIDsCache<TStorage>::AsyncBlockIDsCache(TStorage & storage_)
     , log_name(storage.getStorageID().getFullTableName() + " (AsyncBlockIDsCache)")
     , log(getLogger(log_name))
 {
-    task = storage.getContext()->getSchedulePool().createTask(storage.getStorageID(), log_name, [this]{ update(); });
+    task = storage.getContext()->getSchedulePool().createTask(log_name, [this]{ update(); });
 }
 
 template <typename TStorage>

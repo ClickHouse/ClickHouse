@@ -4,7 +4,6 @@ sidebar_label: 'SimpleAggregateFunction'
 sidebar_position: 48
 slug: /sql-reference/data-types/simpleaggregatefunction
 title: 'SimpleAggregateFunction Type'
-doc_type: 'reference'
 ---
 
 # SimpleAggregateFunction Type
@@ -48,9 +47,7 @@ SimpleAggregateFunction(aggregate_function_name, types_of_arguments...)
 The following aggregate functions are supported:
 
 - [`any`](/sql-reference/aggregate-functions/reference/any)
-- [`any_respect_nulls`](/sql-reference/aggregate-functions/reference/any)
 - [`anyLast`](/sql-reference/aggregate-functions/reference/anylast)
-- [`anyLast_respect_nulls`](/sql-reference/aggregate-functions/reference/anylast)
 - [`min`](/sql-reference/aggregate-functions/reference/min)
 - [`max`](/sql-reference/aggregate-functions/reference/max)
 - [`sum`](/sql-reference/aggregate-functions/reference/sum)

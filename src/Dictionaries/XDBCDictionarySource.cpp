@@ -1,7 +1,6 @@
-#include <Dictionaries/XDBCDictionarySource.h>
+#include "XDBCDictionarySource.h"
 
 #include <Columns/ColumnString.h>
-#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
@@ -12,9 +11,9 @@
 #include <Common/LocalDateTime.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
-#include <Dictionaries/DictionarySourceFactory.h>
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/readInvalidateQuery.h>
+#include "DictionarySourceFactory.h"
+#include "DictionaryStructure.h"
+#include "readInvalidateQuery.h"
 #include <Common/escapeForFileName.h>
 #include <Core/ServerSettings.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -127,41 +126,33 @@ std::string XDBCDictionarySource::getUpdateFieldAndDate()
 }
 
 
-BlockIO XDBCDictionarySource::loadAll()
+QueryPipeline XDBCDictionarySource::loadAll()
 {
     LOG_TRACE(log, fmt::runtime(load_all_query));
-    BlockIO io;
-    io.pipeline = loadFromQuery(bridge_url, sample_block, load_all_query);
-    return io;
+    return loadFromQuery(bridge_url, sample_block, load_all_query);
 }
 
 
-BlockIO XDBCDictionarySource::loadUpdatedAll()
+QueryPipeline XDBCDictionarySource::loadUpdatedAll()
 {
     std::string load_query_update = getUpdateFieldAndDate();
 
     LOG_TRACE(log, fmt::runtime(load_query_update));
-    BlockIO io;
-    io.pipeline = loadFromQuery(bridge_url, sample_block, load_query_update);
-    return io;
+    return loadFromQuery(bridge_url, sample_block, load_query_update);
 }
 
 
-BlockIO XDBCDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline XDBCDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     const auto query = query_builder.composeLoadIdsQuery(ids);
-    BlockIO io;
-    io.pipeline = loadFromQuery(bridge_url, sample_block, query);
-    return io;
+    return loadFromQuery(bridge_url, sample_block, query);
 }
 
 
-BlockIO XDBCDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+QueryPipeline XDBCDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
-    BlockIO io;
-    io.pipeline = loadFromQuery(bridge_url, sample_block, query);
-    return io;
+    return loadFromQuery(bridge_url, sample_block, query);
 }
 
 
@@ -216,8 +207,7 @@ std::string XDBCDictionarySource::doInvalidateQuery(const std::string & request)
     for (const auto & [name, value] : url_params)
         invalidate_url.addQueryParameter(name, value);
 
-    QueryPipeline pipeline = loadFromQuery(invalidate_url, invalidate_sample_block, request);
-    return readInvalidateQuery(pipeline);
+    return readInvalidateQuery(QueryPipeline(loadFromQuery(invalidate_url, invalidate_sample_block, request)));
 }
 
 
@@ -247,8 +237,7 @@ QueryPipeline XDBCDictionarySource::loadFromQuery(const Poco::URI & uri, const B
 
 void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const String & /*name*/,
-                                   const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const DictionaryStructure & dict_struct,
                                    const Poco::Util::AbstractConfiguration & config,
                                    const std::string & config_prefix,
                                    Block & sample_block,
@@ -288,8 +277,7 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
 
 void registerDictionarySourceJDBC(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const String & /*name*/,
-                                 const DictionaryStructure & /* dict_struct */,
+    auto create_table_source = [=](const DictionaryStructure & /* dict_struct */,
                                  const Poco::Util::AbstractConfiguration & /* config */,
                                  const std::string & /* config_prefix */,
                                  Block & /* sample_block */,

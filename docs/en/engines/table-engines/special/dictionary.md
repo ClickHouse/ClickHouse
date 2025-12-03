@@ -4,11 +4,10 @@ description: 'The `Dictionary` engine displays the dictionary data as a ClickHou
 sidebar_label: 'Dictionary'
 sidebar_position: 20
 slug: /engines/table-engines/special/dictionary
-title: 'Dictionary table engine'
-doc_type: 'reference'
+title: 'Dictionary Table Engine'
 ---
 
-# Dictionary table engine
+# Dictionary Table Engine
 
 The `Dictionary` engine displays the [dictionary](../../../sql-reference/dictionaries/index.md) data as a ClickHouse table.
 
@@ -69,7 +68,7 @@ WHERE name = 'products'
 └──────────┴──────┴────────┴─────────────────┴─────────────────┴─────────────────┴───────────────┴─────────────────┘
 ```
 
-You can use the [dictGet\*](/sql-reference/functions/ext-dict-functions) functions to get the dictionary data in this format.
+You can use the [dictGet\*](/sql-reference/functions/ext-dict-functions#dictget-dictgetordefault-dictgetornull) function to get the dictionary data in this format.
 
 This view isn't helpful when you need to get raw data, or when performing a `JOIN` operation. For these cases, you can use the `Dictionary` engine, which displays the dictionary data in a table.
 
@@ -82,7 +81,7 @@ CREATE TABLE %table_name% (%fields%) engine = Dictionary(%dictionary_name%)`
 Usage example:
 
 ```sql
-CREATE TABLE products (product_id UInt64, title String) ENGINE = Dictionary(products);
+create table products (product_id UInt64, title String) Engine = Dictionary(products);
 ```
 
       Ok
@@ -90,7 +89,7 @@ CREATE TABLE products (product_id UInt64, title String) ENGINE = Dictionary(prod
 Take a look at what's in the table.
 
 ```sql
-SELECT * FROM products LIMIT 1;
+select * from products limit 1;
 ```
 
 ```text

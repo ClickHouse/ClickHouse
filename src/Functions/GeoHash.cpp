@@ -341,13 +341,20 @@ UInt64 geohashesInBox(const GeohashesInBoxPreparedArgs & args, char * out)
                 out);
 
             out += length;
+            *out = '\0';
+            ++out;
+
             ++items;
         }
     }
 
     if (items == 0)
     {
-        geohashEncodeImpl(args.longitude_min, args.latitude_min, args.precision, out);
+        size_t length = geohashEncodeImpl(args.longitude_min, args.latitude_min, args.precision, out);
+        out += length;
+        *out = '\0';
+        ++out;
+
         ++items;
     }
 

@@ -44,55 +44,55 @@ SHOW CREATE TABLE 01902_db_repr.t_merge
 CREATE TABLE `01902_db_repr`.t_merge\n(\n    `n` Int8\n)\nENGINE = Merge(REGEXP(\'^01902_db_repr\'), \'^t\')
 SELECT _database, _table, n FROM merge(REGEXP(^01902_db_repr), ^t) ORDER BY _database, _table, n
 01902_db_repr	t	0
-01902_db_repr	t	0
-01902_db_repr	t	1
 01902_db_repr	t	1
 01902_db_repr	t	2
-01902_db_repr	t	2
-01902_db_repr	t	3
 01902_db_repr	t	3
 01902_db_repr	t	4
-01902_db_repr	t	4
-01902_db_repr	t	5
 01902_db_repr	t	5
 01902_db_repr	t	6
-01902_db_repr	t	6
-01902_db_repr	t	7
 01902_db_repr	t	7
 01902_db_repr	t	8
-01902_db_repr	t	8
 01902_db_repr	t	9
-01902_db_repr	t	9
-01902_db_repr	t1	0
-01902_db_repr	t1	1
-01902_db_repr	t1	2
-01902_db_repr	t1	3
-01902_db_repr	t1	4
-01902_db_repr	t1	5
-01902_db_repr	t1	6
-01902_db_repr	t1	7
-01902_db_repr	t1	8
-01902_db_repr	t1	9
-01902_db_repr	t2	0
-01902_db_repr	t2	1
-01902_db_repr	t2	2
-01902_db_repr	t2	3
-01902_db_repr	t2	4
-01902_db_repr	t2	5
-01902_db_repr	t2	6
-01902_db_repr	t2	7
-01902_db_repr	t2	8
-01902_db_repr	t2	9
-01902_db_repr	t3	0
-01902_db_repr	t3	1
-01902_db_repr	t3	2
-01902_db_repr	t3	3
-01902_db_repr	t3	4
-01902_db_repr	t3	5
-01902_db_repr	t3	6
-01902_db_repr	t3	7
-01902_db_repr	t3	8
-01902_db_repr	t3	9
+01902_db_repr	t_merge	0
+01902_db_repr	t_merge	0
+01902_db_repr	t_merge	0
+01902_db_repr	t_merge	0
+01902_db_repr	t_merge	1
+01902_db_repr	t_merge	1
+01902_db_repr	t_merge	1
+01902_db_repr	t_merge	1
+01902_db_repr	t_merge	2
+01902_db_repr	t_merge	2
+01902_db_repr	t_merge	2
+01902_db_repr	t_merge	2
+01902_db_repr	t_merge	3
+01902_db_repr	t_merge	3
+01902_db_repr	t_merge	3
+01902_db_repr	t_merge	3
+01902_db_repr	t_merge	4
+01902_db_repr	t_merge	4
+01902_db_repr	t_merge	4
+01902_db_repr	t_merge	4
+01902_db_repr	t_merge	5
+01902_db_repr	t_merge	5
+01902_db_repr	t_merge	5
+01902_db_repr	t_merge	5
+01902_db_repr	t_merge	6
+01902_db_repr	t_merge	6
+01902_db_repr	t_merge	6
+01902_db_repr	t_merge	6
+01902_db_repr	t_merge	7
+01902_db_repr	t_merge	7
+01902_db_repr	t_merge	7
+01902_db_repr	t_merge	7
+01902_db_repr	t_merge	8
+01902_db_repr	t_merge	8
+01902_db_repr	t_merge	8
+01902_db_repr	t_merge	8
+01902_db_repr	t_merge	9
+01902_db_repr	t_merge	9
+01902_db_repr	t_merge	9
+01902_db_repr	t_merge	9
 01902_db_repr1	t1	0
 01902_db_repr1	t1	1
 01902_db_repr1	t1	2
@@ -193,66 +193,3 @@ SELECT _database, _table, n FROM merge(currentDatabase(), ^t) ORDER BY _database
 01902_db_repr1	t1	7
 01902_db_repr1	t1	8
 01902_db_repr1	t1	9
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
-\N
