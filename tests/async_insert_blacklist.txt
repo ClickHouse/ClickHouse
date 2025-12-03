@@ -36,6 +36,7 @@
     Async inserts with 'implicit_transaction' are not supported. (NOT_IMPLEMENTED)
 01168_mutations_isolation
 01168_mutations_isolation_2
+01168_mutations_isolation_3
     Cannot execute query because current transaction failed. Expecting ROLLBACK statement. (INVALID_TRANSACTION
 01169_alter_partition_isolation_stress
 
