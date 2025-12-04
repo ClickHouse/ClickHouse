@@ -2032,6 +2032,7 @@ Settings for optional improvements in the access control system.
 | `settings_constraints_replace_previous`         | Sets whether a constraint in a settings profile for some setting will cancel actions of the previous constraint (defined in other profiles) for that setting, including fields which are not set by the new constraint. It also enables the `changeable_in_readonly` constraint type.                                                                                                                                                                                                                            | `true`  |
 | `table_engines_require_grant`                   | Sets whether creating a table with a specific table engine requires a grant.                                                                                                                                                                                                                                                                                                                                                                                                                                     | `false` |
 | `role_cache_expiration_time_seconds`            | Sets the number of seconds since last access, that a role is stored in the Role Cache.                                                                                                                                                                                                                                                                                                                                                                                                                           | `600`   |
+| `missing_grants_hints`                          | Controls whether `ACCESS_DENIED` errors include the missing-grant hint. Possible values: `always` — always show the required grant; `require_show` — show only if the user has the corresponding `SHOW` privilege for the object (default); `never` — never include detailed hints.                                                                                                                                            | `require_show` |
 
 Example:
 
@@ -2044,6 +2045,7 @@ Example:
     <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
     <table_engines_require_grant>false</table_engines_require_grant>
     <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
+    <missing_grants_hints>require_show</missing_grants_hints>
 </access_control_improvements>
 ```
 

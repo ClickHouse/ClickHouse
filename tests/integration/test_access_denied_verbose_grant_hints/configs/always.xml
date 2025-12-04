@@ -1,0 +1,5 @@
+<yandex>
+    <access_control_improvements>
+        <missing_grants_hints>always</missing_grants_hints>
+    </access_control_improvements>
+</yandex>
