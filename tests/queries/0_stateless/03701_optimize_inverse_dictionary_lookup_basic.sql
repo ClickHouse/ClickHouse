@@ -436,3 +436,9 @@ SELECT color_id
 FROM t
 WHERE dictGetString('colors', 'name', color_id) = payload
 ORDER BY color_id;
+
+
+-- Validation of attribute name
+CREATE DICTIONARY `dict` (`c0` UInt128) PRIMARY KEY (`c0`) SOURCE(NULL()) LAYOUT(FLAT()) LIFETIME(0);
+
+SELECT *, dictGetUInt16('dict', 'c0', `t1`.`c0`) = TRUE FROM `dict` AS t1; -- { serverError BAD_ARGUMENTS }
