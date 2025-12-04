@@ -19,6 +19,9 @@ namespace ErrorCodes
   */
 struct PositionCaseSensitiveASCII
 {
+    /// Flag indicating case sensitivity for Aho-Corasick fallback
+    static constexpr bool case_sensitive = true;
+
     /// For searching single substring inside big-enough contiguous chunk of data. Coluld have slightly expensive initialization.
     using SearcherInBigHaystack = Volnitsky;
 
@@ -59,6 +62,9 @@ struct PositionCaseSensitiveASCII
 
 struct PositionCaseInsensitiveASCII
 {
+    /// Flag indicating case sensitivity for Aho-Corasick fallback
+    static constexpr bool case_sensitive = false;
+
     /// `Volnitsky` is not used here, because one person has measured that this is better. It will be good if you question it.
     using SearcherInBigHaystack = ASCIICaseInsensitiveStringSearcher;
     using MultiSearcherInBigHaystack = MultiVolnitskyCaseInsensitive;
@@ -92,6 +98,9 @@ struct PositionCaseInsensitiveASCII
 
 struct PositionCaseSensitiveUTF8
 {
+    /// Flag indicating case sensitivity for Aho-Corasick fallback
+    static constexpr bool case_sensitive = true;
+
     using SearcherInBigHaystack = VolnitskyUTF8;
     using MultiSearcherInBigHaystack = MultiVolnitskyUTF8;
     using SearcherInSmallHaystack = StdLibASCIIStringSearcher</*CaseInsensitive*/ false>;
@@ -140,6 +149,9 @@ struct PositionCaseSensitiveUTF8
 
 struct PositionCaseInsensitiveUTF8
 {
+    /// Flag indicating case sensitivity for Aho-Corasick fallback
+    static constexpr bool case_sensitive = false;
+
     using SearcherInBigHaystack = VolnitskyCaseInsensitiveUTF8;
     using MultiSearcherInBigHaystack = MultiVolnitskyCaseInsensitiveUTF8;
     using SearcherInSmallHaystack = UTF8CaseInsensitiveStringSearcher; /// TODO Very suboptimal.
