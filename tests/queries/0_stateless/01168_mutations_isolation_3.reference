@@ -8,3 +8,6 @@ after	101	all_1_1_0_3
 Deadlock detected
 INVALID_TRANSACTION
 after	101	all_1_1_0_4
+Deadlock detected
+INVALID_TRANSACTION
+after	101	all_1_1_0_3
