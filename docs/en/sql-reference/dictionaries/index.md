@@ -1900,9 +1900,9 @@ The `table` or `where` fields cannot be used together with the `query` field. An
 
 :::info
 This is an experimental feature that may change in backwards-incompatible ways in future releases.
-Enable usage of the YTsaurus dicitonary source
+Enable usage of the YTsaurus dictionary source
 using setting [`allow_experimental_ytsaurus_dictionary_source`](/operations/settings/settings#allow_experimental_ytsaurus_dictionary_source).
-
+:::
 
 Example of settings:
 
