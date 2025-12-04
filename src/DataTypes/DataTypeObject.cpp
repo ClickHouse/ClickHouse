@@ -293,7 +293,7 @@ std::optional<String> tryGetSubObjectSubcolumn(std::string_view subcolumn_name)
     if (!subcolumn_name.starts_with("^`"))
         return std::nullopt;
 
-    ReadBufferFromMemory buf(subcolumn_name.data() + 1, subcolumn_name.size() - 1);
+    ReadBufferFromMemory buf(subcolumn_name.substr(1));
     String path;
     /// Try to read back-quoted first path element.
     if (!tryReadBackQuotedString(path, buf))
@@ -352,6 +352,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
                 if (path.starts_with(prefix))
                     result_dynamic_paths.emplace_back(path.substr(prefix.size()), column);
             }
+            result_object_column.setMaxDynamicPaths(result_dynamic_paths.size());
             result_object_column.setDynamicPaths(result_dynamic_paths);
 
             const auto & shared_data_offsets = object_column.getSharedDataOffsets();

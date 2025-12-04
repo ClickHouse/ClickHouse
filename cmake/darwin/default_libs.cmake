@@ -1,6 +1,6 @@
 set (DEFAULT_LIBS "-nodefaultlibs")
 
-set (DEFAULT_LIBS "${DEFAULT_LIBS} ${COVERAGE_OPTION} -lc -lm -lpthread -ldl")
+set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -lpthread -ldl")
 
 message(STATUS "Default libraries: ${DEFAULT_LIBS}")
 

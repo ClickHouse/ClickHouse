@@ -255,7 +255,7 @@ Field ColumnObject::operator[](size_t n) const
     {
         String path{shared_paths->getDataAt(i)};
         auto value_data = shared_values->getDataAt(i);
-        ReadBufferFromMemory buf(value_data.data(), value_data.size());
+        ReadBufferFromMemory buf(value_data);
         Field value;
         getDynamicSerialization()->deserializeBinary(value, buf, getFormatSettings());
         object[path] = value;
@@ -333,7 +333,7 @@ DataTypePtr ColumnObject::getValueNameAndTypeImpl(WriteBufferFromOwnString & nam
             writeDoubleQuoted(path, name_buf);
 
             auto value_data = shared_values->getDataAt(i);
-            ReadBufferFromMemory buf(value_data.data(), value_data.size());
+            ReadBufferFromMemory buf(value_data);
             auto decoded_type = decodeDataType(buf);
 
             if (isNothing(decoded_type))
@@ -825,7 +825,7 @@ void ColumnObject::serializePathAndValueIntoSharedData(ColumnString * shared_dat
 void ColumnObject::deserializeValueFromSharedData(const ColumnString * shared_data_values, size_t n, IColumn & column)
 {
     auto value_data = shared_data_values->getDataAt(n);
-    ReadBufferFromMemory buf(value_data.data(), value_data.size());
+    ReadBufferFromMemory buf(value_data);
     getDynamicSerialization()->deserializeBinary(column, buf, getFormatSettings());
 }
 
@@ -927,28 +927,13 @@ void ColumnObject::rollback(const ColumnCheckpoint & checkpoint)
     shared_data->rollback(*object_checkpoint.shared_data);
 }
 
-std::string_view ColumnObject::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin) const
+std::string_view ColumnObject::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin, const IColumn::SerializationSettings * settings) const
 {
     std::string_view res;
     /// First serialize values from typed paths in sorted order. They are the same for all instances of this column.
     for (auto path : sorted_typed_paths)
     {
-        auto data_ref = typed_paths.find(path)->second->serializeValueIntoArena(n, arena, begin);
-        res = std::string_view{data_ref.data() - res.size(), res.size() + data_ref.size()};
-    }
-
-    /// Second, serialize paths and values in binary format from dynamic paths and shared data in sorted by path order.
-    serializeDynamicPathsAndSharedDataIntoArena(n, arena, begin, res);
-    return res;
-}
-
-std::string_view ColumnObject::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
-{
-    std::string_view res;
-    /// First serialize values from typed paths in sorted order. They are the same for all instances of this column.
-    for (auto path : sorted_typed_paths)
-    {
-        auto data_ref = typed_paths.find(path)->second->serializeAggregationStateValueIntoArena(n, arena, begin);
+        auto data_ref = typed_paths.find(path)->second->serializeValueIntoArena(n, arena, begin, settings);
         res = std::string_view{data_ref.data() - res.size(), res.size() + data_ref.size()};
     }
 
@@ -1018,21 +1003,11 @@ void ColumnObject::serializePathAndValueIntoArena(DB::Arena & arena, const char 
     res = std::string_view{pos - res.size(), res.size() + sizeof(size_t) + path_size + sizeof(size_t) + value_size};
 }
 
-void ColumnObject::deserializeAndInsertFromArena(ReadBuffer & in)
+void ColumnObject::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     /// First deserialize typed paths. They come first.
     for (auto path : sorted_typed_paths)
-        typed_paths.find(path)->second->deserializeAndInsertFromArena(in);
-
-    /// Second deserialize all other paths and values and insert them into dynamic paths or shared data.
-    deserializeDynamicPathsAndSharedDataFromArena(in);
-}
-
-void ColumnObject::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
-{
-    /// First deserialize typed paths. They come first.
-    for (auto path : sorted_typed_paths)
-        typed_paths.find(path)->second->deserializeAndInsertAggregationStateValueFromArena(in);
+        typed_paths.find(path)->second->deserializeAndInsertFromArena(in, settings);
 
     /// Second deserialize all other paths and values and insert them into dynamic paths or shared data.
     deserializeDynamicPathsAndSharedDataFromArena(in);
@@ -1152,7 +1127,7 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
 
         /// Deserialize value in temporary column to get its hash.
         auto value = shared_data_values->getDataAt(i);
-        ReadBufferFromMemory buf(value.data(), value.size());
+        ReadBufferFromMemory buf(value);
         auto tmp_column = ColumnDynamic::create();
         getDynamicSerialization()->deserializeBinary(*tmp_column, buf, getFormatSettings());
         hash.update(path);
@@ -1354,6 +1329,15 @@ void ColumnObject::reserve(size_t n)
 size_t ColumnObject::capacity() const
 {
     return shared_data->capacity();
+}
+
+void ColumnObject::shrinkToFit()
+{
+    for (auto & [_, column] : typed_paths)
+        column->shrinkToFit();
+    for (auto & [_, column] : dynamic_paths_ptrs)
+        column->shrinkToFit();
+    shared_data->shrinkToFit();
 }
 
 void ColumnObject::ensureOwnership()
@@ -1871,6 +1855,13 @@ void ColumnObject::takeDynamicStructureFromColumn(const ColumnPtr & source_colum
     statistics = source_object.getStatistics();
 }
 
+void ColumnObject::fixDynamicStructure()
+{
+    /// Set max_dynamic_paths to the number of dynamic paths.
+    /// It's needed to avoid adding new unexpected dynamic paths during later inserts into this column.
+    max_dynamic_paths = dynamic_paths.size();
+}
+
 size_t ColumnObject::findPathLowerBoundInSharedData(std::string_view path, const ColumnString & shared_data_paths, size_t start, size_t end)
 {
     /// Simple random access iterator over values in ColumnString in specified range.
@@ -1928,7 +1919,7 @@ void ColumnObject::fillPathColumnFromSharedData(IColumn & path_column, std::stri
         if (lower_bound_path_index != paths_end && shared_data_paths.getDataAt(lower_bound_path_index) == path)
         {
             auto value_data = shared_data_values.getDataAt(lower_bound_path_index);
-            ReadBufferFromMemory buf(value_data.data(), value_data.size());
+            ReadBufferFromMemory buf(value_data);
             dynamic_serialization->deserializeBinary(path_column, buf, getFormatSettings());
         }
         else

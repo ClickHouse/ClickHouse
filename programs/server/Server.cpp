@@ -220,6 +220,7 @@ namespace ServerSetting
     extern const ServerSettingsBool s3queue_disable_streaming;
     extern const ServerSettingsUInt64 disk_connections_soft_limit;
     extern const ServerSettingsUInt64 disk_connections_store_limit;
+    extern const ServerSettingsUInt64 disk_connections_hard_limit;
     extern const ServerSettingsUInt64 disk_connections_warn_limit;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv4;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv6;
@@ -231,6 +232,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 global_profiler_real_time_period_ns;
     extern const ServerSettingsUInt64 http_connections_soft_limit;
     extern const ServerSettingsUInt64 http_connections_store_limit;
+    extern const ServerSettingsUInt64 http_connections_hard_limit;
     extern const ServerSettingsUInt64 http_connections_warn_limit;
     extern const ServerSettingsString index_mark_cache_policy;
     extern const ServerSettingsUInt64 index_mark_cache_size;
@@ -320,6 +322,7 @@ namespace ServerSetting
     extern const ServerSettingsBool shutdown_wait_unfinished_queries;
     extern const ServerSettingsUInt64 storage_connections_soft_limit;
     extern const ServerSettingsUInt64 storage_connections_store_limit;
+    extern const ServerSettingsUInt64 storage_connections_hard_limit;
     extern const ServerSettingsUInt64 storage_connections_warn_limit;
     extern const ServerSettingsUInt64 tables_loader_background_pool_size;
     extern const ServerSettingsUInt64 tables_loader_foreground_pool_size;
@@ -1704,7 +1707,7 @@ try
     if (server_settings[ServerSetting::background_schedule_pool_size] > 1)
     {
         auto cancellation_task_holder = global_context->getSchedulePool().createTask(
-            "CancellationChecker",
+            StorageID::createEmpty(), "CancellationChecker",
             [] { CancellationChecker::getInstance().workerFunction(); }
         );
         cancellation_task = std::make_unique<DB::BackgroundSchedulePoolTaskHolder>(std::move(cancellation_task_holder));
@@ -2343,16 +2346,19 @@ try
                     new_server_settings[ServerSetting::disk_connections_soft_limit],
                     new_server_settings[ServerSetting::disk_connections_warn_limit],
                     new_server_settings[ServerSetting::disk_connections_store_limit],
+                    new_server_settings[ServerSetting::disk_connections_hard_limit],
                 },
                 HTTPConnectionPools::Limits{
                     new_server_settings[ServerSetting::storage_connections_soft_limit],
                     new_server_settings[ServerSetting::storage_connections_warn_limit],
                     new_server_settings[ServerSetting::storage_connections_store_limit],
+                    new_server_settings[ServerSetting::storage_connections_hard_limit],
                 },
                 HTTPConnectionPools::Limits{
                     new_server_settings[ServerSetting::http_connections_soft_limit],
                     new_server_settings[ServerSetting::http_connections_warn_limit],
                     new_server_settings[ServerSetting::http_connections_store_limit],
+                    new_server_settings[ServerSetting::http_connections_hard_limit],
                 });
 
             DNSResolver::instance().setFilterSettings(new_server_settings[ServerSetting::dns_allow_resolve_names_to_ipv4], new_server_settings[ServerSetting::dns_allow_resolve_names_to_ipv6]);

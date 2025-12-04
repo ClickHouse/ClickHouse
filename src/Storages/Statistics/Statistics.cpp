@@ -28,7 +28,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int CORRUPTED_DATA;
     extern const int ILLEGAL_STATISTICS;
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
@@ -38,6 +37,7 @@ namespace ErrorCodes
 enum StatisticsFileVersion : UInt16
 {
     V0 = 0,
+    V1 = 1, /// modify the format of uniq, https://github.com/ClickHouse/ClickHouse/pull/90311
 };
 
 std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value, const DataTypePtr & data_type)
@@ -60,8 +60,8 @@ IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
 {
 }
 
-ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_, const String & column_name_)
-    : stats_desc(stats_desc_), column_name(column_name_)
+ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_, const String & column_name_, DataTypePtr data_type_)
+    : stats_desc(stats_desc_), column_name(column_name_), data_type(data_type_)
 {
 }
 
@@ -231,7 +231,7 @@ Estimate ColumnStatistics::getEstimate() const
 
 void ColumnStatistics::serialize(WriteBuffer & buf)
 {
-    writeIntBinary(V0, buf);
+    writeIntBinary(V1, buf);
 
     UInt64 stat_types_mask = 0;
     for (const auto & [type, _]: stats)
@@ -250,13 +250,33 @@ void ColumnStatistics::deserialize(ReadBuffer &buf)
 {
     UInt16 version;
     readIntBinary(version, buf);
-    if (version != V0)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown file format version: {}", version);
+    /// TODO: we should check the version of statistics format when we start clickhouse server, and do materialize statistics automatically.
+    if (version != V1)
+        throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "We try to read stale file format version: {}. Please run `ALTER TABLE [db.]table MATERIALIZE STATISTICS ALL` to regenerate the statistics", version);
 
     UInt64 stat_types_mask = 0;
     readIntBinary(stat_types_mask, buf);
 
     readIntBinary(rows, buf);
+
+    for (UInt8 i = 0; i < static_cast<UInt8>(StatisticsType::Max); i++)
+    {
+        if (stat_types_mask & 1LL << i)
+        {
+            StatisticsType cur_type = static_cast<StatisticsType>(i);
+            auto it = stats.find(cur_type);
+            if (it == stats.end())
+            {
+                /// we found a statistics dropped already, but we still need to read it to skip it
+                auto mock_stats = MergeTreeStatisticsFactory::instance().getSingleStats(SingleStatisticsDescription(cur_type, nullptr, false), data_type);
+                mock_stats->deserialize(buf);
+            }
+            else
+            {
+                it->second->deserialize(buf);
+            }
+        }
+    }
 
     for (auto it = stats.begin(); it != stats.end();)
     {
@@ -265,10 +285,7 @@ void ColumnStatistics::deserialize(ReadBuffer &buf)
             stats.erase(it++);
         }
         else
-        {
-            it->second->deserialize(buf);
-            ++it;
-        }
+            it++;
     }
 }
 
@@ -367,7 +384,7 @@ ColumnStatisticsDescription MergeTreeStatisticsFactory::cloneWithSupportedStatis
 
 ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnDescription & column_desc) const
 {
-    ColumnStatisticsPtr column_stat = std::make_shared<ColumnStatistics>(column_desc.statistics, column_desc.name);
+    ColumnStatisticsPtr column_stat = std::make_shared<ColumnStatistics>(column_desc.statistics, column_desc.name, column_desc.type);
     for (const auto & [type, desc] : column_desc.statistics.types_to_desc)
     {
         auto it = creators.find(type);
@@ -386,6 +403,14 @@ ColumnsStatistics MergeTreeStatisticsFactory::getMany(const ColumnsDescription &
         if (!col.statistics.empty())
             result.push_back(get(col));
     return result;
+}
+
+StatisticsPtr MergeTreeStatisticsFactory::getSingleStats(const SingleStatisticsDescription & desc, DataTypePtr data_type) const
+{
+    auto it = creators.find(desc.type);
+    if (it == creators.end())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'countmin', 'minmax', 'tdigest' and 'uniq'", desc.type);
+    return (it->second)(desc, data_type);
 }
 
 static ColumnStatisticsDescription::StatisticsTypeDescMap parseColumnStatisticsFromString(const String & str)
