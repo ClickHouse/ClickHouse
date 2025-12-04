@@ -18,6 +18,7 @@ TEST(NormalizedPath, Simple)
 
 TEST(NormalizedPath, Root)
 {
+    EXPECT_EQ(normalizePath("").string(), "");
     EXPECT_EQ(normalizePath("/").string(), "");
     EXPECT_EQ(normalizePath("////").string(), "");
 }
