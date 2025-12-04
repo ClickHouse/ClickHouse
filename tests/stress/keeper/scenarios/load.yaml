@@ -1,0 +1,18 @@
+version: 1
+defaults:
+  duration: 120
+  topology: 3
+scenarios:
+  - id: LOAD-01
+    name: Replay zookeeper_log once
+    topology: 3
+    workload:
+      replay: /artifacts/system.zookeeper_log
+      duration: 120
+    gates:
+      - { type: single_leader }
+      - { type: error_rate_le, max_ratio: 0.05 }
+      - type: replay_repeatable
+        duration_s: 120
+        max_error_rate_delta: 0.05
+        max_p99_delta_ms: 500
