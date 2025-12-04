@@ -1583,20 +1583,29 @@ ReturnType readDateTimeTextFallback(
         }
         else
         {
-            auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
-            if (!datetime_maybe)
-                return false;
-            if (!dt64_mode)
+            if (saturate_on_overflow)
             {
-
-
-                if (!saturate_on_overflow && (*datetime_maybe < 0))
-                    return false;
-                if (*datetime_maybe > UINT32_MAX)
-                    return false;
+                /// Use saturating version - makeDateTime saturates out-of-range years
+                if (unlikely(year == 0))
+                    datetime = 0;
+                else
+                    datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
             }
+            else
+            {
+                /// Use non-saturating version - return false for out-of-range values
+                auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
+                if (!datetime_maybe)
+                    return false;
 
-            datetime = *datetime_maybe;
+                if constexpr (!dt64_mode)
+                {
+                    if (*datetime_maybe < 0 || *datetime_maybe > static_cast<Int64>(UINT32_MAX))
+                        return false;
+                }
+
+                datetime = *datetime_maybe;
+            }
         }
     }
     else

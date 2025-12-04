@@ -94,7 +94,6 @@ namespace Setting
     extern const SettingsBool precise_float_parsing;
     extern const SettingsBool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
     extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
-    extern const SettingsBool date_time_saturate_on_overflow;
 }
 
 namespace ErrorCodes
@@ -1085,8 +1084,6 @@ struct AccurateOrNullConvertStrategyAdditions
     UInt32 scale { 0 };
 };
 
-struct FunctionCastName;
-
 template <typename FromDataType, typename ToDataType, typename Name,
     ConvertFromStringExceptionMode exception_mode, ConvertFromStringParsingMode parsing_mode>
 struct ConvertThroughParsing
@@ -1228,9 +1225,6 @@ struct ConvertThroughParsing
         if (context)
             precise_float_parsing = context->getSettingsRef()[Setting::precise_float_parsing];
 
-        constexpr bool from_cast = std::is_same_v<Name, FunctionCastName>;
-        const bool saturate_flag = from_cast ? false : (context ? bool(context->getSettingsRef()[Setting::date_time_saturate_on_overflow]) : true);
-
         for (size_t i = 0; i < size; ++i)
         {
             size_t next_offset = std::is_same_v<FromDataType, DataTypeString> ? (*offsets)[i] : (current_offset + fixed_string_size);
@@ -1359,11 +1353,6 @@ struct ConvertThroughParsing
                         DateTime64 res = 0;
                         parsed = tryParseDateTime64BestEffort(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
-                        if constexpr (from_cast)
-                        {
-                            if (res < 0)
-                                parsed = false;
-                        }
                     }
                     else if constexpr (to_time64)
                     {
@@ -1375,20 +1364,13 @@ struct ConvertThroughParsing
                     {
                         time_t res;
                         parsed = tryParseTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
-                        if (parsed)
-                            convertFromTime<ToDataType>(vec_to[i],res);
+                        convertFromTime<ToDataType>(vec_to[i],res);
                     }
                     else
                     {
                         time_t res;
                         parsed = tryParseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
-                        if constexpr (from_cast)
-                        {
-                            if (parsed && res < 0)
-                                parsed = false;
-                        }
-                        if (parsed)
-                            convertFromTime<ToDataType>(vec_to[i],res);
+                        convertFromTime<ToDataType>(vec_to[i],res);
                     }
                 }
                 else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS && (to_datetime || to_datetime64))
@@ -1398,11 +1380,6 @@ struct ConvertThroughParsing
                         DateTime64 res = 0;
                         parsed = tryParseDateTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
-                        if constexpr (from_cast)
-                        {
-                            if (res < 0)
-                                parsed = false;
-                        }
                     }
                     else if constexpr (to_time64)
                     {
@@ -1414,20 +1391,11 @@ struct ConvertThroughParsing
                     {
                         time_t res;
                         parsed = tryParseTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
-                        if (parsed)
-                            convertFromTime<ToDataType>(vec_to[i],res);
                     }
                     else
                     {
                         time_t res;
                         parsed = tryParseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
-                        if constexpr (from_cast)
-                        {
-                            if (parsed && res < 0)
-                                parsed = false;
-                        }
-                        if (parsed)
-                            convertFromTime<ToDataType>(vec_to[i],res);
                     }
                 }
                 else
@@ -1435,7 +1403,7 @@ struct ConvertThroughParsing
                     if constexpr (to_datetime64)
                     {
                         DateTime64 value = 0;
-                        parsed = tryReadDateTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone, nullptr, nullptr, saturate_flag);
+                        parsed = tryReadDateTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
                         vec_to[i] = value;
                     }
                     else if constexpr (to_time64)
@@ -1443,13 +1411,6 @@ struct ConvertThroughParsing
                         Time64 value = 0;
                         parsed = tryReadTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
                         vec_to[i] = value;
-                    }
-                    else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
-                    {
-                        time_t value = 0;
-                        parsed = tryReadDateTimeText(value, read_buffer, *local_time_zone, nullptr, nullptr, saturate_flag);
-                        if (parsed)
-                            convertFromTime<ToDataType>(vec_to[i], value);
                     }
                     else if constexpr (IsDataTypeDecimal<ToDataType>)
                     {

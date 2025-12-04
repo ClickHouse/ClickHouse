@@ -54,7 +54,7 @@ inline bool tryReadText(
     switch (settings.date_time_input_format)
     {
         case FormatSettings::DateTimeInputFormat::Basic:
-            res = tryReadDateTimeText(x, istr, time_zone, nullptr, nullptr, settings.date_time_saturate_on_overflow);
+            res = tryReadDateTimeText(x, istr, time_zone);
             break;
         case FormatSettings::DateTimeInputFormat::BestEffort:
             res = tryParseDateTimeBestEffort(x, istr, time_zone, utc_time_zone);
