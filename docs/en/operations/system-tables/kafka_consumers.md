@@ -46,6 +46,6 @@ num_rebalance_revocations:     0
 num_rebalance_assignments:     1
 is_currently_used:             1
 rdkafka_stat:                  {...}
-dependencies:                  [['test.kafka','test.mv2'],['test.kafka','test.mv1']]
+dependencies:                  [['test.mv2','test.target2'],['test.mv1','test.target1']]
 missing_dependencies:          []
 ```

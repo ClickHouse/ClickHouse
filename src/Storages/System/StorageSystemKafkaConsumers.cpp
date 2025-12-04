@@ -121,7 +121,60 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
         std::string database_str = it->databaseName();
         std::string table_str = it->name();
 
+        // dependencies and missing_dependencies do not depend on a consumer
+        std::vector<std::vector<String>> dependencies;
+        std::vector<std::vector<String>> missing_dependencies;
+
+        // traverse dependent views
+        // fill dependencies and missing_dependencies
+        auto check_a_table = [&](const auto & self_, StorageID storage_, const std::vector<String> & route_) -> void
+        {
+            checkStackSize();
+            const auto view_ids = DatabaseCatalog::instance().getDependentViews(storage_);
+            if (view_ids.empty() && !route_.empty())
+            {
+                auto copy_route = route_;
+                copy_route.push_back(storage_.getFullNameNotQuoted());
+                dependencies.push_back(copy_route);
+            }
+
+            for (const auto & view_id : view_ids)
+            {
+                auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
+                if (view)
+                {
+                    auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
+                    if (materialized_view)
+                    {
+                        auto target_table_ptr = materialized_view->tryGetTargetTable();
+                        auto copy_route = route_;
+                        if (!copy_route.empty())
+                            copy_route.push_back(storage_.getFullNameNotQuoted());
+                        copy_route.push_back(view_id.getFullNameNotQuoted());
+                        if (!target_table_ptr)
+                        {
+                            // missing target table - MV not ready
+                            dependencies.push_back(copy_route);
+                            missing_dependencies.push_back(copy_route);
+                        }
+                        else
+                        {
+                            // recursive call
+                            self_(self_, target_table_ptr->getStorageID(), copy_route);
+                        }
+                    }
+                }
+            }
+        };
+
         auto safe_consumers = storage_kafka.getSafeConsumers();
+
+        if (!safe_consumers.consumers.empty())
+        {
+            auto storage_id = StorageID(database_str, table_str);
+            std::vector<String> empty_route;
+            check_a_table(check_a_table, storage_id, empty_route);
+        }
 
         for (const auto & consumer : safe_consumers.consumers)
         {
@@ -178,77 +231,30 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
 
             rdkafka_stat.insertData(consumer_stat.rdkafka_stat.data(), consumer_stat.rdkafka_stat.size());
 
-            auto add_missing_dependency = [&](const std::vector<String>& route_)
+            for (const auto & route : dependencies)
             {
-                for (const auto & elem : route_)
-                {
-                    missing_dependencies_table.insertData(elem.data(), elem.size());
-                }
-                missing_inner_elements += route_.size();
-                missing_dependencies_table_inner_offset.push_back(missing_inner_elements);
-                missing_added_routes++;
-            };
-
-            auto add_dependency = [&](const std::vector<String>& route_)
-            {
-                for (const auto & elem : route_)
+                for (const auto & elem : route)
                 {
                     dependencies_table.insertData(elem.data(), elem.size());
                 }
-                inner_elements += route_.size();
+                inner_elements += route.size();
                 dependencies_table_inner_offset.push_back(inner_elements);
                 added_routes++;
-            };
-
-            // traversing dependent views
-            auto check_a_table = [&](const auto & self_, StorageID storage_, std::vector<String> & route_) -> void
-            {
-                checkStackSize();
-                const auto view_ids = DatabaseCatalog::instance().getDependentViews(storage_);
-                if (view_ids.empty())
-                {
-                    auto copy_route = route_;
-                    copy_route.push_back(storage_.getFullNameNotQuoted());
-                    add_dependency(copy_route);
-                }
-
-                for (const auto & view_id : view_ids)
-                {
-                    auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
-                    if (view)
-                    {
-                        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
-                        if (materialized_view)
-                        {
-                            auto target_table_ptr = materialized_view->tryGetTargetTable();
-                            if (!target_table_ptr)
-                            {
-                                // missing target table - MV not ready
-                                auto copy_route = route_;
-                                copy_route.push_back(storage_.getFullNameNotQuoted());
-                                copy_route.push_back(view_id.getFullNameNotQuoted());
-                                add_dependency(copy_route);
-                                add_missing_dependency(copy_route);
-                            }
-                            else
-                            {
-                                // recursive call
-                                auto copy_route = route_;
-                                copy_route.push_back(storage_.getFullNameNotQuoted());
-                                copy_route.push_back(view_id.getFullNameNotQuoted());
-                                self_(self_, target_table_ptr->getStorageID(), copy_route);
-                            }
-                        }
-                    }
-                }
-            };
-
-            auto storage_id = StorageID(database_str, table_str);
-            std::vector<String> empty_route;
-            check_a_table(check_a_table, storage_id, empty_route);
-
+            }
             dependencies_table_outer_offset.push_back(added_routes);
+
+            for (const auto & route : missing_dependencies)
+            {
+                for (const auto & elem : route)
+                {
+                    missing_dependencies_table.insertData(elem.data(), elem.size());
+                }
+                missing_inner_elements += route.size();
+                missing_dependencies_table_inner_offset.push_back(missing_inner_elements);
+                missing_added_routes++;
+            }
             missing_dependencies_table_outer_offset.push_back(missing_added_routes);
+
         }
     };
 
