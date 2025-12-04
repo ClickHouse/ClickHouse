@@ -41,7 +41,6 @@
 #include <Poco/AutoPtr.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/ConsoleChannel.h>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Common/XMLUtils.h>
 
 namespace DB
@@ -155,7 +154,7 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
         }
     }
 
-    assert(zookeeper_elements.length() == 1);
+    assert(zookeeper_elements->length() == 1);
 
     String prefix = "zookeeper.node";
 
