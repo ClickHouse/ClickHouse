@@ -1,33 +1,54 @@
-import os, yaml, hashlib, pytest, pathlib, random, copy
-from ..framework.core.settings import parse_bool, DEFAULT_ERROR_RATE, DEFAULT_P99_MS
+import copy
+import hashlib
+import os
+import pathlib
+import random
+
+import pytest
+import yaml
+
 from ..framework.core.schema import validate_scenario
+from ..framework.core.settings import DEFAULT_ERROR_RATE, DEFAULT_P99_MS, parse_bool
+
 _SCN_BASE = pathlib.Path(__file__).parents[1] / "scenarios"
-from ..framework.fuzz import generate_fuzz_scenario
 from ..framework import presets as _presets
+from ..framework.fuzz import generate_fuzz_scenario
 
 
 def _capabilities_ok(reqs):
-    caps={"minio": bool(os.environ.get("KEEPER_MINIO_ENDPOINT")),
-          "weekly": parse_bool(os.environ.get("KEEPER_RUN_WEEKLY")),
-          "zookeeper_artifacts": bool(os.environ.get("ZK_LOGS_DIR"))}
-    if not reqs: return True
+    caps = {
+        "minio": bool(os.environ.get("KEEPER_MINIO_ENDPOINT")),
+        "weekly": parse_bool(os.environ.get("KEEPER_RUN_WEEKLY")),
+        "zookeeper_artifacts": bool(os.environ.get("ZK_LOGS_DIR")),
+    }
+    if not reqs:
+        return True
     return all(caps.get(r, False) for r in reqs)
 
+
 def _tags_ok(tags):
-    inc=set([t for t in os.environ.get("KEEPER_INCLUDE_TAGS","").split(",") if t])
-    exc=set([t for t in os.environ.get("KEEPER_EXCLUDE_TAGS","").split(",") if t])
-    if not inc and not exc: return True
-    ts=set(tags or [])
-    if inc and ts.isdisjoint(inc): return False
-    if exc and not ts.isdisjoint(exc): return False
+    inc = set([t for t in os.environ.get("KEEPER_INCLUDE_TAGS", "").split(",") if t])
+    exc = set([t for t in os.environ.get("KEEPER_EXCLUDE_TAGS", "").split(",") if t])
+    if not inc and not exc:
+        return True
+    ts = set(tags or [])
+    if inc and ts.isdisjoint(inc):
+        return False
+    if exc and not ts.isdisjoint(exc):
+        return False
     return True
 
+
 def _should_run(sid, total, index):
-    if total<=1: return True
-    h=int(hashlib.sha1(sid.encode()).hexdigest(), 16); return (h % total)==index
+    if total <= 1:
+        return True
+    h = int(hashlib.sha1(sid.encode()).hexdigest(), 16)
+    return (h % total) == index
+
 
 def _has_gate(s, gate_type):
     return any(g.get("type") == gate_type for g in (s.get("gates") or []))
+
 
 def _append_gate(s, gate):
     gs = s.get("gates")
@@ -35,6 +56,7 @@ def _append_gate(s, gate):
         s["gates"] = [gate]
     else:
         gs.append(gate)
+
 
 def _inject_gate_macros(s):
     """Inject common gate blocks based on scenario id patterns.
@@ -64,9 +86,12 @@ def _inject_gate_macros(s):
     # Add generic SLO guards for scenarios with workload
     if s.get("workload"):
         if not _has_gate(s, "error_rate_le"):
-            _append_gate(s, {"type": "error_rate_le", "max_ratio": float(DEFAULT_ERROR_RATE)})
+            _append_gate(
+                s, {"type": "error_rate_le", "max_ratio": float(DEFAULT_ERROR_RATE)}
+            )
         if not _has_gate(s, "p99_le"):
             _append_gate(s, {"type": "p99_le", "max_ms": int(DEFAULT_P99_MS)})
+
 
 def _inject_prefix_tags(s):
     sid = str(s.get("id", ""))
@@ -74,11 +99,26 @@ def _inject_prefix_tags(s):
         return
     prefix = sid.split("-", 1)[0].lower()
     tag_map = {
-        "sem": "sem", "cfg": "cfg", "dur": "dur", "dsk": "dsk",
-        "ldr": "ldr", "res": "res", "perf": "perf", "sec": "sec",
-        "obs": "obs", "mig": "mig", "int": "int", "lin": "lin",
-        "cha": "cha", "nbank": "nbank", "bnd": "bnd", "df": "df",
-        "clk": "clk", "soak": "soak", "ops": "ops", "load": "load",
+        "sem": "sem",
+        "cfg": "cfg",
+        "dur": "dur",
+        "dsk": "dsk",
+        "ldr": "ldr",
+        "res": "res",
+        "perf": "perf",
+        "sec": "sec",
+        "obs": "obs",
+        "mig": "mig",
+        "int": "int",
+        "lin": "lin",
+        "cha": "cha",
+        "nbank": "nbank",
+        "bnd": "bnd",
+        "df": "df",
+        "clk": "clk",
+        "soak": "soak",
+        "ops": "ops",
+        "load": "load",
         "imp": "imp",
     }
     t = tag_map.get(prefix)
@@ -87,6 +127,7 @@ def _inject_prefix_tags(s):
     tags = s.get("tags") or []
     if t not in tags:
         s["tags"] = tags + [t]
+
 
 def _getopt(cfg, name, env_name=None, default=""):
     try:
@@ -101,41 +142,57 @@ def _getopt(cfg, name, env_name=None, default=""):
             return ev
     return default
 
+
 def pytest_generate_tests(metafunc):
     if "scenario" not in metafunc.fixturenames:
         return
     # accept alt env names; robust to missing CLI options
-    total=int(_getopt(metafunc.config, "--total-shards", "KEEPER_TOTAL_SHARDS", 1) or 1)
-    index=int(_getopt(metafunc.config, "--shard-index", "KEEPER_SHARD_INDEX", 0) or 0)
+    total = int(
+        _getopt(metafunc.config, "--total-shards", "KEEPER_TOTAL_SHARDS", 1) or 1
+    )
+    index = int(_getopt(metafunc.config, "--shard-index", "KEEPER_SHARD_INDEX", 0) or 0)
     # Load primary scenario file(s) + optional extras
     # Default: full modular suite (exclude legacy keeper_e2e.yaml)
     env_target = os.environ.get("KEEPER_SCENARIO_FILE", "all")
     if env_target.lower() in ("all", "auto", "*"):
         files = sorted(
-            p for p in _SCN_BASE.glob("*.yaml")
+            p
+            for p in _SCN_BASE.glob("*.yaml")
             if p.name not in ("keeper_e2e.yaml", "e2e_unique.yaml")
         )
     elif "," in env_target:
-        files = [( _SCN_BASE / p.strip() ) for p in env_target.split(",") if p.strip()]
+        files = [(_SCN_BASE / p.strip()) for p in env_target.split(",") if p.strip()]
     else:
-        files = [(_SCN_BASE / env_target)]
+        files = [_SCN_BASE / env_target]
     extra = os.environ.get("KEEPER_EXTRA_SCENARIOS", "")
     for p in [x.strip() for x in extra.split(",") if x.strip()]:
         files.append(pathlib.Path(p))
-    scenarios_raw=[]
+    scenarios_raw = []
     for f in files:
         if f.exists():
-            d=yaml.safe_load(f.read_text())
+            d = yaml.safe_load(f.read_text())
             if isinstance(d, dict) and isinstance(d.get("scenarios"), list):
                 scenarios_raw.extend(d["scenarios"])
-    data={"scenarios": scenarios_raw}
-    include_ids = set([sid for sid in (_getopt(metafunc.config, "--keeper-include-ids", "KEEPER_INCLUDE_IDS", "") or "").split(",") if sid])
-    scenarios=[]
+    data = {"scenarios": scenarios_raw}
+    include_ids = set(
+        [
+            sid
+            for sid in (
+                _getopt(
+                    metafunc.config, "--keeper-include-ids", "KEEPER_INCLUDE_IDS", ""
+                )
+                or ""
+            ).split(",")
+            if sid
+        ]
+    )
+    scenarios = []
     # matrix options (TLS removed)
     mb = (_getopt(metafunc.config, "--matrix-backends", None, "") or "").split(",")
     mb = [x.strip() for x in mb if x.strip()]
     mtops = (_getopt(metafunc.config, "--matrix-topologies", None, "") or "").split(",")
     mtops = [int(x.strip()) for x in mtops if x.strip()]
+
     def _marks_for(s):
         ms = []
         faults = s.get("faults", []) or []
@@ -146,8 +203,8 @@ def pytest_generate_tests(metafunc):
         if faults:
             ms.append(pytest.mark.chaos)
         # network / disk marks
-        nf = {"netem","partition_symmetric","partition_oneway","dns_blackhole"}
-        df = {"dm_delay","dm_error","enospc","volume_detach","volume_attach"}
+        nf = {"netem", "partition_symmetric", "partition_oneway", "dns_blackhole"}
+        df = {"dm_delay", "dm_error", "enospc", "volume_detach", "volume_attach"}
         if any((f.get("kind") in nf) for f in faults):
             ms.append(pytest.mark.network)
         if any((f.get("kind") in df) for f in faults):
@@ -162,9 +219,11 @@ def pytest_generate_tests(metafunc):
                 ms.append(pytest.mark.slow)
         except Exception:
             pass
+
         # Also consider run_bench faults (possibly nested under parallel/background_schedule)
         def _max_bench_duration(steps):
-            if not steps: return 0
+            if not steps:
+                return 0
             m = 0
             for st in steps:
                 try:
@@ -179,6 +238,7 @@ def pytest_generate_tests(metafunc):
                 elif k in ("parallel", "background_schedule"):
                     m = max(m, _max_bench_duration(st.get("steps", []) or []))
             return m
+
         try:
             if _max_bench_duration(faults) >= 180:
                 ms.append(pytest.mark.slow)
@@ -191,9 +251,9 @@ def pytest_generate_tests(metafunc):
         else:
             ms.append(pytest.mark.backend_default)
         return ms
-    
-    params=[]
-    seen_ids=set()
+
+    params = []
+    seen_ids = set()
     for s in data["scenarios"]:
         # Expand preset-defined scenarios to keep YAML thin
         if isinstance(s, dict) and s.get("preset") and _presets is not None:
@@ -203,10 +263,14 @@ def pytest_generate_tests(metafunc):
                 raise AssertionError(f"unknown preset: {name}")
             args = dict(s.get("preset_args", {}))
             # allow id/name override via top-level keys
-            if s.get("id"): args.setdefault("sid", s.get("id"))
-            if s.get("name"): args.setdefault("name", s.get("name"))
-            if s.get("topology"): args.setdefault("topology", int(s.get("topology", 0)))
-            if s.get("backend"): args.setdefault("backend", s.get("backend"))
+            if s.get("id"):
+                args.setdefault("sid", s.get("id"))
+            if s.get("name"):
+                args.setdefault("name", s.get("name"))
+            if s.get("topology"):
+                args.setdefault("topology", int(s.get("topology", 0)))
+            if s.get("backend"):
+                args.setdefault("backend", s.get("backend"))
             try:
                 s = fn(**args)
             except TypeError as e:
@@ -216,9 +280,12 @@ def pytest_generate_tests(metafunc):
             continue
         if include_ids and sid_val not in include_ids:
             continue
-        if not _should_run(s["id"], total, index): continue
-        if not _capabilities_ok(s.get("requires")): continue
-        if not _tags_ok(s.get("tags")): continue
+        if not _should_run(s["id"], total, index):
+            continue
+        if not _capabilities_ok(s.get("requires")):
+            continue
+        if not _tags_ok(s.get("tags")):
+            continue
         _inject_gate_macros(s)
         _inject_prefix_tags(s)
         errs = validate_scenario(s)
@@ -233,7 +300,7 @@ def pytest_generate_tests(metafunc):
     if bool(_getopt(metafunc.config, "--fuzz", None, False)):
         seed = int(_getopt(metafunc.config, "--fuzz-seed", None, 0) or 0)
         if seed <= 0:
-            seed = random.randint(1, 2**31-1)
+            seed = random.randint(1, 2**31 - 1)
         steps = int(_getopt(metafunc.config, "--fuzz-steps", None, 8) or 8)
         dur = int(_getopt(metafunc.config, "--fuzz-duration", None, 180) or 180)
         # parse weights
@@ -244,26 +311,34 @@ def pytest_generate_tests(metafunc):
                 continue
             if "=" in part:
                 k, v = part.split("=", 1)
-                k = k.strip(); v = v.strip()
+                k = k.strip()
+                v = v.strip()
                 try:
                     weights[k] = int(v)
                 except Exception:
                     continue
         dmin = int(_getopt(metafunc.config, "--fuzz-dur-min", None, 15) or 15)
         dmax = int(_getopt(metafunc.config, "--fuzz-dur-max", None, 120) or 120)
-        fs = generate_fuzz_scenario(seed, steps, dur, weights=weights, dur_min=dmin, dur_max=dmax)
+        fs = generate_fuzz_scenario(
+            seed, steps, dur, weights=weights, dur_min=dmin, dur_max=dmax
+        )
         fs["id"] = f"FUZZ-{seed}"
         errs = validate_scenario(fs)
         if errs:
             raise AssertionError(f"Fuzz scenario invalid: {', '.join(errs)}")
-        params.append(pytest.param(fs, marks=[pytest.mark.chaos, pytest.mark.slow], id=fs["id"]))
+        params.append(
+            pytest.param(fs, marks=[pytest.mark.chaos, pytest.mark.slow], id=fs["id"])
+        )
     metafunc.parametrize("scenario", params)
+
 
 def inject_gate_macros(s):
     _inject_gate_macros(s)
 
+
 def inject_prefix_tags(s):
     _inject_prefix_tags(s)
+
 
 def expand_matrix_clones(s, backends, topologies):
     clones = []

@@ -1,13 +1,18 @@
 import os
-from .util import has_bin, sh_root
+
 from .settings import parse_bool
+from .util import has_bin, sh_root
 
 
 def _tools_for_faults(faults):
     req = set()
     if not faults:
         return req
-    kinds = set(str((f or {}).get("kind", "")).strip().lower() for f in faults if isinstance(f, dict))
+    kinds = set(
+        str((f or {}).get("kind", "")).strip().lower()
+        for f in faults
+        if isinstance(f, dict)
+    )
     # Network related
     if kinds & {"netem", "tbf", "partition_symmetric", "partition_oneway"}:
         req.update({"tc", "ip", "iptables"})
@@ -32,7 +37,12 @@ def ensure_environment(nodes, scenario):
     if not req:
         req = set()
     # Keeper-bench presence (if workload is requested)
-    if isinstance(scenario, dict) and scenario.get("workload") and nodes and not parse_bool(os.environ.get("KEEPER_DISABLE_WORKLOAD")):
+    if (
+        isinstance(scenario, dict)
+        and scenario.get("workload")
+        and nodes
+        and not parse_bool(os.environ.get("KEEPER_DISABLE_WORKLOAD"))
+    ):
         bench_ok = False
         n0 = nodes[0]
         try:
@@ -40,6 +50,7 @@ def ensure_environment(nodes, scenario):
                 bench_ok = True
             elif has_bin(n0, "clickhouse"):
                 from .util import sh
+
                 r = sh(n0, "clickhouse keeper-bench --help >/dev/null 2>&1; echo $?")
                 bench_ok = str(r.get("out", " ")).strip().endswith("0")
         except Exception:
@@ -48,8 +59,11 @@ def ensure_environment(nodes, scenario):
             try:
                 url = os.environ.get("KEEPER_BENCH_URL", "").strip()
                 if url:
-                    for n in (nodes or []):
-                        sh_root(n, f"curl -sfL {url} -o /usr/local/bin/keeper-bench && chmod +x /usr/local/bin/keeper-bench")
+                    for n in nodes or []:
+                        sh_root(
+                            n,
+                            f"curl -sfL {url} -o /usr/local/bin/keeper-bench && chmod +x /usr/local/bin/keeper-bench",
+                        )
                     if has_bin(n0, "keeper-bench"):
                         bench_ok = True
             except Exception:
@@ -63,6 +77,7 @@ def ensure_environment(nodes, scenario):
             replay_path = wl.get("replay")
             if replay_path:
                 from .util import sh
+
                 r2 = sh(n0, f"test -f {replay_path} >/dev/null 2>&1; echo $?")
                 if not str(r2.get("out", " ")).strip().endswith("0"):
                     msg = f"replay file not found inside container at {replay_path} (mount it, e.g. bind-mount host log to /artifacts)"
@@ -70,11 +85,13 @@ def ensure_environment(nodes, scenario):
         except Exception:
             pass
     missing = {}
-    for n in (nodes or []):
+    for n in nodes or []:
         miss_n = [t for t in req if not has_bin(n, t)]
         if miss_n:
             missing[n.name] = miss_n
     if missing:
-        msg = ", ".join(f"{name}: {', '.join(tools)}" for name, tools in missing.items())
+        msg = ", ".join(
+            f"{name}: {', '.join(tools)}" for name, tools in missing.items()
+        )
         raise AssertionError(f"Missing required tools on nodes: {msg}")
     return None

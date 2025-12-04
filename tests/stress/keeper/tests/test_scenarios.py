@@ -1,31 +1,49 @@
-import time, pathlib, pytest, json, uuid, yaml, copy
-import os, shutil
+import copy
+import json
+import os
+import pathlib
+import shutil
+import time
+import uuid
+
+import pytest
+import yaml
+
 from ..faults import apply_step as apply_step_dispatcher
-from ..workloads.keeper_bench import KeeperBench
-from ..workloads.adapter import servers_arg
-from ..framework.io.probes import is_leader, mntr, prom_metrics, ch_metrics, ch_async_metrics
+from ..framework.core.preflight import ensure_environment
+from ..framework.core.registry import fault_registry
+from ..framework.core.settings import parse_bool
+from ..framework.fuzz import _EXCLUDE as _FUZZ_EXCLUDE
+from ..framework.fuzz import generate_fuzz_scenario
+from ..framework.io.probes import (
+    ch_async_metrics,
+    ch_metrics,
+    is_leader,
+    mntr,
+    prom_metrics,
+)
 from ..framework.io.prom_parse import parse_prometheus_text
-from ..gates.base import single_leader, apply_gate
 from ..framework.io.sink import sink_clickhouse
 from ..framework.metrics.sampler import MetricsSampler
-from ..framework.core.preflight import ensure_environment
-from ..framework.fuzz import generate_fuzz_scenario
-from ..framework.core.registry import fault_registry
-from ..framework.fuzz import _EXCLUDE as _FUZZ_EXCLUDE
-from ..framework.core.settings import parse_bool
+from ..gates.base import apply_gate, single_leader
+from ..workloads.adapter import servers_arg
+from ..workloads.keeper_bench import KeeperBench
 
 WORKDIR = pathlib.Path(__file__).parents[2]
+
 
 def _apply_step(step, nodes, leader, ctx):
     apply_step_dispatcher(step, nodes, leader, ctx)
 
+
 def _apply_gate(gate, nodes, leader, ctx, summary):
     apply_gate(gate, nodes, leader, ctx, summary)
+
 
 def _snapshot_and_sink(nodes, stage, scenario_id, topo, run_meta, sink_url, run_id=""):
     if not sink_url:
         return
-    metrics_ts_rows=[]
+    metrics_ts_rows = []
     # For fail stage, only snapshot leader to reduce volume
     snap_nodes = nodes
     if stage == "fail":
@@ -37,103 +55,112 @@ def _snapshot_and_sink(nodes, stage, scenario_id, topo, run_meta, sink_url, run_
             snap_nodes = nodes[:1]
     for n in snap_nodes:
         try:
-            m=mntr(n)
+            m = mntr(n)
             for _k, _v in (m or {}).items():
                 try:
                     _val = float(_v)
                 except Exception:
                     continue
-                metrics_ts_rows.append({
-                    "run_id": run_id,
-                    "commit_sha": run_meta.get("commit_sha","local"),
-                    "backend": run_meta.get("backend","default"),
-                    "scenario": scenario_id,
-                    "topology": topo,
-                    "node": n.name,
-                    "stage": stage,
-                    "source": "mntr",
-                    "name": str(_k),
-                    "value": _val,
-                    "labels_json": "{}",
-                })
+                metrics_ts_rows.append(
+                    {
+                        "run_id": run_id,
+                        "commit_sha": run_meta.get("commit_sha", "local"),
+                        "backend": run_meta.get("backend", "default"),
+                        "scenario": scenario_id,
+                        "topology": topo,
+                        "node": n.name,
+                        "stage": stage,
+                        "source": "mntr",
+                        "name": str(_k),
+                        "value": _val,
+                        "labels_json": "{}",
+                    }
+                )
         except Exception:
             pass
         try:
-            p=prom_metrics(n)
+            p = prom_metrics(n)
             for r in parse_prometheus_text(p):
-                name = r.get("name","")
+                name = r.get("name", "")
                 val = 0.0
                 try:
                     val = float(r.get("value", 0.0))
                 except Exception:
                     val = 0.0
                 lj = r.get("labels_json", "{}")
-                metrics_ts_rows.append({
-                    "run_id": run_id,
-                    "commit_sha": run_meta.get("commit_sha","local"),
-                    "backend": run_meta.get("backend","default"),
-                    "scenario": scenario_id,
-                    "topology": topo,
-                    "node": n.name,
-                    "stage": stage,
-                    "source": "prom",
-                    "name": name,
-                    "value": val,
-                    "labels_json": lj,
-                })
+                metrics_ts_rows.append(
+                    {
+                        "run_id": run_id,
+                        "commit_sha": run_meta.get("commit_sha", "local"),
+                        "backend": run_meta.get("backend", "default"),
+                        "scenario": scenario_id,
+                        "topology": topo,
+                        "node": n.name,
+                        "stage": stage,
+                        "source": "prom",
+                        "name": name,
+                        "value": val,
+                        "labels_json": lj,
+                    }
+                )
         except Exception:
             pass
         try:
             for r in ch_metrics(n):
-                nm = r.get("name","")
+                nm = r.get("name", "")
                 try:
-                    val = float(r.get("value",0))
+                    val = float(r.get("value", 0))
                 except Exception:
                     val = 0.0
-                metrics_ts_rows.append({
-                    "run_id": run_id,
-                    "commit_sha": run_meta.get("commit_sha","local"),
-                    "backend": run_meta.get("backend","default"),
-                    "scenario": scenario_id,
-                    "topology": topo,
-                    "node": n.name,
-                    "stage": stage,
-                    "source": "ch_metrics",
-                    "name": nm,
-                    "value": val,
-                    "labels_json": "{}",
-                })
+                metrics_ts_rows.append(
+                    {
+                        "run_id": run_id,
+                        "commit_sha": run_meta.get("commit_sha", "local"),
+                        "backend": run_meta.get("backend", "default"),
+                        "scenario": scenario_id,
+                        "topology": topo,
+                        "node": n.name,
+                        "stage": stage,
+                        "source": "ch_metrics",
+                        "name": nm,
+                        "value": val,
+                        "labels_json": "{}",
+                    }
+                )
         except Exception:
             pass
         try:
             for r in ch_async_metrics(n):
-                nm = r.get("name","")
+                nm = r.get("name", "")
                 try:
-                    val = float(r.get("value",0))
+                    val = float(r.get("value", 0))
                 except Exception:
                     val = 0.0
-                metrics_ts_rows.append({
-                    "run_id": run_id,
-                    "commit_sha": run_meta.get("commit_sha","local"),
-                    "backend": run_meta.get("backend","default"),
-                    "scenario": scenario_id,
-                    "topology": topo,
-                    "node": n.name,
-                    "stage": stage,
-                    "source": "ch_async_metrics",
-                    "name": nm,
-                    "value": val,
-                    "labels_json": "{}",
-                })
+                metrics_ts_rows.append(
+                    {
+                        "run_id": run_id,
+                        "commit_sha": run_meta.get("commit_sha", "local"),
+                        "backend": run_meta.get("backend", "default"),
+                        "scenario": scenario_id,
+                        "topology": topo,
+                        "node": n.name,
+                        "stage": stage,
+                        "source": "ch_async_metrics",
+                        "name": nm,
+                        "value": val,
+                        "labels_json": "{}",
+                    }
+                )
         except Exception:
             pass
     if metrics_ts_rows:
         sink_clickhouse(sink_url, "keeper_metrics_ts", metrics_ts_rows)
 
+
 @pytest.mark.timeout(2400)
 def test_scenario(scenario, cluster_factory, request, run_meta):
     start_ts = time.time()
-    topo=scenario.get("topology",3)
+    topo = scenario.get("topology", 3)
     backend = scenario.get("backend") or request.config.getoption("--keeper-backend")
     # Effective run_meta per test with the scenario-selected backend
     run_meta_eff = dict(run_meta or {})
@@ -141,7 +168,7 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
         run_meta_eff["backend"] = backend
     except Exception:
         pass
-    opts=scenario.get("opts", {})
+    opts = scenario.get("opts", {})
     try:
         faults_mode = request.config.getoption("--faults")
     except Exception:
@@ -160,24 +187,36 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
         fs_effective = []
     elif faults_mode == "random":
         try:
-            dur_default = int((scenario.get("workload") or {}).get("duration") or request.config.getoption("--duration"))
+            dur_default = int(
+                (scenario.get("workload") or {}).get("duration")
+                or request.config.getoption("--duration")
+            )
         except Exception:
             dur_default = int(os.environ.get("KEEPER_DURATION", "120"))
         if seed_val <= 0:
             import os as _os
-            seed_val = int.from_bytes(_os.urandom(4), 'big')
+
+            seed_val = int.from_bytes(_os.urandom(4), "big")
         try:
             try:
-                inc_raw = request.config.getoption("--random-faults-include") or os.environ.get("KEEPER_RANDOM_FAULTS_INCLUDE", "")
+                inc_raw = request.config.getoption(
+                    "--random-faults-include"
+                ) or os.environ.get("KEEPER_RANDOM_FAULTS_INCLUDE", "")
             except Exception:
                 inc_raw = os.environ.get("KEEPER_RANDOM_FAULTS_INCLUDE", "")
             try:
-                exc_raw = request.config.getoption("--random-faults-exclude") or os.environ.get("KEEPER_RANDOM_FAULTS_EXCLUDE", "")
+                exc_raw = request.config.getoption(
+                    "--random-faults-exclude"
+                ) or os.environ.get("KEEPER_RANDOM_FAULTS_EXCLUDE", "")
             except Exception:
                 exc_raw = os.environ.get("KEEPER_RANDOM_FAULTS_EXCLUDE", "")
             inc = set([x.strip() for x in (inc_raw or "").split(",") if x.strip()])
             exc = set([x.strip() for x in (exc_raw or "").split(",") if x.strip()])
-            cands = [k for k in list(getattr(fault_registry, 'keys', lambda: [])()) if k not in _FUZZ_EXCLUDE]
+            cands = [
+                k
+                for k in list(getattr(fault_registry, "keys", lambda: [])())
+                if k not in _FUZZ_EXCLUDE
+            ]
             if not cands and isinstance(fault_registry, dict):
                 cands = [k for k in fault_registry.keys() if k not in _FUZZ_EXCLUDE]
             weights = {}
@@ -187,28 +226,31 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             else:
                 for k in cands:
                     weights[k] = 0 if k in exc else 1
-            fz = generate_fuzz_scenario(seed_val, max(1, rnd_count), dur_default, weights=weights)
+            fz = generate_fuzz_scenario(
+                seed_val, max(1, rnd_count), dur_default, weights=weights
+            )
             rnd_faults = fz.get("faults", []) or []
             rb = {"kind": "run_bench", "duration_s": dur_default}
             fs_effective = [{"kind": "parallel", "steps": [rb] + rnd_faults}]
         except Exception:
             fs_effective = fs_original
     try:
-        uses_dm = any((f.get("kind") in ("dm_delay","dm_error")) for f in fs_effective)
+        uses_dm = any((f.get("kind") in ("dm_delay", "dm_error")) for f in fs_effective)
         if uses_dm:
             os.environ.setdefault("KEEPER_PRIVILEGED", "1")
     except Exception:
         pass
     # compute run_id early for reproducible artifact paths
-    run_id=f"{scenario.get('id','')}-{run_meta.get('commit_sha','local')}-{uuid.uuid4().hex[:8]}"
+    run_id = f"{scenario.get('id','')}-{run_meta.get('commit_sha','local')}-{uuid.uuid4().hex[:8]}"
     # Use a unique cluster name per test to avoid instance-dir collisions
     try:
-        cname = run_id.replace('/', '_').replace(' ', '_')
+        cname = run_id.replace("/", "_").replace(" ", "_")
         os.environ["KEEPER_CLUSTER_NAME"] = cname
     except Exception:
         pass
     cluster, nodes = cluster_factory(topo, backend, opts)
-    summary={}; ctx={}
+    summary = {}
+    ctx = {}
     try:
         try:
             scenario_for_env = copy.deepcopy(scenario)
@@ -217,9 +259,11 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             scenario_for_env = scenario
         ensure_environment(nodes, scenario_for_env)
         single_leader(nodes)
-        leader=[n for n in nodes if is_leader(n)][0]
-        sink_url=request.config.getoption("--sink-url")
-        _snapshot_and_sink(nodes, "pre", scenario.get("id",""), topo, run_meta_eff, sink_url, run_id)
+        leader = [n for n in nodes if is_leader(n)][0]
+        sink_url = request.config.getoption("--sink-url")
+        _snapshot_and_sink(
+            nodes, "pre", scenario.get("id", ""), topo, run_meta_eff, sink_url, run_id
+        )
         ctx["cluster"] = cluster
         try:
             ctx["faults_mode"] = request.config.getoption("--faults")
@@ -231,16 +275,36 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             ctx["seed"] = int(request.config.getoption("--seed") or 0)
         except Exception:
             ctx["seed"] = 0
-        sampler=None
+        sampler = None
         if sink_url:
-            interval=int(opts.get("monitor_interval_s", 5)) if isinstance(opts, dict) else 5
-            prom_allow = opts.get("prom_allow_prefixes") if isinstance(opts, dict) else None
-            sampler=MetricsSampler(nodes, run_meta_eff, scenario.get("id",""), topo, sink_url=sink_url, interval_s=interval, stage_prefix="run", run_id=run_id, prom_allow_prefixes=prom_allow, ctx=ctx)
+            interval = (
+                int(opts.get("monitor_interval_s", 5)) if isinstance(opts, dict) else 5
+            )
+            prom_allow = (
+                opts.get("prom_allow_prefixes") if isinstance(opts, dict) else None
+            )
+            sampler = MetricsSampler(
+                nodes,
+                run_meta_eff,
+                scenario.get("id", ""),
+                topo,
+                sink_url=sink_url,
+                interval_s=interval,
+                stage_prefix="run",
+                run_id=run_id,
+                prom_allow_prefixes=prom_allow,
+                ctx=ctx,
+            )
             sampler.start()
-        for step in scenario.get("pre", []): _apply_step(step, nodes, leader, ctx)
-        kb=None
-        if faults_mode != "random" and "workload" in scenario and not parse_bool(os.environ.get("KEEPER_DISABLE_WORKLOAD")):
-            wl=scenario["workload"]
+        for step in scenario.get("pre", []):
+            _apply_step(step, nodes, leader, ctx)
+        kb = None
+        if (
+            faults_mode != "random"
+            and "workload" in scenario
+            and not parse_bool(os.environ.get("KEEPER_DISABLE_WORKLOAD"))
+        ):
+            wl = scenario["workload"]
             # Environment overrides for workload paths and bench clients
             try:
                 rp = os.environ.get("KEEPER_REPLAY_PATH", "").strip()
@@ -263,23 +327,30 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             except Exception:
                 clients_env = None
             secure = False
-            kb=KeeperBench(
+            kb = KeeperBench(
                 nodes[0],
                 servers_arg(nodes),
-                cfg_path=str(WORKDIR/wl.get("config")) if wl.get("config") else None,
+                cfg_path=str(WORKDIR / wl.get("config")) if wl.get("config") else None,
                 duration_s=wl.get("duration", request.config.getoption("--duration")),
                 replay_path=wl.get("replay"),
                 secure=secure,
                 clients=clients_env,
             )
-            ctx["workload"]=wl; ctx["bench_node"]=nodes[0]; ctx["bench_secure"]=secure; ctx["bench_servers"]=servers_arg(nodes)
-        for action in fs_effective: _apply_step(action, nodes, leader, ctx)
+            ctx["workload"] = wl
+            ctx["bench_node"] = nodes[0]
+            ctx["bench_secure"] = secure
+            ctx["bench_servers"] = servers_arg(nodes)
+        for action in fs_effective:
+            _apply_step(action, nodes, leader, ctx)
         if kb:
             summary = kb.run()
         elif ctx.get("bench_summary"):
             summary = ctx.get("bench_summary") or {}
-        for gate in scenario.get("gates", []): _apply_gate(gate, nodes, leader, ctx, summary)
-        _snapshot_and_sink(nodes, "post", scenario.get("id",""), topo, run_meta_eff, sink_url, run_id)
+        for gate in scenario.get("gates", []):
+            _apply_gate(gate, nodes, leader, ctx, summary)
+        _snapshot_and_sink(
+            nodes, "post", scenario.get("id", ""), topo, run_meta_eff, sink_url, run_id
+        )
     except Exception:
         # Emit minimal reproducible scenario to a file for debugging
         try:
@@ -291,11 +362,19 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             pass
         # Attempt to snapshot fail state as well
         try:
-            sink_url=request.config.getoption("--sink-url")
-            _snapshot_and_sink(nodes, "fail", scenario.get("id",""), topo, run_meta_eff, sink_url, run_id)
+            sink_url = request.config.getoption("--sink-url")
+            _snapshot_and_sink(
+                nodes,
+                "fail",
+                scenario.get("id", ""),
+                topo,
+                run_meta_eff,
+                sink_url,
+                run_id,
+            )
         except Exception:
             pass
-        
+
         try:
             setattr(request.node, "keeper_failed", True)
         except Exception:
@@ -303,8 +382,9 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
         raise
     finally:
         try:
-            if 'sampler' in locals() and sampler:
-                sampler.stop(); sampler.flush()
+            if "sampler" in locals() and sampler:
+                sampler.stop()
+                sampler.flush()
         except Exception:
             pass
         # Close any pooled KeeperClient resources
