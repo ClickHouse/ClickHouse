@@ -1933,7 +1933,6 @@ Setting fields:
 - `cypress_path` – Cypress path to the table source.
 - `oauth_token` –  OAuth token.
 
-
 ### Null {#null}
 
 A special source that can be used to create dummy (empty) dictionaries. Such dictionaries can useful for tests or with setups with separated data and query nodes at nodes with Distributed tables.
