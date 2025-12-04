@@ -253,7 +253,7 @@ The result is a numericIndexedVector containing the indices where the first vect
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseLessEqual(v1, v2)";
         FunctionDocumentation::Arguments arguments
             = {{"v1", "", {"numericIndexedVector"}},
-               {"v2", "A numeric constant or numericIndexedVector object", {"(U)Int*", "Float*", "numericIndexedVector"}}};
+               {"v2", "A numeric constant or numericIndexedVector object.", {"(U)Int*", "Float*", "numericIndexedVector"}}};
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a new numericIndexedVector object.", {"numericIndexedVector"}};
         FunctionDocumentation::Examples examples
             = {{"Usage example",
