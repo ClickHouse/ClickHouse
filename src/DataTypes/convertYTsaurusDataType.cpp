@@ -404,7 +404,7 @@ bool isYTSaurusTypesCompatible(std::shared_ptr<const IDataType> ch_type, std::sh
         (
             allow_nullable &&
             yt_type->getColumnType() == TypeIndex::Nullable &&
-            ch_type->equals(*dynamic_cast<const DataTypeNullable *>(yt_type.get())->getNestedType())
+            ch_type->equals(*assert_cast<const DataTypeNullable *>(yt_type.get())->getNestedType())
         );
 }
 
