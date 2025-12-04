@@ -5,29 +5,49 @@ import subprocess
 import sys
 from pathlib import Path
 
+
 def _get_sink_env():
     return os.environ.get("KEEPER_METRICS_CLICKHOUSE_URL", "").strip()
+
 
 def run(cmd, cwd):
     p = subprocess.run(cmd, cwd=cwd)
     return p.returncode
 
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--files", default=os.environ.get("KEEPER_SCENARIO_FILE", "all"))
-    ap.add_argument("--duration", type=int, default=int(os.environ.get("KEEPER_DURATION", "120")))
+    ap.add_argument(
+        "--duration", type=int, default=int(os.environ.get("KEEPER_DURATION", "120"))
+    )
     ap.add_argument("--seeds", default=os.environ.get("KEEPER_SEEDS", "1,2"))
     ap.add_argument("--jobs", default=os.environ.get("KEEPER_JOBS", ""))
     ap.add_argument("--extra", default=os.environ.get("KEEPER_EXTRA_SCENARIOS", ""))
     ap.add_argument("--include-ids", default=os.environ.get("KEEPER_INCLUDE_IDS", ""))
     ap.add_argument("--matrix-backends", default=os.environ.get("KEEPER_BACKENDS", ""))
-    ap.add_argument("--matrix-topologies", default=os.environ.get("KEEPER_TOPOLOGIES", ""))
-    ap.add_argument("--include-faults-off", action="store_true", default=os.environ.get("KEEPER_INCLUDE_FAULTS_OFF", "") == "1")
+    ap.add_argument(
+        "--matrix-topologies", default=os.environ.get("KEEPER_TOPOLOGIES", "")
+    )
+    ap.add_argument(
+        "--include-faults-off",
+        action="store_true",
+        default=os.environ.get("KEEPER_INCLUDE_FAULTS_OFF", "") == "1",
+    )
     ap.add_argument("--sink-url", default=_get_sink_env())
-    ap.add_argument("--feature-flags", default=os.environ.get("KEEPER_FEATURE_FLAGS", ""))
-    ap.add_argument("--coord-overrides-xml", default=os.environ.get("KEEPER_COORD_OVERRIDES_XML", ""))
+    ap.add_argument(
+        "--feature-flags", default=os.environ.get("KEEPER_FEATURE_FLAGS", "")
+    )
+    ap.add_argument(
+        "--coord-overrides-xml",
+        default=os.environ.get("KEEPER_COORD_OVERRIDES_XML", ""),
+    )
     ap.add_argument("--keep-on-fail", action="store_true")
-    ap.add_argument("--rerun-failures", type=int, default=int(os.environ.get("KEEPER_RERUN_FAILURES", "0")))
+    ap.add_argument(
+        "--rerun-failures",
+        type=int,
+        default=int(os.environ.get("KEEPER_RERUN_FAILURES", "0")),
+    )
     args = ap.parse_args()
     repo = Path(__file__).parents[4]
     tests_path = "tests/stress/keeper/tests"
@@ -45,13 +65,29 @@ def main():
         env.setdefault("KEEPER_EXTRA_SCENARIOS", args.extra)
     if args.include_ids:
         env.setdefault("KEEPER_INCLUDE_IDS", args.include_ids)
-    base = [sys.executable, "-m", "pytest", "-q", tests_path, f"--duration={args.duration}"]
+    base = [
+        sys.executable,
+        "-m",
+        "pytest",
+        "-q",
+        tests_path,
+        f"--duration={args.duration}",
+    ]
     if args.matrix_backends:
         base += [f"--matrix-backends={args.matrix_backends}"]
     if args.matrix_topologies:
         base += [f"--matrix-topologies={args.matrix_topologies}"]
     if args.jobs:
-        base = [sys.executable, "-m", "pytest", "-q", "-n", args.jobs, tests_path, f"--duration={args.duration}"]
+        base = [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "-n",
+            args.jobs,
+            tests_path,
+            f"--duration={args.duration}",
+        ]
         if args.matrix_backends:
             base += [f"--matrix-backends={args.matrix_backends}"]
         if args.matrix_topologies:
@@ -72,7 +108,15 @@ def main():
             break
     # Optional rerun of last failures N times (serial) for flakiness assessment
     if rc != 0 and int(args.rerun_failures or 0) > 0:
-        lf_base = [sys.executable, "-m", "pytest", "-q", tests_path, "--lf", f"--duration={args.duration}"]
+        lf_base = [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            tests_path,
+            "--lf",
+            f"--duration={args.duration}",
+        ]
         if args.matrix_backends:
             lf_base += [f"--matrix-backends={args.matrix_backends}"]
         if args.matrix_topologies:
@@ -84,6 +128,7 @@ def main():
                 rc = 0
                 break
     sys.exit(rc)
+
 
 if __name__ == "__main__":
     main()

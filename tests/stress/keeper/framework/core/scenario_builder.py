@@ -1,5 +1,3 @@
- 
-
 class ScenarioBuilder:
     def __init__(self, sid, name, topology=3, backend="default"):
         self._sid = sid
@@ -46,9 +44,13 @@ class ScenarioBuilder:
             out["gates"] = list(self._gates)
         return out
 
+
 # Helpers for presets
 
-def with_jitter(sb, delay_ms=10, jitter_ms=5, loss_pct=0, duration_s=120, target_parallel=True):
+
+def with_jitter(
+    sb, delay_ms=10, jitter_ms=5, loss_pct=0, duration_s=120, target_parallel=True
+):
     step = {"kind": "netem", "on": "all", "delay_ms": int(delay_ms)}
     if jitter_ms:
         step["jitter_ms"] = int(jitter_ms)
@@ -61,7 +63,12 @@ def with_jitter(sb, delay_ms=10, jitter_ms=5, loss_pct=0, duration_s=120, target
 
 
 def with_gp3_disk(sb, ms=3, duration_s=120, target_parallel=True):
-    step = {"kind": "dm_delay", "on": "all", "ms": int(ms), "duration_s": int(duration_s)}
+    step = {
+        "kind": "dm_delay",
+        "on": "all",
+        "ms": int(ms),
+        "duration_s": int(duration_s),
+    }
     if target_parallel:
         step["target_parallel"] = True
     sb.fault(step)

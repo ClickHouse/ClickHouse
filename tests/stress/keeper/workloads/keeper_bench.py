@@ -1,6 +1,10 @@
-import os, json, re
+import json
+import os
+import re
+
 import yaml
-from ..framework.core.util import sh, has_bin
+
+from ..framework.core.util import has_bin, sh
 
 
 def _parse_hosts(servers):
@@ -45,7 +49,12 @@ def _translate_workload(cfg_text, servers, duration_s):
             requests.setdefault("get", ent)
         elif kind == "delete":
             # keeper-bench uses remove_factor on create; model deletes via create with high remove_factor
-            ent = {"path": path_prefix, "name_length": 10, "remove_factor": 0.8, "weight": weight}
+            ent = {
+                "path": path_prefix,
+                "name_length": 10,
+                "remove_factor": 0.8,
+                "weight": weight,
+            }
             requests.setdefault("create", ent)
         # ignore unknown kinds
     # Support simplified multi-op profile
@@ -79,10 +88,14 @@ def _translate_workload(cfg_text, servers, duration_s):
         for sz in sizes[:20]:  # cap to avoid overly huge configs
             key = f"set_{sz}"
             if key not in requests:
-                requests[key] = {"path": "/bench", "data": {"random_string": {"size": int(sz)}}, "weight": 1}
+                requests[key] = {
+                    "path": "/bench",
+                    "data": {"random_string": {"size": int(sz)}},
+                    "weight": 1,
+                }
         # For depths: vary base path depth for create and read under that subtree
         for d in depths[:20]:
-            sub = "/".join([f"d{i}" for i in range(1, d+1)]) if d > 0 else ""
+            sub = "/".join([f"d{i}" for i in range(1, d + 1)]) if d > 0 else ""
             base = f"/bench/{sub}" if sub else "/bench"
             ckey = f"create_d{d}"
             gkey = f"get_d{d}"
@@ -121,7 +134,16 @@ def _translate_workload(cfg_text, servers, duration_s):
 
 
 class KeeperBench:
-    def __init__(self, node, servers, cfg_path=None, duration_s=120, replay_path=None, secure=False, clients=None):
+    def __init__(
+        self,
+        node,
+        servers,
+        cfg_path=None,
+        duration_s=120,
+        replay_path=None,
+        secure=False,
+        clients=None,
+    ):
         self.node = node
         self.servers = servers
         self.cfg_path = cfg_path
@@ -190,24 +212,34 @@ class KeeperBench:
             cmd = f"{self._bench_cmd()} --config /tmp/keeper_bench.yaml"
         run_out = sh(self.node, cmd)
         # Parse JSON output if present
-        out = sh(self.node, "cat /tmp/keeper_bench_out.json 2>/dev/null || cat keeper_bench_results.json 2>/dev/null")
+        out = sh(
+            self.node,
+            "cat /tmp/keeper_bench_out.json 2>/dev/null || cat keeper_bench_results.json 2>/dev/null",
+        )
         try:
             data = json.loads(out.get("out", "") or "{}")
             if isinstance(data, dict):
-                summary["ops"] = int(data.get("operations") or data.get("total_requests") or 0)
+                summary["ops"] = int(
+                    data.get("operations") or data.get("total_requests") or 0
+                )
                 summary["errors"] = int(data.get("errors") or data.get("failed") or 0)
                 lat = data.get("latency") or data.get("latency_ms") or {}
+
                 def _pick(d, *ks):
                     for k in ks:
                         if k in d:
                             return d.get(k)
                     return None
+
                 p50 = _pick(lat, "p50", "50%", "median")
                 p95 = _pick(lat, "p95", "95%")
                 p99 = _pick(lat, "p99", "99%")
-                if p50 is not None: summary["p50_ms"] = int(float(p50))
-                if p95 is not None: summary["p95_ms"] = int(float(p95))
-                if p99 is not None: summary["p99_ms"] = int(float(p99))
+                if p50 is not None:
+                    summary["p50_ms"] = int(float(p50))
+                if p95 is not None:
+                    summary["p95_ms"] = int(float(p95))
+                if p99 is not None:
+                    summary["p99_ms"] = int(float(p99))
         except Exception:
             pass
         # Parse stdout lines for read/write counts if printed (replay mode)
@@ -220,10 +252,16 @@ class KeeperBench:
                     summary["writes"] = writes[-1]
                 if reads:
                     summary["reads"] = reads[-1]
-                rw_total = float(summary.get("reads", 0) or 0) + float(summary.get("writes", 0) or 0)
+                rw_total = float(summary.get("reads", 0) or 0) + float(
+                    summary.get("writes", 0) or 0
+                )
                 if rw_total > 0:
-                    summary["read_ratio"] = float(summary.get("reads", 0) or 0) / rw_total
-                    summary["write_ratio"] = float(summary.get("writes", 0) or 0) / rw_total
+                    summary["read_ratio"] = (
+                        float(summary.get("reads", 0) or 0) / rw_total
+                    )
+                    summary["write_ratio"] = (
+                        float(summary.get("writes", 0) or 0) / rw_total
+                    )
         except Exception:
             pass
         return summary

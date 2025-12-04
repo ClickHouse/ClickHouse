@@ -1,14 +1,31 @@
-import time, re
-from ..framework.core.util import wait_until
-from ..framework.io.probes import is_leader, count_leaders, wchs_total, any_ephemerals, ready, prom_metrics, four, mntr, ch_trace_log
-from ..framework.io.prom_parse import parse_prometheus_text
+import re
+import time
+
 from ..framework.core.settings import DEFAULT_ERROR_RATE, DEFAULT_P99_MS
-from ..workloads.keeper_bench import KeeperBench
+from ..framework.core.util import wait_until
+from ..framework.io.probes import (
+    any_ephemerals,
+    ch_trace_log,
+    count_leaders,
+    four,
+    is_leader,
+    mntr,
+    prom_metrics,
+    ready,
+    wchs_total,
+)
+from ..framework.io.prom_parse import parse_prometheus_text
 from ..workloads.adapter import servers_arg
+from ..workloads.keeper_bench import KeeperBench
 
 
 def single_leader(nodes, timeout_s=60):
-    wait_until(lambda: count_leaders(nodes) == 1, timeout_s=timeout_s, interval=0.5, desc="single_leader failed")
+    wait_until(
+        lambda: count_leaders(nodes) == 1,
+        timeout_s=timeout_s,
+        interval=0.5,
+        desc="single_leader failed",
+    )
 
 
 def backlog_drains(nodes, max_s=120):
@@ -53,7 +70,8 @@ def config_members_len_eq(nodes, expected):
     for n in nodes:
         try:
             if is_leader(n):
-                leader = n; break
+                leader = n
+                break
         except Exception:
             continue
     target = leader or nodes[0]
@@ -73,7 +91,8 @@ def config_converged(nodes, timeout_s=30):
     for n in nodes:
         try:
             if is_leader(n):
-                leader = n; break
+                leader = n
+                break
         except Exception:
             continue
     target = leader or nodes[0]
@@ -89,7 +108,8 @@ def config_converged(nodes, timeout_s=30):
                 cnt = _conf_members_count(n)
                 # Treat unknown (<=0) as inconclusive rather than failure
                 if cnt > 0 and cnt != expected:
-                    ok = False; break
+                    ok = False
+                    break
             if ok:
                 return
         except Exception:
@@ -104,10 +124,12 @@ def error_rate_le(summary, max_ratio=DEFAULT_ERROR_RATE):
         ops = float(summary.get("ops", 0) or 0)
         if ops <= 0:
             return
-        ratio = (errs / max(1.0, ops))
+        ratio = errs / max(1.0, ops)
         if ratio <= float(max_ratio):
             return
-        raise AssertionError(f"error_rate_le: ratio {ratio:.4f} exceeds {float(max_ratio):.4f}")
+        raise AssertionError(
+            f"error_rate_le: ratio {ratio:.4f} exceeds {float(max_ratio):.4f}"
+        )
     except Exception:
         return
 
@@ -137,7 +159,7 @@ def log_sanity_ok(nodes, allow=None, limit_rows=1000):
         ]
     ]
     offenders = []
-    for n in (nodes or []):
+    for n in nodes or []:
         try:
             txt = ch_trace_log(n, limit_rows=limit_rows) or ""
         except Exception:
@@ -213,7 +235,9 @@ def ready_expect(nodes, leader, ok=True, timeout_s=60):
         except Exception:
             pass
         time.sleep(0.5)
-    raise AssertionError(f"ready_expect: expected {bool(ok)} but condition not met in {int(timeout_s)}s")
+    raise AssertionError(
+        f"ready_expect: expected {bool(ok)} but condition not met in {int(timeout_s)}s"
+    )
 
 
 def lgif_monotone(nodes):
@@ -224,7 +248,7 @@ def lgif_monotone(nodes):
 def fourlw_enforces(nodes, allow=None, deny=None):
     allow = [str(x).strip() for x in (allow or []) if str(x).strip()]
     deny = [str(x).strip() for x in (deny or []) if str(x).strip()]
-    for n in (nodes or []):
+    for n in nodes or []:
         try:
             for cmd in allow:
                 out = four(n, cmd)
@@ -232,8 +256,15 @@ def fourlw_enforces(nodes, allow=None, deny=None):
                     raise AssertionError(f"fourlw_enforces: allow {cmd} returned empty")
             for cmd in deny:
                 out = four(n, cmd)
-                if str(out).strip() and ("Mode:" in out or "zk_" in out or "watch" in out or "connections" in out):
-                    raise AssertionError(f"fourlw_enforces: deny {cmd} returned response")
+                if str(out).strip() and (
+                    "Mode:" in out
+                    or "zk_" in out
+                    or "watch" in out
+                    or "connections" in out
+                ):
+                    raise AssertionError(
+                        f"fourlw_enforces: deny {cmd} returned response"
+                    )
         except Exception:
             raise
     return
@@ -253,6 +284,7 @@ def health_precheck(nodes):
         raise
     return
 
+
 def prom_thresholds_le(nodes, metrics, aggregate="sum"):
     try:
         targets = dict(metrics or {})
@@ -260,7 +292,7 @@ def prom_thresholds_le(nodes, metrics, aggregate="sum"):
             return
         agg = str(aggregate or "sum").strip().lower()
         totals = {k: 0.0 for k in targets.keys()}
-        for n in (nodes or []):
+        for n in nodes or []:
             try:
                 text = prom_metrics(n)
                 for r in parse_prometheus_text(text):
@@ -283,13 +315,24 @@ def prom_thresholds_le(nodes, metrics, aggregate="sum"):
                 if float(totals.get(k, 0.0)) <= float(thr):
                     continue
                 else:
-                    raise AssertionError(f"prom_thresholds_le: {k}={totals.get(k, 0.0)} exceeds {float(thr)}")
+                    raise AssertionError(
+                        f"prom_thresholds_le: {k}={totals.get(k, 0.0)} exceeds {float(thr)}"
+                    )
             except Exception:
                 return
     except Exception:
         return
 
-def replay_repeatable(nodes, leader, ctx, current_summary, duration_s=120, max_error_rate_delta=0.05, max_p99_delta_ms=500):
+
+def replay_repeatable(
+    nodes,
+    leader,
+    ctx,
+    current_summary,
+    duration_s=120,
+    max_error_rate_delta=0.05,
+    max_p99_delta_ms=500,
+):
     wl = ctx.get("workload") or {}
     replay_path = wl.get("replay")
     if not replay_path:
@@ -300,14 +343,25 @@ def replay_repeatable(nodes, leader, ctx, current_summary, duration_s=120, max_e
     servers = ctx.get("bench_servers") or servers_arg(nodes)
     secure = bool(ctx.get("bench_secure"))
     try:
-        bench = KeeperBench(node, servers, cfg_path=None, duration_s=int(duration_s), replay_path=replay_path, secure=secure)
+        bench = KeeperBench(
+            node,
+            servers,
+            cfg_path=None,
+            duration_s=int(duration_s),
+            replay_path=replay_path,
+            secure=secure,
+        )
         summary2 = bench.run()
+
         # Compare error-rate and p99 deltas
         def _err_ratio(s):
             try:
-                return float(s.get("errors", 0) or 0) / max(1.0, float(s.get("ops", 0) or 0))
+                return float(s.get("errors", 0) or 0) / max(
+                    1.0, float(s.get("ops", 0) or 0)
+                )
             except Exception:
                 return 0.0
+
         r1 = _err_ratio(current_summary or {})
         r2 = _err_ratio(summary2 or {})
         if abs(r2 - r1) > float(max_error_rate_delta):
@@ -330,7 +384,9 @@ def apply_gate(gate, nodes, leader, ctx, summary):
     if gtype == "backlog_drains":
         return backlog_drains(nodes, max_s=int(gate.get("max_s", 120)))
     if gtype == "error_rate_le":
-        return error_rate_le(summary or {}, max_ratio=float(gate.get("max_ratio", DEFAULT_ERROR_RATE)))
+        return error_rate_le(
+            summary or {}, max_ratio=float(gate.get("max_ratio", DEFAULT_ERROR_RATE))
+        )
     if gtype == "p99_le":
         return p99_le(summary or {}, max_ms=int(gate.get("max_ms", DEFAULT_P99_MS)))
     if gtype == "p95_le":
@@ -342,7 +398,12 @@ def apply_gate(gate, nodes, leader, ctx, summary):
     if gtype == "ephemerals_gone_within":
         return ephemerals_gone_within(nodes, max_s=int(gate.get("max_s", 60)))
     if gtype == "ready_expect":
-        return ready_expect(nodes, leader, ok=bool(gate.get("ok", True)), timeout_s=int(gate.get("timeout_s", 60)))
+        return ready_expect(
+            nodes,
+            leader,
+            ok=bool(gate.get("ok", True)),
+            timeout_s=int(gate.get("timeout_s", 60)),
+        )
     if gtype == "lgif_monotone":
         return lgif_monotone(nodes)
     if gtype == "fourlw_enforces":
@@ -360,7 +421,11 @@ def apply_gate(gate, nodes, leader, ctx, summary):
             max_p99_delta_ms=int(gate.get("max_p99_delta_ms", 500)),
         )
     if gtype == "prom_thresholds_le":
-        return prom_thresholds_le(nodes, gate.get("metrics") or {}, aggregate=str(gate.get("aggregate", "sum")))
+        return prom_thresholds_le(
+            nodes,
+            gate.get("metrics") or {},
+            aggregate=str(gate.get("aggregate", "sum")),
+        )
     if gtype == "config_converged":
         return config_converged(nodes, timeout_s=int(gate.get("timeout_s", 30)))
     if gtype == "config_members_len_eq":

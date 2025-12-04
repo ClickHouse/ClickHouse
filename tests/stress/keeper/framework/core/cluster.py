@@ -1,19 +1,24 @@
-import os, pathlib, shutil
+import os
+import pathlib
+import shutil
+
 from tests.integration.helpers.cluster import ClickHouseCluster
+
 from .settings import (
-    RAFT_PORT,
     CLIENT_PORT,
     CONTROL_PORT,
-    PROM_PORT,
     ID_BASE,
-    S3_LOG_ENDPOINT,
-    S3_SNAPSHOT_ENDPOINT,
-    S3_REGION,
-    MINIO_ENDPOINT,
     MINIO_ACCESS_KEY,
+    MINIO_ENDPOINT,
     MINIO_SECRET_KEY,
+    PROM_PORT,
+    RAFT_PORT,
+    S3_LOG_ENDPOINT,
+    S3_REGION,
+    S3_SNAPSHOT_ENDPOINT,
     parse_bool,
 )
+
 
 class ClusterBuilder:
     def __init__(self, file_anchor):
@@ -21,13 +26,19 @@ class ClusterBuilder:
 
     def _render_embedded_xml(self, names, sid, start_sid=ID_BASE):
         peers = "\n".join(
-            [f"        <server><id>{i}</id><hostname>{n}</hostname><port>{RAFT_PORT}</port></server>" for i, n in enumerate(names, start=start_sid)]
+            [
+                f"        <server><id>{i}</id><hostname>{n}</hostname><port>{RAFT_PORT}</port></server>"
+                for i, n in enumerate(names, start=start_sid)
+            ]
         )
         # Only inject control endpoint when explicitly enabled to avoid failures on older images.
-        enable_ctrl = bool(CONTROL_PORT) and parse_bool(os.environ.get("KEEPER_ENABLE_CONTROL", "0"))
+        enable_ctrl = bool(CONTROL_PORT) and parse_bool(
+            os.environ.get("KEEPER_ENABLE_CONTROL", "0")
+        )
         http_ctrl = (
             f"<http_control><port>{CONTROL_PORT}</port><readiness><endpoint>/ready</endpoint></readiness></http_control>"
-            if enable_ctrl else ""
+            if enable_ctrl
+            else ""
         )
         return f"""<clickhouse>
   <keeper_server>
@@ -64,7 +75,9 @@ class ClusterBuilder:
         if parse_bool(os.environ.get("KEEPER_USE_S3")):
             use_minio = True
 
-        cluster = ClickHouseCluster(self.file_anchor, name=os.environ.get("KEEPER_CLUSTER_NAME", "keeper"))
+        cluster = ClickHouseCluster(
+            self.file_anchor, name=os.environ.get("KEEPER_CLUSTER_NAME", "keeper")
+        )
         base_dir = pathlib.Path(cluster.base_dir)
         # Use a unique configs subdir per cluster name to avoid xdist collisions
         cname = os.environ.get("KEEPER_CLUSTER_NAME", "keeper").strip() or "keeper"
@@ -119,7 +132,9 @@ class ClusterBuilder:
                 "<storage_path>/var/lib/clickhouse/coordination</storage_path>"
             )
         # Zookeeper client nodes xml
-        zk_nodes = "".join(f"<node><host>{h}</host><port>{CLIENT_PORT}</port></node>" for h in names)
+        zk_nodes = "".join(
+            f"<node><host>{h}</host><port>{CLIENT_PORT}</port></node>" for h in names
+        )
         # Disks definition xml (local + optional S3)
         disks_xml = [
             "<local_log_disk><type>local</type><path>/var/lib/clickhouse/coordination/log/</path></local_log_disk>",
@@ -151,12 +166,18 @@ class ClusterBuilder:
         for i, name in enumerate(names, start=start_sid):
             # Build a single per-node config file with all required sections
             peers = "\n".join(
-                [f"        <server><id>{j}</id><hostname>{n}</hostname><port>{RAFT_PORT}</port></server>" for j, n in enumerate(names, start=start_sid)]
+                [
+                    f"        <server><id>{j}</id><hostname>{n}</hostname><port>{RAFT_PORT}</port></server>"
+                    for j, n in enumerate(names, start=start_sid)
+                ]
             )
-            enable_ctrl = bool(CONTROL_PORT) and parse_bool(os.environ.get("KEEPER_ENABLE_CONTROL", "0"))
+            enable_ctrl = bool(CONTROL_PORT) and parse_bool(
+                os.environ.get("KEEPER_ENABLE_CONTROL", "0")
+            )
             http_ctrl = (
                 f"<http_control><port>{CONTROL_PORT}</port><readiness><endpoint>/ready</endpoint></readiness></http_control>"
-                if enable_ctrl else ""
+                if enable_ctrl
+                else ""
             )
             # Merge baseline and extra coordination settings
             coord_settings = (
@@ -170,35 +191,57 @@ class ClusterBuilder:
                 "<quorum_reads>false</quorum_reads>"
                 "<shutdown_timeout>5000</shutdown_timeout>"
                 "<startup_timeout>30000</startup_timeout>"
-                + ("<experimental_use_rocksdb>1</experimental_use_rocksdb>" if backend == "rocksdb" else "")
-                + extra_coord +
-                "</coordination_settings>"
+                + (
+                    "<experimental_use_rocksdb>1</experimental_use_rocksdb>"
+                    if backend == "rocksdb"
+                    else ""
+                )
+                + extra_coord
+                + "</coordination_settings>"
             )
-            feature_flags_xml = "<feature_flags>" + "".join(f"<{k}>{1 if v else 0}</{k}>" for k, v in ff.items()) + "</feature_flags>"
+            feature_flags_xml = (
+                "<feature_flags>"
+                + "".join(f"<{k}>{1 if v else 0}</{k}>" for k, v in ff.items())
+                + "</feature_flags>"
+            )
             keeper_server = (
                 "<keeper_server>"
                 f"<tcp_port>{CLIENT_PORT}</tcp_port>"
                 f"<server_id>{i}</server_id>"
                 "<log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>"
                 "<snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>"
-                + http_ctrl +
-                coord_settings +
-                "<digest_enabled>true</digest_enabled>"
-                + feature_flags_xml +
-                "<raft_configuration>\n" + peers + "\n    </raft_configuration>"
-                + disk_select +
-                "</keeper_server>"
+                + http_ctrl
+                + coord_settings
+                + "<digest_enabled>true</digest_enabled>"
+                + feature_flags_xml
+                + "<raft_configuration>\n"
+                + peers
+                + "\n    </raft_configuration>"
+                + disk_select
+                + "</keeper_server>"
             )
-            disks_block = "<storage_configuration><disks>" + "\n".join(disks_xml) + "</disks></storage_configuration>"
+            disks_block = (
+                "<storage_configuration><disks>"
+                + "\n".join(disks_xml)
+                + "</disks></storage_configuration>"
+            )
             prom_block = f"<prometheus><endpoint>/metrics</endpoint><port>{PROM_PORT}</port><metrics>true</metrics><events>true</events><asynchronous_metrics>true</asynchronous_metrics></prometheus>"
             zk_block = f"<zookeeper>{zk_nodes}</zookeeper>"
             macros_block = f"<macros><replica>{name}</replica><shard>1</shard></macros>"
             full_xml = (
-                "<clickhouse>" + keeper_server + disks_block + prom_block + zk_block + macros_block + "</clickhouse>"
+                "<clickhouse>"
+                + keeper_server
+                + disks_block
+                + prom_block
+                + zk_block
+                + macros_block
+                + "</clickhouse>"
             )
             (conf_dir / f"keeper_config_{name}.xml").write_text(full_xml)
             cfgs = [f"configs/{cname}/keeper_config_{name}.xml"]
-            inst = cluster.add_instance(name, main_configs=cfgs, with_zookeeper=False, stay_alive=True)
+            inst = cluster.add_instance(
+                name, main_configs=cfgs, with_zookeeper=False, stay_alive=True
+            )
             nodes.append(inst)
 
         # Ensure a clean instances dir to avoid create_dir collisions

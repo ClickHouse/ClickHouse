@@ -1,8 +1,9 @@
 import time
+
 from ..framework.core.registry import fault_registry
-from ..framework.core.util import resolve_targets, wait_until
-from ..framework.io.probes import ready, four, is_leader, count_leaders, wchs_total
 from ..framework.core.settings import RAFT_PORT
+from ..framework.core.util import resolve_targets, wait_until
+from ..framework.io.probes import count_leaders, four, is_leader, ready, wchs_total
 
 
 def apply_step(step, nodes, leader, ctx):
@@ -15,51 +16,63 @@ def apply_step(step, nodes, leader, ctx):
         return fn(ctx, nodes, leader, step)
     # Orchestrators / helpers
     if kind == "parallel":
-        for sub in (step.get("steps") or []):
+        for sub in step.get("steps") or []:
             apply_step(sub, nodes, leader, ctx)
         return
     if kind == "background_schedule":
         # Run each step once (no scheduler loop)
-        for sub in (step.get("steps") or []):
+        for sub in step.get("steps") or []:
             apply_step(sub, nodes, leader, ctx)
         return
     if kind == "run_bench":
-        from ..workloads.keeper_bench import KeeperBench
         from ..workloads.adapter import servers_arg
+        from ..workloads.keeper_bench import KeeperBench
+
         try:
             duration = int(step.get("duration_s", 60))
         except Exception:
             duration = 60
         cfg_path = step.get("config")
-        kb = KeeperBench(nodes[0], servers_arg(nodes), cfg_path=cfg_path, duration_s=duration)
+        kb = KeeperBench(
+            nodes[0], servers_arg(nodes), cfg_path=cfg_path, duration_s=duration
+        )
         ctx["bench_summary"] = kb.run()
         return
     if kind == "leader_kill_measure":
         # Kill current leader and measure time to regain single leader
         import time as _t
+
         from .process import kill as _kill
+
         start = _t.time()
         # Identify leader among nodes
         cur_leader = None
         for n in nodes:
             try:
                 if is_leader(n):
-                    cur_leader = n; break
+                    cur_leader = n
+                    break
             except Exception:
                 continue
         target = cur_leader or nodes[0]
         _kill(target)
         to = int((kind and (step.get("timeout_s", 60))) or 60)
-        wait_until(lambda: count_leaders(nodes) == 1, timeout_s=to, interval=0.5, desc="re-election")
+        wait_until(
+            lambda: count_leaders(nodes) == 1,
+            timeout_s=to,
+            interval=0.5,
+            desc="re-election",
+        )
         ctx["election_time_s"] = float(_t.time() - start)
         return
     if kind == "record_watch_baseline":
         try:
             total = 0
             per = {}
-            for n in (nodes or []):
+            for n in nodes or []:
                 v = int(wchs_total(n) or 0)
-                per[n.name] = v; total += v
+                per[n.name] = v
+                total += v
             ctx["watch_baseline_total"] = total
             ctx["watch_baseline_by_node"] = per
         except Exception:
@@ -75,7 +88,8 @@ def apply_step(step, nodes, leader, ctx):
         for n in nodes:
             try:
                 if is_leader(n):
-                    target = n; break
+                    target = n
+                    break
             except Exception:
                 continue
         target = target or (nodes[0] if nodes else None)
