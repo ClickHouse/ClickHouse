@@ -1,4 +1,3 @@
-# rebuild in #33610
 # docker build -t clickhouse/test-base .
 FROM ubuntu:22.04
 
