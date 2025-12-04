@@ -2,10 +2,11 @@
 #include <Parsers/IAST.h>
 #include <Parsers/IAST_erase.h>
 #include <Parsers/ASTSystemQuery.h>
+#include <Poco/String.h>
 #include <Common/quoteString.h>
+#include <Interpreters/InstrumentationManager.h>
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
-
 
 namespace DB
 {
@@ -163,7 +164,13 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
     print_keyword("SYSTEM") << " ";
     print_keyword(typeToString(type));
-    if (!cluster.empty())
+
+    std::unordered_set<Type> queries_with_on_cluster_at_end = {
+        Type::DROP_FILESYSTEM_CACHE,
+        Type::SYNC_FILESYSTEM_CACHE,
+    };
+
+    if (!queries_with_on_cluster_at_end.contains(type) && !cluster.empty())
         formatOnCluster(ostr, settings);
 
     switch (type)
@@ -472,6 +479,68 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
+
+#if USE_XRAY
+        case Type::INSTRUMENT_ADD:
+        {
+            if (!instrumentation_function_name.empty())
+            {
+                ostr << ' ';
+                print_identifier(instrumentation_function_name);
+            }
+
+            if (!instrumentation_handler_name.empty())
+            {
+                ostr << ' ';
+                print_identifier(Poco::toUpper(instrumentation_handler_name));
+            }
+
+            switch (instrumentation_entry_type)
+            {
+                case Instrumentation::EntryType::ENTRY:
+                    ostr << " ENTRY"; break;
+                case Instrumentation::EntryType::EXIT:
+                    ostr << " EXIT"; break;
+                case Instrumentation::EntryType::ENTRY_AND_EXIT:
+                    break;
+            }
+
+            bool whitespace = false;
+            for (const auto & param : instrumentation_parameters)
+            {
+                if (!whitespace)
+                    ostr << ' ';
+                else
+                    whitespace = true;
+                std::visit([&](const auto & value)
+                {
+                    using T = std::decay_t<decltype(value)>;
+                    if constexpr (std::is_same_v<T, String>)
+                        ostr << ' ' << quoteString(value);
+                    else
+                        ostr << ' ' << value;
+                }, param);
+            }
+            break;
+        }
+        case Type::INSTRUMENT_REMOVE:
+        {
+            if (!instrumentation_subquery.empty())
+                ostr << " (" << instrumentation_subquery << ')';
+            else if (instrumentation_point_id)
+            {
+                if (std::holds_alternative<bool>(instrumentation_point_id.value()))
+                    ostr << " ALL";
+                else
+                    ostr << ' ' << std::get<UInt64>(instrumentation_point_id.value());
+            }
+            break;
+        }
+#else
+        case Type::INSTRUMENT_ADD:
+        case Type::INSTRUMENT_REMOVE:
+#endif
+
         case Type::KILL:
         case Type::SHUTDOWN:
         case Type::DROP_DNS_CACHE:
@@ -523,6 +592,9 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::END:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown SYSTEM command");
     }
+
+    if (queries_with_on_cluster_at_end.contains(type) && !cluster.empty())
+        formatOnCluster(ostr, settings);
 }
 
 

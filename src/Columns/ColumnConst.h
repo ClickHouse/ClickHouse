@@ -174,26 +174,20 @@ public:
         s -= n;
     }
 
-    std::string_view serializeValueIntoArena(size_t, Arena & arena, char const *& begin) const override
+    std::string_view
+    serializeValueIntoArena(size_t, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override
     {
-        return data->serializeValueIntoArena(0, arena, begin);
+        return data->serializeValueIntoArena(0, arena, begin, settings);
     }
 
-    char * serializeValueIntoMemory(size_t, char * memory) const override
+    char * serializeValueIntoMemory(size_t, char * memory, const IColumn::SerializationSettings * settings) const override
     {
-        return data->serializeValueIntoMemory(0, memory);
+        return data->serializeValueIntoMemory(0, memory, settings);
     }
 
-    void deserializeAndInsertFromArena(ReadBuffer & in) override
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override
     {
-        data->deserializeAndInsertFromArena(in);
-        data->popBack(1);
-        ++s;
-    }
-
-    void deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in) override
-    {
-        data->deserializeAndInsertAggregationStateValueFromArena(in);
+        data->deserializeAndInsertFromArena(in, settings);
         data->popBack(1);
         ++s;
     }

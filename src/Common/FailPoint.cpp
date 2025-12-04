@@ -65,6 +65,7 @@ static struct InitFiu
     ONCE(s3_read_buffer_throw_expired_token) \
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
     ONCE(object_storage_queue_fail_commit_once) \
+    ONCE(distributed_cache_fail_continue_request) \
     REGULAR(distributed_cache_fail_connect_non_retriable) \
     REGULAR(distributed_cache_fail_connect_retriable) \
     REGULAR(object_storage_queue_fail_commit) \
@@ -122,7 +123,8 @@ static struct InitFiu
     ONCE(database_replicated_drop_after_removing_keeper_failed) \
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
     PAUSEABLE_ONCE(rmt_mutate_task_pause_in_prepare) \
-    PAUSEABLE_ONCE(rmt_merge_selecting_task_pause_when_scheduled)
+    PAUSEABLE_ONCE(rmt_merge_selecting_task_pause_when_scheduled) \
+    ONCE(parallel_replicas_reading_response_timeout)
 
 
 namespace FailPoints

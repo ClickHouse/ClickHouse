@@ -23,7 +23,8 @@ static auto getKeyHolder(const IColumn & column, size_t row_num, Arena & arena)
     else
     {
         const char * begin = nullptr;
-        auto serialized = column.serializeAggregationStateValueIntoArena(row_num, arena, begin);
+        auto settings = IColumn::SerializationSettings::createForAggregationState();
+        auto serialized = column.serializeValueIntoArena(row_num, arena, begin, &settings);
         chassert(!serialized.empty());
         return SerializedKeyHolder{serialized, arena};
     }
@@ -37,7 +38,8 @@ static void deserializeAndInsert(std::string_view str, IColumn & data_to)
     else
     {
         ReadBufferFromString in(str);
-        data_to.deserializeAndInsertAggregationStateValueFromArena(in);
+        auto settings = IColumn::SerializationSettings::createForAggregationState();
+        data_to.deserializeAndInsertFromArena(in, &settings);
         if (!in.eof())
         {
             throw Exception(ErrorCodes::INCORRECT_DATA, "Extra bytes ({}) found after deserializing aggregation state", in.available());
