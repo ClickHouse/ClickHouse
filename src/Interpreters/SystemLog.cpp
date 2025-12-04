@@ -220,7 +220,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
             LOG_ERROR(
                 getLogger("SystemLog"),
                 "Ignoring '{}.settings' because a custom 'engine' is specified. This usually happens when configs merge with defaults. "
-                "Move settings into the engine's SETTINGS clause and add <settings remove=\"remove\" /> to drop inherited settings, "
+                "Move settings into the 'engine' SETTINGS clause and add <settings remove=\"remove\" /> to drop inherited settings, "
                 "or omit <engine> and configure partition_by / ttl / order_by / storage_policy / settings sections instead.",
                 config_prefix);
         }
