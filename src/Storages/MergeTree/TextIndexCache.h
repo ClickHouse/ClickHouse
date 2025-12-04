@@ -112,13 +112,13 @@ public:
 /// Estimate of the memory usage (bytes) of a text index header in cache
 struct TextIndexHeaderWeightFunction
 {
-    size_t operator()(const TextIndexHeader & header) const
+    size_t operator()(const DictionarySparseIndex & header) const
     {
         return header.memoryUsageBytes();
     }
 };
 
-class TextIndexHeaderCache : public CacheBase<UInt128, TextIndexHeader, UInt128TrivialHash, TextIndexHeaderWeightFunction>
+class TextIndexHeaderCache : public CacheBase<UInt128, DictionarySparseIndex, UInt128TrivialHash, TextIndexHeaderWeightFunction>
 {
 public:
     TextIndexHeaderCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
@@ -186,4 +186,5 @@ using TextIndexDictionaryBlockCachePtr = std::shared_ptr<TextIndexDictionaryBloc
 
 using TextIndexHeaderCachePtr = std::shared_ptr<TextIndexHeaderCache>;
 using TextIndexPostingsCachePtr = std::shared_ptr<TextIndexPostingsCache>;
+
 }

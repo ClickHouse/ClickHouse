@@ -7,18 +7,14 @@ Test ngram size.
 Test separators argument.
 -- separators must be array.
 -- separators must be an array of strings.
-Test bloom_filter_false_positive_rate argument.
--- bloom_filter_false_positive_rate must be a double.
--- bloom_filter_false_positive_rate must be between 0.0 and 1.0.
+Test posting_list_block_size argument.
+-- posting_list_block_size must be a positive integer.
 Test dictionary_block_size argument.
 -- dictionary_block_size must be an integer.
 -- dictionary_block_size must be bigger than 0.
 Test dictionary_block_frontcoding_compression argument.
 -- dictionary_block_frontcoding_compression must be an integer.
 -- dictionary_block_frontcoding_compression must be 0 or 1.
-Test max_cardinality_for_embedded_postings argument.
--- max_cardinality_for_embedded_postings must be an integer.
-Parameters are shuffled.
 Types are incorrect.
 Same argument appears >1 times.
 Non-existing argument.

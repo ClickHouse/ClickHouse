@@ -31,6 +31,8 @@
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/MergeInvertedIndexes.h>
+#include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <boost/algorithm/string/replace.hpp>
@@ -1141,6 +1143,7 @@ struct MutationContext
     MergeTreeData::DataPartPtr source_part;
     StorageMetadataPtr metadata_snapshot;
     StorageSnapshotPtr storage_snapshot;
+    DiskPtr disk;
 
     MutationCommandsConstPtr commands;
     time_t time_of_mutation;
@@ -1180,6 +1183,7 @@ struct MutationContext
     IMergeTreeDataPart::MinMaxIndexPtr minmax_idx;
 
     std::set<MergeTreeIndexPtr> indices_to_recalc;
+    std::set<MergeTreeIndexPtr> inverted_indices_to_recalc;
     std::set<MergeTreeIndexPtr> indices_to_drop;
     std::set<ColumnStatisticsPtr> stats_to_recalc;
     std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
@@ -1262,12 +1266,12 @@ public:
                 if (mutateOriginalPartAndPrepareProjections())
                     return true;
 
-                state = State::NEED_MERGE_PROJECTION_PARTS;
+                state = State::NEED_EXECUTE_MERGE_SUBTASKS;
                 return true;
             }
-            case State::NEED_MERGE_PROJECTION_PARTS:
+            case State::NEED_EXECUTE_MERGE_SUBTASKS:
             {
-                if (iterateThroughAllProjections())
+                if (iterateThroughAllMergeSubtasks())
                     return true;
 
                 state = State::SUCCESS;
@@ -1285,34 +1289,34 @@ public:
 private:
     void prepare();
     bool mutateOriginalPartAndPrepareProjections();
+    void createBuildInvertedIndexTask();
     void writeTempProjectionPart(size_t projection_idx, Chunk chunk);
-    void finalizeTempProjections();
-    bool iterateThroughAllProjections();
-    void constructTaskForProjectionPartsMerge();
+    void finalizeTempProjectionsAndIndexes();
+    bool iterateThroughAllMergeSubtasks();
     void finalize();
 
     enum class State : uint8_t
     {
         NEED_PREPARE,
         NEED_MUTATE_ORIGINAL_PART,
-        NEED_MERGE_PROJECTION_PARTS,
-
+        NEED_EXECUTE_MERGE_SUBTASKS,
         SUCCESS
     };
 
     State state{State::NEED_PREPARE};
     MutationContextPtr ctx;
 
-    size_t block_num = 0;
+    size_t projection_block_num = 0;
+    std::vector<std::unique_ptr<MergeProjectionsIndexesTask>> merge_subtasks;
 
     using ProjectionNameToItsBlocks = std::map<String, MergeTreeData::MutableDataPartsVector>;
     ProjectionNameToItsBlocks projection_parts;
-    std::move_iterator<ProjectionNameToItsBlocks::iterator> projection_parts_iterator;
 
     std::vector<Squashing> projection_squashes;
     const ProjectionsDescription & projections;
 
-    ExecutableTaskPtr merge_projection_parts_task_ptr;
+    MutableDataPartStoragePtr temporary_inverted_index_storage;
+    std::unique_ptr<BuildInvertedIndexTransform> build_inverted_index_transform;
 
     /// Existing rows count calculated during part writing.
     /// It is initialized in prepare(), calculated in mutateOriginalPartAndPrepareProjections()
@@ -1331,6 +1335,11 @@ void PartMergerWriter::prepare()
         projection_squashes.emplace_back(std::make_shared<const Block>(ctx->updated_header), settings[Setting::min_insert_block_size_rows], settings[Setting::min_insert_block_size_bytes]);
     }
 
+    if (!ctx->inverted_indices_to_recalc.empty())
+    {
+        createBuildInvertedIndexTask();
+    }
+
     existing_rows_count = 0;
 }
 
@@ -1346,7 +1355,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
 
         if (!ctx->checkOperationIsNotCanceled() || !ctx->mutating_executor->pull(cur_block))
         {
-            finalizeTempProjections();
+            finalizeTempProjectionsAndIndexes();
             return false;
         }
 
@@ -1379,12 +1388,31 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
                 writeTempProjectionPart(i, std::move(squashed_chunk));
         }
 
+        if (build_inverted_index_transform)
+            build_inverted_index_transform->aggregate(cur_block);
+
         (*ctx->mutate_entry)->rows_written += cur_block.rows();
         (*ctx->mutate_entry)->bytes_written_uncompressed += cur_block.bytes();
     } while (watch.elapsedMilliseconds() < step_time_ms);
 
     /// Need execute again
     return true;
+}
+
+void PartMergerWriter::createBuildInvertedIndexTask()
+{
+    auto part_path = ctx->new_data_part->getDataPartStorage().getRelativePath();
+    temporary_inverted_index_storage = createTemporaryInvertedIndexStorage(ctx->disk, part_path);
+    std::vector<MergeTreeIndexPtr> inverted_indexes(ctx->inverted_indices_to_recalc.begin(), ctx->inverted_indices_to_recalc.end());
+
+    build_inverted_index_transform = std::make_unique<BuildInvertedIndexTransform>(
+        std::make_shared<Block>(ctx->updated_header),
+        /*index_file_prefix=*/ "tmp",
+        std::move(inverted_indexes),
+        temporary_inverted_index_storage,
+        ctx->out->getWriterSettings(),
+        ctx->compression_codec,
+        ctx->mrk_extension);
 }
 
 void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chunk)
@@ -1400,14 +1428,14 @@ void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chun
         result,
         projection,
         ctx->new_data_part.get(),
-        ++block_num);
+        ++projection_block_num);
 
     tmp_part->finalize();
     tmp_part->part->getDataPartStorage().commitTransaction();
     projection_parts[projection.name].emplace_back(std::move(tmp_part->part));
 }
 
-void PartMergerWriter::finalizeTempProjections()
+void PartMergerWriter::finalizeTempProjectionsAndIndexes()
 {
     // Write the last block
     for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
@@ -1417,58 +1445,71 @@ void PartMergerWriter::finalizeTempProjections()
             writeTempProjectionPart(i, std::move(squashed_chunk));
     }
 
-    projection_parts_iterator = std::make_move_iterator(projection_parts.begin());
+    for (auto && [projection_name, temporary_projection_parts] : projection_parts)
+    {
+        auto merge_task = std::make_unique<MergeProjectionPartsTask>
+        (
+            projection_name,
+            std::move(temporary_projection_parts),
+            projections.get(projection_name),
+            projection_block_num,
+            ctx->context,
+            ctx->holder,
+            ctx->mutator,
+            ctx->mutate_entry,
+            ctx->time_of_mutation,
+            ctx->new_data_part,
+            ctx->space_reservation
+        );
 
-    /// Maybe there are no projections ?
-    if (projection_parts_iterator != std::make_move_iterator(projection_parts.end()))
-        constructTaskForProjectionPartsMerge();
+        merge_subtasks.push_back(std::move(merge_task));
+    }
+
+    if (build_inverted_index_transform)
+    {
+        build_inverted_index_transform->finalize();
+        temporary_inverted_index_storage->commitTransaction();
+        auto reader_settings = MergeTreeReaderSettings::create(ctx->context, *ctx->data->getSettings(), SelectQueryInfo{});
+        const auto & indexes = build_inverted_index_transform->getIndexes();
+
+        for (size_t i = 0; i < indexes.size(); ++i)
+        {
+            auto segments = build_inverted_index_transform->getSegments(i, 0);
+
+            auto merge_task = std::make_unique<MergeInvertedIndexesTask>(
+                std::move(segments),
+                ctx->new_data_part,
+                indexes[i],
+                /*merged_part_offsets=*/ nullptr,
+                reader_settings,
+                ctx->out->getWriterSettings());
+
+            merge_subtasks.push_back(std::move(merge_task));
+        }
+    }
 }
 
-void PartMergerWriter::constructTaskForProjectionPartsMerge()
+bool PartMergerWriter::iterateThroughAllMergeSubtasks()
 {
-    auto && [name, parts] = *projection_parts_iterator;
-    const auto & projection = projections.get(name);
-
-    merge_projection_parts_task_ptr = std::make_unique<MergeProjectionPartsTask>
-    (
-        name,
-        std::move(parts),
-        projection,
-        block_num,
-        ctx->context,
-        ctx->holder,
-        ctx->mutator,
-        ctx->mutate_entry,
-        ctx->time_of_mutation,
-        ctx->new_data_part,
-        ctx->space_reservation
-    );
-}
-
-
-bool PartMergerWriter::iterateThroughAllProjections()
-{
-    /// In case if there are no projections we didn't construct a task
-    if (!merge_projection_parts_task_ptr)
+    if (merge_subtasks.empty())
         return false;
 
-    if (merge_projection_parts_task_ptr->executeStep())
+    auto & task = merge_subtasks.back();
+    if (task->executeStep())
         return true;
 
-    ++projection_parts_iterator;
-
-    if (projection_parts_iterator == std::make_move_iterator(projection_parts.end()))
-        return false;
-
-    constructTaskForProjectionPartsMerge();
-
-    return true;
+    task->addToChecksums(ctx->new_data_part->checksums);
+    merge_subtasks.pop_back();
+    return !merge_subtasks.empty();
 }
 
 void PartMergerWriter::finalize()
 {
     if (ctx->count_lightweight_deleted_rows)
         ctx->new_data_part->existing_rows_count = existing_rows_count;
+
+    if (temporary_inverted_index_storage)
+        temporary_inverted_index_storage->removeRecursive();
 }
 
 class MutateAllPartColumnsTask : public IExecutableTask
@@ -2368,15 +2409,24 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
 
         if (need_recalculate)
         {
-            if (ctx->indices_to_recalc.insert(index_factory.get(index)).second)
+            bool inserted;
+            auto index_ptr = index_factory.get(index);
+
+            if (dynamic_cast<const MergeTreeIndexText *>(index_ptr.get()))
+                inserted = ctx->inverted_indices_to_recalc.insert(index_ptr).second;
+            else
+                inserted = ctx->indices_to_recalc.insert(index_ptr).second;
+
+            if (inserted)
             {
-                for (const auto & expr : index.expression_list_ast->children)
+                ASTPtr expr_list = index.expression_list_ast->clone();
+                for (const auto & expr : expr_list->children)
                     indices_recalc_expr_list->children.push_back(expr->clone());
             }
         }
     }
 
-    if (!ctx->indices_to_recalc.empty() && builder.initialized())
+    if ((!ctx->indices_to_recalc.empty() || !ctx->inverted_indices_to_recalc.empty()) && builder.initialized())
     {
         auto indices_recalc_syntax
             = TreeRewriter(ctx->context).analyze(indices_recalc_expr_list, builder.getHeader().getNamesAndTypesList());
@@ -2605,6 +2655,7 @@ bool MutateTask::prepare()
     }
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + ctx->future_part->name, ctx->space_reservation->getDisk(), 0);
+    ctx->disk = single_disk_volume->getDisk();
 
     std::string prefix;
     if (ctx->need_prefix)
@@ -2712,11 +2763,14 @@ bool MutateTask::prepare()
 
         ctx->stats_to_recalc = MutationHelpers::getStatisticsToRecalculate(ctx->metadata_snapshot, ctx->materialized_statistics);
 
+        auto all_indices_to_recalc = ctx->indices_to_recalc;
+        all_indices_to_recalc.insert(ctx->inverted_indices_to_recalc.begin(), ctx->inverted_indices_to_recalc.end());
+
         ctx->files_to_skip = MutationHelpers::collectFilesToSkip(
             ctx->source_part,
             ctx->new_data_part,
             ctx->updated_header,
-            ctx->indices_to_recalc,
+            all_indices_to_recalc,
             ctx->indices_to_drop,
             ctx->mrk_extension,
             projections_to_skip,

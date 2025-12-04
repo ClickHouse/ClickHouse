@@ -5,12 +5,15 @@
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 
-namespace
+namespace DB
 {
 
-using namespace DB;
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
-MergeTreeReaderSettings patchSettings(MergeTreeReaderSettings settings, MergeTreeIndexSubstream::Type substream)
+static MergeTreeReaderSettings patchSettings(MergeTreeReaderSettings settings, MergeTreeIndexSubstream::Type substream)
 {
     using enum MergeTreeIndexSubstream::Type;
 
@@ -26,7 +29,7 @@ MergeTreeReaderSettings patchSettings(MergeTreeReaderSettings settings, MergeTre
     return settings;
 }
 
-std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
+static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
     const String & stream_name,
     const String & extension,
     MergeTreeData::DataPartPtr part,
@@ -55,23 +58,15 @@ std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
     return std::make_unique<MergeTreeReaderStreamSingleColumn>(
         part->getDataPartStoragePtr(),
         stream_name,
-        extension, marks_count,
+        extension,
+        marks_count,
         all_mark_ranges,
         std::move(settings),
         uncompressed_cache,
         part->getFileSizeOrZero(stream_name + extension),
         std::move(marks_loader),
-        ReadBufferFromFileBase::ProfileCallback{}, CLOCK_MONOTONIC_COARSE);
-}
-
-}
-
-namespace DB
-{
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
+        ReadBufferFromFileBase::ProfileCallback{},
+        CLOCK_MONOTONIC_COARSE);
 }
 
 MergeTreeIndexReader::MergeTreeIndexReader(
@@ -150,7 +145,6 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
             .condition = condition,
             .part = *part,
             .index = *index,
-            .index_mark = mark
         };
 
         res->deserializeBinaryWithMultipleStreams(streams, state);
@@ -198,19 +192,6 @@ void MergeTreeIndexReader::adjustRightMark(size_t right_mark)
 {
     for (const auto & stream : stream_holders)
         stream->adjustRightMark(right_mark);
-}
-
-void MergeTreeIndexReader::prefetchBeginOfRange(size_t from_mark, Priority priority)
-{
-    initStreamIfNeeded();
-
-    for (const auto & stream : stream_holders)
-    {
-        stream->seekToMark(from_mark);
-        stream->getDataBuffer()->prefetch(priority);
-    }
-
-    stream_mark = from_mark;
 }
 
 }

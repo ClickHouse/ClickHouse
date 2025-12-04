@@ -35,6 +35,11 @@ public:
         return writer->getIndexGranularity();
     }
 
+    MergeTreeWriterSettings getWriterSettings() const
+    {
+        return writer->getWriterSettings();
+    }
+
     PlainMarksByName releaseCachedMarks()
     {
         return writer ? writer->releaseCachedMarks() : PlainMarksByName{};
