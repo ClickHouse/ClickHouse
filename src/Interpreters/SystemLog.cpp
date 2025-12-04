@@ -656,7 +656,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         /// is called from single thread.
         prepareTable();
         prepare_table_time = stopwatch.elapsedMilliseconds();
-        stopwatch.reset();
+        stopwatch.restart();
 
         ColumnsWithTypeAndName log_element_columns;
         auto log_element_names_and_types = LogElement::getColumnsDescription();
@@ -676,7 +676,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 
         block.setColumns(std::move(columns));
         prepare_data_time = stopwatch.elapsedMilliseconds();
-        stopwatch.reset();
+        stopwatch.restart();
 
         /// We write to table indirectly, using InterpreterInsertQuery.
         /// This is needed to support DEFAULT-columns in table.
@@ -705,7 +705,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         executor.push(block);
         executor.finish();
         execute_insert_time = stopwatch.elapsedMilliseconds();
-        stopwatch.reset();
+        stopwatch.restart();
     }
     catch (...)
     {
