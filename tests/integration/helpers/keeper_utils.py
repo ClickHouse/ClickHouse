@@ -271,19 +271,19 @@ class KeeperClient(object):
             client.stop()
 
 
-def get_keeper_socket(cluster, nodename, port=9181):
+def get_keeper_socket(cluster, nodename, port=9181, timeout_sec=60):
     host = cluster.get_instance_ip(nodename)
     client = socket.socket()
-    client.settimeout(60)
+    client.settimeout(timeout_sec)
     client.connect((host, port))
     return client
 
 
-def send_4lw_cmd(cluster, node, cmd="ruok", port=9181, argument=None):
+def send_4lw_cmd(cluster, node, cmd="ruok", port=9181, argument=None, timeout_sec=60):
     client = None
     logging.debug("Sending %s to %s:%d", cmd, node, port)
     try:
-        client = get_keeper_socket(cluster, node.name, port)
+        client = get_keeper_socket(cluster, node.name, port, timeout_sec)
         if argument is not None:
             client.send(cmd.encode() + struct.pack('>L', len(argument)) + argument.encode())
         else:

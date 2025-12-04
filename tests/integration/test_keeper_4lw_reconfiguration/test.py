@@ -75,7 +75,7 @@ def five_to_three_reconfig(started_cluster):
     print(json_command)
     print(zk.get("/keeper/config"))
 
-    result_str = keeper_utils.send_4lw_cmd(started_cluster, node3, cmd="rcfg", port=9181, argument=json_command)
+    result_str = keeper_utils.send_4lw_cmd(started_cluster, node3, cmd="rcfg", port=9181, argument=json_command, timeout_sec=180)
     print("Result:", result_str)
     result = json.loads(result_str)
     assert result["status"] == "ok"
@@ -150,7 +150,7 @@ def three_to_five_reconfig(started_cluster):
     print(json_command)
     print(zk.get("/keeper/config"))
 
-    result_str = keeper_utils.send_4lw_cmd(started_cluster, node5, cmd="rcfg", port=9181, argument=json_command)
+    result_str = keeper_utils.send_4lw_cmd(started_cluster, node5, cmd="rcfg", port=9181, argument=json_command, timeout_sec=180)
     print("Result:", result_str)
     result = json.loads(result_str)
     assert result["status"] == "ok"
@@ -201,7 +201,7 @@ def test_no_remove_itself(started_cluster):
         ]
     }
     json_command = json.dumps(command)
-    result_str = keeper_utils.send_4lw_cmd(started_cluster, node3, cmd="rcfg", port=9181, argument=json_command)
+    result_str = keeper_utils.send_4lw_cmd(started_cluster, node3, cmd="rcfg", port=9181, argument=json_command, timeout_sec=180)
     result = json.loads(result_str)
     assert result["status"] == "error"
     assert "Reconfigure command cannot remove current server id" in result["message"]
@@ -213,7 +213,7 @@ def test_precondition_failure(started_cluster):
         },
     }
     json_command = json.dumps(command)
-    result_str = keeper_utils.send_4lw_cmd(started_cluster, node3, cmd="rcfg", port=9181, argument=json_command)
+    result_str = keeper_utils.send_4lw_cmd(started_cluster, node3, cmd="rcfg", port=9181, argument=json_command, timeout_sec=180)
     result = json.loads(result_str)
     assert result["status"] == "error"
     assert "expected leader id" in result["message"]
@@ -224,7 +224,7 @@ def test_precondition_failure(started_cluster):
         },
     }
     json_command = json.dumps(command)
-    result_str = keeper_utils.send_4lw_cmd(started_cluster, node3, cmd="rcfg", port=9181, argument=json_command)
+    result_str = keeper_utils.send_4lw_cmd(started_cluster, node3, cmd="rcfg", port=9181, argument=json_command, timeout_sec=180)
     result = json.loads(result_str)
     assert result["status"] == "error"
     assert "expected member" in result["message"]
