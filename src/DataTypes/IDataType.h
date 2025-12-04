@@ -171,6 +171,12 @@ public:
       */
     virtual MutableColumnPtr createColumn() const = 0;
 
+    /** Creates a column with specified size, without initializing values.
+      * This is useful when you need to create a large column to fill later (e.g. the result of a function)
+      * Default implementation uses createColumn and cloneResized.
+      */
+    virtual MutableColumnPtr createUninitializedColumnWithSize(size_t size) const;
+
     /** Create empty column for corresponding type and serialization.
      */
     virtual MutableColumnPtr createColumn(const ISerialization & serialization) const;
