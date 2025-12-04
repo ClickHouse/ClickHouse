@@ -1319,10 +1319,10 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
     node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_commit_once")
 
     assert node.contains_in_log(
-        f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 1/6"
+        f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 1"
     )
     assert not node.contains_in_log(
-        f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 5/6"
+        f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 5"
     )
 
     nodes = zk.get_children(f"{keeper_path}/processing")
@@ -1344,7 +1344,7 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
     assert found
 
     assert node.contains_in_log(
-        f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 6/6"
+        f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 10"
     )
 
     found = False
