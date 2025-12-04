@@ -351,8 +351,10 @@ class FuzzerLogParser:
         # Remove exception functions and everything above them
         for i, func in enumerate(functions):
             if "DB::Exception" in func:
-                functions = functions[:i]
+                functions = functions[i+1:]
                 break
+        # Remove all remaining DB::Exception functions
+        functions = [f for f in functions if "DB::Exception" not in f]
 
         # Limit to top ST_MAX_DEPTH functions for broader matching
         functions = functions[:ST_MAX_DEPTH]
