@@ -309,21 +309,29 @@ void ColumnLowCardinality::collectSerializedValueSizes(PaddedPODArray<UInt64> & 
     idx.collectSerializedValueSizes(sizes, dict_sizes);
 }
 
-void ColumnLowCardinality::deserializeAndInsertFromArena(ReadBuffer & in)
+const char * ColumnLowCardinality::deserializeAndInsertFromArena(const char * pos)
 {
     compactIfSharedDictionary();
-    idx.insertIndex(getDictionary().uniqueDeserializeAndInsertFromArena(in));
+
+    const char * new_pos;
+    idx.insertIndex(getDictionary().uniqueDeserializeAndInsertFromArena(pos, new_pos));
+
+    return new_pos;
 }
 
-void ColumnLowCardinality::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
+const char * ColumnLowCardinality::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
 {
     compactIfSharedDictionary();
-    idx.insertIndex(getDictionary().uniqueDeserializeAndInsertAggregationStateValueFromArena(in));
+
+    const char * new_pos;
+    idx.insertIndex(getDictionary().uniqueDeserializeAndInsertAggregationStateValueFromArena(pos, new_pos));
+
+    return new_pos;
 }
 
-void ColumnLowCardinality::skipSerializedInArena(ReadBuffer & in) const
+const char * ColumnLowCardinality::skipSerializedInArena(const char * pos) const
 {
-    getDictionary().skipSerializedInArena(in);
+    return getDictionary().skipSerializedInArena(pos);
 }
 
 WeakHash32 ColumnLowCardinality::getWeakHash32() const

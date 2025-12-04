@@ -24,8 +24,6 @@
 #include <Common/findExtreme.h>
 #include <Common/iota.h>
 #include <DataTypes/FieldToDataType.h>
-#include <IO/Operators.h>
-#include <IO/ReadHelpers.h>
 
 #include <bit>
 #include <cstring>
@@ -58,17 +56,16 @@ namespace ErrorCodes
 }
 
 template <typename T>
-void ColumnVector<T>::deserializeAndInsertFromArena(ReadBuffer & in)
+const char * ColumnVector<T>::deserializeAndInsertFromArena(const char * pos)
 {
-    T element;
-    readBinaryLittleEndian<T>(element, in);
-    data.emplace_back(std::move(element));
+    data.emplace_back(unalignedLoad<T>(pos));
+    return pos + sizeof(T);
 }
 
 template <typename T>
-void ColumnVector<T>::skipSerializedInArena(ReadBuffer & in) const
+const char * ColumnVector<T>::skipSerializedInArena(const char * pos) const
 {
-    in.ignore(sizeof(T));
+    return pos + sizeof(T);
 }
 
 template <typename T>
@@ -452,13 +449,11 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
 }
 
 template <typename T>
-DataTypePtr ColumnVector<T>::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options & options) const
+std::pair<String, DataTypePtr> ColumnVector<T>::getValueNameAndType(size_t n) const
 {
     chassert(n < data.size()); /// This assert is more strict than the corresponding assert inside PODArray.
     const auto & val = castToNearestFieldType(data[n]);
-    if (options.notFull(name_buf))
-        name_buf << FieldVisitorToString()(val);
-    return FieldToDataType()(val);
+    return {FieldVisitorToString()(val), FieldToDataType()(val)};
 }
 
 template <typename T>

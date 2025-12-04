@@ -136,7 +136,7 @@ public:
 
     void get(size_t n, Field & res) const override;
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
 
     bool isDefaultAt(size_t) const override
     {
@@ -173,9 +173,9 @@ public:
 
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
 
-    void deserializeAndInsertFromArena(ReadBuffer & in) override;
+    const char * deserializeAndInsertFromArena(const char * src_arena) override;
 
-    void skipSerializedInArena(ReadBuffer & in) const override;
+    const char * skipSerializedInArena(const char *) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 

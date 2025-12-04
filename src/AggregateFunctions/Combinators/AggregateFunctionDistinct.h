@@ -138,10 +138,9 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
                 Set::LookupResult it;
                 bool inserted;
                 history.emplace(ArenaKeyHolder{value, *arena}, it, inserted);
-                ReadBufferFromString in({it->getValue().data, it->getValue().size});
-                /// Multiple columns are serialized one by one
+                const char * pos = it->getValue().data;
                 for (auto & column : argument_columns)
-                    column->deserializeAndInsertAggregationStateValueFromArena(in);
+                    pos = column->deserializeAndInsertAggregationStateValueFromArena(pos);
             }
         }
     }

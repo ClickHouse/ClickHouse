@@ -14,7 +14,6 @@
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/ReadBufferFromMemory.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/convertFieldToType.h>
@@ -24,7 +23,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int LOGICAL_ERROR;
     extern const int PARAMETER_OUT_OF_BOUND;
 }
@@ -309,12 +307,12 @@ void ColumnDynamic::get(size_t n, Field & res) const
     type->getDefaultSerialization()->deserializeBinary(res, buf, getFormatSettings());
 }
 
-DataTypePtr ColumnDynamic::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+std::pair<String, DataTypePtr> ColumnDynamic::getValueNameAndType(size_t n) const
 {
     const auto & variant_col = getVariantColumn();
     /// Check if value is not in shared variant.
     if (variant_col.globalDiscriminatorAt(n) != getSharedVariantDiscriminator())
-        return variant_col.getValueNameAndTypeImpl(name_buf, n, options);
+        return variant_col.getValueNameAndType(n);
 
     /// We should deserialize value from shared variant.
     const auto & shared_variant = getSharedVariant();
@@ -323,7 +321,7 @@ DataTypePtr ColumnDynamic::getValueNameAndTypeImpl(WriteBufferFromOwnString & na
     auto type = decodeDataType(buf);
     const auto col = type->createColumn();
     type->getDefaultSerialization()->deserializeBinary(*col, buf, getFormatSettings());
-    return col->getValueNameAndTypeImpl(name_buf, 0, options);
+    return col->getValueNameAndType(0);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -771,25 +769,22 @@ StringRef ColumnDynamic::serializeValueIntoArena(size_t n, Arena & arena, const 
     return res;
 }
 
-void ColumnDynamic::deserializeAndInsertFromArena(ReadBuffer & in)
+const char * ColumnDynamic::deserializeAndInsertFromArena(const char * pos)
 {
     auto & variant_col = getVariantColumn();
-    UInt8 null_bit;
-    readBinaryLittleEndian<UInt8>(null_bit, in);
+    UInt8 null_bit = unalignedLoad<UInt8>(pos);
+    pos += sizeof(UInt8);
     if (null_bit)
     {
         insertDefault();
-        return;
+        return pos;
     }
 
     /// Read variant type and value in binary format.
-    size_t type_and_value_size;
-    readBinaryLittleEndian<size_t>(type_and_value_size, in);
-    if (in.available() < type_and_value_size)
-        throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after eof when deserializing ColumnDynamic");
-
-    std::string_view type_and_value(in.position(), type_and_value_size);
-    in.ignore(type_and_value_size);
+    const size_t type_and_value_size = unalignedLoad<size_t>(pos);
+    pos += sizeof(type_and_value_size);
+    std::string_view type_and_value(pos, type_and_value_size);
+    pos += type_and_value_size;
 
     ReadBufferFromMemory buf(type_and_value.data(), type_and_value.size());
     auto variant_type = decodeDataType(buf);
@@ -814,18 +809,21 @@ void ColumnDynamic::deserializeAndInsertFromArena(ReadBuffer & in)
         variant_col.getLocalDiscriminators().push_back(variant_col.localDiscriminatorByGlobal(getSharedVariantDiscriminator()));
         variant_col.getOffsets().push_back(shared_variant.size() - 1);
     }
+
+    return pos;
 }
 
-void ColumnDynamic::skipSerializedInArena(ReadBuffer & in) const
+const char * ColumnDynamic::skipSerializedInArena(const char * pos) const
 {
-    UInt8 null_bit;
-    readBinaryLittleEndian<UInt8>(null_bit, in);
+    UInt8 null_bit = unalignedLoad<UInt8>(pos);
+    pos += sizeof(UInt8);
     if (null_bit)
-        return;
+        return pos;
 
-    size_t type_and_value_size;
-    readBinaryLittleEndian<size_t>(type_and_value_size, in);
-    in.ignore(type_and_value_size);
+    const size_t type_and_value_size = unalignedLoad<size_t>(pos);
+    pos += sizeof(type_and_value_size);
+    pos += type_and_value_size;
+    return pos;
 }
 
 void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const
@@ -1258,7 +1256,7 @@ bool ColumnDynamic::dynamicStructureEquals(const IColumn & rhs) const
     return false;
 }
 
-void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
 {
     if (!empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "takeDynamicStructureFromSourceColumns should be called only on empty Dynamic column");
@@ -1331,8 +1329,8 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
 
     DataTypePtr result_variant_type;
     Statistics new_statistics(Statistics::Source::MERGE);
-    /// Reset max_dynamic_types to global_max_dynamic_types or max_dynamic_subcolumns if set.
-    max_dynamic_types = max_dynamic_subcolumns ? std::min(*max_dynamic_subcolumns, global_max_dynamic_types) : global_max_dynamic_types;
+    /// Reset max_dynamic_types to global_max_dynamic_types.
+    max_dynamic_types = global_max_dynamic_types;
     /// Check if the number of all dynamic types exceeds the limit.
     if (!canAddNewVariants(0, all_variants.size()))
     {
@@ -1404,7 +1402,7 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
 
     auto & variant_col = getVariantColumn();
     for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
-        variant_col.getVariantByGlobalDiscriminator(i).takeDynamicStructureFromSourceColumns(variants_source_columns[i], max_dynamic_subcolumns);
+        variant_col.getVariantByGlobalDiscriminator(i).takeDynamicStructureFromSourceColumns(variants_source_columns[i]);
 }
 
 void ColumnDynamic::takeDynamicStructureFromColumn(const ColumnPtr & source_column)

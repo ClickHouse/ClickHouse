@@ -25,7 +25,6 @@
 #include <Analyzer/Passes/ConvertQueryToCNFPass.h>
 #include <Analyzer/Passes/CountDistinctPass.h>
 #include <Analyzer/Passes/CrossToInnerJoinPass.h>
-#include <Analyzer/Passes/DisableParallelReplicasPass.h>
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
 #include <Analyzer/Passes/FuseFunctionsPass.h>
 #include <Analyzer/Passes/GroupingFunctionsResolvePass.h>
@@ -183,7 +182,7 @@ void QueryTreePassManager::addPass(QueryTreePassPtr pass)
     passes.push_back(std::move(pass));
 }
 
-void QueryTreePassManager::run(QueryTreeNodePtr & query_tree_node)
+void QueryTreePassManager::run(QueryTreeNodePtr query_tree_node)
 {
     auto current_context = getContext();
     size_t passes_size = passes.size();
@@ -197,7 +196,7 @@ void QueryTreePassManager::run(QueryTreeNodePtr & query_tree_node)
     }
 }
 
-void QueryTreePassManager::runOnlyResolve(QueryTreeNodePtr & query_tree_node)
+void QueryTreePassManager::runOnlyResolve(QueryTreeNodePtr query_tree_node)
 {
     // Run only query tree passes that doesn't affect output header:
     // 1. QueryAnalysisPass
@@ -207,7 +206,7 @@ void QueryTreePassManager::runOnlyResolve(QueryTreeNodePtr & query_tree_node)
     run(query_tree_node, 4);
 }
 
-void QueryTreePassManager::run(QueryTreeNodePtr & query_tree_node, size_t up_to_pass_index)
+void QueryTreePassManager::run(QueryTreeNodePtr query_tree_node, size_t up_to_pass_index)
 {
     size_t passes_size = passes.size();
     if (up_to_pass_index > passes_size)
@@ -320,8 +319,6 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<OptimizeDateOrDateTimeConverterWithPreimagePass>());
 
     manager.addPass(std::make_unique<InjectRandomOrderIfNoOrderByPass>());
-
-    manager.addPass(std::make_unique<DisableParallelReplicasPass>());
 }
 
 }

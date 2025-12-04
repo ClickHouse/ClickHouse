@@ -5,7 +5,6 @@ import time
 from pathlib import Path
 from typing import List, Tuple
 
-from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.integration_tests_configs import IMAGES_ENV, get_optimal_test_batch
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -16,9 +15,10 @@ temp_path = f"{repo_dir}/ci/tmp"
 MAX_FAILS_BEFORE_DROP = 5
 OOM_IN_DMESG_TEST_NAME = "OOM in dmesg"
 ncpu = Utils.cpu_count()
-mem_gb = round(Utils.physical_memory() // (1024**3), 1)
+mem_gb = round(Utils.physical_memory() / (1024**3), 1)
 MAX_CPUS_PER_WORKER = 4
 MAX_MEM_PER_WORKER = 7
+MAX_WORKERS = min(ncpu // MAX_CPUS_PER_WORKER, mem_gb // MAX_MEM_PER_WORKER) or 1
 
 
 def _start_docker_in_docker():
@@ -74,12 +74,6 @@ def parse_args():
         type=str,
         default="",
     )
-    parser.add_argument(
-        "--workers",
-        help="Optional. Number of parallel workers for pytest",
-        default=None,
-        type=int,
-    )
     return parser.parse_args()
 
 
@@ -88,7 +82,7 @@ FLAKY_CHECK_MODULE_REPEAT_COUNT = 2
 
 
 def tests_to_run(
-    batch_num: int, total_batches: int, args_test: List[str], workers: int
+    batch_num: int, total_batches: int, args_test: List[str]
 ) -> Tuple[List[str], List[str]]:
     if args_test:
         batch_num = 1
@@ -102,7 +96,7 @@ def tests_to_run(
     assert len(test_files) > 100
 
     parallel_test_modules, sequential_test_modules = get_optimal_test_batch(
-        test_files, total_batches, batch_num, workers
+        test_files, total_batches, batch_num, MAX_WORKERS
     )
     if not args_test:
         return parallel_test_modules, sequential_test_modules
@@ -144,12 +138,10 @@ def main():
     job_params = [to.strip() for to in job_params]
     use_old_analyzer = False
     use_distributed_plan = False
-    use_database_disk = False
     is_flaky_check = False
     is_bugfix_validation = False
     is_parallel = False
     is_sequential = False
-    is_targeted_check = False
     java_path = Shell.get_output(
         "update-alternatives --config java | sed -n 's/.*(providing \/usr\/bin\/java): //p'",
         verbose=True,
@@ -168,32 +160,44 @@ def main():
             use_old_analyzer = True
         elif to == "distributed plan":
             use_distributed_plan = True
-        elif to == "db disk":
-            use_database_disk = True
         elif to == "flaky":
             is_flaky_check = True
+            args.count = FLAKY_CHECK_TEST_REPEAT_COUNT
         elif to == "parallel":
             is_parallel = True
         elif to == "sequential":
             is_sequential = True
         elif "bugfix" in to.lower() or "validation" in to.lower():
             is_bugfix_validation = True
-        elif "targeted" in to:
-            is_targeted_check = True
         else:
             assert False, f"Unknown job option [{to}]"
 
-    if args.count or is_flaky_check:
-        repeat_option = (
-            f"--count {args.count or FLAKY_CHECK_TEST_REPEAT_COUNT} --random-order"
-        )
-    elif is_targeted_check:
-        repeat_option = f"--count 10 --random-order"
+    if args.count:
+        repeat_option = f"--count {args.count} --random-order"
 
-    if args.workers:
-        workers = args.workers
-    else:
-        workers = min(ncpu // MAX_CPUS_PER_WORKER, mem_gb // MAX_MEM_PER_WORKER) or 1
+    changed_test_modules = []
+    if is_bugfix_validation or is_flaky_check:
+        changed_files = info.get_changed_files()
+        for file in changed_files:
+            if file.startswith("tests/integration/test") and file.endswith(".py"):
+                changed_test_modules.append(file.removeprefix("tests/integration/"))
+
+    if is_bugfix_validation:
+        if Utils.is_arm():
+            link_to_master_head_binary = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
+        else:
+            link_to_master_head_binary = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
+        if not info.is_local_run or not (Path(temp_path) / "clickhouse").exists():
+            print(
+                f"NOTE: Clickhouse binary will be downloaded to [{temp_path}] from [{link_to_master_head_binary}]"
+            )
+            if info.is_local_run:
+                time.sleep(10)
+            Shell.check(
+                f"wget -nv -P {temp_path} {link_to_master_head_binary}",
+                verbose=True,
+                strict=True,
+            )
 
     clickhouse_path = f"{Utils.cwd()}/ci/tmp/clickhouse"
     clickhouse_server_config_dir = f"{Utils.cwd()}/programs/server"
@@ -223,74 +227,29 @@ def main():
     ), f"Clickhouse config dir does not exist [{clickhouse_server_config_dir}]"
     print(f"Using ClickHouse binary at [{clickhouse_path}]")
 
-    changed_test_modules = []
-    if is_bugfix_validation or is_flaky_check or is_targeted_check:
-        if info.is_local_run:
-            assert (
-                args.test
-            ), "--test must be provided for flaky or bugfix job flavor with local run"
-        else:
-            # TODO: reduce scope to modified test cases instead of entire modules
-            changed_files = info.get_changed_files()
-            for file in changed_files:
-                if file.startswith("tests/integration/test") and file.endswith(".py"):
-                    changed_test_modules.append(file.removeprefix("tests/integration/"))
-
-    if is_bugfix_validation:
-        if Utils.is_arm():
-            link_to_master_head_binary = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
-        else:
-            link_to_master_head_binary = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
-        if not info.is_local_run or not (Path(temp_path) / "clickhouse").exists():
-            print(
-                f"NOTE: Clickhouse binary will be downloaded to [{temp_path}] from [{link_to_master_head_binary}]"
-            )
-            if info.is_local_run:
-                time.sleep(10)
-            Shell.check(
-                f"wget -nv -P {temp_path} {link_to_master_head_binary}",
-                verbose=True,
-                strict=True,
-            )
-
     Shell.check(f"chmod +x {clickhouse_path}", verbose=True, strict=True)
     Shell.check(f"{clickhouse_path} --version", verbose=True, strict=True)
-
-    targeted_tests = []
-    if is_targeted_check:
-        assert not args.test, "--test not supposed to be used for targeted check ???"
-        targeter = Targeting(info=info)
-        tests, results_with_info = targeter.get_all_relevant_tests_with_info(
-            clickhouse_path
-        )
-        # no subtask level for integration tests - cannot add this info to the report now
-        # results.append(results_with_info)
-        if not tests:
-            # early exit
-            Result.create_from(
-                status=Result.Status.SKIPPED,
-                info="No failed tests found from previous runs",
-            ).complete_job()
-
-        # Parse test names from the query result
-        for test_ in tests:
-            if test_.strip():
-                test_name = test_.strip()
-                targeted_tests.append(
-                    test_name.split("[")[0]
-                )  # remove parametrization - does not work with test repeat with --count
-        print(f"Parsed {len(targeted_tests)} test names: {targeted_tests}")
 
     if not Shell.check("docker info > /dev/null", verbose=True):
         _start_docker_in_docker()
     Shell.check("docker info > /dev/null", verbose=True, strict=True)
 
     parallel_test_modules, sequential_test_modules = tests_to_run(
-        batch_num,
-        total_batches,
-        args.test or targeted_tests or changed_test_modules,
-        workers,
+        batch_num, total_batches, args.test
     )
+
+    if is_bugfix_validation or is_flaky_check:
+        # TODO: reduce scope to modified test cases instead of entire modules
+        sequential_test_modules = [
+            test_file
+            for test_file in changed_test_modules
+            if test_file in sequential_test_modules
+        ]
+        parallel_test_modules = [
+            test_file
+            for test_file in changed_test_modules
+            if test_file in parallel_test_modules
+        ]
 
     if is_sequential:
         parallel_test_modules = []
@@ -315,7 +274,6 @@ def main():
         "CLICKHOUSE_TESTS_CLIENT_BIN_PATH": clickhouse_path,
         "CLICKHOUSE_USE_OLD_ANALYZER": "1" if use_old_analyzer else "0",
         "CLICKHOUSE_USE_DISTRIBUTED_PLAN": "1" if use_distributed_plan else "0",
-        "CLICKHOUSE_USE_DATABASE_DISK": "1" if use_database_disk else "0",
         "PYTEST_CLEANUP_CONTAINERS": "1",
         "JAVA_PATH": java_path,
     }
@@ -325,14 +283,11 @@ def main():
     has_error = False
     error_info = []
 
-    module_repeat_cnt = 1
-    if is_flaky_check:
-        module_repeat_cnt = FLAKY_CHECK_MODULE_REPEAT_COUNT
-
+    module_repeat_cnt = 1 if not is_flaky_check else FLAKY_CHECK_MODULE_REPEAT_COUNT
     if parallel_test_modules:
         for attempt in range(module_repeat_cnt):
             test_result_parallel = Result.from_pytest_run(
-                command=f"{' '.join(reversed(parallel_test_modules))} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option}",
+                command=f"{' '.join(reversed(parallel_test_modules))} --report-log-exclude-logs-on-passed-tests -n {MAX_WORKERS} --dist=loadfile --tb=short {repeat_option}",
                 cwd="./tests/integration/",
                 env=test_env,
                 pytest_report_file=f"{temp_path}/pytest_parallel.jsonl",

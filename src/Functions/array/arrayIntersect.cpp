@@ -24,7 +24,6 @@
 #include <base/range.h>
 #include <base/TypeLists.h>
 #include <Interpreters/castColumn.h>
-#include <IO/ReadBufferFromString.h>
 
 
 namespace DB
@@ -754,8 +753,7 @@ void FunctionArrayIntersect<Mode>::insertElement(typename Map::LookupResult & pa
     }
     else
     {
-        ReadBufferFromString in({pair->getKey().data, pair->getKey().size});
-        result_data.deserializeAndInsertFromArena(in);
+        std::ignore = result_data.deserializeAndInsertFromArena(pair->getKey().data);
     }
     if (use_null_map)
         null_map.push_back(0);

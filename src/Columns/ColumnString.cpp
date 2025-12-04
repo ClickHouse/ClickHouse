@@ -318,39 +318,40 @@ void ColumnString::batchSerializeValueIntoMemory(std::vector<char *> & memories)
     }
 }
 
-void ColumnString::deserializeAndInsertFromArena(ReadBuffer & in)
+const char * ColumnString::deserializeAndInsertFromArena(const char * pos)
 {
-    size_t string_size;
-    readBinaryLittleEndian<size_t>(string_size, in);
+    const size_t string_size = unalignedLoad<size_t>(pos);
+    pos += sizeof(string_size);
 
     const size_t old_size = chars.size();
     const size_t new_size = old_size + string_size;
     chars.resize(new_size);
-    in.readStrict(reinterpret_cast<char *>(chars.data() + old_size), string_size);
+    memcpy(chars.data() + old_size, pos, string_size);
 
     offsets.push_back(new_size);
+    return pos + string_size;
 }
 
-void ColumnString::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
+const char * ColumnString::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
 {
     /// Serialized value contains string values with 0 byte at the end for compatibility.
-    size_t string_size_with_zero_byte;
-    readBinaryLittleEndian<size_t>(string_size_with_zero_byte, in);
+    const size_t string_size_with_zero_byte = unalignedLoad<size_t>(pos);
+    pos += sizeof(string_size_with_zero_byte);
 
     const size_t old_size = chars.size();
     const size_t new_size = old_size + string_size_with_zero_byte - 1;
     chars.resize(new_size);
-    in.readStrict(reinterpret_cast<char *>(chars.data() + old_size), string_size_with_zero_byte - 1);
-    in.ignore(1); /// ignore the 0 byte at the end.
+    memcpy(chars.data() + old_size, pos, string_size_with_zero_byte - 1);
 
     offsets.push_back(new_size);
+    return pos + string_size_with_zero_byte;
 }
 
-void ColumnString::skipSerializedInArena(ReadBuffer & in) const
+const char * ColumnString::skipSerializedInArena(const char * pos) const
 {
-    size_t string_size;
-    readBinaryLittleEndian<size_t>(string_size, in);
-    in.ignore(string_size);
+    const size_t string_size = unalignedLoad<size_t>(pos);
+    pos += sizeof(string_size);
+    return pos + string_size;
 }
 
 ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const

@@ -419,7 +419,6 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 "greater",           " > ",
                 "equals",            " = ",
                 "isNotDistinctFrom", " <=> ",
-                "isDistinctFrom",    " IS DISTINCT FROM ",
                 "like",              " LIKE ",
                 "ilike",             " ILIKE ",
                 "notLike",           " NOT LIKE ",
