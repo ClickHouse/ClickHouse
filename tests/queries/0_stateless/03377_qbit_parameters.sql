@@ -22,7 +22,7 @@ SELECT {q5:QBit(Float32, 16)};
 
 SELECT 'Test QBit query parameters in expressions';
 SET param_q6 = [1, 2, 3, 4];
-SELECT L2DistanceTransposed({q6:QBit(Float32, 4)}, [1, 2, 3, 4], 4);
+SELECT L2DistanceTransposed({q6:QBit(Float32, 4)}, [1, 2, 3, 4], 32);
 
 SELECT 'Test QBit query parameters with table';
 DROP TABLE IF EXISTS qbit_param_test;
