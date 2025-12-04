@@ -818,6 +818,9 @@ NameSet StorageInMemoryMetadata::getColumnsWithoutDefaultExpressions(const Names
 
 void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescription & column, ContextPtr context)
 {
+    // Ephemeral columns are excluded from implicit indices because they are not persisted;
+    // this is a key behavioral change (see PR description) to avoid creating indices for columns
+    // that do not exist in storage and cannot be indexed.
     if (column.default_desc.kind == ColumnDefaultKind::Ephemeral)
         return;
 

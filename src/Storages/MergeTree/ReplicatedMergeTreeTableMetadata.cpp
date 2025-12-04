@@ -374,6 +374,8 @@ bool ReplicatedMergeTreeTableMetadata::checkEquals(
     if (skip_indices != parsed_zk_skip_indices)
     {
         String all_parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, context).allToString();
+        // Backward compatibility: older replicas included implicit indices in metadata,
+        // while newer ones exclude them. This check allows comparison between both formats.
         if (skip_indices != all_parsed_zk_skip_indices)
         {
             handleTableMetadataMismatch(table_name_for_error_message, "skip indexes", from_zk.skip_indices, parsed_zk_skip_indices, skip_indices, strict_check, logger);
