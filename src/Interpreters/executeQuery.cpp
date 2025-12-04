@@ -1282,8 +1282,8 @@ static BlockIO executeQueryImpl(
                     } while (found_bad_ast);
 
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Inconsistent AST formatting: the query:\n{}\nFormatted as:\n{}\nWas parsed and formatted back as:\n{}",
-                        original_query, formatted1, formatted2);
+                        "Inconsistent AST formatting in {}: the query:\n{}\nFormatted as:\n{}\nWas parsed and formatted back as:\n{}",
+                        bad_ast->getID(), original_query, formatted1, formatted2);
                 }
             }
             catch (const Exception & e)
