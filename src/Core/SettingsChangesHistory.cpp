@@ -60,6 +60,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"compatibility_s3_presigned_url_query_in_path", false, false, "New setting."},
             {"serialize_string_in_memory_with_zero_byte", true, true, "New setting"},
             {"optimize_inverse_dictionary_lookup", false, true, "New setting"},
+            {"allow_experimental_nullable_tuple_type", false, false, "New experimental setting"},
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {

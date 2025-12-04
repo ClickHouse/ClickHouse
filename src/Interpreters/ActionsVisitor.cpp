@@ -25,6 +25,8 @@
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
@@ -54,6 +56,7 @@
 #include <Parsers/QueryParameterVisitor.h>
 
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/SetUtils.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 
 
@@ -77,7 +80,6 @@ namespace ErrorCodes
     extern const int UNEXPECTED_EXPRESSION;
     extern const int TYPE_MISMATCH;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int INCORRECT_ELEMENT_OF_SET;
     extern const int BAD_ARGUMENTS;
     extern const int DUPLICATE_COLUMN;
     extern const int LOGICAL_ERROR;
@@ -85,7 +87,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
     extern const int SYNTAX_ERROR;
-    extern const int UNKNOWN_ELEMENT_OF_ENUM;
 }
 
 static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols)
@@ -94,236 +95,88 @@ static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypes
                         [&](const NamesAndTypesList::value_type & val) { return val.name == name; });
 }
 
-/// Recursion is limited in query parser and we did not check for too large depth here.
-static size_t getTypeDepth(const DataTypePtr & type)
-{
-    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
-        return 1 + getTypeDepth(array_type->getNestedType());
-    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
-        return 1 + (tuple_type->getElements().empty() ? 0 : getTypeDepth(tuple_type->getElements().at(0)));
-
-    return 0;
-}
-
-struct GetSetElementParams
-{
-    bool transform_null_in = true;
-    bool forbid_unknown_enum_values = false;
-};
-
-static std::optional<Field> convertFieldToTypeCheckEnum(const Field & from_value, const IDataType & from_type, const IDataType & to_type, bool forbid_unknown_enum_values)
-{
-    try
-    {
-        return convertFieldToTypeStrict(from_value, from_type, to_type);
-    }
-    catch (const Exception & e)
-    {
-        if (!forbid_unknown_enum_values && isEnum(to_type) && e.code() == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM)
-            return {};
-        throw;
-    }
-}
-
-/// The `convertFieldToTypeStrict` is used to prevent unexpected results in case of conversion with loss of precision.
-/// Example: `SELECT 33.3 :: Decimal(9, 1) AS a WHERE a IN (33.33 :: Decimal(9, 2))`
-/// 33.33 in the set is converted to 33.3, but it is not equal to 33.3 in the column, so the result should still be empty.
-/// We can not include values that don't represent any possible value from the type of filtered column to the set.
-template<typename Collection>
-static ColumnsWithTypeAndName createBlockFromCollection(const Collection & collection, const DataTypes & value_types, const DataTypes & types, GetSetElementParams params)
-{
-    size_t columns_num = types.size();
-    MutableColumns columns(columns_num);
-    for (size_t i = 0; i < columns_num; ++i)
-    {
-        columns[i] = types[i]->createColumn();
-        columns[i]->reserve(collection.size());
-    }
-
-    Row tuple_values;
-    for (size_t collection_index = 0; collection_index < collection.size(); ++collection_index)
-    {
-        const auto& value = collection[collection_index];
-        if (columns_num == 1)
-        {
-            auto field = convertFieldToTypeCheckEnum(value, *value_types[collection_index], *types[0], params.forbid_unknown_enum_values);
-            bool need_insert_null = params.transform_null_in && types[0]->isNullable();
-            if (field && (!field->isNull() || need_insert_null))
-                columns[0]->insert(*field);
-        }
-        else
-        {
-            if (value.getType() != Field::Types::Tuple)
-                throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Invalid type in set. Expected tuple, got {}",
-                    String(value.getTypeName()));
-
-            const auto & tuple = value.template safeGet<Tuple>();
-            size_t tuple_size = tuple.size();
-            if (tuple_size != columns_num)
-                throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Incorrect size of tuple in set: {} instead of {}",
-                    tuple_size, columns_num);
-
-            if (tuple_values.empty())
-                tuple_values.resize(tuple_size);
-
-            const DataTypePtr & value_type = value_types[collection_index];
-            const DataTypes & tuple_value_type = typeid_cast<const DataTypeTuple *>(value_type.get())->getElements();
-
-            size_t i = 0;
-            for (; i < tuple_size; ++i)
-            {
-                auto converted_field = convertFieldToTypeCheckEnum(tuple[i], *tuple_value_type[i], *types[i], params.forbid_unknown_enum_values);
-                if (!converted_field)
-                    break;
-                tuple_values[i] = std::move(*converted_field);
-
-                bool need_insert_null = params.transform_null_in && types[i]->isNullable();
-                if (tuple_values[i].isNull() && !need_insert_null)
-                    break;
-            }
-
-            if (i == tuple_size)
-                for (i = 0; i < tuple_size; ++i)
-                    columns[i]->insert(tuple_values[i]);
-        }
-    }
-
-    ColumnsWithTypeAndName res(columns_num);
-    for (size_t i = 0; i < columns_num; ++i)
-    {
-        res[i].type = types[i];
-        res[i].column = std::move(columns[i]);
-    }
-
-    return res;
-}
-
-static Field extractValueFromNode(const ASTPtr & node, const IDataType & type, ContextPtr context)
-{
-    if (const auto * lit = node->as<ASTLiteral>())
-    {
-        return convertFieldToType(lit->value, type);
-    }
-    if (node->as<ASTFunction>())
-    {
-        std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(node, context);
-        return convertFieldToType(value_raw.first, type, value_raw.second.get());
-    }
-    throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Incorrect element of set. Must be literal or constant expression.");
-}
-
-static ColumnsWithTypeAndName createBlockFromAST(const ASTPtr & node, const DataTypes & types, ContextPtr context)
-{
-    /// Will form a block with values from the set.
-
-    size_t num_columns = types.size();
-    MutableColumns columns(num_columns);
-    for (size_t i = 0; i < num_columns; ++i)
-        columns[i] = types[i]->createColumn();
-
-    DataTypePtr tuple_type;
-    Row tuple_values;
-    const auto & list = node->as<ASTExpressionList &>();
-    bool transform_null_in = context->getSettingsRef()[Setting::transform_null_in];
-    for (const auto & elem : list.children)
-    {
-        if (num_columns == 1)
-        {
-            /// One column at the left of IN.
-
-            Field value = extractValueFromNode(elem, *types[0], context);
-            bool need_insert_null = transform_null_in && types[0]->isNullable();
-
-            if (!value.isNull() || need_insert_null)
-                columns[0]->insert(value);
-        }
-        else if (elem->as<ASTFunction>() || elem->as<ASTLiteral>())
-        {
-            /// Multiple columns at the left of IN.
-            /// The right hand side of in should be a set of tuples.
-
-            Field function_result;
-            const Tuple * tuple = nullptr;
-
-            /// Tuple can be represented as a function in AST.
-            auto * func = elem->as<ASTFunction>();
-            if (func && func->name != "tuple")
-            {
-                if (!tuple_type)
-                    tuple_type = std::make_shared<DataTypeTuple>(types);
-
-                /// If the function is not a tuple, treat it as a constant expression that returns tuple and extract it.
-                function_result = extractValueFromNode(elem, *tuple_type, context);
-
-                if (function_result.getType() != Field::Types::Tuple)
-                    throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET,
-                        "Invalid type of set. Expected tuple, got {}",
-                        function_result.getTypeName());
-
-                tuple = &function_result.safeGet<Tuple>();
-            }
-
-            /// Tuple can be represented as a literal in AST.
-            auto * literal = elem->as<ASTLiteral>();
-            if (literal)
-            {
-                /// The literal must be tuple.
-                if (literal->value.getType() != Field::Types::Tuple)
-                    throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET,
-                        "Invalid type in set. Expected tuple, got {}",
-                        literal->value.getTypeName());
-
-                tuple = &literal->value.safeGet<Tuple>();
-            }
-
-            assert(tuple || func);
-
-            size_t tuple_size = tuple ? tuple->size() : func->arguments->children.size();
-            if (tuple_size != num_columns)
-                throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Incorrect size of tuple in set: {} instead of {}",
-                    tuple_size, num_columns);
-
-            if (tuple_values.empty())
-                tuple_values.resize(tuple_size);
-
-            /// Fill tuple values by evaluation of constant expressions.
-            size_t i = 0;
-            for (; i < tuple_size; ++i)
-            {
-                Field value = tuple ? convertFieldToType((*tuple)[i], *types[i])
-                                    : extractValueFromNode(func->arguments->children[i], *types[i], context);
-
-                bool need_insert_null = transform_null_in && types[i]->isNullable();
-
-                /// If at least one of the elements of the tuple has an impossible (outside the range of the type) value,
-                ///  then the entire tuple too.
-                if (value.isNull() && !need_insert_null)
-                    break;
-
-                tuple_values[i] = value;
-            }
-
-            if (i == tuple_size)
-                for (i = 0; i < tuple_size; ++i)
-                    columns[i]->insert(tuple_values[i]);
-        }
-        else
-            throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Incorrect element of set");
-    }
-
-    ColumnsWithTypeAndName res(num_columns);
-    for (size_t i = 0; i < num_columns; ++i)
-    {
-        res[i].type = types[i];
-        res[i].column = std::move(columns[i]);
-    }
-
-    return res;
-}
-
-
 namespace
 {
+std::pair<Field, DataTypePtr> buildCollectionFieldAndTypeFromASTFunction(
+    const std::shared_ptr<ASTFunction> & func, ContextPtr context)
+{
+    if (!func)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "IN: empty function AST for constant set");
+
+    const auto & args = func->arguments->children;
+
+    if (func->name == "tuple")
+    {
+        Tuple rhs_tuple;
+        rhs_tuple.reserve(args.size());
+
+        DataTypes element_types;
+        element_types.reserve(args.size());
+
+        for (const auto & arg : args)
+        {
+            if (const auto * lit = arg->as<ASTLiteral>())
+            {
+                const Field & value = lit->value;
+                rhs_tuple.emplace_back(value);
+                element_types.emplace_back(applyVisitor(FieldToDataType(), value));
+            }
+            else
+            {
+                auto value_raw = evaluateConstantExpression(arg, context);
+                rhs_tuple.emplace_back(std::move(value_raw.first));
+                element_types.emplace_back(std::move(value_raw.second));
+            }
+        }
+
+        return {Field(std::move(rhs_tuple)), std::make_shared<DataTypeTuple>(std::move(element_types))};
+    }
+
+    if (func->name == "array")
+    {
+        Array rhs_array;
+        rhs_array.reserve(args.size());
+
+        DataTypes element_types;
+        element_types.reserve(args.size());
+
+        for (const auto & arg : args)
+        {
+            if (const auto * lit = arg->as<ASTLiteral>())
+            {
+                const Field & value = lit->value;
+                rhs_array.emplace_back(value);
+                element_types.emplace_back(applyVisitor(FieldToDataType(), value));
+            }
+            else
+            {
+                auto value_raw = evaluateConstantExpression(arg, context);
+                rhs_array.emplace_back(std::move(value_raw.first));
+                element_types.emplace_back(std::move(value_raw.second));
+            }
+        }
+
+        DataTypePtr nested_type;
+        if (element_types.empty())
+            nested_type = std::make_shared<DataTypeNothing>();
+        else
+            nested_type = getLeastSupertype(element_types);
+
+        for (size_t i = 0; i < rhs_array.size(); ++i)
+        {
+            if (!rhs_array[i].isNull())
+                rhs_array[i] = convertFieldToType(rhs_array[i], *nested_type, element_types[i].get());
+        }
+
+        return {Field(std::move(rhs_array)), std::make_shared<DataTypeArray>(std::move(nested_type))};
+    }
+
+    /// For non tuple/array functions, we fall back to the generic path
+    ASTPtr func_ast = func;
+    auto value_raw = evaluateConstantExpression(func_ast, context);
+    return value_raw;
+}
+
 
 /** Create a block for set from expression.
   * 'set_element_types' - types of what are on the left hand side of IN.
@@ -335,57 +188,17 @@ namespace
 ColumnsWithTypeAndName createBlockForSet(
     const DataTypePtr & left_arg_type,
     const ASTPtr & right_arg,
-    const DataTypes & set_element_types,
     ContextPtr context)
 {
     auto [right_arg_value, right_arg_type] = evaluateConstantExpression(right_arg, context);
 
-    const size_t left_type_depth = getTypeDepth(left_arg_type);
-    const size_t right_type_depth = getTypeDepth(right_arg_type);
-
-    auto throw_unsupported_type = [](const auto & type)
-    {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported value type at the right-side of IN: {}.",
-            type->getName());
-    };
-
-    ColumnsWithTypeAndName block;
-
-    GetSetElementParams set_params{
+    GetSetElementParams params{
         .transform_null_in = context->getSettingsRef()[Setting::transform_null_in],
         .forbid_unknown_enum_values = context->getSettingsRef()[Setting::validate_enum_literals_in_operators],
     };
 
-    /// 1 in 1; (1, 2) in (1, 2); identity(tuple(tuple(tuple(1)))) in tuple(tuple(tuple(1))); etc.
-    if (left_type_depth == right_type_depth)
-    {
-        Array array{right_arg_value};
-        DataTypes value_types{right_arg_type};
-        block = createBlockFromCollection(array, value_types, set_element_types, set_params);
-    }
-    /// 1 in (1, 2); (1, 2) in ((1, 2), (3, 4)); etc.
-    else if (left_type_depth + 1 == right_type_depth)
-    {
-        auto type_index = right_arg_type->getTypeId();
-        if (type_index == TypeIndex::Tuple)
-        {
-            const DataTypes & value_types = assert_cast<const DataTypeTuple *>(right_arg_type.get())->getElements();
-            block = createBlockFromCollection(right_arg_value.safeGet<Tuple>(), value_types, set_element_types, set_params);
-        }
-        else if (type_index == TypeIndex::Array)
-        {
-            const auto* right_arg_array_type =  assert_cast<const DataTypeArray *>(right_arg_type.get());
-            size_t right_arg_array_size = right_arg_value.safeGet<Array>().size();
-            DataTypes value_types(right_arg_array_size, right_arg_array_type->getNestedType());
-            block = createBlockFromCollection(right_arg_value.safeGet<Array>(), value_types, set_element_types, set_params);
-        }
-        else
-            throw_unsupported_type(right_arg_type);
-    }
-    else
-        throw_unsupported_type(right_arg_type);
-
-    return block;
+    /// Reuse the new analyzer logic
+    return getSetElementsForConstantValue(left_arg_type, right_arg_value, right_arg_type, params);
 }
 
 /** Create a block for set from literal.
@@ -395,53 +208,18 @@ ColumnsWithTypeAndName createBlockForSet(
 ColumnsWithTypeAndName createBlockForSet(
     const DataTypePtr & left_arg_type,
     const std::shared_ptr<ASTFunction> & right_arg,
-    const DataTypes & set_element_types,
     ContextPtr context)
 {
-    auto get_tuple_type_from_ast = [context](const auto & func) -> DataTypePtr
-    {
-        if ((func->name == "tuple" || func->name == "array") && !func->arguments->children.empty())
-        {
-            /// Won't parse all values of outer tuple.
-            auto element = func->arguments->children.at(0);
-            std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(element, context);
-            return std::make_shared<DataTypeTuple>(DataTypes({value_raw.second}));
-        }
-
-        return evaluateConstantExpression(func, context).second;
+    GetSetElementParams params{
+        .transform_null_in = context->getSettingsRef()[Setting::transform_null_in],
+        .forbid_unknown_enum_values = context->getSettingsRef()[Setting::validate_enum_literals_in_operators],
     };
 
-    assert(right_arg);
-    const DataTypePtr & right_arg_type = get_tuple_type_from_ast(right_arg);
+    auto [right_arg_value, right_arg_type] = buildCollectionFieldAndTypeFromASTFunction(right_arg, context);
 
-    size_t left_tuple_depth = getTypeDepth(left_arg_type);
-    size_t right_tuple_depth = getTypeDepth(right_arg_type);
-    ASTPtr elements_ast;
-
-    /// 1 in 1; (1, 2) in (1, 2); identity(tuple(tuple(tuple(1)))) in tuple(tuple(tuple(1))); etc.
-    if (left_tuple_depth == right_tuple_depth)
-    {
-        ASTPtr exp_list = std::make_shared<ASTExpressionList>();
-        exp_list->children.push_back(right_arg);
-        elements_ast = exp_list;
-    }
-    /// 1 in (1, 2); (1, 2) in ((1, 2), (3, 4)); etc.
-    else if (left_tuple_depth + 1 == right_tuple_depth)
-    {
-        const auto * set_func = right_arg->as<ASTFunction>();
-        if (!set_func || (set_func->name != "tuple" && set_func->name != "array"))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Incorrect type of 2nd argument for function 'in'. "
-                            "Must be subquery or set of elements with type {}.", left_arg_type->getName());
-
-        elements_ast = set_func->arguments;
-    }
-    else
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid types for IN function: {} and {}.",
-                        left_arg_type->getName(), right_arg_type->getName());
-
-    return createBlockFromAST(elements_ast, set_element_types, context);
+    /// Reuse the new analyzer logic
+    return getSetElementsForConstantValue(left_arg_type, right_arg_value, right_arg_type, params);
 }
-
 }
 
 FutureSetPtr makeExplicitSet(
@@ -459,29 +237,31 @@ FutureSetPtr makeExplicitSet(
     const auto & dag_node = actions.findInOutputs(column_name);
     const DataTypePtr & left_arg_type = dag_node.result_type;
 
-    DataTypes set_element_types = {left_arg_type};
-    const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(left_arg_type.get());
+    const auto & right_arg_func = std::dynamic_pointer_cast<ASTFunction>(right_arg);
 
-    /// Do not unpack if empty tuple or single element tuple
-    if (left_tuple_type && left_tuple_type->getElements().size() > 1)
-        set_element_types = left_tuple_type->getElements();
+    ColumnsWithTypeAndName block;
+    if (right_arg_func && (right_arg_func->name == "tuple" || right_arg_func->name == "array"))
+        block = createBlockForSet(left_arg_type, right_arg_func, context);
+    else
+        block = createBlockForSet(left_arg_type, right_arg, context);
 
-    auto set_element_keys = Set::getElementTypes(set_element_types, context->getSettingsRef()[Setting::transform_null_in]);
+    if (block.empty())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Function 'in' second argument evaluated to Block with no columns");
+
+    DataTypes set_element_types;
+    set_element_types.reserve(block.size());
+    for (const auto & elem : block)
+        set_element_types.push_back(elem.type);
+
+    auto set_element_keys = Set::getElementTypes(
+        std::move(set_element_types),
+        context->getSettingsRef()[Setting::transform_null_in]);
 
     auto set_key = right_arg->getTreeHash(/*ignore_aliases=*/ true);
     if (auto set = prepared_sets.findTuple(set_key, set_element_keys))
         return set; /// Already prepared.
-
-    for (auto & element_type : set_element_types)
-        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(element_type.get()))
-            element_type = low_cardinality_type->getDictionaryType();
-
-    ColumnsWithTypeAndName block;
-    const auto & right_arg_func = std::dynamic_pointer_cast<ASTFunction>(right_arg);
-    if (right_arg_func && (right_arg_func->name == "tuple" || right_arg_func->name == "array"))
-        block = createBlockForSet(left_arg_type, right_arg_func, set_element_types, context);
-    else
-        block = createBlockForSet(left_arg_type, right_arg, set_element_types, context);
 
     return prepared_sets.addFromTuple(set_key, right_arg_func, std::move(block), context->getSettingsRef());
 }
@@ -807,12 +587,14 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
     if (!tuple_name_type)
         return {};
 
-    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(tuple_name_type->type.get());
+    auto result_type = tuple_name_type->type;
+    DataTypePtr result_type_without_nullable = removeNullable(result_type);
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(result_type_without_nullable.get());
 
     if (!tuple_type)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Function untuple expect tuple argument, got {}",
-                        tuple_name_type->type->getName());
+                        result_type->getName());
 
     ASTs columns;
     size_t tid = 0;

@@ -125,14 +125,14 @@ Map
 {"v":{"a":42,"b":43,"c":0},"variantElement(v, 'Map(String, UInt64)')":{"a":42,"b":43,"c":0}}
 {"v":"{\"c\" : 44, \"d\" : [1,2,3]}","variantElement(v, 'Map(String, UInt64)')":{}}
 Tuple
-{"v":null,"variantElement(v, 'Tuple(a UInt64, b UInt64)')":{"a":0,"b":0}}
-{"v":"string","variantElement(v, 'Tuple(a UInt64, b UInt64)')":{"a":0,"b":0}}
+{"v":null,"variantElement(v, 'Tuple(a UInt64, b UInt64)')":null}
+{"v":"string","variantElement(v, 'Tuple(a UInt64, b UInt64)')":null}
 {"v":{"a":42,"b":0},"variantElement(v, 'Tuple(a UInt64, b UInt64)')":{"a":42,"b":0}}
 {"v":{"a":44,"b":0},"variantElement(v, 'Tuple(a UInt64, b UInt64)')":{"a":44,"b":0}}
-\N	(0,0)
-string	(0,0)
+\N	\N
+string	\N
 (42,0)	(42,0)
-{"a" : 44, "d" : 32}	(0,0)
+{"a" : 44, "d" : 32}	\N
 Array
 {"v":null,"variantElement(v, 'Array(UInt64)')":[]}
 {"v":"string","variantElement(v, 'Array(UInt64)')":[]}
