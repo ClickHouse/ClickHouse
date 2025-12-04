@@ -1,4 +1,5 @@
 import re
+import string
 import sys
 
 sys.path.append(".")
@@ -117,6 +118,18 @@ class FuzzerLogParser:
             return self.UNKNOWN_ERROR, "Lost connection to server. See the logs.\n"
 
         error_lines = error_output.splitlines()
+        format_message = ""
+        for i, line in enumerate(error_lines):
+            if "Format string: " in line:
+                # Extract the format string content between quotes
+                # Example: "... <Fatal> : Format string: 'Unknown numeric column of type: {}'."
+                start_idx = line.find("Format string: ")
+                if start_idx != -1:
+                    substring = line[start_idx + len("Format string: ") :]
+                    # Remove quotes and trailing period
+                    substring = substring.strip().strip("'\"").rstrip(".")
+                    format_message = substring
+                break
         # keep all lines before next log line
         for i, line in enumerate(error_lines):
             if "] {" in line and "} <" in line or line.startswith("    #"):
@@ -134,6 +147,16 @@ class FuzzerLogParser:
             failed_query = self.get_failed_query()
             if failed_query:
                 reproduce_commands = self.get_reproduce_commands(failed_query)
+            if format_message:
+                # Replace {} placeholders with A, B, C, etc.
+                letters = string.ascii_uppercase
+                letter_index = 0
+                while "{}" in format_message and letter_index < len(letters):
+                    format_message = format_message.replace(
+                        "{}", letters[letter_index], 1
+                    )
+                    letter_index += 1
+                result_name = f"Logical error: {format_message}"
             result_name += f" (STID: {stack_trace_id})"
         elif is_killed_by_signal or is_segfault:
             result_name += f" (STID: {stack_trace_id})"
@@ -351,7 +374,7 @@ class FuzzerLogParser:
         # Remove exception functions and everything above them
         for i, func in enumerate(functions):
             if "DB::Exception" in func:
-                functions = functions[i+1:]
+                functions = functions[i + 1 :]
                 break
         # Remove all remaining DB::Exception functions
         functions = [f for f in functions if "DB::Exception" not in f]
@@ -392,7 +415,6 @@ class FuzzerLogParser:
         assert failure_output, "No failure found in server log"
         failure_first_line = failure_output.splitlines()[0]
         assert failure_first_line, "No failure first line found in server log"
-        print(f"Failure first line: {failure_first_line}")
         query_id = failure_first_line.split(" ] {")[1].split("}")[0]
         if not query_id:
             print("ERROR: Query id not found")
