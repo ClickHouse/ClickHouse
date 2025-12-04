@@ -57,7 +57,7 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
             stats.bytes,
             stats.sample_bytes,
             stats.compressed_bytes,
-            (stats.sample_bytes / 1.0 / stats.compressed_bytes),
+            static_cast<double>(stats.sample_bytes) / stats.compressed_bytes,
             stats.elapsed_microseconds);
     };
 
@@ -68,7 +68,8 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
         if (stats.compressed_bytes)
         {
             log_stats(stats, toString(static_cast<InputStatisticsType>(i)));
-            res.input_bytes += static_cast<size_t>(stats.bytes / (stats.sample_bytes / 1.0 / stats.compressed_bytes));
+            const auto compression_ratio = static_cast<double>(stats.sample_bytes) / stats.compressed_bytes;
+            res.input_bytes += static_cast<size_t>(stats.bytes / compression_ratio);
         }
     }
     for (size_t i = 0; i < OutputStatisticsType::MaxOutputType; ++i)
@@ -77,7 +78,8 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
         if (stats.compressed_bytes)
         {
             log_stats(stats, toString(static_cast<OutputStatisticsType>(i)));
-            res.output_bytes += static_cast<size_t>(stats.bytes / (stats.sample_bytes / 1.0 / stats.compressed_bytes));
+            const auto compression_ratio = static_cast<double>(stats.sample_bytes) / stats.compressed_bytes;
+            res.output_bytes += static_cast<size_t>(stats.bytes / compression_ratio);
         }
     }
 
@@ -98,7 +100,7 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
 }
 
 /// Tries to estimate compressed size of a column by serializing a sample of it.
-static std::pair<size_t, size_t> getCompressedColumnSize(const ColumnWithTypeAndName & column)
+static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTypeAndName & column)
 {
     NullWriteBuffer null_buf;
     CompressedWriteBuffer compressed_buf(null_buf);
@@ -127,7 +129,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chun
         chassert(chunk.getNumColumns() == header.columns());
         for (size_t i = 0; i < chunk.getNumColumns(); ++i)
         {
-            auto [sample, compressed] = getCompressedColumnSize({chunk.getColumns()[i], header.getByPosition(i).type, ""});
+            auto [sample, compressed] = estimateCompressedColumnSize({chunk.getColumns()[i], header.getByPosition(i).type, ""});
             sample_bytes += sample;
             compressed_bytes += compressed;
         }
@@ -187,7 +189,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(const Aggr
             const auto & column = block.getByName(key_column_name);
             if (compress)
             {
-                auto [sample, compressed] = getCompressedColumnSize(column);
+                auto [sample, compressed] = estimateCompressedColumnSize(column);
                 sample_bytes += sample;
                 compressed_bytes += compressed;
             }

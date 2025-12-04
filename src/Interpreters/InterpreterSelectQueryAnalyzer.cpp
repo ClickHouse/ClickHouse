@@ -32,6 +32,9 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryLog.h>
 
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
+
 namespace DB
 {
 
@@ -43,6 +46,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsBool parallel_replicas_local_plan;
 }
 
 namespace
@@ -181,6 +185,13 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , query_plan_with_parallel_replicas_builder(
           [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names]()
           {
+              if (!ctx->getSettingsRef()[Setting::parallel_replicas_local_plan])
+              {
+                  LOG_TRACE(
+                      getLogger("InterpreterSelectQueryAnalyzer"),
+                      "Setting 'parallel_replicas_local_plan' is disabled. Skipping building query plan with parallel replicas.");
+                  return QueryPlanPtr{};
+              }
               ctx->setSetting("enable_parallel_replicas", true);
               InterpreterSelectQueryAnalyzer interpreter(ast, ctx, select_options, column_names);
               auto plan = std::move(interpreter).extractQueryPlan();
@@ -208,6 +219,13 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
            select_options = select_query_options_,
            column_names]()
           {
+              if (!ctx->getSettingsRef()[Setting::parallel_replicas_local_plan])
+              {
+                  LOG_TRACE(
+                      getLogger("InterpreterSelectQueryAnalyzer"),
+                      "Setting 'parallel_replicas_local_plan' is disabled. Skipping building query plan with parallel replicas.");
+                  return QueryPlanPtr{};
+              }
               ctx->setSetting("enable_parallel_replicas", true);
               InterpreterSelectQueryAnalyzer interpreter(ast, ctx, storage, select_options, column_names);
               auto plan = std::move(interpreter).extractQueryPlan();
@@ -227,6 +245,13 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , query_plan_with_parallel_replicas_builder(
           [tree = query_tree_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_]()
           {
+              if (!ctx->getSettingsRef()[Setting::parallel_replicas_local_plan])
+              {
+                  LOG_TRACE(
+                      getLogger("InterpreterSelectQueryAnalyzer"),
+                      "Setting 'parallel_replicas_local_plan' is disabled. Skipping building query plan with parallel replicas.");
+                  return QueryPlanPtr{};
+              }
               ctx->setSetting("enable_parallel_replicas", true);
               InterpreterSelectQueryAnalyzer interpreter(tree, ctx, select_options);
               auto plan = std::move(interpreter).extractQueryPlan();

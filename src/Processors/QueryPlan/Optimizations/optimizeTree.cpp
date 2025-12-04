@@ -1,6 +1,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -226,7 +227,7 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
             {
                 auto * node = child;
                 /// ExpressionStep can be placed on top of ReadFromRemoteParallelReplicas
-                if (typeid_cast<const ExpressionStep *>(node->step.get()))
+                if (typeid_cast<const ExpressionStep *>(node->step.get()) || typeid_cast<const FilterStep *>(node->step.get()))
                 {
                     chassert(!node->children.empty());
                     node = node->children.front();
