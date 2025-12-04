@@ -83,7 +83,7 @@ WHERE
     AND T3.R4_D_ID = T4.D_ID
     AND T1.A_Description = 'Type H'
     AND T4.D_LookupCode = 'Lookup S'
-SETTINGS query_plan_optimize_join_order_algorithm = 'greedy';
+SETTINGS query_plan_optimize_join_order_algorithm = 'greedy', enable_parallel_replicas = 0;
 
 SELECT sum(sipHash64(
     T1.A_Description,
@@ -115,7 +115,7 @@ WHERE
     AND T3.R4_D_ID = T4.D_ID
     AND T1.A_Description = 'Type H'
     AND T4.D_LookupCode = 'Lookup S'
-SETTINGS query_plan_optimize_join_order_algorithm = 'dpsize';
+SETTINGS query_plan_optimize_join_order_algorithm = 'dpsize', enable_parallel_replicas = 0;
 
 SELECT sum(sipHash64(
     T1.A_Description,
