@@ -45,7 +45,7 @@ public:
     bool tryInsert(const Field &) override { return false; }
     bool isDefaultAt(size_t) const override;
 
-    StringRef getDataAt(size_t) const override
+    std::string_view getDataAt(size_t) const override
     {
         return {};
     }
@@ -55,9 +55,9 @@ public:
         ++s;
     }
 
-    StringRef serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin) const override;
+    std::string_view serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
 
-    void deserializeAndInsertFromArena(ReadBuffer & in) override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
     void skipSerializedInArena(ReadBuffer & in) const override;
 

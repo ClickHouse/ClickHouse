@@ -5,7 +5,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/ICatalog.h>
@@ -26,6 +26,8 @@ class IDataLakeMetadata;
 struct IObjectIterator;
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
 using ObjectIterator = std::shared_ptr<IObjectIterator>;
+
+struct StorageParsedArguments;
 
 namespace ErrorCodes
 {
@@ -270,6 +272,7 @@ public:
     std::shared_ptr<IPartitionStrategy> partition_strategy;
 
 protected:
+    void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;
     virtual void fromDisk(const String & /*disk_name*/, ASTs & /*args*/, ContextPtr /*context*/, bool /*with_structure*/)

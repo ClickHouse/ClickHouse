@@ -423,8 +423,6 @@ private:
     ThreadFromGlobalPool thread;
 };
 
-static constexpr auto LATEST_SNAPSHOT_VERSION = -1;
-
 TableSnapshot::TableSnapshot(
     KernelHelperPtr helper_,
     DB::ObjectStoragePtr object_storage_,

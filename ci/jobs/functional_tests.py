@@ -117,6 +117,7 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "azure": " --azure-blob-storage --no-random-settings --no-random-merge-tree-settings",  # azurite is slow, with randomization it can be super slow
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
+    "flaky check": "--flaky-check",
 }
 
 
@@ -441,11 +442,11 @@ def main():
         # Mode (2): N consequent runs for chosen tests
         #   - Drawback: Might eliminate mode (1) issues but potentially catches fewer problems
         #
-        # Currently using Mode (1):
-        run_sets_cnt = 1
-        # To use Mode (2), uncomment:
-        # run_sets_cnt = rerun_count if is_targeted_check else 1
-        # rerun_count = 1 if is_targeted_check else rerun_count
+        # Mode (1):
+        # run_sets_cnt = 1
+        # Mode (2):
+        run_sets_cnt = rerun_count if is_targeted_check else 1
+        rerun_count = 1 if is_targeted_check else rerun_count
 
         ft_res_processor = FTResultsProcessor(wd=temp_dir)
 
