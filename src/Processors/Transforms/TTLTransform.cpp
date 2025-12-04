@@ -108,8 +108,6 @@ TTLTransform::TTLTransform(
         return Result{actions, default_ast->getColumnName()};
     };
 
-    auto expired_columns_map = expired_columns.getNameToTypeMap();
-
     for (const auto & expired_column : expired_columns)
     {
         auto [default_expression, default_column_name] = build_default_expr(expired_column.name);
@@ -119,6 +117,7 @@ TTLTransform::TTLTransform(
 
     if (metadata_snapshot_->hasAnyColumnTTL())
     {
+        auto expired_columns_map = expired_columns.getNameToTypeMap();
         for (const auto & [name, description] : metadata_snapshot_->getColumnTTLs())
         {
             if (!expired_columns_map.contains(name))

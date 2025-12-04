@@ -10,7 +10,6 @@
 #include <Core/Settings.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
-#include <Databases/enableAllExperimentalSettings.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/ReadBufferFromEmptyFile.h>
 #include <Interpreters/Context.h>
@@ -18,7 +17,6 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
-#include <Interpreters/inplaceBlockConversions.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/CoalescingSortedTransform.h>
@@ -557,33 +555,26 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     {
         global_ctx->gathering_columns = global_ctx->gathering_columns.eraseNames(expired_columns);
 
-        NamesAndTypesList merging_columns;
-        for (const auto & column : global_ctx->merging_columns)
+        auto filter_columns = [&](const NamesAndTypesList & input, NamesAndTypesList & expired_out)
         {
-            bool is_expired = expired_columns.contains(column.name);
-            bool is_required_for_merge = global_ctx->merge_required_key_columns.contains(column.name);
+            NamesAndTypesList result;
+            for (const auto & column : input)
+            {
+                bool is_expired = expired_columns.contains(column.name);
+                bool is_required_for_merge = global_ctx->merge_required_key_columns.contains(column.name);
 
-            if (is_expired)
-                global_ctx->merging_columns_expired_by_ttl.push_back(column);
+                if (is_expired)
+                    expired_out.push_back(column);
 
-            if (!is_expired || is_required_for_merge)
-                merging_columns.push_back(column);
-        }
-        global_ctx->merging_columns = std::move(merging_columns);
+                if (!is_expired || is_required_for_merge)
+                    result.push_back(column);
+            }
 
-        NamesAndTypesList storage_columns;
-        for (const auto & column : global_ctx->storage_columns)
-        {
-            bool is_expired = expired_columns.contains(column.name);
-            bool is_required_for_merge = global_ctx->merge_required_key_columns.contains(column.name);
+            return result;
+        };
 
-            if (is_expired)
-                global_ctx->storage_columns_expired_by_ttl.push_back(column);
-
-            if (!is_expired || is_required_for_merge)
-                storage_columns.push_back(column);
-        }
-        global_ctx->storage_columns = std::move(storage_columns);
+        global_ctx->merging_columns = filter_columns(global_ctx->merging_columns, global_ctx->merging_columns_expired_by_ttl);
+        global_ctx->storage_columns = filter_columns(global_ctx->storage_columns, global_ctx->storage_columns_expired_by_ttl);
     }
 
     global_ctx->new_data_part->uuid = global_ctx->future_part->uuid;
