@@ -322,6 +322,7 @@ bool ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFilesByHivePartition(
 
     zkutil::ZooKeeper::MultiTryGetResponse responses;
 
+    zk_retry.resetFailures();
     zk_retry.retryLoop([&]
     {
         responses = ObjectStorageQueueMetadata::getZooKeeper(log_)->tryGet(paths);
@@ -372,6 +373,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
     const auto processor_info = getProcessorInfo(generateProcessingID());
 
     Coordination::Error code;
+    zk_retry.resetFailures();
     zk_retry.retryLoop([&]
     {
         auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log_);
@@ -471,6 +473,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
             zkutil::addCheckNotExistsRequest(requests, *zk_client, processed_node_path);
 
         Coordination::Responses responses;
+        zk_retry.resetFailures();
         zk_retry.retryLoop([&]
         {
             auto zk = ObjectStorageQueueMetadata::getZooKeeper(log);
