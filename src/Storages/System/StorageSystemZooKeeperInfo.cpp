@@ -240,7 +240,8 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
 
         auto followers_in_string = mntr_responses_map["zk_followers"];
         int followers = 0;
-        if (!followers_in_string.empty()) {
+        if (!followers_in_string.empty())
+        {
             followers = stoi(followers_in_string);
         }
 
