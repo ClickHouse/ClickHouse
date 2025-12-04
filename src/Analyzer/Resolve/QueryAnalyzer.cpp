@@ -34,6 +34,8 @@
 #include <Analyzer/Resolve/TypoCorrection.h>
 
 #include <Common/FieldVisitorToString.h>
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 
@@ -111,9 +113,10 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
-QueryAnalyzer::QueryAnalyzer(bool only_analyze_)
+QueryAnalyzer::QueryAnalyzer(bool only_analyze_, UsedColumns used_column_names_)
     : identifier_resolver(node_to_projection_name)
     , only_analyze(only_analyze_)
+    , used_column_names(std::move(used_column_names_))
 {}
 
 QueryAnalyzer::~QueryAnalyzer() = default;
@@ -121,6 +124,7 @@ QueryAnalyzer::~QueryAnalyzer() = default;
 void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context)
 {
     IdentifierResolveScope & scope = createIdentifierResolveScope(node, /*parent_scope=*/ nullptr);
+    scope.used_column_names = std::move(used_column_names);
 
     if (!scope.context)
         scope.context = context;
@@ -2223,7 +2227,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             result_projection_names.pop_back();
     }
 
-    for (auto & [strict_transformer, used_column_names] : strict_transformer_to_used_column_names)
+    for (auto & [strict_transformer, used_column_names_set] : strict_transformer_to_used_column_names)
     {
         auto strict_transformer_type = strict_transformer->getTransformerType();
         const Names * strict_transformer_column_names = nullptr;
@@ -2235,7 +2239,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 const auto * except_transformer = static_cast<const ExceptColumnTransformerNode *>(strict_transformer);
                 const auto & except_names = except_transformer->getExceptColumnNames();
 
-                if (except_names.size() != used_column_names.size())
+                if (except_names.size() != used_column_names_set.size())
                     strict_transformer_column_names = &except_transformer->getExceptColumnNames();
 
                 break;
@@ -2245,7 +2249,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 const auto * replace_transformer = static_cast<const ReplaceColumnTransformerNode *>(strict_transformer);
                 const auto & replacement_names = replace_transformer->getReplacementsNames();
 
-                if (replacement_names.size() != used_column_names.size())
+                if (replacement_names.size() != used_column_names_set.size())
                     strict_transformer_column_names = &replace_transformer->getReplacementsNames();
 
                 break;
@@ -2267,7 +2271,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         for (size_t i = 0; i < strict_transformer_column_names_size; ++i)
         {
             const auto & column_name = (*strict_transformer_column_names)[i];
-            if (!used_column_names.contains(column_name))
+            if (!used_column_names_set.contains(column_name))
                 non_matched_column_names.push_back(column_name);
         }
 
@@ -3360,8 +3364,50 @@ void QueryAnalyzer::resolveWindowNodeList(QueryTreeNodePtr & window_node_list, I
         resolveWindow(node, scope);
 }
 
+namespace
+{
+
+void removeUnusedProjections(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope)
+{
+    if (!scope.used_column_names)
+        return;
+
+    NameSet names_set(scope.used_column_names->begin(), scope.used_column_names->end());
+
+    auto & projection_list_typed = projection_node_list->as<ListNode &>();
+    auto projection_nodes = projection_list_typed.getNodes();
+
+    std::vector<size_t> used_projection_indices;
+    used_projection_indices.reserve(projection_nodes.size());
+
+    for (size_t i = 0; i < projection_nodes.size(); ++i)
+    {
+        auto & projection_node = projection_nodes[i];
+        LOG_DEBUG(getLogger(__func__), "Checking projection node: {}", projection_node->dumpTree());
+        if (!projection_node->hasAlias())
+            return;
+
+        auto projection_name_it = names_set.find(projection_node->getAlias());
+        if (projection_name_it != names_set.end())
+            used_projection_indices.push_back(i);
+    }
+
+    if (used_projection_indices.size() == 0 || used_projection_indices.size() == projection_nodes.size())
+        return;
+
+    QueryTreeNodes new_projection_nodes;
+    new_projection_nodes.reserve(used_projection_indices.size());
+    for (auto index : used_projection_indices)
+        new_projection_nodes.push_back(std::move(projection_nodes[index]));
+
+    projection_list_typed.getNodes() = std::move(new_projection_nodes);
+}
+
+}
+
 NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope)
 {
+    removeUnusedProjections(projection_node_list, scope);
     ProjectionNames projection_names = resolveExpressionNodeList(projection_node_list, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
     auto projection_nodes = projection_node_list->as<ListNode &>().getNodes();

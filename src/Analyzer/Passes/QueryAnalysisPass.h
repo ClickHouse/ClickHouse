@@ -7,6 +7,9 @@
 namespace DB
 {
 
+using Names = std::vector<std::string>;
+using UsedColumns = std::optional<Names>;
+
 /** This pass make initial query analysis.
   *
   * 1. All identifiers are resolved. Next passes can expect that there will be no IdentifierNode in query tree.
@@ -71,7 +74,7 @@ public:
     /** Construct query analysis pass for query or union analysis.
       * Available columns are extracted from query node join tree.
       */
-    explicit QueryAnalysisPass(bool only_analyze_ = false);
+    explicit QueryAnalysisPass(bool only_analyze_ = false, UsedColumns used_column_names_ = {});
 
     /** Construct query analysis pass for expression or list of expressions analysis.
       * Available expression columns are extracted from table expression.
@@ -94,6 +97,7 @@ public:
 private:
     QueryTreeNodePtr table_expression;
     const bool only_analyze;
+    UsedColumns used_column_names;
 };
 
 }

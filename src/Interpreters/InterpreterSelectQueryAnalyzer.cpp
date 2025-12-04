@@ -31,6 +31,8 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryLog.h>
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -48,7 +50,7 @@ namespace Setting
 namespace
 {
 
-ASTPtr createIdentifierFromColumnName(const String & column_name)
+[[maybe_unused]] ASTPtr createIdentifierFromColumnName(const String & column_name)
 {
     Tokens tokens(column_name.data(), column_name.data() + column_name.size(), DBMS_DEFAULT_MAX_QUERY_SIZE);
     IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
@@ -60,7 +62,7 @@ ASTPtr createIdentifierFromColumnName(const String & column_name)
     return res;
 }
 
-ASTPtr normalizeAndValidateQuery(const ASTPtr & query, const Names & column_names)
+ASTPtr normalizeAndValidateQuery(const ASTPtr & query, [[maybe_unused]] const Names & column_names)
 {
     ASTPtr result_query;
 
@@ -73,34 +75,34 @@ ASTPtr normalizeAndValidateQuery(const ASTPtr & query, const Names & column_name
             "Expected ASTSelectWithUnionQuery or ASTSelectQuery. Actual {}",
             query->formatForErrorMessage());
 
-    if (column_names.empty())
-        return result_query;
+    // if (column_names.empty())
+    return result_query;
 
-    /// The initial query the VIEW references to is wrapped here with another SELECT query to allow reading only necessary columns.
-    auto select_query = std::make_shared<ASTSelectQuery>();
+    // /// The initial query the VIEW references to is wrapped here with another SELECT query to allow reading only necessary columns.
+    // auto select_query = std::make_shared<ASTSelectQuery>();
 
-    auto result_table_expression_ast = std::make_shared<ASTTableExpression>();
-    result_table_expression_ast->children.push_back(std::make_shared<ASTSubquery>(std::move(result_query)));
-    result_table_expression_ast->subquery = result_table_expression_ast->children.back();
+    // auto result_table_expression_ast = std::make_shared<ASTTableExpression>();
+    // result_table_expression_ast->children.push_back(std::make_shared<ASTSubquery>(std::move(result_query)));
+    // result_table_expression_ast->subquery = result_table_expression_ast->children.back();
 
-    auto tables_in_select_query_element_ast = std::make_shared<ASTTablesInSelectQueryElement>();
-    tables_in_select_query_element_ast->children.push_back(std::move(result_table_expression_ast));
-    tables_in_select_query_element_ast->table_expression = tables_in_select_query_element_ast->children.back();
+    // auto tables_in_select_query_element_ast = std::make_shared<ASTTablesInSelectQueryElement>();
+    // tables_in_select_query_element_ast->children.push_back(std::move(result_table_expression_ast));
+    // tables_in_select_query_element_ast->table_expression = tables_in_select_query_element_ast->children.back();
 
-    ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
-    tables_in_select_query_ast->children.push_back(std::move(tables_in_select_query_element_ast));
+    // ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
+    // tables_in_select_query_ast->children.push_back(std::move(tables_in_select_query_element_ast));
 
-    select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables_in_select_query_ast));
+    // select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables_in_select_query_ast));
 
-    auto projection_expression_list_ast = std::make_shared<ASTExpressionList>();
-    projection_expression_list_ast->children.reserve(column_names.size());
+    // auto projection_expression_list_ast = std::make_shared<ASTExpressionList>();
+    // projection_expression_list_ast->children.reserve(column_names.size());
 
-    for (const auto & column_name : column_names)
-        projection_expression_list_ast->children.push_back(createIdentifierFromColumnName(column_name));
+    // for (const auto & column_name : column_names)
+    //     projection_expression_list_ast->children.push_back(createIdentifierFromColumnName(column_name));
 
-    select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(projection_expression_list_ast));
+    // select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(projection_expression_list_ast));
 
-    return select_query;
+    // return select_query;
 }
 
 ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOptions & select_query_options)
@@ -145,15 +147,17 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
     query_tree = query_tree->cloneAndReplace(replacement_map);
 }
 
-static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
+static QueryTreeNodePtr buildQueryTreeAndRunPasses(
+    const ASTPtr & query,
     const SelectQueryOptions & select_query_options,
     const ContextPtr & context,
-    const StoragePtr & storage)
+    const StoragePtr & storage,
+    UsedColumns used_column_names = {})
 {
     auto query_tree = buildQueryTree(query, context);
 
     QueryTreePassManager query_tree_pass_manager(context);
-    addQueryTreePasses(query_tree_pass_manager, select_query_options.only_analyze);
+    addQueryTreePasses(query_tree_pass_manager, select_query_options.only_analyze, std::move(used_column_names));
 
     /// We should not apply any query tree level optimizations on shards
     /// because it can lead to a changed header.
@@ -179,9 +183,10 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     : query(normalizeAndValidateQuery(query_, column_names))
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
-    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/))
+    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/, column_names))
     , planner(query_tree, select_query_options)
 {
+    LOG_DEBUG(getLogger(__func__), "Initialized query tree ({}) with columns {}:\n{}", query_->formatForLogging(), toString(column_names), query_tree->dumpTree());
 }
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
@@ -193,7 +198,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     : query(normalizeAndValidateQuery(query_, column_names))
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
-    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_))
+    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_, column_names))
     , planner(query_tree, select_query_options)
 {
 }

@@ -125,6 +125,9 @@ using ProjectionName = String;
 using ProjectionNames = std::vector<ProjectionName>;
 constexpr auto PROJECTION_NAME_PLACEHOLDER = "__projection_name_placeholder";
 
+using Names = std::vector<std::string>;
+using UsedColumns = std::optional<Names>;
+
 struct IdentifierResolveScope
 {
     /// Construct identifier resolve scope using scope node, and parent scope
@@ -135,6 +138,8 @@ struct IdentifierResolveScope
     IdentifierResolveScope * parent_scope = nullptr;
 
     ContextPtr context;
+
+    UsedColumns used_column_names = {};
 
     /// Identifier lookup to result
     std::unordered_map<IdentifierLookup, IdentifierResolveState, IdentifierLookupHash> identifier_in_lookup_process;
