@@ -1391,11 +1391,13 @@ struct ConvertThroughParsing
                     {
                         time_t res;
                         parsed = tryParseTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
+                        convertFromTime<ToDataType>(vec_to[i],res);
                     }
                     else
                     {
                         time_t res;
                         parsed = tryParseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
+                        convertFromTime<ToDataType>(vec_to[i],res);
                     }
                 }
                 else
