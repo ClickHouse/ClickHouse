@@ -3,11 +3,40 @@ import http.server
 import json
 
 GOOD_PASSWORD = "good_password"
-USER_RESPONSES = {
-    "test_user_1": {"settings": {"auth_user": "'test_user'", "auth_num": "UInt64_15"}},
-    "test_user_2": {},
-    "test_user_3": "",
-    "test_user_4": "not json string",
+# See output format examples: 01418_custom_settings.sql
+TEST_CASES = {
+    "test_user_1": {
+        "response": {
+            "settings": {
+                "auth_str": "test_user",
+                "auth_int": 100,
+                "auth_signed": -100,
+                "auth_float": 100.1,
+                "auth_null": None,
+                "auth_bool": True,
+            }
+        },
+        "dump_settings": {
+            "auth_str": "'test_user'",
+            "auth_int": "Int64_100",
+            "auth_signed": "Int64_-100",
+            "auth_float": "Float64_100.1",
+            "auth_null": "NULL",
+            "auth_bool": "Bool_1",
+        },
+        "get_settings": {
+            "auth_str": "test_user",
+            "auth_int": "100",
+            "auth_signed": "-100",
+            "auth_float": "100.1",
+            "auth_null": "\\N",
+            "auth_bool": "true",
+        },
+    },
+    "test_user_2": {"response": {}},
+    "test_user_3": {"response": ""},
+    "test_user_4": {"response": "not json string"},
+    "test_user_5": {"response": {"settings": {"unexpected_nested_object": {}}}},
 }
 
 
@@ -26,7 +55,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_response(http.HTTPStatus.OK)
         body = ""
 
-        response = USER_RESPONSES.get(user)
+        response = TEST_CASES.get(user, {}).get("response")
 
         if isinstance(response, dict):
             body = json.dumps(response)
