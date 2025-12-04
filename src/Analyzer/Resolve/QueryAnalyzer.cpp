@@ -3831,6 +3831,13 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             continue;
         }
 
+        /// Keep matchers (e.g. asterisks) as-is so table functions can validate them themselves
+        if (table_function_argument->getNodeType() == QueryTreeNodeType::MATCHER)
+        {
+            result_table_function_arguments.push_back(table_function_argument);
+            continue;
+        }
+
         if (auto * identifier_node = table_function_argument->as<IdentifierNode>())
         {
             const auto & unresolved_identifier = identifier_node->getIdentifier();
