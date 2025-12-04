@@ -89,7 +89,7 @@ SETTINGS
 
 SELECT queries are forbidden by default on AzureQueue tables. This follows the common queue pattern where data is read once and then removed from the queue. SELECT is forbidden to prevent accidental data loss.
 However, sometimes it might be useful. To do this, you need to set the setting `stream_like_engine_allow_direct_select` to `True`.
-Also, AzureQueue engine has a special setting for SELECT queries: `commit_on_select` set to `False` or `True` if you want to preserve the read data in the queue or you want to remove it after reading.
+The AzureQueue engine has a special setting for SELECT queries: `commit_on_select`. Set it to `False` to preserve data in the queue after reading, or `True` to remove it.
 
 ## Description {#description}
 
