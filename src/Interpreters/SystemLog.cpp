@@ -636,7 +636,8 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 {
     Stopwatch stopwatch;
     UInt64 prepare_table_time = 0;
-    UInt64 prepare_data_time = 0;
+    UInt64 prepare_reserve_block = 0;
+    UInt64 prepare_insert_data_to_block = 0;
     UInt64 execute_insert_time = 0;
     UInt64 confirm_time = 0;
 
@@ -671,11 +672,14 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         for (auto & column : columns)
             column->reserve(to_flush.size());
 
+        prepare_reserve_block = stopwatch.elapsedMilliseconds();
+        stopwatch.restart();
+
         for (const auto & elem : to_flush)
             elem.appendToBlock(columns);
 
         block.setColumns(std::move(columns));
-        prepare_data_time = stopwatch.elapsedMilliseconds();
+        prepare_insert_data_to_block = stopwatch.elapsedMilliseconds();
         stopwatch.restart();
 
         /// We write to table indirectly, using InterpreterInsertQuery.
@@ -719,10 +723,11 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 
     LOG_TRACE(
         log,
-        "Flushed system log up to offset {}. Timings: {}/{}/{}/{}",
+        "Flushed system log up to offset {}. Timings: {}/{}/{}/{}/{}",
         to_flush_end,
         prepare_table_time,
-        prepare_data_time,
+        prepare_reserve_block,
+        prepare_insert_data_to_block,
         execute_insert_time,
         confirm_time);
 }
