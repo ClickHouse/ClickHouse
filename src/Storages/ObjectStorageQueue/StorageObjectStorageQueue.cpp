@@ -537,20 +537,19 @@ void StorageObjectStorageQueue::read(
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. "
                         "To enable use setting `stream_like_engine_allow_direct_select`");
     }
-
-    if (getDependencies() > 0)
-    {
-        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
-                        "Cannot read from {} with attached materialized views", getName());
-    }
-
-    auto this_ptr = std::static_pointer_cast<StorageObjectStorageQueue>(shared_from_this());
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context));
     bool do_commit_on_select;
     {
         std::lock_guard lock(mutex);
         do_commit_on_select = commit_on_select;
     }
+    if (do_commit_on_select && getDependencies() > 0)
+    {
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
+                        "Cannot read from {} with attached materialized views and commit_on_select=1", getName());
+    }
+
+    auto this_ptr = std::static_pointer_cast<StorageObjectStorageQueue>(shared_from_this());
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context));
 
     auto reading = std::make_unique<ReadFromObjectStorageQueue>(
         column_names,
