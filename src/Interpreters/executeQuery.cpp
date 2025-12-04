@@ -1211,13 +1211,18 @@ static BlockIO executeQueryImpl(
                 /// If you format AST, parse it back, and format it again, you get the same string.
                 std::string_view original_query{begin, static_cast<size_t>(end - begin)};
 
-                String formatted1 = out_ast->formatWithPossiblyHidingSensitiveData(
-                    /*max_length=*/0,
-                    /*one_line=*/true,
-                    /*show_secrets=*/true,
-                    /*print_pretty_type_names=*/false,
-                    /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
-                    /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+                auto format_ast = [](ASTPtr ast)
+                {
+                    return ast->formatWithPossiblyHidingSensitiveData(
+                        /*max_length=*/0,
+                        /*one_line=*/true,
+                        /*show_secrets=*/true,
+                        /*print_pretty_type_names=*/false,
+                        /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+                        /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+                };
+
+                String formatted1 = format_ast(out_ast);
 
                 /// The query can become more verbose after formatting, so:
                 size_t new_max_query_size = max_query_size > 0 ? (1000 + 2 * max_query_size) : 0;
@@ -1246,18 +1251,40 @@ static BlockIO executeQueryImpl(
 
                 chassert(ast2);
 
-                String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(
-                    /*max_length=*/0,
-                    /*one_line=*/true,
-                    /*show_secrets=*/true,
-                    /*print_pretty_type_names=*/false,
-                    /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
-                    /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+                String formatted2 = format_ast(ast2);
 
                 if (formatted1 != formatted2)
+                {
+                    /// Try to find the problematic part of the AST (it's not guaranteed to find it correctly though)
+                    auto bad_ast = out_ast;
+                    bool found_bad_ast;
+                    do
+                    {
+                        found_bad_ast = false;
+                        for (const auto & child : bad_ast->children)
+                        {
+                            auto formatted_child = format_ast(child);
+                            if (formatted1.find(formatted_child) == std::string::npos)
+                            {
+                                /// This shouldn't happen
+                                LOG_FATAL(getLogger("executeQuery"), "Cannot find formatted child in the formatted query: {}", formatted_child);
+                                break;
+                            }
+                            if (formatted2.find(formatted_child) == std::string::npos)
+                            {
+                                /// We didn't find it - so it was formatted in a different way
+                                LOG_FATAL(getLogger("executeQuery"), "Suspicious part of the AST: {}: {}", child->getID(), formatted_child);
+                                bad_ast = child;
+                                found_bad_ast = true;
+                                break;
+                            }
+                        }
+                    } while (found_bad_ast);
+
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Inconsistent AST formatting: the query:\n{}\nFormatted as:\n{}\nWas parsed and formatted back as:\n{}",
                         original_query, formatted1, formatted2);
+                }
             }
             catch (const Exception & e)
             {
