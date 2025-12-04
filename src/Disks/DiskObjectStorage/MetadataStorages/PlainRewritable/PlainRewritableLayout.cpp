@@ -16,17 +16,17 @@ PlainRewritableLayout::PlainRewritableLayout(std::string object_storage_common_k
 
 std::string PlainRewritableLayout::getMetadataDirectoryKey() const
 {
-    return fmt::format("{}/{}/", object_storage_common_key_prefix, METADATA_DIRECTORY_TOKEN);
+    return fmt::format("{}/{}", object_storage_common_key_prefix, METADATA_DIRECTORY_TOKEN);
 }
 
 std::string PlainRewritableLayout::getRootFilesDirectoryKey() const
 {
-    return fmt::format("{}/{}/", object_storage_common_key_prefix, ROOT_DIRECTORY_TOKEN);
+    return fmt::format("{}/{}", object_storage_common_key_prefix, ROOT_DIRECTORY_TOKEN);
 }
 
 std::string PlainRewritableLayout::getFilesDirectoryKey(const std::string & directory_remote_path) const
 {
-    return fmt::format("{}/{}/", object_storage_common_key_prefix, directory_remote_path);
+    return fmt::format("{}/{}", object_storage_common_key_prefix, directory_remote_path);
 }
 
 std::string PlainRewritableLayout::packFileObjectKey(const std::string & directory_remote_path, const std::string & file_name) const
