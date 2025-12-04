@@ -9,11 +9,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 PlainRewritableLayout::PlainRewritableLayout(std::string object_storage_common_key_prefix_)
     : object_storage_common_key_prefix(std::move(object_storage_common_key_prefix_))
 {
