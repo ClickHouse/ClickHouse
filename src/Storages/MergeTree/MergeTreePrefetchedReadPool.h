@@ -65,13 +65,14 @@ private:
             MergeTreePrefetchedReadPool & read_prefetch);
 
         void wait();
-        std::pair<MergeTreeReadTask::Readers, MergeTreeIndexReadResultPtr> get();
+        std::tuple<MergeTreeReadTask::Readers, MergeTreeIndexReadResultPtr, bool> get();
         bool valid() const { return is_valid; }
 
     private:
         bool is_valid = false;
-        MergeTreeReadTask::Readers readers;
+        bool always_false_on_ranges = false;
         MergeTreeIndexReadResultPtr index_read_result;
+        MergeTreeReadTask::Readers readers;
         ThreadPoolCallbackRunnerLocal<void> read_index_runner;
         ThreadPoolCallbackRunnerLocal<void> prefetch_runner;
     };
@@ -97,7 +98,7 @@ private:
         MarkRanges ranges;
         std::vector<MarkRanges> patches_ranges;
         Priority priority;
-        MergeTreeIndexReadResultPtr index_read_result;
+        bool always_false_on_ranges = false;
         std::unique_ptr<PrefetchedReaders> readers_future;
     };
 
@@ -120,7 +121,7 @@ private:
     void createPrefetchedReadersForTask(ThreadTask & task);
     std::function<void()> createPrefetchedTask(IMergeTreeReader * reader, Priority priority);
 
-    MergeTreeReadTaskPtr stealTask(size_t thread, MergeTreeReadTask * previous_task);
+    ThreadTaskPtr stealTask(size_t thread);
     MergeTreeReadTaskPtr createTask(ThreadTask & thread_task, MergeTreeReadTask * previous_task);
 
     static std::string dumpTasks(const TasksPerThread & tasks);

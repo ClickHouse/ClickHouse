@@ -80,7 +80,7 @@ MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
     {
         auto ranges = readers.main->getAllMarkRanges();
         index_read_result = index_build_context->getPreparedIndexReadResult(*task_info, ranges);
-        bool always_false_on_ranges = index_read_result && index_read_result->alwaysFalseOnRanges(*task_info->data_part->index_granularity, ranges);
+        always_false_on_ranges = index_read_result && index_read_result->alwaysFalseOnRanges(*task_info->data_part->index_granularity, ranges);
 
         if (!always_false_on_ranges)
         {
@@ -109,7 +109,7 @@ void MergeTreePrefetchedReadPool::PrefetchedReaders::wait()
     prefetch_runner.waitForAllToFinish();
 }
 
-std::pair<MergeTreeReadTask::Readers, MergeTreeIndexReadResultPtr> MergeTreePrefetchedReadPool::PrefetchedReaders::get()
+std::tuple<MergeTreeReadTask::Readers, MergeTreeIndexReadResultPtr, bool> MergeTreePrefetchedReadPool::PrefetchedReaders::get()
 {
     OpenTelemetry::SpanHolder span("MergeTreePrefetchedReadPool::PrefetchedReaders::get");
 
@@ -119,7 +119,7 @@ std::pair<MergeTreeReadTask::Readers, MergeTreeIndexReadResultPtr> MergeTreePref
     read_index_runner.waitForAllToFinishAndRethrowFirstError();
     prefetch_runner.waitForAllToFinishAndRethrowFirstError();
 
-    return std::make_pair(std::move(readers), std::move(index_read_result));
+    return std::make_tuple(std::move(readers), std::move(index_read_result), always_false_on_ranges);
 }
 
 MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
@@ -236,23 +236,30 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t task_idx, Merge
 
         auto it = per_thread_tasks.find(task_idx);
         if (it == per_thread_tasks.end())
-            return stealTask(task_idx, previous_task);
+        {
+            thread_task = stealTask(task_idx);
 
-        auto & thread_tasks = it->second;
-        assert(!thread_tasks.empty());
+            if (!thread_task)
+                return nullptr;
+        }
+        else
+        {
+            auto & thread_tasks = it->second;
+            assert(!thread_tasks.empty());
 
-        thread_task = std::move(thread_tasks.front());
-        thread_tasks.pop_front();
+            thread_task = std::move(thread_tasks.front());
+            thread_tasks.pop_front();
 
-        if (thread_tasks.empty())
-            per_thread_tasks.erase(it);
+            if (thread_tasks.empty())
+                per_thread_tasks.erase(it);
+        }
     }
 
     /// createTask() is costly and doesn't require locking the mutex.
     return createTask(*thread_task, previous_task);
 }
 
-MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::stealTask(size_t thread, MergeTreeReadTask * previous_task)
+MergeTreePrefetchedReadPool::ThreadTaskPtr MergeTreePrefetchedReadPool::stealTask(size_t thread)
 {
     auto non_prefetched_tasks_to_steal = per_thread_tasks.end();
     auto prefetched_tasks_to_steal = per_thread_tasks.end();
@@ -310,7 +317,7 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::stealTask(size_t thread, Merge
         if (thread_tasks.empty())
             per_thread_tasks.erase(prefetched_tasks_to_steal);
 
-        return createTask(*thread_task, previous_task);
+        return thread_task;
     }
 
     /// TODO: it also makes sense to first try to steal from the next thread if it has ranges
@@ -341,7 +348,7 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::stealTask(size_t thread, Merge
         if (current_thread_tasks.empty())
             per_thread_tasks.erase(thread);
 
-        return createTask(*thread_task, previous_task);
+        return thread_task;
     }
 
     return nullptr;
@@ -351,8 +358,8 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::createTask(ThreadTask & task, 
 {
     if (task.isValidReadersFuture())
     {
-        auto [readers, index_read_result] = task.readers_future->get();
-        return MergeTreeReadPoolBase::createTask(task.read_info, std::move(readers), std::move(index_read_result), task.ranges, task.patches_ranges);
+        auto [readers, index_read_result, always_false_on_ranges] = task.readers_future->get();
+        return MergeTreeReadPoolBase::createTask(task.read_info, std::move(readers), task.ranges, std::move(index_read_result), task.patches_ranges, always_false_on_ranges);
     }
 
     return MergeTreeReadPoolBase::createTask(task.read_info, task.ranges, task.patches_ranges, previous_task);

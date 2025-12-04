@@ -10,6 +10,13 @@
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
 #include <Common/Exception.h>
 #include <IO/Operators.h>
+#include <Common/ProfileEvents.h>
+
+namespace ProfileEvents
+{
+    extern const Event EmptyMergeTreeReadTasks;
+    extern const Event MarksInEmptyMergeTreeReadTasks;
+}
 
 namespace DB
 {
@@ -71,7 +78,8 @@ MergeTreeReadTask::MergeTreeReadTask(
     std::vector<MarkRanges> patches_mark_ranges_,
     MergeTreeIndexReadResultPtr index_read_result_,
     const BlockSizeParams & block_size_params_,
-    MergeTreeBlockSizePredictorPtr size_predictor_)
+    MergeTreeBlockSizePredictorPtr size_predictor_,
+    bool is_empty_)
     : info(std::move(info_))
     , readers(std::move(readers_))
     , mark_ranges(std::move(mark_ranges_))
@@ -79,8 +87,13 @@ MergeTreeReadTask::MergeTreeReadTask(
     , index_read_result(std::move(index_read_result_))
     , block_size_params(block_size_params_)
     , size_predictor(std::move(size_predictor_))
-    , is_empty(index_read_result && index_read_result->alwaysFalseOnRanges(*info->data_part->index_granularity, mark_ranges))
+    , is_empty(is_empty_)
 {
+    if (is_empty)
+    {
+        ProfileEvents::increment(ProfileEvents::EmptyMergeTreeReadTasks);
+        ProfileEvents::increment(ProfileEvents::MarksInEmptyMergeTreeReadTasks, mark_ranges.getNumberOfMarks());
+    }
 }
 
 /// Returns pointer to the index if all columns in the read step belongs to the read step for that index.

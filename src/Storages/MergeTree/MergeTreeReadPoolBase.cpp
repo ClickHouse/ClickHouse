@@ -327,9 +327,10 @@ std::vector<size_t> MergeTreeReadPoolBase::getPerPartSumMarks() const
 MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
     MergeTreeReadTaskInfoPtr read_info,
     MergeTreeReadTask::Readers task_readers,
-    MergeTreeIndexReadResultPtr index_read_result,
     MarkRanges ranges,
-    std::vector<MarkRanges> patches_ranges) const
+    MergeTreeIndexReadResultPtr index_read_result,
+    std::vector<MarkRanges> patches_ranges,
+    bool is_empty) const
 {
     auto task_size_predictor = read_info->shared_size_predictor
         ? std::make_unique<MergeTreeBlockSizePredictor>(*read_info->shared_size_predictor)
@@ -342,7 +343,8 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
         std::move(patches_ranges),
         std::move(index_read_result),
         block_size_params,
-        std::move(task_size_predictor));
+        std::move(task_size_predictor),
+        is_empty);
 }
 
 MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
@@ -391,7 +393,8 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
     }
 
     auto index_read_result = index_build_context->getPreparedIndexReadResult(*read_info, ranges);
-    return createTask(read_info, std::move(task_readers), std::move(index_read_result), std::move(ranges), std::move(patches_ranges));
+    bool always_false_on_ranges = index_read_result && index_read_result->alwaysFalseOnRanges(*read_info->data_part->index_granularity, ranges);
+    return createTask(read_info, std::move(task_readers), std::move(ranges), std::move(index_read_result), std::move(patches_ranges), always_false_on_ranges);
 }
 
 MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(

@@ -89,9 +89,10 @@ protected:
     MergeTreeReadTaskPtr createTask(
         MergeTreeReadTaskInfoPtr read_info,
         MergeTreeReadTask::Readers task_readers,
-        MergeTreeIndexReadResultPtr index_read_result,
         MarkRanges ranges,
-        std::vector<MarkRanges> patches_ranges) const;
+        MergeTreeIndexReadResultPtr index_read_result,
+        std::vector<MarkRanges> patches_ranges,
+        bool is_empty) const;
 
     MergeTreeReadTaskPtr createTask(
         MergeTreeReadTaskInfoPtr read_info,

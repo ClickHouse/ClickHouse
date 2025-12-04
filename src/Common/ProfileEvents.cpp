@@ -366,6 +366,9 @@
     M(LoadedDataPartsMicroseconds, "Microseconds spent by MergeTree tables for loading data parts during initialization.", ValueType::Microseconds) \
     M(FilteringMarksWithPrimaryKeyMicroseconds, "Time spent filtering parts by PK.", ValueType::Microseconds) \
     M(FilteringMarksWithSecondaryKeysMicroseconds, "Time spent filtering parts by skip indexes.", ValueType::Microseconds) \
+    M(MarksSkippedByIndexReader, "Number of marks skipped by index reader.", ValueType::Number) \
+    M(EmptyMergeTreeReadTasks, "Number of created empty merge tree read tasks because index read result is always false on ranges.", ValueType::Number) \
+    M(MarksInEmptyMergeTreeReadTasks, "Number of marks in created empty merge tree read tasks.", ValueType::Number) \
     \
     M(WaitMarksLoadMicroseconds, "Time spent loading marks", ValueType::Microseconds) \
     M(BackgroundLoadingMarksTasks, "Number of background tasks for loading marks", ValueType::Number) \

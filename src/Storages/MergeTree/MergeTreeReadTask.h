@@ -156,7 +156,8 @@ public:
         std::vector<MarkRanges> patches_mark_ranges_,
         MergeTreeIndexReadResultPtr index_read_result_,
         const BlockSizeParams & block_size_params_,
-        MergeTreeBlockSizePredictorPtr size_predictor_);
+        MergeTreeBlockSizePredictorPtr size_predictor_,
+        bool is_empty_);
 
     void initializeReadersChain(
         const PrewhereExprInfo & prewhere_actions,
@@ -219,7 +220,7 @@ private:
     MergeTreeBlockSizePredictorPtr size_predictor;
 
     /// If true, the task won't return data and can be skipped.
-    bool is_empty = false;
+    bool is_empty;
 };
 
 using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
