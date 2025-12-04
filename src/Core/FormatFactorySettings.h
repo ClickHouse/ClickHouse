@@ -179,9 +179,6 @@ When reading Parquet files, skip whole row groups based on the WHERE expressions
     DECLARE(Bool, input_format_parquet_enable_json_parsing, true, R"(
 When reading Parquet files, parse JSON columns as ClickHouse JSON Column.
 )", 0) \
-    DECLARE(Bool, input_format_parquet_use_native_reader, false, R"(
-Use native parquet reader v1. It's relatively fast but unfinished. Deprecated.
-)", 0) \
     DECLARE(Bool, input_format_parquet_use_native_reader_v3, true, R"(
 Use Parquet reader v3.
 )", 0) \
@@ -1487,6 +1484,7 @@ Automatically create parent directories when using INTO OUTFILE if they do not a
     MAKE_OBSOLETE(M, Bool, input_format_parquet_import_nested, false) \
     MAKE_OBSOLETE(M, Bool, input_format_orc_import_nested, false) \
     MAKE_OBSOLETE(M, Bool, output_format_enable_streaming, false) \
+    MAKE_OBSOLETE(M, Bool, input_format_parquet_use_native_reader, false) \
 
 #endif // __CLION_IDE__
 

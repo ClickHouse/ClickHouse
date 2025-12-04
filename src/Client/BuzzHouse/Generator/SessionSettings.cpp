@@ -692,7 +692,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"input_format_parquet_filter_push_down", trueOrFalseSetting},
     {"input_format_parquet_preserve_order", trueOrFalseSettingNoOracle},
     {"input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference", trueOrFalseSettingNoOracle},
-    {"input_format_parquet_use_native_reader", trueOrFalseSetting},
     {"input_format_parquet_use_native_reader_v3", trueOrFalseSetting},
     {"input_format_parquet_page_filter_push_down", trueOrFalseSetting},
     {"input_format_parquet_use_offset_index", trueOrFalseSetting},
