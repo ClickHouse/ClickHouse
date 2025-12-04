@@ -383,7 +383,7 @@ Performs a pointwise minimum between two numericIndexedVector objects. For each 
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseMin(v1, v2)";
 
         FunctionDocumentation::Arguments arguments
-            = {{"v1", "", {"numericIndexedVector"}}, {"v2", "Another numericIndexedVector object.", {"numericIndexedVector"}}};
+            = {{"v1", "", {"numericIndexedVector"}}, {"v2", "", {"numericIndexedVector"}}};
 
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a new numericIndexedVector object.", {"numericIndexedVector"}};
 
