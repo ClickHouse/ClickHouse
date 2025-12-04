@@ -6,7 +6,7 @@ namespace DB
 {
 
 MULTITARGET_FUNCTION_AVX2_SSE42(
-    MULTITARGET_FUNCTION_HEADER(template <iota_supported_types T> static void NO_INLINE),
+    MULTITARGET_FUNCTION_HEADER(template <iota_supported_types T> static void NO_INLINE __attribute__((__aligned__(64)))),
     iotaImpl, MULTITARGET_FUNCTION_BODY((T * begin, size_t count, T first_value) /// NOLINT
     {
         for (size_t i = 0; i < count; i++)
