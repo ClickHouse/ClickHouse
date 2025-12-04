@@ -61,6 +61,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 static EvaluateConstantExpressionResult getFieldAndDataTypeFromLiteral(ASTLiteral * literal)
@@ -130,7 +131,8 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
 
         if (actions.getOutputs().size() != 1)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "ActionsDAG contains more than 1 output for expression: {}", ast->formatForLogging());
+            // Expression can return more than one column using untuple()
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Constant expression returns more than 1 column: {}", ast->formatForLogging());
         }
 
         const auto & output = actions.getOutputs()[0];
