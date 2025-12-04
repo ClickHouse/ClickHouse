@@ -57,3 +57,5 @@ WHERE query_kind = 'Insert' AND type = 'QueryFinish'
   AND tables = [currentDatabase() || '.target_table']
 GROUP BY Settings['async_insert']
 ORDER BY count() ASC;
+
+SELECT * FROM target_table ORDER BY id;
