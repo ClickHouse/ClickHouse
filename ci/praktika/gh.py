@@ -504,8 +504,10 @@ class GH:
         if len(search_query) > 100:
             search_query = search_query[:100]
 
-        safe_title = shlex.quote(search_query)
-        cmd = f"gh issue list --json title,body,labels,author,url,updatedAt,createdAt,number --repo {repo} --search {safe_title} {label_cmd}"
+        # Construct the full search query with 'in:title' qualifier
+        full_search_query = f"in:title {search_query}"
+        safe_search_query = shlex.quote(full_search_query)
+        cmd = f"gh issue list --json title,body,labels,author,url,updatedAt,createdAt,number --repo {repo} --search {safe_search_query} {label_cmd}"
         output = Shell.get_output(cmd, verbose=verbose)
         try:
             issues = json.loads(output)

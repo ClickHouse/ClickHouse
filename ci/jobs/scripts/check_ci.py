@@ -42,6 +42,18 @@ class JobTypes:
     PERFORMANCE = "Performance"
     FINISH_WORKFLOW = "Finish Workflow"
     DOCKER_TEST_IMAGES = "Docker test images"
+    BUGFIX_VALIDATION_FUNCTIONAL = "Bugfix validation functional"
+
+
+# TODO: make the list empty
+JOBS_USER_CAN_IGNORE = [
+    JobTypes.BUGFIX_VALIDATION_FUNCTIONAL,
+    JobTypes.STRESS,
+    JobTypes.UPGRADE,
+    JobTypes.PERFORMANCE,
+]
+# TODO: make the list empty
+TEST_NAMES_USER_CAN_IGNORE = ["Scrapping", "Killed", "Fatal messages", "Server died"]
 
 
 @dataclass
@@ -55,20 +67,11 @@ class CIFailure:
     issue: Optional[GH.GHIssue] = None
     job_type: str = ""
     ignorable: bool = False
+    is_not_completed: bool = False
 
     def __post_init__(self):
         if "Stateless" in self.job_name:
             self.job_type = JobTypes.STATELESS
-            if (
-                any(
-                    t in self.test_name
-                    for t in ["Scrapping", "Killed", "Fatal messages", "Server died"]
-                )
-                or self.test_status == "SERVER_DIED"
-            ):
-                # TODO: Find right way to handle this
-                self.ignorable = True
-                self.praktika_result.set_comment("IGNORED")
         elif "Integration" in self.job_name:
             self.job_type = JobTypes.INTEGRATION
         elif "AST" in self.job_name:
@@ -86,10 +89,10 @@ class CIFailure:
             self.job_type = JobTypes.COMPATIBILITY
         elif "Stress" in self.job_name:
             self.job_type = JobTypes.STRESS
-            self.ignorable = True
-            self.praktika_result.set_comment("IGNORED")
         elif "Upgrade" in self.job_name:
             self.job_type = JobTypes.UPGRADE
+        elif "Bugfix validation (functional tests)" in self.job_name:
+            self.job_type = JobTypes.BUGFIX_VALIDATION_FUNCTIONAL
         elif "Performance" in self.job_name:
             self.job_type = JobTypes.PERFORMANCE
         elif self.job_name.startswith("Dockers Build"):
@@ -99,8 +102,22 @@ class CIFailure:
         else:
             raise Exception(f"Unknown job type for job name: {self.job_name}")
 
-        if self.job_status in (Result.Status.RUNNING, Result.Status.PENDING, Result.Status.DROPPED):
+        if self.job_status in (
+            Result.Status.RUNNING,
+            Result.Status.PENDING,
+            Result.Status.DROPPED,
+        ):
             # User agreed to proceed with running job
+            self.ignorable = True
+            self.is_not_completed = False
+            self.praktika_result.set_comment("IGNORED")
+
+        if self.job_type in JOBS_USER_CAN_IGNORE:
+            self.ignorable = True
+            self.is_not_completed = True
+            self.praktika_result.set_comment("IGNORED")
+
+        if any(t in self.test_name for t in TEST_NAMES_USER_CAN_IGNORE):
             self.ignorable = True
             self.praktika_result.set_comment("IGNORED")
 
@@ -118,10 +135,8 @@ class CIFailure:
         return res
 
     def __repr__(self):
-        job_res = Result(
-            name=self.job_name, status=self.job_status, results=[self.praktika_result]
-        )
-        res = job_res.get_info_truncated(
+        res = f"\n - test output:\n"
+        res += self.praktika_result.get_info_truncated(
             truncate_from_top=False, max_info_lines_cnt=20, max_line_length=200
         )
         res += f"\n - flags: {', '.join(self.labels) or 'not flaged'}"
@@ -172,9 +187,15 @@ class CIFailure:
             bool: True if issue was created successfully, False otherwise
         """
         print(f"\nIssue to create:")
-        print(f"Title: {title}")
-        print(f"Labels: {', '.join(labels)}")
-        print(f"Body:\n{body}")
+        print("-" * 100)
+        print(f"- Title:\n  {title}")
+        print(f"- Labels:\n  {', '.join(labels)}")
+        print(f"- Body:\n{body}")
+        print("-" * 100)
+        body = (
+            "_Important: This issue was automatically created and is used by CI. "
+            "Do not modify the issue title._\n\n"
+        ) + body
 
         if not UserPrompt.confirm("Proceed with issue creation?"):
             return False
@@ -196,7 +217,9 @@ class CIFailure:
 
         print(repr(self))
         failure_reason = UserPrompt.get_string(
-            "Enter failure keyword from the test output identifying the problem (e.g. 'Timeout exceeded', 'Logical error', 'Result differs', etc.)",
+            "Enter the exact error text from the test output above that identifies the failure.\n"
+            "This must be a substring from the output (e.g., 'Logical error', 'Result differs').\n"
+            "It will be used to match and group similar failures",
             validator=lambda x: x in self.praktika_result.info,
         )
         title = f"Flaky test: {self.test_name}"
@@ -306,7 +329,7 @@ Test output:
             title=search_in_title,
             labels=labels,
             repo="ClickHouse/ClickHouse",
-            verbose=False,
+            verbose=True,
         )
 
         if issues and len(issues) > 1:
@@ -366,7 +389,6 @@ class JobFailuresList:
     job_name: str
     known_failures: List[CIFailure]
     unknown_failures: List[CIFailure]
-    unprocessed_failures: List[CIFailure]
     is_finished: bool
 
 
@@ -390,18 +412,13 @@ class JobResultProcessor:
             print(
                 f"  Too many failures ({len(job_failures.unknown_failures)}), skipping"
             )
+            time.sleep(3)
             return
 
         # Display known failures summary
         if job_failures.known_failures:
             print(f"  Known failures ({len(job_failures.known_failures)}):")
             for failure in job_failures.known_failures:
-                print(failure)
-
-        # Display unprocessed failures summary
-        if job_failures.unprocessed_failures:
-            print(f"  Unprocessed failures ({len(job_failures.unprocessed_failures)}):")
-            for failure in job_failures.unprocessed_failures:
                 print(failure)
 
         # Process unknown failures
@@ -555,7 +572,7 @@ class JobResultProcessor:
     def process_mergeable_check_status(commit_status_data: GH.CommitStatus, sha: str):
         if commit_status_data and commit_status_data.state in (Result.Status.SUCCESS,):
             pass
-        elif FORCE_MERGE or commit_status_data.state in (Result.Status.FAILED,):
+        elif commit_status_data.state in (Result.Status.FAILED,):
             if UserPrompt.confirm("Do you want to unblock mergeable check?"):
                 GH.post_commit_status(
                     CheckStatuses.MERGEABLE_CHECK,
@@ -700,14 +717,11 @@ def main():
     not_finished_jobs = []
     known_failures = []
     unknown_failures = []
-    unprocessed_failures = []
     for failure in ci_failures:
         if not failure.praktika_result.is_completed():
             not_finished_jobs.append(failure)
         elif failure.issue_url:
             known_failures.append(failure)
-        elif failure.ignorable:
-            unprocessed_failures.append(failure)
         else:
             unknown_failures.append(failure)
     pre_existing_issues_count = len(known_failures)
@@ -726,7 +740,6 @@ def main():
                 job_name=failure.job_name,
                 known_failures=[],
                 unknown_failures=[],
-                unprocessed_failures=[],
                 is_finished=True,
             )
         getattr(job_to_failures[failure.job_name], failure_type).append(failure)
@@ -735,19 +748,20 @@ def main():
             and failure.praktika_result.is_completed()
         )
 
+    print(unknown_failures)
     for failure in unknown_failures:
         add_failure_to_job(failure, "unknown_failures")
 
     for failure in known_failures:
         add_failure_to_job(failure, "known_failures")
 
-    for failure in unprocessed_failures:
-        add_failure_to_job(failure, "unprocessed_failures")
-
     visited_jobs = set()
     job_failures_pairs = []
     for failure in ci_failures:
         if failure.job_name not in visited_jobs:
+            if failure.job_name not in job_to_failures:
+                assert not failure.is_not_completed
+                continue
             job_failures_pairs.append(
                 (failure.job_name, job_to_failures[failure.job_name])
             )
@@ -759,11 +773,10 @@ def main():
 
     known_failures = []
     unknown_failures = []
-    unprocessed_failures = []
+
     for job_name, failures in job_failures_pairs:
         known_failures.extend(failures.known_failures)
         unknown_failures.extend(failures.unknown_failures)
-        unprocessed_failures.extend(failures.unprocessed_failures)
 
     print("\nCI failures:")
     if known_failures:
@@ -776,53 +789,45 @@ def main():
         for failure in unknown_failures:
             print(failure)
 
+    if not_finished_jobs:
+        print("\n--- Not finished jobs ---")
+        for failure in not_finished_jobs:
+            print(failure)
+
     if is_master_commit:
         sys.exit(0)
 
     should_update_PR_comment = False
-    if not unknown_failures:
-        if unprocessed_failures:
-            print("\n--- Unprocessed failures ---")
-            for failure in unprocessed_failures:
-                print(failure)
-        question = "CI status:\n"
-        if (
-            unknown_failures
-            or unprocessed_failures
-            or issues_created > 0
-            or pre_existing_issues_count > 0
-        ):
-            should_update_PR_comment = True
-            if not_finished_jobs:
-                question += f" - {len(not_finished_jobs)} not finished job{'s' if len(not_finished_jobs) != 1 else ''}\n"
-            if unprocessed_failures:
-                unprocessed_count = len(unprocessed_failures)
-                question += f" - {unprocessed_count} unprocessed failure{'s' if unprocessed_count != 1 else ''}\n"
-            if issues_created > 0:
-                question += f" - {issues_created} issue{'s' if issues_created != 1 else ''} just created\n"
-            if pre_existing_issues_count > 0:
-                question += f" - {pre_existing_issues_count} pre-existing issue{'s' if pre_existing_issues_count != 1 else ''}\n"
-            question += " - all other checks passed\n"
-        else:
-            question = "All checks passed! Congratulations!\n"
-        question += "\nDo you want to merge the PR?"
-        if not UserPrompt.confirm(question):
-            sys.exit(0)
+
+    question = "CI status:\n"
+    if unknown_failures or issues_created > 0 or pre_existing_issues_count > 0:
+        should_update_PR_comment = True
+        if not_finished_jobs:
+            question += f" - {len(not_finished_jobs)} not finished job{'s' if len(not_finished_jobs) != 1 else ''}\n"
+        if unknown_failures:
+            question += f" - {len(unknown_failures)} unknown failure{'s' if len(unknown_failures) != 1 else ''}\n"
+        if issues_created > 0:
+            question += f" - {issues_created} issue{'s' if issues_created != 1 else ''} just created\n"
+        if pre_existing_issues_count > 0:
+            question += f" - {pre_existing_issues_count} pre-existing issue{'s' if pre_existing_issues_count != 1 else ''}\n"
+        question += " - all other checks passed\n"
+        question += f" - Sync status: {sync_status.state}, description: {sync_status.description}\n"
     else:
-        print("There are unknown failures. Not merging the PR")
+        question = "All checks passed! Congratulations!\n"
+    question += "\nDo you want to merge the PR?"
+    if not UserPrompt.confirm(question):
         sys.exit(0)
 
     JobResultProcessor.process_mergeable_check_status(
         mergeable_check_status, sha=head_sha
     )
 
-    if unprocessed_failures:
-        for failure in unprocessed_failures:
+    if unknown_failures:
+        for failure in unknown_failures:
             failure.praktika_result.set_comment("IGNORED")
 
     JobResultProcessor.process_sync_status(sync_status, sha=head_sha)
 
-    assert not unknown_failures, "BUG: unknown failures are not processed"
     if should_update_PR_comment:
         try:
             print("\nUpdating CI summary in the PR comment")
