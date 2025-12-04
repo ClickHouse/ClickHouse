@@ -168,6 +168,9 @@ public:
     UInt64 getRightHashTableCacheKey() const { return right_hash_table_cache_key; }
     void setRightHashTableCacheKey(UInt64 right_hash_table_cache_key_) { right_hash_table_cache_key = right_hash_table_cache_key_; }
 
+    bool mayUseInMemoryInputStorage() const { return may_use_in_memory_input_storage; }
+    void setMayUseInMemoryInputStorage() { may_use_in_memory_input_storage = true; }
+
 protected:
     SharedHeader calculateOutputHeader(const NameSet & required_output_columns_set) const;
     void updateOutputHeader() override;
@@ -208,6 +211,7 @@ protected:
 
 private:
     bool disjunctions_optimization_applied = false;
+    bool may_use_in_memory_input_storage = false;
 };
 
 
