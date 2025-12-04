@@ -61,16 +61,9 @@ void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
 
         const auto config_prefix = root_config_prefix + ".ytsaurus";
         auto configuration = std::make_shared<YTsaurusStorageConfiguration>();
-        Poco::Util::AbstractConfiguration::Keys keys;
-        config.keys(config_prefix, keys);
-        for (const auto & key : keys)
-        {
-            if (!YTsaurusSettings::hasBuiltin(key))
-            {
-                continue;
-            }
-            configuration->settings.set(key, config.getString(config_prefix + "." + key));
-        }
+
+        configuration->settings.loadFromConfig(config, config_prefix);
+
         auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, config_prefix, context) : nullptr;
         if (named_collection)
         {
@@ -81,7 +74,7 @@ void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
         configuration->cypress_path = config.getString(config_prefix + ".cypress_path");
         configuration->oauth_token = config.getString(config_prefix + ".oauth_token");
 
-        return std::make_unique<YTsarususDictionarySource>(context, dict_struct, std::move(configuration), sample_block);
+        return std::make_unique<YTsaurusDictionarySource>(context, dict_struct, std::move(configuration), sample_block);
     };
 
     #else
@@ -107,7 +100,7 @@ void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
 static const UInt64 max_block_size = 8192;
 
 
-YTsarususDictionarySource::YTsarususDictionarySource(
+YTsaurusDictionarySource::YTsaurusDictionarySource(
     ContextPtr context_,
     const DictionaryStructure & dict_struct_,
     std::shared_ptr<YTsaurusStorageConfiguration> configuration_,
@@ -126,21 +119,21 @@ YTsarususDictionarySource::YTsarususDictionarySource(
 {
 }
 
-YTsarususDictionarySource::YTsarususDictionarySource(const YTsarususDictionarySource & other)
-    : YTsarususDictionarySource{other.context, other.dict_struct, other.configuration, *other.sample_block}
+YTsaurusDictionarySource::YTsaurusDictionarySource(const YTsaurusDictionarySource & other)
+    : YTsaurusDictionarySource{other.context, other.dict_struct, other.configuration, *other.sample_block}
 {
 }
 
-YTsarususDictionarySource::~YTsarususDictionarySource() = default;
+YTsaurusDictionarySource::~YTsaurusDictionarySource() = default;
 
-BlockIO YTsarususDictionarySource::loadAll()
+BlockIO YTsaurusDictionarySource::loadAll()
 {
     BlockIO io;
     io.pipeline = QueryPipeline(YTsaurusSourceFactory::createSource(client, {.cypress_path = configuration->cypress_path, .settings = configuration->settings}, sample_block, max_block_size));
     return io;
 }
 
-BlockIO YTsarususDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockIO YTsaurusDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     if (!dict_struct.id)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is required for selective loading");
@@ -155,7 +148,7 @@ BlockIO YTsarususDictionarySource::loadIds(const std::vector<UInt64> & ids)
     return io;
 }
 
-BlockIO YTsarususDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO YTsaurusDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     if (!supportsSelectiveLoad())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Can't make selective update of YTsaurus dictionary because data source doesn't supports lookups.");
@@ -173,13 +166,13 @@ BlockIO YTsarususDictionarySource::loadKeys(const Columns & key_columns, const s
     return io;
 }
 
-bool YTsarususDictionarySource::supportsSelectiveLoad() const
+bool YTsaurusDictionarySource::supportsSelectiveLoad() const
 {
     return client->getNodeType(configuration->cypress_path) == YTsaurusNodeType::DYNAMIC_TABLE;
 }
 
 
-std::string YTsarususDictionarySource::toString() const
+std::string YTsaurusDictionarySource::toString() const
 {
     return fmt::format("YTsaurus: {}", configuration->cypress_path);
 }

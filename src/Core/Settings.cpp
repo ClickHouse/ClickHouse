@@ -4641,6 +4641,9 @@ Defines how MySQL types are converted to corresponding ClickHouse types. A comma
 - `date2Date32`: convert `DATE` to `Date32` instead of `Date`. Takes precedence over `date2String`.
 - `date2String`: convert `DATE` to `String` instead of `Date`. Overridden by `datetime64`.
 )", 0) \
+    DECLARE(Bool, ytsaurus_check_table_schema, true, R"(
+Enable schema compatibility checks for ytsaurus table function.
+)", 0) \
     DECLARE(Bool, optimize_trivial_insert_select, false, R"(
 Optimize trivial 'INSERT INTO table SELECT ... FROM TABLES' query
 )", 0) \
