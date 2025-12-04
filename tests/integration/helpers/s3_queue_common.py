@@ -165,8 +165,6 @@ def create_table(
         settings["enable_hash_ring_filtering"] = 1
         settings["use_persistent_processing_nodes"] = random.choice([True, False])
 
-    azurite_connection_string = started_cluster.env_variables['AZURITE_CONNECTION_STRING']
-
     if after_processing == "move":
         assert move_to_prefix or move_to_bucket
 
@@ -180,6 +178,7 @@ def create_table(
                 settings["after_processing_move_access_key_id"] = minio_access_key_id
                 settings["after_processing_move_secret_access_key"] = minio_secret_access_key
             else:
+                azurite_connection_string = started_cluster.env_variables['AZURITE_CONNECTION_STRING']
                 settings["after_processing_move_connection_string"] = azurite_connection_string
                 settings["after_processing_move_container"] = move_to_bucket
 
@@ -195,6 +194,7 @@ def create_table(
         url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/{hive_partitioning_path}"
         engine_def = f"{engine_name}('{url}', {auth_params}, {file_format})"
     else:
+        azurite_connection_string = started_cluster.env_variables['AZURITE_CONNECTION_STRING']
         engine_def = f"{engine_name}('{azurite_connection_string}', '{started_cluster.azurite_container}', '{files_path}/{hive_partitioning_path}', 'CSV')"
 
     create = "REPLACE" if replace else "CREATE"

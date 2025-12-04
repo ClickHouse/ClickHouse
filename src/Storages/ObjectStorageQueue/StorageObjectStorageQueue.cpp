@@ -1024,16 +1024,29 @@ void StorageObjectStorageQueue::commit(
     const auto commit_id = generateCommitID();
     const auto commit_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
+    std::exception_ptr finalize_exception;
     for (auto & source : sources)
     {
-        source->finalizeCommit(
-            insert_succeeded, commit_id, commit_time, transaction_start_time, exception_message);
+        try
+        {
+            source->finalizeCommit(
+                insert_succeeded, commit_id, commit_time, transaction_start_time, exception_message);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+            if (!finalize_exception)
+                finalize_exception = std::current_exception();
+        }
     }
+    if (finalize_exception)
+        std::rethrow_exception(finalize_exception);
 
     LOG_DEBUG(
         log, "Successfully committed {} requests for {} sources with commit id {} "
-        "(inserted rows: {}, successful files: {})",
-        requests.size(), sources.size(), commit_id, inserted_rows, successful_objects.size());
+        "(inserted rows: {}, successful files ({}): {})",
+        requests.size(), sources.size(), commit_id, inserted_rows,
+        successful_objects.size(), collectRemotePaths(successful_objects));
 }
 
 UInt64 StorageObjectStorageQueue::generateCommitID()
@@ -1341,7 +1354,10 @@ void StorageObjectStorageQueue::alter(
         LOG_TEST(log, "New settings: {}", new_metadata.settings_changes->formatForLogging());
 
         /// Alter settings which are stored in keeper.
-        files_metadata->alterSettings(changed_settings, local_context);
+        ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+        {
+            files_metadata->alterSettings(changed_settings, local_context);
+        });
 
         /// Alter settings which are not stored in keeper.
         for (const auto & change : changed_settings)

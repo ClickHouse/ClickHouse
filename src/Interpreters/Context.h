@@ -1222,6 +1222,8 @@ public:
     /// return Auxiliary Zookeeper map
     std::map<String, zkutil::ZooKeeperPtr> getAuxiliaryZooKeepers() const;
 
+    int64_t getZooKeeperLastZXIDSeen() const;
+
     /// Try to connect to Keeper using get(Auxiliary)ZooKeeper. Useful for
     /// internal Keeper start (check connection to some other node). Return true
     /// if connected successfully (without exception) or our zookeeper client

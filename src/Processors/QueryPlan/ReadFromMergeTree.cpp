@@ -2312,7 +2312,7 @@ bool ReadFromMergeTree::isParallelReplicasLocalPlanForInitiator() const
         && context->canUseParallelReplicasOnInitiator();
 }
 
-bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, std::optional<ActionsDAG> virtual_row_conversion_)
+bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit)
 {
     /// if dirction is not set, use current one
     if (!direction)
@@ -2335,14 +2335,26 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     /// Let prefer in-order optimization over vertical FINAL for now
     enable_vertical_final = false;
 
-    /// Disable virtual row for FINAL.
-    if (virtual_row_conversion_ && !isQueryWithFinal() && context->getSettingsRef()[Setting::read_in_order_use_virtual_row])
-        virtual_row_conversion = std::make_shared<ExpressionActions>(std::move(*virtual_row_conversion_));
-
     updateSortDescription();
+
+    /// Re-calculate analysis result to have correct read_type
+    /// For some reason for projection it breaks aggregation in order, so skip it
+    if (analyzed_result_ptr && !analyzed_result_ptr->readFromProjection())
+        selectRangesToRead();
 
     return true;
 }
+
+bool ReadFromMergeTree::setVirtualRowConversions(ActionsDAG virtual_row_conversion_)
+{
+    /// Disable virtual row for FINAL.
+    if (isQueryWithFinal() || !context->getSettingsRef()[Setting::read_in_order_use_virtual_row])
+        return false;
+
+    virtual_row_conversion = std::make_shared<ExpressionActions>(std::move(virtual_row_conversion_));
+    return true;
+}
+
 
 bool ReadFromMergeTree::readsInOrder() const
 {

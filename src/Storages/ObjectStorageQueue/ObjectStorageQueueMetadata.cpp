@@ -480,6 +480,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
         Coordination::Requests requests;
         Coordination::Responses responses;
         std::optional<Coordination::Error> code;
+        zk_retries.resetFailures();
         zk_retries.retryLoop([&]
         {
             auto zk_client = getZooKeeper(log);
@@ -669,6 +670,7 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
         Coordination::Requests requests;
         Coordination::Responses responses;
 
+        zk_retries.resetFailures();
         zk_retries.retryLoop([&]
         {
             auto zk_client = getZooKeeper(log);
@@ -1164,6 +1166,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     }
 
     Strings failed_nodes;
+    zk_retries.resetFailures();
     zk_retries.retryLoop([&]
     {
         code = getZooKeeper(log)->tryGetChildren(zookeeper_failed_path, failed_nodes);
@@ -1216,7 +1219,10 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     {
         auto get_paths = [&]
         {
+            LOG_TEST(log, "Fetching info for {} paths", paths.size());
+
             zkutil::ZooKeeper::MultiTryGetResponse response;
+            zk_retries.resetFailures();
             zk_retries.retryLoop([&]
             {
                 response = getZooKeeper(log)->tryGet(paths);
@@ -1247,6 +1253,10 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
         if (!paths.empty())
             get_paths();
     };
+
+    LOG_TRACE(
+        log, "Processed nodes to remove: {}, failed nodes to remove: {}, multiread batch size: {}",
+        processed_nodes.size(), failed_nodes.size(), keeper_multiread_batch_size);
 
     fetch_nodes(processed_nodes, zookeeper_processed_path);
     fetch_nodes(failed_nodes, zookeeper_failed_path);
@@ -1295,6 +1305,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
                 {
                     /// requests with ZRUNTIMEINCONSISTENCY were not processed because the multi request was aborted before
                     /// so we try removing it again without multi requests
+                    zk_retries.resetFailures();
                     zk_retries.retryLoop([&]
                     {
                         code = getZooKeeper(log)->tryRemove(remove_requests[i]->getPath());
@@ -1419,6 +1430,7 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
     auto get_paths = [&]
     {
         zkutil::ZooKeeper::MultiTryGetResponse response;
+        zk_retries.resetFailures();
         zk_retries.retryLoop([&]
         {
             response = getZooKeeper(log)->tryGet(get_batch);
@@ -1468,6 +1480,7 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
 
     for (const auto & node : nodes_to_remove)
     {
+        zk_retries.resetFailures();
         zk_retries.retryLoop([&]
         {
             code = getZooKeeper(log)->tryRemove(node);
