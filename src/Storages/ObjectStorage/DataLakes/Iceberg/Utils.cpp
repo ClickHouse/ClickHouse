@@ -20,6 +20,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include <base/getThreadId.h>
 #include <base/types.h>
 #include <Poco/Dynamic/Var.h>
@@ -395,11 +396,11 @@ std::string normalizeUuid(const std::string & uuid)
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration_ptr,
-    IcebergMetadataFilesCachePtr cache_ptr,
+    IcebergMetadataFilesCachePtr metadata_cache,
     const ContextPtr & local_context,
     LoggerPtr log,
-    CompressionMethod compression_method)
+    CompressionMethod compression_method,
+    const std::optional<String> & table_uuid)
 {
     auto create_fn = [&]()
     {
@@ -407,7 +408,7 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
 
         auto read_settings = local_context->getReadSettings();
         /// Do not utilize filesystem cache if more precise cache enabled
-        if (cache_ptr)
+        if (metadata_cache)
             read_settings.enable_filesystem_cache = false;
 
         auto source_buf = createReadBuffer(object_info.relative_path_with_metadata, object_storage, local_context, log, read_settings);
@@ -424,8 +425,9 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     };
 
     String metadata_json_str;
-    if (cache_ptr)
-        metadata_json_str = cache_ptr->getOrSetTableMetadata(IcebergMetadataFilesCache::getKey(configuration_ptr, metadata_file_path), create_fn);
+    if (metadata_cache && table_uuid.has_value())
+        metadata_json_str = metadata_cache->getOrSetTableMetadata(
+            IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path), create_fn);
     else
         metadata_json_str = create_fn();
 
@@ -858,31 +860,36 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     return {new_metadata_file_content, removeEscapedSlashes(oss.str())};
 }
 
+
 /**
  * Each version of table metadata is stored in a `metadata` directory and
  * has one of 2 formats:
  *   1) v<V>.metadata.json, where V - metadata version.
  *   2) <V>-<random-uuid>.metadata.json, where V - metadata version
+
+We use table_uuid both for metadata cache queries and selection of the latest metadata file.
+For legacy reasons, we keep the option to not use table_uuid for metadata file selection.
  */
-MetadataFileWithInfo getLatestMetadataFileAndVersion(
+static MetadataFileWithInfo getLatestMetadataFileAndVersion(
     const ObjectStoragePtr & object_storage,
-    StorageObjectStorageConfigurationPtr configuration_ptr,
-    IcebergMetadataFilesCachePtr cache_ptr,
+    const String & table_path,
+    const DataLakeStorageSettings & data_lake_settings,
+    IcebergMetadataFilesCachePtr metadata_cache,
     const ContextPtr & local_context,
-    const std::optional<String> & table_uuid)
+    std::optional<String> table_uuid,
+    bool use_table_uuid_for_metadata_file_selection)
 {
     auto log = getLogger("IcebergMetadataFileResolver");
     MostRecentMetadataFileSelectionWay selection_way
-        = configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_recent_metadata_file_by_last_updated_ms_field].value
+        = data_lake_settings[DataLakeStorageSetting::iceberg_recent_metadata_file_by_last_updated_ms_field].value
         ? MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD
         : MostRecentMetadataFileSelectionWay::BY_METADATA_FILE_VERSION;
-    bool need_all_metadata_files_parsing
-        = (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD) || table_uuid.has_value();
-    const auto metadata_files = listFiles(*object_storage, *configuration_ptr, "metadata", ".metadata.json");
+    bool need_all_metadata_files_parsing = (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
+        || (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection);
+    const auto metadata_files = listFiles(*object_storage, table_path, "metadata", ".metadata.json");
     if (metadata_files.empty())
     {
-        throw Exception(
-            ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", configuration_ptr->getPathForRead().path);
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", table_path);
     }
     std::vector<ShortMetadataFileInfo> metadata_files_with_versions;
     metadata_files_with_versions.reserve(metadata_files.size());
@@ -895,8 +902,9 @@ MetadataFileWithInfo getLatestMetadataFileAndVersion(
 
         if (need_all_metadata_files_parsing)
         {
-            auto metadata_file_object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, cache_ptr, local_context, log, compression_method);
-            if (table_uuid.has_value())
+            auto metadata_file_object = getMetadataJSONObject(
+                metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid);
+            if (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
             {
                 if (metadata_file_object->has(Iceberg::f_table_uuid))
                 {
@@ -927,6 +935,22 @@ MetadataFileWithInfo getLatestMetadataFileAndVersion(
         }
     }
 
+    if (metadata_files_with_versions.empty())
+    {
+        if (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
+        {
+            throw Exception(
+                ErrorCodes::FILE_DOESNT_EXIST,
+                "The metadata file for Iceberg table with path {} and table UUID {} doesn't exist",
+                table_path,
+                table_uuid.value());
+        }
+        throw Exception(
+            ErrorCodes::FILE_DOESNT_EXIST,
+            "The metadata file for Iceberg table with path {} doesn't exist",
+            table_path);
+    }
+
     /// Get the latest version of metadata file: v<V>.metadata.json
     const ShortMetadataFileInfo & latest_metadata_file_info = [&]()
     {
@@ -950,12 +974,13 @@ MetadataFileWithInfo getLatestMetadataFileAndVersion(
 
 MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     const ObjectStoragePtr & object_storage,
-    StorageObjectStorageConfigurationPtr configuration_ptr,
-    IcebergMetadataFilesCachePtr cache_ptr,
+    const String & table_path,
+    const DataLakeStorageSettings & data_lake_settings,
+    IcebergMetadataFilesCachePtr metadata_cache,
     const ContextPtr & local_context,
-    Poco::Logger * log)
+    Poco::Logger * log,
+    const std::optional<String> & table_uuid)
 {
-    const auto & data_lake_settings = configuration_ptr->getDataLakeSettings();
     if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
     {
         auto explicit_metadata_path = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].value;
@@ -969,9 +994,8 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
                 if (*it == "." || *it == "..")
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Relative paths are not allowed");
             }
-            auto prefix_storage_path = configuration_ptr->getPathForRead().path;
-            if (!explicit_metadata_path.starts_with(prefix_storage_path))
-                explicit_metadata_path = std::filesystem::path(prefix_storage_path) / explicit_metadata_path;
+            if (!explicit_metadata_path.starts_with(table_path))
+                explicit_metadata_path = std::filesystem::path(table_path) / explicit_metadata_path;
             return getMetadataFileAndVersion(explicit_metadata_path);
         }
         catch (const std::exception & ex)
@@ -981,13 +1005,29 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     }
     else if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_table_uuid].changed)
     {
-        std::optional<String> table_uuid = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_table_uuid].value;
-        return getLatestMetadataFileAndVersion(object_storage, configuration_ptr, cache_ptr, local_context, table_uuid);
+        String explicit_table_uuid = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_table_uuid].value;
+        if (table_uuid.has_value())
+        {
+            if (normalizeUuid(explicit_table_uuid) != table_uuid.value())
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Explicit table UUID '{}' doesn't match the one from table properties '{}'",
+                    normalizeUuid(explicit_table_uuid),
+                    table_uuid.value());
+            }
+        }
+        LOG_TEST(
+            log,
+            "Explicit table UUID is specified {}, will read the latest metadata file for Iceberg table at path {}",
+            explicit_table_uuid,
+            table_path);
+        return getLatestMetadataFileAndVersion(
+            object_storage, table_path, data_lake_settings, metadata_cache, local_context, normalizeUuid(explicit_table_uuid), true);
     }
     else if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value)
     {
-        auto prefix_storage_path = configuration_ptr->getPathForRead().path;
-        auto version_hint_path = std::filesystem::path(prefix_storage_path) / "metadata" / "version-hint.text";
+        auto version_hint_path = std::filesystem::path(table_path) / "metadata" / "version-hint.text";
         std::string metadata_file;
         StoredObject version_hint(version_hint_path);
         auto buf = object_storage->readObject(version_hint, ReadSettings{});
@@ -1002,11 +1042,12 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
         LOG_TEST(log, "Version hint file points to {}, will read from this metadata file", metadata_file);
         ProfileEvents::increment(ProfileEvents::IcebergVersionHintUsed);
 
-        return getMetadataFileAndVersion(std::filesystem::path(prefix_storage_path) / "metadata" / fs::path(metadata_file).filename());
+        return getMetadataFileAndVersion(std::filesystem::path(table_path) / "metadata" / fs::path(metadata_file).filename());
     }
     else
     {
-        return getLatestMetadataFileAndVersion(object_storage, configuration_ptr, cache_ptr, local_context, std::nullopt);
+        return getLatestMetadataFileAndVersion(
+            object_storage, table_path, data_lake_settings, metadata_cache, local_context, table_uuid, false);
     }
 }
 

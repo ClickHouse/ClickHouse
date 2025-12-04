@@ -44,6 +44,7 @@ namespace Setting
     extern const SettingsBool s3_validate_request_settings;
     extern const SettingsSchemaInferenceMode schema_inference_mode;
     extern const SettingsBool schema_inference_use_cache_for_s3;
+    extern const SettingsBool compatibility_s3_presigned_url_query_in_path;
 }
 
 namespace S3AuthSetting
@@ -182,9 +183,15 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
 
     auto filename = collection.getOrDefault<String>("filename", "");
     if (!filename.empty())
-        url = S3::URI(std::filesystem::path(collection.get<String>("url")) / filename, settings[Setting::allow_archive_path_syntax]);
+        url = S3::URI(
+            std::filesystem::path(collection.get<String>("url")) / filename,
+            settings[Setting::allow_archive_path_syntax],
+            /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path]);
     else
-        url = S3::URI(collection.get<String>("url"), settings[Setting::allow_archive_path_syntax]);
+        url = S3::URI(
+            collection.get<String>("url"),
+            settings[Setting::allow_archive_path_syntax],
+            /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path]);
 
     const auto & config = context->getConfigRef();
 
@@ -579,7 +586,10 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     }
 
     /// This argument is always the first
-    url = S3::URI(checkAndGetLiteralArgument<String>(args[0], "url"), context->getSettingsRef()[Setting::allow_archive_path_syntax]);
+    url = S3::URI(
+        checkAndGetLiteralArgument<String>(args[0], "url"),
+        context->getSettingsRef()[Setting::allow_archive_path_syntax],
+        /*keep_presigned_query_parameters*/ !context->getSettingsRef()[Setting::compatibility_s3_presigned_url_query_in_path]);
 
     s3_settings = std::make_unique<S3Settings>();
     s3_settings->loadFromConfigForObjectStorage(
