@@ -746,12 +746,12 @@ bool Client::buzzHouse()
                 {
                     /// Test in and out formats
                     /// When testing content, we have to export and import to the same table
-                    const bool test_content = fuzz_config->use_dump_table_oracle > 1 && rg.nextBool()
+                    const bool test_content = fuzz_config->use_dump_table_oracle > 1 && rg.nextBool() 
                         && gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_to_compare_content);
                     const auto & tbl = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(
                         test_content ? gen.attached_tables_to_compare_content : gen.attached_tables_to_test_format));
 
-                    const uint32_t optimize_table = 20 * static_cast<uint32_t>(test_content);
+                    const uint32_t optimize_table = 20 * static_cast<uint32_t>(test_content && tbl.get().can_run_merges);
                     const uint32_t reattach_table = 20 * static_cast<uint32_t>(test_content);
                     const uint32_t backup_restore_table = 20 * static_cast<uint32_t>(test_content);
                     const uint32_t dump_table = 50;

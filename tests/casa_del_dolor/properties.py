@@ -847,10 +847,10 @@ class DiskPropertiesGroup(PropertiesGroup):
             disk_element = ET.SubElement(smt_element, "disk")
             disk_element.text = f"disk{random.choice(created_keeper_disks)}"
         # Optionally set database disk
-        if random.randint(1, 100) <= 30:
+        if number_disks > 0 and random.randint(1, 100) <= 30:
             dbd_element = ET.SubElement(top_root, "database_disk")
             disk_element = ET.SubElement(dbd_element, "disk")
-            disk_element.text = f"disk{random.randint(0, number_disks)}"
+            disk_element.text = f"disk{random.randint(0, number_disks - 1)}"
 
 
 def add_single_cache(i: int, next_cache: ET.Element):
