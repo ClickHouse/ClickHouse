@@ -46,7 +46,7 @@ namespace DB
  *   - e controls the decimal scaling up
  *   - f controls how many trailing decimal zeros we effectively “cut off” again
  * A value is considered exactly encodable if:
- *   decodeValue(encodeValue(v, e, f), e, f) == v (within epsilon)
+ *   decodeValue(encodeValue(v, e, f), e, f) == v
  * Encodable values become part of the integer stream; non-encodable values become exceptions stored verbatim.
  *
  * Two-Level Sampling to Select (e,f)
@@ -320,7 +320,7 @@ private:
             const Int64 value_enc = ALPFloatUtils<T>::encodeValue(value, block_params.exponent, block_params.fraction);
             const T value_dec = ALPFloatUtils<T>::decodeValue(value_enc, block_params.exponent, block_params.fraction);
 
-            if (likely(std::abs(value - value_dec) < std::numeric_limits<T>::epsilon()))
+            if (likely(value == value_dec))
             {
                 block_encoded.push_back(value_enc);
                 min = std::min(value_enc, min);
@@ -376,6 +376,8 @@ private:
                 best_params = params;
                 is_prev_worse = false;
             }
+            else if (estimated_size == best_size)
+                is_prev_worse = false;
             else
             {
                 if (is_prev_worse)
@@ -479,7 +481,7 @@ private:
             const Int64 value_enc = ALPFloatUtils<T>::encodeValue(value, params.exponent, params.fraction);
             const T value_dec = ALPFloatUtils<T>::decodeValue(value_enc, params.exponent, params.fraction);
 
-            if (likely(std::abs(value - value_dec) < std::numeric_limits<T>::epsilon()))
+            if (likely(value == value_dec))
             {
                 min = std::min(value_enc, min);
                 max = std::max(value_enc, max);

@@ -848,6 +848,8 @@ INSTANTIATE_TEST_SUITE_P(SmallSequences,
                 + generatePyramidOfSequences<UInt16>(42, G(SequentialGenerator(1)))
                 + generatePyramidOfSequences<UInt32>(42, G(SequentialGenerator(1)))
                 + generatePyramidOfSequences<UInt64>(42, G(SequentialGenerator(1)))
+                + generatePyramidOfSequences<Float32>(42, G(SequentialGenerator(1)))
+                + generatePyramidOfSequences<Float64>(42, G(SequentialGenerator(1)))
         )
     )
 );
@@ -864,7 +866,9 @@ INSTANTIATE_TEST_SUITE_P(Mixed,
             generateSeq<UInt8>(G(MinMaxGenerator()), 1, 5) + generateSeq<UInt8>(G(SequentialGenerator(1)), 1, 1001),
             generateSeq<UInt16>(G(MinMaxGenerator()), 1, 5) + generateSeq<UInt16>(G(SequentialGenerator(1)), 1, 1001),
             generateSeq<UInt32>(G(MinMaxGenerator()), 1, 5) + generateSeq<UInt32>(G(SequentialGenerator(1)), 1, 1001),
-            generateSeq<UInt64>(G(MinMaxGenerator()), 1, 5) + generateSeq<UInt64>(G(SequentialGenerator(1)), 1, 1001)
+            generateSeq<UInt64>(G(MinMaxGenerator()), 1, 5) + generateSeq<UInt64>(G(SequentialGenerator(1)), 1, 1001),
+            generateSeq<Float32>(G(MinMaxGenerator()), 1, 5) + generateSeq<Float32>(G(SequentialGenerator(1)), 1, 1001),
+            generateSeq<Float64>(G(MinMaxGenerator()), 1, 5) + generateSeq<Float64>(G(SequentialGenerator(1)), 1, 1001)
         )
     )
 );
@@ -1423,5 +1427,31 @@ TEST(T64Test, TranscodeRawInput)
         }
     }
 }
+
+auto SequentialALPGenerator = []<typename T>()
+{
+    return [=](auto i)
+    {
+        T trend = static_cast<T>(0.1) * static_cast<T>(i);
+        T oscillation = std::sin(trend);
+        T spike = i % 10 == 0 ? static_cast<T>(M_PI) : static_cast<T>(0);
+        T value = trend + oscillation + spike;
+        value = std::ceil(value * static_cast<T>(100.0)) / static_cast<T>(100.0);
+        return value;
+    };
+};
+
+INSTANTIATE_TEST_SUITE_P(SequentialALP,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(
+            Codec("ALP")
+        ),
+        ::testing::ValuesIn(
+              generatePyramidOfSequences<Float32>(1035, G(SequentialALPGenerator.template operator()<Float32>()))
+            + generatePyramidOfSequences<Float64>(1034, G(SequentialALPGenerator.template operator()<Float64>()))
+        )
+    )
+);
 
 }

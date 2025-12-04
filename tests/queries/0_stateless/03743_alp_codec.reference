@@ -1,7 +1,15 @@
-0	0
-alp	f32	154930	160000	0.968
-alp	f64	154930	160000	0.968
-alp	id	154930	160000	0.968
-gorilla	f32	165228	160000	1.033
-gorilla	f64	165228	160000	1.033
-gorilla	id	165228	160000	1.033
+Test Data integrity
+0
+0
+Compare compression with Gorilla codec (higher is better)
+alp64	58394	100000	1.7125
+alp32	54883	60000	1.0932
+gorilla64	102563	100000	0.975
+gorilla32	62559	60000	0.9591
+Test uncompressible data
+base64	100050	100000	0.9995
+alp64	100072	100000	0.9993
+base32	60050	60000	0.9992
+alp32	60072	60000	0.9988
+Test different precisions in one data series compression rate
+alp64	50054	81920	1.6366
