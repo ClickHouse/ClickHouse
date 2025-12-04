@@ -6,7 +6,7 @@
 #include <Core/Settings.h>
 #include <Parsers/IAST.h>
 #include <Formats/FormatFactory.h>
-#include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/HDFS/HDFSObjectStorage.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -74,7 +74,7 @@ StorageObjectStorageQuerySettings StorageHDFSConfiguration::getQuerySettings(con
     };
 }
 
-void HDFSStorageParsableArguments::fromASTImpl(ASTs & args, ContextPtr context, bool with_structure)
+void HDFSStorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
     if (args.empty() || args.size() > getMaxNumberOfArguments(with_structure))
         throw Exception(
@@ -110,7 +110,7 @@ void HDFSStorageParsableArguments::fromASTImpl(ASTs & args, ContextPtr context, 
     }
 }
 
-void HDFSStorageParsableArguments::fromNamedCollectionImpl(const NamedCollection & collection, ContextPtr /*context*/)
+void HDFSStorageParsedArguments::fromNamedCollection(const NamedCollection & collection, ContextPtr /*context*/)
 {
     auto filename = collection.getOrDefault<String>("filename", "");
     if (!filename.empty())
@@ -144,7 +144,7 @@ void StorageHDFSConfiguration::setURL(const std::string & url_)
     LOG_TRACE(getLogger("StorageHDFSConfiguration"), "Using URL: {}, path: {}", url, path.path);
 }
 
-static void addStructureAndFormatToArgsIfNeededImpl(
+static void addStructureAndFormatToArgsIfNeededHDFS(
     ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
 {
     if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
@@ -167,11 +167,11 @@ static void addStructureAndFormatToArgsIfNeededImpl(
     else
     {
         size_t count = args.size();
-        if (count == 0 || count > HDFSStorageParsableArguments::getMaxNumberOfArguments())
+        if (count == 0 || count > HDFSStorageParsedArguments::getMaxNumberOfArguments())
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Expected 1 to {} arguments in table function hdfs, got {}",
-                HDFSStorageParsableArguments::getMaxNumberOfArguments(),
+                HDFSStorageParsedArguments::getMaxNumberOfArguments(),
                 count);
 
         auto format_literal = std::make_shared<ASTLiteral>(format_);
@@ -209,26 +209,31 @@ static void addStructureAndFormatToArgsIfNeededImpl(
     }
 }
 
+void StorageHDFSConfiguration::initializeFromParsedArguments(const HDFSStorageParsedArguments & parsed_arguments)
+{
+    StorageObjectStorageConfiguration::initializeFromParsedArguments(parsed_arguments);
+}
+
 void StorageHDFSConfiguration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
-    HDFSStorageParsableArguments parsable_arguments;
-    parsable_arguments.fromASTImpl(args, context, with_structure);
-    initializeFromParsableArguments(parsable_arguments);
-    setURL(parsable_arguments.url_str);
+    HDFSStorageParsedArguments parsed_arguments;
+    parsed_arguments.fromAST(args, context, with_structure);
+    initializeFromParsedArguments(parsed_arguments);
+    setURL(parsed_arguments.url_str);
 }
 
 void StorageHDFSConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
-    HDFSStorageParsableArguments parsable_arguments;
-    parsable_arguments.fromNamedCollectionImpl(collection, context);
-    initializeFromParsableArguments(parsable_arguments);
-    setURL(parsable_arguments.url_str);
+    HDFSStorageParsedArguments parsed_arguments;
+    parsed_arguments.fromNamedCollection(collection, context);
+    initializeFromParsedArguments(parsed_arguments);
+    setURL(parsed_arguments.url_str);
 }
 
 void StorageHDFSConfiguration::addStructureAndFormatToArgsIfNeeded(
     ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
 {
-    addStructureAndFormatToArgsIfNeededImpl(args, structure_, format_, context, with_structure);
+    addStructureAndFormatToArgsIfNeededHDFS(args, structure_, format_, context, with_structure);
 }
 }
 

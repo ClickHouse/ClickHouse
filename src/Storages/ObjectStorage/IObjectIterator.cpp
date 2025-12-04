@@ -3,7 +3,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Core/Settings.h>
 #include <Core/Defines.h>

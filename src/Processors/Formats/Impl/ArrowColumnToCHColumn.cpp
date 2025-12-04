@@ -191,7 +191,7 @@ static ColumnWithTypeAndName readColumnWithJSONData(
             for (size_t row_i = 0, num_rows = chunk.length(); row_i < num_rows; ++row_i)
             {
                 auto view = chunk.GetView(row_i);
-                ReadBufferFromMemory rb(view.data(), view.size());
+                ReadBufferFromMemory rb(view);
                 serialization->deserializeTextJSON(column_object, rb, format_settings);
             }
         }
@@ -205,7 +205,7 @@ static ColumnWithTypeAndName readColumnWithJSONData(
                     continue;
                 }
                 auto view = chunk.GetView(row_i);
-                ReadBufferFromMemory rb(view.data(), view.size());
+                ReadBufferFromMemory rb(view);
                 serialization->deserializeTextJSON(column_object, rb, format_settings);
             }
         }

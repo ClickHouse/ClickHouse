@@ -5,19 +5,20 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/ICatalog.h>
+#include <Storages/MutationCommands.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
-#include <Storages/MutationCommands.h>
-#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Storages/StorageFactory.h>
 #include <Common/Exception.h>
+#include <Storages/StorageFactory.h>
 #include <Formats/FormatFilterInfo.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 
-namespace DB {
+namespace DB
+{
 
 class NamedCollection;
 class SinkToStorage;
@@ -26,7 +27,7 @@ struct IObjectIterator;
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
 using ObjectIterator = std::shared_ptr<IObjectIterator>;
 
-struct StorageParsableArguments;
+struct StorageParsedArguments;
 
 namespace ErrorCodes
 {
@@ -202,6 +203,7 @@ public:
         ContextPtr local_context,
         const std::optional<ColumnsDescription> & columns,
         ASTPtr partition_by,
+        ASTPtr order_by,
         bool if_not_exists,
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & table_id_);
@@ -270,7 +272,7 @@ public:
     std::shared_ptr<IPartitionStrategy> partition_strategy;
 
 protected:
-    void initializeFromParsableArguments(const StorageParsableArguments & parsable_arguments);
+    void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;
     virtual void fromDisk(const String & /*disk_name*/, ASTs & /*args*/, ContextPtr /*context*/, bool /*with_structure*/)

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-#include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 
 #include <Storages/ObjectStorage/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -12,7 +12,7 @@
 namespace DB
 {
 
-struct LocalStorageParsableArguments : private StorageParsableArguments
+struct LocalStorageParsedArguments : private StorageParsedArguments
 {
     friend class StorageLocalConfiguration;
     static constexpr auto max_number_of_arguments_with_structure = 4;
@@ -40,11 +40,11 @@ struct LocalStorageParsableArguments : private StorageParsableArguments
 
     using Paths = StorageObjectStorageConfiguration::Paths;
     using Path = StorageObjectStorageConfiguration::Path;
-    Path path;
+    String path;
     String path_suffix;
-    void fromNamedCollectionImpl(const NamedCollection & collection, ContextPtr);
-    void fromDiskImpl(DiskPtr disk, ASTs & args, ContextPtr context, bool with_structure);
-    void fromASTImpl(ASTs & args, ContextPtr context, bool with_structure);
+    void fromNamedCollection(const NamedCollection & collection, ContextPtr);
+    void fromDisk(DiskPtr disk, ASTs & args, ContextPtr context, bool with_structure);
+    void fromAST(ASTs & args, ContextPtr context, bool with_structure);
 };
 
 class StorageLocalConfiguration : public StorageObjectStorageConfiguration
@@ -81,19 +81,14 @@ public:
 
     void addStructureAndFormatToArgsIfNeeded(ASTs &, const String &, const String &, ContextPtr, bool) override { }
 
+protected:
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
 
+private:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
-
     Path path;
     Paths paths;
-
-private:
-    void initializeFromParsableArguments(const LocalStorageParsableArguments & parsable_arguments)
-    {
-        StorageObjectStorageConfiguration::initializeFromParsableArguments(parsable_arguments);
-        path = parsable_arguments.path;
-    }
+    void initializeFromParsedArguments(const LocalStorageParsedArguments & parsed_arguments);
 };
 }

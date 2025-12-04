@@ -30,6 +30,8 @@ public:
 
     /// Disable reading default libssh configuration
     void disableDefaultConfig();
+    /// Disable session from closing socket. Can be used when a socket is passed.
+    void disableSocketOwning();
 
     /// Connect / disconnect
     void connect();

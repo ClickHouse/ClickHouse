@@ -3,17 +3,17 @@
 #include "config.h"
 
 #if USE_AWS_S3
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <IO/S3Settings.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ObjectStorage/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 
 namespace DB
 {
 
-struct S3StorageParsableArguments : private StorageParsableArguments
+struct S3StorageParsedArguments : private StorageParsedArguments
 {
     friend class StorageS3Configuration;
     static constexpr auto max_number_of_arguments_with_structure = 10;
@@ -80,10 +80,10 @@ struct S3StorageParsableArguments : private StorageParsableArguments
     String path_suffix;
 
 public:
-    void fromNamedCollectionImpl(const NamedCollection & collection, ContextPtr context);
-    void fromDiskImpl(const DiskPtr & disk, ASTs & args, ContextPtr context, bool with_structure);
-    void fromASTImpl(ASTs & args, ContextPtr context, bool with_structure);
-    S3StorageParsableArguments() = default;
+    void fromNamedCollection(const NamedCollection & collection, ContextPtr context);
+    void fromDisk(const DiskPtr & disk, ASTs & args, ContextPtr context, bool with_structure);
+    void fromAST(ASTs & args, ContextPtr context, bool with_structure);
+    S3StorageParsedArguments() = default;
 };
 
 
@@ -152,14 +152,7 @@ protected:
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
 
 private:
-    void initializeFromParsableArguments(S3StorageParsableArguments && parsable_arguments)
-    {
-        StorageObjectStorageConfiguration::initializeFromParsableArguments(parsable_arguments);
-        url = std::move(parsable_arguments.url);
-        s3_settings = std::move(parsable_arguments.s3_settings);
-        s3_capabilities = std::move(parsable_arguments.s3_capabilities);
-        headers_from_ast = std::move(parsable_arguments.headers_from_ast);
-    }
+    void initializeFromParsedArguments(S3StorageParsedArguments && parsed_arguments);
 
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
 

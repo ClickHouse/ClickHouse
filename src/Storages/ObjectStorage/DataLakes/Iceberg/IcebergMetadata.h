@@ -8,7 +8,7 @@
 #include <Poco/JSON/Parser.h>
 
 #include <Core/Types.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
@@ -46,7 +46,7 @@ public:
 
     IcebergMetadata(
         ObjectStoragePtr object_storage_,
-        StorageObjectStorageConfigurationWeakPtr configuration_,
+        StorageObjectStorageConfigurationPtr configuration_,
         const ContextPtr & context_,
         IcebergMetadataFilesCachePtr cache_ptr);
 
@@ -63,6 +63,7 @@ public:
         const ContextPtr & local_context,
         const std::optional<ColumnsDescription> & columns,
         ASTPtr partition_by,
+        ASTPtr order_by,
         bool if_not_exists,
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & table_id_);
@@ -97,7 +98,7 @@ public:
         SharedHeader sample_block,
         const StorageID & table_id,
         ObjectStoragePtr object_storage,
-        StorageObjectStorageConfigurationPtr configuration,
+        StorageObjectStorageConfigurationPtr /*configuration*/,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr context,
         std::shared_ptr<DataLake::ICatalog> catalog);
@@ -136,8 +137,7 @@ public:
 
 private:
     Iceberg::PersistentTableComponents initializePersistentTableComponents(
-        IcebergMetadataFilesCachePtr cache_ptr,
-        ContextPtr context_);
+        StorageObjectStorageConfigurationPtr configuration, IcebergMetadataFilesCachePtr cache_ptr, ContextPtr context_);
 
     Iceberg::IcebergDataSnapshotPtr
     getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, ContextPtr local_context) const;
@@ -150,13 +150,12 @@ private:
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::TableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
     std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(const ContextPtr & context) const;
-    StorageObjectStorageConfigurationPtr getConfiguration() const;
 
-
-    const ObjectStoragePtr object_storage;
-    const StorageObjectStorageConfigurationWeakPtr configuration;
     LoggerPtr log;
+    const ObjectStoragePtr object_storage;
     DB::Iceberg::PersistentTableComponents persistent_components;
+    const DataLakeStorageSettings & data_lake_settings;
+    const String write_format;
     KeyDescription getSortingKey(ContextPtr local_context, Iceberg::TableStateSnapshot actual_table_state_snapshot) const;
 };
 }

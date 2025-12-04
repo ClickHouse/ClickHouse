@@ -79,37 +79,30 @@ extern const SettingsBool iceberg_delete_data_on_drop;
 
 
 void data_lake_general_initialization_code() {
-//     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
-
 //     const bool need_resolve_columns_or_format = false;
-//     const bool do_lazy_init = lazy_init;
 
-//     LOG_DEBUG(log, "StorageObjectStorage: lazy_init={}, need_resolve_columns_or_format={}, need_resolve_sample_path={}, is_table_function={}, is_datalake_query={}, columns_in_table_or_function_definition={}",
-//         lazy_init, need_resolve_columns_or_format, false, is_table_function, is_datalake_query, columns_in_table_or_function_definition.toString(true));
+//     LOG_DEBUG(log, "StorageObjectStorage: lazy_init={}, need_resolve_columns_or_format={}, need_resolve_sample_path={}, is_table_function={}, needs_data_table_create={}, columns_in_table_or_function_definition={}",
+//         lazy_init, need_resolve_columns_or_format, false, is_table_function, needs_data_table_create, columns_in_table_or_function_definition.toString(true));
 
-//     if (!is_table_function && !columns_in_table_or_function_definition.empty() && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE)
+//     if (!is_table_function && !columns_in_table_or_function_definition.empty() && needs_data_table_create && mode == LoadingStrictnessLevel::CREATE)
 //     {
-            if (object_storage->getType() == ObjectStorageType::Local)
-            {
-                auto user_files_path = local_context->getUserFilesPath();
-                if (!fileOrSymlinkPathStartsWith(this->getPathForRead().path, user_files_path))
-                    throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
-            }
-            BaseStorageConfiguration::update(object_storage, local_context, true);
+            // if (object_storage->getType() == ObjectStorageType::Local)
+            // {
+            //     auto user_files_path = local_context->getUserFilesPath();
+            //     if (!fileOrSymlinkPathStartsWith(this->getPathForRead().path, user_files_path))
+            //         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
+            // }
+            // BaseStorageConfiguration::update(object_storage, local_context, true);
 
-            DataLakeMetadata::createInitial(object_storage, weak_from_this(), local_context, columns, partition_by, if_not_exists, catalog, table_id_);
+            // DataLakeMetadata::createInitial(object_storage, weak_from_this(), local_context, columns, partition_by, if_not_exists, catalog, table_id_);
 //     }
 
 //     bool updated_configuration = false;
 //     try
 //     {
-//         if (!do_lazy_init)
+//         if (!lazy_init)
 //         {
-//             configuration->update(
-//                 object_storage,
-//                 context,
-//                 /* if_not_updated_before */ is_table_function);
-//             updated_configuration = true;
+//             lazyInitializeIcebergMetadata(local_context);
 //         }
 //     }
 //     catch (...)
@@ -123,65 +116,13 @@ void data_lake_general_initialization_code() {
 //         tryLogCurrentException(log, /*start of message = */ "", LogsLevel::warning);
 //     }
 
-//     /// We always update configuration on read for table engine,
-//     /// but this is not needed for table function,
-//     /// which exists only for the duration of a single query
-//     /// (e.g. read always follows constructor immediately).
-//     update_configuration_on_read_write = !is_table_function || !updated_configuration;
-
 //     ColumnsDescription columns{columns_in_table_or_function_definition};
 //     validateSupportedColumns(columns, *configuration);
 
 //     configuration->check(context);
 
-//     bool format_supports_prewhere = FormatFactory::instance().checkIfFormatSupportsPrewhere(configuration->format, context, format_settings);
-
-//     /// TODO: Known problems with datalake prewhere:
-//     ///  * If the iceberg table went through schema evolution, columns read from file may need to
-//     ///    be renamed or typecast before applying prewhere. There's already a mechanism for
-//     ///    telling parquet reader to rename columns: ColumnMapper. And parquet reader already
-//     ///    automatically does type casts to requested types. But weirdly the iceberg reader uses
-//     ///    those mechanism to request the *old* name and type of the column, then has additional
-//     ///    code to do the renaming and casting as a separate step outside parquet reader.
-//     ///    We should probably change this and delete that additional code?
-//     ///  * Delta Lake can have "partition columns", which are columns with constant value specified
-//     ///    in the metadata, not present in parquet file. Like hive partitioning, but in metadata
-//     ///    files instead of path. Currently these columns are added to the block outside parquet
-//     ///    reader. If they appear in prewhere expression, parquet reader gets a "no column in block"
-//     ///    error. Unlike hive partitioning, we can't (?) just return these columns from
-//     ///    supportedPrewhereColumns() because at the time of the call the delta lake metadata hasn't
-//     ///    been read yet. So we should probably pass these columns to the parquet reader instead of
-//     ///    adding them outside.
-//     ///  * There's a bug in StorageObjectStorageSource::createReader: it makes a copy of
-//     ///    FormatFilterInfo, but for some reason unsets prewhere_info and row_level_filter_info.
-//     ///    There's probably no reason for this, and it should just copy those fields like the others.
-//     ///  * If the table contains files in different formats, with only some of them supporting
-//     ///    prewhere, things break.
-//     supports_prewhere = false;
-//     supports_tuple_elements = format_supports_prewhere;
-
-//     StorageInMemoryMetadata metadata;
-//     metadata.setColumns(columns);
-//     metadata.setConstraints(constraints_);
-//     metadata.setComment(comment);
-
-//     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
-//         metadata.columns,
-//         context,
-//         format_settings,
-//         configuration->partition_strategy_type,
-//         {}));
-
-//     setInMemoryMetadata(metadata);
-
-//     /// This will update metadata for table function which contains specific information about table
-//     /// state (e.g. for Iceberg). It is done because select queries for table functions are executed
-//     /// in a different way and clickhouse can execute without calling updateExternalDynamicMetadataIfExists.
-//     if (!do_lazy_init && is_table_function && configuration->needsUpdateForSchemaConsistency())
-//     {
 //         auto metadata_snapshot = configuration->getStorageSnapshotMetadata(context);
 //         setInMemoryMetadata(metadata_snapshot);
-//     }
 }
 
 IcebergStorage::IcebergStorage(
@@ -196,7 +137,7 @@ IcebergStorage::IcebergStorage(
     LoadingStrictnessLevel mode,
     std::shared_ptr<DataLake::ICatalog> catalog_,
     bool if_not_exists_,
-    bool is_datalake_query,
+    bool needs_data_table_create,
     bool distributed_processing_,
     ASTPtr partition_by_,
     bool is_table_function,

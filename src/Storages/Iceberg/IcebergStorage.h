@@ -51,7 +51,7 @@ public:
         LoadingStrictnessLevel mode,
         std::shared_ptr<DataLake::ICatalog> catalog_,
         bool if_not_exists_,
-        bool is_datalake_query,
+        bool needs_data_table_create,
         bool distributed_processing_ = false,
         ASTPtr partition_by_ = nullptr,
         bool is_table_function_ = false,

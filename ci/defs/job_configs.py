@@ -50,7 +50,7 @@ common_ft_job_config = Job.Config(
     command='python3 ./ci/jobs/functional_tests.py --options "{PARAMETER}"',
     # some tests can be flaky due to very slow disks - use tmpfs for temporary ClickHouse files
     # --cap-add=SYS_PTRACE and --privileged for gdb in docker
-    run_in_docker=f"clickhouse/stateless-test+--memory={LIMITED_MEM}+--cap-add=SYS_PTRACE+--privileged+--security-opt seccomp=unconfined+--tmpfs /tmp/clickhouse+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/etc/clickhouse-server1:/etc/clickhouse-server1+--volume=./ci/tmp/etc/clickhouse-server2:/etc/clickhouse-server2+--volume=./ci/tmp/var/log:/var/log",
+    run_in_docker=f"clickhouse/stateless-test+--memory={LIMITED_MEM}+--cap-add=SYS_PTRACE+--privileged+--security-opt seccomp=unconfined+--tmpfs /tmp/clickhouse:mode=1777+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/etc/clickhouse-server1:/etc/clickhouse-server1+--volume=./ci/tmp/etc/clickhouse-server2:/etc/clickhouse-server2+--volume=./ci/tmp/var/log:/var/log",
     digest_config=Job.CacheDigestConfig(
         include_paths=[
             "./ci/jobs/functional_tests.py",
@@ -62,6 +62,7 @@ common_ft_job_config = Job.Config(
             "./tests/config",
             "./tests/*.txt",
             "./ci/docker/stateless-test",
+            "./ci/defs/job_configs.py",
         ],
     ),
     result_name_for_cidb="Tests",
@@ -96,6 +97,7 @@ common_integration_test_job_config = Job.Config(
             "./ci/jobs/integration_test_job.py",
             "./tests/integration/",
             "./ci/docker/integration",
+            "./ci/jobs/scripts/docker_in_docker.sh",
         ],
     ),
     run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker",
@@ -303,7 +305,7 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.AMD_FREEBSD,
             provides=[ArtifactNames.CH_AMD_FREEBSD],
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.PPC64LE,
@@ -318,7 +320,7 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.AMD_MUSL,
             provides=[ArtifactNames.CH_AMD_MUSL],
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.RISCV64,
@@ -328,7 +330,7 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.S390X,
             provides=[ArtifactNames.CH_S390X],
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.LOONGARCH64,
@@ -415,7 +417,7 @@ class JobConfigs:
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command="python3 ./ci/jobs/functional_tests.py --options BugfixValidation",
         # some tests can be flaky due to very slow disks - use tmpfs for temporary ClickHouse files
-        run_in_docker="clickhouse/stateless-test+--network=host+--security-opt seccomp=unconfined+--tmpfs /tmp/clickhouse",
+        run_in_docker="clickhouse/stateless-test+--network=host+--security-opt seccomp=unconfined+--tmpfs /tmp/clickhouse:mode=1777",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/functional_tests.py",
@@ -426,6 +428,18 @@ class JobConfigs:
             ],
         ),
         result_name_for_cidb="Tests",
+    )
+    lightweight_functional_tests_job = Job.Config(
+        name="Quick functional tests",
+        command="python3 ./ci/jobs/clickhouse_light.py --path ./ci/tmp/clickhouse",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/clickhouse_light.py",
+                "./ci/jobs/queries",
+            ],
+        ),
+        requires=[ArtifactNames.CH_AMD_DEBUG],
+        runs_on=RunnerLabels.AMD_SMALL,
     )
     functional_tests_jobs = common_ft_job_config.parametrize(
         *[
@@ -482,15 +496,11 @@ class JobConfigs:
             runs_on=RunnerLabels.AMD_SMALL,
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
-        *[
-            Job.ParamSet(
-                parameter=f"amd_tsan, parallel, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_LARGE,
-                requires=[ArtifactNames.CH_AMD_TSAN],
-            )
-            for total_batches in (2,)
-            for batch in range(1, total_batches + 1)
-        ],
+        Job.ParamSet(
+            parameter=f"amd_tsan, parallel",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.CH_AMD_TSAN],
+        ),
         *[
             Job.ParamSet(
                 parameter=f"amd_tsan, sequential, {batch}/{total_batches}",
@@ -500,15 +510,11 @@ class JobConfigs:
             for total_batches in (2,)
             for batch in range(1, total_batches + 1)
         ],
-        *[
-            Job.ParamSet(
-                parameter=f"amd_msan, parallel, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_LARGE,
-                requires=[ArtifactNames.CH_AMD_MSAN],
-            )
-            for total_batches in (2,)
-            for batch in range(1, total_batches + 1)
-        ],
+        Job.ParamSet(
+            parameter=f"amd_msan, parallel",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.CH_AMD_MSAN],
+        ),
         *[
             Job.ParamSet(
                 parameter=f"amd_msan, sequential, {batch}/{total_batches}",
@@ -520,7 +526,7 @@ class JobConfigs:
         ],
         Job.ParamSet(
             parameter="amd_ubsan, parallel",
-            runs_on=RunnerLabels.AMD_MEDIUM_CPU,
+            runs_on=RunnerLabels.AMD_SMALL_MEM,  # it runs much faster than many job, no need larger machine
             requires=[ArtifactNames.CH_AMD_UBSAN],
         ),
         Job.ParamSet(
@@ -540,7 +546,7 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter="amd_tsan, s3 storage, parallel",
-            runs_on=RunnerLabels.AMD_MEDIUM_CPU,
+            runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_TSAN],
         ),
         *[
@@ -802,6 +808,7 @@ class JobConfigs:
             include_paths=[
                 "./ci/docker/fuzzer",
                 "./ci/jobs/ast_fuzzer_job.py",
+                "./ci/jobs/scripts/log_parser.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./ci/jobs/scripts/fuzzer/",
                 "./ci/docker/fuzzer",

@@ -77,6 +77,13 @@ void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_valu
     }
 }
 
+
+MutableColumnPtr IDataType::createUninitializedColumnWithSize(size_t size) const
+{
+    auto column = createColumn();
+    return column->cloneResized(size);
+}
+
 MutableColumnPtr IDataType::createColumn(const ISerialization & serialization) const
 {
     auto kind_stack = serialization.getKindStack();

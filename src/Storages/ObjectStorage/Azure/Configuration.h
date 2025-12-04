@@ -3,18 +3,17 @@
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <filesystem>
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/Common.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
-
 
 namespace DB
 {
 class BackupFactory;
 
-struct AzureStorageParsableArguments : private StorageParsableArguments
+struct AzureStorageParsedArguments : private StorageParsedArguments
 {
     using Path = StorageObjectStorageConfiguration::Path;
     friend class StorageAzureConfiguration;
@@ -58,9 +57,9 @@ struct AzureStorageParsableArguments : private StorageParsableArguments
 
     static bool collectCredentials(ASTPtr maybe_credentials, std::optional<String> & client_id, std::optional<String> & tenant_id, ContextPtr local_context);
 
-    void fromNamedCollectionImpl(const NamedCollection & collection, ContextPtr context);
-    void fromDiskImpl(DiskPtr disk, ASTs & args, ContextPtr context, bool with_structure);
-    void fromASTImpl(ASTs & args, ContextPtr context, bool with_structure);
+    void fromNamedCollection(const NamedCollection & collection, ContextPtr context);
+    void fromDisk(DiskPtr disk, ASTs & args, ContextPtr context, bool with_structure);
+    void fromAST(ASTs & args, ContextPtr context, bool with_structure);
     void initializeForOneLake(
         ASTs & args,
         ContextPtr context);
@@ -132,12 +131,7 @@ private:
     String onelake_client_secret;
     String onelake_tenant_id;
 
-    void initializeFromParsableArguments(const AzureStorageParsableArguments & parsable_arguments)
-    {
-        StorageObjectStorageConfiguration::initializeFromParsableArguments(parsable_arguments);
-        blob_path = parsable_arguments.blob_path;
-        connection_params = parsable_arguments.connection_params;
-    }
+    void initializeFromParsedArguments(const AzureStorageParsedArguments & parsed_arguments);
 };
 }
 
