@@ -358,12 +358,11 @@ In addition, `ordered` mode also introduces another setting called `(s3queue_)bu
 The setting `(s3queue_)processing_threads_num` is not recommended for usage before version `24.6`.
 The setting `(s3queue_)buckets` is available starting with version `24.6`.
 
-## SELECT from S3Queue table engine
+## SELECT from S3Queue table engine {#select}
 
 SELECT queries are forbidden by default on S3Queue tables. This follows the common queue pattern where data is read once and then removed from the queue. SELECT is forbidden to prevent accidental data loss.
 However, sometimes it might be useful. To do this, you need to set the setting `stream_like_engine_allow_direct_select` to `True`.
 The S3Queue engine has a special setting for SELECT queries: `commit_on_select`. Set it to `False` to preserve data in the queue after reading, or `True` to remove it.
-
 
 ## Description {#description}
 

@@ -85,7 +85,7 @@ SETTINGS
     after_processing_move_container = 'dst-container';
 ```
 
-## SELECT from AzureQueue table engine
+## SELECT from AzureQueue table engine {#select}
 
 SELECT queries are forbidden by default on AzureQueue tables. This follows the common queue pattern where data is read once and then removed from the queue. SELECT is forbidden to prevent accidental data loss.
 However, sometimes it might be useful. To do this, you need to set the setting `stream_like_engine_allow_direct_select` to `True`.
