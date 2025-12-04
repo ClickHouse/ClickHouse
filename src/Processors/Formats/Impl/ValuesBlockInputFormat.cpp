@@ -12,6 +12,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -489,6 +490,17 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         std::exception_ptr exception;
         try
         {
+            /// Simulate bug that used to exist, for compatibility.
+            /// We used to fail to create template for expressions with toDateTime64 or 3-argument toDateTime.
+            /// This made a user-visible difference if the output type is Dynamic: with template
+            /// the Dynamic's inner type is DateTime64, without template it's Decimal
+            /// (because we do convertFieldToType below without providing source data type, and
+            ///  DateTime64's Field type is Decimal).
+            if (const ASTFunction * func = typeid_cast<const ASTFunction *>(ast.get()))
+                if (func->name == "toDateTime64" ||
+                    (func->name == "toDateTime" && func->arguments && func->arguments->children.size() == 3))
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "toDateTime64 in VALUES requires interpreting expressions, for compatibility");
+
             bool found_in_cache = false;
             const auto & result_type = header.getByPosition(column_idx).type;
             const char * delimiter = (column_idx + 1 == num_columns) ? ")" : ",";
