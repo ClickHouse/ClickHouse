@@ -398,14 +398,13 @@ DataTypePtr convertYTSchema(const Poco::JSON::Object::Ptr & json)
 
 bool isYTSaurusTypesCompatible(std::shared_ptr<const IDataType> ch_type, std::shared_ptr<const IDataType> yt_type, bool allow_nullable)
 {
-
     return yt_type->getColumnType() == TypeIndex::Dynamic ||
         ch_type->getColumnType() == TypeIndex::Dynamic ||
-        ch_type->getColumnType() == yt_type->getColumnType() ||
+        ch_type->equals(*yt_type) ||
         (
             allow_nullable &&
             yt_type->getColumnType() == TypeIndex::Nullable &&
-            ch_type->getColumnType() == dynamic_cast<const DataTypeNullable *>(yt_type.get())->getNestedType()->getColumnType()
+            ch_type->equals(*dynamic_cast<const DataTypeNullable *>(yt_type.get())->getNestedType())
         );
 }
 
