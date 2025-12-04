@@ -133,9 +133,9 @@ SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.tab AS __table1
-WHERE __table1.id IN (SELECT __table1.id AS id
+WHERE _CAST(__table1.id IN (SELECT __table1.id AS id
 FROM dictionary(\'dictionary_all\') AS __table1
-WHERE _CAST(__table1.name, \'Nullable(String)\') = \'alpha\')
+WHERE _CAST(__table1.name, \'Nullable(String)\') = \'alpha\'), \'Nullable(UInt8)\')
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
