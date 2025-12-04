@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 #include <Common/Arena.h>
 
 /**
@@ -137,4 +139,35 @@ inline void ALWAYS_INLINE keyHolderDiscardKey(DB::SerializedKeyHolder & holder)
     chassert(new_head == holder.key.data());
     holder.key = std::string_view();
 }
+
+inline void keyPrefetch(const std::string_view key)
+{
+    const size_t cache_line_size = 64;
+    // Prefetch up to 4 cache lines.
+    const size_t max_prefetch = cache_line_size * 4;
+    const size_t n = std::min(key.size(), max_prefetch);
+    const char * ptr = key.data();
+    const char * end = ptr + n;
+    for (; ptr < end; ptr += cache_line_size)
+    {
+        __builtin_prefetch(ptr);
+    }
+}
+
+template <typename CellType>
+concept CouldPrefetchKey = requires(CellType * cell)
+{
+    { keyPrefetch(cell->getKey()) };
+};
+
+inline void mappedPrefetch(char * mapped)
+{
+    __builtin_prefetch(mapped);
+}
+
+template <typename CellType>
+concept CouldPrefetchMapped = requires(CellType * cell)
+{
+    { mappedPrefetch(cell->getMapped()) };
+};
 
