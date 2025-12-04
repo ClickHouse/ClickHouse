@@ -773,7 +773,7 @@ ReturnType parseDateTimeBestEffortImpl(
         }
     };
 
-    if constexpr (!strict && std::is_same_v<ReturnType, void>)
+    if constexpr (!strict || std::is_same_v<ReturnType, void>)
     {
         if (has_time_zone_offset)
         {
@@ -784,54 +784,40 @@ ReturnType parseDateTimeBestEffortImpl(
         {
             res = local_time_zone.makeDateTime(year, month, day_of_month, hour, minute, second);
         }
+
+        if constexpr (std::is_same_v<ReturnType, bool>)
+            return true;
     }
     else
     {
-
         if (has_time_zone_offset)
         {
             auto res_maybe = utc_time_zone.tryToMakeDateTime(year, month, day_of_month, hour, minute, second);
             if (!res_maybe)
+                return false;
+
+            /// For usual DateTime check if value is within supported range
+            if constexpr (!is_64)
             {
-                /// For DateTime64, saturate out-of-range years instead of returning false
-                if constexpr (is_64)
-                    res = utc_time_zone.makeDateTime(year, month, day_of_month, hour, minute, second);
-                else
+                if (*res_maybe < 0 || *res_maybe > UINT32_MAX)
                     return false;
             }
-            else
-            {
-                /// For usual DateTime check if value is within supported range
-                if constexpr (!is_64)
-                {
-                    if (*res_maybe < 0 || *res_maybe > UINT32_MAX)
-                        return false;
-                }
-                res = *res_maybe;
-            }
+            res = *res_maybe;
             adjust_time_zone();
         }
         else
         {
             auto res_maybe = local_time_zone.tryToMakeDateTime(year, month, day_of_month, hour, minute, second);
             if (!res_maybe)
+                return false;
+
+            /// For usual DateTime check if value is within supported range
+            if constexpr (!is_64)
             {
-                /// For DateTime64, saturate out-of-range years instead of returning false
-                if constexpr (is_64)
-                    res = local_time_zone.makeDateTime(year, month, day_of_month, hour, minute, second);
-                else
+                if (*res_maybe < 0 || *res_maybe > UINT32_MAX)
                     return false;
             }
-            else
-            {
-                /// For usual DateTime check if value is within supported range
-                if constexpr (!is_64)
-                {
-                    if (*res_maybe < 0 || *res_maybe > UINT32_MAX)
-                        return false;
-                }
-                res = *res_maybe;
-            }
+            res = *res_maybe;
         }
 
         return true;

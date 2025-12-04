@@ -790,7 +790,7 @@ namespace
 
         ReadBufferFromString buf(field);
         DayNum tmp;
-        return tryReadDateText(tmp, buf, DateLUT::instance(), /*allowed_delimiters=*/"-/:") && buf.eof();
+        return tryReadDateText(tmp, buf, DateLUT::instance(), /*allowed_delimiters=*/"-/:", /*saturate_on_overflow=*/false) && buf.eof();
     }
 
     DataTypePtr tryInferDateTimeOrDateTime64(std::string_view field, const FormatSettings & settings)
