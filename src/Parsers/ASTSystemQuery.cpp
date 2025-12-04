@@ -4,12 +4,9 @@
 #include <Parsers/ASTSystemQuery.h>
 #include <Poco/String.h>
 #include <Common/quoteString.h>
+#include <Interpreters/InstrumentationManager.h>
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
-
-#if USE_XRAY
-#include <xray/xray_interface.h>
-#endif
 
 namespace DB
 {

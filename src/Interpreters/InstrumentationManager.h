@@ -3,13 +3,7 @@
 #include "config.h"
 #include <base/types.h>
 
-#if USE_XRAY
-#include <xray/xray_interface.h>
-#endif
-
-namespace DB
-{
-namespace Instrumentation
+namespace DB::Instrumentation
 {
 
 enum class EntryType : UInt8
@@ -19,12 +13,6 @@ enum class EntryType : UInt8
     ENTRY_AND_EXIT
 };
 
-#if USE_XRAY
-EntryType fromXRayEntryType(XRayEntryType entry_type);
-String entryTypeToString(EntryType entry_type);
-#endif
-
-}
 }
 
 #if USE_XRAY
@@ -38,12 +26,21 @@ String entryTypeToString(EntryType entry_type);
 #include <boost/multi_index/hashed_index.hpp>
 #include <boost/multi_index/member.hpp>
 #include <boost/multi_index/ordered_index.hpp>
+#include <xray/xray_interface.h>
 
 #include <vector>
 #include <variant>
 
 namespace DB
 {
+
+namespace Instrumentation
+{
+
+EntryType fromXRayEntryType(XRayEntryType entry_type);
+String entryTypeToString(EntryType entry_type);
+
+}
 
 struct TraceLogElement;
 
