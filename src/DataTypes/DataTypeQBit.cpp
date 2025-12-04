@@ -27,6 +27,11 @@ DataTypeQBit::DataTypeQBit(const DataTypePtr & element_type_, const size_t dimen
     : element_type(element_type_)
     , dimension(dimension_)
 {
+    /// QBit stores data as a Tuple of binary FixedStrings. Setting custom_serialization
+    /// ensures that ReplaceQueryParameterVisitor::visitQueryParameter uses the original
+    /// string value for query parameters like `SET param_q=[1,2,3,4]; SELECT {q:QBit(Float32,4)};`
+    /// instead of extracting this Tuple as a Field that fails to cast back to QBit.
+    custom_serialization = doGetDefaultSerialization();
 }
 
 std::string DataTypeQBit::doGetName() const
