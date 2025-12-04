@@ -14,8 +14,16 @@ def build_gp3_jitter(
 ):
     sb = ScenarioBuilder(sid, name, topology=topology, backend=backend)
     sb.set_workload_config("workloads/prod_mix.yaml", duration=duration_s)
-    from .core.scenario_builder import with_jitter, with_gp3_disk
-    with_jitter(sb, delay_ms=delay_ms, jitter_ms=jitter_ms, loss_pct=loss_pct, duration_s=duration_s, target_parallel=True)
+    from .core.scenario_builder import with_gp3_disk, with_jitter
+
+    with_jitter(
+        sb,
+        delay_ms=delay_ms,
+        jitter_ms=jitter_ms,
+        loss_pct=loss_pct,
+        duration_s=duration_s,
+        target_parallel=True,
+    )
     with_gp3_disk(sb, ms=disk_ms, duration_s=duration_s, target_parallel=True)
     sb.gate({"type": "single_leader"})
     sb.gate({"type": "error_rate_le"})
@@ -36,13 +44,16 @@ def build_partition_during_reconfig(
         "partition_symmetric_during",
         "leader",
         [
-            {"kind": "reconfig", "on": "leader", "operation": "remove", "server_id": 3, "ok": False}
+            {
+                "kind": "reconfig",
+                "on": "leader",
+                "operation": "remove",
+                "server_id": 3,
+                "ok": False,
+            }
         ],
     )
     sb.gate({"type": "single_leader"})
     sb.gate({"type": "config_converged", "timeout_s": 60})
     sb.gate({"type": "log_sanity_ok"})
     return sb.build()
-
-
- 

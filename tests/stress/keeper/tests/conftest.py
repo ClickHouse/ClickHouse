@@ -1,36 +1,95 @@
-import os, pytest, pathlib
+import os
+import pathlib
+
+import pytest
+
 
 def _sink_env():
     return os.environ.get("KEEPER_METRICS_CLICKHOUSE_URL", "").strip()
 
+
 def pytest_addoption(parser):
     pa = parser.addoption
-    pa("--keeper-backend", action="store", default=os.environ.get("KEEPER_BACKEND", "default"))
+    pa(
+        "--keeper-backend",
+        action="store",
+        default=os.environ.get("KEEPER_BACKEND", "default"),
+    )
     pa("--commit-sha", action="store", default=os.environ.get("COMMIT_SHA", "local"))
     pa("--sink-url", action="store", default=_sink_env())
     pa("--duration", type=int, default=int(os.environ.get("KEEPER_DURATION", "120")))
-    pa("--total-shards", type=int, default=int(os.environ.get("KEEPER_TOTAL_SHARDS") or os.environ.get("KEEPER_TOTAL", "1")))
-    pa("--shard-index", type=int, default=int(os.environ.get("KEEPER_SHARD_INDEX") or os.environ.get("KEEPER_INDEX", "0")))
-    pa("--matrix-backends", action="store", default=os.environ.get("KEEPER_BACKENDS", ""))
-    pa("--matrix-topologies", action="store", default=os.environ.get("KEEPER_TOPOLOGIES", ""))
+    pa(
+        "--total-shards",
+        type=int,
+        default=int(
+            os.environ.get("KEEPER_TOTAL_SHARDS") or os.environ.get("KEEPER_TOTAL", "1")
+        ),
+    )
+    pa(
+        "--shard-index",
+        type=int,
+        default=int(
+            os.environ.get("KEEPER_SHARD_INDEX") or os.environ.get("KEEPER_INDEX", "0")
+        ),
+    )
+    pa(
+        "--matrix-backends",
+        action="store",
+        default=os.environ.get("KEEPER_BACKENDS", ""),
+    )
+    pa(
+        "--matrix-topologies",
+        action="store",
+        default=os.environ.get("KEEPER_TOPOLOGIES", ""),
+    )
     pa("--seed", type=int, default=int(os.environ.get("KEEPER_SEED", "0")))
-    pa("--keep-containers-on-fail", action="store_true", default=parse_bool(os.environ.get("KEEPER_KEEP_ON_FAIL")))
-    pa("--faults", choices=("on","off","random"), default=os.environ.get("KEEPER_FAULTS", "on"))
-    pa("--random-faults-count", type=int, default=int(os.environ.get("KEEPER_RANDOM_FAULTS_COUNT", "1")))
-    pa("--random-faults-include", action="store", default=os.environ.get("KEEPER_RANDOM_FAULTS_INCLUDE", ""))
-    pa("--random-faults-exclude", action="store", default=os.environ.get("KEEPER_RANDOM_FAULTS_EXCLUDE", ""))
-    pa("--keeper-include-ids", action="store", default=os.environ.get("KEEPER_INCLUDE_IDS", ""))
+    pa(
+        "--keep-containers-on-fail",
+        action="store_true",
+        default=parse_bool(os.environ.get("KEEPER_KEEP_ON_FAIL")),
+    )
+    pa(
+        "--faults",
+        choices=("on", "off", "random"),
+        default=os.environ.get("KEEPER_FAULTS", "on"),
+    )
+    pa(
+        "--random-faults-count",
+        type=int,
+        default=int(os.environ.get("KEEPER_RANDOM_FAULTS_COUNT", "1")),
+    )
+    pa(
+        "--random-faults-include",
+        action="store",
+        default=os.environ.get("KEEPER_RANDOM_FAULTS_INCLUDE", ""),
+    )
+    pa(
+        "--random-faults-exclude",
+        action="store",
+        default=os.environ.get("KEEPER_RANDOM_FAULTS_EXCLUDE", ""),
+    )
+    pa(
+        "--keeper-include-ids",
+        action="store",
+        default=os.environ.get("KEEPER_INCLUDE_IDS", ""),
+    )
+
+
+from ..framework.core.cluster import ClusterBuilder
 from ..framework.core.settings import parse_bool
 from ..framework.core.util import wait_until
 from ..framework.io.probes import count_leaders
-from ..framework.core.cluster import ClusterBuilder
 
 pytest_plugins = ["tests.stress.keeper.pytest_plugins.scenario_loader"]
 
+
 @pytest.fixture(scope="session")
 def run_meta(request):
-    return {"commit_sha": request.config.getoption("--commit-sha"),
-            "backend": request.config.getoption("--keeper-backend")}
+    return {
+        "commit_sha": request.config.getoption("--commit-sha"),
+        "backend": request.config.getoption("--keeper-backend"),
+    }
+
 
 @pytest.fixture(scope="function")
 def cluster_factory(request):
@@ -49,7 +108,8 @@ def cluster_factory(request):
                         k, v = part.split("=", 1)
                     else:
                         k, v = part, "1"
-                    k = k.strip(); v = v.strip()
+                    k = k.strip()
+                    v = v.strip()
                     flags[k] = 1 if v == "1" else 0
                 base_opts = dict(opts or {})
                 cur_ff = dict((base_opts.get("feature_flags") or {}))
@@ -72,9 +132,16 @@ def cluster_factory(request):
             to = float(os.environ.get("KEEPER_READY_TIMEOUT", "120"))
         except Exception:
             to = 120.0
-        wait_until(lambda: count_leaders(nodes) == 1, timeout_s=to, interval=0.5, desc="cluster ready")
+        wait_until(
+            lambda: count_leaders(nodes) == 1,
+            timeout_s=to,
+            interval=0.5,
+            desc="cluster ready",
+        )
         return cluster, nodes
+
     return _make
+
 
 def pytest_collection_modifyitems(config, items):
     run_weekly = parse_bool(os.environ.get("KEEPER_RUN_WEEKLY"))
@@ -93,4 +160,3 @@ def pytest_collection_modifyitems(config, items):
         except Exception:
             pass
         items[:] = keep
-

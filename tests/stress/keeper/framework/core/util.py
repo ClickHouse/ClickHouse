@@ -1,4 +1,6 @@
-import time, shlex
+import shlex
+import time
+
 
 def _exec(node, cmd, user=None, privileged=False):
     if isinstance(cmd, str):
@@ -13,6 +15,7 @@ def _exec(node, cmd, user=None, privileged=False):
     out = node.exec_in_container(args, **kwargs)
     return out
 
+
 def sh(node, cmd, user=None, privileged=False):
     try:
         out = _exec(node, cmd, user=user, privileged=privileged)
@@ -20,12 +23,15 @@ def sh(node, cmd, user=None, privileged=False):
     except Exception:
         return {"out": ""}
 
+
 def sh_root(node, cmd):
     return sh(node, cmd, user="root", privileged=True)
+
 
 def has_bin(node, name):
     r = sh(node, f"command -v {shlex.quote(name)} >/dev/null 2>&1; echo $?")
     return str(r.get("out", " ")).strip().endswith("0")
+
 
 def resolve_targets(spec, nodes, leader):
     if not nodes:
@@ -43,6 +49,7 @@ def resolve_targets(spec, nodes, leader):
     if s == "one":
         return [leader]
     return [n for n in nodes if n.name == s] or [leader]
+
 
 def wait_until(cond, timeout_s=60.0, interval=0.5, desc=""):
     start = time.time()
