@@ -4,6 +4,7 @@
 #include <Common/Scheduler/WorkloadSettings.h>
 #include <Common/Scheduler/ISchedulerNode.h>
 #include <Parsers/ASTSetQuery.h>
+#include <IO/ReadHelpers.h>
 
 
 namespace DB
@@ -12,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_PARSE_NUMBER;
 }
 
 bool WorkloadSettings::hasThrottler(CostUnit unit) const
@@ -141,28 +143,35 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
         std::optional<Int64> max_waiting_queries;
         std::optional<Int64> max_memory;
 
-        static Float64 getNotNegativeFloat64(const String & name, const Field & field)
+        static Float64 getFloat64(const String & name, const Field & field)
         {
+            // We dont mind slight loss of precision when converting from Int64/UInt64 to Float64
             {
                 UInt64 val;
                 if (field.tryGet(val))
-                    return static_cast<Float64>(val); // We dont mind slight loss of precision
+                    return static_cast<Float64>(val);
             }
 
             {
                 Int64 val;
                 if (field.tryGet(val))
-                {
-                    if (val < 0)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected negative Int64 value for workload setting '{}'", name);
-                    return static_cast<Float64>(val); // We dont mind slight loss of precision
-                }
+                    return static_cast<Float64>(val);
             }
 
-            return field.safeGet<Float64>();
+            {
+                String val; // To handle suffixes
+                if (field.tryGet(val))
+                    return static_cast<Float64>(parseWithSizeSuffix<Int64>(val));
+            }
+
+            Float64 value = field.safeGet<Float64>();
+            if (!std::isfinite(value))
+                throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER,
+                    "Float setting value must be finite, got {} for workload setting '{}'", value, name);
+            return value;
         }
 
-        static Int64 getNotNegativeInt64(const String & name, const Field & field)
+        static Int64 getInt64(const Field & field)
         {
             {
                 UInt64 val;
@@ -178,14 +187,32 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
             {
                 Int64 val;
                 if (field.tryGet(val))
-                {
-                    if (val < 0)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected negative Int64 value for workload setting '{}'", name);
                     return val;
-                }
+            }
+
+            {
+                String val; // To handle suffixes
+                if (field.tryGet(val))
+                    return parseWithSizeSuffix<Int64>(val);
             }
 
             return field.safeGet<Int64>();
+        }
+
+        static Float64 getNotNegativeFloat64(const String & name, const Field & field)
+        {
+            Float64 val = getFloat64(name, field);
+            if (val < 0)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected negative value {} for workload setting '{}'", val, name);
+            return val;
+        }
+
+        static Int64 getNotNegativeInt64(const String & name, const Field & field)
+        {
+            Int64 val = getInt64(field);
+            if (val < 0)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected negative value {} for workload setting '{}'", val, name);
+            return val;
         }
 
         void read(const String & name, const Field & value, bool throw_on_unknown_setting)
