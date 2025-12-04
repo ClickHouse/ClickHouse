@@ -34,6 +34,7 @@ struct MultiSearchFirstPositionImpl
         size_t /*max_hyperscan_regexp_length*/,
         size_t /*max_hyperscan_regexp_total_length*/,
         bool /*reject_expensive_hyperscan_regexps*/,
+        bool /*force_daachorse*/,
         size_t input_rows_count)
     {
         // For performance of Volnitsky search, it is crucial to save only one byte for pattern number.
@@ -90,6 +91,7 @@ struct MultiSearchFirstPositionImpl
         size_t /*max_hyperscan_regexp_length*/,
         size_t /*max_hyperscan_regexp_total_length*/,
         bool /*reject_expensive_hyperscan_regexps*/,
+        bool /*force_daachorse*/,
         size_t input_rows_count)
     {
         res.resize(input_rows_count);

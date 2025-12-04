@@ -3,6 +3,13 @@
 version = 4
 
 [[package]]
+name = "_ch_rust_aho_corasick"
+version = "0.1.0"
+dependencies = [
+ "daachorse",
+]
+
+[[package]]
 name = "_ch_rust_prql"
 version = "0.1.0"
 dependencies = [
@@ -429,6 +436,12 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "daachorse"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "63b7ef7a4be509357f4804d0a22e830daddb48f19fd604e4ad32ddce04a94c36"
 
 [[package]]
 name = "darling"

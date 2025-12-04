@@ -1,0 +1,10 @@
+[package]
+edition = "2021"
+name = "_ch_rust_aho_corasick"
+version = "0.1.0"
+
+[dependencies]
+daachorse = "1.0"
+
+[lib]
+crate-type = ["staticlib"]

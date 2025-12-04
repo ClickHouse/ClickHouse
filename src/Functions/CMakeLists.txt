@@ -111,6 +111,10 @@ if (TARGET ch_contrib::vectorscan)
     list (APPEND PRIVATE_LIBS ch_contrib::vectorscan)
 endif()
 
+if (TARGET ch_rust::aho_corasick)
+    list (APPEND PRIVATE_LIBS ch_rust::aho_corasick)
+endif()
+
 if (TARGET ch_contrib::simdjson)
     list (APPEND PRIVATE_LIBS ch_contrib::simdjson)
 endif()
