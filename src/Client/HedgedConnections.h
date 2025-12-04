@@ -129,6 +129,9 @@ public:
 
     void setAsyncCallback(AsyncCallback async_callback) override;
 
+    /// Get the connection pool of the current active connection (for error tracking)
+    ConnectionPoolPtr getCurrentConnectionPool() const override;
+
 private:
     /// If we don't receive data from replica and there is no progress in query
     /// execution for receive_data_timeout, we are trying to get new
