@@ -1,10 +1,12 @@
 import logging
 import os
 import uuid
+from typing import Any
 
 import pyspark
 import pytest
 import pandas as pd
+from pyspark.sql import DataFrame, SparkSession
 
 from pyspark.sql.functions import (
     monotonically_increasing_id,
@@ -15,8 +17,8 @@ from pyspark.sql.types import (
 )
 from pyspark.sql.window import Window
 
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
-from helpers.s3_tools import (
+from tests.integration.helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from tests.integration.helpers.s3_tools import (
     AzureUploader,
     LocalUploader,
     S3Uploader,
@@ -28,8 +30,8 @@ from helpers.s3_tools import (
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
-def get_spark():
-    builder = (
+def get_spark() -> SparkSession:
+    builder: SparkSession.Builder = (
         pyspark.sql.SparkSession.builder.appName("spark_test")
         .config(
             "spark.sql.catalog.spark_catalog",
@@ -44,14 +46,15 @@ def get_spark():
         )
         .master("local")
     )
-    return builder.master("local").getOrCreate()
+    assert isinstance(builder, SparkSession.Builder)
+    return builder.getOrCreate()
 
 
 @pytest.fixture(scope="module")
-def started_cluster():
+def started_cluster() -> Any:
     try:
         cluster = ClickHouseCluster(__file__, with_spark=True)
-        cluster.add_instance(
+        _: ClickHouseInstance = cluster.add_instance(
             "node1",
             main_configs=[
                 "configs/config.d/query_log.xml",
@@ -64,7 +67,7 @@ def started_cluster():
             with_azurite=True,
             stay_alive=True,
         )
-        cluster.add_instance(
+        _: ClickHouseInstance = cluster.add_instance(
             "node2",
             main_configs=[
                 "configs/config.d/query_log.xml",
@@ -75,7 +78,7 @@ def started_cluster():
             user_configs=["configs/users.d/users.xml"],
             stay_alive=True,
         )
-        cluster.add_instance(
+        _: ClickHouseInstance = cluster.add_instance(
             "node3",
             main_configs=[
                 "configs/config.d/query_log.xml",
@@ -122,19 +125,28 @@ def started_cluster():
         cluster.shutdown()
 
 
-def run_query(instance, query, stdin=None, settings=None):
-    # type: (ClickHouseInstance, str, object, dict) -> str
-
+def run_query(
+    instance: ClickHouseInstance,
+    query: str,
+    stdin: str | None = None,
+    settings: dict[str, Any] | None = None,
+) -> str:
     logging.info("Running query '{}'...".format(query))
-    result = instance.query(query, stdin=stdin, settings=settings)
+    result : pd.DataFrame | str = instance.query(query, stdin=stdin, settings=settings)
+    assert isinstance(result, str)
     logging.info("Query finished")
 
     return result
 
 
 def write_iceberg_from_file(
-    spark, path, table_name, mode="overwrite", format_version="1", partition_by=None
-):
+    spark: SparkSession,
+    path: str,
+    table_name: str,
+    mode: str = "overwrite",
+    format_version: str = "1",
+    partition_by: Any | None = None,
+) -> None:
     if mode == "overwrite":
         if partition_by is None:
             spark.read.load(f"file://{path}").writeTo(table_name).tableProperty(
@@ -149,8 +161,13 @@ def write_iceberg_from_file(
 
 
 def write_iceberg_from_df(
-    spark, df, table_name, mode="overwrite", format_version="1", partition_by=None
-):
+    spark: SparkSession,
+    df: DataFrame,
+    table_name: str,
+    mode: str = "overwrite",
+    format_version: str = "1",
+    partition_by: Any | None = None,
+) -> None:
     if mode == "overwrite":
         if partition_by is None:
             df.writeTo(table_name).tableProperty(
@@ -168,7 +185,7 @@ def write_iceberg_from_df(
         df.writeTo(table_name).append()
 
 
-def generate_data(spark, start, end):
+def generate_data(spark: SparkSession, start: int, end: int) -> DataFrame:
     a = spark.range(start, end, 1).toDF("a")
     b = spark.range(start + 1, end + 1, 1).toDF("b")
     b = b.withColumn("b", b["b"].cast(StringType()))
@@ -185,23 +202,22 @@ def generate_data(spark, start, end):
 
 
 def get_creation_expression(
-    storage_type,
-    table_name,
-    cluster,
-    schema="",
-    format_version=2,
-    partition_by="",
-    if_not_exists=False,
-    compression_method=None,
-    format="Parquet",
-    order_by="",
-    table_function=False,
-    use_version_hint=False,
-    run_on_cluster=False,
-    explicit_metadata_path="",
-    additional_settings = [],
-    **kwargs,
-):
+    storage_type: str,
+    table_name: str,
+    cluster: ClickHouseCluster,
+    schema: str = "",
+    format_version: int = 2,
+    partition_by: str = "",
+    if_not_exists: bool = False,
+    compression_method: str | None = None,
+    format: str = "Parquet",
+    table_function: bool = False,
+    use_version_hint: bool = False,
+    run_on_cluster: bool = False,
+    explicit_metadata_path: str = "",
+    additional_settings: list[str] = [],
+    **kwargs: Any,
+) -> str:
     settings_array = list(additional_settings)
 
     if explicit_metadata_path:
@@ -212,10 +228,6 @@ def get_creation_expression(
 
     if partition_by:
         partition_by = "PARTITION BY " + partition_by
-
-    if order_by:
-        order_by = "ORDER BY " + order_by
-
     settings_array.append(f"iceberg_format_version = {format_version}")
 
     if compression_method:
@@ -248,9 +260,8 @@ def get_creation_expression(
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {if_not_exists_prefix} {table_name} {schema}
                     ENGINE=IcebergS3(s3, filename = 'var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')
-                    {order_by}
                     {partition_by}
-                    {settings_expression};
+                    {settings_expression}
                     """
                 )
 
@@ -271,7 +282,6 @@ def get_creation_expression(
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {if_not_exists_prefix} {table_name} {schema}
                     ENGINE=IcebergAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/', format={format})
-                    {order_by}
                     {partition_by}
                     {settings_expression}
                     """
@@ -290,7 +300,6 @@ def get_creation_expression(
                 DROP TABLE IF EXISTS {table_name};
                 CREATE TABLE {if_not_exists_prefix} {table_name} {schema}
                 ENGINE=IcebergLocal(local, path = '/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}', format={format})
-                {order_by}
                 {partition_by}
                 {settings_expression}
                 """
@@ -300,7 +309,11 @@ def get_creation_expression(
         raise Exception(f"Unknown iceberg storage type: {storage_type}")
 
 
-def get_raw_schema_and_data(instance, table_expression, timestamp_ms=None):
+def get_raw_schema_and_data(
+    instance: ClickHouseInstance,
+    table_expression: str,
+    timestamp_ms: int | None = None,
+) -> tuple[str, str]:
     if timestamp_ms:
         schema = instance.query(f"DESC {table_expression} SETTINGS iceberg_timestamp_ms = {timestamp_ms}")
         data = instance.query(f"SELECT * FROM {table_expression} ORDER BY ALL SETTINGS iceberg_timestamp_ms = {timestamp_ms}")
@@ -314,7 +327,9 @@ clickhouse_to_pandas_types = {
     "Int32": "int32",
 }
 
-def convert_schema_and_data_to_pandas_df(schema_raw, data_raw):
+def convert_schema_and_data_to_pandas_df(
+    schema_raw: str, data_raw: str
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     # Extract column names from schema
     schema_rows = list(
         map(
@@ -345,7 +360,13 @@ def convert_schema_and_data_to_pandas_df(schema_raw, data_raw):
     data_df = data_df.astype(dict(zip(column_names, pandas_types)))
     return schema_df, data_df
 
-def check_schema_and_data(instance, table_expression, expected_schema, expected_data, timestamp_ms=None):
+def check_schema_and_data(
+    instance: ClickHouseInstance,
+    table_expression: str,
+    expected_schema: list[list[str]],
+    expected_data: list[list[str]],
+    timestamp_ms: int | None = None,
+) -> None:
     raw_schema, raw_data = get_raw_schema_and_data(instance, table_expression, timestamp_ms)
 
     schema = list(
@@ -363,41 +384,40 @@ def check_schema_and_data(instance, table_expression, expected_schema, expected_
     assert expected_schema == schema
     assert expected_data == data
 
-def get_uuid_str():
+def get_uuid_str() -> str:
     return str(uuid.uuid4()).replace("-", "_")
 
 
 def create_iceberg_table(
-    storage_type,
-    node,
-    table_name,
-    cluster,
-    schema="",
-    format_version=2,
-    partition_by="",
-    if_not_exists=False,
-    compression_method=None,
-    run_on_cluster=False,
-    format="Parquet",
-    order_by="",
-    **kwargs,
-):
+    storage_type: str,
+    node: ClickHouseInstance,
+    table_name: str,
+    cluster: ClickHouseCluster,
+    schema: str = "",
+    format_version: int = 2,
+    partition_by: str = "",
+    if_not_exists: bool = False,
+    compression_method: str | None = None,
+    run_on_cluster: bool = False,
+    format: str = "Parquet",
+    **kwargs: Any,
+) -> None:
     if 'output_format_parquet_use_custom_encoder' in kwargs:
         node.query(
-            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, order_by, run_on_cluster = run_on_cluster, **kwargs),
+            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, run_on_cluster = run_on_cluster, **kwargs),
             settings={"output_format_parquet_use_custom_encoder" : 0, "output_format_parquet_parallel_encoding" : 0}
         )
     else:
         node.query(
-            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, order_by, run_on_cluster=run_on_cluster, **kwargs),
+            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, run_on_cluster=run_on_cluster, **kwargs),
         )
 
 
 def drop_iceberg_table(
-    node,
-    table_name,
-    if_exists=False,
-):
+    node: ClickHouseInstance,
+    table_name: str,
+    if_exists: bool = False,
+) -> None:
     if if_exists:
         node.query(f"DROP TABLE IF EXISTS {table_name};")
     else:
@@ -405,8 +425,12 @@ def drop_iceberg_table(
 
 
 def create_initial_data_file(
-    cluster, node, query, table_name, compression_method="none"
-):
+    cluster: ClickHouseCluster,
+    node: ClickHouseInstance,
+    query: str,
+    table_name: str,
+    compression_method: str = "none",
+) -> str:
     node.query(
         f"""
         INSERT INTO TABLE FUNCTION
@@ -424,8 +448,12 @@ def create_initial_data_file(
 
 
 def default_upload_directory(
-    started_cluster, storage_type, local_path, remote_path, **kwargs
-):
+    started_cluster: ClickHouseCluster,
+    storage_type: str,
+    local_path: str,
+    remote_path: str,
+    **kwargs: Any,
+) -> Any:
     prefix = "/var/lib/clickhouse/user_files"
     if local_path != "" and local_path[:len(prefix)] != prefix:
         local_path = prefix + local_path
@@ -450,8 +478,12 @@ def default_upload_directory(
 
 
 def default_download_directory(
-    started_cluster, storage_type, remote_path, local_path, **kwargs
-):
+    started_cluster: ClickHouseCluster,
+    storage_type: str,
+    remote_path: str,
+    local_path: str,
+    **kwargs: Any,
+) -> Any:
     if storage_type == "local":
         return started_cluster.default_local_downloader.download_directory(
             local_path, remote_path, **kwargs
@@ -465,8 +497,12 @@ def default_download_directory(
 
 
 def execute_spark_query_general(
-    spark, started_cluster, storage_type: str, table_name: str, query: str
-):
+    spark: SparkSession,
+    started_cluster: ClickHouseCluster,
+    storage_type: str,
+    table_name: str,
+    query: str,
+) -> None:
     spark.sql(query)
     default_upload_directory(
         started_cluster,
@@ -476,7 +512,7 @@ def execute_spark_query_general(
     )
     return
 
-def get_last_snapshot(path_to_table):
+def get_last_snapshot(path_to_table: str) -> int:
     import json
     import os
 
@@ -496,7 +532,14 @@ def get_last_snapshot(path_to_table):
     return last_snapshot_id
 
 
-def check_validity_and_get_prunned_files_general(instance, table_name, settings1, settings2, profile_event_name, select_expression):
+def check_validity_and_get_prunned_files_general(
+    instance: ClickHouseInstance,
+    table_name: str,
+    settings1: dict[str, Any],
+    settings2: dict[str, Any],
+    profile_event_name: str,
+    select_expression: str,
+) -> int:
     query_id1 = f"{table_name}-{uuid.uuid4()}"
     query_id2 = f"{table_name}-{uuid.uuid4()}"
 

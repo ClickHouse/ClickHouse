@@ -4,6 +4,7 @@ import signal
 import subprocess as sp
 import tempfile
 from threading import Timer
+from typing import Any, Callable, cast
 
 import numpy as np
 import pandas as pd
@@ -14,15 +15,15 @@ DEFAULT_QUERY_TIMEOUT = 600
 class Client:
     def __init__(
         self,
-        host,
-        port=9000,
-        command="/usr/bin/clickhouse-client",
-        secure=False,
-        config=None,
-    ):
-        self.host = host
-        self.port = port
-        self.command = [command]
+        host: str,
+        port: int = 9000,
+        command: str = "/usr/bin/clickhouse-client",
+        secure: bool = False,
+        config: str | None = None,
+    ) -> None:
+        self.host: str = host
+        self.port: int = port
+        self.command: list[str] = [command]
 
         if os.path.basename(command) == "clickhouse":
             self.command.append("client")
@@ -34,8 +35,8 @@ class Client:
 
         self.command += ["--host", self.host, "--port", str(self.port), "--stacktrace"]
 
-    def stacktraces_on_timeout_decorator(func):
-        def wrap(self, *args, **kwargs):
+    def stacktraces_on_timeout_decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        def wrap(self: Any, *args: Any, **kwargs: Any) -> Any:
             try:
                 return func(self, *args, **kwargs)
             except sp.TimeoutExpired:
@@ -53,18 +54,18 @@ class Client:
     @stacktraces_on_timeout_decorator
     def query(
         self,
-        sql,
-        stdin=None,
-        timeout=None,
-        settings=None,
-        user=None,
-        password=None,
-        database=None,
-        host=None,
-        ignore_error=False,
-        query_id=None,
-        parse=False,
-    ):
+        sql: str,
+        stdin: str | None = None,
+        timeout: float | None = None,
+        settings: dict[str, Any] | None = None,
+        user: str | None = None,
+        password: str | None = None,
+        database: str | None = None,
+        host: str | None = None,
+        ignore_error: bool = False,
+        query_id: str | None = None,
+        parse: bool = False,
+    ) -> pd.DataFrame | str:
         return self.get_query_request(
             sql,
             stdin=stdin,
@@ -81,22 +82,22 @@ class Client:
 
     def get_query_request(
         self,
-        sql,
-        stdin=None,
-        timeout=None,
-        settings=None,
-        user=None,
-        password=None,
-        database=None,
-        host=None,
-        ignore_error=False,
-        query_id=None,
-        parse=False,
-    ):
-        command = self.command[:]
+        sql: str,
+        stdin: str | None = None,
+        timeout: float | None = None,
+        settings: dict[str, Any] | None = None,
+        user: str | None = None,
+        password: str | None = None,
+        database: str | None = None,
+        host: str | None = None,
+        ignore_error: bool = False,
+        query_id: str | None = None,
+        parse: bool = False,
+    ) -> "CommandRequest":
+        command: list[str] = self.command[:]
 
         if stdin is None:
-            stdin = sql
+            stdin: str = sql
         else:
             command += ["--query", sql]
 
@@ -132,15 +133,15 @@ class Client:
     @stacktraces_on_timeout_decorator
     def query_and_get_error(
         self,
-        sql,
-        stdin=None,
-        timeout=None,
-        settings=None,
-        user=None,
-        password=None,
-        database=None,
-        query_id=None,
-    ):
+        sql: str,
+        stdin: str | None = None,
+        timeout: float | None = None,
+        settings: dict[str, Any] | None = None,
+        user: str | None = None,
+        password: str | None = None,
+        database: str | None = None,
+        query_id: str | None = None,
+    ) -> str:
         return self.get_query_request(
             sql,
             stdin=stdin,
@@ -155,15 +156,15 @@ class Client:
     @stacktraces_on_timeout_decorator
     def query_and_get_answer_with_error(
         self,
-        sql,
-        stdin=None,
-        timeout=None,
-        settings=None,
-        user=None,
-        password=None,
-        database=None,
-        query_id=None,
-    ):
+        sql: str,
+        stdin: str | None = None,
+        timeout: float | None = None,
+        settings: dict[str, Any] | None = None,
+        user: str | None = None,
+        password: str | None = None,
+        database: str | None = None,
+        query_id: str | None = None,
+    ) -> tuple[str, str]:
         return self.get_query_request(
             sql,
             stdin=stdin,
@@ -181,31 +182,43 @@ class QueryTimeoutExceedException(Exception):
 
 
 class QueryRuntimeException(Exception):
-    def __init__(self, message, returncode, stderr):
+    def __init__(self, message: str, returncode: int, stderr: str) -> None:
         super(QueryRuntimeException, self).__init__(message)
-        self.returncode = returncode
-        self.stderr = stderr
+        self.returncode: int = returncode
+        self.stderr: str = stderr
 
 
 class CommandRequest:
     def __init__(
-        self, command, stdin=None, timeout=None, ignore_error=False, parse=False, stdout_file_path=None, stderr_file_path=None, env = {}
-    ):
+        self,
+        command: list[str],
+        stdin: str | None = None,
+        timeout: float | None = None,
+        ignore_error: bool = False,
+        parse: bool = False,
+        stdout_file_path: str | None = None,
+        stderr_file_path: str | None = None,
+        env: dict[str, str] = {},
+    ) -> None:
         # Write data to tmp file to avoid PIPEs and execution blocking
-        stdin_file = tempfile.TemporaryFile(mode="w+")
-        stdin_file.write(stdin)
+        stdin_file: tempfile._TemporaryFileWrapper[str] = tempfile.TemporaryFile(
+            mode="w+")
+        assert stdin is not None
+        _: int = stdin_file.write(stdin)
         stdin_file.seek(0)
-        self.stdout_file = tempfile.TemporaryFile() if stdout_file_path is None else stdout_file_path
-        self.stderr_file = tempfile.TemporaryFile() if stderr_file_path is None else stderr_file_path
-        self.ignore_error = ignore_error
-        self.parse = parse
+        self.stdout_file: tempfile._TemporaryFileWrapper[bytes] | str = tempfile.TemporaryFile(
+        ) if stdout_file_path is None else stdout_file_path
+        self.stderr_file: tempfile._TemporaryFileWrapper[bytes] | str = tempfile.TemporaryFile(
+        ) if stderr_file_path is None else stderr_file_path
+        self.ignore_error: bool = ignore_error
+        self.parse: bool = parse
         # print " ".join(command)
 
         # we suppress stderror on client becase sometimes thread sanitizer
         # can print some debug information there
         env["ASAN_OPTIONS"] = "use_sigaltstack=0"
         env["TSAN_OPTIONS"] = "use_sigaltstack=0 verbosity=0"
-        self.process = sp.Popen(
+        self.process: sp.Popen[str] = sp.Popen(
             command,
             stdin=stdin_file,
             stdout=self.stdout_file,
@@ -214,11 +227,11 @@ class CommandRequest:
             universal_newlines=True,
         )
 
-        self.timer = None
-        self.process_finished_before_timeout = True
+        self.timer: Timer | None = None
+        self.process_finished_before_timeout: bool = True
         if timeout is not None:
 
-            def kill_process():
+            def kill_process() -> None:
                 if self.process.poll() is None:
                     self.process_finished_before_timeout = False
                     self.process.kill()
@@ -226,23 +239,25 @@ class CommandRequest:
             self.timer = Timer(timeout, kill_process)
             self.timer.start()
 
-    def remove_trash_from_stderr(self, stderr):
+    def remove_trash_from_stderr(self, stderr: str) -> str:
         # FIXME https://github.com/ClickHouse/ClickHouse/issues/48181
         if not stderr:
             return stderr
-        lines = stderr.split("\n")
+        lines: list[str] = stderr.split("\n")
         lines = [
             x for x in lines if ("completion_queue" not in x and "Kick failed" not in x)
         ]
         return "\n".join(lines)
 
-    def get_answer(self):
+    def get_answer(self) -> pd.DataFrame | str:
         self.process.wait(timeout=DEFAULT_QUERY_TIMEOUT)
         self.stdout_file.seek(0)
         self.stderr_file.seek(0)
 
-        stdout = self.stdout_file.read().decode("utf-8", errors="replace")
-        stderr = self.stderr_file.read().decode("utf-8", errors="replace")
+        stdout: str = cast(bytes, self.stdout_file.read()
+                           ).decode("utf-8", errors="replace")
+        stderr: str = cast(bytes, self.stderr_file.read()
+                           ).decode("utf-8", errors="replace")
 
         if (
             self.timer is not None
@@ -266,21 +281,26 @@ class CommandRequest:
         if self.parse:
             from io import StringIO
 
+            df: pd.DataFrame = pd.read_csv(StringIO(stdout), sep="\t")
+            assert isinstance(df, pd.DataFrame)
             return (
-                pd.read_csv(StringIO(stdout), sep="\t")
-                .replace(r"\N", None)
+                df.replace(r"\N", None)
                 .replace(np.nan, None)
             )
 
         return stdout
 
-    def get_error(self):
+    def get_error(self) -> str:
         self.process.wait(timeout=DEFAULT_QUERY_TIMEOUT)
         self.stdout_file.seek(0)
         self.stderr_file.seek(0)
 
-        stdout = self.stdout_file.read().decode("utf-8", errors="replace")
-        stderr = self.stderr_file.read().decode("utf-8", errors="replace")
+        stdout: str = cast(bytes, self.stdout_file.read()).decode(
+            # pyright: ignore[reportUnknownMemberType]
+            "utf-8", errors="replace")
+        stderr: str = cast(bytes, self.stderr_file.read()).decode(
+            # pyright: ignore[reportUnknownMemberType]
+            "utf-8", errors="replace")
 
         if (
             self.timer is not None
@@ -298,13 +318,15 @@ class CommandRequest:
 
         return stderr
 
-    def get_answer_and_error(self):
+    def get_answer_and_error(self) -> tuple[str, str]:
         self.process.wait(timeout=DEFAULT_QUERY_TIMEOUT)
         self.stdout_file.seek(0)
         self.stderr_file.seek(0)
 
-        stdout = self.stdout_file.read().decode("utf-8", errors="replace")
-        stderr = self.stderr_file.read().decode("utf-8", errors="replace")
+        stdout: str = cast(bytes, self.stdout_file.read()
+                           ).decode("utf-8", errors="replace")
+        stderr: str = cast(bytes, self.stderr_file.read()
+                           ).decode("utf-8", errors="replace")
 
         if (
             self.timer is not None
@@ -315,8 +337,8 @@ class CommandRequest:
 
         return (stdout, stderr)
 
-    def pause_process(self):
+    def pause_process(self) -> None:
         self.process.send_signal(signal.SIGSTOP)
 
-    def resume_process(self):
+    def resume_process(self) -> None:
         self.process.send_signal(signal.SIGCONT)

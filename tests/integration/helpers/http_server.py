@@ -6,11 +6,12 @@ import ssl
 import logging
 import signal
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from typing import Any, Callable
 
 
 # Decorator used to see if authentication works for external dictionary who use a HTTP source.
-def check_auth(fn):
-    def wrapper(req):
+def check_auth(fn: Callable[[Any], None]) -> Callable[[Any], None]:  # pyright: ignore[reportAny, reportExplicitAny]
+    def wrapper(req: Any) -> None:  # pyright: ignore[reportAny, reportExplicitAny]
         auth_header = req.headers.get("authorization", None)
         api_key = req.headers.get("api-key", None)
         if (
@@ -26,9 +27,9 @@ def check_auth(fn):
     return wrapper
 
 
-def start_server(server_address, data_path, schema, cert_path, address_family):
+def start_server(server_address: tuple[str, int], data_path: str, schema: str, cert_path: str, address_family: str) -> None:
     class TSVHTTPHandler(BaseHTTPRequestHandler):
-        def log_message(self, format, *args):
+        def log_message(self, format: str, *args: Any) -> None:  # pyright: ignore[reportAny, reportExplicitAny]
             logging.info(
                 "%s:%s - - [%s] %s",
                 self.address_string(),
@@ -38,36 +39,36 @@ def start_server(server_address, data_path, schema, cert_path, address_family):
             )
 
         @check_auth
-        def do_GET(self):
+        def do_GET(self) -> None:
             self.log_message("Processing '%s'", self.requestline)
             self.__send_headers()
             self.__send_data()
 
         @check_auth
-        def do_POST(self):
+        def do_POST(self) -> None:
             self.log_message("Processing '%s'", self.requestline)
             ids = self.__read_and_decode_post_ids()
             print("ids=", ids)
             self.__send_headers()
             self.__send_data(ids)
 
-        def __send_headers(self):
+        def __send_headers(self) -> None:
             self.send_response(200)
             self.send_header("Content-type", "text/tsv")
             self.end_headers()
 
-        def __send_data(self, only_ids=None):
+        def __send_data(self, only_ids: list[str] | None = None) -> None:
             with open(data_path, "r") as fl:
                 reader = csv.reader(fl, delimiter="\t")
                 for row in reader:
                     if not only_ids or (row[0] in only_ids):
                         self.wfile.write(("\t".join(row) + "\n").encode())
 
-        def __read_and_decode_post_ids(self):
+        def __read_and_decode_post_ids(self) -> list[str]:
             data = self.__read_and_decode_post_data()
             return [_f for _f in data.split() if _f]
 
-        def __read_and_decode_post_data(self):
+        def __read_and_decode_post_data(self) -> str:
             transfer_encoding = self.headers.get("Transfer-encoding")
             decoded = ""
             if transfer_encoding == "chunked":

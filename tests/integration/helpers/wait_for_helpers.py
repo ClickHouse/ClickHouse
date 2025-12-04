@@ -1,19 +1,21 @@
-import time
+from typing import Any
 
-from helpers.test_tools import assert_eq_with_retry
+from .test_tools import assert_eq_with_retry
+from .cluster import ClickHouseInstance
 
 
-def _parse_table_database(table, database):
+def _parse_table_database(table: str, database: str | None) -> tuple[str, str]:
     if database is not None:
         return table, database
 
     if "." in table:
-        return reversed(table.split(".", 1))
+        parts = table.split(".", 1)
+        return parts[1], parts[0]
 
     return table, "default"
 
 
-def wait_for_delete_inactive_parts(node, table, database=None, **kwargs):
+def wait_for_delete_inactive_parts(node: ClickHouseInstance, table: str, database: str | None = None, **kwargs: Any) -> None:
     table, database = _parse_table_database(table, database)
     inactive_parts_query = (
         f"SELECT count() FROM system.parts "
@@ -22,7 +24,7 @@ def wait_for_delete_inactive_parts(node, table, database=None, **kwargs):
     assert_eq_with_retry(node, inactive_parts_query, "0\n", **kwargs)
 
 
-def wait_for_delete_empty_parts(node, table, database=None, **kwargs):
+def wait_for_delete_empty_parts(node: ClickHouseInstance, table: str, database: str | None = None, **kwargs: Any) -> None:
     table, database = _parse_table_database(table, database)
     empty_parts_query = (
         f"SELECT count() FROM system.parts "
@@ -31,7 +33,7 @@ def wait_for_delete_empty_parts(node, table, database=None, **kwargs):
     assert_eq_with_retry(node, empty_parts_query, "0\n", **kwargs)
 
 
-def wait_for_merges(node, table, database=None, **kwargs):
+def wait_for_merges(node: ClickHouseInstance, table: str, database: str | None = None, **kwargs: Any) -> None:
     table, database = _parse_table_database(table, database)
     merges_count_query = (
         f"SELECT count() > 0 FROM system.merges "

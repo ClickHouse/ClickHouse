@@ -1,16 +1,22 @@
 import socket
 import threading
+from typing import Any, Callable
 
 
 # simple port forwarding
 class PortForward:
-    def __init__(self):
-        self._clients_lock = threading.Lock()
-        self._clients = {}
+    def __init__(self) -> None:
+        self._clients_lock: threading.Lock = threading.Lock()
+        self._clients: dict[socket.socket, tuple[socket.socket,
+                                                 threading.Thread, threading.Thread]] = {}
+        self._address: tuple[str, int] | None = None
+        self._sock: socket.socket | None = None
+        self._runner: threading.Thread | None = None
 
-    def _run(self):
+    def _run(self) -> None:
         while True:
             try:
+                assert self._sock is not None
                 connection, addr = self._sock.accept()
             except socket.timeout:
                 continue
@@ -24,7 +30,7 @@ class PortForward:
             connection.settimeout(1)
             client.settimeout(1)
 
-            def forward(source: socket.socket, destination: socket.socket, terminate):
+            def forward(source: socket.socket, destination: socket.socket, terminate: Callable[[], None]) -> None:
                 while True:
                     try:
                         data = source.recv(4096)
@@ -45,14 +51,15 @@ class PortForward:
 
                 terminate()
 
-            def termination(connection: socket.socket, idx: int):
-                client = None
+            def termination(connection: socket.socket, idx: int) -> None:
+                client_tuple: tuple[socket.socket,
+                                    threading.Thread, threading.Thread] | None = None
                 with self._clients_lock:
-                    client = self._clients.pop(connection, None)
-                if client is not None:
-                    client[idx].join()
+                    client_tuple = self._clients.pop(connection, None)
+                if client_tuple is not None:
+                    client_tuple[idx].join()
                     connection.close()
-                    client[0].close()
+                    client_tuple[0].close()
 
             client_to_server_thread = threading.Thread(
                 target=forward, args=(connection, client, lambda: termination(connection, 2))
@@ -67,7 +74,7 @@ class PortForward:
             client_to_server_thread.start()
             server_to_client_thread.start()
 
-    def start(self, address, listen_port=0):
+    def start(self, address: tuple[str, int], listen_port: int = 0) -> int:
         self._address = address
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._sock.bind(("", listen_port))
@@ -77,7 +84,7 @@ class PortForward:
         self._runner.start()
         return self._sock.getsockname()[1]
 
-    def stop(self, force = False):
+    def stop(self, force: bool = False) -> None:
         if self._sock:
             self._sock.close()
 

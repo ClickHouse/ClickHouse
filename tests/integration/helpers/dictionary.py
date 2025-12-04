@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 import copy
+from typing import Any
 
 
-class Layout(object):
+class Layout:
     LAYOUTS_STR_DICT = {
         "flat": "<flat/>",
         "hashed": "<hashed/>",
@@ -18,69 +19,69 @@ class Layout(object):
         "complex_key_direct": "<complex_key_direct/>",
     }
 
-    def __init__(self, name):
-        self.name = name
-        self.is_complex = False
-        self.is_simple = False
-        self.is_ranged = False
+    def __init__(self, name: str) -> None:
+        self.name: str = name
+        self.is_complex: bool = False
+        self.is_simple: bool = False
+        self.is_ranged: bool = False
         if self.name.startswith("complex"):
-            self.layout_type = "complex"
+            self.layout_type: str = "complex"
             self.is_complex = True
         elif name.startswith("range"):
-            self.layout_type = "ranged"
+            self.layout_type: str = "ranged"
             self.is_ranged = True
         else:
-            self.layout_type = "simple"
+            self.layout_type: str = "simple"
             self.is_simple = True
 
-    def get_str(self):
+    def get_str(self) -> str:
         return self.LAYOUTS_STR_DICT[self.name]
 
-    def get_key_block_name(self):
+    def get_key_block_name(self) -> str:
         if self.is_complex:
             return "key"
         return "id"
 
 
-class Row(object):
-    def __init__(self, fields, values):
-        self.data = {}
+class Row:
+    def __init__(self, fields: list["Field"], values: list[Any]) -> None:  # pyright: ignore[reportAny, reportExplicitAny]
+        self.data: dict[str, Any] = {}  # pyright: ignore[reportAny, reportExplicitAny]
         for field, value in zip(fields, values):
             self.data[field.name] = value
 
-    def has_field(self, name):
+    def has_field(self, name: str) -> bool:
         return name in self.data
 
-    def get_value_by_name(self, name):
+    def get_value_by_name(self, name: str) -> Any:  # pyright: ignore[reportAny, reportExplicitAny]
         return self.data[name]
 
-    def set_value(self, name, value):
+    def set_value(self, name: str, value: Any) -> None:  # pyright: ignore[reportAny, reportExplicitAny]
         self.data[name] = value
 
 
-class Field(object):
+class Field:
     def __init__(
         self,
-        name,
-        field_type,
-        is_key=False,
-        is_range_key=False,
-        default=None,
-        hierarchical=False,
-        range_hash_type=None,
-        default_value_for_get=None,
-    ):
-        self.name = name
-        self.field_type = field_type
-        self.is_key = is_key
-        self.default = default
-        self.hierarchical = hierarchical
-        self.range_hash_type = range_hash_type
-        self.is_range = self.range_hash_type is not None
-        self.is_range_key = is_range_key
-        self.default_value_for_get = default_value_for_get
+        name: str,
+        field_type: str,
+        is_key: bool = False,
+        is_range_key: bool = False,
+        default: Any = None,  # pyright: ignore[reportAny, reportExplicitAny]
+        hierarchical: bool = False,
+        range_hash_type: str | None = None,
+        default_value_for_get: Any = None,  # pyright: ignore[reportAny, reportExplicitAny]
+    ) -> None:
+        self.name: str = name
+        self.field_type: str = field_type
+        self.is_key: bool = is_key
+        self.default: Any = default  # pyright: ignore[reportAny, reportExplicitAny]
+        self.hierarchical: bool = hierarchical
+        self.range_hash_type: str | None = range_hash_type
+        self.is_range: bool = self.range_hash_type is not None
+        self.is_range_key: bool = is_range_key
+        self.default_value_for_get: Any = default_value_for_get  # pyright: ignore[reportAny, reportExplicitAny]
 
-    def get_attribute_str(self):
+    def get_attribute_str(self) -> str:
         return """
             <attribute>
               <name>{name}</name>
@@ -94,10 +95,10 @@ class Field(object):
             hierarchical="true" if self.hierarchical else "false",
         )
 
-    def get_simple_index_str(self):
+    def get_simple_index_str(self) -> str:
         return "<name>{name}</name>".format(name=self.name)
 
-    def get_range_hash_str(self):
+    def get_range_hash_str(self) -> str:
         if not self.range_hash_type:
             raise Exception("Field {} is not range hashed".format(self.name))
         return """
@@ -109,14 +110,14 @@ class Field(object):
         )
 
 
-class DictionaryStructure(object):
-    def __init__(self, layout, fields):
-        self.layout = layout
-        self.keys = []
-        self.range_key = None
-        self.ordinary_fields = []
-        self.range_fields = []
-        self.has_hierarchy = False
+class DictionaryStructure:
+    def __init__(self, layout: Layout, fields: list[Field]) -> None:
+        self.layout: Layout = layout
+        self.keys: list[Field] = []
+        self.range_key: Field | None = None
+        self.ordinary_fields: list[Field] = []
+        self.range_fields: list[Field] = []
+        self.has_hierarchy: bool = False
 
         for field in fields:
             if field.is_key:
@@ -146,7 +147,7 @@ class DictionaryStructure(object):
         ):
             raise Exception("Inconsistent configuration of ranged dictionary")
 
-    def get_structure_str(self):
+    def get_structure_str(self) -> str:
         fields_strs = []
         for field in self.ordinary_fields:
             fields_strs.append(field.get_attribute_str())
@@ -182,7 +183,7 @@ class DictionaryStructure(object):
             range_strs="\n".join(ranged_strs),
         )
 
-    def get_ordered_names(self):
+    def get_ordered_names(self) -> list[str]:
         fields_strs = []
         for key_field in self.keys:
             fields_strs.append(key_field.name)
@@ -192,12 +193,12 @@ class DictionaryStructure(object):
             fields_strs.append(field.name)
         return fields_strs
 
-    def get_all_fields(self):
+    def get_all_fields(self) -> list[Field]:
         return self.keys + self.range_fields + self.ordinary_fields
 
     def _get_dict_get_common_expression(
-        self, dict_name, field, row, or_default, with_type, has
-    ):
+        self, dict_name: str, field: Field, row: Row, or_default: bool, with_type: bool, has: bool
+    ) -> str:
         if field in self.keys:
             raise Exception(
                 "Trying to receive key field {} from dictionary".format(field.name)
@@ -282,7 +283,7 @@ class DictionaryStructure(object):
             def_for_get=default_value_for_get,
         )
 
-    def get_get_expressions(self, dict_name, field, row):
+    def get_get_expressions(self, dict_name: str, field: Field, row: Row) -> list[str]:
         return [
             self._get_dict_get_common_expression(
                 dict_name, field, row, or_default=False, with_type=False, has=False
@@ -292,7 +293,7 @@ class DictionaryStructure(object):
             ),
         ]
 
-    def get_get_or_default_expressions(self, dict_name, field, row):
+    def get_get_or_default_expressions(self, dict_name: str, field: Field, row: Row) -> list[str]:
         if not self.layout.is_ranged:
             return [
                 self._get_dict_get_common_expression(
@@ -304,7 +305,7 @@ class DictionaryStructure(object):
             ]
         return []
 
-    def get_has_expressions(self, dict_name, field, row):
+    def get_has_expressions(self, dict_name: str, field: Field, row: Row) -> list[str]:
         if not self.layout.is_ranged:
             return [
                 self._get_dict_get_common_expression(
@@ -313,7 +314,7 @@ class DictionaryStructure(object):
             ]
         return []
 
-    def get_hierarchical_expressions(self, dict_name, row):
+    def get_hierarchical_expressions(self, dict_name: str, row: Row) -> list[str]:
         if self.layout.is_simple:
             key_expr = "toUInt64({})".format(row.data[self.keys[0].name])
             return [
@@ -325,7 +326,7 @@ class DictionaryStructure(object):
 
         return []
 
-    def get_is_in_expressions(self, dict_name, row, parent_row):
+    def get_is_in_expressions(self, dict_name: str, row: Row, parent_row: Row) -> list[str]:
         if self.layout.is_simple:
             child_key_expr = "toUInt64({})".format(row.data[self.keys[0].name])
             parent_key_expr = "toUInt64({})".format(parent_row.data[self.keys[0].name])
@@ -340,28 +341,28 @@ class DictionaryStructure(object):
         return []
 
 
-class Dictionary(object):
+class Dictionary:
     def __init__(
         self,
-        name,
-        structure,
-        source,
-        config_path,
-        table_name,
-        fields,
-        min_lifetime=3,
-        max_lifetime=5,
-    ):
-        self.name = name
-        self.structure = copy.deepcopy(structure)
-        self.source = copy.deepcopy(source)
-        self.config_path = config_path
-        self.table_name = table_name
-        self.fields = fields
-        self.min_lifetime = min_lifetime
-        self.max_lifetime = max_lifetime
+        name: str,
+        structure: DictionaryStructure,
+        source: Any,  # pyright: ignore[reportAny, reportExplicitAny]
+        config_path: str,
+        table_name: str,
+        fields: list[Field],
+        min_lifetime: int = 3,
+        max_lifetime: int = 5,
+    ) -> None:
+        self.name: str = name
+        self.structure: DictionaryStructure = copy.deepcopy(structure)
+        self.source: Any = copy.deepcopy(source)  # pyright: ignore[reportAny, reportExplicitAny]
+        self.config_path: str = config_path
+        self.table_name: str = table_name
+        self.fields: list[Field] = fields
+        self.min_lifetime: int = min_lifetime
+        self.max_lifetime: int = max_lifetime
 
-    def generate_config(self):
+    def generate_config(self) -> None:
         with open(self.config_path, "w") as result:
             if "direct" not in self.structure.layout.get_str():
                 result.write(
@@ -408,10 +409,10 @@ class Dictionary(object):
                     )
                 )
 
-    def prepare_source(self, cluster):
+    def prepare_source(self, cluster: Any) -> None:  # pyright: ignore[reportAny, reportExplicitAny]
         self.source.prepare(self.structure, self.table_name, cluster)
 
-    def load_data(self, data):
+    def load_data(self, data: Any) -> None:  # pyright: ignore[reportAny, reportExplicitAny]
         if not self.source.prepared:
             raise Exception(
                 "Cannot load data for dictionary {}, source is not prepared".format(
@@ -421,13 +422,13 @@ class Dictionary(object):
 
         self.source.load_data(data, self.table_name)
 
-    def get_select_get_queries(self, field, row):
+    def get_select_get_queries(self, field: Field, row: Row) -> list[str]:
         return [
             "select {}".format(expr)
             for expr in self.structure.get_get_expressions(self.name, field, row)
         ]
 
-    def get_select_get_or_default_queries(self, field, row):
+    def get_select_get_or_default_queries(self, field: Field, row: Row) -> list[str]:
         return [
             "select {}".format(expr)
             for expr in self.structure.get_get_or_default_expressions(
@@ -435,26 +436,26 @@ class Dictionary(object):
             )
         ]
 
-    def get_select_has_queries(self, field, row):
+    def get_select_has_queries(self, field: Field, row: Row) -> list[str]:
         return [
             "select {}".format(expr)
             for expr in self.structure.get_has_expressions(self.name, field, row)
         ]
 
-    def get_hierarchical_queries(self, row):
+    def get_hierarchical_queries(self, row: Row) -> list[str]:
         return [
             "select {}".format(expr)
             for expr in self.structure.get_hierarchical_expressions(self.name, row)
         ]
 
-    def get_is_in_queries(self, row, parent_row):
+    def get_is_in_queries(self, row: Row, parent_row: Row) -> list[str]:
         return [
             "select {}".format(expr)
             for expr in self.structure.get_is_in_expressions(self.name, row, parent_row)
         ]
 
-    def is_complex(self):
+    def is_complex(self) -> bool:
         return self.structure.layout.is_complex
 
-    def get_fields(self):
+    def get_fields(self) -> list[Field]:
         return self.fields

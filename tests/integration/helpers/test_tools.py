@@ -2,12 +2,16 @@ import difflib
 import logging
 import time
 from io import IOBase
+from typing import Any, Callable
+
+from .cluster import ClickHouseInstance
 
 
 class TSV:
     """Helper to get pretty diffs between expected and actual tab-separated value files"""
 
-    def __init__(self, contents):
+    def __init__(self, contents: IOBase | str | list[list[str] | str] | "TSV") -> None:
+        raw_lines: list[str]
         if isinstance(contents, IOBase):
             raw_lines = contents.readlines()
         elif isinstance(contents, str) or isinstance(contents, str):
@@ -18,7 +22,7 @@ class TSV:
                 for l in contents
             ]
         elif isinstance(contents, TSV):
-            self.lines = contents.lines
+            self.lines: list[str] = contents.lines
             return
         else:
             raise TypeError(
@@ -27,17 +31,17 @@ class TSV:
             )
         self.lines = [l.strip() for l in raw_lines if l.strip()]
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, TSV):
             return self == TSV(other)
         return self.lines == other.lines
 
-    def __ne__(self, other):
+    def __ne__(self, other: object) -> bool:
         if not isinstance(other, TSV):
             return self != TSV(other)
         return self.lines != other.lines
 
-    def diff(self, other, n1="", n2=""):
+    def diff(self, other: "TSV" | str, n1: str = "", n2: str = "") -> list[str]:
         if not isinstance(other, TSV):
             return self.diff(TSV(other), n1=n1, n2=n2)
         return list(
@@ -47,34 +51,34 @@ class TSV:
             )
         )[2:]
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "\n".join(self.lines)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return self.__str__()
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.lines)
 
     @staticmethod
-    def toMat(contents):
+    def toMat(contents: str) -> list[list[str]]:
         return [line.split("\t") for line in contents.split("\n") if line.strip()]
 
 
 def assert_eq_with_retry(
-    instance,
-    query,
-    expectation,
-    retry_count=20,
-    sleep_time=0.5,
-    stdin=None,
-    timeout=None,
-    settings=None,
-    user=None,
-    ignore_error=False,
-    get_result=lambda x: x,
-):
-    expectation_tsv = TSV(expectation)
+    instance: ClickHouseInstance,
+    query: str,
+    expectation: str,
+    retry_count: int = 20,
+    sleep_time: float = 0.5,
+    stdin: str | None = None,
+    timeout: float | None = None,
+    settings: dict[str, Any] | None = None,
+    user: str | None = None,
+    ignore_error: bool = False,
+    get_result: Callable[[Any], Any] = lambda x: x,
+) -> None:
+    expectation_tsv: TSV = TSV(expectation)
     for i in range(retry_count):
         try:
             if (
@@ -98,7 +102,7 @@ def assert_eq_with_retry(
             logging.exception(f"assert_eq_with_retry retry {i+1} exception {ex}")
             time.sleep(sleep_time)
     else:
-        val = TSV(
+        val: TSV = TSV(
             get_result(
                 instance.query(
                     query,
@@ -120,12 +124,12 @@ def assert_eq_with_retry(
             )
 
 
-def assert_logs_contain(instance, substring):
+def assert_logs_contain(instance: ClickHouseInstance, substring: str) -> None:
     if not instance.contains_in_log(substring):
         raise AssertionError("'{}' not found in logs".format(substring))
 
 
-def assert_logs_contain_with_retry(instance, substring, retry_count=20, sleep_time=0.5):
+def assert_logs_contain_with_retry(instance: ClickHouseInstance, substring: str, retry_count: int = 20, sleep_time: float = 0.5) -> None:
     for i in range(retry_count):
         try:
             if instance.contains_in_log(substring):
@@ -139,18 +143,19 @@ def assert_logs_contain_with_retry(instance, substring, retry_count=20, sleep_ti
 
 
 def exec_query_with_retry(
-    instance,
-    query,
-    retry_count=40,
-    sleep_time=0.5,
-    silent=False,
-    settings={},
-    timeout=30,
-):
-    exception = None
+    instance: ClickHouseInstance,
+    query: str,
+    retry_count: int = 40,
+    sleep_time: float = 0.5,
+    silent: bool = False,
+    settings: dict[str, Any] = {},
+    timeout: float = 30,
+) -> Any:
+    exception: Exception | None = None
     for cnt in range(retry_count):
         try:
-            res = instance.query(query, timeout=timeout, settings=settings)
+            res: Any = instance.query(
+                query, timeout=timeout, settings=settings)
             if not silent:
                 logging.debug(f"Result of {query} on {cnt} try is {res}")
             return res
@@ -165,11 +170,11 @@ def exec_query_with_retry(
         raise exception
 
 
-def csv_compare(result, expected):
-    csv_result = TSV(result)
-    csv_expected = TSV(expected)
-    mismatch = []
-    max_len = (
+def csv_compare(result: str, expected: str) -> str:
+    csv_result: TSV = TSV(result)
+    csv_expected: TSV = TSV(expected)
+    mismatch: list[str] = []
+    max_len: int = (
         len(csv_result) if len(csv_result) > len(csv_expected) else len(csv_expected)
     )
     for i in range(max_len):
@@ -184,9 +189,9 @@ def csv_compare(result, expected):
     return "\n".join(mismatch)
 
 
-def wait_condition(func, condition, max_attempts=10, delay=0.1):
-    attempts = 0
-    result = None
+def wait_condition(func: Callable[[], Any], condition: Callable[[Any], bool], max_attempts: int = 10, delay: float = 0.1) -> Any:
+    attempts: int = 0
+    result: Any = None
     while attempts < max_attempts:
         result = func()
         if condition(result):
@@ -200,8 +205,8 @@ def wait_condition(func, condition, max_attempts=10, delay=0.1):
     )
 
 
-def get_retry_number(request, fallback=1):
-    retry_number = getattr(request.node, "callspec", None)
+def get_retry_number(request: Any, fallback: int = 1) -> int:
+    retry_number: Any = getattr(request.node, "callspec", None)
     if retry_number is not None:
         retry_number = retry_number.params.get("__pytest_repeat_step_number", fallback)
     else:

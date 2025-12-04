@@ -1,6 +1,9 @@
 import ipaddress
 import logging
 import time
+from typing import Any
+
+from .cluster import ClickHouseInstance
 
 
 class PartitionManager:
@@ -17,12 +20,12 @@ class PartitionManager:
 
     """
 
-    def __init__(self):
-        self._rules = []
-        self._netem_delayed_instances = []
-        self._prepared_instances = set()
+    def __init__(self) -> None:
+        self._rules: list[dict[str, Any]] = []
+        self._netem_delayed_instances: list[ClickHouseInstance] = []
+        self._prepared_instances: set[str] = set()
 
-    def _prepare_instance(self, instance):
+    def _prepare_instance(self, instance: ClickHouseInstance) -> None:
         if instance.name in self._prepared_instances:
             return
 
@@ -74,17 +77,17 @@ class PartitionManager:
         # raise Exception(
         #     f"Could not find a known package manager (apt-get or yum) in {instance.name} to install iptables.")
 
-    def _iptables_cmd(self, instance, args):
+    def _iptables_cmd(self, instance: ClickHouseInstance, args: list[str]) -> None:
         self._prepare_instance(instance)
         instance.exec_in_container(['iptables'] + args, user='root')
 
-    def _ip6tables_cmd(self, instance, args):
+    def _ip6tables_cmd(self, instance: ClickHouseInstance, args: list[str]) -> None:
         self._prepare_instance(instance)
         instance.exec_in_container(['ip6tables'] + args, user='root')
 
-    def _build_rule_args(self, action, rule_spec):
-        chain = rule_spec.get("chain", "OUTPUT")
-        args = ['--wait', action, chain]
+    def _build_rule_args(self, action: str, rule_spec: dict[str, Any]) -> list[str]:
+        chain: str = rule_spec.get("chain", "OUTPUT")
+        args: list[str] = ['--wait', action, chain]
 
         if rule_spec.get('probability'):
             args.extend(['-m', 'statistic', '--mode', 'random', '--probability', str(rule_spec['probability'])])
@@ -103,12 +106,12 @@ class PartitionManager:
         args.extend(['-j'] + rule_spec['action'].split())
         return args
 
-    def add_rule(self, rule_spec):
-        instance = rule_spec.get('instance')
+    def add_rule(self, rule_spec: dict[str, Any]) -> None:
+        instance: ClickHouseInstance | None = rule_spec.get('instance')
         if not instance:
             raise ValueError("Rule specification must include an 'instance' key")
 
-        args = self._build_rule_args('-A', rule_spec)
+        args: list[str] = self._build_rule_args('-A', rule_spec)
 
         if self._is_ipv6_rule(rule_spec):
             self._ip6tables_cmd(instance, args)
@@ -118,12 +121,12 @@ class PartitionManager:
         if rule_spec not in self._rules:
             self._rules.append(rule_spec)
 
-    def delete_rule(self, rule_spec):
-        instance = rule_spec.get('instance')
+    def delete_rule(self, rule_spec: dict[str, Any]) -> None:
+        instance: ClickHouseInstance | None = rule_spec.get('instance')
         if not instance:
             raise ValueError("Rule specification must include an 'instance' key")
 
-        args = self._build_rule_args('-D', rule_spec)
+        args: list[str] = self._build_rule_args('-D', rule_spec)
         try:
             if self._is_ipv6_rule(rule_spec):
                 self._ip6tables_cmd(instance, args)
@@ -135,7 +138,7 @@ class PartitionManager:
         except Exception as e:
             logging.warning(f"Could not delete network rule on {instance.name}: {e}")
 
-    def drop_instance_zk_connections(self, instance, action="DROP"):
+    def drop_instance_zk_connections(self, instance: ClickHouseInstance, action: str = "DROP") -> None:
         self._check_instance(instance)
         self.add_rule({
             "instance": instance, "chain": "OUTPUT", "destination_port": 2181,
@@ -147,7 +150,7 @@ class PartitionManager:
                 "protocol": "tcp", "action": action, "__ipv6": True,
             })
 
-    def restore_instance_zk_connections(self, instance, action="DROP"):
+    def restore_instance_zk_connections(self, instance: ClickHouseInstance, action: str = "DROP") -> None:
         self._check_instance(instance)
         self.delete_rule({
             "instance": instance, "chain": "OUTPUT", "destination_port": 2181,
@@ -159,7 +162,7 @@ class PartitionManager:
                 "protocol": "tcp", "action": action, "__ipv6": True,
             })
 
-    def partition_instances(self, left, right, port=None, action="DROP"):
+    def partition_instances(self, left: ClickHouseInstance, right: ClickHouseInstance, port: int | None = None, action: str = "DROP") -> None:
         self._check_instance(left)
         self._check_instance(right)
         self.add_rule({
@@ -180,26 +183,26 @@ class PartitionManager:
                 "action": action, "protocol": "tcp", "__ipv6": True,
             })
 
-    def pop_rules(self):
-        rules_to_pop = list(self._rules)
+    def pop_rules(self) -> list[dict[str, Any]]:
+        rules_to_pop: list[dict[str, Any]] = list(self._rules)
         for rule in rules_to_pop:
             self.delete_rule(rule)
         return rules_to_pop
 
-    def push_rules(self, rules):
+    def push_rules(self, rules: list[dict[str, Any]]) -> None:
         for rule in rules:
             self.add_rule(rule)
 
-    def heal_all(self):
+    def heal_all(self) -> None:
         while self._rules:
             # Pop first to ensure we don't get stuck in an infinite loop
             # if delete_rule fails (e.g. container died)
             if self._rules:
-                rule_spec = self._rules.pop(0)
+                rule_spec: dict[str, Any] = self._rules.pop(0)
                 self.delete_rule(rule_spec)
 
         while self._netem_delayed_instances:
-            instance = self._netem_delayed_instances.pop()
+            instance: ClickHouseInstance = self._netem_delayed_instances.pop()
             try:
                 instance.exec_in_container(
                     ["bash", "-c", "tc qdisc del dev eth0 root netem"], user="root"
@@ -207,18 +210,18 @@ class PartitionManager:
             except Exception as e:
                 logging.warning(f"Could not heal tc rule on {instance.name}: {e}")
 
-    def add_network_delay(self, instance, delay_ms):
+    def add_network_delay(self, instance: ClickHouseInstance, delay_ms: int) -> None:
         self._add_tc_netem_delay(instance, delay_ms)
 
     @staticmethod
-    def _is_ipv6_rule(rule):
+    def _is_ipv6_rule(rule: dict[str, Any]) -> bool:
         if rule.get("__ipv6"):
             return True
         if rule.get("destination"):
             return ipaddress.ip_address(rule["destination"]).version == 6
         return False
 
-    def _add_tc_netem_delay(self, instance, delay_ms):
+    def _add_tc_netem_delay(self, instance: ClickHouseInstance, delay_ms: int) -> None:
         if instance.name not in self._prepared_instances:
             # Add missing packages (old mysql images)
             try:
@@ -236,33 +239,33 @@ class PartitionManager:
         self._netem_delayed_instances.append(instance)
 
     @staticmethod
-    def _check_instance(instance):
+    def _check_instance(instance: ClickHouseInstance) -> None:
         if instance.ip_address is None:
             raise Exception(f"Instance {instance.name} is not launched!")
 
-    def __enter__(self):
+    def __enter__(self) -> "PartitionManager":
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: Any) -> None:  # pyright: ignore[reportAny, reportExplicitAny]
         self.heal_all()
 
-    def __del__(self):
+    def __del__(self) -> None:
         self.heal_all()
 
 
 # Approximately measure network I/O speed for interface
-class NetThroughput(object):
-    def __init__(self, node):
-        self.node = node
+class NetThroughput:
+    def __init__(self, node: ClickHouseInstance) -> None:
+        self.node: ClickHouseInstance = node
         # trying to get default interface and check it in /proc/net/dev
-        self.interface = self.node.exec_in_container(
+        self.interface: str = self.node.exec_in_container(
             [
                 "bash",
                 "-c",
                 "awk '{print $1 \" \" $2}' /proc/net/route | grep 00000000 | awk '{print $1}'",
             ]
         ).strip()
-        check = self.node.exec_in_container(
+        check: str = self.node.exec_in_container(
             ["bash", "-c", f'grep "^ *{self.interface}:" /proc/net/dev']
         ).strip()
         if not check:  # if check is not successful just try eth{1-10}
@@ -300,13 +303,13 @@ class NetThroughput(object):
                 f"No such interface {self.interface} found in /proc/net/dev"
             )
 
-        self.current_in = self._get_in_bytes()
-        self.current_out = self._get_out_bytes()
-        self.measure_time = time.time()
+        self.current_in: int = self._get_in_bytes()
+        self.current_out: int = self._get_out_bytes()
+        self.measure_time: float = time.time()
 
-    def _get_in_bytes(self):
+    def _get_in_bytes(self) -> int:
         try:
-            result = self.node.exec_in_container(
+            result: str = self.node.exec_in_container(
                 [
                     "bash",
                     "-c",
@@ -325,9 +328,9 @@ class NetThroughput(object):
                 f"Got non-numeric in bytes '{result}' from /proc/net/dev for interface {self.interface}"
             )
 
-    def _get_out_bytes(self):
+    def _get_out_bytes(self) -> int:
         try:
-            result = self.node.exec_in_container(
+            result: str = self.node.exec_in_container(
                 [
                     "bash",
                     "-c",
@@ -346,12 +349,12 @@ class NetThroughput(object):
                 f"Got non-numeric out bytes '{result}' from /proc/net/dev for interface {self.interface}"
             )
 
-    def measure_speed(self, measure="bytes"):
-        new_in = self._get_in_bytes()
-        new_out = self._get_out_bytes()
-        current_time = time.time()
-        in_speed = (new_in - self.current_in) / (current_time - self.measure_time)
-        out_speed = (new_out - self.current_out) / (current_time - self.measure_time)
+    def measure_speed(self, measure: str = "bytes") -> tuple[float, float]:
+        new_in: int = self._get_in_bytes()
+        new_out: int = self._get_out_bytes()
+        current_time: float = time.time()
+        in_speed: float = (new_in - self.current_in) / (current_time - self.measure_time)
+        out_speed: float = (new_out - self.current_out) / (current_time - self.measure_time)
 
         self.current_out = new_out
         self.current_in = new_in

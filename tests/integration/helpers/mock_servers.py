@@ -2,6 +2,9 @@ import importlib
 import logging
 import os
 import time
+from typing import Any
+
+from .cluster import ClickHouseCluster
 
 
 # Starts simple HTTP servers written in Python.
@@ -10,7 +13,7 @@ import time
 # `mocks` is a list of tuples (server_script, container_name, port), where
 #     `server_script` is a name of a python file inside `script_dir`,
 #     `container_name` is usually "resolver" (see docker/test/integration/resolver)
-def start_mock_servers(cluster, script_dir, mocks, timeout=100):
+def start_mock_servers(cluster: ClickHouseCluster, script_dir: str, mocks: list[tuple[str, str, int] | tuple[str, str, int, list[str]]], timeout: float = 100) -> None:
     server_names = [mock[0] for mock in mocks]
     server_names_with_desc = (
         f"{'server' if len(server_names) == 1 else 'servers'} {','.join(server_names)}"
@@ -92,7 +95,7 @@ def start_mock_servers(cluster, script_dir, mocks, timeout=100):
 # The same as start_mock_servers, but
 # import servers from central directory tests/integration/helpers
 # and return the control instance
-def start_s3_mock(cluster, mock_name, port, timeout=100):
+def start_s3_mock(cluster: ClickHouseCluster, mock_name: str, port: int, timeout: float = 100) -> Any:  # pyright: ignore[reportAny, reportExplicitAny]
     script_dir = os.path.join(os.path.dirname(__file__), "s3_mocks")
     registered_servers = [
         mock

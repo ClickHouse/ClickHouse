@@ -1,4 +1,7 @@
 import os
+from typing import Any
+
+from .cluster import ClickHouseInstance
 
 
 class ConfigManager:
@@ -13,22 +16,22 @@ class ConfigManager:
 
     """
 
-    def __init__(self):
-        self.__added_configs = []
+    def __init__(self) -> None:
+        self.__added_configs: list[tuple[ClickHouseInstance, str]] = []
 
-    def add_main_config(self, node_or_nodes, local_path, reload_config=True):
+    def add_main_config(self, node_or_nodes: ClickHouseInstance | list[ClickHouseInstance], local_path: str, reload_config: bool = True) -> None:
         """Temporarily adds a configuration file to the "config.d" directory."""
         self.__add_config(
             node_or_nodes, local_path, dest_dir="config.d", reload_config=reload_config
         )
 
-    def add_user_config(self, node_or_nodes, local_path, reload_config=True):
+    def add_user_config(self, node_or_nodes: ClickHouseInstance | list[ClickHouseInstance], local_path: str, reload_config: bool = True) -> None:
         """Temporarily adds a configuration file to the "users.d" directory."""
         self.__add_config(
             node_or_nodes, local_path, dest_dir="users.d", reload_config=reload_config
         )
 
-    def reset(self, reload_config=True):
+    def reset(self, reload_config: bool = True) -> None:
         """Removes all configuration files added by this ConfigManager."""
         if not self.__added_configs:
             return
@@ -39,7 +42,7 @@ class ConfigManager:
                 node.query("SYSTEM RELOAD CONFIG")
         self.__added_configs = []
 
-    def __add_config(self, node_or_nodes, local_path, dest_dir, reload_config):
+    def __add_config(self, node_or_nodes: ClickHouseInstance | list[ClickHouseInstance], local_path: str, dest_dir: str, reload_config: bool) -> None:
         nodes_to_add_config = (
             node_or_nodes if (type(node_or_nodes) is list) else [node_or_nodes]
         )
@@ -62,8 +65,8 @@ class ConfigManager:
             )
             self.__added_configs.append((node, dest_path))
 
-    def __enter__(self):
+    def __enter__(self) -> "ConfigManager":
         return self
 
-    def __exit__(self, type, value, traceback):
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: Any) -> None:  # pyright: ignore[reportAny, reportExplicitAny]
         self.reset()

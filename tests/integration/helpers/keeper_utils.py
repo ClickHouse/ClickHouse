@@ -7,7 +7,7 @@ import socket
 import subprocess
 import time
 from os import path as p
-from typing import Iterable, List, Optional, Sequence, Union
+from typing import Any, Iterable, Optional, Sequence
 
 from helpers.kazoo_client import KazooClientWithImplicitRetries
 from kazoo.exceptions import ConnectionLoss, OperationTimeoutError
@@ -28,21 +28,18 @@ ss_established = [
 ]
 
 
-def get_active_zk_connections(node: ClickHouseInstance) -> List[str]:
-    return (
-        str(node.exec_in_container(ss_established, privileged=True, user="root"))
-        .strip()
-        .split("\n")
-    )
+def get_active_zk_connections(node: ClickHouseInstance) -> list[str]:
+    result: str = str(node.exec_in_container(ss_established, privileged=True, user="root"))
+    return result.strip().split("\n")
 
 
 def get_zookeeper_which_node_connected_to(node: ClickHouseInstance) -> str:
-    line = str(
+    line: str = str(
         node.exec_in_container(ss_established, privileged=True, user="root")
     ).strip()
 
-    pattern = re.compile(r"zoo[0-9]+", re.IGNORECASE)
-    result = pattern.findall(line)
+    pattern: re.Pattern[str] = re.compile(r"zoo[0-9]+", re.IGNORECASE)
+    result: list[str] = pattern.findall(line)
     assert (
         len(result) == 1
     ), "ClickHouse must be connected only to one Zookeeper at a time"
@@ -74,23 +71,23 @@ class KeeperException(Exception):
     pass
 
 
-class KeeperClient(object):
+class KeeperClient:
     SEPARATOR = b"\a\a\a\a\n"
 
-    def __init__(self, bin_path: str, host: str, port: int, connection_tries=30, identity=None):
+    def __init__(self, bin_path: str, host: str, port: int, connection_tries: int = 30, identity: str | None = None) -> None:
         self.bin_path = bin_path
         self.host = host
         self.port = port
 
-        retry_count = 0
+        retry_count: int = 0
 
-        identity_arg = []
+        identity_arg: list[str] = []
         if identity:
             identity_arg = ["--identity", identity]
 
         while True:
             try:
-                self.proc = subprocess.Popen(
+                self.proc: subprocess.Popen[bytes] = subprocess.Popen(
                     [
                         bin_path,
                         "keeper-client",
@@ -109,16 +106,16 @@ class KeeperClient(object):
                     stderr=subprocess.PIPE,
                 )
 
-                self.poller = select.epoll()
+                self.poller: select.epoll = select.epoll()
                 self.poller.register(self.proc.stdout)
                 self.poller.register(self.proc.stderr)
 
-                self._fd_nums = {
+                self._fd_nums: dict[int, Any] = {  # pyright: ignore[reportAny, reportExplicitAny]
                     self.proc.stdout.fileno(): self.proc.stdout,
                     self.proc.stderr.fileno(): self.proc.stderr,
                 }
 
-                self.stopped = False
+                self.stopped: bool = False
 
                 self.get("/keeper", 60.0)
                 break
@@ -139,22 +136,22 @@ class KeeperClient(object):
                     raise
 
     def execute_query(self, query: str, timeout: float = 60.0) -> str:
-        output = io.BytesIO()
+        output: io.BytesIO = io.BytesIO()
 
         self.proc.stdin.write(query.encode() + b"\n")
         self.proc.stdin.flush()
 
-        events = self.poller.poll(timeout)
+        events: list[tuple[int, int]] = self.poller.poll(timeout)
         if not events:
             raise TimeoutError(f"Keeper client returned no output")
 
         for fd_num, event in events:
             if event & (select.EPOLLIN | select.EPOLLPRI):
-                file = self._fd_nums[fd_num]
+                file: Any = self._fd_nums[fd_num]  # pyright: ignore[reportAny, reportExplicitAny]
 
                 if file == self.proc.stdout:
                     while True:
-                        chunk = file.readline()
+                        chunk: bytes = file.readline()
                         if chunk.endswith(self.SEPARATOR):
                             break
 
@@ -167,27 +164,27 @@ class KeeperClient(object):
             else:
                 raise ValueError(f"Failed to read from pipe. Flag {event}")
 
-        data = output.getvalue().strip().decode()
+        data: str = output.getvalue().strip().decode()
         return data
 
-    def cd(self, path: str, timeout: float = 60.0):
+    def cd(self, path: str, timeout: float = 60.0) -> None:
         self.execute_query(f"cd '{path}'", timeout)
 
     def ls(self, path: str, timeout: float = 60.0) -> list[str]:
         return self.execute_query(f"ls '{path}'", timeout).split(" ")
 
-    def create(self, path: str, value: str, timeout: float = 60.0):
+    def create(self, path: str, value: str, timeout: float = 60.0) -> None:
         self.execute_query(f"create '{path}' '{value}'", timeout)
 
     def get(self, path: str, timeout: float = 60.0) -> str:
         return self.execute_query(f"get '{path}'", timeout)
 
-    def set(self, path: str, value: str, version: Optional[int] = None) -> None:
+    def set(self, path: str, value: str, version: int | None = None) -> None:
         self.execute_query(
             f"set '{path}' '{value}' {version if version is not None else ''}"
         )
 
-    def rm(self, path: str, version: Optional[int] = None) -> None:
+    def rm(self, path: str, version: int | None = None) -> None:
         self.execute_query(f"rm '{path}' {version if version is not None else ''}")
 
     def rmr(self, path: str) -> None:
@@ -196,15 +193,15 @@ class KeeperClient(object):
     def exists(self, path: str, timeout: float = 60.0) -> bool:
         return bool(int(self.execute_query(f"exists '{path}'", timeout)))
 
-    def stop(self):
+    def stop(self) -> None:
         if not self.stopped:
             self.stopped = True
             self.proc.communicate(b"exit\n", timeout=10.0)
 
-    def sync(self, path: str, timeout: float = 60.0):
+    def sync(self, path: str, timeout: float = 60.0) -> None:
         self.execute_query(f"sync '{path}'", timeout)
 
-    def touch(self, path: str, timeout: float = 60.0):
+    def touch(self, path: str, timeout: float = 60.0) -> None:
         self.execute_query(f"touch '{path}'", timeout)
 
     def find_big_family(self, path: str, n: int = 10, timeout: float = 60.0) -> str:
@@ -222,14 +219,14 @@ class KeeperClient(object):
     def delete_stale_backups(self, timeout: float = 60.0) -> str:
         return self.execute_query("delete_stale_backups", timeout)
 
-    def get_acl(self, path: str, timeout: float = 60.0):
+    def get_acl(self, path: str, timeout: float = 60.0) -> str:
         return self.execute_query(f"get_acl '{path}'", timeout)
 
     def reconfig(
         self,
-        joining: Optional[str],
-        leaving: Optional[str],
-        new_members: Optional[str],
+        joining: str | None,
+        leaving: str | None,
+        new_members: str | None,
         timeout: float = 60.0,
     ) -> str:
         if bool(joining) + bool(leaving) + bool(new_members) != 1:
@@ -255,7 +252,7 @@ class KeeperClient(object):
     @classmethod
     @contextlib.contextmanager
     def from_cluster(
-        cls, cluster: ClickHouseCluster, keeper_node: str, port: Optional[int] = None, identity: Optional[str] = None
+        cls, cluster: ClickHouseCluster, keeper_node: str, port: int | None = None, identity: str | None = None
     ) -> "KeeperClient":
         client = cls(
             cluster.server_bin_path,
@@ -270,7 +267,7 @@ class KeeperClient(object):
             client.stop()
 
 
-def get_keeper_socket(cluster, nodename, port=9181):
+def get_keeper_socket(cluster: ClickHouseCluster, nodename: str, port: int = 9181) -> socket.socket:
     host = cluster.get_instance_ip(nodename)
     client = socket.socket()
     client.settimeout(10)
@@ -278,7 +275,7 @@ def get_keeper_socket(cluster, nodename, port=9181):
     return client
 
 
-def send_4lw_cmd(cluster, node, cmd="ruok", port=9181):
+def send_4lw_cmd(cluster: ClickHouseCluster, node: ClickHouseInstance, cmd: str = "ruok", port: int = 9181) -> str:
     client = None
     logging.debug("Sending %s to %s:%d", cmd, node, port)
     try:
@@ -296,9 +293,9 @@ NOT_SERVING_REQUESTS_ERROR_MSG = "This instance is not currently serving request
 
 
 def wait_until_connected(
-    cluster, node, port=9181, timeout=30.0, wait_complete_readiness=True, password=None
-):
-    start = time.time()
+    cluster: ClickHouseCluster, node: ClickHouseInstance, port: int = 9181, timeout: float = 30.0, wait_complete_readiness: bool = True, password: str | None = None
+) -> None:
+    start: float = time.time()
 
     logging.debug(
         "Waiting until keeper will be ready on %s:%d (timeout=%f)",
@@ -315,7 +312,7 @@ def wait_until_connected(
             )
 
     if wait_complete_readiness:
-        host = cluster.get_instance_ip(node.name)
+        host: str = cluster.get_instance_ip(node.name)
         logging.debug(
             "Waiting until keeper can create sessions on %s:%d (timeout=%f)",
             host,
@@ -323,14 +320,14 @@ def wait_until_connected(
             timeout,
         )
         while True:
-            zk_cli = None
+            zk_cli: KazooClient | None = None
             try:
-                time_passed = min(time.time() - start, 5.0)
+                time_passed: float = min(time.time() - start, 5.0)
                 if time_passed >= timeout:
                     raise Exception(
                         f"{timeout}s timeout while waiting for {node.name} to start serving requests"
                     )
-                client_id = None
+                client_id: tuple[int, str] | None = None
                 if password is not None:
                     client_id = (0, password)
 
@@ -350,34 +347,34 @@ def wait_until_connected(
                     zk_cli.close()
 
 
-def wait_until_quorum_lost(cluster, node, port=9181):
+def wait_until_quorum_lost(cluster: ClickHouseCluster, node: ClickHouseInstance, port: int = 9181) -> None:
     while send_4lw_cmd(cluster, node, "mntr", port) != NOT_SERVING_REQUESTS_ERROR_MSG:
         time.sleep(0.1)
 
 
-def wait_nodes(cluster, nodes):
+def wait_nodes(cluster: ClickHouseCluster, nodes: Iterable[ClickHouseInstance]) -> None:
     for node in nodes:
         wait_until_connected(cluster, node)
 
 
-def is_leader(cluster, node, port=9181):
+def is_leader(cluster: ClickHouseCluster, node: ClickHouseInstance, port: int = 9181) -> bool:
     stat = send_4lw_cmd(cluster, node, "stat", port)
     return "Mode: leader" in stat
 
 
-def is_follower(cluster, node, port=9181):
-    stat = send_4lw_cmd(cluster, node, "stat", port)
+def is_follower(cluster: ClickHouseCluster, node: ClickHouseInstance, port: int = 9181) -> bool:
+    stat: str = send_4lw_cmd(cluster, node, "stat", port)
     return "Mode: follower" in stat
 
 
-def get_leader(cluster, nodes):
+def get_leader(cluster: ClickHouseCluster, nodes: Iterable[ClickHouseInstance]) -> ClickHouseInstance:
     for node in nodes:
         if is_leader(cluster, node):
             return node
     raise Exception("No leader in Keeper cluster.")
 
 
-def get_any_follower(cluster, nodes):
+def get_any_follower(cluster: ClickHouseCluster, nodes: Iterable[ClickHouseInstance]) -> ClickHouseInstance:
     for node in nodes:
         if is_follower(cluster, node):
             return node
@@ -385,17 +382,17 @@ def get_any_follower(cluster, nodes):
 
 
 def get_fake_zk(
-    cluster, nodename, timeout: float = 30.0, password=None, retries=10, start=True
+    cluster: ClickHouseCluster, nodename: str, timeout: float = 30.0, password: str | None = None, retries: int = 10, start: bool = True
 ) -> KazooClientWithImplicitRetries:
-    kazoo_retry = {
+    kazoo_retry: dict[str, int] = {
         "max_tries": retries,
     }
 
-    client_id = None
+    client_id: tuple[int, str] | None = None
     if password is not None:
         client_id = (0, password)
 
-    _fake = KazooClientWithImplicitRetries(
+    _fake: KazooClientWithImplicitRetries = KazooClientWithImplicitRetries(
         hosts=cluster.get_instance_ip(nodename) + ":9181",
         client_id=client_id,
         timeout=timeout,
@@ -414,7 +411,7 @@ def get_config_str(zk: KeeperClient) -> str:
     return zk.get("/keeper/config")
 
 
-def wait_configs_equal(left_config: str, right_zk: KeeperClient, timeout: float = 30.0):
+def wait_configs_equal(left_config: str, right_zk: KeeperClient, timeout: float = 30.0) -> None:
     """
     Check whether get /keeper/config result in left_config is equal
     to get /keeper/config on right_zk ZK connection.
@@ -435,7 +432,7 @@ def wait_configs_equal(left_config: str, right_zk: KeeperClient, timeout: float 
 
 
 def replace_zookeeper_config(
-    nodes: Union[Sequence[ClickHouseInstance], ClickHouseInstance], new_config: str
+    nodes: Sequence[ClickHouseInstance] | ClickHouseInstance, new_config: str
 ) -> None:
     if not isinstance(nodes, Sequence):
         nodes = (nodes,)
@@ -445,7 +442,7 @@ def replace_zookeeper_config(
 
 
 def reset_zookeeper_config(
-    nodes: Union[Sequence[ClickHouseInstance], ClickHouseInstance],
+    nodes: Sequence[ClickHouseInstance] | ClickHouseInstance,
     file_path: str = p.join(p.dirname(p.realpath(__file__)), "zookeeper_config.xml"),
 ) -> None:
     """Resets the keeper config to default or to a given path on the disk"""

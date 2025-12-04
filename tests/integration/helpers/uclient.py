@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+from typing import Any
 
 CURDIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -12,8 +13,8 @@ prompt = ":\\) "
 end_of_block = r".*\r\n.*\r\n"
 
 
-class client(object):
-    def __init__(self, command=None, name="", log=None):
+class client:
+    def __init__(self, command: str | None = None, name: str = "", log: Any = None) -> None:  # pyright: ignore[reportAny, reportExplicitAny]
         self.client = uexpect.spawn(["/bin/bash", "--noediting"])
         if command is None:
             command = "/usr/bin/clickhouse-client"
@@ -24,10 +25,10 @@ class client(object):
         self.client.expect("[#\\$] ", timeout=2)
         self.client.send(command)
 
-    def __enter__(self):
+    def __enter__(self) -> Any:  # pyright: ignore[reportAny, reportExplicitAny]
         return self.client.__enter__()
 
-    def __exit__(self, type, value, traceback):
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: Any) -> Any:  # pyright: ignore[reportAny, reportExplicitAny]
         self.client.reader["kill_event"].set()
         # send Ctrl-C
         self.client.send("\x03", eol="")

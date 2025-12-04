@@ -18,23 +18,24 @@ import time
 from queue import Empty, Queue
 from subprocess import Popen
 from threading import Event, Thread
+from typing import Any, Callable
 
 
 class TimeoutError(Exception):
-    def __init__(self, timeout):
-        self.timeout = timeout
+    def __init__(self, timeout: float) -> None:
+        self.timeout: float = timeout
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "Timeout %.3fs" % float(self.timeout)
 
 
 class ExpectTimeoutError(Exception):
-    def __init__(self, pattern, timeout, buffer):
-        self.pattern = pattern
-        self.timeout = timeout
-        self.buffer = buffer
+    def __init__(self, pattern: re.Pattern[str], timeout: float, buffer: str | None) -> None:
+        self.pattern: re.Pattern[str] = pattern
+        self.timeout: float = timeout
+        self.buffer: str | None = buffer
 
-    def __str__(self):
+    def __str__(self) -> str:
         s = "Timeout %.3fs " % float(self.timeout)
         if self.pattern:
             s += "for %s " % repr(self.pattern.pattern)
@@ -44,63 +45,63 @@ class ExpectTimeoutError(Exception):
         return s
 
 
-class IO(object):
-    class EOF(object):
+class IO:
+    class EOF:
         pass
 
-    class Timeout(object):
+    class Timeout:
         pass
 
     EOF = EOF
     TIMEOUT = Timeout
 
-    class Logger(object):
-        def __init__(self, logger, prefix=""):
-            self._logger = logger
-            self._prefix = prefix
+    class Logger:
+        def __init__(self, logger: Any, prefix: str = "") -> None:  # pyright: ignore[reportAny, reportExplicitAny]
+            self._logger: Any = logger  # pyright: ignore[reportAny, reportExplicitAny]
+            self._prefix: str = prefix
 
-        def write(self, data):
+        def write(self, data: str) -> None:
             self._logger.write(("\n" + data).replace("\n", "\n" + self._prefix))
 
-        def flush(self):
+        def flush(self) -> None:
             self._logger.flush()
 
-    def __init__(self, process, master, queue, reader):
-        self.process = process
-        self.master = master
-        self.queue = queue
-        self.buffer = None
-        self.before = None
-        self.after = None
-        self.match = None
-        self.pattern = None
-        self.reader = reader
-        self._timeout = None
-        self._logger = None
-        self._eol = ""
+    def __init__(self, process: Popen[bytes], master: int, queue: Queue[str], reader: dict[str, Any]) -> None:  # pyright: ignore[reportAny, reportExplicitAny]
+        self.process: Popen[bytes] = process
+        self.master: int = master
+        self.queue: Queue[str] = queue
+        self.buffer: str | None = None
+        self.before: str | None = None
+        self.after: str | None = None
+        self.match: re.Match[str] | None = None
+        self.pattern: re.Pattern[str] | None = None
+        self.reader: dict[str, Any] = reader  # pyright: ignore[reportAny, reportExplicitAny]
+        self._timeout: float | None = None
+        self._logger: IO.Logger | None = None
+        self._eol: str = ""
 
-    def __enter__(self):
+    def __enter__(self) -> "IO":
         return self
 
-    def __exit__(self, type, value, traceback):
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: Any) -> None:  # pyright: ignore[reportAny, reportExplicitAny]
         self.close()
 
-    def logger(self, logger=None, prefix=""):
+    def logger(self, logger: Any = None, prefix: str = "") -> IO.Logger | None:  # pyright: ignore[reportAny, reportExplicitAny]
         if logger:
             self._logger = self.Logger(logger, prefix=prefix)
         return self._logger
 
-    def timeout(self, timeout=None):
+    def timeout(self, timeout: float | None = None) -> float | None:
         if timeout:
             self._timeout = timeout
         return self._timeout
 
-    def eol(self, eol=None):
+    def eol(self, eol: str | None = None) -> str:
         if eol:
             self._eol = eol
         return self._eol
 
-    def close(self, force=True):
+    def close(self, force: bool = True) -> None:
         self.reader["kill_event"].set()
         os.system("pkill -TERM -P %d" % self.process.pid)
         if force:
@@ -112,15 +113,15 @@ class IO(object):
             self._logger.write("\n")
             self._logger.flush()
 
-    def send(self, data, eol=None):
+    def send(self, data: str, eol: str | None = None) -> int:
         if eol is None:
             eol = self._eol
         return self.write(data + eol)
 
-    def write(self, data):
+    def write(self, data: str) -> int:
         return os.write(self.master, data.encode())
 
-    def expect(self, pattern, timeout=None, escape=False):
+    def expect(self, pattern: str, timeout: float | None = None, escape: bool = False) -> re.Match[str]:
         self.match = None
         self.before = None
         self.after = None
@@ -162,7 +163,7 @@ class IO(object):
             raise exception
         return self.match
 
-    def read(self, timeout=0, raise_exception=False):
+    def read(self, timeout: float = 0, raise_exception: bool = False) -> str:
         data = ""
         timeleft = timeout
         try:
@@ -184,7 +185,7 @@ class IO(object):
         return data
 
 
-def spawn(command):
+def spawn(command: list[str]) -> IO:
     master, slave = pty.openpty()
     process = Popen(
         command,
@@ -210,7 +211,7 @@ def spawn(command):
     )
 
 
-def reader(process, out, queue, kill_event):
+def reader(process: Popen[bytes], out: int, queue: Queue[str], kill_event: Event) -> None:
     while True:
         try:
             # TODO: there are some issues with 1<<16 buffer size
