@@ -4,8 +4,8 @@
 #include <Common/setThreadName.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Disks/ObjectStorages/ObjectStorageIterator.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <IO/Archives/ArchiveUtils.h>
@@ -69,7 +69,6 @@ namespace Setting
     extern const SettingsBool use_iceberg_partition_pruning;
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
     extern const SettingsBool table_engine_read_through_distributed_cache;
-    extern const SettingsObjectStorageGranularityLevel cluster_table_function_split_granularity;
 }
 
 namespace ErrorCodes
@@ -211,15 +210,6 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 hive_columns,
                 configuration->getNamespace(),
                 local_context);
-        }
-        if (local_context->getSettingsRef()[Setting::cluster_table_function_split_granularity] == ObjectStorageGranularityLevel::BUCKET)
-        {
-            iter = std::make_shared<ObjectIteratorSplitByBuckets>(
-                std::move(iter),
-                configuration->format,
-                object_storage,
-                local_context
-            );
         }
         return iter;
     }

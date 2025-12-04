@@ -5,6 +5,7 @@
 #if USE_SSH && defined(OS_LINUX)
 
 #include <memory>
+#include <mutex>
 #include <base/types.h>
 
 struct ssh_session_struct;
@@ -51,6 +52,8 @@ public:
 
 private:
     SessionPtr session = nullptr;
+    bool disconnected = false;
+    std::mutex disconnect_mutex;
 };
 
 }

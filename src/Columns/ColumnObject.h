@@ -125,7 +125,7 @@ public:
     DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
 
     bool isDefaultAt(size_t n) const override;
-    StringRef getDataAt(size_t n) const override;
+    std::string_view getDataAt(size_t n) const override;
     void insertData(const char * pos, size_t length) override;
 
     void insert(const Field & x) override;
@@ -143,12 +143,10 @@ public:
 
     void popBack(size_t n) override;
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    void deserializeAndInsertFromArena(ReadBuffer & in) override;
-    void deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in) override;
+    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
     void skipSerializedInArena(ReadBuffer & in) const override;
-    std::optional<size_t> getSerializedValueSize(size_t) const override { return std::nullopt; }
+    std::optional<size_t> getSerializedValueSize(size_t, const IColumn::SerializationSettings *) const override { return std::nullopt; }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     WeakHash32 getWeakHash32() const override;
@@ -176,6 +174,7 @@ public:
     void reserve(size_t n) override;
     size_t capacity() const override;
     void prepareForSquashing(const std::vector<ColumnPtr> & source_columns, size_t factor) override;
+    void shrinkToFit() override;
     void ensureOwnership() override;
     size_t byteSize() const override;
     size_t byteSizeAt(size_t n) const override;
@@ -205,6 +204,7 @@ public:
     bool dynamicStructureEquals(const IColumn & rhs) const override;
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
+    void fixDynamicStructure() override;
 
     const PathToColumnMap & getTypedPaths() const { return typed_paths; }
     PathToColumnMap & getTypedPaths() { return typed_paths; }
@@ -278,12 +278,12 @@ public:
     static void deserializeValueFromSharedData(const ColumnString * shared_data_values, size_t n, IColumn & column);
 
     /// Paths in shared data are sorted in each row. Use this method to find the lower bound for specific path in the row.
-    static size_t findPathLowerBoundInSharedData(StringRef path, const ColumnString & shared_data_paths, size_t start, size_t end);
+    static size_t findPathLowerBoundInSharedData(std::string_view path, const ColumnString & shared_data_paths, size_t start, size_t end);
     /// Insert all the data from shared data with specified path to dynamic column.
-    static void fillPathColumnFromSharedData(IColumn & path_column, StringRef path, const ColumnPtr & shared_data_column, size_t start, size_t end);
+    static void fillPathColumnFromSharedData(IColumn & path_column, std::string_view path, const ColumnPtr & shared_data_column, size_t start, size_t end);
 
-    /// Validate that all dynamic paths have correct sizes.
-    void validateDynamicPathsSizes() const;
+    /// Validate that all dynamic paths have correct sizes and that shared data doesn't contain any dynamic paths.
+    void validateDynamicPathsAndSharedData(size_t shared_data_offset = 0) const;
 
     /// Class that allows to iterate over paths inside single row in ColumnObject in sorted order.
     class SortedPathsIterator
@@ -336,8 +336,8 @@ public:
 private:
 
     void insertFromSharedDataAndFillRemainingDynamicPaths(const ColumnObject & src_object_column, std::vector<std::string_view> && src_dynamic_paths_for_shared_data, size_t start, size_t length);
-    void serializePathAndValueIntoArena(Arena & arena, const char *& begin, StringRef path, StringRef value, StringRef & res) const;
-    void serializeDynamicPathsAndSharedDataIntoArena(size_t n, Arena & arena, const char *& begin, StringRef & res) const;
+    void serializePathAndValueIntoArena(Arena & arena, const char *& begin, std::string_view path, std::string_view value, std::string_view & res) const;
+    void serializeDynamicPathsAndSharedDataIntoArena(size_t n, Arena & arena, const char *& begin, std::string_view & res) const;
     void deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in);
 
     /// Map path -> column for paths with explicitly specified types.
