@@ -216,7 +216,9 @@ public:
         }
 
         const String attr_col_name = dictget_function_info.attr_col_name_node->getValue().safeGet<String>();
-        chassert(dict_structure.hasAttribute(attr_col_name) && "Attribute not found in dictionary structure of dictionary");
+
+        if (!dict_structure.hasAttribute(attr_col_name))
+            return;
 
         DataTypePtr dict_attr_col_type = dict_structure.getAttribute(attr_col_name).type;
 
