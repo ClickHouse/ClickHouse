@@ -15,6 +15,8 @@ struct Settings;
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
+class QueryPlan;
+
 struct QueryPlanOptimizationSettings
 {
     explicit QueryPlanOptimizationSettings(
@@ -118,6 +120,7 @@ struct QueryPlanOptimizationSettings
 
     /// If full text search using index in payload is enabled.
     bool direct_read_from_text_index;
+    bool allow_experimental_full_text_index;
 
     /// Setting needed for Sets (JOIN -> IN optimization)
 
@@ -148,9 +151,16 @@ struct QueryPlanOptimizationSettings
     /// It should be relativaly simple to fix, but I will do it later.
     size_t max_threads;
 
+    bool parallel_replicas_enabled;
+    size_t max_parallel_replicas;
+    size_t automatic_parallel_replicas_mode;
+    size_t automatic_parallel_replicas_min_bytes_per_replica;
+
     bool keep_logical_steps;
 
     bool is_explain;
+
+    std::function<std::unique_ptr<QueryPlan>()> query_plan_with_parallel_replicas_builder;
 };
 
 }

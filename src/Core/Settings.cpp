@@ -6736,6 +6736,15 @@ Replace external dictionary sources to Null on restore. Useful for testing purpo
     DECLARE_WITH_ALIAS(UInt64, allow_experimental_parallel_reading_from_replicas, 0, R"(
 Use up to `max_parallel_replicas` the number of replicas from each shard for SELECT query execution. Reading is parallelized and coordinated dynamically. 0 - disabled, 1 - enabled, silently disable them in case of failure, 2 - enabled, throw an exception in case of failure
 )", BETA, enable_parallel_replicas) \
+    DECLARE(UInt64, automatic_parallel_replicas_mode, 2, R"(
+🚨 HIGHLY EXPERIMENTAL 🚨 If you have accidentally enabled this feature, please open the windows and exit the building immediately.
+
+Enable automatic switching to execution with parallel replicas based on collected statistics.
+0 - disabled, 1 - enabled, 2 - only statistics collection is enabled (switching to execution with parallel replicas is disabled).
+)", 0) \
+    DECLARE(UInt64, automatic_parallel_replicas_min_bytes_per_replica, 0, R"(
+Threshold of bytes to read per replica to enable parallel replicas automatically (applies only when `automatic_parallel_replicas_mode`=1). 0 means no threshold.
+)", 0) \
     DECLARE(NonZeroUInt64, max_parallel_replicas, 1000, R"(
 The maximum number of replicas for each shard when executing a query.
 
@@ -6796,7 +6805,7 @@ When used in conjunction with [parallel_replicas_custom_key_range_lower](#parall
 
 Note: This setting will not cause any additional data to be filtered during query processing, rather it changes the points at which the range filter breaks up the range `[0, INT_MAX]` for parallel processing
 )", BETA) \
-    DECLARE(String, cluster_for_parallel_replicas, "", R"(
+    DECLARE(String, cluster_for_parallel_replicas, "parallel_replicas", R"(
 Cluster for a shard in which current server is located
 )", BETA) \
     DECLARE(Bool, parallel_replicas_allow_in_with_subquery, true, R"(

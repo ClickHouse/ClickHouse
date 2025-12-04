@@ -1,14 +1,17 @@
-#include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <IO/Operators.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <Storages/MergeTree/MergeTreeReaderIndex.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Storages/MergeTree/MergeTreeReaderIndex.h>
 #include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
+#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
-#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Common/Exception.h>
-#include <IO/Operators.h>
+
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 namespace DB
 {
@@ -69,13 +72,15 @@ MergeTreeReadTask::MergeTreeReadTask(
     MarkRanges mark_ranges_,
     std::vector<MarkRanges> patches_mark_ranges_,
     const BlockSizeParams & block_size_params_,
-    MergeTreeBlockSizePredictorPtr size_predictor_)
+    MergeTreeBlockSizePredictorPtr size_predictor_,
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
     : info(std::move(info_))
     , readers(std::move(readers_))
     , mark_ranges(std::move(mark_ranges_))
     , patches_mark_ranges(std::move(patches_mark_ranges_))
     , block_size_params(block_size_params_)
     , size_predictor(std::move(size_predictor_))
+    , updater(std::move(updater_))
 {
 }
 
@@ -382,6 +387,9 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
         }
         block = sample_block.cloneWithColumns(read_result.columns);
     }
+
+    if (updater)
+        updater->recordInputColumns(block.getColumnsWithTypeAndName(), info->data_part->getColumnSizes(), num_read_bytes);
 
     BlockAndProgress res = {
         .block = std::move(block),
