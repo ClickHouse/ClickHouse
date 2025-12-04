@@ -1023,6 +1023,16 @@ def test_failed_startup(started_cluster):
     node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_startup")
 
     zk = started_cluster.get_kazoo_client("zoo1")
+
+    # Wait for table shutdown to be callled.
+    for i in range(5):
+        try:
+            zk.get(f"{keeper_path}")
+            time.sleep(1)
+            continue
+        except NoNodeError:
+            pass
+        break
     try:
         zk.get(f"{keeper_path}")
         assert False
