@@ -444,6 +444,8 @@ bool optimizePrewhereDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nod
 void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & nodes)
 {
     bool optimized = optimizePrewhereDirectReadFromTextIndex(stack, nodes);
+    /// Currently direct read optimization can be applied only once.
+    /// Do not optimize WHERE clause if PREWHERE was already optimized.
     if (!optimized)
         optimizeWhereDirectReadFromTextIndex(stack, nodes);
 }
