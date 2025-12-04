@@ -43,8 +43,14 @@ set(GOOGLE_CLOUD_CPP_ENABLE_GRPC ON)
 set(PROJECT_VERSION "1")
 set(PROJECT_VERSION_MAJOR "1")
 set(PROTO_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src")
-set(Protobuf_PROTOC_EXECUTABLE $<TARGET_FILE:protoc>)
-set(GOOGLE_CLOUD_CPP_GRPC_PLUGIN_EXECUTABLE $<TARGET_FILE:grpc_cpp_plugin>)
+
+if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
+    set(Protobuf_PROTOC_EXECUTABLE "${PROJECT_BINARY_DIR}/native/contrib/google-protobuf-cmake/protoc")
+    set(GOOGLE_CLOUD_CPP_GRPC_PLUGIN_EXECUTABLE "${PROJECT_BINARY_DIR}/native/contrib/grpc-cmake/grpc_cpp_plugin")
+else ()
+    set(Protobuf_PROTOC_EXECUTABLE $<TARGET_FILE:protoc>)
+    set(GOOGLE_CLOUD_CPP_GRPC_PLUGIN_EXECUTABLE $<TARGET_FILE:grpc_cpp_plugin>)
+endif()
 
 include(GoogleApis)
 

@@ -112,12 +112,18 @@ public:
 
     void insertDefault() override { tuple->insertDefault(); }
     void popBack(size_t n) override { tuple->popBack(n); }
-    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
+    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override
     {
-        return tuple->serializeValueIntoArena(n, arena, begin);
+        return tuple->serializeValueIntoArena(n, arena, begin, settings);
     }
-    char * serializeValueIntoMemory(size_t n, char * memory) const override { return tuple->serializeValueIntoMemory(n, memory); }
-    void deserializeAndInsertFromArena(ReadBuffer & in) override { tuple->deserializeAndInsertFromArena(in); }
+    char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override
+    {
+        return tuple->serializeValueIntoMemory(n, memory, settings);
+    }
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override
+    {
+        tuple->deserializeAndInsertFromArena(in, settings);
+    }
     void skipSerializedInArena(ReadBuffer & in) const override { tuple->skipSerializedInArena(in); }
     void updateHashWithValue(size_t n, SipHash & hash) const override { tuple->updateHashWithValue(n, hash); }
     void updateHashFast(SipHash & hash) const override { tuple->updateHashFast(hash); }
