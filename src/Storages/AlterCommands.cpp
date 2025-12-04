@@ -550,47 +550,11 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             metadata.columns.add(column, after_column, first);
         }
 
-        /// Try to add "implicit" minmax index for new column
-        if (metadata.settings_changes
-            && ((isNumber(column.type) && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_numeric_columns"))
-                || (isString(column.type) && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_string_columns"))))
-        {
-            bool minmax_index_exists = false;
-            for (const auto & index: metadata.secondary_indices)
-            {
-                if (index.column_names.front() == column.name && index.type == "minmax")
-                {
-                    minmax_index_exists = true;
-                    break;
-                }
-            }
-
-            if (!minmax_index_exists)
-            {
-                auto new_index = createImplicitMinMaxIndexDescription(column.name, metadata.columns, context);
-                metadata.secondary_indices.push_back(new_index);
-            }
-        }
+        metadata.addImplicitIndicesForColumn(column, context);
     }
     else if (type == DROP_COLUMN)
     {
-        const auto * column = metadata.columns.tryGet(column_name);
-        if (column && metadata.settings_changes
-            && ((isNumber(column->type) && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_numeric_columns"))
-                || (isString(column->type) && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_string_columns"))))
-        {
-            for (auto index_it = metadata.secondary_indices.begin();
-                     index_it != metadata.secondary_indices.end();)
-            {
-                if (index_it->name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name)
-                {
-                    index_it = metadata.secondary_indices.erase(index_it);
-                    break;
-                }
-                else
-                    ++index_it;
-            }
-        }
+        metadata.dropImplicitIndicesForColumn(column_name);
 
         /// Otherwise just clear data on disk
         if (!clear && !partition)
@@ -640,7 +604,12 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                     column.ttl = ttl;
 
                 if (data_type)
+                {
                     column.type = data_type;
+                    /// The type changed, so assume that implicit indices may change too
+                    metadata.dropImplicitIndicesForColumn(column_name);
+                    metadata.addImplicitIndicesForColumn(column, context);
+                }
 
                 if (!settings_changes.empty())
                 {
@@ -723,9 +692,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         }
 
         if (index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX)
-            && metadata.settings_changes
-            && (metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_numeric_columns")
-                || metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_string_columns")))
+            && (metadata.add_minmax_index_for_numeric_columns || metadata.add_minmax_index_for_string_columns))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot add index {} because it uses a reserved index name", index_name);
         }
@@ -757,7 +724,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             ++insert_it;
         }
 
-        metadata.secondary_indices.emplace(insert_it, IndexDescription::getIndexFromAST(index_decl, metadata.columns, context));
+        metadata.secondary_indices.emplace(insert_it, IndexDescription::getIndexFromAST(index_decl, metadata.columns, /* is_implicitly_created */ false, context));
     }
     else if (type == DROP_INDEX)
     {
@@ -998,17 +965,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
         for (auto & index : metadata.secondary_indices)
         {
-            if (index.name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name
-                && metadata.settings_changes
-                && (metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_numeric_columns")
-                    ||  metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_string_columns")))
-            {
+            if (index.isImplicitlyCreated() && index.column_names.front() == column_name)
                 index.definition_ast = createImplicitMinMaxIndexAST(rename_to);
-            }
             else
-            {
                 rename_visitor.visit(index.definition_ast);
-            }
         }
     }
     else if (type == MODIFY_SQL_SECURITY)
@@ -1319,7 +1279,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     {
         try
         {
-            index = IndexDescription::getIndexFromAST(index.definition_ast, metadata_copy.columns, context);
+            index = IndexDescription::getIndexFromAST(index.definition_ast, metadata_copy.columns, index.isImplicitlyCreated(), context);
         }
         catch (Exception & exception)
         {
@@ -1696,6 +1656,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             {
                 if (from_nested_table_name != to_nested_table_name)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column from one nested name to another");
+                all_columns.rename(command.column_name, command.rename_to);
             }
             else if (!from_nested && !to_nested)
             {

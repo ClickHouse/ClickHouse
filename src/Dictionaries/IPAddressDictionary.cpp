@@ -267,12 +267,15 @@ ColumnPtr IPAddressDictionary::getColumn(
                 getItemsShortCircuitImpl<ValueType>(
                     attribute, key_columns, [&](const size_t, const Array & value) { out->insert(value); }, default_mask);
             }
-            else if constexpr (std::is_same_v<ValueType, StringRef>)
+            else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
                 auto * out = column.get();
 
                 getItemsShortCircuitImpl<ValueType>(
-                    attribute, key_columns, [&](const size_t, StringRef value) { out->insertData(value.data, value.size); }, default_mask);
+                    attribute,
+                    key_columns,
+                    [&](const size_t, std::string_view value) { out->insertData(value.data(), value.size()); },
+                    default_mask);
             }
             else
             {
@@ -299,14 +302,14 @@ ColumnPtr IPAddressDictionary::getColumn(
                     [&](const size_t, const Array & value) { out->insert(value); },
                     default_value_extractor);
             }
-            else if constexpr (std::is_same_v<ValueType, StringRef>)
+            else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
                 auto * out = column.get();
 
                 getItemsImpl<ValueType>(
                     attribute,
                     key_columns,
-                    [&](const size_t, StringRef value) { out->insertData(value.data, value.size); },
+                    [&](const size_t, std::string_view value) { out->insertData(value.data(), value.size()); },
                     default_value_extractor);
             }
             else
@@ -348,7 +351,7 @@ ColumnUInt8::Ptr IPAddressDictionary::hasKeys(const Columns & key_columns, const
         uint8_t addrv6_buf[IPV6_BINARY_LENGTH];
         for (const auto i : collections::range(0, rows))
         {
-            auto addrv4 = *reinterpret_cast<const UInt32 *>(first_column->getDataAt(i).data);
+            auto addrv4 = *reinterpret_cast<const UInt32 *>(first_column->getDataAt(i).data());
             auto found = tryLookupIPv4(addrv4, addrv6_buf);
             out[i] = (found != ipNotFound());
             keys_found += out[i];
@@ -359,9 +362,9 @@ ColumnUInt8::Ptr IPAddressDictionary::hasKeys(const Columns & key_columns, const
         for (const auto i : collections::range(0, rows))
         {
             auto addr = first_column->getDataAt(i);
-            if (addr.size != IPV6_BINARY_LENGTH)
+            if (addr.size() != IPV6_BINARY_LENGTH)
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected key FixedString(16)");
-            auto found = tryLookupIPv6(reinterpret_cast<const uint8_t *>(addr.data));
+            auto found = tryLookupIPv6(reinterpret_cast<const uint8_t *>(addr.data()));
             out[i] = (found != ipNotFound());
             keys_found += out[i];
         }
@@ -439,7 +442,7 @@ void IPAddressDictionary::loadData()
                         setAttributeValue(attribute, attribute_column[row]);
                     }
 
-                    const auto [addr, prefix] = parseIPFromString(key_column_ptr->getDataAt(row).toView());
+                    const auto [addr, prefix] = parseIPFromString(key_column_ptr->getDataAt(row));
                     has_ipv6 = has_ipv6 || (addr.family() == Poco::Net::IPAddress::IPv6);
 
                     size_t row_number = ip_records.size();
@@ -590,7 +593,7 @@ void IPAddressDictionary::addAttributeSize(const Attribute & attribute)
 template <>
 void IPAddressDictionary::addAttributeSize<String>(const Attribute & attribute)
 {
-    addAttributeSize<StringRef>(attribute);
+    addAttributeSize<std::string_view>(attribute);
     bytes_allocated += sizeof(Arena) + attribute.string_arena->allocatedBytes();
 }
 
@@ -634,7 +637,7 @@ template <>
 void IPAddressDictionary::createAttributeImpl<String>(Attribute & attribute, const Field & null_value)
 {
     attribute.null_values = null_value.isNull() ? String() : null_value.safeGet<String>();
-    attribute.maps.emplace<ContainerType<StringRef>>();
+    attribute.maps.emplace<ContainerType<std::string_view>>();
     attribute.string_arena = std::make_unique<Arena>();
 }
 
@@ -727,7 +730,7 @@ void IPAddressDictionary::getItemsByTwoKeyColumnsImpl(
         auto addr = key_ip_column_ptr->getDataAt(i);
         UInt8 mask = key_mask_column.getElement(i);
 
-        IPv6Subnet target{reinterpret_cast<const uint8_t *>(addr.data), mask};
+        IPv6Subnet target{reinterpret_cast<const uint8_t *>(addr.data()), mask};
 
         auto range = collections::range(0, row_idx.size());
         auto found_it = std::lower_bound(range.begin(), range.end(), target, comp_v6);
@@ -815,7 +818,7 @@ size_t IPAddressDictionary::getItemsByTwoKeyColumnsShortCircuitImpl(
         auto addr = key_ip_column_ptr->getDataAt(i);
         UInt8 mask = key_mask_column.getElement(i);
 
-        IPv6Subnet target{reinterpret_cast<const uint8_t *>(addr.data), mask};
+        IPv6Subnet target{reinterpret_cast<const uint8_t *>(addr.data()), mask};
 
         auto range = collections::range(0, row_idx.size());
         auto found_it = std::lower_bound(range.begin(), range.end(), target, comp_v6);
@@ -867,7 +870,7 @@ void IPAddressDictionary::getItemsImpl(
         for (const auto i : collections::range(0, rows))
         {
             // addrv4 has native endianness
-            auto addrv4 = *reinterpret_cast<const UInt32 *>(first_column->getDataAt(i).data);
+            auto addrv4 = *reinterpret_cast<const UInt32 *>(first_column->getDataAt(i).data());
             auto found = tryLookupIPv4(addrv4, addrv6_buf);
             if (found != ipNotFound())
             {
@@ -883,9 +886,9 @@ void IPAddressDictionary::getItemsImpl(
         for (const auto i : collections::range(0, rows))
         {
             auto addr = first_column->getDataAt(i);
-            if (addr.size != IPV6_BINARY_LENGTH)
+            if (addr.size() != IPV6_BINARY_LENGTH)
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected key to be FixedString(16)");
-            auto found = tryLookupIPv6(reinterpret_cast<const uint8_t *>(addr.data));
+            auto found = tryLookupIPv6(reinterpret_cast<const uint8_t *>(addr.data()));
             if (found != ipNotFound())
             {
                 set_value(i, vec[*found]);
@@ -930,7 +933,7 @@ void IPAddressDictionary::getItemsShortCircuitImpl(
         for (const auto i : collections::range(0, rows))
         {
             // addrv4 has native endianness
-            auto addrv4 = *reinterpret_cast<const UInt32 *>(first_column->getDataAt(i).data);
+            auto addrv4 = *reinterpret_cast<const UInt32 *>(first_column->getDataAt(i).data());
             auto found = tryLookupIPv4(addrv4, addrv6_buf);
             if (found != ipNotFound())
             {
@@ -950,9 +953,9 @@ void IPAddressDictionary::getItemsShortCircuitImpl(
         for (const auto i : collections::range(0, rows))
         {
             auto addr = first_column->getDataAt(i);
-            if (addr.size != IPV6_BINARY_LENGTH)
+            if (addr.size() != IPV6_BINARY_LENGTH)
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected key to be FixedString(16)");
-            auto found = tryLookupIPv6(reinterpret_cast<const uint8_t *>(addr.data));
+            auto found = tryLookupIPv6(reinterpret_cast<const uint8_t *>(addr.data()));
             if (found != ipNotFound())
             {
                 set_value(i, vec[*found]);
@@ -991,7 +994,7 @@ void IPAddressDictionary::setAttributeValue(Attribute & attribute, const Field &
         {
             const auto & string = value.safeGet<String>();
             const auto * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
-            setAttributeValueImpl<StringRef>(attribute, StringRef{string_in_arena, string.size()});
+            setAttributeValueImpl<std::string_view>(attribute, std::string_view{string_in_arena, string.size()});
         }
         else
         {
@@ -1057,7 +1060,8 @@ static auto keyViewGetter()
             if constexpr (IsIPv4)
                 str_len = formatIPWithPrefix(reinterpret_cast<const unsigned char *>(&key_ip_column.getElement(row)), mask, true, buffer);
             else
-                str_len = formatIPWithPrefix(reinterpret_cast<const unsigned char *>(key_ip_column.getDataAt(row).data), mask, false, buffer);
+                str_len
+                    = formatIPWithPrefix(reinterpret_cast<const unsigned char *>(key_ip_column.getDataAt(row).data()), mask, false, buffer);
             column->insertData(buffer, str_len);
         }
         return ColumnsWithTypeAndName{

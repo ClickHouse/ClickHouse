@@ -129,7 +129,7 @@ public:
             root_offsets_data.resize(input_rows_count);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                std::string_view current_row = column_haystack->getDataAt(i).toView();
+                std::string_view current_row = column_haystack->getDataAt(i);
 
                 // Extract all non-intersecting matches from haystack except group #0.
                 const auto * pos = current_row.data();
@@ -176,8 +176,8 @@ public:
                 const auto & current_row = column_haystack->getDataAt(i);
 
                 // Extract all non-intersecting matches from haystack except group #0.
-                const auto * pos = current_row.data;
-                const auto * end = pos + current_row.size;
+                const auto * pos = current_row.data();
+                const auto * end = pos + current_row.size();
                 while (pos < end
                     && regexp->Match({pos, static_cast<size_t>(end - pos)},
                         0, end - pos, RE2::UNANCHORED, matched_groups.data(),

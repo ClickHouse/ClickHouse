@@ -379,15 +379,27 @@ static std::pair<QueryPipelineBuilder, ParallelReplicasReadingCoordinatorPtr> ge
 
 QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline)
 {
-    const Settings & settings = getContext()->getSettingsRef();
+    auto context = getContext();
+
+    // disable parallel replicas for inserts if enabled
+    // the insert can trigger update for dependent materialized views
+    // using parallel replicas in this context is unnecessary
+    if (context->canUseParallelReplicasOnInitiator())
+    {
+        auto mutable_context = Context::createCopy(context);
+        mutable_context->setSetting("enable_parallel_replicas", Field{0});
+        context = mutable_context;
+    }
+
+    const Settings & settings = context->getSettingsRef();
 
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
-    auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, getContext(), no_destination, allow_materialized);
+    auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized);
 
     pipeline.dropTotalsAndExtremes();
 
     /// Allow to insert Nullable into non-Nullable columns, NULL values will be added as defaults values.
-    if (getContext()->getSettingsRef()[Setting::insert_null_as_default])
+    if (context->getSettingsRef()[Setting::insert_null_as_default])
     {
         const auto & input_columns = pipeline.getHeader().getColumnsWithTypeAndName();
         const auto & query_columns = query_sample_block.getColumnsWithTypeAndName();
@@ -416,7 +428,6 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
         }
     }
 
-    auto context = getContext();
     auto actions_dag = ActionsDAG::makeConvertingActions(
             pipeline.getHeader().getColumnsWithTypeAndName(),
             query_sample_block.getColumnsWithTypeAndName(),
@@ -674,10 +685,22 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
 
 QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query, StoragePtr table)
 {
-    const Settings & settings = getContext()->getSettingsRef();
+    auto context = getContext();
 
+    // disable parallel replicas for inserts if enabled
+    // the insert can trigger update for dependent materialized views
+    // using parallel replicas in this context is unnecessary
+    if (context->canUseParallelReplicasOnInitiator())
+    {
+        auto mutable_context = Context::createCopy(context);
+        mutable_context->setSetting("enable_parallel_replicas", Field{0});
+        context = mutable_context;
+    }
+
+    const Settings & settings = context->getSettingsRef();
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
-    auto query_sample_block = std::make_shared<const Block>(getSampleBlock(query, table, metadata_snapshot, getContext(), no_destination, allow_materialized));
+    auto query_sample_block
+        = std::make_shared<const Block>(getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized));
 
     // when insert is initiated from FileLog or similar storages
     // they are allowed to expose its virtuals columns to the dependent views
@@ -688,7 +711,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         async_insert,
         /*skip_destination_table*/ no_destination,
         /*max_insert_threads*/ 1,
-        getContext());
+        context);
 
     auto chains = insert_dependencies->createChainWithDependenciesForAllStreams();
     chassert(chains.size() == 1);
@@ -703,7 +726,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
     chain.addSource(std::make_shared<DeduplicationToken::AddTokenInfoTransform>(chain.getInputSharedHeader()));
 
-    if (shouldAddSquashingForStorage(table, getContext()) && !no_squash && !async_insert)
+    if (shouldAddSquashingForStorage(table, context) && !no_squash && !async_insert)
     {
         bool table_prefers_large_blocks = table->prefersLargeBlocks();
 
@@ -717,10 +740,9 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         chain.addSource(std::move(planing));
     }
 
-    auto context_ptr = getContext();
-    auto counting = std::make_shared<CountingTransform>(chain.getInputSharedHeader(), context_ptr->getQuota());
-    counting->setProcessListElement(context_ptr->getProcessListElement());
-    counting->setProgressCallback(context_ptr->getProgressCallback());
+    auto counting = std::make_shared<CountingTransform>(chain.getInputSharedHeader(), context->getQuota());
+    counting->setProcessListElement(context->getProcessListElement());
+    counting->setProgressCallback(context->getProgressCallback());
     chain.addSource(std::move(counting));
 
     QueryPipeline pipeline = QueryPipeline(std::move(chain));
@@ -730,12 +752,12 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
     if (query.hasInlinedData() && !async_insert)
     {
-        auto format = getInputFormatFromASTInsertQuery(query_ptr, true, *query_sample_block, getContext(), nullptr);
+        auto format = getInputFormatFromASTInsertQuery(query_ptr, true, *query_sample_block, context, nullptr);
 
         if (settings[Setting::enable_parsing_to_custom_serialization])
             format->setSerializationHints(table->getSerializationHints());
 
-        auto pipe = getSourceFromInputFormat(query_ptr, std::move(format), getContext(), nullptr);
+        auto pipe = getSourceFromInputFormat(query_ptr, std::move(format), context, nullptr);
         pipeline.complete(std::move(pipe));
     }
 
