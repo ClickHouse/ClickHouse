@@ -150,7 +150,13 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
     print_keyword("SYSTEM") << " ";
     print_keyword(typeToString(type));
-    if (!cluster.empty())
+
+    std::unordered_set<Type> queries_with_on_cluster_at_end = {
+        Type::DROP_FILESYSTEM_CACHE,
+        Type::SYNC_FILESYSTEM_CACHE,
+    };
+
+    if (!queries_with_on_cluster_at_end.contains(type) && !cluster.empty())
         formatOnCluster(ostr, settings);
 
     switch (type)
@@ -489,6 +495,9 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::END:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown SYSTEM command");
     }
+
+    if (queries_with_on_cluster_at_end.contains(type) && !cluster.empty())
+        formatOnCluster(ostr, settings);
 }
 
 
