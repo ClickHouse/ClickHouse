@@ -2813,7 +2813,7 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
         if (original_defined_columns.size() != actual_names_and_types.size())
             throw_schema_mismatch();
 
-        for (auto [defined_column, actual_column] : llvm::zip(original_defined_columns.getAll(), actual_names_and_types))
+        for (const auto [defined_column, actual_column] : std::views::zip(original_defined_columns.getAll(), actual_names_and_types))
         {
             if (defined_column.name != actual_column.name || defined_column.type->getName() != actual_column.type->getName())
                 throw_schema_mismatch();
