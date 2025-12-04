@@ -80,7 +80,9 @@ FROM file(
     '03743_buffers_numbers.buffers',
     'Buffers',
     'id UInt64, k UInt8'
-) LIMIT -5;
+)
+ORDER BY id
+LIMIT -5;
 
 SELECT 'Complex types';
 SELECT
