@@ -32,7 +32,7 @@ class LDAPAccessStorage : public IAccessStorage
 public:
     static constexpr char STORAGE_TYPE[] = "ldap";
 
-    explicit LDAPAccessStorage(const String & storage_name_, AccessControl & access_control_, const Poco::Util::AbstractConfiguration & config, const String & prefix);
+    explicit LDAPAccessStorage(const String & storage_name_, AccessControl & access_control_, const Poco::Util::AbstractConfiguration & config, const String & prefix, UInt64 access_entities_num_limit_);
     ~LDAPAccessStorage() override = default;
 
     String getLDAPServerName() const;
