@@ -64,6 +64,7 @@ def started_cluster():
             user_configs=[
                 "configs/users.xml",
                 "configs/enable_keeper_fault_injection.xml",
+                "configs/keeper_retries.xml",
             ],
             with_minio=True,
             with_azurite=True,
@@ -80,6 +81,7 @@ def started_cluster():
             user_configs=[
                 "configs/users.xml",
                 "configs/enable_keeper_fault_injection.xml",
+                "configs/keeper_retries.xml",
             ],
             with_minio=True,
             with_zookeeper=True,
