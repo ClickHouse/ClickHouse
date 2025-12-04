@@ -2420,7 +2420,6 @@ template <typename FromType, typename ToType, typename Transform, bool is_extend
 struct Transformer
 {
     template <typename FromTypeVector, typename ToTypeVector>
-    // __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2,avx512bf16")))
     static void vector(const FromTypeVector & vec_from, ToTypeVector & vec_to, const DateLUTImpl & time_zone, const Transform & transform,
         [[maybe_unused]] ColumnUInt8::Container * vec_null_map_to, size_t input_rows_count)
     {
