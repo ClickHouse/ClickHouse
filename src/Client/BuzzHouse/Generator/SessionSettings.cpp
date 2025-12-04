@@ -1375,8 +1375,8 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              "max_rows_to_read",
              "max_rows_to_read_leaf",
              "max_rows_to_sort"});
-        max_columns_values.insert(
-            max_columns_values.end(), {"max_columns_to_read", "max_temporary_columns", "max_temporary_non_const_columns"});
+        /*max_columns_values.insert( too many errors on queries
+            max_columns_values.end(), {"max_columns_to_read", "max_temporary_columns", "max_temporary_non_const_columns"});*/
     }
 
     /// When measuring performance use bigger block sizes

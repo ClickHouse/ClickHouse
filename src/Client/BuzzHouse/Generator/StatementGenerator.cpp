@@ -4513,7 +4513,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
                               && (collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
                                   || collectionCount<SQLDictionary>(attached_dictionaries) > 3
                                   || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3 || functions.size() > 3));
-    const uint32_t insert = 220 * static_cast<uint32_t>(has_tables);
+    const uint32_t insert = 60 * static_cast<uint32_t>(has_tables);
     const uint32_t light_delete = 6 * static_cast<uint32_t>(has_mergeable_mt);
     const uint32_t truncate = 2 * static_cast<uint32_t>(has_databases || has_tables);
     const uint32_t optimize_table = 2 * static_cast<uint32_t>(has_tables);
@@ -4544,7 +4544,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
         * static_cast<uint32_t>(!in_parallel
                                 && (collectionHas<SQLTable>(exchange_table_lambda) || has_views || has_dictionaries || has_databases));
     const uint32_t light_update = 6 * static_cast<uint32_t>(has_mergeable_mt);
-    const uint32_t select_query = 1800 * static_cast<uint32_t>(!in_parallel);
+    const uint32_t select_query = 1000 * static_cast<uint32_t>(!in_parallel);
     const uint32_t kill = 2;
     const uint32_t show_stmt = 1;
     const uint32_t prob_space = create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table
