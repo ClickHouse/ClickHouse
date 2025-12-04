@@ -48,7 +48,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int FILE_DOESNT_EXIST;
-extern const int LOGICAL_ERROR;
 extern const int CANNOT_PARSE_NUMBER;
 }
 
@@ -92,25 +91,19 @@ PaimonSnapshot::PaimonSnapshot(const Poco::JSON::Object::Ptr & json_object)
     }
 }
 
-PaimonTableClient::PaimonTableClient(
-    ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, const DB::ContextPtr & context_)
+PaimonTableClient::PaimonTableClient(ObjectStoragePtr object_storage_, const String & table_location_, const DB::ContextPtr & context_)
     : WithContext(context_)
     , object_storage(object_storage_)
-    , configuration(configuration_)
-    , table_location(configuration.lock()->getPathForRead().path)
+    , table_location(table_location_)
     , log(getLogger("PaimonTableClient"))
 {}
 
 std::pair<Int32, String> PaimonTableClient::getLastestTableSchemaInfo()
 {
-    auto configuration_ptr = configuration.lock();
-    if (configuration_ptr == nullptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired.");
-
     /// list all schema files
     const auto schema_files = listFiles(
         *object_storage,
-        *configuration_ptr,
+        table_location,
         PAIMON_SCHEMA_DIR,
         [](const RelativePathWithMetadata & path_with_metadata)
         {
@@ -162,9 +155,6 @@ Poco::JSON::Object::Ptr PaimonTableClient::getTableSchemaJSON(const std::pair<In
 
 std::pair<Int64, String> PaimonTableClient::getLastestTableSnapshotInfo()
 {
-    auto configuration_ptr = configuration.lock();
-    if (configuration_ptr == nullptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired.");
     /// read latest hint
     Int64 snapshot_version;
     RelativePathWithMetadata relative_path_with_metadata(
@@ -191,7 +181,7 @@ std::pair<Int64, String> PaimonTableClient::getLastestTableSnapshotInfo()
     {
         auto snapshot_files = listFiles(
             *object_storage,
-            *configuration_ptr,
+            table_location,
             PAIMON_SNAPSHOT_DIR,
             [](const RelativePathWithMetadata & path_with_metadata)
             {

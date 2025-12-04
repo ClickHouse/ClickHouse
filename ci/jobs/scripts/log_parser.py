@@ -6,6 +6,7 @@ from ci.praktika.utils import Shell
 
 
 class FuzzerLogParser:
+    UNKNOWN_ERROR = "Unknown error"
     MAX_INLINE_REPRODUCE_COMMANDS = 20
     SQL_COMMANDS = [
         "SELECT",
@@ -105,7 +106,7 @@ class FuzzerLogParser:
                 break
 
         if not error_output:
-            return "Unknown error", "Lost connection to server. See the logs.\n"
+            return self.UNKNOWN_ERROR, "Lost connection to server. See the logs.\n"
 
         error_lines = error_output.splitlines()
         # keep all lines before next log line

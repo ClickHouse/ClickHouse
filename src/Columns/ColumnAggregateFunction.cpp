@@ -600,7 +600,8 @@ void ColumnAggregateFunction::insertDefault()
     pushBackAndCreateState(data, arena, func.get());
 }
 
-std::string_view ColumnAggregateFunction::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin) const
+std::string_view ColumnAggregateFunction::serializeValueIntoArena(
+    size_t n, Arena & arena, const char *& begin, const IColumn::SerializationSettings *) const
 {
     WriteBufferFromArena out(arena, begin);
     func->serialize(data[n], out, version);
@@ -608,7 +609,7 @@ std::string_view ColumnAggregateFunction::serializeValueIntoArena(size_t n, Aren
     return out.complete();
 }
 
-void ColumnAggregateFunction::deserializeAndInsertFromArena(ReadBuffer & in)
+void ColumnAggregateFunction::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings *)
 {
     ensureOwnership();
 
