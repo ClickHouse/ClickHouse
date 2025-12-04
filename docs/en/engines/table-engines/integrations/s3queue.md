@@ -360,7 +360,7 @@ The setting `(s3queue_)buckets` is available starting with version `24.6`.
 
 ## SELECT from S3Queue table engine
 
-It is forbidden to perform SELECT queries from S3Queue. This is a common approach for all widespread queues: you read from a queue just once, and when you read the data from the queue, the data is removed from it. So SELECT is forbidden in order not to lose the data in a queue.
+SELECT queries are forbidden by default on S3Queue tables. This follows the common queue pattern where data is read once and then removed from the queue. SELECT is forbidden to prevent accidental data loss.
 However, sometimes it might be useful. To do this, you need to set the setting `stream_like_engine_allow_direct_select` to `True`.
 Also, S3Queue engine has a special setting for SELECT queries: `commit_on_select` set to `False` or `True` if you want to preserve the read data in the queue or you want to remove it after reading.
 
