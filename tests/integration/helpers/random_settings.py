@@ -1,5 +1,5 @@
 import random
-from typing import Iterator
+from collections.abc import Iterator
 
 
 def randomize_settings() -> Iterator[tuple[str, int | str]]:
@@ -12,7 +12,7 @@ def randomize_settings() -> Iterator[tuple[str, int | str]]:
 
 def write_random_settings_config(destination: str) -> None:
     with open(destination, "w") as f:
-        f.write(
+        _ = f.write(
             """
 <clickhouse>
     <profiles>
@@ -22,7 +22,7 @@ def write_random_settings_config(destination: str) -> None:
         for setting, value in randomize_settings():
             f.write(f"<{setting}>{value}</{setting}>\n")
 
-        f.write(
+        _ = f.write(
             """
         </default>
     </profiles>

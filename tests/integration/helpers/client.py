@@ -35,8 +35,10 @@ class Client:
 
         self.command += ["--host", self.host, "--port", str(self.port), "--stacktrace"]
 
+    @staticmethod
     def stacktraces_on_timeout_decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-        def wrap(self: Any, *args: Any, **kwargs: Any) -> Any:
+        # pyright: ignore[reportAny, reportExplicitAny]
+        def wrap(self: "Client", *args: Any, **kwargs: Any) -> Any:
             try:
                 return func(self, *args, **kwargs)
             except sp.TimeoutExpired:

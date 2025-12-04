@@ -62,7 +62,6 @@ from .config_cluster import *
 from .kazoo_client import KazooClientWithImplicitRetries
 from .random_settings import write_random_settings_config
 from .retry_decorator import retry
-from .test_tools import assert_eq_with_retry, exec_query_with_retry
 
 HELPERS_DIR = p.dirname(__file__)
 CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
@@ -217,6 +216,8 @@ class PortPoolManager:
 
     @classmethod
     def get_port(cls) -> int:
+        assert FileLock is not None, "FileLock is not available"
+        assert Timeout is not None, "Timeout is not available"
         lock = FileLock(str(cls.LOCK_FILE))
 
         try:
@@ -416,6 +417,7 @@ def rabbitmq_debuginfo(rabbitmq_id: str, cookie: str) -> None:
 
 
 async def check_nats_is_available(cluster: Any) -> bool:
+    assert nats is not None, "nats module is not available"
     nc = await nats_connect_ssl(cluster, max_reconnect_attempts=1)
     available = nc.is_connected
     await nc.close()
@@ -423,6 +425,8 @@ async def check_nats_is_available(cluster: Any) -> bool:
 
 
 async def nats_connect_ssl(cluster: Any, **connect_options: Any) -> Any:
+    assert ssl is not None, "ssl module is not available"
+    assert nats is not None, "nats module is not available"
     ssl_ctx = cluster.nats_ssl_context
     if not ssl_ctx:
         ssl_ctx = ssl.create_default_context()
@@ -470,7 +474,9 @@ def find_binary(name: str) -> str:
 
     if is_executable(name):
         return name
-    paths = os.environ.get("PATH").split(":")
+    path_env = os.environ.get("PATH")
+    assert path_env is not None, "PATH environment variable is not set"
+    paths: list[str] = path_env.split(":")
     for path in paths:
         bin_path = os.path.join(path, name)
         if is_executable(bin_path):
@@ -593,7 +599,7 @@ class ClickHouseCluster:
         )
         self.docker_api_version = os.environ.get("DOCKER_API_VERSION")
 
-        self.docker_logs_proc = None  # type: Optional[subprocess.Popen]
+        self.docker_logs_proc: subprocess.Popen[bytes] | None = None
 
         self.base_cmd = ["docker", "compose"]
         if custom_dockerd_host:
@@ -1119,7 +1125,7 @@ class ClickHouseCluster:
             pass
 
     def get_docker_handle(self, docker_id: str) -> Container:
-        exception = None
+        exception: Exception | None = None
         for i in range(20):
             try:
                 return self.docker_client.containers.get(docker_id)
@@ -1127,6 +1133,7 @@ class ClickHouseCluster:
                 logging.debug(f"Got exception getting docker handle {ex}")
                 time.sleep(0.5)
                 exception = ex
+        assert exception is not None, "Failed to get docker handle after 20 attempts"
         raise exception
 
     def get_client_cmd(self) -> str:
@@ -1166,7 +1173,7 @@ class ClickHouseCluster:
 
     def setup_zookeeper_secure_cmd(
         self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str
-    ) -> None:
+    ) -> list[str]:
         logging.debug("Setup ZooKeeper Secure")
         zookeeper_docker_compose_path = p.join(
             docker_compose_yml_dir, "docker_compose_zookeeper_secure.yml"
@@ -1195,7 +1202,7 @@ class ClickHouseCluster:
         )
         return self.base_zookeeper_cmd
 
-    def setup_zookeeper_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> None:
+    def setup_zookeeper_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> list[str]:
         logging.debug("Setup ZooKeeper")
         zookeeper_docker_compose_path = p.join(
             docker_compose_yml_dir, "docker_compose_zookeeper.yml"
@@ -1224,7 +1231,7 @@ class ClickHouseCluster:
         )
         return self.base_zookeeper_cmd
 
-    def setup_keeper_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> None:
+    def setup_keeper_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> list[str]:
         logging.debug("Setup Keeper")
         keeper_docker_compose_path = p.join(
             docker_compose_yml_dir, "docker_compose_keeper.yml"
@@ -1269,7 +1276,7 @@ class ClickHouseCluster:
         )
         return self.base_zookeeper_cmd
 
-    def setup_mysql_client_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> None:
+    def setup_mysql_client_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> list[str]:
         self.with_mysql_client = True
         self.base_cmd.extend(
             [
@@ -1286,7 +1293,7 @@ class ClickHouseCluster:
 
         return self.base_mysql_client_cmd
 
-    def setup_mysql57_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> None:
+    def setup_mysql57_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> list[str]:
         self.with_mysql57 = True
         env_variables["MYSQL_HOST"] = self.mysql57_host
         env_variables["MYSQL_PORT"] = str(self.mysql57_port)
@@ -1307,7 +1314,7 @@ class ClickHouseCluster:
 
         return self.base_mysql57_cmd
 
-    def setup_mysql8_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> None:
+    def setup_mysql8_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> list[str]:
         self.with_mysql8 = True
         env_variables["MYSQL8_HOST"] = self.mysql8_host
         env_variables["MYSQL8_PORT"] = str(self.mysql8_port)
@@ -1328,7 +1335,7 @@ class ClickHouseCluster:
 
         return self.base_mysql8_cmd
 
-    def setup_mysql_cluster_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> None:
+    def setup_mysql_cluster_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> list[str]:
         self.with_mysql_cluster = True
         env_variables["MYSQL_CLUSTER_PORT"] = str(self.mysql8_port)
         env_variables["MYSQL_CLUSTER_ROOT_HOST"] = "%"
@@ -1351,7 +1358,7 @@ class ClickHouseCluster:
 
         return self.base_mysql_cluster_cmd
 
-    def setup_dremio26_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> None:
+    def setup_dremio26_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> list[str]:
         self.with_dremio26 = True
         env_variables["DREMIO26_HOST"] = self.dremio26_host
         env_variables["DREMIO26_PORT"] = str(self.dremio26_port)
@@ -1373,7 +1380,7 @@ class ClickHouseCluster:
 
         return self.base_dremio26_cmd
 
-    def setup_postgres_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> None:
+    def setup_postgres_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> list[str]:
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_postgres.yml")]
         )
@@ -1450,7 +1457,7 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_mysql_dotnet_client.yml"),
         )
 
-    def setup_kafka_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> None:
+    def setup_kafka_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> list[str]:
         self.with_kafka = True
         env_variables["KAFKA_HOST"] = self.kafka_host
         env_variables["KAFKA_EXTERNAL_PORT"] = str(self.kafka_port)
@@ -1470,7 +1477,7 @@ class ClickHouseCluster:
         )
         return self.base_kafka_cmd
 
-    def setup_kafka_sasl_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> None:
+    def setup_kafka_sasl_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> list[str]:
         self.with_kafka_sasl = True
         env_variables["KAFKA_HOST"] = self.kafka_sasl_host
         env_variables["KAFKA_EXTERNAL_PORT"] = str(self.kafka_sasl_port)
@@ -1509,7 +1516,7 @@ class ClickHouseCluster:
         )
         return self.base_kerberized_kafka_cmd
 
-    def setup_kerberos_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> None:
+    def setup_kerberos_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> list[str]:
         self.with_kerberos_kdc = True
         env_variables["KERBEROS_KDC_DIR"] = self.instances_dir + "/"
         env_variables["KERBEROS_KDC_HOST"] = self.kerberos_kdc_host
@@ -1527,7 +1534,7 @@ class ClickHouseCluster:
         )
         return self.base_kerberos_kdc_cmd
 
-    def setup_redis_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> None:
+    def setup_redis_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> list[str]:
         self.with_redis = True
         env_variables["REDIS_HOST"] = self.redis_host
         env_variables["REDIS_EXTERNAL_PORT"] = str(self.redis_port)
@@ -1544,7 +1551,7 @@ class ClickHouseCluster:
         )
         return self.base_redis_cmd
 
-    def setup_rabbitmq_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> None:
+    def setup_rabbitmq_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> list[str]:
         self.with_rabbitmq = True
         env_variables["RABBITMQ_HOST"] = self.rabbitmq_host
         env_variables["RABBITMQ_PORT"] = str(self.rabbitmq_port)
@@ -1565,7 +1572,7 @@ class ClickHouseCluster:
         )
         return self.base_rabbitmq_cmd
 
-    def setup_nats_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> None:
+    def setup_nats_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> list[str]:
         self.with_nats = True
         env_variables["NATS_HOST"] = self.nats_host
         env_variables["NATS_INTERNAL_PORT"] = "4444"
@@ -1585,7 +1592,7 @@ class ClickHouseCluster:
         )
         return self.base_nats_cmd
 
-    def setup_mongo_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> None:
+    def setup_mongo_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> list[str]:
         self.with_mongo = True
         env_variables["MONGO_HOST"] = self.mongo_host
         env_variables["MONGO_EXTERNAL_PORT"] = str(self.mongo_port)
@@ -1608,7 +1615,7 @@ class ClickHouseCluster:
         )
         return self.base_mongo_cmd
 
-    def setup_arrowflight_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> None:
+    def setup_arrowflight_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> list[str]:
         self.with_arrowflight = True
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_arrowflight.yml")]
@@ -1621,7 +1628,7 @@ class ClickHouseCluster:
         )
         return self.base_arrowflight_cmd
 
-    def setup_coredns_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> None:
+    def setup_coredns_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> list[str]:
         self.with_coredns = True
         env_variables["COREDNS_CONFIG_DIR"] = instance.path + "/" + "coredns_config"
         self.base_cmd.extend(
@@ -1637,7 +1644,7 @@ class ClickHouseCluster:
 
         return self.base_coredns_cmd
 
-    def setup_minio_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> None:
+    def setup_minio_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> list[str]:
         self.with_minio = True
         cert_d = p.join(self.minio_dir, "certs")
         env_variables["MINIO_CERTS_DIR"] = cert_d
@@ -1658,7 +1665,7 @@ class ClickHouseCluster:
         )
         return self.base_minio_cmd
 
-    def setup_glue_catalog_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> None:
+    def setup_glue_catalog_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> list[str]:
         self.with_glue_catalog = True
         self.base_cmd.extend(
             [
@@ -1674,7 +1681,7 @@ class ClickHouseCluster:
         )
         return self.base_glue_catalog_cmd
 
-    def setup_hms_catalog_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> None:
+    def setup_hms_catalog_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> list[str]:
         self.with_hms_catalog = True
         self.base_cmd.extend(
             [
@@ -1694,8 +1701,8 @@ class ClickHouseCluster:
         return self.base_iceberg_hms_cmd
 
     def setup_iceberg_catalog_cmd(
-        self, instance, env_variables, docker_compose_yml_dir, extra_parameters=None
-    ):
+        self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str, extra_parameters: dict[str, Any] | None = None
+    ) -> list[str]:
         self.with_iceberg_catalog = True
         file_name = "docker_compose_iceberg_rest_catalog.yml"
         if extra_parameters is not None and extra_parameters["docker_compose_file_name"] != "":
@@ -1716,7 +1723,7 @@ class ClickHouseCluster:
         )
         return self.base_iceberg_catalog_cmd
 
-    def setup_azurite_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> None:
+    def setup_azurite_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> list[str]:
         self.with_azurite = True
         env_variables["AZURITE_PORT"] = str(self.azurite_port)
         env_variables["AZURITE_STORAGE_ACCOUNT_URL"] = (
@@ -1739,7 +1746,7 @@ class ClickHouseCluster:
         )
         return self.base_azurite_cmd
 
-    def setup_cassandra_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> None:
+    def setup_cassandra_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> list[str]:
         self.with_cassandra = True
         env_variables["CASSANDRA_PORT"] = str(self.cassandra_port)
         self.base_cmd.extend(
@@ -1753,7 +1760,7 @@ class ClickHouseCluster:
         )
         return self.base_cassandra_cmd
 
-    def setup_ldap_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> None:
+    def setup_ldap_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> list[str]:
         self.with_ldap = True
         env_variables["LDAP_EXTERNAL_PORT"] = str(self.ldap_port)
         self.base_cmd.extend(
@@ -1767,7 +1774,7 @@ class ClickHouseCluster:
         )
         return self.base_ldap_cmd
 
-    def setup_jdbc_bridge_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> None:
+    def setup_jdbc_bridge_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> list[str]:
         self.with_jdbc_bridge = True
         env_variables["JDBC_DRIVER_LOGS"] = self.jdbc_driver_logs_dir
         env_variables["JDBC_DRIVER_FS"] = "bind"
@@ -1782,7 +1789,7 @@ class ClickHouseCluster:
         )
         return self.base_jdbc_bridge_cmd
 
-    def setup_nginx_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> None:
+    def setup_nginx_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> list[str]:
         self.with_nginx = True
 
         env_variables["NGINX_EXTERNAL_PORT"] = str(self.nginx_port)
@@ -1797,7 +1804,7 @@ class ClickHouseCluster:
         )
         return self.base_nginx_cmd
 
-    def setup_hive(self, instance, env_variables, docker_compose_yml_dir):
+    def setup_hive(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> list[str]:
         self.with_hive = True
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_hive.yml")]
@@ -1810,7 +1817,7 @@ class ClickHouseCluster:
         )
         return self.base_hive_cmd
 
-    def setup_ytsaurus(self, instance, env_variables, docker_compose_yml_dir):
+    def setup_ytsaurus(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> list[str]:
         self.with_ytsaurus = True
         env_variables["YTSAURUS_PROXY_PORT"] = str(self.ytsaurus_port)
         env_variables["YTSAURUS_INTERNAL_PORTS_LIST"] = " ".join(
@@ -1828,7 +1835,7 @@ class ClickHouseCluster:
         )
         return self.base_ytsaurus_cmd
 
-    def setup_letsencrypt_pebble(self, instance, env_variables, docker_compose_yml_dir):
+    def setup_letsencrypt_pebble(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> list[str]:
         self.with_letsencrypt_pebble = True
 
         self.base_cmd.extend(
@@ -1842,7 +1849,7 @@ class ClickHouseCluster:
         )
         return self.base_letsencrypt_pebble_cmd
 
-    def setup_prometheus_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> None:
+    def setup_prometheus_cmd(self, instance: Any, env_variables: dict[str, str], docker_compose_yml_dir: str) -> list[str]:
         if "writer" in self.prometheus_servers:
             prefix = f"PROMETHEUS_WRITER"
             env_variables[f"{prefix}_HOST"] = self.prometheus_writer_host
@@ -4797,6 +4804,8 @@ class ClickHouseInstance:
                 pid = self.get_process_pid("clickhouse")
                 if pid is None:
                     raise Exception("ClickHouse server is not running. Check logs.")
+                # Import here to avoid circular dependency with test_tools
+                from .test_tools import exec_query_with_retry
                 exec_query_with_retry(self, "select 20", retry_count=10, silent=True)
                 return
             except QueryRuntimeException as err:

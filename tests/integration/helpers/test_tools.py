@@ -1,19 +1,21 @@
+from __future__ import annotations
+
 import difflib
 import logging
 import time
 from io import IOBase
 from typing import Any, Callable
 
-from .cluster import ClickHouseInstance
-
 
 class TSV:
     """Helper to get pretty diffs between expected and actual tab-separated value files"""
 
-    def __init__(self, contents: IOBase | str | list[list[str] | str] | "TSV") -> None:
+    def __init__(self, contents: IOBase | str | list[list[str] | str] | TSV) -> None:
         raw_lines: list[str]
         if isinstance(contents, IOBase):
-            raw_lines = contents.readlines()
+            lines_bytes: list[bytes] = contents.readlines()
+            raw_lines = [line.decode("utf-8", errors="replace")
+                         for line in lines_bytes]
         elif isinstance(contents, str) or isinstance(contents, str):
             raw_lines = contents.splitlines(True)
         elif isinstance(contents, list):
@@ -33,15 +35,23 @@ class TSV:
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, TSV):
-            return self == TSV(other)
+            # Convert other to TSV for comparison
+            from typing import cast
+            other_tsv = TSV(
+                cast(IOBase | str | list[list[str] | str] | TSV, other))
+            return self == other_tsv
         return self.lines == other.lines
 
     def __ne__(self, other: object) -> bool:
         if not isinstance(other, TSV):
-            return self != TSV(other)
+            # Convert other to TSV for comparison
+            from typing import cast
+            other_tsv = TSV(
+                cast(IOBase | str | list[list[str] | str] | TSV, other))
+            return self != other_tsv
         return self.lines != other.lines
 
-    def diff(self, other: "TSV" | str, n1: str = "", n2: str = "") -> list[str]:
+    def diff(self, other: TSV | str, n1: str = "", n2: str = "") -> list[str]:
         if not isinstance(other, TSV):
             return self.diff(TSV(other), n1=n1, n2=n2)
         return list(
@@ -66,7 +76,8 @@ class TSV:
 
 
 def assert_eq_with_retry(
-    instance: ClickHouseInstance,
+    # pyright: ignore[reportUndefinedVariable, reportUnknownParameterType]
+    instance: "ClickHouseInstance",
     query: str,
     expectation: str,
     retry_count: int = 20,
@@ -99,7 +110,8 @@ def assert_eq_with_retry(
                 break
             time.sleep(sleep_time)
         except Exception as ex:
-            logging.exception(f"assert_eq_with_retry retry {i+1} exception {ex}")
+            logging.exception(
+                f"assert_eq_with_retry retry {i+1} exception {ex}")
             time.sleep(sleep_time)
     else:
         val: TSV = TSV(
@@ -119,31 +131,36 @@ def assert_eq_with_retry(
                 "'{}' != '{}'\n{}".format(
                     expectation_tsv,
                     val,
-                    "\n".join(expectation_tsv.diff(val, n1="expectation", n2="query")),
+                    "\n".join(expectation_tsv.diff(
+                        val, n1="expectation", n2="query")),
                 )
             )
 
 
-def assert_logs_contain(instance: ClickHouseInstance, substring: str) -> None:
+# type: ignore[name-defined]
+def assert_logs_contain(instance: "ClickHouseInstance", substring: str) -> None:
     if not instance.contains_in_log(substring):
         raise AssertionError("'{}' not found in logs".format(substring))
 
 
-def assert_logs_contain_with_retry(instance: ClickHouseInstance, substring: str, retry_count: int = 20, sleep_time: float = 0.5) -> None:
+# type: ignore[name-defined]
+def assert_logs_contain_with_retry(instance: "ClickHouseInstance", substring: str, retry_count: int = 20, sleep_time: float = 0.5) -> None:
     for i in range(retry_count):
         try:
             if instance.contains_in_log(substring):
                 break
             time.sleep(sleep_time)
         except Exception as ex:
-            logging.exception(f"contains_in_log_with_retry retry {i+1} exception {ex}")
+            logging.exception(
+                f"contains_in_log_with_retry retry {i+1} exception {ex}")
             time.sleep(sleep_time)
     else:
         raise AssertionError("'{}' not found in logs".format(substring))
 
 
 def exec_query_with_retry(
-    instance: ClickHouseInstance,
+    # pyright: ignore[reportUndefinedVariable, reportUnknownParameterType]
+    instance: "ClickHouseInstance",
     query: str,
     retry_count: int = 40,
     sleep_time: float = 0.5,
@@ -167,6 +184,7 @@ def exec_query_with_retry(
                 )
             time.sleep(sleep_time)
     else:
+        assert exception is not None, "Exception should have been set if we reach this point"
         raise exception
 
 
@@ -175,7 +193,8 @@ def csv_compare(result: str, expected: str) -> str:
     csv_expected: TSV = TSV(expected)
     mismatch: list[str] = []
     max_len: int = (
-        len(csv_result) if len(csv_result) > len(csv_expected) else len(csv_expected)
+        len(csv_result) if len(csv_result) > len(
+            csv_expected) else len(csv_expected)
     )
     for i in range(max_len):
         if i >= len(csv_result):
@@ -208,7 +227,8 @@ def wait_condition(func: Callable[[], Any], condition: Callable[[Any], bool], ma
 def get_retry_number(request: Any, fallback: int = 1) -> int:
     retry_number: Any = getattr(request.node, "callspec", None)
     if retry_number is not None:
-        retry_number = retry_number.params.get("__pytest_repeat_step_number", fallback)
+        retry_number = retry_number.params.get(
+            "__pytest_repeat_step_number", fallback)
     else:
         retry_number = fallback
     return retry_number

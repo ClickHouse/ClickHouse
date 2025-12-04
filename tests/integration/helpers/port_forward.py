@@ -23,6 +23,7 @@ class PortForward:
             except Exception:
                 break
 
+            assert self._address is not None, "Address must be set before connecting"
             client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             client.bind(("", 0))
             client.connect(self._address)
@@ -57,7 +58,11 @@ class PortForward:
                 with self._clients_lock:
                     client_tuple = self._clients.pop(connection, None)
                 if client_tuple is not None:
-                    client_tuple[idx].join()
+                    assert idx in (1, 2), "idx must be 1 or 2 to access Thread"
+                    from typing import cast
+                    thread_to_join: threading.Thread = cast(
+                        threading.Thread, client_tuple[idx])
+                    thread_to_join.join()
                     connection.close()
                     client_tuple[0].close()
 
