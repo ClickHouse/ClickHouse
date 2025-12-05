@@ -9,15 +9,14 @@ namespace DB
 class Block;
 class WriteBuffer;
 
-/*
-  Serializes the stream of blocks in their native binary format (without names, columns and serialization types).
-
-  For each block, the following sequence is written:
-  1. Number of columns (UInt64, little endian).
-  2. Number of rows (UInt64, little endian).
-  3. For each column:
-    - Total byte size of the serialized column data (UInt64, little endian).
-    - Serialized column data bytes, exactly as in the Native format.
+/** Serializes the stream of blocks in their native binary format (without names, columns and serialization types).
+  *
+  * For each block, the following sequence is written:
+  * 1. Number of columns (UInt64, little endian).
+  * 2. Number of rows (UInt64, little endian).
+  * 3. For each column:
+  *   - Total byte size of the serialized column data (UInt64, little endian).
+  *   - Serialized column data bytes, exactly as in the Native format.
 */
 
 class BuffersWriter
