@@ -71,7 +71,7 @@ UInt64 TokenizerFactory::extractNgramParam(std::span<const Field> params)
     assertParamsCount(NgramsTokenExtractor::getExternalName(), params.size(), 1);
     auto ngram_size = params.empty() ? DEFAULT_NGRAM_SIZE : castAs<UInt64>(params[0], "ngram_size");
 
-    if (ngram_size < 2 || ngram_size > 8)
+    if (ngram_size < 1 || ngram_size > 8)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Incorrect param of {} tokenizer: ngram length must be between 2 and 8, but got {}",
@@ -173,17 +173,17 @@ void TokenizerFactory::validateTokenizerType(std::string_view tokenizer) const
 {
     if (std::ranges::find(allowed_tokenizers, tokenizer) == allowed_tokenizers.end())
     {
-        std::ostringstream oss;
-        oss << "'" << allowed_tokenizers[0] << "', "; /// asserted not empty in constructor
+        WriteBufferFromOwnString buf;
+        buf << "'" << allowed_tokenizers[0] << "', "; /// asserted not empty in constructor
         for (size_t i = 1; i < allowed_tokenizers.size(); ++i)
         {
             if (i < allowed_tokenizers.size() - 1)
-                oss << "'" << allowed_tokenizers[i] << "', ";
+                buf << "'" << allowed_tokenizers[i] << "', ";
             else
-                oss << "and '" << allowed_tokenizers[i] << "'";
+                buf << "and '" << allowed_tokenizers[i] << "'";
         }
 
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only {} tokenizers are supported for function or index '{}', received '{}'", oss.str(), caller_name, tokenizer);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only {} tokenizers are supported for function or index '{}', received '{}'", buf.str(), caller_name, tokenizer);
     }
 }
 
