@@ -128,3 +128,103 @@ DROP TABLE IF EXISTS funnel_test2;
 
 
 drop table funnel_test_strict_increase;
+
+SET enable_analyzer = 1;
+DROP TABLE IF EXISTS funnel_test_conv_time;
+CREATE TABLE funnel_test_conv_time (user_id UInt64, event_time UInt32, eventName String) ENGINE = Memory;
+
+INSERT INTO funnel_test_conv_time VALUES (1, 0, 'event1'), (1, 5, 'event2'), (1, 15, 'event3');
+
+INSERT INTO funnel_test_conv_time VALUES (2, 100, 'event1'), (2, 110, 'event2'), (2, 145, 'event3');
+
+INSERT INTO funnel_test_conv_time VALUES (3, 200, 'event1');
+
+INSERT INTO funnel_test_conv_time VALUES (4, 300, 'event1'), (4, 305, 'event2'), (4, 315, 'event3'), (4, 320, 'event1'), (4, 322, 'event2'), (4, 330, 'event3');
+
+INSERT INTO funnel_test_conv_time VALUES (5, 400, 'event1'), (5, 405, 'event2'), (5, 440, 'event1'), (5, 442, 'event2'), (5, 450, 'event3');
+
+SELECT
+    user_id,
+    windowFunnel(30, 'conversion_time')(
+        event_time,
+        eventName = 'event1',
+        eventName = 'event2',
+        eventName = 'event3'
+    ) AS funnel_result
+FROM funnel_test_conv_time
+GROUP BY user_id
+ORDER BY user_id;
+
+SELECT
+    user_id,
+    windowFunnel(30, 'conversion_time')(
+        event_time,
+        eventName = 'event1',
+        eventName = 'event2',
+        eventName = 'event3'
+    ) AS funnel_result,
+    funnel_result.max_level,
+    funnel_result.time_1_to_2,
+    funnel_result.time_2_to_3
+FROM funnel_test_conv_time
+GROUP BY user_id
+ORDER BY user_id;
+
+INSERT INTO funnel_test_conv_time VALUES (6, 500, 'event1'), (6, 501, 'event1'), (6, 505, 'event2'), (6, 510, 'event3');
+
+SELECT
+    user_id,
+    windowFunnel(30, 'strict_once', 'conversion_time')(
+        event_time,
+        eventName = 'event1',
+        eventName = 'event2',
+        eventName = 'event3'
+    ) AS funnel_result
+FROM funnel_test_conv_time
+WHERE user_id = 6
+GROUP BY user_id;
+
+DROP TABLE funnel_test_conv_time;
+
+DROP TABLE IF EXISTS funnel_test_overlap;
+CREATE TABLE funnel_test_overlap (ts UInt32, event String) ENGINE = Memory;
+INSERT INTO funnel_test_overlap VALUES (1, 'a'), (2, 'b'), (3, 'c'), (4, 'a'), (5, 'b'), (6, 'd');
+
+SELECT
+    windowFunnel(10, 'conversion_time')(
+        ts,
+        event = 'a',
+        event = 'b',
+        event = 'c',
+        event = 'd'
+    ) AS funnel_result
+FROM funnel_test_overlap;
+
+DROP TABLE funnel_test_overlap;
+
+DROP TABLE IF EXISTS conv_strict_order;
+CREATE TABLE conv_strict_order (dt UInt32, user UInt32, event String) ENGINE = Memory;
+INSERT INTO conv_strict_order VALUES (1, 1, 'a'), (2, 1, 'b'), (3, 1, 'c');
+INSERT INTO conv_strict_order VALUES (1, 2, 'a'), (2, 2, 'd'), (3, 2, 'b'), (4, 2, 'c');
+INSERT INTO conv_strict_order VALUES (1, 3, 'a'), (1, 3, 'b'), (2, 3, 'c');
+SELECT user, windowFunnel(100, 'strict_order', 'conversion_time')(dt, event='a', event='b', event='c') AS s
+FROM conv_strict_order GROUP BY user ORDER BY user FORMAT JSONCompactEachRow;
+DROP TABLE conv_strict_order;
+
+DROP TABLE IF EXISTS conv_strict_increase;
+CREATE TABLE conv_strict_increase (ts UInt32, event String) ENGINE = Memory;
+INSERT INTO conv_strict_increase VALUES (1, 'a'), (1, 'b'), (2, 'c');
+SELECT windowFunnel(10, 'strict_increase', 'conversion_time')(ts, event='a', event='b', event='c') FROM conv_strict_increase;
+DROP TABLE conv_strict_increase;
+
+DROP TABLE IF EXISTS conv_strict_dedup;
+CREATE TABLE conv_strict_dedup (ts UInt32, event String) ENGINE = Memory;
+INSERT INTO conv_strict_dedup VALUES (1, 'a'), (2, 'b'), (3, 'b'), (4, 'c');
+SELECT windowFunnel(10, 'strict_deduplication', 'conversion_time')(ts, event='a', event='b', event='c') FROM conv_strict_dedup;
+DROP TABLE conv_strict_dedup;
+
+DROP TABLE IF EXISTS funnel_test_large_dt;
+CREATE TABLE funnel_test_large_dt (ts DateTime, ev String) ENGINE = Memory;
+INSERT INTO funnel_test_large_dt VALUES ('2106-02-07 06:28:05', 'a'), ('2106-02-07 06:28:06', 'b'), ('2106-02-07 06:28:07', 'c');
+SELECT windowFunnel(100, 'conversion_time')(ts, ev='a', ev='b', ev='c') FROM funnel_test_large_dt;
+DROP TABLE funnel_test_large_dt;
