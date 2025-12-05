@@ -118,6 +118,7 @@ class FuzzerLogParser:
             return self.UNKNOWN_ERROR, "Lost connection to server. See the logs.\n"
 
         error_lines = error_output.splitlines()
+        result_name = error_lines[0].removesuffix(".")
         format_message = ""
         for i, line in enumerate(error_lines):
             if "Format string: " in line:
@@ -137,7 +138,6 @@ class FuzzerLogParser:
                 error_lines = error_lines[:i]
                 break
         error_output = "\n".join(error_lines)
-        result_name = error_lines[0].removesuffix(".")
         failed_query = ""
         reproduce_commands = []
         stack_trace = self.get_stack_trace()
@@ -157,7 +157,6 @@ class FuzzerLogParser:
                     )
                     letter_index += 1
                 result_name = f"Logical error: {format_message}"
-            result_name += f" (STID: {stack_trace_id})"
         elif is_killed_by_signal or is_segfault:
             result_name += f" (STID: {stack_trace_id})"
         elif is_memory_limit_exceeded:
@@ -539,7 +538,7 @@ class FuzzerLogParser:
 if __name__ == "__main__":
     # Test:
     fuzzer_log = "./asan_err/fuzzer.log"
-    server_log = "./asan_err/server.log"
+    server_log = "./no_stid/server.log"
     FTG = FuzzerLogParser(server_log, fuzzer_log)
     # FTG2 = FuzzerLogParser("", "", stack_trace_str="...")
     result_name, info = FTG.parse_failure()
