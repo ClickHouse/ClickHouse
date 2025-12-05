@@ -7,12 +7,16 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SCHEMADIR=$CURDIR/format_schemas
 . "$CURDIR"/../shell_config.sh
 
-set -e
 
-[ -e "${CLICKHOUSE_TMP}"/oneof_several_values.bin ] && rm "${CLICKHOUSE_TMP}"/oneof_several_values.bin
+# USE WORKING_FOLDER_03710 = ${CLICKHOUSE_TMP} to run locally
+WORKING_FOLDER_03710="${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}"
 
 
-$CLICKHOUSE_CLIENT <<EOF
+rm -rf "${WORKING_FOLDER_03710}"
+mkdir "${WORKING_FOLDER_03710}"
+
+
+${CLICKHOUSE_CLIENT} <<EOF
 CREATE TABLE string_or_string
 (
 string1 String,
@@ -24,24 +28,24 @@ ORDER BY tuple();
 insert into string_or_string values ('str1',''), ('','str2');
 
 SELECT * FROM string_or_string
-INTO OUTFILE '${CLICKHOUSE_TMP}/oneof_several_values.bin'
+INTO OUTFILE '${WORKING_FOLDER_03710}/oneof_several_values.bin'
 SETTINGS format_schema_source='string',
 format_schema = 'syntax = "proto3";message StringOrString {oneof string_oneof {string string1 = 1;string string2 = 42;}}',
 format_schema_message_name='StringOrString'
 FORMAT Protobuf;
 
-SELECT * FROM file('${CLICKHOUSE_TMP}/oneof_several_values.bin', Protobuf)
+SELECT * FROM file('${WORKING_FOLDER_03710}/oneof_several_values.bin', Protobuf)
 SETTINGS format_schema_source='string',
 format_schema = 'syntax = "proto3";message StringOrString {oneof string_oneof {string string1 = 1;string string2 = 42;}}',
 format_schema_message_name='StringOrString';
 EOF
 
-$CLICKHOUSE_CLIENT <<EOF
+${CLICKHOUSE_CLIENT} <<EOF
 SELECT *
-FROM file('${CLICKHOUSE_TMP}/oneof_several_values.bin', Protobuf)
+FROM file('${WORKING_FOLDER_03710}/oneof_several_values.bin', Protobuf)
 SETTINGS format_schema_source='string',
 format_schema = 'syntax = "proto3";message StringOrString {oneof string_oneof {string string1 = 1;string string2 = 42;}}',
 format_schema_message_name='StringOrString', input_format_protobuf_oneof_presence = true; -- { serverError PROTOBUF_ONEOF_HAS_SEVERAL_VALUES }
 EOF
 
-rm "${CLICKHOUSE_TMP}"/oneof_several_values.bin
+rm -rf "${WORKING_FOLDER_03710}"
