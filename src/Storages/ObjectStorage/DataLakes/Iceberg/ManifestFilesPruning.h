@@ -6,6 +6,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
