@@ -25,7 +25,7 @@ SELECT tokens('a', 'splitByString', 'c'); -- { serverError ILLEGAL_TYPE_OF_ARGUM
 SELECT tokens('a', 'splitByString', toInt8(-1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT tokens('a', 'splitByString', toFixedString('c', 1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT tokens('a', 'splitByString', materialize(['c'])); -- { serverError ILLEGAL_COLUMN }
-SELECT tokens('a', 'splitByString', [1, 2]); -- { serverError BAD_GET }
+SELECT tokens('a', 'splitByString', [1, 2]); -- { serverError INCORRECT_QUERY }
 
 SELECT 'Default tokenizer';
 

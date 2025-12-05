@@ -69,7 +69,12 @@ Type castAs(const Field & field, std::string_view argument_name)
 UInt64 TokenizerFactory::extractNgramParam(std::span<const Field> params)
 {
     assertParamsCount(NgramsTokenExtractor::getExternalName(), params.size(), 1);
-    return params.empty() ? DEFAULT_NGRAM_SIZE : castAs<UInt64>(params[0], "ngram_size");
+    auto ngram_size = params.empty() ? DEFAULT_NGRAM_SIZE : castAs<UInt64>(params[0], "ngram_size");
+
+    if (ngram_size < 2 || ngram_size > 8)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Ngram length should be between 2 and 8, got: {}", ngram_size);
+
+    return ngram_size;
 }
 
 std::vector<String> TokenizerFactory::extractSplitByStringParam(std::span<const Field> params)
@@ -107,7 +112,7 @@ std::tuple<UInt64, UInt64, std::optional<UInt64>> TokenizerFactory::extractSpars
     return {min_length, max_length, min_cutoff_length};
 }
 
-void TokenizerFactory::validateTokenizerType(const String & tokenizer)
+void TokenizerFactory::validateTokenizerType(std::string_view tokenizer) const
 {
     if (std::ranges::find(allowed_tokenizers, tokenizer) == allowed_tokenizers.end())
     {
@@ -125,7 +130,7 @@ void TokenizerFactory::validateTokenizerType(const String & tokenizer)
     }
 }
 
-std::unique_ptr<ITokenExtractor> TokenizerFactory::createTokenizer(const String & tokenizer_type, std::span<const Field> params)
+std::unique_ptr<ITokenExtractor> TokenizerFactory::createTokenizer(std::string_view tokenizer_type, std::span<const Field> params) const
 {
     validateTokenizerType(tokenizer_type);
 
@@ -148,6 +153,10 @@ std::unique_ptr<ITokenExtractor> TokenizerFactory::createTokenizer(const String 
     {
         auto [min_ngram_length, max_ngram_length, min_cutoff_length] = extractSparseGramsParams(params);
         return std::make_unique<SparseGramsTokenExtractor>(min_ngram_length, max_ngram_length, min_cutoff_length);
+    }
+    if (tokenizer_type == ArrayTokenExtractor::getName() || tokenizer_type == ArrayTokenExtractor::getExternalName())
+    {
+        return std::make_unique<ArrayTokenExtractor>();
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown tokenizer: '{}' for function or index '{}'", tokenizer_type, caller_name);

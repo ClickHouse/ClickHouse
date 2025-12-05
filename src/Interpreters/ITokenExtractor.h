@@ -160,16 +160,16 @@ private:
 
 struct TokenizerFactory : public boost::noncopyable
 {
-    TokenizerFactory(String caller_name_, std::vector<String> allowed_tokenizers_)
+    TokenizerFactory(std::string_view caller_name_, const std::vector<String> & allowed_tokenizers_)
         : caller_name(caller_name_)
         , allowed_tokenizers(allowed_tokenizers_)
     {
         chassert(!allowed_tokenizers.empty());
     }
 
-    void validateTokenizerType(const String & tokenizer);
+    void validateTokenizerType(std::string_view tokenizer) const;
 
-    std::unique_ptr<ITokenExtractor> createTokenizer(const String & tokenizer_type, std::span<const Field> params);
+    std::unique_ptr<ITokenExtractor> createTokenizer(std::string_view tokenizer_type, std::span<const Field> params) const;
 
     /// Param helper functions
     static UInt64 extractNgramParam(std::span<const Field> params);
