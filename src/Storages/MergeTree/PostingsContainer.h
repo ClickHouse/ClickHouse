@@ -90,7 +90,7 @@ struct Codec
         temp_buffer.resize(bytes);
         in.readStrict(temp_buffer.data(), bytes);
         /// Decode postings
-        unsigned char *p = reinterpret_cast<unsigned char *>(temp_buffer.data());
+        unsigned char * p = reinterpret_cast<unsigned char *>(temp_buffer.data());
         auto used = CodecTraits<T>::decode(p, n, temp.data());
         if (used != bytes)
             throw Exception(ErrorCodes::CORRUPTED_DATA,

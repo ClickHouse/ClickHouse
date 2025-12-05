@@ -1,94 +1,26 @@
 #pragma once
-
-extern "C" {
-#include <ic.h>
-}
-
 extern "C" {
 #include <streamvbyte.h>
 #include <streamvbytedelta.h>
 }
-#pragma clang optimize off
+
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int CORRUPTED_DATA;
-    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
-/// A compact, block-based container for storing monotonically increasing
-/// postings (document IDs or row offsets) with TurboPFor compression.
-///
-/// This templated class supports both 32-bit and 64-bit integer types.
-/// Postings are accumulated in memory and compressed in fixed-size blocks
-/// (`kBlockSize = 128`) using TurboPFor’s PForDelta codec
-/// (`p4nd1enc32` / `p4nd1enc64`). Each compressed block is prefixed by a
-/// small variable-length header that stores the number of elements and the
-/// compressed byte length, both encoded as VarUInt values.
-///
-/// Data Layout
-///
-/// The serialized byte stream layout is as follows:
-///
-///   +--------------------------------------------------------------------+
-///   | VarUInt(block_count) | VarUInt(total_elems) | VarUInt(bytes_total) |
-///   | [BlockHeader][CompressedBlock] ... [BlockHeader][CompressedBlock]  |
-///   +--------------------------------------------------------------------+
-///
-/// Each `[BlockHeader]` is encoded using VarUInt values:
-///   - VarUInt(n)      : number of elements in the block
-///   - VarUInt(bytes)  : number of compressed bytes that follow
-///
-/// The `[CompressedBlock]` contains TurboPFor-encoded integer deltas.
-///
-/// Compression
-///
-/// When `kBlockSize` values have been collected, the block is delta-encoded
-/// (using the “delta − 1” scheme for strictly increasing sequences) and
-/// compressed with the TurboPFor codec. Remaining values in `current` are
-/// automatically flushed during serialization.
+/// Generic codec traits.
+/// Specializations provide a uniform encode/decode interface for different integer types.
 template <typename T>
 struct CodecTraits;
-#if 0
-template <>
-struct CodecTraits<uint32_t>
-{
-    ALWAYS_INLINE static uint32_t bound(std::size_t n)
-    {
-        return p4nbound256v32(static_cast<uint32_t>(n));
-    }
 
-    ALWAYS_INLINE static uint32_t encode(uint32_t * p, std::size_t n, unsigned char *out)
-    {
-        return p4nd1enc32(p, n, out);
-    }
-
-    ALWAYS_INLINE static std::size_t decode(unsigned char * p, std::size_t n, uint32_t *out)
-    {
-        return p4nd1dec32(p, n, out);
-    }
-};
-
-template <>
-struct CodecTraits<uint64_t>
-{
-    ALWAYS_INLINE static uint32_t bound(std::size_t n)
-    {
-        return p4nbound256v32(static_cast<uint32_t>(n));
-    }
-
-    ALWAYS_INLINE static uint64_t encode(uint64_t * p, std::size_t n, unsigned char *out)
-    {
-        return p4nd1enc64(p, n, out);
-    }
-
-    ALWAYS_INLINE static std::size_t decode(unsigned char * p, std::size_t n, uint64_t *out)
-    {
-        return p4nd1dec64(p, n, out);
-    }
-};
-#endif
+/// Specialization of CodecTraits for uint32_t.
+///
+/// This implementation uses StreamVByte delta coding
+/// (streamvbyte_delta_encode / streamvbyte_delta_decode)
+/// to compress and decompress arrays of 32-bit unsigned integers.
 template <>
 struct CodecTraits<uint32_t>
 {
@@ -108,6 +40,7 @@ struct CodecTraits<uint32_t>
     }
 };
 
+/// Specialization of CodecTraits for uint64_t.
 template <>
 struct CodecTraits<uint64_t>
 {
