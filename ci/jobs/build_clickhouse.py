@@ -124,7 +124,8 @@ def main():
         os.environ["CH_PASSWORD"] = chcache_secret.get_value()
         os.environ["CH_USE_LOCAL_CACHE"] = "false"
 
-    if info.pr_number == 0:
+    # PMO: Always enable official builds to test USE_BINARY_HASH
+    if info.pr_number == 0 or True:
         cmake_cmd += " -DCLICKHOUSE_OFFICIAL_BUILD=1"
 
     is_private = (
