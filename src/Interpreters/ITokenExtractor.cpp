@@ -31,7 +31,7 @@ static constexpr UInt64 DEFAULT_SPARSE_GRAMS_MAX_LENGTH = 100;
 namespace
 {
 
-void assertParamsCount(const String & tokenizer, size_t params_count, size_t max_count)
+void assertParamsCount(std::string_view tokenizer, size_t params_count, size_t max_count)
 {
     if (params_count > max_count)
     {
@@ -107,7 +107,7 @@ std::vector<String> TokenizerFactory::extractSplitByStringParam(std::span<const 
 
 std::tuple<UInt64, UInt64, std::optional<UInt64>> TokenizerFactory::extractSparseGramsParams(std::span<const Field> params)
 {
-    auto tokenizer_name = SparseGramsTokenExtractor::getExternalName();
+    const auto * tokenizer_name = SparseGramsTokenExtractor::getExternalName();
     assertParamsCount(tokenizer_name, params.size(), 3);
 
     UInt64 min_length = DEFAULT_SPARSE_GRAMS_MIN_LENGTH;
@@ -199,6 +199,7 @@ std::unique_ptr<ITokenExtractor> TokenizerFactory::createTokenizer(std::string_v
     }
     if (tokenizer_type == SplitByNonAlphaTokenExtractor::getName() || tokenizer_type == SplitByNonAlphaTokenExtractor::getExternalName())
     {
+        assertParamsCount(tokenizer_type, params.size(), 0);
         return only_validate ? nullptr : std::make_unique<SplitByNonAlphaTokenExtractor>();
     }
     if (tokenizer_type == SplitByStringTokenExtractor::getName() || tokenizer_type == SplitByStringTokenExtractor::getExternalName())
@@ -214,6 +215,7 @@ std::unique_ptr<ITokenExtractor> TokenizerFactory::createTokenizer(std::string_v
     }
     if (tokenizer_type == ArrayTokenExtractor::getName() || tokenizer_type == ArrayTokenExtractor::getExternalName())
     {
+        assertParamsCount(tokenizer_type, params.size(), 0);
         return only_validate ? nullptr : std::make_unique<ArrayTokenExtractor>();
     }
 
