@@ -295,6 +295,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         std::optional<NodeMetadata> processed_node;
         Coordination::Stat processed_node_stat;
         std::optional<std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State>> result;
+        zk_retry.resetFailures();
         zk_retry.retryLoop([&]
         {
             bool is_multi_read_enabled = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ);
@@ -317,8 +318,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
                     LOG_TEST(log, "File {} is Failed", path);
                     result = {false, FileStatus::State::Failed};
                 }
-
-                if (responses[0].error == Coordination::Error::ZOK)
+                else if (responses[0].error == Coordination::Error::ZOK)
                 {
                     if (!responses[0].data.empty())
                     {
@@ -346,14 +346,16 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
                         LOG_TEST(log, "File {} is Failed", path);
                         result = {false, FileStatus::State::Failed};
                     }
-
-                    processed_node.emplace(node_metadata);
-                    LOG_TEST(log, "Current max processed file {} from path: {}",
-                            processed_node->file_path, processed_node_path);
-
-                    if (!processed_node->file_path.empty() && path <= processed_node->file_path)
+                    else
                     {
-                        result = {false, FileStatus::State::Processed};
+                        processed_node.emplace(node_metadata);
+                        LOG_TEST(log, "Current max processed file {} from path: {}",
+                                processed_node->file_path, processed_node_path);
+
+                        if (!processed_node->file_path.empty() && path <= processed_node->file_path)
+                        {
+                            result = {false, FileStatus::State::Processed};
+                        }
                     }
                 }
             }

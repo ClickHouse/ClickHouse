@@ -69,7 +69,7 @@ namespace Setting
     extern const SettingsBool use_iceberg_partition_pruning;
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
     extern const SettingsBool table_engine_read_through_distributed_cache;
-    extern const SettingsObjectStorageGranularityLevel cluster_table_function_split_granularity;
+    extern const SettingsUInt64 s3_path_filter_limit;
 }
 
 namespace ErrorCodes
@@ -179,23 +179,66 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
     std::unique_ptr<IObjectIterator> iterator;
     const auto & reading_path = configuration->getPathForRead();
-    if (reading_path.hasGlobs())
+    if (reading_path.hasGlobs() && hasExactlyOneBracketsExpansion(reading_path.path))
     {
-        if (hasExactlyOneBracketsExpansion(reading_path.path))
+        auto paths = expandSelectionGlob(reading_path.path);
+        iterator = std::make_unique<KeysIterator>(
+            paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
+            query_settings.ignore_non_existent_file, skip_object_metadata, with_tags,
+            file_progress_callback);
+    }
+    else if (reading_path.hasGlobs())
+    {
+        // Try extract _path values from filter, which will allow to use KeysIterator instead of GlobIterator
+        std::optional<Strings> paths;
+        if (filter_actions_dag && local_context->getSettingsRef()[Setting::s3_path_filter_limit])
+            paths = VirtualColumnUtils::extractPathValuesFromFilter(
+                filter_actions_dag, local_context, local_context->getSettingsRef()[Setting::s3_path_filter_limit]);
+
+        // If paths is nullopt, use the glob iterator to scan all matching files.
+        // If paths contains a value, validate the extracted paths and use the key-based iterator
+        // (even if the result is empty, indicating no scanning is required).
+        if (!paths)
+            iterator = std::make_unique<GlobIterator>(
+                object_storage,
+                configuration,
+                predicate,
+                virtual_columns,
+                hive_columns,
+                local_context,
+                is_archive ? nullptr : read_keys,
+                query_settings.list_object_keys_size,
+                query_settings.throw_on_zero_files_match,
+                with_tags,
+                file_progress_callback);
+        else
         {
-            auto paths = expandSelectionGlob(reading_path.path);
+            // Validate that extracted paths match the glob pattern to prevent scanning unallowed data
+            Strings validated_paths;
+            re2::RE2 matcher(makeRegexpPatternFromGlobs(reading_path.path));
+            if (matcher.ok())
+            {
+                for (const auto & path : paths.value())
+                {
+                    const auto relative_path = fs::relative(path, configuration->getNamespace()).string();
+                    if (RE2::FullMatch(relative_path, matcher))
+                        validated_paths.push_back(relative_path);
+                }
+            }
+            else
+                throw Exception(
+                    ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", reading_path.path, matcher.error());
+
             iterator = std::make_unique<KeysIterator>(
-                paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
-                query_settings.ignore_non_existent_file, skip_object_metadata, with_tags,
+                validated_paths,
+                object_storage,
+                virtual_columns,
+                is_archive ? nullptr : read_keys,
+                query_settings.ignore_non_existent_file,
+                skip_object_metadata,
+                with_tags,
                 file_progress_callback);
         }
-        else
-            /// Iterate through disclosed globs and make a source for each file
-            iterator = std::make_unique<GlobIterator>(
-                object_storage, configuration, predicate, virtual_columns, hive_columns,
-                local_context, is_archive ? nullptr : read_keys, query_settings.list_object_keys_size,
-                query_settings.throw_on_zero_files_match, with_tags,
-                file_progress_callback);
     }
     else if (configuration->supportsFileIterator())
     {
@@ -211,15 +254,6 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 hive_columns,
                 configuration->getNamespace(),
                 local_context);
-        }
-        if (local_context->getSettingsRef()[Setting::cluster_table_function_split_granularity] == ObjectStorageGranularityLevel::BUCKET)
-        {
-            iter = std::make_shared<ObjectIteratorSplitByBuckets>(
-                std::move(iter),
-                configuration->format,
-                object_storage,
-                local_context
-            );
         }
         return iter;
     }
