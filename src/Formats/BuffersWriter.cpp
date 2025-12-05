@@ -20,10 +20,8 @@ BuffersWriter::BuffersWriter(WriteBuffer & ostr_, SharedHeader header_, const Fo
 {
 }
 
-size_t BuffersWriter::write(const Block & block)
+void BuffersWriter::write(const Block & block)
 {
-    const size_t written_before = ostr.count();
-
     block.checkNumberOfRows();
 
     const size_t num_columns = block.columns();
@@ -71,9 +69,6 @@ size_t BuffersWriter::write(const Block & block)
     {
         ostr.write(data.data(), data.size());
     }
-
-    const size_t written_after = ostr.count();
-    return written_after - written_before;
 }
 
 }

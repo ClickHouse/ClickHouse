@@ -25,7 +25,7 @@ public:
     SharedHeader getHeader() const { return header; }
 
     /// Returns the number of bytes written
-    size_t write(const Block & block);
+    void write(const Block & block);
 
 private:
     WriteBuffer & ostr;
