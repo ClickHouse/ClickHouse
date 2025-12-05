@@ -4537,7 +4537,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
                                     || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3));
     const uint32_t create_database = 2 * static_cast<uint32_t>(static_cast<uint32_t>(databases.size()) < this->fc.max_databases);
     const uint32_t create_function = 5 * static_cast<uint32_t>(static_cast<uint32_t>(functions.size()) < this->fc.max_functions);
-    const uint32_t system_stmt = 1;
+    const uint32_t system_stmt = 8;
     const uint32_t backup_or_restore = 1;
     const uint32_t create_dictionary = 10 * static_cast<uint32_t>(static_cast<uint32_t>(dictionaries.size()) < this->fc.max_dictionaries);
     const uint32_t rename = 1
