@@ -83,6 +83,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_types_in_order_by;
     extern const SettingsBool allow_experimental_correlated_subqueries;
     extern const SettingsString implicit_table_at_top_level;
+    extern const SettingsBool allow_unused_columns_analysis_skipping;
 }
 
 
@@ -3403,14 +3404,49 @@ void removeUnusedProjections(QueryTreeNodePtr & projection_node_list, Identifier
     projection_list_typed.getNodes() = std::move(new_projection_nodes);
 }
 
+void removeUnusedProjections(QueryTreeNodePtr & projection_node_list, ProjectionNames & projection_names, IdentifierResolveScope & scope)
+{
+    if (!scope.used_column_names)
+        return;
+
+    NameSet names_set(scope.used_column_names->begin(), scope.used_column_names->end());
+
+    auto & projection_list_typed = projection_node_list->as<ListNode &>();
+    auto projection_nodes = projection_list_typed.getNodes();
+
+    QueryTreeNodes new_projection_nodes;
+    new_projection_nodes.reserve(projection_nodes.size());
+
+    ProjectionNames new_projection_names;
+    new_projection_names.reserve(projection_nodes.size());
+
+    for (size_t i = 0; i < projection_nodes.size(); ++i)
+    {
+        auto projection_name_it = names_set.find(projection_names[i]);
+        if (projection_name_it != names_set.end())
+        {
+            new_projection_nodes.push_back(std::move(projection_nodes[i]));
+            new_projection_names.push_back(std::move(projection_names[i]));
+        }
+    }
+
+    projection_list_typed.getNodes() = std::move(new_projection_nodes);
+    projection_names = std::move(new_projection_names);
+}
+
 }
 
 NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope)
 {
-    removeUnusedProjections(projection_node_list, scope);
-    ProjectionNames projection_names = resolveExpressionNodeList(projection_node_list, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+    const auto & settings = scope.context->getSettingsRef();
 
-    auto projection_nodes = projection_node_list->as<ListNode &>().getNodes();
+    if (settings[Setting::allow_unused_columns_analysis_skipping])
+        removeUnusedProjections(projection_node_list, scope);
+
+    ProjectionNames projection_names = resolveExpressionNodeList(projection_node_list, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+    removeUnusedProjections(projection_node_list, projection_names, scope);
+
+    auto & projection_nodes = projection_node_list->as<ListNode &>().getNodes();
     size_t projection_nodes_size = projection_nodes.size();
 
     NamesAndTypes projection_columns;

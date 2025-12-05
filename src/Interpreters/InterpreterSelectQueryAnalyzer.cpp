@@ -62,7 +62,7 @@ namespace
     return res;
 }
 
-ASTPtr normalizeAndValidateQuery(const ASTPtr & query, [[maybe_unused]] const Names & column_names)
+ASTPtr normalizeAndValidateQuery(const ASTPtr & query)
 {
     ASTPtr result_query;
 
@@ -179,14 +179,14 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const ASTPtr & query_,
     const ContextPtr & context_,
     const SelectQueryOptions & select_query_options_,
-    const Names & column_names)
-    : query(normalizeAndValidateQuery(query_, column_names))
+    UsedColumns column_names)
+    : query(normalizeAndValidateQuery(query_))
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
-    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/, column_names))
+    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/, std::move(column_names)))
     , planner(query_tree, select_query_options)
 {
-    LOG_DEBUG(getLogger(__func__), "Initialized query tree ({}) with columns {}:\n{}", query_->formatForLogging(), toString(column_names), query_tree->dumpTree());
+    LOG_DEBUG(getLogger(__func__), "Initialized query tree ({}) with columns {}:\n{}", query_->formatForLogging(), column_names.has_value() ? toString(*column_names) : "{}", query_tree->dumpTree());
 }
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
@@ -194,11 +194,11 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const ContextPtr & context_,
     const StoragePtr & storage_,
     const SelectQueryOptions & select_query_options_,
-    const Names & column_names)
-    : query(normalizeAndValidateQuery(query_, column_names))
+    UsedColumns column_names)
+    : query(normalizeAndValidateQuery(query_))
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
-    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_, column_names))
+    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_, std::move(column_names)))
     , planner(query_tree, select_query_options)
 {
 }

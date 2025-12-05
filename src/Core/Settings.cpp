@@ -7104,6 +7104,21 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
+    DECLARE(Bool, allow_unused_columns_analysis_skipping, true, R"(
+Allow skipping unused columns analysis in some cases to speed up query analysis.
+
+For example, in the query `SELECT a FROM view` only column `a` is needed from the view,
+so other columns can be skipped during VIEW subquery analysis.
+
+This optimization may allow executing semantically invalid queries without error,
+because some columns are not analyzed.
+
+Possible values:
+- 0 - Disable
+- 1 - Enable
+)", 0) \
+    DECLARE(UInt64, jemalloc_profiler_sample_rate, 0, R"(
+)", 0) \
     DECLARE(Bool, jemalloc_enable_profiler, false, R"(
 Enable jemalloc profiler for the query. Jemalloc will sample allocations and all deallocations for sampled allocations.
 Profiles can be flushed using SYSTEM JEMALLOC FLUSH PROFILE which can be used for allocation analysis.
