@@ -421,7 +421,7 @@ private:
             /// Calculate L2 distance
             for (size_t r = 0; r < rows_in_block; ++r)
             {
-                /// We don't care about the branch in `else` as having one QBit with many reference vectors is a marginal use case
+                /// The branching in `else` is fine performance-wise since multiple reference vectors per QBit is rare
                 const CalcT * ref_data = [&]()
                 {
                     if constexpr (ref_is_const)
