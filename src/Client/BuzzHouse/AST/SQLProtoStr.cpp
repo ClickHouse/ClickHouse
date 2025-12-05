@@ -2462,9 +2462,6 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kS3:
             S3FuncToString(ret, tf.s3());
             break;
-        case TableFunctionType::kFunc:
-            SQLTableFuncCallToString(ret, tf.func());
-            break;
         case TableFunctionType::kMerge:
             MergeFuncToString(ret, tf.merge());
             break;
@@ -2515,6 +2512,9 @@ CONV_FN(TableFunction, tf)
             break;
         case TableFunctionType::kFlight:
             ArrowFlightFuncToString(ret, tf.flight());
+            break;
+        case TableFunctionType::kFunc:
+            SQLTableFuncCallToString(ret, tf.func());
             break;
         default:
             ret += "numbers(10)";
