@@ -1018,7 +1018,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 top_k_elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
             }
 
-            if (!ranges.ranges.empty())
+            if (!ranges.ranges.empty() && !perform_top_k_optimization)
             {
                 if (limits.max_rows || leaf_limits.max_rows)
                 {
