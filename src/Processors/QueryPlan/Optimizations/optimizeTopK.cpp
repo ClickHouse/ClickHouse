@@ -30,6 +30,10 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
     if (node->children.size() != 1)
         return 0;
 
+    /// Cannot support LIMIT 10 WITH TIES because we don't know how many rows will be output
+    if (limit_step->withTies())
+        return 0;
+
     node = node->children.front();
     auto * sorting_step = typeid_cast<SortingStep *>(node->step.get());
     if (!sorting_step)

@@ -1926,8 +1926,8 @@ static void buildIndexes(
         if (settings[Setting::use_skip_indexes_for_top_k] && can_skip_index_be_used_for_top_k_filtering(index_helper))
         {
             skip_indexes.skip_index_for_top_k_filtering = index_helper;
-            LOG_TRACE(getLogger("MergeTreeSkipIndexReader"), "Selected index {} on column {} for top-K optimization",
-                        index_helper->index.name, top_k_filter_info->column_name);
+            LOG_TRACE(getLogger("MergeTreeSkipIndexReader"), "Selected index {} on column {} for top-K optimization, k = {}",
+                        index_helper->index.name, top_k_filter_info->column_name, top_k_filter_info->limit_n);
             if (settings[Setting::use_skip_indexes_on_data_read])
                 skip_indexes.threshold_tracker = top_k_filter_info->threshold_tracker;
         }
