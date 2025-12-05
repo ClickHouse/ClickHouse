@@ -5554,7 +5554,10 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
             {
                 UNREACHABLE();
             }
-            this->backups[br.backup_number()] = std::move(newb);
+            if (!newb.databases.empty() || !newb.tables.empty() || !newb.views.empty() || !newb.dictionaries.empty())
+            {
+                this->backups[br.backup_number()] = std::move(newb);
+            }
         }
         else if (backups.contains(br.backup_number()))
         {
