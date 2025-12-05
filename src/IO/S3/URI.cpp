@@ -32,7 +32,7 @@ namespace ErrorCodes
 namespace S3
 {
 
-URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
+URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_presigned_query_parameters)
 {
     /// Case when bucket name represented in domain name of S3 URL.
     /// E.g. (https://bucket-name.s3.region.amazonaws.com/key)
@@ -60,12 +60,26 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     bool looks_like_presigned = false;
     for (const auto & [qk, qv] : original_uri.getQueryParameters())
     {
-        if (qk == "versionId" || qk == "AWSAccessKeyId" || qk == "Signature" || qk == "Expires" || qk.starts_with("X-Amz-"))
+        if (
+            qk == "versionId" ||
+            qk == "AWSAccessKeyId" ||
+            qk == "Signature" ||
+            qk == "Expires" ||
+            qk.starts_with("X-Amz-") ||
+            qk == "GoogleAccessId" ||
+            qk.starts_with("X-Goog-")
+        )
         {
             looks_like_presigned = true;
             break;
         }
     }
+
+    /// In compatibility mode, we want to treat pre-signed URLs like plain ones,
+    /// so we fold their query into the key (like make '?' behave as wildcard)
+    /// Do it by unmarking presigned here, but if it actually looks like a presigned URL
+    if (!keep_presigned_query_parameters && looks_like_presigned)
+        looks_like_presigned = false;
 
     std::unordered_map<std::string, std::string> mapper;
     auto context = Context::getGlobalContextInstance();
@@ -156,7 +170,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     }
 
     /// If there is a '?' in the original string, but no actual query, it means
-    /// the user intended to use '?' as a wildcard in the path
+    /// the user intended to use '?' as a wildcard in the path. Preserve it (even if trailing)
     if (original_uri.getRawQuery().empty() && uri_str.find('?') != std::string::npos && !has_version_id && !looks_like_presigned)
     {
         key += "?";

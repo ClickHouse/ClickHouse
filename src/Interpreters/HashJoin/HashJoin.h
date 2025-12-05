@@ -273,15 +273,15 @@ public:
         std::shared_ptr<FixedHashMap<UInt16, Mapped>>                         key16;
         std::shared_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>           key32;
         std::shared_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>           key64;
-        std::shared_ptr<HashMapWithSavedHash<StringRef, Mapped>>              key_string;
-        std::shared_ptr<HashMapWithSavedHash<StringRef, Mapped>>              key_fixed_string;
+        std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>              key_string;
+        std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>              key_fixed_string;
         std::shared_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>           keys128;
         std::shared_ptr<HashMap<UInt256, Mapped, UInt256HashCRC32>>           keys256;
         std::shared_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>>         hashed;
         std::shared_ptr<TwoLevelHashMap<UInt32, Mapped, HashCRC32<UInt32>>>   two_level_key32;
         std::shared_ptr<TwoLevelHashMap<UInt64, Mapped, HashCRC32<UInt64>>>   two_level_key64;
-        std::shared_ptr<TwoLevelHashMapWithSavedHash<StringRef, Mapped>>      two_level_key_string;
-        std::shared_ptr<TwoLevelHashMapWithSavedHash<StringRef, Mapped>>      two_level_key_fixed_string;
+        std::shared_ptr<TwoLevelHashMapWithSavedHash<std::string_view, Mapped>>      two_level_key_string;
+        std::shared_ptr<TwoLevelHashMapWithSavedHash<std::string_view, Mapped>>      two_level_key_fixed_string;
         std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128HashCRC32>>   two_level_keys128;
         std::shared_ptr<TwoLevelHashMap<UInt256, Mapped, UInt256HashCRC32>>   two_level_keys256;
         std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128TrivialHash>> two_level_hashed;
@@ -373,8 +373,7 @@ public:
 
         NullMapHolder() = default;
         explicit NullMapHolder(const ScatteredColumns * columns_, ColumnPtr column_)
-            : columns(columns_)
-            , column(column_)
+            : columns(columns_), column(column_)
         {
             // we can cache the selector size at construction to make the holder robust
             // even if columns are moved/cleared later
@@ -475,7 +474,6 @@ public:
 
     static bool isUsedByAnotherAlgorithm(const TableJoin & table_join);
     static bool canRemoveColumnsFromLeftBlock(const TableJoin & table_join);
-    bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
 
 private:
     friend class NotJoinedHash;
@@ -565,6 +563,7 @@ private:
     bool canRemoveColumnsFromLeftBlock() const;
 
     void validateAdditionalFilterExpression(std::shared_ptr<ExpressionActions> additional_filter_expression);
+    bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
 
     template <JoinKind KIND, typename Map, JoinStrictness STRICTNESS>
     void tryRerangeRightTableDataImpl(Map & map);
