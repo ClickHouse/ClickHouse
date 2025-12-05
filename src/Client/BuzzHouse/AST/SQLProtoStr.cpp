@@ -2734,7 +2734,7 @@ void OffsetStatementToString(String & ret, const bool has_limit, const OffsetSta
     ret += (has_limit && off.comma()) ? "," : "OFFSET";
     ret += " ";
     ExprToString(ret, off.row_count());
-    if (off.has_rows() || off.has_fetch())
+    if ((!has_limit || !off.comma()) && (off.has_rows() || off.has_fetch()))
     {
         ret += " ";
         ret += off.has_rows() ? RowsKeyword_Name(off.rows()).substr(4) : "ROWS";
