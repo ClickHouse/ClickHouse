@@ -89,7 +89,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
     /// 3. Checking if the value of `prefix.path` changed for any already existing directory
     ///    and apply the corresponding rename.
 
-    bool has_metadata = object_storage->existsOrHasAnyChild(layout->getMetadataDirectoryKey());
+    bool has_metadata = object_storage->existsOrHasAnyChild(layout->constructMetadataDirectoryKey());
 
     std::mutex remote_layout_mutex;
     std::unordered_map<std::string, DirectoryRemoteInfo> remote_layout;
@@ -121,7 +121,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
     try
     {
         /// Root folder is a special case. Files are stored as /__root/{file-name}.
-        for (auto iterator = object_storage->iterate(layout->getRootFilesDirectoryKey(), 0, /*with_tags=*/ false); iterator->isValid(); iterator->next())
+        for (auto iterator = object_storage->iterate(layout->constructRootFilesDirectoryKey(), 0, /*with_tags=*/ false); iterator->isValid(); iterator->next())
         {
             auto remote_file = iterator->current();
             remote_layout[""].files.emplace(remote_file->getFileName(), FileRemoteInfo{
@@ -130,10 +130,10 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
             });
         }
 
-        for (auto iterator = object_storage->iterate(layout->getMetadataDirectoryKey(), 0, /*with_tags=*/ false); iterator->isValid(); iterator->next())
+        for (auto iterator = object_storage->iterate(layout->constructMetadataDirectoryKey(), 0, /*with_tags=*/ false); iterator->isValid(); iterator->next())
         {
             const auto file = iterator->current();
-            const auto remote_path = layout->unpackDirectoryObjectKey(file->getPath());
+            const auto remote_path = layout->parseDirectoryObjectKey(file->getPath());
             if (!remote_path.has_value())
                 continue;
 
@@ -170,10 +170,10 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                     }
 
                     /// Load the list of files inside the directory.
-                    for (auto dir_iterator = object_storage->iterate(layout->getFilesDirectoryKey(remote_path.value()), 0, /*with_tags=*/ false); dir_iterator->isValid(); dir_iterator->next())
+                    for (auto dir_iterator = object_storage->iterate(layout->constructFilesDirectoryKey(remote_path.value()), 0, /*with_tags=*/ false); dir_iterator->isValid(); dir_iterator->next())
                     {
                         const auto remote_file = dir_iterator->current();
-                        const auto unpacked_remote_file_path = layout->unpackFileObjectKey(remote_file->getPath());
+                        const auto unpacked_remote_file_path = layout->parseFileObjectKey(remote_file->getPath());
                         if (!unpacked_remote_file_path.has_value())
                         {
                             LOG_WARNING(log, "Legacy layout is in use, ignoring '{}'", remote_file->getPath());
@@ -339,7 +339,7 @@ std::optional<StoredObjects> MetadataStorageFromPlainRewritableObjectStorage::ge
     if (!directory_remote_info)
         return std::nullopt;
 
-    auto object_key = layout->packFileObjectKey(directory_remote_info->remote_path, normalized_path.filename());
+    auto object_key = layout->constructFileObjectKey(directory_remote_info->remote_path, normalized_path.filename());
     return StoredObjects{StoredObject(object_key, path, object_size.value())};
 }
 
@@ -548,10 +548,10 @@ ObjectStorageKey MetadataStorageFromPlainRewritableObjectStorageTransaction::gen
         throw Exception(ErrorCodes::LOGICAL_ERROR, "File name is empty for path '{}'", path);
 
     if (const auto directory_remote_info = uncommitted_fs_tree->getDirectoryRemoteInfo(normalized_path.parent_path()))
-        return ObjectStorageKey::createAsAbsolute(metadata_storage.layout->packFileObjectKey(directory_remote_info->remote_path, normalized_path.filename()));
+        return ObjectStorageKey::createAsAbsolute(metadata_storage.layout->constructFileObjectKey(directory_remote_info->remote_path, normalized_path.filename()));
 
     if (const auto directory_remote_info = metadata_storage.fs_tree->getDirectoryRemoteInfo(normalized_path.parent_path()))
-        return ObjectStorageKey::createAsAbsolute(metadata_storage.layout->packFileObjectKey(directory_remote_info->remote_path, normalized_path.filename()));
+        return ObjectStorageKey::createAsAbsolute(metadata_storage.layout->constructFileObjectKey(directory_remote_info->remote_path, normalized_path.filename()));
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' does not exist", normalized_path.parent_path().string());
 }

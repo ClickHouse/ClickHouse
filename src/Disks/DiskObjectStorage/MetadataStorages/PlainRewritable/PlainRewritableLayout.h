@@ -15,18 +15,14 @@ public:
 
     explicit PlainRewritableLayout(std::string object_storage_common_key_prefix_);
 
-    /// TODO:
-    std::string getMetadataDirectoryKey() const;
-    std::string getRootFilesDirectoryKey() const;
-    std::string getFilesDirectoryKey(const std::string & directory_remote_path) const;
+    std::string constructMetadataDirectoryKey() const;
+    std::string constructRootFilesDirectoryKey() const;
+    std::string constructFilesDirectoryKey(const std::string & directory_remote_path) const;
+    std::string constructFileObjectKey(const std::string & directory_remote_path, const std::string & file_name) const;
+    std::string constructDirectoryObjectKey(const std::string & directory_remote_path) const;
 
-    /// TODO:
-    std::string packFileObjectKey(const std::string & directory_remote_path, const std::string & file_name) const;
-    std::string packDirectoryObjectKey(const std::string & directory_remote_path) const;
-
-    /// TODO:
-    std::optional<std::pair<std::string, std::string>> unpackFileObjectKey(const std::string & key) const;
-    std::optional<std::string> unpackDirectoryObjectKey(const std::string & key) const;
+    std::optional<std::pair<std::string, std::string>> parseFileObjectKey(const std::string & key) const;
+    std::optional<std::string> parseDirectoryObjectKey(const std::string & key) const;
 
 private:
     const std::string object_storage_common_key_prefix;

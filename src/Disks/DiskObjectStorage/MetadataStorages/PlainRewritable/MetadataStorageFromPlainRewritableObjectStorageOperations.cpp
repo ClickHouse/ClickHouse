@@ -76,7 +76,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute()
         if (!fs_tree->existsDirectory(path.parent_path().parent_path()).first)
             throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", path.parent_path().parent_path());
 
-    auto metadata_object_key = layout->packDirectoryObjectKey(directory_remote_path);
+    auto metadata_object_key = layout->constructDirectoryObjectKey(directory_remote_path);
 
     LOG_TRACE(
         getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"),
@@ -112,7 +112,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo()
     if (created_directory)
         fs_tree->unlinkTree(path);
 
-    auto metadata_object_key = layout->packDirectoryObjectKey(directory_remote_path);
+    auto metadata_object_key = layout->constructDirectoryObjectKey(directory_remote_path);
     object_storage->removeObjectIfExists(StoredObject(metadata_object_key, path));
 }
 
@@ -138,7 +138,7 @@ MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::MetadataStorageFrom
 std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::createWriteBuf(
     const DirectoryRemoteInfo & remote_info, std::optional<std::string> expected_content)
 {
-    auto metadata_object_key = layout->packDirectoryObjectKey(remote_info.remote_path);
+    auto metadata_object_key = layout->constructDirectoryObjectKey(remote_info.remote_path);
     StoredObject metadata_object(metadata_object_key);
 
     if (expected_content)
@@ -279,7 +279,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute()
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation"), "Removing directory '{}'", path);
 
     remove_attempted = true;
-    auto metadata_object_key = layout->packDirectoryObjectKey(info.remote_path);
+    auto metadata_object_key = layout->constructDirectoryObjectKey(info.remote_path);
     auto metadata_object = StoredObject(/*remote_path*/ metadata_object_key, /*local_path*/ path, path.string().length());
     object_storage->removeObjectIfExists(metadata_object);
 
@@ -297,7 +297,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo()
     if (!fs_tree->existsDirectory(path).first)
         fs_tree->recordDirectoryPath(path, info);
 
-    auto metadata_object_key = layout->packDirectoryObjectKey(info.remote_path);
+    auto metadata_object_key = layout->constructDirectoryObjectKey(info.remote_path);
     auto metadata_object = StoredObject(metadata_object_key, path);
 
     auto buf = object_storage->writeObject(
@@ -418,11 +418,11 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute()
 
     const auto normalized_path_from = normalizePath(path_from);
     const auto directory_remote_path_from = fs_tree->getDirectoryRemoteInfo(normalized_path_from.parent_path())->remote_path;
-    remote_path_from = layout->packFileObjectKey(directory_remote_path_from, normalized_path_from.filename());
+    remote_path_from = layout->constructFileObjectKey(directory_remote_path_from, normalized_path_from.filename());
 
     const auto normalized_path_to = normalizePath(path_to);
     const auto directory_remote_path_to = fs_tree->getDirectoryRemoteInfo(normalized_path_to.parent_path())->remote_path;
-    remote_path_to = layout->packFileObjectKey(directory_remote_path_to, normalized_path_to.filename());
+    remote_path_to = layout->constructFileObjectKey(directory_remote_path_to, normalized_path_to.filename());
 
     copy_attempted = true;
     object_storage->copyObject(StoredObject(remote_path_from), StoredObject(remote_path_to), getReadSettings(), getWriteSettings());
@@ -486,10 +486,10 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
     const auto directory_remote_path_from = fs_tree->getDirectoryRemoteInfo(normalized_path_from.parent_path())->remote_path;
     const auto directory_remote_path_to = fs_tree->getDirectoryRemoteInfo(normalized_path_to.parent_path())->remote_path;
 
-    remote_path_from = layout->packFileObjectKey(directory_remote_path_from, normalized_path_from.filename());
-    remote_path_to = layout->packFileObjectKey(directory_remote_path_to, normalized_path_to.filename());
-    tmp_remote_path_from = layout->packFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(16));
-    tmp_remote_path_to = layout->packFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(16));
+    remote_path_from = layout->constructFileObjectKey(directory_remote_path_from, normalized_path_from.filename());
+    remote_path_to = layout->constructFileObjectKey(directory_remote_path_to, normalized_path_to.filename());
+    tmp_remote_path_from = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(16));
+    tmp_remote_path_to = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(16));
     file_from_remote_info = fs_tree->getFileRemoteInfo(path_from).value();
     const auto read_settings = getReadSettingsForMetadata();
     const auto write_settings = getWriteSettingsForMetadata();
@@ -668,7 +668,7 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()
         LOG_TRACE(log, "Removing directory '{}'", subdir_path);
 
         /// Info should exist since it's lifetime is bounded to execution of this operation, because tmp path is unique.
-        auto metadata_object_key = layout->packDirectoryObjectKey(remote_info->remote_path);
+        auto metadata_object_key = layout->constructDirectoryObjectKey(remote_info->remote_path);
         objects_to_remove.emplace_back(metadata_object_key, path);
 
         /// We also need to remove all files inside each of the subdirectories.
@@ -680,7 +680,7 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()
 
             LOG_TRACE(log, "Removing file '{}'", file_path);
 
-            auto file_object_key = layout->packFileObjectKey(remote_info->remote_path, child);
+            auto file_object_key = layout->constructFileObjectKey(remote_info->remote_path, child);
             objects_to_remove.emplace_back(file_object_key, file_path);
         }
     }
