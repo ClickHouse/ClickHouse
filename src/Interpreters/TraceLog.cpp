@@ -1,5 +1,7 @@
 #include <base/getFQDNOrHostName.h>
 #include <base/demangle.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/DateLUTImpl.h>
 #include <Interpreters/InstrumentationManager.h>
 #include <Interpreters/TraceLog.h>
@@ -207,7 +209,13 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
     auto thread_name_str = toString(thread_name);
     columns[i++]->insertData(thread_name_str.data(), thread_name_str.size());
     columns[i++]->insertData(query_id.data(), query_id.size());
-    columns[i++]->insert(Array(trace.begin(), trace.end()));
+
+    auto & column_trace = typeid_cast<ColumnArray &>(*columns[i++]);
+    auto & column_trace_inner = typeid_cast<ColumnUInt64 &>(column_trace.getData());
+    column_trace_inner.getData().insert(column_trace_inner.getData().end(), trace.begin(), trace.end());
+    auto & offsets = column_trace.getOffsets();
+    offsets.push_back(offsets.back() + trace.size());
+
     columns[i++]->insert(size);
     columns[i++]->insert(ptr);
     if (memory_context.has_value())
@@ -229,14 +237,14 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
 #if defined(__ELF__) && !defined(OS_FREEBSD)
     if (symbolize)
     {
-        Array symbols;
-        Array lines;
-        size_t num_frames = trace.size();
-        symbols.reserve(num_frames);
-        lines.reserve(num_frames);
+        auto & column_symbols = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_symbols_inner = typeid_cast<ColumnLowCardinality &>(column_symbols.getData());
+
+        auto & column_lines = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_lines_inner = typeid_cast<ColumnLowCardinality &>(column_lines.getData());
 
         const SymbolIndex & symbol_index = SymbolIndex::instance();
-
+        size_t num_frames = trace.size();
         for (size_t frame = 0; frame < num_frames; ++frame)
         {
             if (const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(trace[frame])))
@@ -245,21 +253,21 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
 
                 auto demangled = tryDemangle(symbol->name);
                 if (demangled)
-                    symbols.emplace_back(std::string_view(demangled.get()));
+                    column_symbols_inner.insert(demangled.get());
                 else
-                    symbols.emplace_back(std::string_view(symbol->name));
+                    column_symbols_inner.insert(std::string_view(symbol->name));
 
-                lines.emplace_back(AddressToLineCache::get(trace[frame]));
+                column_lines_inner.insert(AddressToLineCache::get(trace[frame]));
             }
             else
             {
-                symbols.emplace_back(String());
-                lines.emplace_back(String());
+                column_symbols_inner.insert(String());
+                column_lines_inner.insert(String());
             }
         }
 
-        columns[i++]->insert(symbols);
-        columns[i++]->insert(lines);
+        column_symbols.getOffsets().push_back(column_symbols.getOffsets().back() + num_frames);
+        column_lines.getOffsets().push_back(column_lines.getOffsets().back() + num_frames);
     }
     else
 #endif
