@@ -5,7 +5,7 @@
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/JoinUtils.h>
 #include <Processors/Port.h>
-#include <Common/logger_useful.h>
+#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 
 namespace ProfileEvents
 {
@@ -124,7 +124,9 @@ IProcessor::Status JoiningTransform::prepare()
         return Status::NeedData;
 
     input_chunk = input.pull(true);
-    has_input = input_chunk.hasRows() || on_totals;
+
+    has_virtual_row = isVirtualRow(input_chunk);
+    has_input = input_chunk.hasRows() || on_totals || has_virtual_row;
     return Status::Ready;
 }
 
@@ -197,6 +199,12 @@ void JoiningTransform::transform(Chunk & chunk)
 
         res = outputs.front().getHeader().cloneEmpty();
         JoinCommon::joinTotals(left_totals, right_totals, join->getTableJoin(), res);
+    }
+    else if (has_virtual_row)
+    {
+        res = outputs.front().getHeader().cloneEmpty();
+        output_chunk = Chunk(res.getColumns(), res.rows());
+        output_chunk->setChunkInfos(std::move(chunk.getChunkInfos()));
     }
     else
     {

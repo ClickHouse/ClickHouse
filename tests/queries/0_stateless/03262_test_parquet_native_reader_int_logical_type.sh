@@ -18,5 +18,5 @@ DATA_FILE_USER_PATH="${WORKING_DIR}/multi_column_bf.gz.parquet"
 
 cp ${DATA_FILE} ${DATA_FILE_USER_PATH}
 
-${CLICKHOUSE_CLIENT} --query="select int8_logical, uint16_logical, uint64_logical from file('${DATA_FILE_USER_PATH}', Parquet) order by uint64_logical limit 20 SETTINGS input_format_parquet_use_native_reader=false;";
-${CLICKHOUSE_CLIENT} --query="select int8_logical, uint16_logical, uint64_logical from file('${DATA_FILE_USER_PATH}', Parquet) order by uint64_logical limit 20 SETTINGS input_format_parquet_use_native_reader=true;";
+${CLICKHOUSE_CLIENT} --query="select int8_logical, uint16_logical, uint64_logical from file('${DATA_FILE_USER_PATH}', Parquet) order by uint64_logical limit 20 SETTINGS input_format_parquet_use_native_reader_v3=false;";
+${CLICKHOUSE_CLIENT} --query="select int8_logical, uint16_logical, uint64_logical from file('${DATA_FILE_USER_PATH}', Parquet) order by uint64_logical limit 20 SETTINGS input_format_parquet_use_native_reader_v3=true;";

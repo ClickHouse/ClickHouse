@@ -200,7 +200,6 @@ namespace ErrorCodes
 {
     extern const int INDEX_NOT_USED;
     extern const int LOGICAL_ERROR;
-    extern const int TOO_MANY_ROWS;
 }
 
 static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
@@ -283,37 +282,6 @@ static SortDescription getSortDescriptionForOutputHeader(
     }
 
     return {};
-}
-
-void ReadFromMergeTree::AnalysisResult::checkLimits(const Settings & settings, const SelectQueryInfo & query_info_) const
-{
-
-    /// Do not check number of read rows if we have reading
-    /// in order of sorting key with limit.
-    /// In general case, when there exists WHERE clause
-    /// it's impossible to estimate number of rows precisely,
-    /// because we can stop reading at any time.
-
-    SizeLimits limits;
-    if (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read] && !query_info_.input_order_info)
-        limits = SizeLimits(settings[Setting::max_rows_to_read], 0, settings[Setting::read_overflow_mode]);
-
-    SizeLimits leaf_limits;
-    if (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf] && !query_info_.input_order_info)
-        leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], 0, settings[Setting::read_overflow_mode_leaf]);
-
-    if (limits.max_rows || leaf_limits.max_rows)
-    {
-        /// Fail fast if estimated number of rows to read exceeds the limit
-        size_t total_rows_estimate = selected_rows;
-        if (query_info_.trivial_limit > 0 && total_rows_estimate > query_info_.trivial_limit)
-        {
-            total_rows_estimate = query_info_.trivial_limit;
-        }
-        limits.check(total_rows_estimate, 0, "rows (controlled by 'max_rows_to_read' setting)", ErrorCodes::TOO_MANY_ROWS);
-        leaf_limits.check(
-            total_rows_estimate, 0, "rows (controlled by 'max_rows_to_read_leaf' setting)", ErrorCodes::TOO_MANY_ROWS);
-    }
 }
 
 ReadFromMergeTree::ReadFromMergeTree(
@@ -2117,6 +2085,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             res_parts,
             metadata_snapshot,
             mutations_snapshot,
+            query_info_,
             context_,
             indexes->key_condition,
             indexes->part_offset_condition,
@@ -2131,7 +2100,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             indexes->use_skip_indexes_for_disjunctions,
             find_exact_ranges,
             query_info_.isFinal(),
-            is_parallel_reading_from_replicas_);
+            is_parallel_reading_from_replicas_,
+            result);
 
         if (indexes->use_skip_indexes && !indexes->skip_indexes.empty() && query_info_.isFinal()
             && settings[Setting::use_skip_indexes_if_final_exact_mode])
@@ -2312,7 +2282,7 @@ bool ReadFromMergeTree::isParallelReplicasLocalPlanForInitiator() const
         && context->canUseParallelReplicasOnInitiator();
 }
 
-bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, std::optional<ActionsDAG> virtual_row_conversion_)
+bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit)
 {
     /// if dirction is not set, use current one
     if (!direction)
@@ -2335,14 +2305,26 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     /// Let prefer in-order optimization over vertical FINAL for now
     enable_vertical_final = false;
 
-    /// Disable virtual row for FINAL.
-    if (virtual_row_conversion_ && !isQueryWithFinal() && context->getSettingsRef()[Setting::read_in_order_use_virtual_row])
-        virtual_row_conversion = std::make_shared<ExpressionActions>(std::move(*virtual_row_conversion_));
-
     updateSortDescription();
+
+    /// Re-calculate analysis result to have correct read_type
+    /// For some reason for projection it breaks aggregation in order, so skip it
+    if (analyzed_result_ptr && !analyzed_result_ptr->readFromProjection())
+        selectRangesToRead();
 
     return true;
 }
+
+bool ReadFromMergeTree::setVirtualRowConversions(ActionsDAG virtual_row_conversion_)
+{
+    /// Disable virtual row for FINAL.
+    if (isQueryWithFinal() || !context->getSettingsRef()[Setting::read_in_order_use_virtual_row])
+        return false;
+
+    virtual_row_conversion = std::make_shared<ExpressionActions>(std::move(virtual_row_conversion_));
+    return true;
+}
+
 
 bool ReadFromMergeTree::readsInOrder() const
 {
@@ -2681,8 +2663,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         /// They are stored separately, and some could be released after PK analysis.
         storage_snapshot->data = std::make_unique<MergeTreeData::SnapshotData>();
     }
-
-    result.checkLimits(context->getSettingsRef(), query_info);
     shared_virtual_fields.emplace("_sample_factor", result.sampling.used_sample_factor);
 
     LOG_DEBUG(

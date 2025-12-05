@@ -80,6 +80,15 @@ def parse_args():
         default=None,
         type=int,
     )
+    parser.add_argument(
+        "--param",
+        help=(
+            "Optional. Comma-separated KEY=VALUE pairs to inject as environment "
+            "variables for pytest (e.g. --param PYTEST_ADDOPTS=-vv,CUSTOM_FLAG=1)"
+        ),
+        type=str,
+        default="",
+    )
     return parser.parse_args()
 
 
@@ -150,6 +159,16 @@ def main():
     is_parallel = False
     is_sequential = False
     is_targeted_check = False
+
+    if args.param:
+        for item in args.param.split(","):
+            print(f"Setting env variable: {item}")
+            key, _, value = item.partition("=")
+            key = key.strip()
+            if not key:
+                continue
+            os.environ[key] = value.strip()
+
     java_path = Shell.get_output(
         "update-alternatives --config java | sed -n 's/.*(providing \/usr\/bin\/java): //p'",
         verbose=True,

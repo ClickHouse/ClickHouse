@@ -12,6 +12,8 @@ from helpers.iceberg_utils import (
 import logging
 import time
 import uuid
+from helpers.config_cluster import minio_secret_key
+
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure"])
@@ -227,9 +229,13 @@ def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with
 
         return files
 
+    pq_file = ""
     files = add_df(mode="overwrite")
     for i in range(1, 5 * len(started_cluster_iceberg_with_spark.instances)):
         files = add_df(mode="append")
+        for file in files:
+            if file[-7:] == 'parquet':
+                pq_file = file
 
     clusters = instance.query(f"SELECT * FROM system.clusters")
     logging.info(f"Clusters setup: {clusters}")
@@ -280,3 +286,11 @@ def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with
     buffers_count_with_splitted_tasks = get_buffers_count(lambda: instance.query(f"SELECT * FROM {table_function_expr_cluster} ORDER BY ALL SETTINGS input_format_parquet_use_native_reader_v3={input_format_parquet_use_native_reader_v3},cluster_table_function_split_granularity='bucket', cluster_table_function_buckets_batch_size={cluster_table_function_buckets_batch_size}").strip().split())
     buffers_count_default = get_buffers_count(lambda: instance.query(f"SELECT * FROM {table_function_expr_cluster} ORDER BY ALL SETTINGS input_format_parquet_use_native_reader_v3={input_format_parquet_use_native_reader_v3}, cluster_table_function_buckets_batch_size={cluster_table_function_buckets_batch_size}").strip().split())
     assert buffers_count_with_splitted_tasks > buffers_count_default
+
+    if storage_type != "s3":
+        return
+    table_function_expr_s3_cluster = f"s3Cluster('cluster_simple', 'http://minio1:9001/root/{pq_file}', 'minio', '{minio_secret_key}', 'Parquet')"
+    buffers_count_with_splitted_tasks = get_buffers_count(lambda: instance.query(f"SELECT * FROM {table_function_expr_s3_cluster} ORDER BY ALL SETTINGS input_format_parquet_use_native_reader_v3={input_format_parquet_use_native_reader_v3},cluster_table_function_split_granularity='bucket', cluster_table_function_buckets_batch_size={cluster_table_function_buckets_batch_size}").strip().split())
+    buffers_count_default = get_buffers_count(lambda: instance.query(f"SELECT * FROM {table_function_expr_s3_cluster} ORDER BY ALL SETTINGS input_format_parquet_use_native_reader_v3={input_format_parquet_use_native_reader_v3}, cluster_table_function_buckets_batch_size={cluster_table_function_buckets_batch_size}").strip().split())
+    if buffers_count_with_splitted_tasks != 0:
+        assert buffers_count_with_splitted_tasks > buffers_count_default

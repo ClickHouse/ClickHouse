@@ -599,6 +599,11 @@ Possible values:
 - 1 — validate settings.
 - 0 — do not validate settings.
 )", 0) \
+    DECLARE(Bool, compatibility_s3_presigned_url_query_in_path, false, R"(
+Compatibility: when enabled, folds pre-signed URL query parameters (e.g. X-Amz-*) into the S3 key (legacy behavior),
+so '?' acts as a wildcard in the path. When disabled (default), pre-signed URL query parameters are kept in the URL query
+to avoid interpreting '?' as a wildcard.
+)", 0) \
     DECLARE(Bool, s3_disable_checksum, S3::DEFAULT_DISABLE_CHECKSUM, R"(
 Do not calculate a checksum when sending a file to S3. This speeds up writes by avoiding excessive processing passes on a file. It is mostly safe as the data of MergeTree tables is checksummed by ClickHouse anyway, and when S3 is accessed with HTTPS, the TLS layer already provides integrity while transferring through the network. While additional checksums on S3 give defense in depth.
 )", 0) \
@@ -701,7 +706,8 @@ The maximum speed of local reads in bytes per second.
 The maximum speed of local writes in bytes per second.
 )", 0) \
     DECLARE(Bool, stream_like_engine_allow_direct_select, false, R"(
-Allow direct SELECT query for Kafka, RabbitMQ, FileLog, Redis Streams, and NATS engines. In case there are attached materialized views, SELECT query is not allowed even if this setting is enabled.
+Allow direct SELECT query for Kafka, RabbitMQ, FileLog, Redis Streams, S3Queue, AzureQueue and NATS engines. In case there are attached materialized views, SELECT query is not allowed even if this setting is enabled.
+If there are no attached materialized views, enabling this setting allows to read data. Be aware that usually the read data is removed from the queue. In order to avoid removing read data the related engine settings should be configured properly.
 )", 0) \
     DECLARE(String, stream_like_engine_insert_queue, "", R"(
 When stream-like engine reads from multiple queues, the user will need to select one queue to insert into when writing. Used by Redis Streams and NATS.
@@ -5635,6 +5641,7 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
+    DECLARE(Bool, query_plan_read_in_order_through_join, true, "Keep reading in order from the left table in JOIN operations, which can be utilized by subsequent steps.", 0) \
     DECLARE(Bool, query_plan_aggregation_in_order, true, R"(
 Toggles the aggregation in-order query-plan-level optimization.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
@@ -7146,6 +7153,10 @@ Possible values:
 )", 0) \
     DECLARE(Bool, serialize_string_in_memory_with_zero_byte, true, R"(
 Serialize String values during aggregation with zero byte at the end. Enable to keep compatibility when querying cluster of incompatible versions.
+)", 0) \
+    DECLARE(UInt64, s3_path_filter_limit, 1000, R"(
+Maximum number of `_path` values that can be extracted from query filters to use for file iteration
+instead of glob listing. 0 means disabled.
 )", 0) \
     \
     /* ####################################################### */ \
