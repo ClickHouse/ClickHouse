@@ -1,4 +1,5 @@
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/BaseSettings.h>
@@ -7558,22 +7559,24 @@ void SettingsImpl::loadSettingsFromConfig(const String & path, const Poco::Util:
 
 void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
 {
-    /// Convert ptr and make simple check
-    auto * column_map = column ? &typeid_cast<ColumnMap &>(*column) : nullptr;
-    if (!column_map)
+    if (!column)
         return;
 
-    auto & offsets = column_map->getNestedColumn().getOffsets();
-    auto & tuple_column = column_map->getNestedData();
-    auto & key_column = tuple_column.getColumn(0);
-    auto & value_column = tuple_column.getColumn(1);
+    /// Convert ptr and make simple check
+    auto & column_map = typeid_cast<ColumnMap &>(*column);
+    auto & offsets = column_map.getNestedColumn().getOffsets();
+
+    auto & tuple_column = column_map.getNestedData();
+    auto & key_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(0));
+    auto & value_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(1));
 
     size_t size = 0;
     for (const auto & setting : all(changed_only ? SKIP_UNCHANGED : SKIP_NONE))
     {
-        auto name = setting.getName();
+        auto & name = setting.getName();
+        auto value = setting.getValueString();
         key_column.insertData(name.data(), name.size());
-        value_column.insertData(setting.getValueString());
+        value_column.insertData(value.data(), value.size());
         size++;
     }
 

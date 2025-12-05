@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsDateTime.h>
@@ -197,13 +198,13 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 
     typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(memory_usage);
 
-    columns[i++]->insertData(current_database.data(), current_database.size());
-    columns[i++]->insertData(query.data(), query.size());
-    columns[i++]->insertData(formatted_query.data(), formatted_query.size());
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(current_database.data(), current_database.size());
+    typeid_cast<ColumnString &>(*columns[i++]).insertData(query.data(), query.size());
+    typeid_cast<ColumnString &>(*columns[i++]).insertData(formatted_query.data(), formatted_query.size());
     typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(normalized_query_hash);
 
     const std::string_view query_kind_str = magic_enum::enum_name(query_kind);
-    columns[i++]->insertData(query_kind_str);
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(query_kind_str.data(), query_kind_str.size());
 
     {
         auto & column_databases = typeid_cast<ColumnArray &>(*columns[i++]);
@@ -215,10 +216,12 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 
         auto fill_column = [](const std::set<String> & data, ColumnArray & column)
         {
+            auto & lc_column_data = typeid_cast<ColumnLowCardinality &>(column.getData());
+
             size_t size = 0;
             for (const auto & name : data)
             {
-                column.getData().insertData(name.data(), name.size());
+                lc_column_data.insertData(name.data(), name.size());
                 ++size;
             }
             auto & offsets = column.getOffsets();
@@ -234,14 +237,14 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     }
 
     typeid_cast<ColumnInt32 &>(*columns[i++]).getData().push_back(exception_code);
-    columns[i++]->insertData(exception.data(), exception.size());
-    columns[i++]->insertData(stack_trace.data(), stack_trace.size());
+    typeid_cast<ColumnString &>(*columns[i++]).insertData(exception.data(), exception.size());
+    typeid_cast<ColumnString &>(*columns[i++]).insertData(stack_trace.data(), stack_trace.size());
 
     appendClientInfo(client_info, columns, i);
 
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(ClickHouseRevision::getVersionRevision());
 
-    columns[i++]->insertData(log_comment);
+    typeid_cast<ColumnString &>(*columns[i++]).insertData(log_comment.data(), log_comment.size());
 
     {
         auto & column_thread_ids = typeid_cast<ColumnArray &>(*columns[i++]);
@@ -294,10 +297,12 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 
         auto fill_column = [](const auto & data, ColumnArray & column)
         {
+            auto & lc_column_data = typeid_cast<ColumnLowCardinality &>(column.getData());
+
             size_t size = 0;
             for (const auto & value : data)
             {
-                column.getData().insertData(value);
+                lc_column_data.insertData(value.data(), value.size());
                 ++size;
             }
             auto & offsets = column.getOffsets();
@@ -334,7 +339,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     else
         columns[i++]->insertDefault();
 
-    columns[i++]->insert(is_internal);
+    typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(is_internal);
 }
 
 void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i)
