@@ -62,6 +62,7 @@ def started_cluster():
             user_configs=[
                 "configs/users.xml",
                 "configs/enable_keeper_fault_injection.xml",
+                "configs/keeper_retries.xml",
             ],
             with_minio=True,
             with_azurite=True,
@@ -78,6 +79,7 @@ def started_cluster():
             user_configs=[
                 "configs/users.xml",
                 "configs/enable_keeper_fault_injection.xml",
+                "configs/keeper_retries.xml",
             ],
             with_minio=True,
             with_zookeeper=True,
@@ -275,7 +277,7 @@ def test_processed_file_setting_distributed(started_cluster, processing_threads)
 def test_upgrade(started_cluster):
     node = started_cluster.instances["instance_23.12"]
     if "23.12" not in node.query("select version()").strip():
-        node.restart_with_original_version()
+        node.restart_with_original_version(clear_data_dir=True)
 
     table_name = f"test_upgrade"
     dst_table_name = f"{table_name}_dst"
@@ -480,7 +482,7 @@ def test_commit_on_limit(started_cluster, processing_threads):
 def test_upgrade_2(started_cluster):
     node = started_cluster.instances["instance_24.5"]
     if "24.5" not in node.query("select version()").strip():
-        node.restart_with_original_version()
+        node.restart_with_original_version(clear_data_dir=True)
     assert "24.5" in node.query("select version()").strip()
 
     table_name = f"test_upgrade_2_{uuid.uuid4().hex[:8]}"

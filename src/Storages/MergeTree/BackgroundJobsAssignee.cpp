@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/LockGuardWithStopWatch.h>
 #include <Common/randomSeed.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
@@ -111,7 +112,7 @@ void BackgroundJobsAssignee::start()
 {
     std::lock_guard lock(holder_mutex);
     if (!holder)
-        holder = getContext()->getSchedulePool().createTask("BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
+        holder = getContext()->getSchedulePool().createTask(data.getStorageID(), "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
 
     holder->activateAndSchedule();
 }

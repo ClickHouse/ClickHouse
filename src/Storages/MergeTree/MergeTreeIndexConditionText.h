@@ -8,6 +8,13 @@ namespace DB
 {
 
 class TextIndexDictionaryBlockCache;
+using TextIndexDictionaryBlockCachePtr = std::shared_ptr<TextIndexDictionaryBlockCache>;
+
+class TextIndexHeaderCache;
+using TextIndexHeaderCachePtr = std::shared_ptr<TextIndexHeaderCache>;
+
+class TextIndexPostingsCache;
+using TextIndexPostingsCachePtr = std::shared_ptr<TextIndexPostingsCache>;
 
 enum class TextSearchMode : uint8_t
 {
@@ -15,17 +22,24 @@ enum class TextSearchMode : uint8_t
     All,
 };
 
+enum class TextIndexDirectReadMode : uint8_t
+{
+    /// Do not use direct read.
+    None,
+    /// Use direct read and remove the original condition.
+    Exact,
+    /// Use direct read and add a hint to the original condition.
+    Hint,
+};
+
 /// Represents a single text-search function
 struct TextSearchQuery
 {
-    TextSearchQuery(String function_name_, TextSearchMode mode_, std::vector<String> tokens_)
-        : function_name(std::move(function_name_)), mode(std::move(mode_)), tokens(std::move(tokens_))
-    {
-        std::sort(tokens.begin(), tokens.end());
-    }
+    TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode direct_read_mode_, std::vector<String> tokens_);
 
     String function_name;
-    TextSearchMode mode;
+    TextSearchMode search_mode;
+    TextIndexDirectReadMode direct_read_mode;
     std::vector<String> tokens;
 
     SipHash getHash() const;
@@ -33,25 +47,28 @@ struct TextSearchQuery
 
 using TextSearchQueryPtr = std::shared_ptr<TextSearchQuery>;
 
+class MergeTreeIndexTextPreprocessor;
+using MergeTreeIndexTextPreprocessorPtr = std::shared_ptr<MergeTreeIndexTextPreprocessor>;
 
 /// Condition for text index.
 /// Unlike conditions for other indexes, it can be used after analysis
 /// of granules on reading from text index step (see MergeTreeReaderTextIndex)
-class MergeTreeIndexConditionText final : public IMergeTreeIndexCondition, WithContext
+class MergeTreeIndexConditionText final : public IMergeTreeIndexCondition, public WithContext
 {
 public:
     MergeTreeIndexConditionText(
         const ActionsDAG::Node * predicate,
-        ContextPtr context,
+        ContextPtr context_,
         const Block & index_sample_block,
-        TokenExtractorPtr token_extactor_);
+        TokenExtractorPtr token_extractor_,
+        MergeTreeIndexTextPreprocessorPtr preprocessor_);
 
     ~MergeTreeIndexConditionText() override = default;
-    static bool isSupportedFunctionForDirectRead(const String & function_name);
     static bool isSupportedFunction(const String & function_name);
+    TextIndexDirectReadMode getDirectReadMode(const String & function_name) const;
 
     bool alwaysUnknownOrTrue() const override;
-    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
+    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
 
     const std::vector<String> & getAllSearchTokens() const { return all_search_tokens; }
     bool useBloomFilter() const { return use_bloom_filter; }
@@ -65,7 +82,13 @@ public:
     TextSearchQueryPtr getSearchQueryForVirtualColumn(const String & column_name) const;
 
     bool useDictionaryBlockCache() const { return use_dictionary_block_cache; }
-    TextIndexDictionaryBlockCache * dictionaryBlockCache() const { return dictionary_block_cache; }
+    TextIndexDictionaryBlockCachePtr dictionaryBlockCache() const { return dictionary_block_cache; }
+
+    bool useHeaderCache() const { return use_header_cache; }
+    TextIndexHeaderCachePtr headerCache() const { return header_cache; }
+
+    bool usePostingsCache() const { return use_postings_cache; }
+    TextIndexPostingsCachePtr postingsCache() const { return postings_cache; }
 
 private:
     /// Uses RPN like KeyCondition
@@ -82,6 +105,7 @@ private:
             FUNCTION_MATCH,
             FUNCTION_HAS_ANY_TOKENS,
             FUNCTION_HAS_ALL_TOKENS,
+            FUNCTION_HAS_ALL_TOKENS_OR_EMPTY,
             /// Can take any value
             FUNCTION_UNKNOWN,
             /// Operators
@@ -108,6 +132,10 @@ private:
         const Field & value_field,
         RPNElement & out) const;
 
+    TextIndexDirectReadMode getHintOrNoneMode() const;
+    bool traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
+    bool traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const;
+
     std::vector<String> stringToTokens(const Field & field) const;
     std::vector<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;
     std::vector<String> stringLikeToTokens(const Field & field) const;
@@ -130,10 +158,20 @@ private:
     bool use_bloom_filter = true;
     /// If global mode is All, then we can exit analysis earlier if any token is missing in granule.
     TextSearchMode global_search_mode = TextSearchMode::All;
+    /// Reference preprocessor expression
+    MergeTreeIndexTextPreprocessorPtr preprocessor;
     /// Using text index dictionary block cache can be enabled to reduce I/O
     bool use_dictionary_block_cache;
     /// Instance of the text index dictionary block cache
-    TextIndexDictionaryBlockCache * dictionary_block_cache;
+    TextIndexDictionaryBlockCachePtr dictionary_block_cache;
+    /// Using text index header cache can be enabled to reduce I/O
+    bool use_header_cache;
+    /// Instance of the text index dictionary block cache
+    TextIndexHeaderCachePtr header_cache;
+    /// Using text index posting list cache can be enabled to reduce I/O
+    bool use_postings_cache;
+    /// Instance of the text index dictionary block cache
+    TextIndexPostingsCachePtr postings_cache;
 };
 
 static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";

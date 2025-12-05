@@ -137,7 +137,7 @@ void updateStatistics(const DB::ManyAggregatedDataVariants & data_variants, cons
     for (size_t i = 0; i < data_variants.size(); ++i)
         sizes[i] = data_variants[i]->size();
     const auto median_size = sizes.begin() + sizes.size() / 2; // not precisely though...
-    std::nth_element(sizes.begin(), median_size, sizes.end());
+    ::nth_element(sizes.begin(), median_size, sizes.end());
     const auto sum_of_sizes = std::accumulate(sizes.begin(), sizes.end(), 0ull);
     DB::getHashTablesStatistics<DB::AggregationEntry>().update({.sum_of_sizes = sum_of_sizes, .median_size = *median_size}, params);
 }
@@ -210,7 +210,8 @@ Aggregator::Params::Params(
     bool optimize_group_by_constant_keys_,
     float min_hit_rate_to_use_consecutive_keys_optimization_,
     const StatsCollectingParams & stats_collecting_params_,
-    bool enable_producing_buckets_out_of_order_in_aggregation_)
+    bool enable_producing_buckets_out_of_order_in_aggregation_,
+    bool serialize_string_with_zero_byte_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
@@ -234,6 +235,7 @@ Aggregator::Params::Params(
     , min_hit_rate_to_use_consecutive_keys_optimization(min_hit_rate_to_use_consecutive_keys_optimization_)
     , stats_collecting_params(stats_collecting_params_)
     , enable_producing_buckets_out_of_order_in_aggregation(enable_producing_buckets_out_of_order_in_aggregation_)
+    , serialize_string_with_zero_byte(serialize_string_with_zero_byte_)
 {
 }
 
@@ -278,7 +280,8 @@ Aggregator::Params::Params(
     bool overflow_row_,
     size_t max_threads_,
     size_t max_block_size_,
-    float min_hit_rate_to_use_consecutive_keys_optimization_)
+    float min_hit_rate_to_use_consecutive_keys_optimization_,
+    bool serialize_string_with_zero_byte_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
@@ -288,6 +291,7 @@ Aggregator::Params::Params(
     , max_block_size(max_block_size_)
     , only_merge(true)
     , min_hit_rate_to_use_consecutive_keys_optimization(min_hit_rate_to_use_consecutive_keys_optimization_)
+    , serialize_string_with_zero_byte(serialize_string_with_zero_byte_)
 {
 }
 
@@ -540,6 +544,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
 
     HashMethodContext::Settings cache_settings;
     cache_settings.max_threads = params.max_threads;
+    cache_settings.serialize_string_with_zero_byte = params.serialize_string_with_zero_byte;
     aggregation_state_cache = AggregatedDataVariants::createCache(method_chosen, cache_settings);
 
 #if USE_EMBEDDED_COMPILER
@@ -721,9 +726,9 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
         {
             /// Pack if possible all the keys along with information about which key values are nulls
             /// into a fixed 16- or 32-byte blob.
-            if (std::tuple_size<KeysNullMap<UInt128>>::value + keys_bytes <= 16)
+            if (std::tuple_size_v<KeysNullMap<UInt128>> + keys_bytes <= 16)
                 return AggregatedDataVariants::Type::nullable_keys128;
-            if (std::tuple_size<KeysNullMap<UInt256>>::value + keys_bytes <= 32)
+            if (std::tuple_size_v<KeysNullMap<UInt256>> + keys_bytes <= 32)
                 return AggregatedDataVariants::Type::nullable_keys256;
         }
 
@@ -2142,7 +2147,9 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
                 init_out_cols();
 
             const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
-            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref);
+            IColumn::SerializationSettings serialization_settings{
+                .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
+            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref, &serialization_settings);
 
             if constexpr (is_final)
             {
@@ -2408,7 +2415,9 @@ Aggregator::ConvertToBlockResVariant Aggregator::convertToBlockImplFinal(
                 init_out_cols();
 
             const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
-            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref);
+            IColumn::SerializationSettings serialization_settings{
+                .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
+            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref, &serialization_settings);
             places.emplace_back(mapped);
 
             /// Mark the cell as destroyed so it will not be destroyed in destructor.
@@ -2481,7 +2490,9 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
                 init_out_cols();
 
             const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
-            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref);
+            IColumn::SerializationSettings serialization_settings{
+                .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
+            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref, &serialization_settings);
 
             /// reserved, so push_back does not throw exceptions
             for (size_t i = 0; i < params.aggregates_size; ++i)
@@ -2676,7 +2687,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(AggregatedDataVariants &
         }
     };
 
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "AggregatorPool");
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::AGGREGATOR_POOL);
     try
     {
         for (size_t thread_id = 0; thread_id < max_threads; ++thread_id)
@@ -3653,7 +3664,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
         if (use_thread_pool)
         {
-            ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "AggregatorPool");
+            ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::AGGREGATOR_POOL);
             try
             {
                 for (size_t i = 0; i < params.max_threads; ++i)

@@ -192,10 +192,17 @@ bool ReadBufferFromS3::nextImpl()
     if (!next_result)
     {
         read_all_range_successfully = true;
-        stop_reason = fmt::format("EOF (read offset: {}/{})", offset.load(), read_until_position.load());
+        stop_reason = fmt::format(
+            "EOF (read offset: {}/{}, file size: {}, restricted seek: {})",
+            offset.load(), read_until_position.load(),
+            file_size.has_value() ? toString(*file_size) : "Unknown", restricted_seek);
+
         release_reason = stop_reason;
         // release result to free pooled HTTP session for reuse
         impl->releaseResult();
+        /// We could get EOF only if read_until_position is not set,
+        /// otherwise we'd quit before impl->next().
+        chassert(!read_until_position);
         return false;
     }
 
@@ -210,8 +217,10 @@ bool ReadBufferFromS3::nextImpl()
     if (stream_eof || is_read_until_position)
     {
         release_reason = fmt::format(
-            "{} ({}/{})", stream_eof ? "stream EOF" : "read until position reached",
-            offset.load(), read_until_position.load());
+            "{} (read {}/{}, file size: {}, restricted seek: {})",
+            impl->isStreamEof() ? "stream EOF" : "read until position reached",
+            offset.load(), read_until_position.load(),
+            file_size.has_value() ? toString(*file_size) : "Unknown", restricted_seek);
 
         impl->releaseResult();
     }
@@ -454,7 +463,7 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     if (!version_id.empty())
         req.SetVersionId(version_id);
 
-    req.SetAdditionalCustomHeaderValue("clickhouse-request", fmt::format("attempt={}", attempt));
+    S3::setClickhouseAttemptNumber(req, attempt);
 
     if (range_end_incl)
     {

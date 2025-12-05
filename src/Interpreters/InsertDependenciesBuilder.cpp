@@ -669,7 +669,8 @@ private:
             auto converting_types_dag = ActionsDAG::makeConvertingActions(
                 input.getColumnsWithTypeAndName(),
                 to_convert,
-                ActionsDAG::MatchColumnsMode::Name);
+                ActionsDAG::MatchColumnsMode::Name,
+                local_context);
 
             auto adding_missing_defaults_dag = addMissingDefaults(
                 Block(to_convert),
@@ -1407,14 +1408,14 @@ Chain InsertDependenciesBuilder::createSink(StorageIDPrivate view_id) const
 
     Chain result;
 
+    /// Add transform to remove Replicated columns. Right now no storage supports writing it.
+    result.addSink(std::make_shared<RemovingReplicatedColumnsTransform>(header));
+
     /// Add transform to check if the sizes of arrays - elements of nested data structures doesn't match.
     /// We have to make this assertion before writing to table, because storage engine may assume that they have equal sizes.
     /// NOTE It'd better to do this check in serialization of nested structures (in place when this assumption is required),
     /// but currently we don't have methods for serialization of nested structures "as a whole".
     result.addSink(std::make_shared<NestedElementsValidationTransform>(header));
-
-    /// Add transform to remove Replicated columns. Right now no storage supports writing it.
-    result.addSink(std::make_shared<RemovingReplicatedColumnsTransform>(header));
 
     if (!inner_storage->supportsSparseSerialization())
         result.addSink(std::make_shared<RemovingSparseTransform>(header));

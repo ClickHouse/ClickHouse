@@ -415,7 +415,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         {
             const ColumnWithTypeAndName & key_col = header.safeGetByPosition(*column_num_it);
             const String & name = key_col.name;
-            const IDataType & nested_type = *assert_cast<const DataTypeArray &>(*key_col.type).getNestedType();
+            const IDataType & nested_type = *recursiveRemoveLowCardinality(assert_cast<const DataTypeArray &>(*key_col.type).getNestedType());
 
             if (column_num_it == map.second.begin()
                 || endsWith(name, "ID")
@@ -500,19 +500,12 @@ static void postprocessChunk(
         auto column = std::move(columns[next_column]);
         ++next_column;
 
-        if (!desc.is_agg_func_type && !desc.is_simple_agg_func_type && isTuple(desc.function->getResultType()))
+        if (!desc.aggregate_all_columns && !desc.is_agg_func_type && !desc.is_simple_agg_func_type && isTuple(desc.function->getResultType()))
         {
-            if (desc.aggregate_all_columns)
-            {
-                res_columns[desc.column_numbers[0]] = column;
-            }
-            else
-            {
-                /// Unpack tuple into block.
-                size_t tuple_size = desc.column_numbers.size();
-                for (size_t i = 0; i < tuple_size; ++i)
-                   res_columns[desc.column_numbers[i]] = assert_cast<const ColumnTuple &>(*column).getColumnPtr(i);
-            }
+            /// Unpack tuple into block.
+            const size_t tuple_size = desc.column_numbers.size();
+            for (size_t i = 0; i < tuple_size; ++i)
+               res_columns[desc.column_numbers[i]] = assert_cast<const ColumnTuple &>(*column).getColumnPtr(i);
         }
         else if (desc.nested_type)
         {
@@ -573,8 +566,8 @@ static void setRow(Row & row, std::vector<ColumnPtr> & row_columns, const Column
 }
 
 
-SummingSortedAlgorithm::SummingMergedData::SummingMergedData(UInt64 max_block_size_rows_, UInt64 max_block_size_bytes_, ColumnsDefinition & def_)
-    : MergedData(false, max_block_size_rows_, max_block_size_bytes_)
+SummingSortedAlgorithm::SummingMergedData::SummingMergedData(UInt64 max_block_size_rows_, UInt64 max_block_size_bytes_, std::optional<size_t> max_dynamic_subcolumns_, ColumnsDefinition & def_)
+    : MergedData(false, max_block_size_rows_, max_block_size_bytes_, max_dynamic_subcolumns_)
     , def(def_), current_row(def.column_names.size()), current_row_columns(def.column_names.size())
 {
 }
@@ -590,31 +583,23 @@ void SummingSortedAlgorithm::SummingMergedData::initialize(const DB::Block & hea
     for (const auto & desc : def.columns_to_aggregate)
     {
         // Wrap aggregated columns in a tuple to match function signature
-        if (!desc.is_agg_func_type && !desc.is_simple_agg_func_type && isTuple(desc.function->getResultType()))
+        if (!desc.aggregate_all_columns && !desc.is_agg_func_type && !desc.is_simple_agg_func_type && isTuple(desc.function->getResultType()))
         {
-            if (desc.aggregate_all_columns)
-            {
-                auto column = desc.real_type->createColumn();
-                size_t tuple_size = static_cast<const ColumnTuple &>(*column).tupleSize();
-                MutableColumns tuple_columns(tuple_size);
-                for (size_t i = 0; i < tuple_size; ++i)
-                    tuple_columns[i] = static_cast<const ColumnTuple &>(*column).getColumnPtr(i)->cloneEmpty();
-                new_columns.emplace_back(ColumnTuple::create(std::move(tuple_columns)));
-            }
-            else
-            {
-                size_t tuple_size = desc.column_numbers.size();
-                MutableColumns tuple_columns(tuple_size);
-                for (size_t i = 0; i < tuple_size; ++i)
-                    tuple_columns[i] = std::move(columns[desc.column_numbers[i]]);
+            const size_t tuple_size = desc.column_numbers.size();
+            MutableColumns tuple_columns(tuple_size);
+            for (size_t i = 0; i < tuple_size; ++i)
+                tuple_columns[i] = std::move(columns[desc.column_numbers[i]]);
 
-                new_columns.emplace_back(ColumnTuple::create(std::move(tuple_columns)));
-            }
+            new_columns.emplace_back(ColumnTuple::create(std::move(tuple_columns)));
         }
         else
         {
-            const auto & type = desc.nested_type ? desc.nested_type : desc.real_type;
-            new_columns.emplace_back(type->createColumn());
+            /// Remove LowCardinality from columns if needed. It's important to use columns initialized in
+            /// MergedData::initialize to keep correct dynamic structure of some columns (like JSON/Dynamic).
+            if (desc.nested_type)
+                new_columns.emplace_back(recursiveRemoveLowCardinality(std::move(columns[desc.column_numbers[0]]))->assumeMutable());
+            else
+                new_columns.emplace_back(std::move(columns[desc.column_numbers[0]]));
         }
     }
 
@@ -817,6 +802,7 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
     const Names & partition_and_sorting_required_columns,
     size_t max_block_size_rows,
     size_t max_block_size_bytes,
+    std::optional<size_t> max_dynamic_subcolumns_,
     const String & sum_function_name,
     const String & sum_function_map_name,
     bool remove_default_values,
@@ -824,7 +810,7 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
     : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, std::move(description_))
     , columns_definition(
           defineColumns(*header_, description, column_names_to_sum, partition_and_sorting_required_columns, sum_function_name, sum_function_map_name, remove_default_values, aggregate_all_columns))
-    , merged_data(max_block_size_rows, max_block_size_bytes, columns_definition)
+    , merged_data(max_block_size_rows, max_block_size_bytes, max_dynamic_subcolumns_, columns_definition)
 {
 }
 

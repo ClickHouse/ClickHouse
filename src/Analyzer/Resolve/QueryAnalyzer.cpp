@@ -52,6 +52,8 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
 
+#include <base/Decimal_fwd.h>
+#include <base/types.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <ranges>
 
@@ -77,8 +79,8 @@ namespace Setting
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsBool allow_suspicious_types_in_group_by;
     extern const SettingsBool allow_suspicious_types_in_order_by;
-    extern const SettingsBool allow_not_comparable_types_in_order_by;
     extern const SettingsBool allow_experimental_correlated_subqueries;
+    extern const SettingsString implicit_table_at_top_level;
 }
 
 
@@ -634,8 +636,8 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
             expression_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
 
-    // We support limit in the range [INT64_MIN, UINT64_MAX]
 
+    // We support limit in the range [INT64_MIN, UINT64_MAX] for integral limit or (0, 1) for fractional limit
     // Consider the nonnegative limit case first as they are more common
     {
         Field converted_value = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeUInt64());
@@ -665,10 +667,25 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
         }
     }
 
-    // If we are here, then the number is either outside the supported range or float
+    {
+        Field converted_value = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeFloat64());
+        if (!converted_value.isNull())
+        {
+            auto value = converted_value.safeGet<Float64>();
+            if (value < 1 && value > 0)
+            {
+                auto result_constant_node = std::make_shared<ConstantNode>(Field(value), std::make_shared<DataTypeFloat64>());
+                result_constant_node->getSourceExpression() = limit_offset_constant_node->getSourceExpression();
+
+                expression_node = std::move(result_constant_node);
+                return;
+            }
+        }
+    }
+
     throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
-        "{} numeric constant expression is not representable as UInt64 or Int64",
-        expression_description);
+        "The value {} of {} expression is not representable as UInt64 or Int64 or Float64 in the range (0, 1)",
+        applyVisitor(FieldVisitorToString(), limit_offset_constant_node->getValue()) , expression_description);
 }
 
 void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
@@ -2250,7 +2267,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         for (size_t i = 0; i < strict_transformer_column_names_size; ++i)
         {
             const auto & column_name = (*strict_transformer_column_names)[i];
-            if (used_column_names.find(column_name) == used_column_names.end())
+            if (!used_column_names.contains(column_name))
                 non_matched_column_names.push_back(column_name);
         }
 
@@ -3208,8 +3225,8 @@ void QueryAnalyzer::validateSortingKeyType(const DataTypePtr & sorting_key_type,
                 "its a JSON path subcolumn) or casting this column to a specific data type. "
                 "Set setting allow_suspicious_types_in_order_by = 1 in order to allow it");
 
-        if (!scope.context->getSettingsRef()[Setting::allow_not_comparable_types_in_order_by] && !type.isComparable())
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Data type {} is not allowed in ORDER BY keys, because its values are not comparable. Set setting allow_not_comparable_types_in_order_by = 1 in order to allow it", type.getName());
+        if (!type.isComparable())
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Data type {} is not allowed in ORDER BY keys, because its values are not comparable", type.getName());
     };
 
     check(*sorting_key_type);
@@ -3586,7 +3603,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
     {
         const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 
-        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
+        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals();
         if (storage_snapshot->storage.supportsSubcolumns())
         {
             get_column_options.withSubcolumns();
@@ -3903,7 +3920,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
     uint64_t use_structure_from_insertion_table_in_table_functions
         = scope_context->getSettingsRef()[Setting::use_structure_from_insertion_table_in_table_functions];
-    if (!nested_table_function && use_structure_from_insertion_table_in_table_functions && scope_context->hasInsertionTable()
+    if (!nested_table_function && !scope.subquery_depth && use_structure_from_insertion_table_in_table_functions && scope_context->hasInsertionTable()
         && table_function_ptr->needStructureHint())
     {
         const auto & insertion_table = scope_context->getInsertionTable();
@@ -4202,56 +4219,88 @@ void QueryAnalyzer::resolveCrossJoin(QueryTreeNodePtr & cross_join_node, Identif
     }
 }
 
-static NameSet getColumnsFromTableExpression(const QueryTreeNodePtr & table_expression)
+static NameSet getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_expression)
 {
     NameSet existing_columns;
-    switch (table_expression->getNodeType())
+    std::stack<const IQueryTreeNode *> nodes_to_process;
+    nodes_to_process.push(root_table_expression.get());
+
+    while (!nodes_to_process.empty())
     {
-        case QueryTreeNodeType::TABLE: {
-            const auto * table_node = table_expression->as<TableNode>();
-            chassert(table_node);
+        const auto * table_expression = nodes_to_process.top();
+        nodes_to_process.pop();
 
-            auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
-            for (const auto & column : table_node->getStorageSnapshot()->getColumns(get_column_options))
-                existing_columns.insert(column.name);
+        switch (table_expression->getNodeType())
+        {
+            case QueryTreeNodeType::TABLE:
+            {
+                const auto * table_node = table_expression->as<TableNode>();
+                chassert(table_node);
 
-            return existing_columns;
+                auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+                for (const auto & column : table_node->getStorageSnapshot()->getColumns(get_column_options))
+                    existing_columns.insert(column.name);
+
+                break;
+            }
+            case QueryTreeNodeType::TABLE_FUNCTION:
+            {
+                const auto * table_function_node = table_expression->as<TableFunctionNode>();
+                chassert(table_function_node);
+
+                auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+                for (const auto & column : table_function_node->getStorageSnapshot()->getColumns(get_column_options))
+                    existing_columns.insert(column.name);
+
+                break;
+            }
+            case QueryTreeNodeType::QUERY:
+            {
+                const auto * query_node = table_expression->as<QueryNode>();
+                chassert(query_node);
+
+                for (const auto & column : query_node->getProjectionColumns())
+                    existing_columns.insert(column.name);
+
+                break;
+            }
+            case QueryTreeNodeType::UNION:
+            {
+                const auto * union_node = table_expression->as<UnionNode>();
+                chassert(union_node);
+
+                for (const auto & column : union_node->computeProjectionColumns())
+                    existing_columns.insert(column.name);
+                break;
+            }
+            case QueryTreeNodeType::JOIN:
+            {
+                const auto * join_node = table_expression->as<JoinNode>();
+                chassert(join_node);
+
+                nodes_to_process.push(join_node->getLeftTableExpression().get());
+                nodes_to_process.push(join_node->getRightTableExpression().get());
+                break;
+            }
+            case QueryTreeNodeType::CROSS_JOIN:
+            {
+                const auto * cross_join_node = table_expression->as<CrossJoinNode>();
+                chassert(cross_join_node);
+                for (const auto & table_expr : cross_join_node->getTableExpressions())
+                    nodes_to_process.push(table_expr.get());
+                break;
+            }
+            default:
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Expected TableNode, TableFunctionNode, QueryNode or UnionNode, got {}: {}",
+                    table_expression->getNodeTypeName(),
+                    table_expression->formatASTForErrorMessage());
+            }
         }
-        case QueryTreeNodeType::TABLE_FUNCTION: {
-            const auto * table_function_node = table_expression->as<TableFunctionNode>();
-            chassert(table_function_node);
-
-            auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
-            for (const auto & column : table_function_node->getStorageSnapshot()->getColumns(get_column_options))
-                existing_columns.insert(column.name);
-
-            return existing_columns;
-        }
-        case QueryTreeNodeType::QUERY: {
-            const auto * query_node = table_expression->as<QueryNode>();
-            chassert(query_node);
-
-            for (const auto & column : query_node->getProjectionColumns())
-                existing_columns.insert(column.name);
-
-            return existing_columns;
-        }
-        case QueryTreeNodeType::UNION: {
-            const auto * union_node = table_expression->as<UnionNode>();
-            chassert(union_node);
-
-            for (const auto & column : union_node->computeProjectionColumns())
-                existing_columns.insert(column.name);
-
-            return existing_columns;
-        }
-        default:
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Expected TableNode, TableFunctionNode, QueryNode or UnionNode, got {}: {}",
-                table_expression->getNodeTypeName(),
-                table_expression->formatASTForErrorMessage());
     }
+    return existing_columns;
 }
 
 /// Resolve join node in scope
@@ -4345,8 +4394,14 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                             while (existing_columns.contains(column_name_type.name))
                                 column_name_type.name = "_" + column_name_type.name;
 
+                            auto [expression_source, is_single_source] = getExpressionSource(resolved_nodes.front());
+                            /// Do not support `SELECT t1.a + t2.a AS id ... USING id`
+                            if (!is_single_source)
+                                return nullptr;
+
                             /// Create ColumnNode with expression from parent projection
-                            return std::make_shared<ColumnNode>(std::move(column_name_type), resolved_nodes.front(), left_table_expression);
+                            return std::make_shared<ColumnNode>(std::move(column_name_type), resolved_nodes.front(),
+                                expression_source ? expression_source : left_table_expression);
                         }
                     }
                 }

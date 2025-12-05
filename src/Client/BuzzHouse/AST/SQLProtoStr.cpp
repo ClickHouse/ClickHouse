@@ -792,11 +792,14 @@ CONV_FN(BinaryOperator, bop)
         case BINOP_LEGR:
             ret += " <> ";
             break;
-        case BINOP_IS_NOT_DISTINCT_FROM:
-            ret += " IS NOT DISTINCT FROM ";
-            break;
         case BINOP_LEEQGR:
             ret += " <=> ";
+            break;
+        case BINOP_IS_DISTINCT_FROM:
+            ret += " IS DISTINCT FROM ";
+            break;
+        case BINOP_IS_NOT_DISTINCT_FROM:
+            ret += " IS NOT DISTINCT FROM ";
             break;
         case BINOP_AND:
             ret += " AND ";
@@ -983,6 +986,23 @@ static void BottomTypeNameToString(String & ret, const uint32_t quote, const boo
             ret += FloatingPoints_Name(qq.subtype());
             ret += ", ";
             ret += std::to_string(qq.dimension());
+            ret += ")";
+        }
+        break;
+        case BottomTypeNameType::kGeo:
+            ret += GeoTypes_Name(btn.geo());
+            break;
+        case BottomTypeNameType::kAggr: {
+            const AggregateFunction & af = btn.aggr();
+
+            ret += af.simple() ? "Simple" : "";
+            ret += "AggregateFunction(";
+            ret += SQLFunc_Name(af.aggr()).substr(4);
+            for (int i = 0; i < af.types_size(); i++)
+            {
+                ret += ", ";
+                TopTypeNameToString(ret, quote, af.types(i));
+            }
             ret += ")";
         }
         break;
@@ -1188,9 +1208,6 @@ CONV_FN_QUOTE(TopTypeName, ttn)
         case TopTypeNameType::kVariant:
             ret += "Variant";
             TupleWithOutColumnNamesToString(ret, quote, ttn.variant());
-            break;
-        case TopTypeNameType::kGeo:
-            ret += GeoTypes_Name(ttn.geo());
             break;
         default:
             ret += "Int";
@@ -2679,30 +2696,24 @@ CONV_FN(GroupByStatement, gbs)
     }
 }
 
-CONV_FN(LimitStatement, ls)
+CONV_FN(LimitByStatement, ls)
 {
     ret += "LIMIT ";
     ExprToString(ret, ls.limit());
     if (ls.has_offset())
     {
-        ret += ", ";
+        ret += ls.comma() ? "," : " OFFSET";
+        ret += " ";
         ExprToString(ret, ls.offset());
     }
-    if (ls.with_ties())
+    ret += " BY ";
+    if (ls.has_by_expr())
     {
-        ret += " WITH TIES";
+        ExprToString(ret, ls.by_expr());
     }
-    if (ls.has_by_expr() || ls.lall())
+    else
     {
-        ret += " BY ";
-        if (ls.has_by_expr())
-        {
-            ExprToString(ret, ls.by_expr());
-        }
-        else
-        {
-            ret += "ALL";
-        }
+        ret += "ALL";
     }
 }
 
@@ -2712,18 +2723,22 @@ CONV_FN(FetchStatement, fet)
     ret += fet.first() ? "FIRST" : "NEXT";
     ret += " ";
     ExprToString(ret, fet.row_count());
-    ret += " ROW";
-    ret += fet.rows() ? "S" : "";
+    ret += " ";
+    ret += RowsKeyword_Name(fet.rows()).substr(4);
     ret += " ";
     ret += fet.only() ? "ONLY" : "WITH TIES";
 }
 
-CONV_FN(OffsetStatement, off)
+void OffsetStatementToString(String & ret, const bool has_limit, const OffsetStatement & off)
 {
-    ret += "OFFSET ";
+    ret += (has_limit && off.comma()) ? "," : "OFFSET";
+    ret += " ";
     ExprToString(ret, off.row_count());
-    ret += " ROW";
-    ret += off.rows() ? "S" : "";
+    if (off.has_rows() || off.has_fetch())
+    {
+        ret += " ";
+        ret += off.has_rows() ? RowsKeyword_Name(off.rows()).substr(4) : "ROWS";
+    }
     if (off.has_fetch())
     {
         ret += " ";
@@ -2804,15 +2819,20 @@ CONV_FN(SelectStatementCore, ssc)
         ret += " ";
         OrderByStatementToString(ret, ssc.orderby());
     }
+    if (ssc.has_limit_by())
+    {
+        ret += " ";
+        LimitByStatementToString(ret, ssc.limit_by());
+    }
     if (ssc.has_limit())
     {
-        ret += " ";
-        LimitStatementToString(ret, ssc.limit());
+        ret += " LIMIT ";
+        ExprToString(ret, ssc.limit());
     }
-    else if (ssc.has_offset())
+    if (ssc.has_offset() && (ssc.has_limit() || !ssc.has_limit_by()))
     {
         ret += " ";
-        OffsetStatementToString(ret, ssc.offset());
+        OffsetStatementToString(ret, ssc.has_limit(), ssc.offset());
     }
 }
 
@@ -2935,6 +2955,11 @@ CONV_FN(IndexParam, ip)
             break;
         case IndexParamType::kUnescapedSval:
             ret += ip.unescaped_sval();
+            break;
+        case IndexParamType::kKval:
+            ret += ip.kval().key();
+            ret += " = ";
+            ExprToString(ret, ip.kval().value());
             break;
         default:
             ret += "0";
@@ -3480,7 +3505,7 @@ CONV_FN(CreateTable, create_table)
 {
     CreateOrReplaceToString(ret, create_table.create_opt());
     ret += " ";
-    if (create_table.create_opt() == CreateReplaceOption::Create && create_table.is_temp())
+    if (create_table.is_temp())
     {
         ret += "TEMPORARY ";
     }
@@ -3992,7 +4017,7 @@ CONV_FN(CreateView, create_view)
 
     CreateOrReplaceToString(ret, create_view.create_opt());
     ret += " ";
-    if (create_view.create_opt() == CreateReplaceOption::Create && create_view.is_temp())
+    if (create_view.is_temp())
     {
         ret += "TEMPORARY ";
     }
@@ -4939,9 +4964,6 @@ CONV_FN(SystemCommand, cmd)
         case CmdType::kUnloadPk:
             SystemCommandOnCluster(ret, "UNLOAD PRIMARY KEY", cmd, cmd.unload_pk());
             break;
-        case CmdType::kRefreshViews:
-            ret += "REFRESH VIEWS";
-            break;
         case CmdType::kRefreshView:
             ret += "REFRESH VIEW ";
             ExprSchemaTableToString(ret, cmd.refresh_view());
@@ -5047,6 +5069,22 @@ CONV_FN(SystemCommand, cmd)
             break;
         case CmdType::kReconnectKeeper:
             ret += "RECONNECT ZOOKEEPER";
+            can_set_cluster = true;
+            break;
+        case CmdType::kDropTextIndexDictionaryCache:
+            ret += "DROP TEXT INDEX DICTIONARY CACHE";
+            can_set_cluster = true;
+            break;
+        case CmdType::kDropTextIndexHeaderCache:
+            ret += "DROP TEXT INDEX HEADER CACHE";
+            can_set_cluster = true;
+            break;
+        case CmdType::kDropTextIndexPostingsCache:
+            ret += "DROP TEXT INDEX POSTINGS CACHE";
+            can_set_cluster = true;
+            break;
+        case CmdType::kDropTextIndexCaches:
+            ret += "DROP TEXT INDEX CACHES";
             can_set_cluster = true;
             break;
         default:

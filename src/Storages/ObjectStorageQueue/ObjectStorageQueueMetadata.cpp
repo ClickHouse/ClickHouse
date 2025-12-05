@@ -19,6 +19,7 @@
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/randomSeed.h>
 #include <Common/DNSResolver.h>
+#include <Interpreters/DDLTask.h>
 #include <shared_mutex>
 #include <Core/ServerUUID.h>
 
@@ -206,7 +207,7 @@ void ObjectStorageQueueMetadata::startup()
     if (!task && (need_cleanup_for_unordered || need_cleanup_for_ordered))
     {
         task = Context::getGlobalContextInstance()->getSchedulePool().createTask(
-            "ObjectStorageQueueCleanupFunc",
+            StorageID::createEmpty(), "ObjectStorageQueueCleanupFunc",
             [this] { cleanupThreadFunc(); });
 
         task->activate();
@@ -281,24 +282,30 @@ ObjectStorageQueueMetadata::tryAcquireBucket(const Bucket & bucket)
 
 void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, const ContextPtr & context)
 {
+    bool is_initial_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY ||
+                            (context->getZooKeeperMetadataTransaction() && context->getZooKeeperMetadataTransaction()->isInitialQuery());
+
     const fs::path alter_settings_lock_path = zookeeper_path / "alter_settings_lock";
     zkutil::EphemeralNodeHolder::Ptr alter_settings_lock;
     auto zookeeper = getZooKeeper(log);
 
-    /// We will retry taking alter_settings_lock for the duration of 5 seconds.
-    /// Do we need to add a setting for this?
-    const size_t num_tries = 100;
-    for (size_t i = 0; i < num_tries; ++i)
+    if (is_initial_query)
     {
-        alter_settings_lock = zkutil::EphemeralNodeHolder::tryCreate(alter_settings_lock_path, *zookeeper->getKeeper(), toString(getCurrentTime()));
+        /// We will retry taking alter_settings_lock for the duration of 5 seconds.
+        /// Do we need to add a setting for this?
+        const size_t num_tries = 100;
+        for (size_t i = 0; i < num_tries; ++i)
+        {
+            alter_settings_lock = zkutil::EphemeralNodeHolder::tryCreate(alter_settings_lock_path, *zookeeper->getKeeper(), toString(getCurrentTime()));
 
-        if (alter_settings_lock)
-            break;
+            if (alter_settings_lock)
+                break;
 
-        if (i == num_tries - 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to take alter setting lock");
+            if (i == num_tries - 1)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to take alter setting lock");
 
-        sleepForMilliseconds(50);
+            sleepForMilliseconds(50);
+        }
     }
 
     Coordination::Stat stat;
@@ -413,7 +420,8 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
     /// Here we intentionally do not add zk retries,
     /// because we modify metadata under ephemeral metadata lock,
     /// so we do not want to retry if it expires.
-    zookeeper->set(table_metadata_path, new_metadata_str, stat.version);
+    if (is_initial_query)
+        zookeeper->set(table_metadata_path, new_metadata_str, stat.version);
 
     table_metadata.syncChangeableSettings(new_table_metadata);
 }
@@ -468,6 +476,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
         Coordination::Requests requests;
         Coordination::Responses responses;
         std::optional<Coordination::Error> code;
+        zk_retries.resetFailures();
         zk_retries.retryLoop([&]
         {
             auto zk_client = getZooKeeper(log);
@@ -656,6 +665,7 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
         Coordination::Requests requests;
         Coordination::Responses responses;
 
+        zk_retries.resetFailures();
         zk_retries.retryLoop([&]
         {
             auto zk_client = getZooKeeper(log);
@@ -776,6 +786,7 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
     Coordination::Error code = Coordination::Error::ZOK;
 
     bool is_retry = false;
+    bool allow_remove_recursive = true;
     for (size_t i = 0; i < 1000; ++i)
     {
         Coordination::Requests requests;
@@ -790,7 +801,7 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
         try
         {
             zk_client = getZooKeeper(log);
-            supports_remove_recursive = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE);
+            supports_remove_recursive = allow_remove_recursive && zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE);
 
             Coordination::Stat stat;
             std::string registry_str;
@@ -843,7 +854,7 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                 if (supports_remove_recursive)
                 {
                     requests.push_back(zkutil::makeCheckRequest(registry_path, stat.version));
-                    requests.push_back(zkutil::makeRemoveRecursiveRequest(*zk_client, zookeeper_path, std::numeric_limits<uint32_t>::max()));
+                    requests.push_back(zkutil::makeRemoveRecursiveRequest(*zk_client, zookeeper_path, /*remove_nodes_limit=*/10000));
                 }
                 else
                 {
@@ -914,6 +925,13 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                 }
             }
             return;
+        }
+
+        if (!responses.empty() && supports_remove_recursive && code == Coordination::Error::ZNOTEMPTY) /// potentiall we reached RemoveRecursive node limit, let's try without it
+        {
+            allow_remove_recursive = false;
+            is_retry = true;
+            continue;
         }
 
         if (Coordination::isHardwareError(code)
@@ -1143,6 +1161,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     }
 
     Strings failed_nodes;
+    zk_retries.resetFailures();
     zk_retries.retryLoop([&]
     {
         code = getZooKeeper(log)->tryGetChildren(zookeeper_failed_path, failed_nodes);
@@ -1195,7 +1214,10 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     {
         auto get_paths = [&]
         {
+            LOG_TEST(log, "Fetching info for {} paths", paths.size());
+
             zkutil::ZooKeeper::MultiTryGetResponse response;
+            zk_retries.resetFailures();
             zk_retries.retryLoop([&]
             {
                 response = zk_client->tryGet(paths);
@@ -1226,6 +1248,10 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
         if (!paths.empty())
             get_paths();
     };
+
+    LOG_TRACE(
+        log, "Processed nodes to remove: {}, failed nodes to remove: {}, multiread batch size: {}",
+        processed_nodes.size(), failed_nodes.size(), keeper_multiread_batch_size);
 
     fetch_nodes(processed_nodes, zookeeper_processed_path);
     fetch_nodes(failed_nodes, zookeeper_failed_path);
@@ -1271,6 +1297,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
                 {
                     /// requests with ZRUNTIMEINCONSISTENCY were not processed because the multi request was aborted before
                     /// so we try removing it again without multi requests
+                    zk_retries.resetFailures();
                     zk_retries.retryLoop([&]
                     {
                         code = getZooKeeper(log)->tryRemove(remove_requests[i]->getPath());
@@ -1395,6 +1422,7 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
     auto get_paths = [&]
     {
         zkutil::ZooKeeper::MultiTryGetResponse response;
+        zk_retries.resetFailures();
         zk_retries.retryLoop([&]
         {
             response = getZooKeeper(log)->tryGet(get_batch);
@@ -1444,6 +1472,7 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
 
     for (const auto & node : nodes_to_remove)
     {
+        zk_retries.resetFailures();
         zk_retries.retryLoop([&]
         {
             code = getZooKeeper(log)->tryRemove(node);
