@@ -3901,8 +3901,16 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             throw;
         }
 
-        if (auto * expression_list = table_function_argument->as<ListNode>(); expression_list && !expression_list->getNodes().empty())
+        if (auto * expression_list = table_function_argument->as<ListNode>())
         {
+            if (expression_list->getNodes().empty())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Table function {} argument at position {} resolved to an empty expression list (parsed as: {})",
+                    table_function_name,
+                    table_function_argument_index + 1,
+                    table_function_argument->formatASTForErrorMessage());
+
             for (auto & expression_list_node : expression_list->getNodes())
                 result_table_function_arguments.push_back(expression_list_node);
         }
