@@ -2101,7 +2101,7 @@ void executeQuery(
 
                     fiu_do_on(FailPoints::execute_query_calling_empty_set_result_func_on_exception,
                     {
-                        // emulate calling empty set_result_details() callbak
+                        // emulate calling empty set_result_details() callback
                         throw std::bad_function_call{};
                     });
 
