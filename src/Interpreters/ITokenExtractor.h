@@ -158,21 +158,26 @@ private:
     }
 };
 
-struct IndexDescription;
-
-struct TokenExtractorFactory : public boost::noncopyable
+struct TokenizerFactory : public boost::noncopyable
 {
-    TokenExtractorFactory(std::vector<String> allowed_types_, bool is_bloom_filter_ = false)
-        : allowed_types(allowed_types_)
-        , is_bloom_filter(is_bloom_filter_)
+    TokenizerFactory(String caller_name_, std::vector<String> allowed_tokenizers_)
+        : caller_name(caller_name_)
+        , allowed_tokenizers(allowed_tokenizers_)
     {
-        chassert(!allowed_types.empty());
+        chassert(!allowed_tokenizers.empty());
     }
 
-    std::unique_ptr<ITokenExtractor> createTokenExtractor(const IndexDescription & index);
+    void validateTokenizerType(const String & tokenizer);
 
-    std::vector<String> allowed_types;
-    bool is_bloom_filter = false;
+    std::unique_ptr<ITokenExtractor> createTokenizer(const String & tokenizer_type, std::span<const Field> params);
+
+    /// Param helper functions
+    static UInt64 extractNgramParam(std::span<const Field> params);
+    static std::vector<String> extractSplitByStringParam(std::span<const Field> params);
+    static std::tuple<UInt64, UInt64, std::optional<UInt64>> extractSparseGramsParams(std::span<const Field> params);
+
+    String caller_name;
+    std::vector<String> allowed_tokenizers;
 };
 
 /// Parser extracting all ngrams from string.

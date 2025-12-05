@@ -56,9 +56,6 @@ static size_t getBloomFilterSizeInBytes(size_t bits_per_row, size_t num_tokens)
 static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 16;
 static_assert(PostingListBuilder::max_small_size <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "max_small_size must be less than or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
 
-static constexpr UInt64 DEFAULT_NGRAM_SIZE = 3;
-static constexpr UInt64 DEFAULT_SPARSE_GRAMS_MIN_LENGTH = 3;
-static constexpr UInt64 DEFAULT_SPARSE_GRAMS_MAX_LENGTH = 100;
 static constexpr UInt64 DEFAULT_DICTIONARY_BLOCK_SIZE = 128;
 static constexpr bool DEFAULT_DICTIONARY_BLOCK_USE_FRONTCODING = true;
 static constexpr UInt64 DEFAULT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = 16;
@@ -1151,82 +1148,22 @@ std::pair<String, std::vector<Field>> extractTokenizer(std::unordered_map<String
         options.at(ARGUMENT_TOKENIZER).getTypeName());
 }
 
-UInt64 extractNgramParam(const std::vector<Field> & params)
-{
-    assertParamsCount(NgramsTokenExtractor::getExternalName(), params.size(), 1);
-    return params.empty() ? DEFAULT_NGRAM_SIZE : castAs<UInt64>(params.at(0), "ngram_size");
-}
-
-std::vector<String> extractSplitByStringParam(const std::vector<Field> & params)
-{
-    assertParamsCount(SplitByStringTokenExtractor::getExternalName(), params.size(), 1);
-    if (params.empty())
-        return std::vector<String>{" "};
-
-    std::vector<String> values;
-    auto array = castAs<Array>(params.at(0), "separators");
-
-    for (const auto & value : array)
-        values.emplace_back(castAs<String>(value, "separator"));
-
-    return values;
-}
-
-std::tuple<UInt64, UInt64, std::optional<UInt64>> extractSparseGramsParams(const std::vector<Field> & params)
-{
-    assertParamsCount(SparseGramsTokenExtractor::getExternalName(), params.size(), 3);
-
-    UInt64 min_length = DEFAULT_SPARSE_GRAMS_MIN_LENGTH;
-    UInt64 max_length = DEFAULT_SPARSE_GRAMS_MAX_LENGTH;
-    std::optional<UInt64> min_cutoff_length;
-
-    if (!params.empty())
-        min_length = castAs<UInt64>(params.at(0), "min_length");
-
-    if (params.size() > 1)
-        max_length = castAs<UInt64>(params.at(1), "max_length");
-
-    if (params.size() > 2)
-        min_cutoff_length = castAs<UInt64>(params.at(2), "min_cutoff_length");
-
-    return {min_length, max_length, min_cutoff_length};
-}
-
 }
 
 MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
 {
     std::unordered_map<String, Field> options = convertArgumentsToOptionsMap(index.arguments);
     const auto [tokenizer, params] = extractTokenizer(options);
-    std::unique_ptr<ITokenExtractor> token_extractor;
 
-    if (tokenizer == SplitByNonAlphaTokenExtractor::getExternalName())
-    {
-        token_extractor = std::make_unique<SplitByNonAlphaTokenExtractor>();
-    }
-    else if (tokenizer == NgramsTokenExtractor::getExternalName())
-    {
-        auto ngram_size = extractNgramParam(params);
-        token_extractor = std::make_unique<NgramsTokenExtractor>(ngram_size);
-    }
-    else if (tokenizer == SplitByStringTokenExtractor::getExternalName())
-    {
-        auto separators = extractSplitByStringParam(params);
-        token_extractor = std::make_unique<SplitByStringTokenExtractor>(separators);
-    }
-    else if (tokenizer == ArrayTokenExtractor::getExternalName())
-    {
-        token_extractor = std::make_unique<ArrayTokenExtractor>();
-    }
-    else if (tokenizer == SparseGramsTokenExtractor::getExternalName())
-    {
-        auto [min_length, max_length, min_cutoff_length] = extractSparseGramsParams(params);
-        token_extractor = std::make_unique<SparseGramsTokenExtractor>(min_length, max_length, min_cutoff_length);
-    }
-    else
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Tokenizer {} not supported", tokenizer);
-    }
+    std::vector<String> allowed_tokenizers
+        = {NgramsTokenExtractor::getExternalName(),
+           SplitByNonAlphaTokenExtractor::getExternalName(),
+           SplitByStringTokenExtractor::getExternalName(),
+           ArrayTokenExtractor::getExternalName(),
+           SparseGramsTokenExtractor::getExternalName()};
+
+    TokenizerFactory factory(index.name, allowed_tokenizers);
+    auto token_extractor = factory.createTokenizer(tokenizer, params);
 
     String preprocessor = extractOption<String>(options, ARGUMENT_PREPROCESSOR).value_or("");
     UInt64 dictionary_block_size = extractOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE).value_or(DEFAULT_DICTIONARY_BLOCK_SIZE);
@@ -1275,7 +1212,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     }
     else if (tokenizer == NgramsTokenExtractor::getExternalName())
     {
-        auto ngram_size = extractNgramParam(params);
+        auto ngram_size = TokenizerFactory::extractNgramParam(params);
 
         if (ngram_size < 2 || ngram_size > 8)
         {
@@ -1286,7 +1223,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     }
     else if (tokenizer == SplitByStringTokenExtractor::getExternalName())
     {
-        auto separators = extractSplitByStringParam(params);
+        auto separators = TokenizerFactory::extractSplitByStringParam(params);
 
         if (separators.empty())
         {
@@ -1297,7 +1234,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     }
     else if (tokenizer == SparseGramsTokenExtractor::getExternalName())
     {
-        auto [min_length, max_length, min_cutoff_length] = extractSparseGramsParams(params);
+        auto [min_length, max_length, min_cutoff_length] = TokenizerFactory::extractSparseGramsParams(params);
 
         if (min_length < 3)
         {
