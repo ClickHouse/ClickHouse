@@ -281,11 +281,11 @@ std::string RestCatalog::retrieveAccessToken() const
     request.setContentLength(body_size);
     request.set("Accept", "application/json");
 
-    std::ostream& os = session->sendRequest(request);
+    std::ostream & os = session->sendRequest(request);
     out_stream_callback(os);
 
     Poco::Net::HTTPResponse response;
-    std::istream& rs = session->receiveResponse(response);
+    std::istream & rs = session->receiveResponse(response);
 
     std::string json_str;
     Poco::StreamCopier::copyToString(rs, json_str);
