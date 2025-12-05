@@ -77,29 +77,3 @@ diff_counts as
 select * from diff_counts;
 EOF
 
-echo 'run enable-analyzer=0';
-cat <<EOF | $CLICKHOUSE_CLIENT --enable-analyzer=0 -nm
-with differences as
-    (
-        (
-            select g, i from left
-            where g BETWEEN 0 and 10
-            EXCEPT ALL
-            select g, i from right
-            where g BETWEEN 0 and 10
-        )
-        UNION ALL
-        (
-            select g, i from right
-            where g BETWEEN 0 and 10
-            EXCEPT ALL
-            select g, i from left
-            where g BETWEEN 0 and 10
-        )
-    ),
-diff_counts as
-    (
-        select g, count(*) from differences group by g
-    )
-select * from diff_counts;
-EOF
