@@ -570,6 +570,121 @@ struct ZooKeeperGetACLResponse final : GetACLResponse, ZooKeeperResponse
     size_t bytesSize() const override { return GetACLResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
 };
 
+struct ZooKeeperCheckWatchRequest : CheckWatchRequest, ZooKeeperRequest
+{
+    OpNum getOpNum() const override { return OpNum::CheckWatches; }
+    void writeImpl(WriteBuffer & out) const override;
+    size_t sizeImpl() const override;
+    void readImpl(ReadBuffer & in) override;
+    std::string toStringImpl(bool short_format) const override;
+    ZooKeeperResponsePtr makeResponse() const override;
+    bool isReadRequest() const override { return true; }
+
+    size_t bytesSize() const override { return sizeof(xid); }
+};
+
+struct ZooKeeperCheckWatchResponse : CheckWatchResponse, ZooKeeperResponse
+{
+    void readImpl(ReadBuffer & in) override;
+    void writeImpl(WriteBuffer & out) const override;
+    size_t sizeImpl() const override;
+    OpNum getOpNum() const override { return OpNum::CheckWatches; }
+
+    size_t bytesSize() const override { return sizeof(xid); }
+};
+
+struct ZooKeeperRemoveWatchRequest : RemoveWatchRequest, ZooKeeperRequest
+{
+    OpNum getOpNum() const override { return OpNum::RemoveWatches; }
+    void writeImpl(WriteBuffer & out) const override;
+    size_t sizeImpl() const override;
+    void readImpl(ReadBuffer & in) override;
+    std::string toStringImpl(bool short_format) const override;
+    ZooKeeperResponsePtr makeResponse() const override;
+    bool isReadRequest() const override { return true; }
+
+    size_t bytesSize() const override { return sizeof(xid); }
+};
+
+struct ZooKeeperRemoveWatchResponse : RemoveWatchResponse, ZooKeeperResponse
+{
+    void readImpl(ReadBuffer & in) override;
+    void writeImpl(WriteBuffer & out) const override;
+    size_t sizeImpl() const override;
+    OpNum getOpNum() const override { return OpNum::RemoveWatches; }
+
+    size_t bytesSize() const override { return sizeof(xid); }
+};
+
+struct ZooKeeperAddWatchRequest : AddWatchRequest, ZooKeeperRequest
+{
+    OpNum getOpNum() const override { return OpNum::AddWatch; }
+    void writeImpl(WriteBuffer & out) const override;
+    size_t sizeImpl() const override;
+    void readImpl(ReadBuffer & in) override;
+    std::string toStringImpl(bool short_format) const override;
+    ZooKeeperResponsePtr makeResponse() const override;
+    bool isReadRequest() const override { return true; }
+
+    size_t bytesSize() const override { return sizeof(xid); }
+};
+
+struct ZooKeeperAddWatchResponse : AddWatchResponse, ZooKeeperResponse
+{
+    void readImpl(ReadBuffer & in) override;
+    void writeImpl(WriteBuffer & out) const override;
+    size_t sizeImpl() const override;
+    OpNum getOpNum() const override { return OpNum::AddWatch; }
+
+    size_t bytesSize() const override { return sizeof(xid); }
+};
+
+struct ZooKeeperSetWatchRequest : SetWatchRequest, ZooKeeperRequest
+{
+    OpNum getOpNum() const override { return OpNum::SetWatches; }
+    void writeImpl(WriteBuffer & out) const override;
+    size_t sizeImpl() const override;
+    void readImpl(ReadBuffer & in) override;
+    std::string toStringImpl(bool short_format) const override;
+    ZooKeeperResponsePtr makeResponse() const override;
+    bool isReadRequest() const override { return true; }
+
+    size_t bytesSize() const override { return sizeof(xid); }
+};
+
+struct ZooKeeperSetWatchResponse : SetWatchesResponse, ZooKeeperResponse
+{
+    void readImpl(ReadBuffer & in) override;
+    void writeImpl(WriteBuffer & out) const override;
+    size_t sizeImpl() const override;
+    OpNum getOpNum() const override { return OpNum::SetWatches; }
+
+    size_t bytesSize() const override { return sizeof(xid); }
+};
+
+struct ZooKeeperSetWatch2Request : SetWatch2Request, ZooKeeperRequest
+{
+    OpNum getOpNum() const override { return OpNum::SetWatches2; }
+    void writeImpl(WriteBuffer & out) const override;
+    size_t sizeImpl() const override;
+    void readImpl(ReadBuffer & in) override;
+    std::string toStringImpl(bool short_format) const override;
+    ZooKeeperResponsePtr makeResponse() const override;
+    bool isReadRequest() const override { return true; }
+
+    size_t bytesSize() const override { return sizeof(xid); }
+};
+
+struct ZooKeeperSetWatch2Response : SetWatches2Response, ZooKeeperResponse
+{
+    void readImpl(ReadBuffer & in) override;
+    void writeImpl(WriteBuffer & out) const override;
+    size_t sizeImpl() const override;
+    OpNum getOpNum() const override { return OpNum::SetWatches2; }
+
+    size_t bytesSize() const override { return sizeof(xid); }
+};
+
 struct ZooKeeperMultiRequest final : MultiRequest<ZooKeeperRequestPtr>, ZooKeeperRequest
 {
     OpNum getOpNum() const override;

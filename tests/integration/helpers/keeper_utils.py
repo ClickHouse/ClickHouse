@@ -187,6 +187,8 @@ class KeeperClient(object):
             f"set '{path}' '{value}' {version if version is not None else ''}"
         )
 
+    
+
     def rm(self, path: str, version: Optional[int] = None) -> None:
         self.execute_query(f"rm '{path}' {version if version is not None else ''}")
 
