@@ -4369,6 +4369,7 @@ class ClickHouseInstance:
         build_opts = self.query(
             "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'"
         )
+        print("in is_built_with_llvm_coverage: ", build_opts)
         return "WITH_COVERAGE=ON" in build_opts.upper()
 
     def is_built_with_thread_sanitizer(self):

@@ -212,7 +212,7 @@ def main():
         runner_options += f" --jobs {nproc}"
 
     if is_llvm_coverage:
-        runner_options += " --no-random-settings --no-random-merge-tree-settings"
+        runner_options += " --no-random-settings --no-random-merge-tree-settings --no-debug --no-long"
 
     rerun_count = 1
     if args.count:

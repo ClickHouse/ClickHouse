@@ -504,10 +504,7 @@ def main():
                 )
 
     R = Result.create_from(results=test_results, stopwatch=sw, files=files)
-
-    if has_error:
-        R.set_error().set_info("\n".join(error_info))
-        
+       
     if is_llvm_coverage:
         assert is_bugfix_validation is False, "LLVM coverage with bugfix validation is not supported"
         has_failure = False
@@ -522,6 +519,12 @@ def main():
         if has_failure:
             R.set_failed()
             R.set_info("Some tests failed during LLVM coverage run")
+        else:
+            R.set_success()
+            has_error = False
+
+    if has_error:
+        R.set_error().set_info("\n".join(error_info))
 
     if is_bugfix_validation:
         assert is_llvm_coverage is False, "Bugfix validation with LLVM coverage is not supported"
