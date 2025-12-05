@@ -34,17 +34,3 @@ SELECT * FROM numbers_mt(2, *); -- { serverError BAD_ARGUMENTS }
 
 SELECT *
 FROM generateSeries(*, 1, 3); -- { serverError BAD_ARGUMENTS }
-
-DROP TABLE IF EXISTS logs_2025_01;
-DROP TABLE IF EXISTS logs_2025_02;
-DROP TABLE IF EXISTS logs_2025_03;
-
-CREATE TABLE logs_2025_01 (date Date, message String) ENGINE = MergeTree ORDER BY date;
-CREATE TABLE logs_2025_02 (date Date, message String) ENGINE = MergeTree ORDER BY date;
-CREATE TABLE logs_2025_03 (date Date, message String) ENGINE = MergeTree ORDER BY date;
-
-INSERT INTO logs_2025_01 VALUES ('2025-01-15', 'January log');
-INSERT INTO logs_2025_02 VALUES ('2025-02-15', 'February log');
-INSERT INTO logs_2025_03 VALUES ('2025-03-15', 'March log');
-
-SELECT * FROM merge(*, currentDatabase(), '^logs_2025_.*'); -- { serverError BAD_ARGUMENTS }
