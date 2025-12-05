@@ -9,42 +9,34 @@
 namespace DB
 {
 
-static std::string trimSlashesAtTheEnd(std::string data)
-{
-    while (!data.empty() && data.back() == '/')
-        data.pop_back();
-
-    return data;
-}
-
 PlainRewritableLayout::PlainRewritableLayout(std::string object_storage_common_key_prefix_)
-    : object_storage_common_key_prefix(trimSlashesAtTheEnd(std::move(object_storage_common_key_prefix_)))
+    : object_storage_common_key_prefix(object_storage_common_key_prefix_)
 {
 }
 
 std::string PlainRewritableLayout::constructMetadataDirectoryKey() const
 {
-    return fmt::format("{}/{}", object_storage_common_key_prefix, METADATA_DIRECTORY_TOKEN);
+    return object_storage_common_key_prefix / METADATA_DIRECTORY_TOKEN;
 }
 
 std::string PlainRewritableLayout::constructRootFilesDirectoryKey() const
 {
-    return fmt::format("{}/{}", object_storage_common_key_prefix, ROOT_DIRECTORY_TOKEN);
+    return object_storage_common_key_prefix / ROOT_DIRECTORY_TOKEN;
 }
 
 std::string PlainRewritableLayout::constructFilesDirectoryKey(const std::string & directory_remote_path) const
 {
-    return fmt::format("{}/{}", object_storage_common_key_prefix, directory_remote_path);
+    return object_storage_common_key_prefix / directory_remote_path;
 }
 
 std::string PlainRewritableLayout::constructFileObjectKey(const std::string & directory_remote_path, const std::string & file_name) const
 {
-    return fmt::format("{}/{}/{}", object_storage_common_key_prefix, directory_remote_path, file_name);
+    return object_storage_common_key_prefix / directory_remote_path / file_name;
 }
 
 std::string PlainRewritableLayout::constructDirectoryObjectKey(const std::string & directory_remote_path) const
 {
-    return fmt::format("{}/{}/{}/{}", object_storage_common_key_prefix, METADATA_DIRECTORY_TOKEN, directory_remote_path, PREFIX_PATH_FILE_NAME);
+    return object_storage_common_key_prefix / METADATA_DIRECTORY_TOKEN / directory_remote_path / PREFIX_PATH_FILE_NAME;
 }
 
 std::optional<std::pair<std::string, std::string>> PlainRewritableLayout::parseFileObjectKey(const std::string & key) const
@@ -52,7 +44,7 @@ std::optional<std::pair<std::string, std::string>> PlainRewritableLayout::parseF
     std::vector<std::string> key_parts;
     splitInto<'/'>(key_parts, key);
 
-    if (key_parts.size() < 3)
+    if (key_parts.size() < 2)
         return std::nullopt;
 
     const size_t size = key_parts.size();
@@ -64,7 +56,7 @@ std::optional<std::string> PlainRewritableLayout::parseDirectoryObjectKey(const 
     std::vector<std::string> key_parts;
     splitInto<'/'>(key_parts, key);
 
-    if (key_parts.size() < 4)
+    if (key_parts.size() < 3)
         return std::nullopt;
 
     const size_t size = key_parts.size();
