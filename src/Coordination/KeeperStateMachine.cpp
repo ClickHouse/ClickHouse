@@ -30,6 +30,7 @@ namespace ProfileEvents
     extern const Event KeeperCommits;
     extern const Event KeeperReconfigRequest;
     extern const Event KeeperCommitsFailed;
+    extern const Event KeeperCommittedBytes;
     extern const Event KeeperSnapshotCreations;
     extern const Event KeeperSnapshotCreationsFailed;
     extern const Event KeeperSnapshotApplys;
@@ -620,6 +621,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
         }
 
         ProfileEvents::increment(ProfileEvents::KeeperCommits);
+        ProfileEvents::increment(ProfileEvents::KeeperCommittedBytes, data.size());
 
         if (commit_callback)
             commit_callback(log_idx, *request_for_session);
