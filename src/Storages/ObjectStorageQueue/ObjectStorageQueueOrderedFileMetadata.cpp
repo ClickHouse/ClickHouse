@@ -295,6 +295,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         std::optional<NodeMetadata> processed_node;
         Coordination::Stat processed_node_stat;
         std::optional<std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State>> result;
+        zk_retry.resetFailures();
         zk_retry.retryLoop([&]
         {
             bool is_multi_read_enabled = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ);
