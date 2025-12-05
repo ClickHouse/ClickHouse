@@ -195,7 +195,7 @@ DisksClient::DisksClient(const Poco::Util::AbstractConfiguration & config_, Cont
                         initialized_disks,
                         /*attach*/ false,
                         /*custom_disk*/ false,
-                        {"cache", "encrypted"});
+                        {"cache"});
                 },
                 std::nullopt});
     }
@@ -380,7 +380,7 @@ void DisksClient::addDisk(String disk_name, std::optional<String> path)
     {
         path = uninitialized_disks.at(disk_name).second;
     }
-    auto disk_with_path = DiskWithPath{disk, path};
+    DiskWithPath disk_with_path{disk, path};
 
     LOG_INFO(log, "Adding disk '{}' with path '{}'", disk_name, path.value_or(""));
 
