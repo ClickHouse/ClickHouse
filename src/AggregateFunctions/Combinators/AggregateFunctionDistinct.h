@@ -116,7 +116,8 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
         std::string_view value;
         for (size_t i = 0; i < columns_num; ++i)
         {
-            auto cur_ref = columns[i]->serializeAggregationStateValueIntoArena(row_num, *arena, begin);
+            auto settings = IColumn::SerializationSettings::createForAggregationState();
+            auto cur_ref = columns[i]->serializeValueIntoArena(row_num, *arena, begin, &settings);
             value = std::string_view{cur_ref.data() - value.size(), value.size() + cur_ref.size()};
         }
 
@@ -139,8 +140,9 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
                 history.emplace(ArenaKeyHolder{value, *arena}, it, inserted);
                 ReadBufferFromString in(it->getValue());
                 /// Multiple columns are serialized one by one
+                auto settings = IColumn::SerializationSettings::createForAggregationState();
                 for (auto & column : argument_columns)
-                    column->deserializeAndInsertAggregationStateValueFromArena(in);
+                    column->deserializeAndInsertFromArena(in, &settings);
             }
         }
     }

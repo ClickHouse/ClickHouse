@@ -38,9 +38,6 @@ class UserPrompt:
                     )
             except ValueError:
                 print("Invalid input. Please enter a number.")
-            except KeyboardInterrupt:
-                print("\n\nSelection cancelled.")
-                return None
 
         return selected_item
 
@@ -66,9 +63,6 @@ class UserPrompt:
                     raise ValueError("Invalid input. Please enter a valid number.")
             except ValueError as e:
                 print(f"Invalid input. {e}")
-            except KeyboardInterrupt:
-                print("\n\nSelection cancelled.")
-                return None
         return choice_num
 
     @staticmethod
@@ -83,17 +77,13 @@ class UserPrompt:
             True for yes, False for no, None if cancelled.
         """
         while True:
-            try:
-                choice = input(f"\n{question} (y/n): ")
-                if choice.lower() in ("y", "yes"):
-                    return True
-                elif choice.lower() in ("n", "no"):
-                    return False
-                else:
-                    print("Invalid choice. Please enter 'y' or 'n'.")
-            except KeyboardInterrupt:
-                print("\n\nSelection cancelled.")
-                return None
+            choice = input(f"\n{question} (y/n): ")
+            if choice.lower() in ("y", "yes"):
+                return True
+            elif choice.lower() in ("n", "no"):
+                return False
+            else:
+                print("Invalid choice. Please enter 'y' or 'n'.")
 
     @staticmethod
     def get_string(question, validator=lambda x: True):
@@ -116,7 +106,4 @@ class UserPrompt:
                     raise ValueError("Invalid input. Please enter a valid string.")
             except ValueError as e:
                 print(f"Invalid input. {e}")
-            except KeyboardInterrupt:
-                print("\n\nSelection cancelled.")
-                return None
         return choice
