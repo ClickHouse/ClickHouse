@@ -504,8 +504,8 @@ private:
             , group(group_)
             , metrics(std::move(metrics_))
         {
-            // atConnectionCreate can throw, when it does, no destructor is called
-            // so we increment active_count only after successful atConnectionCreate call
+            // atConnectionCreate can throw. If it does, this object's constructor fails and its destructor won't be called,
+            // so we must call atConnectionCreate before incrementing active_count to avoid leaking the metric increment.
             group->atConnectionCreate(Session::getHost(), Session::getPort());
             CurrentMetrics::add(metrics.active_count);
         }
