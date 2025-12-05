@@ -1625,10 +1625,10 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
             const uint32_t heavy_update = 40 * static_cast<uint32_t>(t.can_run_merges);
             const uint32_t add_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer() && t.cols.size() < fc.max_columns);
             const uint32_t materialize_column = 2 * static_cast<uint32_t>(t.can_run_merges);
-            const uint32_t drop_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer() && !t.cols.empty());
-            const uint32_t rename_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer());
-            const uint32_t clear_column = 2;
-            const uint32_t modify_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer());
+            const uint32_t drop_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer() && !t.cols.empty() && t.can_run_merges);
+            const uint32_t rename_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer() && t.can_run_merges);
+            const uint32_t clear_column = 2 * static_cast<uint32_t>(t.can_run_merges);
+            const uint32_t modify_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer() && t.can_run_merges);
             const uint32_t comment_column = 2;
             const uint32_t add_stats = 3;
             const uint32_t mod_stats = 3;
@@ -1638,18 +1638,18 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
             const uint32_t delete_mask = 8 * static_cast<uint32_t>(t.can_run_merges);
             const uint32_t add_idx = 2 * static_cast<uint32_t>(t.idxs.size() < 3);
             const uint32_t materialize_idx = 2 * static_cast<uint32_t>(t.can_run_merges && !t.idxs.empty());
-            const uint32_t clear_idx = 2 * static_cast<uint32_t>(!t.idxs.empty());
-            const uint32_t drop_idx = 2 * static_cast<uint32_t>(!t.idxs.empty());
+            const uint32_t clear_idx = 2 * static_cast<uint32_t>(!t.idxs.empty() && t.can_run_merges);
+            const uint32_t drop_idx = 2 * static_cast<uint32_t>(!t.idxs.empty() && t.can_run_merges);
             const uint32_t column_remove_property = 2;
             const uint32_t column_modify_setting = 2 * static_cast<uint32_t>(!allColumnSettings.at(t.teng).empty());
             const uint32_t column_remove_setting = 2 * static_cast<uint32_t>(!allColumnSettings.at(t.teng).empty());
             const uint32_t table_modify_setting = 2;
             const uint32_t table_remove_setting = 2;
             const uint32_t add_projection = 2 * static_cast<uint32_t>(t.isMergeTreeFamily());
-            const uint32_t remove_projection = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.projs.empty());
+            const uint32_t remove_projection = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.projs.empty() && t.can_run_merges);
             const uint32_t materialize_projection
                 = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && t.can_run_merges && !t.projs.empty());
-            const uint32_t clear_projection = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.projs.empty());
+            const uint32_t clear_projection = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.projs.empty() && t.can_run_merges);
             const uint32_t add_constraint = 2 * static_cast<uint32_t>(t.constrs.size() < 4);
             const uint32_t remove_constraint = 2 * static_cast<uint32_t>(!t.constrs.empty());
             const uint32_t detach_partition = 5 * static_cast<uint32_t>(t.isMergeTreeFamily());
