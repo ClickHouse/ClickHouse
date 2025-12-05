@@ -68,7 +68,7 @@ def get_run_command(
         "--privileged "
         # a static link, don't use S3_URL or S3_DOWNLOAD
         "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' "
-        "--tmpfs /tmp/clickhouse "
+        "--tmpfs /tmp/clickhouse:mode=1777 "
         f"--volume={build_path}:/package_folder "
         f"--volume={result_path}:/test_output "
         f"--volume={repo_tests_path}/..:/repo "

@@ -1,10 +1,8 @@
-#include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
-#include <Disks/ObjectStorages/MetadataStorageFromPlainRewritableObjectStorage.h>
-#include <Disks/ObjectStorages/createMetadataStorageMetrics.h>
-#include <Disks/ObjectStorages/PlainRewritableObjectStorage.h>
-#include <Disks/ObjectStorages/StoredObject.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Disks/WriteMode.h>
 
 #include <IO/ReadSettings.h>
@@ -77,15 +75,9 @@ public:
 private:
     std::shared_ptr<IMetadataStorage> createMetadataStorage(const std::string & key_prefix)
     {
-        MetadataStorageMetrics metadata_storage_metrics = MetadataStorageMetrics::create<LocalObjectStorage, MetadataStorageType::PlainRewritable>();
-        EXPECT_EQ(metadata_storage_metrics.directory_created, ProfileEvents::DiskPlainRewritableLocalDirectoryCreated);
-        EXPECT_EQ(metadata_storage_metrics.directory_removed, ProfileEvents::DiskPlainRewritableLocalDirectoryRemoved);
-        EXPECT_EQ(metadata_storage_metrics.directory_map_size, CurrentMetrics::DiskPlainRewritableLocalDirectoryMapSize);
-        EXPECT_EQ(metadata_storage_metrics.file_count, CurrentMetrics::DiskPlainRewritableLocalFileCount);
-
         fs::remove_all("./" + key_prefix);
         LocalObjectStorageSettings settings("./" + key_prefix, /*read_only_=*/false);
-        auto object_storage = std::make_shared<PlainRewritableObjectStorage<LocalObjectStorage>>(std::move(metadata_storage_metrics), std::move(settings));
+        auto object_storage = std::make_shared<LocalObjectStorage>(std::move(settings));
         auto metadata_storage = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "");
 
         active_metadatas.emplace(key_prefix, metadata_storage);
@@ -122,10 +114,26 @@ std::string readObject(const std::shared_ptr<IObjectStorage> & object_storage, c
     return content;
 }
 
-std::string createMetadataObjectPath(const std::shared_ptr<IObjectStorage> & object_storage, const std::string & directory)
+std::string generateObjectKeyPrefixForDirectoryPath(const std::shared_ptr<IMetadataStorage> & metadata, const std::string & directory)
 {
-    auto mid = object_storage->generateObjectKeyPrefixForDirectoryPath(fs::path(directory) / "", "").serialize();
-    return fs::path(object_storage->getCommonKeyPrefix()) / "__meta" / mid / "prefix.path";
+    auto tx = metadata->createTransaction();
+    auto file_remote_path = tx->generateObjectKeyForPath(fs::path(directory) / "file.txt").serialize();
+    return fs::path(file_remote_path).parent_path().filename();
+}
+
+std::string generateObjectKeyForPath(const std::shared_ptr<IMetadataStorage> & metadata, const std::string & path)
+{
+    auto tx = metadata->createTransaction();
+    return tx->generateObjectKeyForPath(path).serialize();
+}
+
+std::string createMetadataObjectPath(const std::shared_ptr<IMetadataStorage> & metadata, const std::string & directory)
+{
+    auto tx = metadata->createTransaction();
+    auto file_remote_path = tx->generateObjectKeyForPath(fs::path(directory) / "file.txt").serialize();
+    auto object_key_prefix = fs::path(file_remote_path).parent_path().filename();
+    auto common_key_prefix = fs::path(file_remote_path).parent_path().parent_path();
+    return fs::path(common_key_prefix) / "__meta" / object_key_prefix / "prefix.path";
 }
 
 std::vector<std::string> sorted(std::vector<std::string> array)
@@ -165,8 +173,8 @@ TEST_F(MetadataPlainRewritableDiskTest, JustWorking)
     EXPECT_TRUE(metadata->existsDirectory("A/D"));
     EXPECT_FALSE(metadata->existsDirectory("OTHER"));
 
-    EXPECT_EQ(readObject(object_storage, createMetadataObjectPath(object_storage, "A")), "A/");
-    EXPECT_EQ(readObject(object_storage, createMetadataObjectPath(object_storage, "A/B/C")), "A/B/C/");
+    EXPECT_EQ(readObject(object_storage, createMetadataObjectPath(metadata, "A")), "A/");
+    EXPECT_EQ(readObject(object_storage, createMetadataObjectPath(metadata, "A/B/C")), "A/B/C/");
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, Ls)
@@ -195,7 +203,7 @@ TEST_F(MetadataPlainRewritableDiskTest, Ls)
     /// For now we can not create file under the directory created in the same tx.
     {
         auto tx = metadata->createTransaction();
-        size_t file_size = writeObject(object_storage, object_storage->generateObjectKeyForPath("D/E/F/G/H/file", std::nullopt).serialize(), "file");
+        size_t file_size = writeObject(object_storage, tx->generateObjectKeyForPath("D/E/F/G/H/file").serialize(), "file");
         tx->createMetadataFile("D/E/F/G/H/file", {StoredObject("file", "file", file_size)});
         tx->commit();
     }
@@ -223,9 +231,9 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveTree)
         tx->commit();
     }
 
-    auto a_path = createMetadataObjectPath(object_storage, "A");
-    auto ab_path = createMetadataObjectPath(object_storage, "A/B");
-    auto abcd_path = createMetadataObjectPath(object_storage, "A/B/C/D");
+    auto a_path = createMetadataObjectPath(metadata, "A");
+    auto ab_path = createMetadataObjectPath(metadata, "A/B");
+    auto abcd_path = createMetadataObjectPath(metadata, "A/B/C/D");
 
     /// Move tree starting from the root
     {
@@ -271,9 +279,9 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveUndo)
         tx->commit();
     }
 
-    auto a_path = createMetadataObjectPath(object_storage, "A");
-    auto ab_path = createMetadataObjectPath(object_storage, "A/B");
-    auto abc_path = createMetadataObjectPath(object_storage, "A/B/C");
+    auto a_path = createMetadataObjectPath(metadata, "A");
+    auto ab_path = createMetadataObjectPath(metadata, "A/B");
+    auto abc_path = createMetadataObjectPath(metadata, "A/B/C");
 
     /// Move tree starting from the root
     {
@@ -482,10 +490,10 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveDirectoryRecursive)
 
     {
         auto tx = metadata->createTransaction();
-        size_t file_1_size = writeObject(object_storage, object_storage->generateObjectKeyForPath("root/A/file_1", std::nullopt).serialize(), "1");
-        size_t file_2_size = writeObject(object_storage, object_storage->generateObjectKeyForPath("root/A/B/file_2", std::nullopt).serialize(), "2");
-        size_t file_3_size = writeObject(object_storage, object_storage->generateObjectKeyForPath("root/A/C/file_3", std::nullopt).serialize(), "3");
-        size_t file_4_size = writeObject(object_storage, object_storage->generateObjectKeyForPath("root/A/B/E/F/file_4", std::nullopt).serialize(), "4");
+        size_t file_1_size = writeObject(object_storage, tx->generateObjectKeyForPath("root/A/file_1").serialize(), "1");
+        size_t file_2_size = writeObject(object_storage, tx->generateObjectKeyForPath("root/A/B/file_2").serialize(), "2");
+        size_t file_3_size = writeObject(object_storage, tx->generateObjectKeyForPath("root/A/C/file_3").serialize(), "3");
+        size_t file_4_size = writeObject(object_storage, tx->generateObjectKeyForPath("root/A/B/E/F/file_4").serialize(), "4");
         tx->createMetadataFile("root/A/file_1", {StoredObject("root/A/file_1", "file_1", file_1_size)});
         tx->createMetadataFile("root/A/B/file_2", {StoredObject("root/A/B/file_2", "file_2", file_2_size)});
         tx->createMetadataFile("root/A/C/file_3", {StoredObject("root/A/C/file_3", "file_3", file_3_size)});
@@ -591,7 +599,7 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveFile)
 
     {
         auto tx = metadata->createTransaction();
-        size_t file_size = writeObject(object_storage, object_storage->generateObjectKeyForPath("A/file", std::nullopt).serialize(), "Hello world!");
+        size_t file_size = writeObject(object_storage, tx->generateObjectKeyForPath("A/file").serialize(), "Hello world!");
         tx->createMetadataFile("A/file", {StoredObject("A/file", "file", file_size)});
         tx->commit();
     }
@@ -633,7 +641,7 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveFileUndo)
 
     {
         auto tx = metadata->createTransaction();
-        size_t file_size = writeObject(object_storage, object_storage->generateObjectKeyForPath("A/file", std::nullopt).serialize(), "Hello world!");
+        size_t file_size = writeObject(object_storage, tx->generateObjectKeyForPath("A/file").serialize(), "Hello world!");
         tx->createMetadataFile("A/file", {StoredObject("A/file", "file", file_size)});
         tx->commit();
     }
@@ -671,7 +679,7 @@ TEST_F(MetadataPlainRewritableDiskTest, DirectoryFileNameCollision)
 
     {
         auto tx = metadata->createTransaction();
-        size_t b_size = writeObject(object_storage, object_storage->generateObjectKeyForPath("A/B", std::nullopt).serialize(), "Hello world!");
+        size_t b_size = writeObject(object_storage, tx->generateObjectKeyForPath("A/B").serialize(), "Hello world!");
         tx->createMetadataFile("A/B", {StoredObject("A/B", "B", b_size)});
         tx->commit();
     }
@@ -721,28 +729,28 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoteLayout)
         tx->commit();
     }
 
-    std::string a_remote = object_storage->generateObjectKeyPrefixForDirectoryPath("A/", "").serialize();
+    std::string a_remote = generateObjectKeyPrefixForDirectoryPath(metadata, "A/");
     EXPECT_EQ(a_remote, "faefxnlkbtfqgxcbfqfjtztsocaqrnqn");
-    EXPECT_EQ(object_storage->generateObjectKeyPrefixForDirectoryPath("A/", "").serialize(), a_remote);
-    EXPECT_EQ(object_storage->generateObjectKeyPrefixForDirectoryPath("A/", "").serialize(), a_remote);
-    EXPECT_EQ(object_storage->generateObjectKeyPrefixForDirectoryPath("A/", "").serialize(), a_remote);
+    EXPECT_EQ(generateObjectKeyPrefixForDirectoryPath(metadata, "A/"), a_remote);
+    EXPECT_EQ(generateObjectKeyPrefixForDirectoryPath(metadata, "A/"), a_remote);
+    EXPECT_EQ(generateObjectKeyPrefixForDirectoryPath(metadata, "A/"), a_remote);
 
-    std::string ab_remote = object_storage->generateObjectKeyPrefixForDirectoryPath("A/B/", "").serialize();
+    std::string ab_remote = generateObjectKeyPrefixForDirectoryPath(metadata, "A/B/");
     EXPECT_EQ(ab_remote, "ykwvvchguqasvfnkikaqtiebknfzafwv");
-    EXPECT_EQ(object_storage->generateObjectKeyPrefixForDirectoryPath("A/B/", "").serialize(), ab_remote);
-    EXPECT_EQ(object_storage->generateObjectKeyPrefixForDirectoryPath("A/B/", "").serialize(), ab_remote);
-    EXPECT_EQ(object_storage->generateObjectKeyPrefixForDirectoryPath("A/B/", "").serialize(), ab_remote);
+    EXPECT_EQ(generateObjectKeyPrefixForDirectoryPath(metadata, "A/B/"), ab_remote);
+    EXPECT_EQ(generateObjectKeyPrefixForDirectoryPath(metadata, "A/B/"), ab_remote);
+    EXPECT_EQ(generateObjectKeyPrefixForDirectoryPath(metadata, "A/B/"), ab_remote);
 
-    std::string file_1_remote = object_storage->generateObjectKeyForPath("/A/file_1", std::nullopt).serialize();
+    std::string file_1_remote = generateObjectKeyForPath(metadata, "/A/file_1");
     EXPECT_EQ(file_1_remote, "./RemoteLayout/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/file_1");
     EXPECT_EQ(file_1_remote, fmt::format("./RemoteLayout/{}/file_1", a_remote));
 
-    std::string file_2_remote = object_storage->generateObjectKeyForPath("/A/B/file_2", std::nullopt).serialize();
+    std::string file_2_remote = generateObjectKeyForPath(metadata, "/A/B/file_2");
     EXPECT_EQ(file_2_remote, "./RemoteLayout/ykwvvchguqasvfnkikaqtiebknfzafwv/file_2");
     EXPECT_EQ(file_2_remote, fmt::format("./RemoteLayout/{}/file_2", ab_remote));
 
     /// Root files
-    EXPECT_EQ(object_storage->generateObjectKeyForPath("root_file", std::nullopt).serialize(), "./RemoteLayout/__root/root_file");
+    EXPECT_EQ(generateObjectKeyForPath(metadata, "root_file"), "./RemoteLayout/__root/root_file");
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, RootFiles)
@@ -754,8 +762,8 @@ TEST_F(MetadataPlainRewritableDiskTest, RootFiles)
 
     {
         auto tx = metadata->createTransaction();
-        size_t a_size = writeObject(object_storage, object_storage->generateObjectKeyForPath("/A", std::nullopt).serialize(), "A");
-        size_t b_size = writeObject(object_storage, object_storage->generateObjectKeyForPath("/B", std::nullopt).serialize(), "B");
+        size_t a_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A").serialize(), "A");
+        size_t b_size = writeObject(object_storage, tx->generateObjectKeyForPath("/B").serialize(), "B");
         tx->createMetadataFile("/A", {StoredObject("A", "A", a_size)});
         tx->createMetadataFile("/B", {StoredObject("B", "B", b_size)});
         tx->commit();
@@ -815,8 +823,8 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveRoot)
 
     {
         auto tx = metadata->createTransaction();
-        size_t a_size = writeObject(object_storage, object_storage->generateObjectKeyForPath("/A", std::nullopt).serialize(), "A");
-        size_t b_size = writeObject(object_storage, object_storage->generateObjectKeyForPath("/B", std::nullopt).serialize(), "B");
+        size_t a_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A").serialize(), "A");
+        size_t b_size = writeObject(object_storage, tx->generateObjectKeyForPath("/B").serialize(), "B");
         tx->createMetadataFile("/A", {StoredObject("A", "A", a_size)});
         tx->createMetadataFile("/B", {StoredObject("B", "B", b_size)});
         tx->commit();
@@ -1148,7 +1156,7 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateFiles)
 
     {
         auto tx = metadata->createTransaction();
-        size_t f1_size = writeObject(object_storage, object_storage->generateObjectKeyForPath("/A/f1", std::nullopt).serialize(), "f1");
+        size_t f1_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/f1").serialize(), "f1");
         tx->createMetadataFile("/A/f1", {StoredObject("A", "f1", f1_size)});
         tx->commit();
     }
@@ -1162,11 +1170,11 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateFiles)
     /// Some rewrites
     {
         auto tx = metadata->createTransaction();
-        size_t size_1 = writeObject(object_storage, object_storage->generateObjectKeyForPath("/A/f1", std::nullopt).serialize(), "Do the impossible, see the invisible");
+        size_t size_1 = writeObject(object_storage, tx->generateObjectKeyForPath("/A/f1").serialize(), "Do the impossible, see the invisible");
         tx->createMetadataFile("/A/f1", {StoredObject("B", "f1", size_1)});
-        size_t size_2 = writeObject(object_storage, object_storage->generateObjectKeyForPath("/A/f1", std::nullopt).serialize(), "Touch the untouchable, break the unbreakable");
+        size_t size_2 = writeObject(object_storage, tx->generateObjectKeyForPath("/A/f1").serialize(), "Touch the untouchable, break the unbreakable");
         tx->createMetadataFile("/A/f1", {StoredObject("C", "f1", size_2)});
-        size_t size_3 = writeObject(object_storage, object_storage->generateObjectKeyForPath("/A/f1", std::nullopt).serialize(), "Just break the rule, then you see the truth");
+        size_t size_3 = writeObject(object_storage, tx->generateObjectKeyForPath("/A/f1").serialize(), "Just break the rule, then you see the truth");
         tx->createMetadataFile("/A/f1", {StoredObject("G", "f1", size_3)});
         tx->commit();
     }
@@ -1269,7 +1277,7 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateHardLink)
 
     {
         auto tx = metadata->createTransaction();
-        size_t f1_size = writeObject(object_storage, object_storage->generateObjectKeyForPath("/A/f1", std::nullopt).serialize(), "f1");
+        size_t f1_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/f1").serialize(), "f1");
         tx->createMetadataFile("/A/f1", {StoredObject("f1", "f1", f1_size)});
         tx->commit();
     }
@@ -1312,7 +1320,7 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateHardLinkUndo)
 
     {
         auto tx = metadata->createTransaction();
-        size_t f1_size = writeObject(object_storage, object_storage->generateObjectKeyForPath("/A/f1", std::nullopt).serialize(), "f1");
+        size_t f1_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/f1").serialize(), "f1");
         tx->createMetadataFile("/A/f1", {StoredObject("f1", "f1", f1_size)});
         tx->commit();
     }
@@ -1371,7 +1379,7 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateHardLinkRootFiles)
 
     {
         auto tx = metadata->createTransaction();
-        size_t f1_size = writeObject(object_storage, object_storage->generateObjectKeyForPath("f1", std::nullopt).serialize(), "f1");
+        size_t f1_size = writeObject(object_storage, tx->generateObjectKeyForPath("f1").serialize(), "f1");
         tx->createMetadataFile("/f1", {StoredObject("f1", "f1", f1_size)});
         tx->commit();
     }
@@ -1578,7 +1586,7 @@ TEST_F(MetadataPlainRewritableDiskTest, FileRemoteInfo)
         tx->commit();
 
         tx = metadata->createTransaction();
-        written_bytes = writeObject(object_storage, object_storage->generateObjectKeyForPath("/A/B/C/file", std::nullopt).serialize(), "don't stop! don't stop!");
+        written_bytes = writeObject(object_storage, tx->generateObjectKeyForPath("/A/B/C/file").serialize(), "don't stop! don't stop!");
         tx->createMetadataFile("/A/B/C/file", {StoredObject("file", "file", written_bytes)});
         tx->commit();
     }
@@ -1621,7 +1629,7 @@ TEST_F(MetadataPlainRewritableDiskTest, FileRemoteInfoAfterMove)
         tx->commit();
 
         tx = metadata->createTransaction();
-        written_bytes_file = writeObject(object_storage, object_storage->generateObjectKeyForPath("/A/B/C/file", std::nullopt).serialize(), "don't stop! don't stop!");
+        written_bytes_file = writeObject(object_storage, tx->generateObjectKeyForPath("/A/B/C/file").serialize(), "don't stop! don't stop!");
         tx->createMetadataFile("/A/B/C/file", {StoredObject("file", "file", written_bytes_file)});
         tx->commit();
     }
@@ -1630,7 +1638,7 @@ TEST_F(MetadataPlainRewritableDiskTest, FileRemoteInfoAfterMove)
 
     {
         auto tx = metadata->createTransaction();
-        written_bytes_tmp = writeObject(object_storage, object_storage->generateObjectKeyForPath("/A/B/C/tmp", std::nullopt).serialize(), "stop!");
+        written_bytes_tmp = writeObject(object_storage, tx->generateObjectKeyForPath("/A/B/C/tmp").serialize(), "stop!");
         tx->createMetadataFile("/A/B/C/tmp", {StoredObject("tmp", "tmp", written_bytes_tmp)});
         tx->replaceFile("/A/B/C/tmp", "/A/B/C/file");
         tx->commit();
@@ -1657,7 +1665,7 @@ TEST_F(MetadataPlainRewritableDiskTest, FileRemoteInfoMoveUndo)
         tx->commit();
 
         tx = metadata->createTransaction();
-        written_bytes_file = writeObject(object_storage, object_storage->generateObjectKeyForPath("/A/B/C/file", std::nullopt).serialize(), "don't stop! don't stop!");
+        written_bytes_file = writeObject(object_storage, tx->generateObjectKeyForPath("/A/B/C/file").serialize(), "don't stop! don't stop!");
         tx->createMetadataFile("/A/B/C/file", {StoredObject("file", "file", written_bytes_file)});
         tx->commit();
     }
@@ -1666,7 +1674,7 @@ TEST_F(MetadataPlainRewritableDiskTest, FileRemoteInfoMoveUndo)
 
     {
         auto tx = metadata->createTransaction();
-        written_bytes_tmp = writeObject(object_storage, object_storage->generateObjectKeyForPath("/A/B/C/tmp", std::nullopt).serialize(), "stop!");
+        written_bytes_tmp = writeObject(object_storage, tx->generateObjectKeyForPath("/A/B/C/tmp").serialize(), "stop!");
         tx->createMetadataFile("/A/B/C/tmp", {StoredObject("tmp", "tmp", written_bytes_tmp)});
         tx->replaceFile("/A/B/C/tmp", "/A/B/C/file");
         tx->moveFile("non-existing", "non-existing");

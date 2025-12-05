@@ -38,7 +38,6 @@ workflow = Workflow.Config(
     base_branches=[BASE_BRANCH],
     jobs=[
         JobConfigs.style_check,
-        JobConfigs.pr_body.set_dependency([JobNames.STYLE_CHECK]),
         JobConfigs.docs_job,
         JobConfigs.fast_test,
         *JobConfigs.tidy_build_arm_jobs,
@@ -134,7 +133,7 @@ workflow = Workflow.Config(
     enable_merge_ready_status=True,
     enable_gh_summary_comment=True,
     enable_commit_status_on_failure=False,
-    enable_flaky_tests_catalog=True,
+    enable_open_issues_check=True,
     pre_hooks=[
         can_be_trusted,
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
