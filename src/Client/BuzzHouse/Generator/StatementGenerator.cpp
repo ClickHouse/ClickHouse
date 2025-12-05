@@ -1631,10 +1631,10 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
             const uint32_t modify_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer() && t.can_run_merges);
             const uint32_t comment_column = 2;
             const uint32_t add_stats = 3;
-            const uint32_t mod_stats = 3;
-            const uint32_t drop_stats = 3;
-            const uint32_t clear_stats = 3;
-            const uint32_t mat_stats = 3;
+            const uint32_t mod_stats = 3 * static_cast<uint32_t>(t.can_run_merges);
+            const uint32_t drop_stats = 3 * static_cast<uint32_t>(t.can_run_merges);
+            const uint32_t clear_stats = 3 * static_cast<uint32_t>(t.can_run_merges);
+            const uint32_t mat_stats = 3 * static_cast<uint32_t>(t.can_run_merges);
             const uint32_t delete_mask = 8 * static_cast<uint32_t>(t.can_run_merges);
             const uint32_t add_idx = 2 * static_cast<uint32_t>(t.idxs.size() < 3);
             const uint32_t materialize_idx = 2 * static_cast<uint32_t>(t.can_run_merges && !t.idxs.empty());
