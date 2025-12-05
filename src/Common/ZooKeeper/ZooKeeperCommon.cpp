@@ -68,6 +68,7 @@ void ZooKeeperRequest::write(WriteBuffer & out, bool use_xid_64) const
         Coordination::write(static_cast<int32_t>(xid), out);
     Coordination::write(getOpNum(), out);
     writeImpl(out);
+    tracing_context.serialize(out);
 }
 
 void ZooKeeperSyncRequest::writeImpl(WriteBuffer & out) const
@@ -1211,6 +1212,7 @@ std::shared_ptr<ZooKeeperRequest> ZooKeeperRequest::read(ReadBuffer & in)
     auto request = ZooKeeperRequestFactory::instance().get(op_num);
     request->xid = xid;
     request->readImpl(in);
+    request->tracing_context.deserialize(in);
     return request;
 }
 
