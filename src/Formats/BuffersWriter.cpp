@@ -24,11 +24,16 @@ void BuffersWriter::write(const Block & block)
 {
     block.checkNumberOfRows();
 
-    const size_t num_columns = block.columns();
+    const UInt64 num_columns = static_cast<UInt64>(block.columns());
 
-    /// Serialize each column into its own in-memory buffer first so that
-    /// we know sizes before writing num_buffers + sizes
-    std::vector<std::string> column_buffers(num_columns);
+    /// Number of buffers (UInt64)
+    writeBinary(num_columns, ostr);
+
+    const UInt64 num_rows = static_cast<UInt64>(block.rows());
+
+    /// Number of rows (UInt64)
+    /// We encode number of rows because we need it to deserialize each column
+    writeBinary(num_rows, ostr);
 
     for (size_t i = 0; i < num_columns; ++i)
     {
@@ -43,31 +48,12 @@ void BuffersWriter::write(const Block & block)
 
         NativeWriter::writeData(*serialization, column.column, buffer, format_settings, 0, 0, format_settings.client_protocol_version);
 
-        column_buffers[i] = std::move(buffer.str());
-    }
+        /// Size of each buffer in bytes (UInt64)
+        UInt64 buffer_size = static_cast<UInt64>(buffer.count());
+        writeBinary(buffer_size, ostr);
 
-    const UInt64 num_buffers = static_cast<UInt64>(column_buffers.size());
-
-    /// Number of buffers (UInt64)
-    writeBinary(num_buffers, ostr);
-
-    const UInt64 num_rows = static_cast<UInt64>(block.rows());
-
-    /// Number of rows (UInt64)
-    /// We encode number of rows because we need it to deserialize each column
-    writeBinary(num_rows, ostr);
-
-    /// Size of each buffer in bytes (UInt64)
-    for (const auto & data : column_buffers)
-    {
-        const UInt64 sz = static_cast<UInt64>(data.size());
-        writeBinary(sz, ostr);
-    }
-
-    /// Contents of each buffer (raw bytes, concatenated)
-    for (const auto & data : column_buffers)
-    {
-        ostr.write(data.data(), data.size());
+        /// Contents of each buffer (raw bytes, concatenated)
+        ostr.write(buffer.str().data(), buffer_size);
     }
 }
 

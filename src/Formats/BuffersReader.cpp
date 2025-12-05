@@ -35,15 +35,15 @@ Block BuffersReader::read()
         return Block{};
 
     /// Number of buffers (UInt64)
-    UInt64 num_buffers = 0;
-    readBinary(num_buffers, istr);
+    UInt64 num_columns = 0;
+    readBinary(num_columns, istr);
 
-    if (num_buffers != header.columns())
+    if (num_columns != header.columns())
         throw Exception(
-            ErrorCodes::INCORRECT_DATA, "Buffers block has {} buffers, but header has {} columns", num_buffers, header.columns());
+            ErrorCodes::INCORRECT_DATA, "Buffers block has {} buffers, but header has {} columns", num_columns, header.columns());
 
-    if (num_buffers > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Suspiciously many buffers in Buffers format: {}", num_buffers);
+    if (num_columns > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Suspiciously many buffers in Buffers format: {}", num_columns);
 
     /// Number of rows (UInt64)
     UInt64 num_rows = 0;
@@ -52,14 +52,12 @@ Block BuffersReader::read()
     if (num_rows > DEFAULT_NATIVE_BINARY_MAX_NUM_ROWS)
         throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Suspiciously many rows in Buffers format: {}", num_rows);
 
-    /// Size of each buffer (UInt64 * number of buffers)
-    std::vector<UInt64> buffer_sizes(num_buffers);
-    for (size_t i = 0; i < num_buffers; ++i)
-        readBinary(buffer_sizes[i], istr);
-
     Block res;
-    for (size_t i = 0; i < num_buffers; ++i)
+    for (size_t i = 0; i < num_columns; ++i)
     {
+        UInt64 buffer_size = 0;
+        readBinary(buffer_size, istr);
+
         auto column = header.getByPosition(i).cloneEmpty();
 
         ColumnPtr & read_column = column.column;
@@ -67,20 +65,22 @@ Block BuffersReader::read()
         auto serialization = column.type->getDefaultSerialization();
 
         const size_t before = istr.count();
+
         NameAndTypePair name_and_type = {column.name, column.type};
         NativeReader::readData(*serialization, read_column, istr, &format_settings, num_rows, &name_and_type, nullptr);
+
         const size_t after = istr.count();
 
         const size_t consumed = after - before;
 
-        if (consumed != buffer_sizes[i])
+        if (consumed != buffer_size)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Cannot read all data for column {} of type {} from Buffer at position {}, expected to read {} bytes, but read {} bytes",
                 column.name,
                 column.type->getName(),
                 i,
-                buffer_sizes[i],
+                buffer_size,
                 consumed);
 
         res.insert(std::move(column));
