@@ -37,9 +37,6 @@ Block BuffersReader::read()
     UInt64 num_buffers = 0;
     readBinary(num_buffers, istr);
 
-    if (num_buffers == 0)
-        return Block{};
-
     if (num_buffers != header.columns())
         throw Exception(
             ErrorCodes::INCORRECT_DATA, "Buffers block has {} buffers, but header has {} columns", num_buffers, header.columns());
