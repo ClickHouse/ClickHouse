@@ -376,7 +376,7 @@ def main():
         for attempt in range(module_repeat_cnt):
             log_file = f"{temp_path}/pytest_parallel.log"
             test_result_parallel = Result.from_pytest_run(
-                command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout=7200",
+                command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout=5400",
                 cwd="./tests/integration/",
                 env=test_env,
                 pytest_report_file=f"{temp_path}/pytest_parallel.jsonl",
@@ -402,7 +402,7 @@ def main():
         for attempt in range(module_repeat_cnt):
             log_file = f"{temp_path}/pytest_sequential.log"
             test_result_sequential = Result.from_pytest_run(
-                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout=7200",
+                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout=5400",
                 env=test_env,
                 cwd="./tests/integration/",
                 pytest_report_file=f"{temp_path}/pytest_sequential.jsonl",
@@ -507,8 +507,24 @@ def main():
 
     if has_error:
         R.set_error().set_info("\n".join(error_info))
+        
+    if is_llvm_coverage:
+        assert is_bugfix_validation is False, "LLVM coverage with bugfix validation is not supported"
+        has_failure = False
+        for r in R.results:
+            if r.status == Result.StatusExtended.FAIL:
+                if r.has_label(Result.Label.OK_ON_RETRY):
+                    # Remove label and set to OK
+                    r.remove_label(Result.Label.OK_ON_RETRY)
+                    r.status = Result.StatusExtended.OK
+                else:
+                    has_failure = True
+        if has_failure:
+            R.set_failed()
+            R.set_info("Some tests failed during LLVM coverage run")
 
     if is_bugfix_validation:
+        assert is_llvm_coverage is False, "Bugfix validation with LLVM coverage is not supported"
         has_failure = False
         for r in R.results:
             # invert statuses

@@ -308,6 +308,16 @@ class Result(MetaClasses.Serializable):
         if not self.ext.get("labels", None):
             self.ext["labels"] = []
         self.ext["labels"].append(label)
+    
+    def has_label(self, label):
+        if not self.ext.get("labels", None):
+            return False
+        return label in self.ext["labels"]
+    
+    def remove_label(self, label):
+        if not self.ext.get("labels", None):
+            return
+        self.ext["labels"] = [l for l in self.ext["labels"] if l != label]
 
     def set_comment(self, comment):
         self.ext["comment"] = comment
