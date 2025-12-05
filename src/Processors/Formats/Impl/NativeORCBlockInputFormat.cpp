@@ -1631,9 +1631,11 @@ static ColumnWithTypeAndName readColumnWithDateData(
             if (check_date32_range && (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < -DAYNUM_OFFSET_EPOCH))
                 throw Exception(
                     ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                    "Input value {} of a column \"{}\" exceeds the range of type Date32",
+                    "Input value {} of a column \"{}\" exceeds the range of type Date32, which is [{}, {}]",
                     days_num,
-                    column_name);
+                    column_name,
+                    -DAYNUM_OFFSET_EPOCH,
+                    DATE_LUT_MAX_EXTEND_DAY_NUM);
 
             if (check_date_range && (days_num > DATE_LUT_MAX_DAY_NUM || days_num < 0))
                 throw Exception(
