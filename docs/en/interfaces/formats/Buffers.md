@@ -39,9 +39,7 @@ Read back with an explicit column types:
 
 ```sql
 SELECT
-    count() AS cnt,
-    sum(col_1) AS sum_col_1,
-    sum(col_2)  AS sum_col_2
+    *
 FROM file(
     'squares.buffers',
     'Buffers',
@@ -50,9 +48,18 @@ FROM file(
 ```
 
 ```txt
-  ┌─cnt─┬─sum_col_1─┬─sum_col_2─┐
-  │  10 │        45 │       285 │
-  └─────┴───────────┴───────────┘
+  ┌─a─┬──b─┐
+  │ 0 │  0 │
+  │ 1 │  1 │
+  │ 2 │  4 │
+  │ 3 │  9 │
+  │ 4 │ 16 │
+  │ 5 │ 25 │
+  │ 6 │ 36 │
+  │ 7 │ 49 │
+  │ 8 │ 64 │
+  │ 9 │ 81 │
+  └───┴────┘
 ```
 
 If you have a table with same column types, you can populate it directly:
