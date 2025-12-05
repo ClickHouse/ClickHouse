@@ -390,3 +390,6 @@
 [submodule "contrib/TurboPFor-Integer-Compression"]
 	path = contrib/TurboPFor-Integer-Compression
 	url = https://github.com/powturbo/TurboPFor-Integer-Compression.git
+[submodule "contrib/streamvbyte"]
+	path = contrib/streamvbyte
+	url = https://github.com/fast-pack/streamvbyte.git

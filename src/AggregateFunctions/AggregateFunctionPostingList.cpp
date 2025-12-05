@@ -77,7 +77,9 @@ AggregateFunctionPtr createAggregateFunctionPostingList(
 {
     assertUnary(name, argument_types);
     WhichDataType which(argument_types[0]);
-    if (which.idx == TypeIndex::UInt64)
+    /// This implementation currently supports UInt32 only.
+    /// UInt64 support is planned for a future version.
+    if (which.idx == TypeIndex::UInt32)
         return std::make_shared<AggregateFunctionPostingList>(argument_types[0]);
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal type {} of argument for aggregate function {}", argument_types[0]->getName(), name);

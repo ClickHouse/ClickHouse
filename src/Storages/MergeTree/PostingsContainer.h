@@ -1,14 +1,9 @@
 #pragma once
 #include <Common/Exception.h>
-#include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <Storages/MergeTree/IntegerCodecTrait.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
-extern "C" {
-#include <ic.h>
-}
-
 #pragma clang optimize off
 namespace DB
 {
@@ -50,48 +45,7 @@ namespace ErrorCodes
 /// (using the “delta − 1” scheme for strictly increasing sequences) and
 /// compressed with the TurboPFor codec. Remaining values in `current` are
 /// automatically flushed during serialization.
-namespace internal
-{
-template <typename T>
-struct CodecTraits;
 
-template <>
-struct CodecTraits<uint32_t>
-{
-    ALWAYS_INLINE static uint32_t bound(std::size_t n)
-    {
-        return p4nbound256v32(static_cast<uint32_t>(n));
-    }
-
-    ALWAYS_INLINE static uint32_t encode(uint32_t * p, std::size_t n, unsigned char *out)
-    {
-        return p4nd1enc32(p, n, out);
-    }
-
-    ALWAYS_INLINE static std::size_t decode(unsigned char * p, std::size_t n, uint32_t *out)
-    {
-        return p4nd1dec32(p, n, out);
-    }
-};
-
-template <>
-struct CodecTraits<uint64_t>
-{
-    ALWAYS_INLINE static uint32_t bound(std::size_t n)
-    {
-        return p4nbound256v32(static_cast<uint32_t>(n));
-    }
-
-    ALWAYS_INLINE static uint64_t encode(uint64_t * p, std::size_t n, unsigned char *out)
-    {
-        return p4nd1enc64(p, n, out);
-    }
-
-    ALWAYS_INLINE static std::size_t decode(unsigned char * p, std::size_t n, uint64_t *out)
-    {
-        return p4nd1dec64(p, n, out);
-    }
-};
 
 /// Codec — Low-level encoding/decoding utility for postings blocks.
 /// Provides static helpers to write/read block headers and perform
@@ -368,7 +322,6 @@ void mergePostingsVariadic(Out & out, Pairs&&... pairs)
         }
     }
 }
-}
 
 struct ContainerBase
 {
@@ -533,7 +486,7 @@ public:
         temp_compress_buffer.reserve(kBlockSize);
         ReadBufferFromMemory data_buffer(data);
         for (size_t i = 0; i < block_count; ++i)
-            internal::Codec::decompressCurrent<T>(data_buffer, temp_buffer, temp_compress_buffer, [&out] (std::vector<uint32_t> & temp) { out.addMany(temp.size(), temp.data()); });
+            Codec::decompressCurrent<T>(data_buffer, temp_buffer, temp_compress_buffer, [&out] (std::vector<uint32_t> & temp) { out.addMany(temp.size(), temp.data()); });
         if (!current.empty())
             out.addMany(current.size(), current.data());
     }
@@ -556,9 +509,9 @@ public:
     /// Returns an iterator over decompressed postings (lazy block decoding).
     auto begin() const
     {
-        return Iterator<InputType, ValueType, internal::MemorySourceTraits<ValueType>, IteratorData>(std::make_shared<IteratorData>(data, current), block_count);
+        return Iterator<InputType, ValueType, MemorySourceTraits<ValueType>, IteratorData>(std::make_shared<IteratorData>(data, current), block_count);
     }
-    auto end() const { return Iterator<InputType, ValueType, internal::MemorySourceTraits<ValueType>, IteratorData>(); }
+    auto end() const { return Iterator<InputType, ValueType, MemorySourceTraits<ValueType>, IteratorData>(); }
 private:
     using InputType = ReadBufferFromString;
     struct IteratorData
@@ -578,11 +531,11 @@ private:
     void compressCurrent()
     {
         const uint32_t n = current.size();
-        const uint32_t cap = internal::CodecTraits<T>::bound(n);
+        const uint32_t cap = CodecTraits<T>::bound(n);
         temp_compression_data.resize(cap);
-        auto bytes = internal::CodecTraits<T>::encode(current.data(), n, reinterpret_cast<unsigned char*>(temp_compression_data.data()));
+        auto bytes = CodecTraits<T>::encode(current.data(), n, reinterpret_cast<unsigned char*>(temp_compression_data.data()));
         WriteBufferFromString wb(data, AppendModeTag{});
-        internal::Codec::writeHeader(n, bytes, wb);
+        Codec::writeHeader(n, bytes, wb);
         wb.write(temp_compression_data.data(), bytes);
         block_count++;
         current.clear();
@@ -617,9 +570,9 @@ public:
     /// The iterator consumes the buffer in a single forward pass.
     auto begin() const
     {
-        return Iterator<InputType, ValueType, internal::StreamSourceTraits<ValueType>, IteratorData>(std::make_shared<IteratorData>(read_buffer), block_count);
+        return Iterator<InputType, ValueType, StreamSourceTraits<ValueType>, IteratorData>(std::make_shared<IteratorData>(read_buffer), block_count);
     }
-    auto end() const { return Iterator<InputType, ValueType, internal::StreamSourceTraits<ValueType>, IteratorData>(); }
+    auto end() const { return Iterator<InputType, ValueType, StreamSourceTraits<ValueType>, IteratorData>(); }
     bool empty() const { return total == 0; }
     size_t size() const { return total; }
 private:
@@ -678,8 +631,8 @@ template <typename Out, typename C1, typename C2, typename... Rest>
 static void mergePostingsContainers(Out & out, const C1 & c1, const C2 & c2, const Rest &... rest)
 {
     if constexpr (sizeof...(rest) == 0)
-        internal::mergePostingsTwo(out, c1.begin(), c1.end(), c2.begin(), c2.end());
+        mergePostingsTwo(out, c1.begin(), c1.end(), c2.begin(), c2.end());
     else
-        internal::mergePostingsVariadic(out, std::pair{ c1.begin(), c1.end() }, std::pair{ c2.begin(), c2.end() }, std::pair{ rest.begin(), rest.end() }...);
+        mergePostingsVariadic(out, std::pair{ c1.begin(), c1.end() }, std::pair{ c2.begin(), c2.end() }, std::pair{ rest.begin(), rest.end() }...);
 }
 }
