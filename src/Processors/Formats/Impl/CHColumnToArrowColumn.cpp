@@ -10,6 +10,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnVariant.h>
 #include <Common/DateLUTImpl.h>
 #include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -33,6 +34,7 @@
 #include <arrow/array/array_nested.h>
 #include <arrow/array/builder_primitive.h>
 #include <arrow/array/builder_union.h>
+#include <arrow/array/builder_binary.h>
 #include <arrow/scalar.h>
 
 #define FOR_INTERNAL_NUMERIC_TYPES(M) \
@@ -105,6 +107,28 @@ namespace DB
     {
         if (!status.ok())
             throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Error with a {} column \"{}\": {}.", format_name, column_name, status.ToString());
+    }
+
+    static void fillArrowArrayWithRawColumnData(
+        ColumnPtr write_column,
+        const PaddedPODArray<UInt8> * null_bytemap,
+        const String & format_name,
+        arrow::ArrayBuilder* array_builder,
+        size_t start,
+        size_t end)
+    {
+        arrow::BinaryBuilder & builder = assert_cast<arrow::BinaryBuilder &>(*array_builder);
+        arrow::Status status;
+
+
+        for (size_t value_i = start; value_i < end; ++value_i)
+        {
+            if (null_bytemap && (*null_bytemap)[value_i])
+                status = builder.AppendNull();
+            else
+                status = builder.Append(write_column->getDataAt(value_i).toView());
+            checkStatus(status, write_column->getName(), format_name);
+        }
     }
 
     /// Invert values since Arrow interprets 1 as a non-null value, while CH as a null
@@ -235,7 +259,7 @@ namespace DB
         }
     }
 
-    static void fillArrowArray(
+    static std::shared_ptr<arrow::Array> fillArrowArray(
         const String & column_name,
         ColumnPtr & column,
         const DataTypePtr & column_type,
@@ -262,6 +286,8 @@ namespace DB
         const CHColumnToArrowColumn::Settings & settings,
         std::unordered_map<String, MutableColumnPtr> & dictionary_values)
     {
+        /// TODO: utilize slicing (start - end) - it reqires some non-trivial reindexation
+        /// and maybe optimization of typed values arrays
         arrow::ArrayVector children;
 
         for (size_t i = 0; i < column.getNumVariants(); ++i)
@@ -281,7 +307,7 @@ namespace DB
             arrow::Status status = MakeBuilder(arrow::default_memory_pool(), arrow_type, &variant_array_builder);
             checkStatus(status, variant->getName(), format_name);
 
-            fillArrowArray(
+            std::shared_ptr<arrow::Array> variant_arrow_array = fillArrowArray(
                 variant->getName(),
                 variant,
                 column_type.getVariant(i),
@@ -292,10 +318,6 @@ namespace DB
                 variant->size(),
                 settings,
                 dictionary_values);
-
-            std::shared_ptr<arrow::Array> variant_arrow_array;
-            status = variant_array_builder->Finish(&variant_arrow_array);
-            checkStatus(status, variant->getName(), format_name);
 
             children.push_back(variant_arrow_array);
         }
@@ -373,7 +395,7 @@ namespace DB
         }
     }
 
-    static void fillArrowArrayWithTupleColumnData(
+    static std::shared_ptr<arrow::Array> buildArrowStructArrayWithTupleColumnData(
         const String & column_name,
         ColumnPtr & column,
         const DataTypePtr & column_type,
@@ -392,51 +414,55 @@ namespace DB
 
         arrow::StructBuilder & builder = assert_cast<arrow::StructBuilder &>(*array_builder);
 
+        arrow::ArrayVector children;
+        std::vector<std::string> field_names;
+
         for (size_t i = 0; i != column_tuple->tupleSize(); ++i)
         {
             ColumnPtr nested_column = column_tuple->getColumnPtr(i);
-            fillArrowArray(
-                column_name + "." + nested_names[i],
+            auto name = column_name + "." + nested_names[i];
+            std::shared_ptr<arrow::Array> nested_arrow_array = fillArrowArray(
+                name,
                 nested_column, nested_types[i], null_bytemap,
                 builder.field_builder(static_cast<int>(i)),
                 format_name,
                 start, end,
                 settings,
                 dictionary_values);
+
+            children.push_back(nested_arrow_array);
+            field_names.push_back(name);
         }
 
-        for (size_t i = start; i != end; ++i)
-        {
-            auto status = builder.Append();
-            checkStatus(status, column->getName(), format_name);
-        }
+        return std::move(arrow::StructArray::Make(children, field_names)).ValueOrDie();
     }
 
-    template<typename T>
-    static PaddedPODArray<Int64> extractIndexes(ColumnPtr column, size_t start, size_t end, bool shift)
+    template<typename From, typename To>
+    static PaddedPODArray<To> extractIndexes(ColumnPtr column, size_t start, size_t end, bool shift)
     {
-        const PaddedPODArray<T> & data = assert_cast<const ColumnVector<T> *>(column.get())->getData();
-        PaddedPODArray<Int64> result;
+        const PaddedPODArray<From> & data = assert_cast<const ColumnVector<From> *>(column.get())->getData();
+        PaddedPODArray<To> result;
         result.reserve(end - start);
         if (shift)
-            std::transform(data.begin() + start, data.begin() + end, std::back_inserter(result), [](T value) { return Int64(value) - 1; });
+            std::transform(data.begin() + start, data.begin() + end, std::back_inserter(result), [](From value) { return To(value) - 1; });
         else
-            std::transform(data.begin() + start, data.begin() + end, std::back_inserter(result), [](T value) { return Int64(value); });
+            std::transform(data.begin() + start, data.begin() + end, std::back_inserter(result), [](From value) { return To(value); });
         return result;
     }
 
-    static PaddedPODArray<Int64> extractIndexes(ColumnPtr column, size_t start, size_t end, bool shift)
+    template<typename To = Int64>
+    static PaddedPODArray<To> extractIndexes(ColumnPtr column, size_t start, size_t end, bool shift)
     {
         switch (column->getDataType())
         {
             case TypeIndex::UInt8:
-                return extractIndexes<UInt8>(column, start, end, shift);
+                return extractIndexes<UInt8, To>(column, start, end, shift);
             case TypeIndex::UInt16:
-                return extractIndexes<UInt16>(column, start, end, shift);
+                return extractIndexes<UInt16, To>(column, start, end, shift);
             case TypeIndex::UInt32:
-                return extractIndexes<UInt32>(column, start, end, shift);
+                return extractIndexes<UInt32, To>(column, start, end, shift);
             case TypeIndex::UInt64:
-                return extractIndexes<UInt64>(column, start, end, shift);
+                return extractIndexes<UInt64, To>(column, start, end, shift);
             default:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column must be ColumnUInt, got {}.", column->getName());
         }
@@ -502,6 +528,75 @@ namespace DB
                 " resulting dictionary size exceeds the max value of index type {}", dict_indexes_arrow_type->name());
     }
 
+    static std::shared_ptr<arrow::Array> buildArrowListArrayWithArrayColumnData(
+        const String & column_name,
+        ColumnPtr & column,
+        const DataTypePtr & column_type,
+        [[maybe_unused]] const PaddedPODArray<UInt8> * null_bytemap,
+        arrow::ArrayBuilder * array_builder,
+        String format_name,
+        size_t start,
+        size_t end,
+        const CHColumnToArrowColumn::Settings & settings,
+        std::unordered_map<String, MutableColumnPtr> & dictionary_values)
+    {
+        auto * column_array = assert_cast<ColumnArray *>(&column->assumeMutableRef());
+        const auto * type_array = assert_cast<const DataTypeArray *>(column_type.get());
+
+        const auto column_offsets = assert_cast<const ColumnArray::ColumnOffsets &>(column_array->getOffsetsColumn()).getPtr();
+        size_t column_size = column_offsets->size();
+        auto offsets = extractIndexes<int32_t>(column_offsets, start, end, false);
+        size_t values_start = start >= column_size ? offsets.back() : (start == 0 ? 0 : offsets[start-1]);
+        size_t values_end = end >= column_size ? offsets.back() : (end == 0 ? 0 : offsets[end-1]);
+
+        arrow::ListBuilder & builder = assert_cast<arrow::ListBuilder &>(*array_builder);
+
+        auto data_array = fillArrowArray(column_name, column_array->getDataPtr(), type_array->getNestedType(), nullptr, builder.value_builder(), format_name, values_start, values_end, settings, dictionary_values);
+
+        arrow::Status status;
+        arrow::Int32Builder offsets_builder;
+        status = offsets_builder.Append(0);
+        checkStatus(status, column_name, format_name);
+        size_t dif = start == 0 ? 0 : offsets[start-1];
+        for (size_t i = start; i < end; ++i)
+        {
+            status = offsets_builder.Append(offsets[i] - dif);
+            checkStatus(status, column_name, format_name);
+        }
+
+        std::shared_ptr<arrow::Array> offsets_array;
+        status = offsets_builder.Finish(&offsets_array);
+        checkStatus(status, column_name, format_name);
+
+        return arrow::ListArray::FromArrays(*offsets_array, *data_array).ValueOrDie();
+    }
+
+    static std::shared_ptr<arrow::Array> buildArrowMapArrayWithMapColumnData(
+        const String & column_name,
+        ColumnPtr & column,
+        const DataTypePtr & column_type,
+        const PaddedPODArray<UInt8> * null_bytemap,
+        arrow::ArrayBuilder * array_builder,
+        String format_name,
+        size_t start,
+        size_t end,
+        const CHColumnToArrowColumn::Settings & settings,
+        std::unordered_map<String, MutableColumnPtr> & dictionary_values)
+    {
+        return
+            buildArrowListArrayWithArrayColumnData(
+                column_name,
+                assert_cast<ColumnMap *>(&column->assumeMutableRef())->getNestedColumnPtr(),
+                column_type,
+                null_bytemap,
+                array_builder,
+                format_name,
+                start,
+                end,
+                settings,
+                dictionary_values);
+    }
+
     template<typename ValueType>
     static void fillArrowArrayWithLowCardinalityColumnDataImpl(
         const String & column_name,
@@ -553,10 +648,7 @@ namespace DB
 
         auto dict_column = dynamic_cast<IColumnUnique &>(*dict_values).getNestedNotNullableColumn();
         const auto & dict_type = removeNullable(assert_cast<const DataTypeLowCardinality *>(column_type.get())->getDictionaryType());
-        fillArrowArray(column_name, dict_column, dict_type, nullptr, values_builder.get(), format_name, is_nullable, dict_column->size(), settings, dictionary_values);
-        std::shared_ptr<arrow::Array> arrow_dict_array;
-        status = values_builder->Finish(&arrow_dict_array);
-        checkStatus(status, column->getName(), format_name);
+        std::shared_ptr<arrow::Array> arrow_dict_array = fillArrowArray(column_name, dict_column, dict_type, nullptr, values_builder.get(), format_name, is_nullable, dict_column->size(), settings, dictionary_values);
 
         status = builder->InsertMemoValues(*arrow_dict_array);
         checkStatus(status, column->getName(), format_name);
@@ -863,7 +955,7 @@ namespace DB
         checkStatus(status, write_column->getName(), format_name);
     }
 
-    static void fillArrowArray(
+    static std::shared_ptr<arrow::Array> fillArrowArray(
         const String & column_name,
         ColumnPtr & column,
         const DataTypePtr & column_type,
@@ -875,6 +967,8 @@ namespace DB
         const CHColumnToArrowColumn::Settings & settings,
         std::unordered_map<String, MutableColumnPtr> & dictionary_values)
     {
+        std::shared_ptr<arrow::Array> arrow_array;
+
         column = column->convertToFullColumnIfConst();
 
         switch (column_type->getTypeId())
@@ -886,7 +980,7 @@ namespace DB
                 DataTypePtr nested_type = assert_cast<const DataTypeNullable *>(column_type.get())->getNestedType();
                 const ColumnPtr & null_column = column_nullable->getNullMapColumnPtr();
                 const PaddedPODArray<UInt8> & bytemap = assert_cast<const ColumnVector<UInt8> &>(*null_column).getData();
-                fillArrowArray(column_name, nested_column, nested_type, &bytemap, array_builder, format_name, start, end, settings, dictionary_values);
+                arrow_array = fillArrowArray(column_name, nested_column, nested_type, &bytemap, array_builder, format_name, start, end, settings, dictionary_values);
                 break;
             }
             case TypeIndex::String:
@@ -923,19 +1017,32 @@ namespace DB
                 fillArrowArrayWithDate32ColumnData(column, null_bytemap, format_name, array_builder, start, end);
                 break;
             case TypeIndex::Array:
-                fillArrowArrayWithArrayColumnData<arrow::ListBuilder>(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end, settings, dictionary_values);
+                arrow_array = buildArrowListArrayWithArrayColumnData(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end, settings, dictionary_values);
                 break;
             case TypeIndex::Tuple:
-                fillArrowArrayWithTupleColumnData(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end, settings, dictionary_values);
+                arrow_array = buildArrowStructArrayWithTupleColumnData(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end, settings, dictionary_values);
                 break;
             case TypeIndex::LowCardinality:
                 fillArrowArrayWithLowCardinalityColumnData(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end, settings, dictionary_values);
                 break;
             case TypeIndex::Map:
             {
-                ColumnPtr column_array = assert_cast<const ColumnMap *>(column.get())->getNestedColumnPtr();
-                DataTypePtr array_type = assert_cast<const DataTypeMap *>(column_type.get())->getNestedType();
-                fillArrowArrayWithArrayColumnData<arrow::MapBuilder>(column_name, column_array, array_type, null_bytemap, array_builder, format_name, start, end, settings, dictionary_values);
+                arrow_array = buildArrowMapArrayWithMapColumnData(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end, settings, dictionary_values);
+                break;
+            }
+            case TypeIndex::Variant:
+            {
+                const auto & column_variant = assert_cast<const ColumnVariant &>(*column);
+                const auto & column_variant_type = assert_cast<const DataTypeVariant &>(*column_type);
+                arrow_array = buildArrowDenseUnionArrayWithVariantColumnData(
+                        column_variant,
+                        column_variant_type,
+                        nullptr,
+                        format_name,
+                        0,
+                        column->size(),
+                        settings,
+                        dictionary_values);
                 break;
             }
             case TypeIndex::Decimal32:
@@ -986,8 +1093,16 @@ namespace DB
                 FOR_INTERNAL_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
             default:
-                throw Exception(ErrorCodes::UNKNOWN_TYPE, "Internal type '{}' of a column '{}' is not supported for conversion into {} data format.", column_type->getFamilyName(), column_name, format_name);
+                fillArrowArrayWithRawColumnData(column, null_bytemap, format_name, array_builder, start, end);
         }
+
+        if (!arrow_array)
+        {
+            auto status = array_builder->Finish(&arrow_array);
+            checkStatus(status, column->getName(), format_name);
+        }
+
+        return arrow_array;
     }
 
     static std::shared_ptr<arrow::DataType> getArrowTypeForLowCardinalityIndexes(ColumnPtr indexes_column, const CHColumnToArrowColumn::Settings & settings)
@@ -1194,6 +1309,9 @@ namespace DB
                 fields.push_back(std::make_shared<arrow::Field>(field_name, arrow_type, is_column_nullable));
             }
 
+            /// Variant in CH is slightly different than in arrow - it can indicate null value by having ColumnVariant::NULL_DISCRIMINATOR
+            /// in discriminators instead of using nullable type - because of this we need to introduce additional
+            /// null array (having a single null value) to have these null values to refer to
             if (column_variant && std::ranges::any_of(column_variant->getLocalDiscriminators(), [](auto idx){ return idx == ColumnVariant::NULL_DISCRIMINATOR; }))
                 fields.push_back(std::make_shared<arrow::Field>("NULL", arrow::null(), false));
 
@@ -1210,6 +1328,7 @@ namespace DB
             return arrow_type_it->second;
         }
 
+        /// If we have no conversion then assume arrow::BinaryType
         return arrow::binary();
     }
 
@@ -1317,47 +1436,23 @@ namespace DB
                 if (!settings.low_cardinality_as_dictionary)
                     column = recursiveRemoveLowCardinality(column);
 
-                if (isVariant(column->getDataType()))
-                {
-                    column = column->convertToFullColumnIfConst();
-                    const auto & column_variant = assert_cast<const ColumnVariant &>(*column);
-                    const auto & column_variant_type = assert_cast<const DataTypeVariant &>(*header_column.type);
-                    auto arrow_array = buildArrowDenseUnionArrayWithVariantColumnData(
-                        column_variant,
-                        column_variant_type,
-                        nullptr,
-                        format_name,
-                        0,
-                        column->size(),
-                        settings,
-                        dictionary_values);
+                std::unique_ptr<arrow::ArrayBuilder> array_builder;
+                arrow::Status status = MakeBuilder(arrow::default_memory_pool(), schema->field(column_i)->type(), &array_builder);
+                checkStatus(status, column->getName(), format_name);
 
-                    table_data.at(column_i).emplace_back(std::move(arrow_array));
-                }
-                else
-                {
-                    std::unique_ptr<arrow::ArrayBuilder> array_builder;
-                    arrow::Status status = MakeBuilder(arrow::default_memory_pool(), schema->field(column_i)->type(), &array_builder);
-                    checkStatus(status, column->getName(), format_name);
+                std::shared_ptr<arrow::Array> arrow_array = fillArrowArray(
+                    header_column.name,
+                    column,
+                    header_column.type,
+                    nullptr,
+                    array_builder.get(),
+                    format_name,
+                    0,
+                    column->size(),
+                    settings,
+                    dictionary_values);
 
-                    fillArrowArray(
-                        header_column.name,
-                        column,
-                        header_column.type,
-                        nullptr,
-                        array_builder.get(),
-                        format_name,
-                        0,
-                        column->size(),
-                        settings,
-                        dictionary_values);
-
-                    std::shared_ptr<arrow::Array> arrow_array;
-                    status = array_builder->Finish(&arrow_array);
-                    checkStatus(status, column->getName(), format_name);
-
-                    table_data.at(column_i).emplace_back(std::move(arrow_array));
-                }
+                table_data.at(column_i).emplace_back(std::move(arrow_array));
             }
         }
 
