@@ -20,6 +20,34 @@ void IRuntimeFilter::updateStats(UInt64 rows_checked, UInt64 rows_passed) const
 {
     stats.rows_checked += rows_checked;
     stats.rows_passed += rows_passed;
+
+    /// Skip next 10 blocks if too few rows got filtered out
+    if (rows_passed > 0.7 * rows_checked)
+        rows_to_skip = rows_checked * 10;
+}
+
+bool IRuntimeFilter::shouldSkip(size_t next_block_rows) const
+{
+    rows_to_skip -= next_block_rows;
+    if (rows_to_skip > 0)
+    {
+        stats.rows_skipped += next_block_rows;
+        return true;
+    }
+    rows_to_skip = 0;
+    return false;
+}
+
+ColumnPtr IRuntimeFilter::find(const ColumnWithTypeAndName & values) const
+{
+    if (!inserts_are_finished)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to lookup values in runtime filter before builiding it was finished");
+
+    const size_t rows_in_block = values.column->size();
+    if (shouldSkip(rows_in_block))
+        return DataTypeUInt8().createColumnConst(rows_in_block, true);
+
+    return doFind(values);
 }
 
 static void mergeBloomFilters(BloomFilter & destination, const BloomFilter & source)
@@ -131,15 +159,17 @@ static size_t countPassedStats(ColumnPtr values)
 }
 
 template <bool negate>
-ColumnPtr RuntimeFilterBase<negate>::find(const ColumnWithTypeAndName & values) const
+ColumnPtr RuntimeFilterBase<negate>::doFind(const ColumnWithTypeAndName & values) const
 {
+    chassert(inserts_are_finished);
+
     switch (values_count)
     {
         case ValuesCount::UNKNOWN:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Run time filter set is not ready for lookups");
         case ValuesCount::ZERO:
             updateStats(values.column->size(), negate ? values.column->size() : 0);
-            return std::make_shared<DataTypeUInt8>()->createColumnConst(values.column->size(), negate);
+            return DataTypeUInt8().createColumnConst(values.column->size(), negate);
         case ValuesCount::ONE:
         {
             /// If only 1 element in the set then use "value == const" instead of set lookup
@@ -163,10 +193,9 @@ ColumnPtr RuntimeFilterBase<negate>::find(const ColumnWithTypeAndName & values) 
     UNREACHABLE();
 }
 
-ColumnPtr ApproximateRuntimeFilter::find(const ColumnWithTypeAndName & values) const
+ColumnPtr ApproximateRuntimeFilter::doFind(const ColumnWithTypeAndName & values) const
 {
-    if (!inserts_are_finished)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to lookup values in runtime filter before builiding it was finished");
+    chassert(inserts_are_finished);
 
     if (bloom_filter)
     {
@@ -189,7 +218,7 @@ ColumnPtr ApproximateRuntimeFilter::find(const ColumnWithTypeAndName & values) c
     }
     else
     {
-        return Base::find(values);
+        return Base::doFind(values);
     }
 }
 
@@ -249,8 +278,8 @@ public:
         for (const auto & [filter_name, filter] : filters_by_name)
         {
             const auto & stats = filter->getStats();
-            LOG_TRACE(getLogger("RuntimeFilter"), "Stats for '{}': rows checked {}, rows passed {}",
-                filter_name, stats.rows_checked.load(), stats.rows_passed.load());
+            LOG_TRACE(getLogger("RuntimeFilter"), "Stats for '{}': rows skipped {}, rows checked {}, rows passed {}",
+                filter_name, stats.rows_skipped.load(), stats.rows_checked.load(), stats.rows_passed.load());
         }
     }
 
