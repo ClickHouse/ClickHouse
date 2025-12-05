@@ -21,23 +21,20 @@ $CLICKHOUSE_CURL -sS -d "select value, changed from system.settings where name =
 $CLICKHOUSE_CURL -sS -d 'begin transaction' "$CLICKHOUSE_URL&$SETTINGS"
 $CLICKHOUSE_CURL -sS -d 'commit' "$CLICKHOUSE_URL&$SETTINGS&close_session=1"
 
-# Poll for SESSION_NOT_FOUND to avoid CI timing issues
-MAX_RETRIES=10
-RETRY_INTERVAL=1
-for i in $(seq 1 $MAX_RETRIES); do
-    output=$($CLICKHOUSE_CURL -sS -X POST --data-binary @- \
-        "$CLICKHOUSE_URL&$SETTINGS&session_check=1&query=insert+into+$TABLE_NAME+format+TSV" < "$DATA_FILE" 2>&1)
-    if echo "$output" | grep -q "SESSION_NOT_FOUND"; then
-        break  # detected as expected
-    fi
-    sleep $RETRY_INTERVAL
-done
-
-# Fail test if SESSION_NOT_FOUND did not appear
-echo "$output" | grep -q "SESSION_NOT_FOUND" || { echo "Expected SESSION_NOT_FOUND error"; exit 1; }
-
-# Ensure table is still empty
-$CLICKHOUSE_CLIENT --implicit_transaction=1 -q "select throwIf(count() != 0) from $TABLE_NAME"
+$CLICKHOUSE_CURL -sS -X POST --data-binary @- \
+  "$CLICKHOUSE_URL&$SETTINGS&session_check=1&query=insert+into+$TABLE_NAME+format+TSV" \
+  < "$DATA_FILE" 2>&1 | {
+    response=$(cat)
+    echo "$response" | grep -Faq "SESSION_NOT_FOUND" || {
+        echo "Expected SESSION_NOT_FOUND error"
+        echo "---- FULL RESPONSE START ----"
+        echo "$response"
+        echo "---- FULL RESPONSE END ----"
+        exit 1
+    }
+  }
+$CLICKHOUSE_CLIENT --implicit_transaction=1 -q "select throwIf(count() != 0) from $TABLE_NAME" \
+  || $CLICKHOUSE_CLIENT -q "select name, rows, active, visible, creation_tid, creation_csn from system.parts where database=currentDatabase()"
 
 # sleep a bit more than a session timeout (3) to make sure there's enough time to close it using close time buckets
 sleep 5

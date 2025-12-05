@@ -37,7 +37,7 @@ OPTIMIZE TABLE t_lwu_deletes_vertical FINAL;
 SELECT count() FROM t_lwu_deletes_vertical;
 SELECT count() FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_lwu_deletes_vertical' AND active AND partition_id = 'all' AND column = '_row_exists';
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS part_log;
 
 SELECT
     merge_algorithm,

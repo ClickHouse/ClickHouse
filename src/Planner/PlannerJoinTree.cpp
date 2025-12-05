@@ -1,3 +1,4 @@
+#include <Interpreters/convertFieldToType.h>
 #include <Planner/PlannerJoinTree.h>
 
 #include <Core/Settings.h>
@@ -24,6 +25,7 @@
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageValues.h>
 
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
@@ -54,6 +56,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromTableStep.h>
 #include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
@@ -124,6 +127,7 @@ namespace Setting
     extern const SettingsUInt64 min_joined_block_size_bytes;
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool query_plan_display_internal_aliases;
+    extern const SettingsBool enable_lazy_columns_replication;
 }
 
 namespace ErrorCodes
@@ -630,19 +634,40 @@ std::optional<FilterDAGInfo> buildAdditionalFiltersIfNeeded(const StoragePtr & s
 
 UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
 {
+    // Since we support negative limit, query node field could potentially be Int64 implying negative value.
+    // So, we have to handle to separately
     auto const & main_query_node = select_query_info.query_tree->as<QueryNode const &>();
 
     /// Constness of limit and offset is validated during query analysis stage
-    size_t limit_length = 0;
+    UInt64 limit_length = 0;
     if (main_query_node.hasLimit())
-        limit_length = main_query_node.getLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
+    {
+        const auto & field = main_query_node.getLimit()->as<ConstantNode &>().getValue();
 
-    size_t limit_offset = 0;
+        const bool is_uint64 = !convertFieldToType(field, DataTypeUInt64()).isNull();
+
+        // Negative LIMIT, skip optimization
+        if (!is_uint64)
+            return 0;
+
+        limit_length = field.safeGet<UInt64>();
+    }
+
+    UInt64 limit_offset = 0;
     if (main_query_node.hasOffset())
-        limit_offset = main_query_node.getOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();
+    {
+        const auto & field = main_query_node.getOffset()->as<ConstantNode &>().getValue();
+        const bool is_uint64 = !convertFieldToType(field, DataTypeUInt64()).isNull();
+
+        // Negative OFFSET, skip optimization
+        if (!is_uint64)
+            return 0;
+
+        limit_offset = field.safeGet<UInt64>();
+    }
 
     /** If not specified DISTINCT, WHERE, GROUP BY, HAVING, ORDER BY, JOIN, LIMIT BY, LIMIT WITH TIES
-      * but LIMIT is specified, and limit + offset < max_block_size,
+      * but LIMIT is specified with UInt64 value, and limit + offset < max_block_size,
       * then as the block size we will use limit + offset (not to read more from the table than requested),
       * and also set the number of threads to 1.
       */
@@ -1046,7 +1071,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 };
 
                 /// query_plan can be empty if there is nothing to read
-                if (query_plan.isInitialized() && !select_query_options.build_logical_plan && parallel_replicas_enabled_for_storage(storage, settings))
+                if (query_plan.isInitialized() && !select_query_options.build_logical_plan
+                    && parallel_replicas_enabled_for_storage(storage, settings))
                 {
                     auto allow_parallel_replicas_for_table_expression
                         = [](const QueryTreeNodePtr current_table_expression, const QueryTreeNodePtr & join_tree_node)
@@ -1058,13 +1084,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         if (!join_node)
                             return true;
 
+                        const auto & left_table_expr = join_node->getLeftTableExpression();
                         const auto join_kind = join_node->getKind();
                         const auto join_strictness = join_node->getStrictness();
-
                         if ((join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All) || join_kind == JoinKind::Left)
                         {
-
-                            const auto & left_table_expr = join_node->getLeftTableExpression();
                             if (current_table_expression.get() == left_table_expr.get())
                                 // here current table expression is table or table function
                                 return true;
@@ -1073,13 +1097,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             // check if left one is not subquery
                             return left_table_expr->getNodeType() != QueryTreeNodeType::QUERY
                                 && left_table_expr->getNodeType() != QueryTreeNodeType::UNION
-                                && left_table_expr->getNodeType() != QueryTreeNodeType::JOIN;
+                                && left_table_expr->getNodeType() != QueryTreeNodeType::JOIN
+                                && left_table_expr->getNodeType() != QueryTreeNodeType::ARRAY_JOIN
+                                && left_table_expr->getNodeType() != QueryTreeNodeType::CROSS_JOIN;
                         }
 
                         if (join_kind == JoinKind::Right)
                         {
                             // parallel replicas is allowed only simple RIGHT JOINs i.e. t1 RIGHT JOIN t2
-                            const auto & left_table_expr = join_node->getLeftTableExpression();
                             if (left_table_expr->getNodeType() != QueryTreeNodeType::TABLE
                                 && left_table_expr->getNodeType() != QueryTreeNodeType::TABLE_FUNCTION)
                                 return false;
@@ -1220,7 +1245,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     const auto & data_header = query_plan.getCurrentHeader();
                     if (!data_header->findByName(static_cast<std::string_view>("_table")))
                     {
-                        const auto & table_name = storage->getStorageID().getTableName();
+                        String table_name;
+                        if (table_node && !(table_node->getTemporaryTableName().empty()))
+                            table_name = table_node->getTemporaryTableName();
+                        else
+                            table_name = storage->getStorageID().getTableName();
                         ColumnWithTypeAndName column;
                         column.name = "_table";
                         column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
@@ -1282,10 +1311,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 /// Create step which reads from empty source if storage has no data.
                 const auto & column_names = table_expression_data.getColumnNames();
                 auto source_header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
-                Pipe pipe(std::make_shared<NullSource>(source_header));
-                auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-                read_from_pipe->setStepDescription("Read from NullSource");
-                query_plan.addStep(std::move(read_from_pipe));
+                auto read_nothing = std::make_unique<ReadNothingStep>(source_header);
+                read_nothing->setStepDescription("Read from NullSource");
+                query_plan.addStep(std::move(read_nothing));
                 query_plan.setMaxThreads(max_threads_execute_query);
 
                 auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
@@ -1306,10 +1334,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             for (auto & projection_column : projection_columns)
                 source_header.insert(ColumnWithTypeAndName(projection_column.type, projection_column.name));
 
-            Pipe pipe(std::make_shared<NullSource>(std::make_shared<const Block>(source_header)));
-            auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-            read_from_pipe->setStepDescription("Read from NullSource");
-            query_plan.addStep(std::move(read_from_pipe));
+            auto read_nothing = std::make_unique<ReadNothingStep>(std::make_shared<const Block>(source_header));
+            read_nothing->setStepDescription("Read from NullSource");
+            query_plan.addStep(std::move(read_nothing));
         }
         else
         {
@@ -1410,7 +1437,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
                 expected_block.getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Position,
-                true /*ignore_constant_values*/);
+                planner_context->getQueryContext(),
+                true /*ignore_constant_values*/,
+                false /*add_cast_columns*/,
+                nullptr /*new_names*/);
             auto rename_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(rename_actions_dag));
             if (table_expression_data.isRemote())
                 rename_step->setStepDescription("Change remote column names to local column names");
@@ -1546,11 +1576,19 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
 
     table_join->setInputColumns(columns_from_left_table, columns_from_right_table);
 
+    ColumnIdentifierSet required_columns_after_join = outer_scope_columns;
+
+    if (join_clauses_and_actions.residual_join_expressions_actions)
+    {
+        for (const auto * input : join_clauses_and_actions.residual_join_expressions_actions->getInputs())
+            required_columns_after_join.insert(input->result_name);
+    }
+
     for (auto & column_from_joined_table : columns_from_left_table)
     {
         /// Add columns to output only if they are presented in outer scope, otherwise they can be dropped
         if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(column_from_joined_table.name) &&
-            outer_scope_columns.contains(column_from_joined_table.name))
+            required_columns_after_join.contains(column_from_joined_table.name))
             table_join->setUsedColumn(column_from_joined_table, JoinTableSide::Left);
     }
 
@@ -1558,7 +1596,7 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
     {
         /// Add columns to output only if they are presented in outer scope, otherwise they can be dropped
         if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(column_from_joined_table.name) &&
-            outer_scope_columns.contains(column_from_joined_table.name))
+            required_columns_after_join.contains(column_from_joined_table.name))
             table_join->setUsedColumn(column_from_joined_table, JoinTableSide::Right);
     }
 
@@ -1672,14 +1710,6 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
         }
 
         auto join_pipeline_type = join_algorithm->pipelineType();
-
-        ColumnIdentifierSet required_columns_after_join = outer_scope_columns;
-
-        if (join_clauses_and_actions.residual_join_expressions_actions)
-        {
-            for (const auto * input : join_clauses_and_actions.residual_join_expressions_actions->getInputs())
-                required_columns_after_join.insert(input->result_name);
-        }
 
         if (required_columns_after_join.empty())
         {
@@ -1827,7 +1857,7 @@ JoinTreeQueryPlan buildQueryPlanForCrossJoinNode(
             auto join_step_logical = std::make_unique<JoinStepLogical>(
                 left_header,
                 right_header,
-                JoinOperator{},
+                JoinOperator{JoinKind::Cross},
                 std::move(join_expression_actions),
                 outer_scope_columns,
                 std::unordered_map<String, const ActionsDAG::Node *>{},
@@ -1980,7 +2010,12 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
             auto & join_node_using_column_node = join_node_using_node->as<ColumnNode &>();
             auto & inner_columns_list = join_node_using_column_node.getExpressionOrThrow()->as<ListNode &>();
 
-            auto & left_inner_column_node = inner_columns_list.getNodes().at(0);
+            if (inner_columns_list.getNodes().size() < 2)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "JOIN USING clause expected at least two column identifiers, got: {}",
+                    join_node_using_column_node.formatASTForErrorMessage());
+
+            auto & left_inner_column_node = inner_columns_list.getNodes().front();
             auto * left_inner_column = left_inner_column_node->as<ColumnNode>();
             if (!left_inner_column)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -1988,7 +2023,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
                     left_inner_column_node->getNodeTypeName(),
                     left_inner_column_node->formatASTForErrorMessage());
 
-            auto & right_inner_column_node = inner_columns_list.getNodes().at(1);
+            auto & right_inner_column_node = inner_columns_list.getNodes().back();
             auto * right_inner_column = right_inner_column_node->as<ColumnNode>();
             if (!right_inner_column)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -2022,7 +2057,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
                 continue;
 
             const auto & cast_type = it->second;
-            output_node = &cast_actions_dag.addCast(*output_node, cast_type, output_node->result_name);
+            output_node = &cast_actions_dag.addCast(*output_node, cast_type, output_node->result_name, planner_context->getQueryContext());
         }
 
         cast_actions_dag.appendInputsForUnusedColumns(*plan_to_add_cast.getCurrentHeader());
@@ -2196,8 +2231,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
         {
             auto & join_using_column_node = join_using_node->as<ColumnNode &>();
             auto & using_join_columns_list = join_using_column_node.getExpressionOrThrow()->as<ListNode &>();
-            auto & using_join_left_join_column_node = using_join_columns_list.getNodes().at(0);
-            auto & using_join_right_join_column_node = using_join_columns_list.getNodes().at(1);
+            auto & using_join_left_join_column_node = using_join_columns_list.getNodes().front();
+            auto & using_join_right_join_column_node = using_join_columns_list.getNodes().back();
 
             const auto & left_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(using_join_left_join_column_node);
             const auto & right_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(using_join_right_join_column_node);
@@ -2370,7 +2405,9 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
         plan.getCurrentHeader(),
         ArrayJoin{std::move(array_join_column_names), array_join_node.isLeft()},
         settings[Setting::enable_unaligned_array_join],
-        settings[Setting::max_block_size]);
+        settings[Setting::max_block_size],
+        settings[Setting::enable_lazy_columns_replication]
+        );
 
     array_join_step->setStepDescription("ARRAY JOIN");
     plan.addStep(std::move(array_join_step));
@@ -2413,6 +2450,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     size_t joins_count = 0;
     bool is_full_join = false;
     bool is_global_join = false;
+    bool is_right_join_with_remote_table = false;
     int first_left_or_inner_join_pos = -1;
     int first_right_join_pos = -1;
     /// For each table, table function, query, union table expressions prepare before query plan build
@@ -2445,6 +2483,16 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             if (first_right_join_pos < 0 && join_node.getKind() == JoinKind::Right)
                 first_right_join_pos = i;
 
+            /// For RIGHT JOIN with a distributed table on the right side, disable parallel replicas.
+            /// The distributed table on the right side would be wrapped into a subquery,
+            /// causing parallel replicas to incorrectly choose the left table for parallel reading.
+            /// Each replica would then independently read the full distributed table, resulting in duplicate data.
+            if (join_node.getKind() == JoinKind::Right)
+            {
+                const auto & right_expression_data = planner_context->getTableExpressionDataOrThrow(join_node.getRightTableExpression());
+                is_right_join_with_remote_table = right_expression_data.isRemote();
+            }
+
             continue;
         }
 
@@ -2459,6 +2507,10 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
 
         /// for n-way join with FULL JOIN or GLOBAL JOINS
         if (joins_count > 1 && (is_full_join || is_global_join))
+            return true;
+
+        /// For RIGHT JOIN with distributed table on the right side
+        if (is_right_join_with_remote_table)
             return true;
 
         return false;
@@ -2485,7 +2537,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     /** If left most table expression query plan is planned to stage that is not equal to fetch columns,
       * then left most table expression is responsible for providing valid JOIN TREE part of final query plan.
       *
-      * Examples: Distributed, LiveView, Merge storages.
+      * Examples: Distributed, Merge storages.
       */
     auto left_table_expression = table_expressions_stack.front();
     auto left_table_expression_query_plan = buildQueryPlanForTableExpression(
@@ -2593,7 +2645,8 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             for (size_t j = i + 1; j < table_expressions_stack.size(); ++j)
             {
                 const auto & node = table_expressions_stack[j];
-                if (node->getNodeType() == QueryTreeNodeType::JOIN || node->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+                if (node->getNodeType() == QueryTreeNodeType::JOIN || node->getNodeType() == QueryTreeNodeType::ARRAY_JOIN
+                    || node->getNodeType() == QueryTreeNodeType::CROSS_JOIN)
                 {
                     parent_join_tree = node;
                     break;
@@ -2606,7 +2659,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             bool is_remote = planner_context->getTableExpressionDataOrThrow(table_expression).isRemote();
             query_plans_stack.push_back(buildQueryPlanForTableExpression(
                 table_expression,
-                join_tree_node,
+                parent_join_tree,
                 select_query_info,
                 select_query_options,
                 planner_context,

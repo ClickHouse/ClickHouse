@@ -53,6 +53,22 @@ struct UsefulSkipIndexes
     std::vector<std::vector<size_t>> per_part_index_orders;
 };
 
+/// Contains parts each from different projection index
+using ProjectionIndexReadRangesByIndex = std::unordered_map<size_t, RangesInDataParts>;
+
+struct ProjectionIndexReadInfo
+{
+    ProjectionDescriptionRawPtr projection;
+    PrewhereInfoPtr prewhere_info;
+};
+using ProjectionIndexReadInfos = std::vector<ProjectionIndexReadInfo>;
+
+struct ProjectionIndexReadDescription
+{
+    ProjectionIndexReadRangesByIndex read_ranges;
+    ProjectionIndexReadInfos read_infos;
+};
+
 struct MergeTreeIndexBuildContext;
 using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;
 
@@ -125,15 +141,58 @@ public:
         UInt64 total_marks_pk = 0;
         UInt64 selected_rows = 0;
         bool has_exact_ranges = false;
+        std::atomic<bool> exceeded_row_limits = false;
+
+        AnalysisResult() = default;
+
+        AnalysisResult(const AnalysisResult & other)
+            : parts_with_ranges(other.parts_with_ranges)
+            , split_parts(other.split_parts)
+            , sampling(other.sampling)
+            , index_stats(other.index_stats)
+            , projection_stats(other.projection_stats)
+            , column_names_to_read(other.column_names_to_read)
+            , read_type(other.read_type)
+            , total_parts(other.total_parts)
+            , parts_before_pk(other.parts_before_pk)
+            , selected_parts(other.selected_parts)
+            , selected_ranges(other.selected_ranges)
+            , selected_marks(other.selected_marks)
+            , selected_marks_pk(other.selected_marks_pk)
+            , total_marks_pk(other.total_marks_pk)
+            , selected_rows(other.selected_rows)
+            , has_exact_ranges(other.has_exact_ranges)
+            , exceeded_row_limits(other.exceeded_row_limits.load())
+        {}
+
+        AnalysisResult(AnalysisResult && other) noexcept
+            : parts_with_ranges(std::move(other.parts_with_ranges))
+            , split_parts(std::move(other.split_parts))
+            , sampling(std::move(other.sampling))
+            , index_stats(std::move(other.index_stats))
+            , projection_stats(std::move(other.projection_stats))
+            , column_names_to_read(std::move(other.column_names_to_read))
+            , read_type(other.read_type)
+            , total_parts(other.total_parts)
+            , parts_before_pk(other.parts_before_pk)
+            , selected_parts(other.selected_parts)
+            , selected_ranges(other.selected_ranges)
+            , selected_marks(other.selected_marks)
+            , selected_marks_pk(other.selected_marks_pk)
+            , total_marks_pk(other.total_marks_pk)
+            , selected_rows(other.selected_rows)
+            , has_exact_ranges(other.has_exact_ranges)
+            , exceeded_row_limits(other.exceeded_row_limits.load())
+        {}
 
         bool readFromProjection() const { return !parts_with_ranges.empty() && parts_with_ranges.front().data_part->isProjectionPart(); }
-        void checkLimits(const Settings & settings, const SelectQueryInfo & query_info_) const;
+        bool isUsable() const { return !exceeded_row_limits; }
     };
 
     using AnalysisResultPtr = std::shared_ptr<AnalysisResult>;
 
     ReadFromMergeTree(
-        RangesInDataParts parts_,
+        RangesInDataPartsPtr parts_,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot_,
         Names all_column_names_,
         const MergeTreeData & data_,
@@ -187,20 +246,23 @@ public:
         explicit Indexes(KeyCondition key_condition_)
             : key_condition(std::move(key_condition_))
             , use_skip_indexes(false)
+            , use_skip_indexes_for_disjunctions(false)
         {}
 
         KeyCondition key_condition;
+        std::optional<KeyCondition> key_condition_rpn_template; /// skeleton of the key condition without resolved columns
         std::optional<PartitionPruner> partition_pruner;
         std::optional<KeyCondition> minmax_idx_condition;
         std::optional<KeyCondition> part_offset_condition;
         std::optional<KeyCondition> total_offset_condition;
         UsefulSkipIndexes skip_indexes;
         bool use_skip_indexes;
+        bool use_skip_indexes_for_disjunctions;
         std::optional<std::unordered_set<String>> part_values;
     };
 
     static AnalysisResultPtr selectRangesToRead(
-        RangesInDataParts parts,
+        const RangesInDataParts & parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const std::optional<VectorSearchParameters> & vector_search_parameters,
         const StorageMetadataPtr & metadata_snapshot,
@@ -221,7 +283,8 @@ public:
     const LazilyReadInfoPtr & getLazilyReadInfo() const { return lazily_read_info; }
 
     /// Returns `false` if requested reading cannot be performed.
-    bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit, std::optional<ActionsDAG> virtual_row_conversion_);
+    bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
+    bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
     bool readsInOrder() const;
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
     const SortDescription & getSortDescription() const override { return result_sort_description; }
@@ -241,7 +304,7 @@ public:
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
 
-    const RangesInDataParts & getParts() const { return analyzed_result_ptr ? analyzed_result_ptr->parts_with_ranges : prepared_parts; }
+    const RangesInDataParts & getParts() const { return analyzed_result_ptr ? analyzed_result_ptr->parts_with_ranges : *prepared_parts; }
     MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot() const { return mutations_snapshot; }
 
     const MergeTreeData & getMergeTreeData() const { return data; }
@@ -263,14 +326,18 @@ public:
 
     /// Adds virtual columns for reading from text index.
     /// Removes physical text columns that were eliminated by direct read from text index.
-    void replaceColumnsForTextSearch(const IndexReadColumns & added_columns, const Names & removed_columns);
+    void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final);
+
     const std::optional<Indexes> & getIndexes() const { return indexes; }
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator() const;
+
+    const ProjectionIndexReadDescription & getProjectionIndexReadDescription() const { return projection_index_read_desc; }
+    ProjectionIndexReadDescription & getProjectionIndexReadDescription() { return projection_index_read_desc; }
 
 private:
     MergeTreeReaderSettings reader_settings;
 
-    RangesInDataParts prepared_parts;
+    RangesInDataPartsPtr prepared_parts;
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot;
 
     Names all_column_names;
@@ -398,6 +465,8 @@ private:
     ExpressionActionsPtr virtual_row_conversion;
 
     std::optional<size_t> number_of_current_replica;
+
+    ProjectionIndexReadDescription projection_index_read_desc;
 };
 
 }

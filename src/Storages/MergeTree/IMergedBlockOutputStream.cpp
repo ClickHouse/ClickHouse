@@ -12,6 +12,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
+    extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
 }
 
 IMergedBlockOutputStream::IMergedBlockOutputStream(
@@ -30,6 +31,7 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
         false,
         (*storage_settings)[MergeTreeSetting::serialization_info_version],
         (*storage_settings)[MergeTreeSetting::string_serialization_version],
+        (*storage_settings)[MergeTreeSetting::nullable_serialization_version],
     }
     , new_serialization_infos(info_settings)
 {
@@ -60,7 +62,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         data_part->getSerialization(column.name)->enumerateStreams(
             [&](const ISerialization::SubstreamPath & substream_path)
             {
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, checksums);
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", checksums, data_part->storage.getSettings());
                 if (stream_name)
                     ++stream_counts[*stream_name];
             });
@@ -76,7 +78,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
 
         ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, checksums);
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", checksums, data_part->storage.getSettings());
 
             /// Delete files if they are no longer shared with another column.
             if (stream_name && --stream_counts[*stream_name] == 0)

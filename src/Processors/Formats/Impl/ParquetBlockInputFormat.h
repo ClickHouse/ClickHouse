@@ -22,7 +22,6 @@ namespace DB
 {
 
 class ArrowColumnToCHColumn;
-class ParquetRecordReader;
 
 // Parquet files contain a metadata block with the following information:
 //  * list of columns,
@@ -51,6 +50,28 @@ class ParquetRecordReader;
 // parallel reading+decoding, instead of using ParallelReadBuffer and ParallelParsingInputFormat.
 // That's what RandomAccessInputCreator in FormatFactory is about.
 
+struct ParquetFileBucketInfo : public FileBucketInfo
+{
+    std::vector<size_t> row_group_ids;
+
+    ParquetFileBucketInfo() = default;
+    explicit ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_);
+    void serialize(WriteBuffer & buffer) override;
+    void deserialize(ReadBuffer & buffer) override;
+    String getIdentifier() const override;
+    String getFormatName() const override
+    {
+        return "Parquet";
+    }
+};
+using ParquetFileBucketInfoPtr = std::shared_ptr<ParquetFileBucketInfo>;
+
+struct ParquetBucketSplitter : public IBucketSplitter
+{
+    ParquetBucketSplitter() = default;
+    std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) override;
+};
+
 class ParquetBlockInputFormat : public IInputFormat
 {
 public:
@@ -71,6 +92,8 @@ public:
     const BlockMissingValues * getMissingValues() const override;
 
     size_t getApproxBytesReadForChunk() const override { return previous_approx_bytes_read_for_chunk; }
+
+    void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_) override;
 
 private:
     Chunk read() override;
@@ -224,9 +247,6 @@ private:
         std::vector<int> row_groups_idxs;
 
         // These are only used by the decoding thread, so don't require locking the mutex.
-        // If use_native_reader, only native_record_reader is used;
-        // otherwise, only native_record_reader is not used.
-        std::shared_ptr<ParquetRecordReader> native_record_reader;
         std::unique_ptr<parquet::arrow::FileReader> file_reader;
         std::unique_ptr<RowGroupPrefetchIterator> prefetch_iterator;
         std::shared_ptr<arrow::RecordBatchReader> record_batch_reader;
@@ -295,7 +315,8 @@ private:
     };
 
     const FormatSettings format_settings;
-    const std::unordered_set<int> & skip_row_groups;
+    std::unordered_set<int> skip_row_groups;
+    ParquetFileBucketInfoPtr buckets_to_read;
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
     size_t min_bytes_for_seek;

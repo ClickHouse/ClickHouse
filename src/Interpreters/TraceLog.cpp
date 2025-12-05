@@ -1,14 +1,17 @@
 #include <base/getFQDNOrHostName.h>
 #include <base/demangle.h>
 #include <Common/DateLUTImpl.h>
+#include <Interpreters/InstrumentationManager.h>
 #include <Interpreters/TraceLog.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/SymbolIndex.h>
@@ -32,6 +35,7 @@ const TraceDataType::Values TraceLogElement::trace_values =
     {"ProfileEvent", static_cast<UInt8>(TraceType::ProfileEvent)},
     {"JemallocSample", static_cast<UInt8>(TraceType::JemallocSample)},
     {"MemoryAllocatedWithoutCheck", static_cast<UInt8>(TraceType::MemoryAllocatedWithoutCheck)},
+    {"Instrumentation", static_cast<UInt8>(TraceType::Instrumentation)},
 };
 
 static_assert(TraceSender::MEMORY_CONTEXT_UNKNOWN == -1);
@@ -59,6 +63,13 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
         "`Thread` represents thread (thread of particular process) context. "
         "`Max` this is a special value means that memory tracker is not blocked (for blocked_context column). ";
 
+    auto entry_type_enum = std::make_shared<DataTypeEnum8> (
+        DataTypeEnum8::Values
+        {
+            {"Entry", static_cast<Int8>(Instrumentation::EntryType::ENTRY)},
+            {"Exit", static_cast<Int8>(Instrumentation::EntryType::EXIT)},
+        });
+
     return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
@@ -76,8 +87,11 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
             "`ProfileEvent` represents collecting of increments of profile events. "
             "`JemallocSample` represents collecting of jemalloc samples. "
             "`MemoryAllocatedWithoutCheck` represents collection of significant allocations (>16MiB) that is done with ignoring any memory limits (for ClickHouse developers only)."
+            "`Instrumentation` represents traces collected by the instrumentation performed through XRay."
         },
+        {"cpu_id", std::make_shared<DataTypeUInt64>(), "CPU identifier."},
         {"thread_id", std::make_shared<DataTypeUInt64>(), "Thread identifier."},
+        {"thread_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Thread name."},
         {"query_id", std::make_shared<DataTypeString>(), "Query identifier that can be used to get details about a query that was running from the query_log system table."},
         {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process."},
         {"size", std::make_shared<DataTypeInt64>(), "For trace types Memory, MemorySample, MemoryAllocatedWithoutCheck or MemoryPeak is the amount of memory allocated, for other trace types is 0."},
@@ -88,6 +102,11 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
         {"increment", std::make_shared<DataTypeInt64>(), "For trace type ProfileEvent is the amount of increment of profile event, for other trace types is 0."},
         {"symbols", symbolized_type, "If the symbolization is enabled, contains demangled symbol names, corresponding to the `trace`."},
         {"lines", symbolized_type, "If the symbolization is enabled, contains strings with file names with line numbers, corresponding to the `trace`."},
+        {"function_id", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>()), "For trace type Instrumentation, ID assigned to the function in xray_instr_map section of elf-binary."},
+        {"function_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "For trace type Instrumentation, name of the instrumented function."},
+        {"handler", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "For trace type Instrumentation, handler of the instrumented function."},
+        {"entry_type", std::make_shared<DataTypeNullable>(entry_type_enum), "For trace type Instrumentation, entry type of the instrumented function."},
+        {"duration_nanoseconds", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "For trace type Instrumentation, time the function was running for in nanoseconds."},
     };
 }
 
@@ -111,11 +130,11 @@ namespace
     {
     private:
         Arena arena;
-        using Map = HashMap<uintptr_t, StringRef>;
+        using Map = HashMap<uintptr_t, std::string_view>;
         Map map;
         std::unordered_map<std::string, Dwarf> dwarfs;
 
-        void setResult(StringRef & result, const Dwarf::LocationInfo & location, const std::vector<Dwarf::SymbolizedFrame> &)
+        void setResult(std::string_view & result, const Dwarf::LocationInfo & location, const std::vector<Dwarf::SymbolizedFrame> &)
         {
             const char * arena_begin = nullptr;
             WriteBufferFromArena out(arena, arena_begin);
@@ -128,7 +147,7 @@ namespace
             result = out.complete();
         }
 
-        StringRef impl(uintptr_t addr)
+        std::string_view impl(uintptr_t addr)
         {
             const SymbolIndex & symbol_index = SymbolIndex::instance();
 
@@ -140,18 +159,18 @@ namespace
 
                 Dwarf::LocationInfo location;
                 std::vector<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
-                StringRef result;
+                std::string_view result;
                 if (dwarf_it->second.findAddress(addr, location, Dwarf::LocationInfoMode::FAST, frames))
                 {
                     setResult(result, location, frames);
                     return result;
                 }
-                return {object->name};
+                return object->name;
             }
             return {};
         }
 
-        StringRef implCached(uintptr_t addr)
+        std::string_view implCached(uintptr_t addr)
         {
             typename Map::LookupResult it;
             bool inserted;
@@ -162,7 +181,7 @@ namespace
         }
 
     public:
-        static StringRef get(uintptr_t addr)
+        static std::string_view get(uintptr_t addr)
         {
             static AddressToLineCache cache;
             return cache.implCached(addr);
@@ -183,7 +202,10 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(timestamp_ns);
     columns[i++]->insert(ClickHouseRevision::getVersionRevision());
     columns[i++]->insert(static_cast<UInt8>(trace_type));
+    columns[i++]->insert(cpu_id);
     columns[i++]->insert(thread_id);
+    auto thread_name_str = toString(thread_name);
+    columns[i++]->insertData(thread_name_str.data(), thread_name_str.size());
     columns[i++]->insertData(query_id.data(), query_id.size());
     columns[i++]->insert(Array(trace.begin(), trace.end()));
     columns[i++]->insert(size);
@@ -227,7 +249,7 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
                 else
                     symbols.emplace_back(std::string_view(symbol->name));
 
-                lines.emplace_back(AddressToLineCache::get(trace[frame]).toView());
+                lines.emplace_back(AddressToLineCache::get(trace[frame]));
             }
             else
             {
@@ -245,6 +267,12 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
         columns[i++]->insertDefault();
         columns[i++]->insertDefault();
     }
+
+    columns[i++]->insert(function_id > 0 ? function_id : Field());
+    columns[i++]->insert(!function_name.empty() ? function_name : Field());
+    columns[i++]->insert(!handler.empty() ? handler : Field());
+    columns[i++]->insert(entry_type.has_value() ? entry_type.value() : Field());
+    columns[i++]->insert(duration_nanoseconds.has_value() ? duration_nanoseconds.value() : Field());
 }
 
 }

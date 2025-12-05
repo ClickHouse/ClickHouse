@@ -35,7 +35,7 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/n
     grep -vP $EXCLUDE |
     grep -v 'src/Storages/System/StorageSystemDashboards.cpp' |
     grep -vP $EXCLUDE_DOCS |
-    xargs grep $@ -P '((class|struct|namespace|enum|if|for|while|else|throw|switch).*|\)(\s*const)?(\s*override)?\s*)\{$|\s$|^ {1,3}[^\* ]\S|\t|^\s*(if|else if|if constexpr|else if constexpr|for|while|catch|switch)\(|\( [^\s\\]|\S \)' |
+    xargs grep $@ -n -P '((class|struct|namespace|enum|if|for|while|else|throw|switch).*|\)(\s*const)?(\s*override)?\s*)\{$|\s$|^ {1,3}[^\* ]\S|\t|^\s*(if|else if|if constexpr|else if constexpr|for|while|catch|switch)\(|\( [^\s\\]|\S \)' |
 # a curly brace not in a new line, but not for the case of C++11 init or agg. initialization | trailing whitespace | number of ws not a multiple of 4, but not in the case of comment continuation | missing whitespace after for/if/while... before opening brace | whitespaces inside braces
     grep -v -P '//|\s+\*|\$\(\(| \)"' && echo "^ style error on this line"
 # single-line comment | continuation of a multiline comment | a typical piece of embedded shell code | something like ending of raw string literal
@@ -91,9 +91,10 @@ EXTERN_TYPES_EXCLUDES=(
     CurrentMetrics::add
     CurrentMetrics::sub
     CurrentMetrics::get
+    CurrentMetrics::set
+    CurrentMetrics::cas
     CurrentMetrics::getDocumentation
     CurrentMetrics::getName
-    CurrentMetrics::set
     CurrentMetrics::end
     CurrentMetrics::Increment
     CurrentMetrics::Metric
@@ -340,7 +341,8 @@ do
 done
 
 # Currently fmt::format is faster both at compile and runtime
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | grep -vP $EXCLUDE | xargs grep -l "std::format" | while read -r file;
+EXCLUDE_STD_FORMAT='HTTPHandler'
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | grep -vP $EXCLUDE | grep -vP $EXCLUDE_STD_FORMAT | xargs grep -l "std::format" | while read -r file;
 do
     echo "Found the usage of std::format in '${file}'. Please use fmt::format instead"
 done

@@ -1,4 +1,5 @@
 personal_ws-1.1 en 3452
+aarch
 AArch
 ACLs
 ALTERs
@@ -205,6 +206,24 @@ ConnectionDetails
 Const
 ContextLockWait
 Contrib
+conversio
+convertCharset
+cooldown
+coroutines
+corrmatrix
+corrMatrix
+corrstable
+corrStable
+cors
+CORS
+cosineDistance
+countDigits
+countDistinctIf
+countEqual
+counterintuitively
+countIf
+countMatches
+countMatchesCaseInsensitive
 CountMin
 Covid
 Cramer
@@ -294,6 +313,7 @@ Doxygen
 Dresseler
 Durre
 ECMA
+EntryAndExit
 ETag
 EachRow
 Ecto
@@ -307,9 +327,11 @@ Encodings
 Enum
 Enums
 Eoan
+epilog
 EphemeralNode
 EscapingRule
 Ethereum
+Eval
 ExactEdgeLengthKm
 ExactEdgeLengthM
 ExactEdgeLengthRads
@@ -466,6 +488,38 @@ IntervalQuarter
 IntervalSecond
 IntervalWeek
 IntervalYear
+intExp
+intHash
+IntN
+invalidCertificateHandler
+invariants
+invertedindexes
+INVOKER
+IOPrefetchThreads
+IOPrefetchThreadsActive
+IOThreads
+IOThreadsActive
+IOUringInFlightEvents
+IOUringPendingEvents
+IOWriterThreads
+IOWriterThreadsActive
+IProcessor
+IPTrie
+IPv
+irate
+isAdjustedToUTC
+isConstant
+isDecimalOverflow
+isFinite
+isInfinite
+isIPAddressInRange
+isIPv
+isMergeTreePartCoveredBy
+isNaN
+isNotDistinctFrom
+isNotNull
+isNull
+isNullable
 IsPentagon
 IsResClassIII
 IsValid
@@ -518,6 +572,7 @@ JSONExtractStringCaseInsensitive
 JSONExtractUInt
 JSONExtractUIntCaseInsensitive
 JSONHas
+JSONL
 JSONLength
 JSONLines
 JSONObjectEachRow
@@ -811,6 +866,7 @@ Observability
 Octonica
 Ok
 OnTime
+OneLake
 OpenAI
 OpenCelliD
 OpenFileForRead
@@ -836,6 +892,7 @@ PROXYv
 PRQL
 PSUN
 PagerDuty
+Paimon
 ParallelFormattingOutputFormatThreads
 ParallelFormattingOutputFormatThreadsActive
 ParallelParsingInputFormat
@@ -860,12 +917,14 @@ PeerDB
 PendingAsyncInsert
 Percona
 PerfEventInfo
+Perfetto
 PhpStorm
 PlantUML
 Poess
 PointDistKm
 PointDistM
 PointDistRads
+PolygonToCells
 PostHistory
 PostLink
 PostLinks
@@ -898,6 +957,7 @@ PrivatePreviewBadge
 ProfileEvents
 Profiler
 Proleptic
+prolog
 PromHouse
 PromQL
 Promql
@@ -946,6 +1006,7 @@ RawBLOB
 RawSum
 RawWithNames
 RawWithNamesAndTypes
+REPL
 ReDoS
 ReadTaskRequestsSent
 ReadonlyReplica
@@ -1190,6 +1251,7 @@ UDFs
 UInt
 UIntN
 ULID
+ULIDs
 ULIDStringToDateTime
 UMTS
 UNDROP
@@ -1222,6 +1284,7 @@ Uptime
 Uptrace
 UserID
 Util
+VARBINARY
 VARCHAR
 VIEWs
 Vadim
@@ -1274,6 +1337,7 @@ Zabbix
 Zipkin
 ZooKeeper
 ZooKeeper's
+ZooKeeperClientLastZXIDSeen
 ZooKeeperRequest
 ZooKeeperSession
 ZooKeeperWatch
@@ -1338,10 +1402,14 @@ appendTrailingCharIfAbsent
 approximative
 approxtopk
 approxtopsum
+areaCartesian
+areaSpherical
 argMax
 argMin
 argmax
 argmin
+argAndMax
+argAndMin
 arrayAUC
 arrayAUCPR
 arrayAll
@@ -1429,6 +1497,7 @@ atanh
 atomicity
 auth
 authType
+authenticatedUser
 authenticator
 authenticators
 autocompletion
@@ -1639,6 +1708,7 @@ const
 constexpr
 consumptio
 contrib
+conv
 conversio
 convertCharset
 cooldown
@@ -1691,6 +1761,7 @@ csv
 csvwithnames
 csvwithnamesandtypes
 ctukey
+cume
 curdate
 currentDatabase
 currentProfiles
@@ -1802,6 +1873,7 @@ dictGetAll
 dictGetChildren
 dictGetDescendant
 dictGetHierarchy
+dictGetKeys
 dictGetOrDefault
 dictGetOrNull
 dictGetUUID
@@ -1927,6 +1999,8 @@ flamegraph
 flatbuffers
 flattenTuple
 flink
+Flink
+flipCoordinates
 fluentd
 fmtlib
 formatDateTime
@@ -2443,6 +2517,7 @@ multiline
 multilinestring
 multiplyDecimal
 multipolygon
+multipolygons
 multiquery
 multiread
 multisearchany
@@ -2464,6 +2539,9 @@ mysql
 mysqldump
 mysqljs
 mytable
+Nagios
+naiveBayesClassifier
+Nambiar
 namedatabases
 namenetworks
 namenode
@@ -2574,6 +2652,8 @@ overparallelization
 packetpool
 packetsize
 pageviews
+paimon
+paimonCluster
 parallelization
 parallelize
 parallelized
@@ -2606,6 +2686,8 @@ pclmulqdq
 pcre
 perf
 performant
+perimeterCartesian
+perimeterSpherical
 perkey
 perl
 persistency
@@ -2795,6 +2877,7 @@ readWKTMultiPolygon
 readWKTPoint
 readWKTPolygon
 readWKTRing
+readWkt
 readahead
 readline
 readme
@@ -3067,6 +3150,7 @@ subqueries
 subquery
 subranges
 subreddits
+subsecond
 subseconds
 subsequence
 substream
@@ -3296,6 +3380,7 @@ transactionally
 translateUTF
 translocality
 trie
+trigrams
 trimBoth
 trimLeft
 trimRight
@@ -3465,6 +3550,8 @@ xeus
 xkcd
 xlarge
 xml
+XRay
+xray
 xxHash
 xz
 yaml
@@ -3480,3 +3567,4 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+zxid

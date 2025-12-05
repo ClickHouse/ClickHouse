@@ -4,6 +4,7 @@
 -- { echo ON }
 
 SET use_skip_indexes_on_data_read = 1;
+SET max_rows_to_read = 0;
 
 set use_query_condition_cache=0;
 set merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0;
@@ -47,7 +48,7 @@ SELECT * FROM test WHERE region = 'unknown' AND user_id = 101 ORDER BY ALL SETTI
 -- narrowing filter via user_id_idx
 SELECT * FROM test WHERE region = 'us_west' AND user_id = 106 ORDER BY ALL SETTINGS log_comment = 'test_3';
 
--- it's not possible to use different indexes with or filter yet
+-- test with an OR filter - 3 rows/granules for user_id=101 union 3 rows/granules for 'asia'
 SELECT * FROM test WHERE region = 'asia' OR user_id = 101 ORDER BY ALL SETTINGS log_comment = 'test_4';
 
 SYSTEM FLUSH LOGS query_log;
@@ -104,7 +105,11 @@ SELECT * FROM test_partial_index WHERE region = 'unknown' AND user_id = 101 ORDE
 -- narrowing filter via user_id_idx
 SELECT * FROM test_partial_index WHERE region = 'us_west' AND user_id = 106 ORDER BY ALL SETTINGS log_comment = 'test_partial_3';
 
--- it's not possible to use different indexes with or filter yet
+-- Skip indexes on OR supported.
+-- All 5 rows from part1 (no skip indexes) +
+-- All 5 rows from part2 (because no index on user_id) +
+-- 2 rows from part3 -> 1 row each for region='asia' and user_id=101.
+-- Total 12
 SELECT * FROM test_partial_index WHERE region = 'asia' OR user_id = 101 ORDER BY ALL SETTINGS log_comment = 'test_partial_4';
 
 SYSTEM FLUSH LOGS query_log;

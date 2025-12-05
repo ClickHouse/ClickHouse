@@ -23,6 +23,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
+#include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -101,6 +102,7 @@ public:
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// Otherwise return information about column size on disk.
     ColumnSize getColumnSize(const String & column_name) const;
+    ColumnSizeByName getColumnSizes() const;
 
     virtual std::optional<time_t> getColumnModificationTime(const String & column_name) const = 0;
 
@@ -141,8 +143,8 @@ public:
     void writeMetadataVersion(ContextPtr local_context, int32_t metadata_version, bool sync);
 
     const NamesAndTypesList & getColumns() const { return columns; }
-    const ColumnsDescription & getColumnsDescription() const { return columns_description; }
-    const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const { return columns_description_with_collected_nested; }
+    const ColumnsDescription & getColumnsDescription() const { return *columns_description; }
+    const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const { return *columns_description_with_collected_nested; }
     const ColumnsSubstreams & getColumnsSubstreams() const { return columns_substreams; }
     StorageMetadataPtr getMetadataSnapshot() const;
 
@@ -163,6 +165,7 @@ public:
     void remove();
 
     ColumnsStatistics loadStatistics() const;
+    Estimates getEstimates() const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
@@ -389,6 +392,8 @@ public:
     void moveIndexToCache(PrimaryIndexCache & index_cache);
     void removeIndexFromCache(PrimaryIndexCache * index_cache) const;
 
+    void removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const;
+
     void setIndex(Columns index_columns);
     void unloadIndex();
     bool isIndexLoaded() const;
@@ -594,6 +599,7 @@ public:
 
     static std::optional<String> getStreamNameOrHash(
         const String & name,
+        const String & extension,
         const IMergeTreeDataPart::Checksums & checksums);
 
     static std::optional<String> getStreamNameOrHash(
@@ -604,24 +610,30 @@ public:
     static std::optional<String> getStreamNameForColumn(
         const String & column_name,
         const ISerialization::SubstreamPath & substream_path,
-        const Checksums & checksums_);
+        const String & extension,
+        const Checksums & checksums_,
+        const MergeTreeSettingsPtr & settings);
 
     static std::optional<String> getStreamNameForColumn(
         const NameAndTypePair & column,
         const ISerialization::SubstreamPath & substream_path,
-        const Checksums & checksums_);
+        const String & extension,
+        const Checksums & checksums_,
+        const MergeTreeSettingsPtr & settings);
 
     static std::optional<String> getStreamNameForColumn(
         const String & column_name,
         const ISerialization::SubstreamPath & substream_path,
         const String & extension,
-        const IDataPartStorage & storage_);
+        const IDataPartStorage & storage_,
+        const MergeTreeSettingsPtr & settings);
 
     static std::optional<String> getStreamNameForColumn(
         const NameAndTypePair & column,
         const ISerialization::SubstreamPath & substream_path,
         const String & extension,
-        const IDataPartStorage & storage_);
+        const IDataPartStorage & storage_,
+        const MergeTreeSettingsPtr & settings);
 
     mutable std::atomic<DataPartRemovalState> removal_state = DataPartRemovalState::NOT_ATTEMPTED;
 
@@ -710,11 +722,16 @@ private:
 
     /// Columns description for more convenient access
     /// to columns by name and getting subcolumns.
-    ColumnsDescription columns_description;
+    std::shared_ptr<const ColumnsDescription> columns_description;
 
     /// The same as above but after call of Nested::collect().
     /// It is used while reading from wide parts.
-    ColumnsDescription columns_description_with_collected_nested;
+    std::shared_ptr<const ColumnsDescription> columns_description_with_collected_nested;
+
+    /// Small state of finalized statistics for suitable statistics types.
+    /// Lazily initialized on a first access.
+    mutable std::mutex estimates_mutex;
+    mutable std::optional<Estimates> estimates;
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();

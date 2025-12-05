@@ -121,6 +121,7 @@ struct SettingAutoWrapper
     void readBinary(ReadBuffer & in) { changed = true; is_auto = false; base.readBinary(in); }
 
     Type valueOr(Type default_value) const { return is_auto ? default_value : base.value; }
+    std::optional<Type> valueOrNullopt() const { return is_auto ? std::optional<Type>(std::nullopt) : base.value; }
 };
 
 using SettingFieldBoolAuto = SettingAutoWrapper<SettingFieldBool>;

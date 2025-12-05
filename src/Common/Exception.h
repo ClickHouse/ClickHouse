@@ -207,7 +207,7 @@ protected:
     mutable std::vector<StackTrace::FramePointers> capture_thread_frame_pointers;
 };
 
-[[noreturn]] void abortOnFailedAssertion(const String & description, void * const * trace, size_t trace_offset, size_t trace_size);
+[[noreturn]] void abortOnFailedAssertion(const String & description, std::string_view format_string, void * const * trace, size_t trace_offset, size_t trace_size);
 [[noreturn]] void abortOnFailedAssertion(const String & description);
 
 std::string getExceptionStackTraceString(const std::exception & e);
@@ -375,5 +375,9 @@ T current_exception_cast()
         return nullptr;
     }
 }
+
+/// Return copy of a current exception if it is a Poco::Exception (DB::Exception), since this exception is mutable, and returning reference is unsafe.
+/// And a reference otherwise.
+std::exception_ptr copyMutableException(std::exception_ptr ptr);
 
 }

@@ -12,10 +12,12 @@ public:
     StorageObjectStorageSink(
         const std::string & path_,
         ObjectStoragePtr object_storage,
-        StorageObjectStorageConfigurationPtr configuration,
         const std::optional<FormatSettings> & format_settings_,
         SharedHeader sample_block_,
-        ContextPtr context);
+        ContextPtr context,
+        const String & format,
+        const String & compression_method);
+
 
     /// For building a sink that receives chunks shaped like input_header_
     /// and serializes them with the schema of the format_header_. A name
@@ -23,11 +25,13 @@ public:
     StorageObjectStorageSink(
         const std::string & path_,
         ObjectStoragePtr object_storage,
-        StorageObjectStorageConfigurationPtr configuration,
         const std::optional<FormatSettings> & format_settings_,
-        SharedHeader input_header_,
-        SharedHeader format_header_,
-        ContextPtr context);
+        SharedHeader input_header,
+        SharedHeader format_header,
+        ContextPtr context,
+        const String & format,
+        const String & compression_method);
+
 
     ~StorageObjectStorageSink() override;
 

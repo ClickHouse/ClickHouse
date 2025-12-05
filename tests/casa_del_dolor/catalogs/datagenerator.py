@@ -210,12 +210,18 @@ class LakeDataGenerator:
         return bytes(random.getrandbits(8) for _ in range(nlen))
 
     def _rand_date(self):
+        if random.randint(1, 100) < 16:
+            # Today's date
+            return date.today()
         reduced_limit = random.randint(1, 2) == 1
         start = date(2000 if reduced_limit else 1, 1, 1).toordinal()
         end = date(2000 if reduced_limit else 9999, 12, 31).toordinal()
         return date.fromordinal(self._rand_int(start, end))
 
     def _rand_timestamp(self):
+        if random.randint(1, 100) < 21:
+            # Timestamp related to now
+            return datetime.now() + timedelta(seconds=random.randint(-60, 60))
         reduced_limit = random.randint(1, 2) == 1
         start = datetime(2000 if reduced_limit else 1, 1, 1)
         end = datetime(2000 if reduced_limit else 9999, 12, 31)

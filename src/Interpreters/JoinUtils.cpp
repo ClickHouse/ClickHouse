@@ -148,8 +148,7 @@ DataTypePtr convertTypeToNullable(const DataTypePtr & type)
 /// Returns nullptr if conversion cannot be performed.
 static ColumnPtr tryConvertColumnToNullable(ColumnPtr col)
 {
-    if (col->isSparse())
-        col = recursiveRemoveSparse(col);
+    col = removeSpecialRepresentations(col);
 
     if (isColumnNullable(*col) || col->canBeInsideNullable())
         return makeNullable(col);
@@ -301,7 +300,7 @@ ColumnPtr emptyNotNullableClone(const ColumnPtr & column)
 
 ColumnPtr materializeColumn(const ColumnPtr & column)
 {
-    return recursiveRemoveLowCardinality(recursiveRemoveSparse(column->convertToFullColumnIfConst()));
+    return recursiveRemoveLowCardinality(removeSpecialRepresentations(column->convertToFullColumnIfConst()));
 }
 
 ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
@@ -485,8 +484,7 @@ ColumnPtr castToBoolColumn(ColumnPtr column)
 {
     if (!typeid_cast<const ColumnUInt8 *>(column.get()))
     {
-        auto casted_column = ColumnUInt8::create();
-        casted_column->getData().resize(column->size());
+        auto casted_column = ColumnUInt8::create(column->size());
         if (!tryConvertAnyColumnToBool(*column, casted_column->getData()))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Illegal type {} of column for JOIN filter. Must be Number or Nullable(Number).", column->getName());

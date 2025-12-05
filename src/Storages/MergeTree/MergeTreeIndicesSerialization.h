@@ -1,4 +1,5 @@
 #pragma once
+
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Formats/MarkInCompressedFile.h>
@@ -7,6 +8,8 @@ namespace DB
 {
 
 class IMergeTreeIndexCondition;
+class IMergeTreeDataPart;
+struct IMergeTreeIndex;
 
 /// Represents a substream of a merge tree index.
 /// By default skip indexes have one substream (skp_idx_<name>.idx),
@@ -49,6 +52,9 @@ struct MergeTreeIndexDeserializationState
 {
     MergeTreeIndexVersion version;
     const IMergeTreeIndexCondition * condition;
+    const IMergeTreeDataPart & part;
+    const IMergeTreeIndex & index;
+    size_t index_mark;
 };
 
 }

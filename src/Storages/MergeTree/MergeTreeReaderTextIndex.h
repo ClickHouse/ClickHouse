@@ -3,12 +3,13 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/TextIndexCache.h>
 #include <roaring.hh>
 
 namespace DB
 {
 
-using PostingsMap = absl::flat_hash_map<StringRef, const PostingList *>;
+using PostingsMap = absl::flat_hash_map<std::string_view, PostingListPtr>;
 
 /// A part of "direct read from text index" optimization.
 /// This reader fills virtual columns for text search filters
@@ -22,7 +23,8 @@ public:
     MergeTreeReaderTextIndex(
         const IMergeTreeReader * main_reader_,
         MergeTreeIndexWithCondition index_,
-        NamesAndTypesList columns_);
+        NamesAndTypesList columns_,
+        bool can_skip_mark_);
 
     size_t readRows(
         size_t from_mark,
@@ -35,24 +37,30 @@ public:
     bool canSkipMark(size_t mark, size_t current_task_last_mark) override;
     bool canReadIncompleteGranules() const override { return false; }
     void updateAllMarkRanges(const MarkRanges & ranges) override;
+    void prefetchBeginOfRange(Priority priority) override;
 
 private:
     struct Granule
     {
         MergeTreeIndexGranulePtr granule;
         PostingsMap postings;
-        std::list<PostingList> postings_holders;
         bool may_be_true = true;
         bool need_read_postings = true;
+        std::vector<bool> is_always_true;
     };
 
     void updateAllIndexRanges();
     void createEmptyColumns(Columns & columns) const;
-    void readPostingsIfNeeded(Granule & granule);
+    void readPostingsIfNeeded(Granule & granule, size_t index_mark);
     void fillSkippedColumn(IColumn & column, size_t num_rows);
     void fillColumn(IColumn & column, Granule & granule, const String & column_name, size_t granule_offset, size_t num_rows);
 
+    using TokenToPostingsInfosMap = MergeTreeIndexGranuleText::TokenToPostingsInfosMap;
+    size_t getNumRowsInGranule(size_t index_mark) const;
+    double estimateCardinality(const TextSearchQuery & query, const TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const;
+
     MergeTreeIndexWithCondition index;
+    bool can_skip_mark;
     MarkRanges all_index_ranges;
     std::optional<MergeTreeIndexReader> index_reader;
 

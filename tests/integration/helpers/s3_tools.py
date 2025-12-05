@@ -83,12 +83,15 @@ class S3Downloader:
             recursive=True,
         )
 
+        result_files = []
         for obj in objects:
+            result_files.append(obj.object_name)
             diff_path = os.path.relpath(obj.object_name, start=remote_blobs_path)
             local_file_path = os.path.join(local_path, diff_path)
             os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
             print(f"Downloading {obj.object_name} to {local_file_path}")
             self.download_file(obj.object_name, local_file_path, bucket=self.bucket_name)
+        return result_files
 
 
 class LocalUploader(CloudUploader):
