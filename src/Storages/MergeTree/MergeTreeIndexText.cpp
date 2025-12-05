@@ -128,7 +128,7 @@ static UInt64 serializeWithCompressedPostings(PostingListBuilder && postings, Wr
     if (postings.isSmall())
     {
         const auto &small = postings.getSmall();
-        assert(postings.size() <= small.size());
+        chassert(postings.size() <= small.size());
         for (size_t i = 0; i < postings.size(); ++i)
             container.add(small[i]);
     }

@@ -168,7 +168,7 @@ struct Source
         in.readStrict(raw.data(), bytes);
         auto p = reinterpret_cast<unsigned char*>(raw.data());
         Codec::decodeBlock<T>(p, n, decoded, bytes);
-        ++ current_block;
+        ++current_block;
         return true;
     }
 };

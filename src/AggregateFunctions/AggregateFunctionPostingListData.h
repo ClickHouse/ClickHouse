@@ -33,7 +33,7 @@ struct PostingListDataSorted
     {
         PostingsContainer64 out_container;
         mergePostingsContainers(out_container, container, rhs.container);
-        container.swap(out_container);
+        container = std::move(out_container);
     }
     ALWAYS_INLINE void insertResultInto(IColumn & to)
     {
@@ -56,13 +56,15 @@ struct PostingListDataSorted
         }
     }
 
-    void serialize(WriteBuffer & buf, std::optional<size_t> /* version */) const
+    void serialize(WriteBuffer & buf, std::optional<size_t> version) const
     {
+        chassert(version);
         container.serialize(buf);
     }
 
-    void deserialize(ReadBuffer & buf, std::optional<size_t> /* version */, Arena *)
+    void deserialize(ReadBuffer & buf, std::optional<size_t> version, Arena *)
     {
+        chassert(version);
         container.deserialize(buf);
     }
 };
