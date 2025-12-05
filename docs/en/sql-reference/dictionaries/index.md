@@ -10,6 +10,7 @@ doc_type: 'reference'
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
 import CloudDetails from '@site/docs/sql-reference/dictionaries/_snippet_dictionary_in_cloud.md';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 
 # Dictionaries
 
@@ -1107,6 +1108,7 @@ Types of sources (`source_type`):
   - [Redis](#redis)
   - [Cassandra](#cassandra)
   - [PostgreSQL](#postgresql)
+  - [YTsaurus](#ytsaurus)
 
 ### Local File {#local-file}
 
@@ -1889,6 +1891,46 @@ Setting fields:
 :::note
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
 :::
+
+### YTsaurus {#ytsaurus}
+
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
+
+:::info
+This is an experimental feature that may change in backwards-incompatible ways in future releases.
+Enable usage of the YTsaurus dictionary source
+using setting [`allow_experimental_ytsaurus_dictionary_source`](/operations/settings/settings#allow_experimental_ytsaurus_dictionary_source).
+:::
+
+Example of settings:
+
+```xml
+<source>
+    <ytsaurus>
+        <http_proxy_urls>http://localhost:8000</http_proxy_urls>
+        <cypress_path>//tmp/test</cypress_path>
+        <oauth_token>password</oauth_token>
+        <check_table_schema>1</check_table_schema>
+    </ytsaurus>
+</source>
+```
+
+or
+
+```sql
+SOURCE(YTSAURUS(
+    http_proxy_urls 'http://localhost:8000'
+    cypress_path '//tmp/test'
+    oauth_token 'password'
+))
+```
+
+Setting fields:
+
+- `http_proxy_urls` –  URL to the YTsaurus http proxy.
+- `cypress_path` – Cypress path to the table source.
+- `oauth_token` –  OAuth token.
 
 ### Null {#null}
 

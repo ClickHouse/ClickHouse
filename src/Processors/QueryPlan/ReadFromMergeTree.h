@@ -154,14 +154,52 @@ public:
         UInt64 total_marks_pk = 0;
         UInt64 selected_rows = 0;
         bool has_exact_ranges = false;
+        std::atomic<bool> exceeded_row_limits = false;
 
         AnalysisResult() = default;
 
-        AnalysisResult(const AnalysisResult &) = default;
-        AnalysisResult(AnalysisResult &&) noexcept = default;
+        AnalysisResult(const AnalysisResult & other)
+            : parts_with_ranges(other.parts_with_ranges)
+            , split_parts(other.split_parts)
+            , sampling(other.sampling)
+            , index_stats(other.index_stats)
+            , projection_stats(other.projection_stats)
+            , column_names_to_read(other.column_names_to_read)
+            , read_type(other.read_type)
+            , total_parts(other.total_parts)
+            , parts_before_pk(other.parts_before_pk)
+            , selected_parts(other.selected_parts)
+            , selected_ranges(other.selected_ranges)
+            , selected_marks(other.selected_marks)
+            , selected_marks_pk(other.selected_marks_pk)
+            , total_marks_pk(other.total_marks_pk)
+            , selected_rows(other.selected_rows)
+            , has_exact_ranges(other.has_exact_ranges)
+            , exceeded_row_limits(other.exceeded_row_limits.load())
+        {}
+
+        AnalysisResult(AnalysisResult && other) noexcept
+            : parts_with_ranges(std::move(other.parts_with_ranges))
+            , split_parts(std::move(other.split_parts))
+            , sampling(std::move(other.sampling))
+            , index_stats(std::move(other.index_stats))
+            , projection_stats(std::move(other.projection_stats))
+            , column_names_to_read(std::move(other.column_names_to_read))
+            , read_type(other.read_type)
+            , total_parts(other.total_parts)
+            , parts_before_pk(other.parts_before_pk)
+            , selected_parts(other.selected_parts)
+            , selected_ranges(other.selected_ranges)
+            , selected_marks(other.selected_marks)
+            , selected_marks_pk(other.selected_marks_pk)
+            , total_marks_pk(other.total_marks_pk)
+            , selected_rows(other.selected_rows)
+            , has_exact_ranges(other.has_exact_ranges)
+            , exceeded_row_limits(other.exceeded_row_limits.load())
+        {}
 
         bool readFromProjection() const { return !parts_with_ranges.empty() && parts_with_ranges.front().data_part->isProjectionPart(); }
-        void checkLimits(const Settings & settings, const SelectQueryInfo & query_info_) const;
+        bool isUsable() const { return !exceeded_row_limits; }
     };
 
     using AnalysisResultPtr = std::shared_ptr<AnalysisResult>;
