@@ -72,7 +72,7 @@ ColumnsDescription StorageSystemProcesses::getColumnsDescription()
         {"thread_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The list of identifiers of all threads which participated in this query."},
         {"peak_threads_usage", std::make_shared<DataTypeUInt64>(), "Maximum count of simultaneous threads executing the query."},
         {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "ProfileEvents calculated for this query."},
-        {"Settings", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "The list of modified user-level settings."},
+        {"Settings", std::make_shared<DataTypeMap>(low_cardinality_string, low_cardinality_string), "The list of modified user-level settings."},
 
         {"current_database", std::make_shared<DataTypeString>(), "The name of the current database."},
 
