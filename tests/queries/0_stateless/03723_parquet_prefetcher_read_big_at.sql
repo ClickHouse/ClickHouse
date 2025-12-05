@@ -10,7 +10,7 @@ ENGINE = S3(s3_conn, filename='test_03723_parquet_prefetcher_read_big_at', forma
 INSERT INTO t_parquet_prefetcher_read_big_at
     SELECT number, toString(number)
     FROM system.numbers
-    LIMIT 2
+    LIMIT 1
 SETTINGS s3_truncate_on_insert=1;
 -- Trigger reading from it
 SELECT * FROM t_parquet_prefetcher_read_big_at ORDER BY a,c;
