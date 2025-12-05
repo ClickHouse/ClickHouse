@@ -423,7 +423,8 @@ void SerializationQBit::transposeBits(Word src, const size_t row_i, const size_t
 /// CPU Dispatch for untransposeBitPlane
 DECLARE_DEFAULT_CODE(
     template <typename T>
-    ALWAYS_INLINE inline void untransposeBitPlaneImpl(const UInt8 * __restrict src, T * __restrict dst, size_t stride_len, T bit_mask) {
+    ALWAYS_INLINE inline void untransposeBitPlaneImpl(const UInt8 * __restrict src, T * __restrict dst, size_t stride_len, T bit_mask)
+    {
         const size_t bytes_per_fs = stride_len / 8;
         ssize_t row_base = stride_len - 1;
 
@@ -446,7 +447,8 @@ DECLARE_DEFAULT_CODE(
 
 /// Do not inline target specific implementations to avoid code bloat on all targets
 DECLARE_AVX512F_SPECIFIC_CODE(
-    void untransposeBitPlaneFloat64Impl(const UInt8 * __restrict src, UInt64 * __restrict dst, size_t stride_len, UInt64 bit_mask) {
+    void untransposeBitPlaneFloat64Impl(const UInt8 * __restrict src, UInt64 * __restrict dst, size_t stride_len, UInt64 bit_mask)
+    {
         const size_t bytes_per_fs = stride_len / 8;
         ssize_t row_base = stride_len - 1;
 
@@ -469,7 +471,8 @@ DECLARE_AVX512F_SPECIFIC_CODE(
     })
 
 DECLARE_AVX512VL_SPECIFIC_CODE(
-    void untransposeBitPlaneFloat32Impl(const UInt8 * __restrict src, UInt32 * __restrict dst, size_t stride_len, UInt32 bit_mask) {
+    void untransposeBitPlaneFloat32Impl(const UInt8 * __restrict src, UInt32 * __restrict dst, size_t stride_len, UInt32 bit_mask)
+    {
         const size_t bytes_per_fs = stride_len / 8;
         ssize_t row_base = stride_len - 1;
 
@@ -521,7 +524,8 @@ DECLARE_AVX512VL_SPECIFIC_CODE(
     })
 
 DECLARE_AVX512VL_SPECIFIC_CODE(
-    void untransposeBitPlaneBFloat16Impl(const UInt8 * __restrict src, UInt16 * __restrict dst, size_t stride_len, UInt16 bit_mask) {
+    void untransposeBitPlaneBFloat16Impl(const UInt8 * __restrict src, UInt16 * __restrict dst, size_t stride_len, UInt16 bit_mask)
+    {
         const size_t bytes_per_fs = stride_len / 8;
         const __m512i bmask = _mm512_set1_epi16(bit_mask);
         ssize_t row_base = stride_len - 1;
