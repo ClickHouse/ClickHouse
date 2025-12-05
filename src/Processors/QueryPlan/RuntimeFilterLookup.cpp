@@ -28,6 +28,12 @@ void IRuntimeFilter::updateStats(UInt64 rows_checked, UInt64 rows_passed) const
 
 bool IRuntimeFilter::shouldSkip(size_t next_block_rows) const
 {
+    if (is_fully_disabled)
+    {
+        stats.rows_skipped += next_block_rows;
+        return true;
+    }
+
     rows_to_skip -= next_block_rows;
     if (rows_to_skip > 0)
     {
@@ -101,6 +107,9 @@ void ApproximateRuntimeFilter::insert(ColumnPtr values)
     }
     else
     {
+        if (isFull())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected 'full' state of ApproximateRuntimeFilter");
+
         Base::insert(std::move(values));
 
         if (isFull())
@@ -116,7 +125,10 @@ void ApproximateRuntimeFilter::finishInsert()
     inserts_are_finished = true;
 
     if (bloom_filter)
+    {
+        checkBloomFilterWorthiness();
         return;
+    }
 
     Base::finishInsert();
 }
@@ -242,6 +254,18 @@ void ApproximateRuntimeFilter::switchToBloomFilter()
     insertIntoBloomFilter(getValuesColumn());
 
     releaseExactValues();
+}
+
+void ApproximateRuntimeFilter::checkBloomFilterWorthiness()
+{
+    const auto & raw_filter_words = bloom_filter->getFilter();
+    const size_t total_bits = raw_filter_words.size() * sizeof(raw_filter_words[0]) * 8;
+    size_t set_bits = 0;
+    for (auto word : raw_filter_words)
+        set_bits += std::popcount(word);
+    /// If too many bits are set then it is likely that the filter will not filter out much
+    if (set_bits > 0.7 * total_bits)
+        setFullyDisabled();
 }
 
 class RuntimeFilterLookup : public IRuntimeFilterLookup

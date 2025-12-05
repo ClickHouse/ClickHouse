@@ -51,6 +51,7 @@ public:
     /// Usage statistics
     void updateStats(UInt64 rows_checked, UInt64 rows_passed) const;
     const RuntimeFilterStats & getStats() const { return stats; }
+    void setFullyDisabled() { is_fully_disabled = true; }
 
 protected:
 
@@ -70,9 +71,10 @@ protected:
 
     mutable RuntimeFilterStats stats;
 
-    /// How many rows should be skipped before trying to re-enable the filter after it was disbaled due to
+    /// How many rows should be skipped before trying to re-enable the filter after it was disabled due to
     /// low percentage of filtered rows
     mutable std::atomic<Int64> rows_to_skip = 0;
+    std::atomic<bool> is_fully_disabled = false;
 };
 
 template <bool negate>
@@ -214,6 +216,9 @@ public:
 private:
     void insertIntoBloomFilter(ColumnPtr values);
     void switchToBloomFilter();
+
+    /// Disables bloom filter if it is likely to have bad selectivity
+    void checkBloomFilterWorthiness();
 
     const UInt64 bloom_filter_hash_functions;
 
