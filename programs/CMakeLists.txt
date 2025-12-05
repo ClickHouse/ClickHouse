@@ -239,7 +239,7 @@ if (USE_BINARY_HASH)
     if (NOT CMAKE_CROSSCOMPILING)
         add_custom_command(TARGET clickhouse POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E echo "Verifying hash-binary utility matches clickhouse hash-binary..."
-            COMMAND sh -c "./clickhouse hash-binary > hash.verify && diff hash hash.verify || (echo 'ERROR: hash-binary utility output does not match clickhouse hash-binary' && exit 1)"
+            COMMAND sh -c "./clickhouse hash-binary > hash.verify && diff -u hash hash.verify || (echo 'ERROR: hash-binary utility output does not match clickhouse hash-binary' && exit 1)"
             COMMAND ${CMAKE_COMMAND} -E rm hash.verify
             COMMENT "Verifying hash-binary output matches clickhouse hash-binary" VERBATIM)
     endif()
