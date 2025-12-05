@@ -1321,7 +1321,7 @@ def test_mutate_to_another_disk(start_cluster, name, engine):
     ],
 )
 def test_concurrent_alter_modify(start_cluster, name, engine):
-    if node1.is_built_with_llvm_coverage():
+    if node1.is_built_with_llvm_coverage() or node2.is_built_with_llvm_coverage():
         pytest.skip("Flaky under llvm_coverage")
     try:
         node1.query_with_retry(

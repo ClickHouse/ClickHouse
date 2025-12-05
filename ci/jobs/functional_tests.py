@@ -117,8 +117,7 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "azure": " --azure-blob-storage --no-random-settings --no-random-merge-tree-settings",  # azurite is slow, with randomization it can be super slow
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
-    "flaky check": "--flaky-check",
-    "llvm coverage": "--no-random-settings --no-random-merge-tree-settings --no-long",
+    "flaky check": "--flaky-check"
 }
 
 
@@ -154,6 +153,7 @@ def main():
             or to.startswith("arm_")
             or "flaky" in to
             or "targeted" in to
+            or "llvm coverage" in to
         ):
             pass
         elif to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
@@ -210,6 +210,9 @@ def main():
     else:
         print(f"Workers count set to optimal value: {nproc}")
         runner_options += f" --jobs {nproc}"
+
+    if is_llvm_coverage:
+        runner_options += " --no-random-settings --no-random-merge-tree-settings"
 
     rerun_count = 1
     if args.count:
