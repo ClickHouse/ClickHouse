@@ -2,4 +2,28 @@
     <query>SELECT * FROM test.hits ORDER BY EventTime LIMIT 1 FORMAT Null</query>
     <query>SELECT * FROM test.hits WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 1 FORMAT Null</query>
     <query>SELECT * FROM test.hits WHERE URL LIKE '%google%' ORDER BY CounterID, EventDate LIMIT 1 FORMAT Null</query>
+
+    <query>SELECT * FROM test.hits ORDER BY EventTime LIMIT 10 FORMAT Null</query>
+    <query>SELECT * FROM test.hits WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 10 FORMAT Null</query>
+    <query>SELECT * FROM test.hits WHERE URL LIKE '%google%' ORDER BY CounterID, EventDate LIMIT 10 FORMAT Null</query>
+
+    <query>SELECT * FROM test.hits ORDER BY EventTime LIMIT 100 FORMAT Null</query>
+    <query>SELECT * FROM test.hits WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 100 FORMAT Null</query>
+    <query>SELECT * FROM test.hits WHERE URL LIKE '%google%' ORDER BY CounterID, EventDate LIMIT 100 FORMAT Null</query>
+
+    <query>SELECT * FROM test.hits ORDER BY EventTime LIMIT 1000 FORMAT Null</query>
+    <query>SELECT * FROM test.hits WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 1000 FORMAT Null</query>
+    <query>SELECT * FROM test.hits WHERE URL LIKE '%google%' ORDER BY CounterID, EventDate LIMIT 1000 FORMAT Null</query>
+
+    <query>SELECT * FROM test.hits ORDER BY EventTime LIMIT 10000 FORMAT Null</query>
+    <query>SELECT * FROM test.hits WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 10000 FORMAT Null</query>
+    <query>SELECT * FROM test.hits WHERE URL LIKE '%google%' ORDER BY CounterID, EventDate LIMIT 10000 FORMAT Null</query>
+
+    <query>SELECT * FROM test.hits ORDER BY EventTime LIMIT 100000 FORMAT Null</query>
+    <query>SELECT * FROM test.hits WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 100000 FORMAT Null</query>
+    <query>SELECT * FROM test.hits WHERE URL LIKE '%google%' ORDER BY CounterID, EventDate LIMIT 100000 FORMAT Null</query>
+
+    <query>SELECT * FROM test.hits ORDER BY EventTime LIMIT 1000000 FORMAT Null</query>
+    <query>SELECT * FROM test.hits WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 1000000 FORMAT Null</query>
+    <query>SELECT * FROM test.hits WHERE URL LIKE '%google%' ORDER BY CounterID, EventDate LIMIT 1000000 FORMAT Null</query>
 </test>
