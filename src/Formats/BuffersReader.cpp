@@ -1,4 +1,5 @@
 #include <Columns/IColumn.h>
+#include <Core/Defines.h>
 #include <DataTypes/IDataType.h>
 #include <Formats/BuffersReader.h>
 #include <Formats/NativeReader.h>
@@ -41,14 +42,14 @@ Block BuffersReader::read()
         throw Exception(
             ErrorCodes::INCORRECT_DATA, "Buffers block has {} buffers, but header has {} columns", num_buffers, header.columns());
 
-    if (num_buffers > 100'000'000uz)
+    if (num_buffers > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
         throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Suspiciously many buffers in Buffers format: {}", num_buffers);
 
     /// Number of rows (UInt64)
     UInt64 num_rows = 0;
     readBinary(num_rows, istr);
 
-    if (num_rows > 1'000'000'000'000uz)
+    if (num_rows > DEFAULT_NATIVE_BINARY_MAX_NUM_ROWS)
         throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Suspiciously many rows in Buffers format: {}", num_rows);
 
     /// Size of each buffer (UInt64 * number of buffers)
