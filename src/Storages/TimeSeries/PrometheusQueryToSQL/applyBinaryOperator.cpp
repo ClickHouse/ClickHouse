@@ -284,9 +284,9 @@ namespace
             makeASTFunction(
                 "lambda",
                 makeASTFunction("tuple", std::make_shared<ASTIdentifier>("x"), std::make_shared<ASTIdentifier>("y")),
-                operator_expr,
-                array_argument,
-                other_array_argument));
+                operator_expr),
+            array_argument,
+            other_array_argument);
     }
 
 
@@ -608,7 +608,7 @@ namespace
                 /// timeSeriesCopyTag(join_group, left_argument_group, "__name__")
                 metric_name_dropped_from_result = false;
                 return makeASTFunction(
-                    "timeSeriesCopyTags", std::move(join_group), std::move(left_argument_group), std::make_shared<ASTLiteral>(Array{kMetricName}));
+                    "timeSeriesCopyTag", std::move(join_group), std::move(left_argument_group), std::make_shared<ASTLiteral>(kMetricName));
             }
             else
             {
@@ -972,9 +972,9 @@ namespace
                         "if",
                         makeASTFunction("isNull", std::make_shared<ASTIdentifier>("y")),
                         std::make_shared<ASTLiteral>(Field{} /* NULL */),
-                        std::make_shared<ASTIdentifier>("x")),
-                    std::make_shared<ASTIdentifier>(Strings{left, ColumnNames::Values}),
-                    std::make_shared<ASTIdentifier>(Strings{step1, ColumnNames::Values}))));
+                        std::make_shared<ASTIdentifier>("x"))),
+                std::make_shared<ASTIdentifier>(Strings{left, ColumnNames::Values}),
+                std::make_shared<ASTIdentifier>(Strings{step1, ColumnNames::Values})));
             params.select_list.back()->setAlias(ColumnNames::Values);
 
             params.from_table = left;
@@ -1074,9 +1074,9 @@ namespace
                             "if",
                             makeASTFunction("isNull", std::make_shared<ASTIdentifier>("y")),
                             std::make_shared<ASTIdentifier>("x"),
-                            std::make_shared<ASTLiteral>(Field{} /* NULL */)),
-                        std::make_shared<ASTIdentifier>(Strings{left, ColumnNames::Values}),
-                        std::make_shared<ASTIdentifier>(Strings{step1, ColumnNames::Values})))));
+                            std::make_shared<ASTLiteral>(Field{} /* NULL */))),
+                    std::make_shared<ASTIdentifier>(Strings{left, ColumnNames::Values}),
+                    std::make_shared<ASTIdentifier>(Strings{step1, ColumnNames::Values}))));
             params.select_list.back()->setAlias(ColumnNames::Values);
 
             params.from_table = left;
@@ -1148,9 +1148,9 @@ namespace
                         "if",
                         makeASTFunction("isNull", std::make_shared<ASTIdentifier>("x")),
                         std::make_shared<ASTIdentifier>("y"),
-                        std::make_shared<ASTIdentifier>("x")),
-                    std::make_shared<ASTIdentifier>(Strings{left, ColumnNames::Values}),
-                    std::make_shared<ASTIdentifier>(Strings{right, ColumnNames::Values}))));
+                        std::make_shared<ASTIdentifier>("x"))),
+                std::make_shared<ASTIdentifier>(Strings{left, ColumnNames::Values}),
+                std::make_shared<ASTIdentifier>(Strings{right, ColumnNames::Values})));
             params.select_list.back()->setAlias(ColumnNames::Values);
 
             params.from_table = left;
@@ -1219,9 +1219,9 @@ namespace
                             "if",
                             makeASTFunction("isNull", std::make_shared<ASTIdentifier>("x")),
                             std::make_shared<ASTIdentifier>("y"),
-                            std::make_shared<ASTLiteral>(Field{} /* NULL */)),
-                        std::make_shared<ASTIdentifier>(Strings{step2, ColumnNames::Values}),
-                        std::make_shared<ASTIdentifier>(Strings{right, ColumnNames::Values})))));
+                            std::make_shared<ASTLiteral>(Field{} /* NULL */))),
+                    std::make_shared<ASTIdentifier>(Strings{step2, ColumnNames::Values}),
+                    std::make_shared<ASTIdentifier>(Strings{right, ColumnNames::Values}))));
             params.select_list.back()->setAlias(ColumnNames::Values);
 
             params.from_table = step2;

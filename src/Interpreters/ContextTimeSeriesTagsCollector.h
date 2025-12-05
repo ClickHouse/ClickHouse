@@ -100,6 +100,14 @@ public:
     Group removeAllTagsExcept(Group group, const Strings & tags_to_keep);
     std::vector<Group> removeAllTagsExcept(const std::vector<Group> & groups_, const Strings & tags_to_keep);
 
+    /// Copies a specified tag from `src_group` to `dest_group`. The function replaces any previous value of the copied tag in `dest_group`.
+    /// If the copied tag doesn't present in `src_group` then the function will remove them in `dest_group` as well.
+    /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
+    Group copyTag(Group dest_group, Group src_group, const String & tag_to_copy);
+    std::vector<Group> copyTag(Group dest_group, const std::vector<Group> & src_groups, const String & tag_to_copy);
+    std::vector<Group> copyTag(const std::vector<Group> & dest_groups, Group src_group, const String & tag_to_copy);
+    std::vector<Group> copyTag(const std::vector<Group> & dest_groups, const std::vector<Group> & src_groups, const String & tag_to_copy);
+
     /// Copies specified tags from `src_group` to `dest_group`. The function replaces any previous values of the copied tags in `dest_group`.
     /// If some of the copied tags don't present in `src_group` then the function will remove them in `dest_group` as well.
     /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.

@@ -362,3 +362,30 @@ def test_range_query():
     assert execute_range_query_in_clickhouse(query, start_time, end_time, step) == TSV(
         chresult
     )
+
+
+def test_cheat_sheet():
+    preset = load_preset("cheat_sheet.zip")
+    timestamp = 1764970352.192
+
+    queries = [  # array of tuples (query, http_api_result, result of prometheusQuery)
+        (
+            "node_memory_MemFree_bytes + node_memory_Cached_bytes",
+            '{"resultType": "vector", "result": [{"metric": {"__name__": "test_data"}, "value": [129, "1"]}]}',
+            [
+                [
+                    "[('__name__','test_data')]",
+                    "1970-01-01 00:02:09.000",
+                    "1",
+                ]
+            ],
+        )
+    ]
+
+    for query, result, chresult in queries:
+        assert (
+            execute_query_in_prometheus(query, timestamp) == result
+        ), f"query: {query}"
+        assert execute_query_in_clickhouse(query, timestamp) == TSV(
+            chresult
+        ), f"query: {query}"

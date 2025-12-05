@@ -221,6 +221,11 @@ namespace
             num_tags_to_copy = tags_to_copy.size();
         }
 
+        explicit CopyTagsTransformFunc2(const String & tag_to_copy_)
+            : CopyTagsTransformFunc2(Strings{tag_to_copy_})
+        {
+        }
+
         TagNamesAndValuesPtr operator()(const TagNamesAndValuesPtr & dest_tags, const TagNamesAndValuesPtr & src_tags)
         {
             /// Extract the values of the tags we're going to copy from `src_tags`.
@@ -1075,6 +1080,30 @@ std::vector<Group> ContextTimeSeriesTagsCollector::transformTags2(const std::vec
     }
 
     return res;
+}
+
+
+Group ContextTimeSeriesTagsCollector::copyTag(Group dest_group, Group src_group, const String & tag_to_copy)
+{
+    return transformTags2(dest_group, src_group, CopyTagsTransformFunc2{tag_to_copy});
+}
+
+
+std::vector<Group> ContextTimeSeriesTagsCollector::copyTag(Group dest_group, const std::vector<Group> & src_groups, const String & tag_to_copy)
+{
+    return transformTags2(dest_group, src_groups, CopyTagsTransformFunc2{tag_to_copy});
+}
+
+
+std::vector<Group> ContextTimeSeriesTagsCollector::copyTag(const std::vector<Group> & dest_groups, Group src_group, const String & tag_to_copy)
+{
+    return transformTags2(dest_groups, src_group, CopyTagsTransformFunc2{tag_to_copy});
+}
+
+
+std::vector<Group> ContextTimeSeriesTagsCollector::copyTag(const std::vector<Group> & dest_groups, const std::vector<Group> & src_groups, const String & tag_to_copy)
+{
+    return transformTags2(dest_groups, src_groups, CopyTagsTransformFunc2{tag_to_copy});
 }
 
 
