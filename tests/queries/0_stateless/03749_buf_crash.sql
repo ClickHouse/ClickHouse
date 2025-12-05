@@ -49,4 +49,4 @@ SELECT
 FROM filtered_biometrics
 LEFT JOIN tickets USING (rockman_id)
 GROUP BY workerScope_hash
-ORDER BY workerScope_hash;
+ORDER BY workerScope_hash FORMAT NULL;
