@@ -219,6 +219,8 @@ if (TARGET ch_contrib::sha3iuf)
     set(USE_SHA3IUF 1)
 endif()
 set (USE_YTSAURUS 1)
-
+if (TARGET ch_contrib::jwt-cpp)
+    set(USE_JWT_CPP 1)
+endif()
 
 set(SOURCE_DIR ${PROJECT_SOURCE_DIR})

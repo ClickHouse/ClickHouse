@@ -7,6 +7,7 @@
 #include <Access/AccessControl.h>
 #include <Access/resolveSetting.h>
 #include <Access/AccessChangesNotifier.h>
+#include <Access/Credentials.h>
 #include <Dictionaries/IDictionary.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Common/Logger.h>
@@ -130,6 +131,7 @@ namespace
         bool has_password_double_sha1_hex = config.has(user_config + ".password_double_sha1_hex");
         bool has_ldap = config.has(user_config + ".ldap");
         bool has_kerberos = config.has(user_config + ".kerberos");
+        bool has_jwt = config.has(user_config + ".jwt");
 
         const auto certificates_config = user_config + ".ssl_certificates";
         bool has_certificates = config.has(certificates_config);
@@ -141,18 +143,18 @@ namespace
         bool has_http_auth = config.has(http_auth_config);
 
         size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex
-            + has_ldap + has_kerberos + has_certificates + has_ssh_keys + has_http_auth + has_scram_password_sha256_hex;
+            + has_ldap + has_kerberos + has_certificates + has_ssh_keys + has_http_auth + has_scram_password_sha256_hex + has_jwt;
 
         if (num_password_fields > 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "More than one field of 'password', 'password_sha256_hex', "
                             "'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos', 'ssl_certificates', 'ssh_keys', "
-                            "'http_authentication' are used to specify authentication info for user {}. "
+                            "'http_authentication', 'jwt' are used to specify authentication info for user {}. "
                             "Must be only one of them.", user_name);
 
         if (num_password_fields < 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Either 'password' or 'password_sha256_hex' "
                             "or 'password_double_sha1_hex' or 'no_password' or 'ldap' or 'kerberos "
-                            "or 'ssl_certificates' or 'ssh_keys' or 'http_authentication' must be specified for user {}.", user_name);
+                            "or 'ssl_certificates' or 'ssh_keys' or 'http_authentication' or 'jwt' must be specified for user {}.", user_name);
 
         if (has_password_plaintext)
         {
@@ -275,6 +277,10 @@ namespace
             user->authentication_methods.back().setHTTPAuthenticationServerName(config.getString(http_auth_config + ".server"));
             auto scheme = config.getString(http_auth_config + ".scheme");
             user->authentication_methods.back().setHTTPAuthenticationScheme(parseHTTPAuthenticationScheme(scheme));
+        }
+        else if (has_jwt)
+        {
+            user->authentication_methods.emplace_back(AuthenticationType::JWT);
         }
         else
         {
