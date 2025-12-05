@@ -290,7 +290,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     if (!global_ctx->merging_params.is_deleted_column.empty())
         key_columns.emplace(global_ctx->merging_params.is_deleted_column);
 
-    /// Force version column for Replacing mode
+    /// Force version column for Replacing mode and VersionedCollapsing mode
     if (!global_ctx->merging_params.version_column.empty())
         key_columns.emplace(global_ctx->merging_params.version_column);
 
