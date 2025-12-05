@@ -39,12 +39,16 @@ namespace ErrorCodes
 
 static bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextPtr & context [[maybe_unused]])
 {
-    const auto * mv = typeid_cast<const StorageMaterializedView *>(table_node.getStorage().get());
-    // address refreshable MVs separately, currently leads to logical error
-    if (mv->isRefreshable())
-        return false;
+    auto storage = table_node.getStorage();
+    const auto * mv = typeid_cast<const StorageMaterializedView *>(storage.get());
+    if (mv)
+    {
+        // address refreshable MVs separately, currently leads to logical error
+        if (mv->isRefreshable())
+            return false;
 
-    const auto & storage = mv ? mv->getTargetTable() : table_node.getStorage();
+        storage = mv->getTargetTable();
+    }
 
     if (!storage->isMergeTree() && !typeid_cast<const StorageDummy *>(storage.get()))
         return false;

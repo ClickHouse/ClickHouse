@@ -1062,11 +1062,15 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 auto parallel_replicas_enabled_for_storage = [](const StoragePtr & table, const Settings & query_settings)
                 {
                     const auto * mv = typeid_cast<const StorageMaterializedView *>(table.get());
-                    // address refreshable MVs separately, currently leads to logical error
-                    if (mv->isRefreshable())
-                        return false;
+                    const auto * table_ptr = table.get();
+                    if (mv)
+                    {
+                        // address refreshable MVs separately, currently leads to logical error
+                        if (mv->isRefreshable())
+                            return false;
 
-                    const auto * table_ptr = mv ? mv->getTargetTable().get() : table.get();
+                        table_ptr = mv->getTargetTable().get();
+                    }
 
                     if (!table_ptr->isMergeTree())
                         return false;
