@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stack>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Core/QueryProcessingStage.h>
 #include <Client/IConnections.h>
@@ -10,8 +11,8 @@
 
 namespace DB
 {
-class IThrottler;
-using ThrottlerPtr = std::shared_ptr<IThrottler>;
+class Throttler;
+using ThrottlerPtr = std::shared_ptr<Throttler>;
 
 class ParallelReplicasReadingCoordinator;
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
@@ -24,7 +25,7 @@ public:
     /// @param main_table_ if Shards contains main_table then this parameter will be ignored
     ReadFromRemote(
         ClusterProxy::SelectStreamFactory::Shards shards_,
-        SharedHeader header_,
+        Block header_,
         QueryProcessingStage::Enum stage_,
         StorageID main_table_,
         ASTPtr table_func_ptr_,
@@ -44,9 +45,7 @@ public:
     void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;
 
     void enableMemoryBoundMerging();
-    void enforceAggregationInOrder(const SortDescription & sort_description);
-
-    bool hasSerializedPlan() const;
+    void enforceAggregationInOrder();
 
 private:
     ClusterProxy::SelectStreamFactory::Shards shards;
@@ -63,19 +62,9 @@ private:
     const String cluster_name;
     std::optional<GetPriorityForLoadBalancing> priority_func_factory;
 
-    Pipes addPipes(const ClusterProxy::SelectStreamFactory::Shards & used_shards, const SharedHeader & out_header);
-
-    void addLazyPipe(
-        Pipes & pipes,
-        const ClusterProxy::SelectStreamFactory::Shard & shard,
-        const SharedHeader & out_header,
-        size_t parallel_marshalling_threads);
-
-    void addPipe(
-        Pipes & pipes,
-        const ClusterProxy::SelectStreamFactory::Shard & shard,
-        const SharedHeader & out_header,
-        size_t parallel_marshalling_threads);
+    Pipes addPipes(const ClusterProxy::SelectStreamFactory::Shards & used_shards, const Header & out_header);
+    void addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const Header & out_header);
+    void addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const Header & out_header);
 };
 
 
@@ -87,7 +76,7 @@ public:
         ClusterPtr cluster_,
         const StorageID & storage_id_,
         ParallelReplicasReadingCoordinatorPtr coordinator_,
-        SharedHeader header_,
+        Block header_,
         QueryProcessingStage::Enum stage_,
         ContextMutablePtr context_,
         ThrottlerPtr throttler_,
@@ -106,16 +95,13 @@ public:
     void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;
 
     void enableMemoryBoundMerging();
-    void enforceAggregationInOrder(const SortDescription & sort_description);
+    void enforceAggregationInOrder();
 
     StorageID getStorageID() const { return storage_id; }
-    ParallelReplicasReadingCoordinatorPtr getCoordinator() const { return coordinator; }
 
 private:
-    Pipes addPipes(ASTPtr ast, const SharedHeader & out_header);
-
-    Pipe createPipeForSingeReplica(const ConnectionPoolPtr & pool, ASTPtr ast, IConnections::ReplicaInfo replica_info, const SharedHeader & out_header,
-                                   size_t parallel_marshalling_threads);
+    Pipes addPipes(ASTPtr ast, const Header & out_header);
+    void addPipeForSingeReplica(Pipes & pipes, const ConnectionPoolPtr & pool, ASTPtr ast, IConnections::ReplicaInfo replica_info, const Header & out_header);
 
     ClusterPtr cluster;
     ASTPtr query_ast;

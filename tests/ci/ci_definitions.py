@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, Iterable, List, Literal, Optional, Union
 
 from ci_utils import WithIter
+from integration_test_images import IMAGES
 
 
 class Labels:
@@ -12,7 +13,7 @@ class Labels:
     CAN_BE_TESTED = "can be tested"
     DO_NOT_TEST = "do not test"
     MUST_BACKPORT = "pr-must-backport"
-    MUST_BACKPORT_SYNCED = "pr-must-backport-synced"
+    MUST_BACKPORT_CLOUD = "pr-must-backport-cloud"
     JEPSEN_TEST = "jepsen-test"
     SKIP_MERGEABLE_CHECK = "skip mergeable check"
     PR_BACKPORT = "pr-backport"
@@ -123,7 +124,7 @@ class BuildNames(metaclass=WithIter):
     BINARY_RISCV64 = "binary_riscv64"
     BINARY_S390X = "binary_s390x"
     BINARY_LOONGARCH64 = "binary_loongarch64"
-    ARM_FUZZERS = "arm_fuzzers"
+    FUZZERS = "fuzzers"
 
 
 class JobNames(metaclass=WithIter):
@@ -142,7 +143,7 @@ class JobNames(metaclass=WithIter):
     STATELESS_TEST_RELEASE = "Stateless tests (release)"
     STATELESS_TEST_RELEASE_COVERAGE = "Stateless tests (coverage)"
     STATELESS_TEST_AARCH64 = "Stateless tests (aarch64)"
-    STATELESS_TEST_ASAN_DISTRIBUTED_PLAN = "Stateless tests (asan, distributed plan)"
+    STATELESS_TEST_ASAN = "Stateless tests (asan)"
     STATELESS_TEST_AARCH64_ASAN = "Stateless tests (aarch64, asan)"
     STATELESS_TEST_TSAN = "Stateless tests (tsan)"
     STATELESS_TEST_MSAN = "Stateless tests (msan)"
@@ -153,12 +154,7 @@ class JobNames(metaclass=WithIter):
     STATELESS_TEST_PARALLEL_REPLICAS_REPLICATED_RELEASE = (
         "Stateless tests (release, ParallelReplicas, s3 storage)"
     )
-    STATELESS_TEST_ASYNC_INSERT_DEBUG = (
-        "Stateless tests (amd_debug, AsyncInsert, s3 storage)"
-    )
-    STATELESS_TEST_S3_DEBUG_DISTRIBUTED_PLAN = (
-        "Stateless tests (debug, distributed plan, s3 storage)"
-    )
+    STATELESS_TEST_S3_DEBUG = "Stateless tests (debug, s3 storage)"
     STATELESS_TEST_S3_TSAN = "Stateless tests (tsan, s3 storage)"
     STATELESS_TEST_AZURE_ASAN = "Stateless tests (azure, asan)"
     STATELESS_TEST_FLAKY_ASAN = "Stateless tests (asan, flaky check)"
@@ -175,9 +171,7 @@ class JobNames(metaclass=WithIter):
     INTEGRATION_TEST_ASAN = "Integration tests (asan)"
     INTEGRATION_TEST_ASAN_OLD_ANALYZER = "Integration tests (asan, old analyzer)"
     INTEGRATION_TEST_TSAN = "Integration tests (tsan)"
-    INTEGRATION_TEST_AARCH64_DISTRIBUTED_PLAN = (
-        "Integration tests (aarch64, distributed plan)"
-    )
+    INTEGRATION_TEST_AARCH64 = "Integration tests (aarch64)"
     INTEGRATION_TEST_FLAKY = "Integration tests (asan, flaky check)"
 
     UPGRADE_TEST_DEBUG = "Upgrade check (debug)"
@@ -226,7 +220,7 @@ class JobNames(metaclass=WithIter):
     BUILD_CHECK = "Builds"
 
     DOCS_CHECK = "Docs check"
-    BUGFIX_VALIDATE = "Bugfix validation (integration tests)"
+    BUGFIX_VALIDATE = "Bugfix validation"
 
 
 # hack to concatenate Build and non-build jobs under JobNames class
@@ -466,6 +460,7 @@ class CommonJobConfigs:
                 "./tests/integration/",
             ],
             exclude_files=[".md"],
+            docker=IMAGES.copy(),
         ),
         run_command='integration_test_check.py "$CHECK_NAME"',
         runner_type=Runners.FUNC_TESTER,
@@ -619,7 +614,7 @@ REQUIRED_CHECKS = [
     JobNames.DOCS_CHECK,
     JobNames.FAST_TEST,
     JobNames.STATELESS_TEST_RELEASE,
-    JobNames.STATELESS_TEST_ASAN_DISTRIBUTED_PLAN,
+    JobNames.STATELESS_TEST_ASAN,
     JobNames.STATELESS_TEST_AARCH64_ASAN,
     JobNames.STATELESS_TEST_FLAKY_ASAN,
     JobNames.STYLE_CHECK,

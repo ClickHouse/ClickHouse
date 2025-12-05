@@ -1,7 +1,6 @@
 #include <Interpreters/AsynchronousInsertLog.h>
 
 #include <base/getFQDNOrHostName.h>
-#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -9,6 +8,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <Parsers/ASTInsertQuery.h>
 
 
 namespace DB

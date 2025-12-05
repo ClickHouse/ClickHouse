@@ -4,7 +4,6 @@
 #include <Core/Settings.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/ConvertingActions.h>
 
 namespace DB
@@ -21,19 +20,15 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     QueryProcessingStage::Enum processed_stage,
     size_t shard_num,
     size_t shard_count,
-    bool build_logical_plan,
-    const std::string & default_database)
+    bool has_missing_objects)
 {
     checkStackSize();
 
     auto query_plan = std::make_unique<QueryPlan>();
     auto new_context = Context::createCopy(context);
 
-    if (build_logical_plan && !default_database.empty())
-        new_context->setCurrentDatabase(default_database);
-
     /// Do not push down limit to local plan, as it will break `rows_before_limit_at_least` counter.
-    if (!build_logical_plan && processed_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit)
+    if (processed_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit)
         processed_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
 
     /// Do not apply AST optimizations, because query
@@ -43,8 +38,6 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     auto select_query_options = SelectQueryOptions(processed_stage)
         .setShardInfo(static_cast<UInt32>(shard_num), static_cast<UInt32>(shard_count))
         .ignoreASTOptimizations();
-
-    select_query_options.build_logical_plan = build_logical_plan;
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
@@ -61,7 +54,7 @@ std::unique_ptr<QueryPlan> createLocalPlan(
         interpreter.buildQueryPlan(*query_plan);
     }
 
-    addConvertingActions(*query_plan, header, new_context);
+    addConvertingActions(*query_plan, header, has_missing_objects);
     return query_plan;
 }
 

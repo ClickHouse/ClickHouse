@@ -1,6 +1,6 @@
 #pragma once
 #include <Core/SchemaInferenceMode.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/IStorage.h>
@@ -9,24 +9,22 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
-#include <Formats/FormatSettings.h>
-#include <Interpreters/Context_fwd.h>
-#include <Databases/DataLake/ICatalog.h>
-#include <Storages/MutationCommands.h>
 
 #include <memory>
-
-#include <Storages/IPartitionStrategy.h>
 namespace DB
 {
+
 class ReadBufferIterator;
 class SchemaCache;
+class NamedCollection;
 struct StorageObjectStorageSettings;
 using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSettings>;
-struct IPartitionStrategy;
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 
 /**
  * A general class containing implementation for external table engines
@@ -36,23 +34,42 @@ struct IPartitionStrategy;
 class StorageObjectStorage : public IStorage
 {
 public:
+    class Configuration;
+    using ConfigurationPtr = std::shared_ptr<Configuration>;
+    using ConfigurationObserverPtr = std::weak_ptr<Configuration>;
+    using ObjectInfo = RelativePathWithMetadata;
+    using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
+    using ObjectInfos = std::vector<ObjectInfoPtr>;
+
+    struct QuerySettings
+    {
+        /// Insert settings:
+        bool truncate_on_insert;
+        bool create_new_file_on_insert;
+
+        /// Schema inference settings:
+        bool schema_inference_use_cache;
+        SchemaInferenceMode schema_inference_mode;
+
+        /// List settings:
+        bool skip_empty_files;
+        size_t list_object_keys_size;
+        bool throw_on_zero_files_match;
+        bool ignore_non_existent_file;
+    };
+
     StorageObjectStorage(
-        StorageObjectStorageConfigurationPtr configuration_,
+        ConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
         ContextPtr context_,
         const StorageID & table_id_,
-        const ColumnsDescription & columns_in_table_or_function_definition,
+        const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
         std::optional<FormatSettings> format_settings_,
         LoadingStrictnessLevel mode,
-        std::shared_ptr<DataLake::ICatalog> catalog_,
-        bool if_not_exists_,
-        bool is_datalake_query,
         bool distributed_processing_ = false,
         ASTPtr partition_by_ = nullptr,
-        ASTPtr order_by_ = nullptr,
-        bool is_table_function_ = false,
         bool lazy_init = false);
 
     String getName() const override;
@@ -79,8 +96,6 @@ public:
         ContextPtr local_context,
         TableExclusiveLockHolder &) override;
 
-    void drop() override;
-
     bool supportsPartitionBy() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
@@ -91,110 +106,165 @@ public:
 
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
-    bool isDataLake() const override { return configuration->isDataLakeConfiguration(); }
-
-    bool isObjectStorage() const override { return true; }
-
-    bool supportsReplication() const override { return configuration->isDataLakeConfiguration(); }
-
-    /// Things required for PREWHERE.
-    bool supportsPrewhere() const override;
-    bool canMoveConditionsToPrewhere() const override;
-    std::optional<NameSet> supportedPrewhereColumns() const override;
-    ColumnSizeByName getColumnSizes() const override;
-
     bool prefersLargeBlocks() const override;
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
 
-    static SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & storage_engine_name);
+    static SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & storage_type_name);
 
     static ColumnsDescription resolveSchemaFromData(
         const ObjectStoragePtr & object_storage,
-        const StorageObjectStorageConfigurationPtr & configuration,
+        const ConfigurationPtr & configuration,
         const std::optional<FormatSettings> & format_settings,
         std::string & sample_path,
         const ContextPtr & context);
 
     static std::string resolveFormatFromData(
         const ObjectStoragePtr & object_storage,
-        const StorageObjectStorageConfigurationPtr & configuration,
+        const ConfigurationPtr & configuration,
         const std::optional<FormatSettings> & format_settings,
         std::string & sample_path,
         const ContextPtr & context);
 
     static std::pair<ColumnsDescription, std::string> resolveSchemaAndFormatFromData(
         const ObjectStoragePtr & object_storage,
-        const StorageObjectStorageConfigurationPtr & configuration,
+        const ConfigurationPtr & configuration,
         const std::optional<FormatSettings> & format_settings,
         std::string & sample_path,
         const ContextPtr & context);
 
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
-    void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
+    bool hasExternalDynamicMetadata() const override;
 
-    IDataLakeMetadata * getExternalMetadata(ContextPtr query_context);
-
-    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
-    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
-
-    bool optimize(
-        const ASTPtr & /*query*/,
-        const StorageMetadataPtr & metadata_snapshot,
-        const ASTPtr & /*partition*/,
-        bool /*final*/,
-        bool /*deduplicate*/,
-        const Names & /* deduplicate_by_columns */,
-        bool /*cleanup*/,
-        ContextPtr context) override;
-
-    bool supportsDelete() const override { return configuration->supportsDelete(); }
-
-    bool supportsParallelInsert() const override { return configuration->supportsParallelInsert(); }
-
-    void mutate(const MutationCommands &, ContextPtr) override;
-    void checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const override;
-
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override;
-
-    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
+    void updateExternalDynamicMetadata(ContextPtr) override;
 
 protected:
-    /// Get path sample for hive partitioning implementation.
     String getPathSample(ContextPtr context);
 
-    /// Creates ReadBufferIterator for schema inference implementation.
     static std::unique_ptr<ReadBufferIterator> createReadBufferIterator(
         const ObjectStoragePtr & object_storage,
-        const StorageObjectStorageConfigurationPtr & configuration,
+        const ConfigurationPtr & configuration,
         const std::optional<FormatSettings> & format_settings,
         ObjectInfos & read_keys,
         const ContextPtr & context);
 
-    /// Storage configuration (S3, Azure, HDFS, Local, DataLake).
-    /// Contains information about table engine configuration
-    /// and underlying storage access.
-    StorageObjectStorageConfigurationPtr configuration;
-    /// `object_storage` to allow direct access to data storage.
+    ConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;
-    /// Whether this engine is a part of according Cluster engine implementation.
-    /// (One of the reading replicas, not the initiator).
+    const ASTPtr partition_by;
     const bool distributed_processing;
-    bool supports_prewhere = false;
-    bool supports_tuple_elements = false;
-    /// Whether we need to call `configuration->update()`
-    /// (e.g. refresh configuration) on each read() method call.
-    bool update_configuration_on_read_write = true;
-
-    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
-    NamesAndTypesList file_columns;
 
     LoggerPtr log;
+};
 
-    std::shared_ptr<DataLake::ICatalog> catalog;
-    StorageID storage_id;
+class StorageObjectStorage::Configuration
+{
+public:
+    Configuration() = default;
+    Configuration(const Configuration & other);
+    virtual ~Configuration() = default;
+
+    using Path = std::string;
+    using Paths = std::vector<Path>;
+
+    static void initialize(
+        Configuration & configuration_to_initialize,
+        ASTs & engine_args,
+        ContextPtr local_context,
+        bool with_table_structure,
+        StorageObjectStorageSettingsPtr settings);
+
+    /// Storage type: s3, hdfs, azure, local.
+    virtual ObjectStorageType getType() const = 0;
+    virtual std::string getTypeName() const = 0;
+    /// Engine name: S3, HDFS, Azure.
+    virtual std::string getEngineName() const = 0;
+    /// Sometimes object storages have something similar to chroot or namespace, for example
+    /// buckets in S3. If object storage doesn't have any namepaces return empty string.
+    virtual std::string getNamespaceType() const { return "namespace"; }
+
+    virtual Path getFullPath() const { return ""; }
+    virtual Path getPath() const = 0;
+    virtual void setPath(const Path & path) = 0;
+
+    virtual const Paths & getPaths() const = 0;
+    virtual void setPaths(const Paths & paths) = 0;
+
+    virtual String getDataSourceDescription() const = 0;
+    virtual String getNamespace() const = 0;
+
+    virtual StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const = 0;
+
+    /// Add/replace structure and format arguments in the AST arguments if they have 'auto' values.
+    virtual void addStructureAndFormatToArgsIfNeeded(
+        ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure) = 0;
+
+    bool withPartitionWildcard() const;
+    bool withGlobs() const { return isPathWithGlobs() || isNamespaceWithGlobs(); }
+    bool withGlobsIgnorePartitionWildcard() const;
+    bool isPathWithGlobs() const;
+    bool isNamespaceWithGlobs() const;
+    virtual std::string getPathWithoutGlobs() const;
+
+    virtual bool isArchive() const { return false; }
+    bool isPathInArchiveWithGlobs() const;
+    virtual std::string getPathInArchive() const;
+
+    virtual void check(ContextPtr context);
+    virtual void validateNamespace(const String & /* name */) const {}
+
+    virtual ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) = 0;
+    virtual ConfigurationPtr clone() = 0;
+    virtual bool isStaticConfiguration() const { return true; }
+
+    virtual bool isDataLakeConfiguration() const { return false; }
+
+    virtual void implementPartitionPruning(const ActionsDAG &) { }
+
+    virtual bool hasExternalDynamicMetadata() { return false; }
+
+    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String&) const { return {}; }
+
+    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String&) const { return {}; }
+
+    virtual ColumnsDescription updateAndGetCurrentSchema(ObjectStoragePtr, ContextPtr)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateAndGetCurrentSchema is not supported by storage {}", getEngineName());
+    }
+
+    virtual ReadFromFormatInfo prepareReadingFromFormat(
+        ObjectStoragePtr object_storage,
+        const Strings & requested_columns,
+        const StorageSnapshotPtr & storage_snapshot,
+        bool supports_subset_of_columns,
+        ContextPtr local_context);
+
+    virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const;
+
+    virtual bool supportsFileIterator() const { return false; }
+    virtual ObjectIterator iterate()
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
+    }
+
+    String format = "auto";
+    String compression_method = "auto";
+    String structure = "auto";
+
+    virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
+
+    const StorageObjectStorageSettings & getSettingsRef() const;
+
+protected:
+    virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
+    virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;
+
+    void assertInitialized() const;
+
+    bool initialized = false;
+
+    StorageObjectStorageSettingsPtr storage_settings;
 };
 
 }

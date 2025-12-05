@@ -6,15 +6,19 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Core/Types.h>
-#include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Poco/JSON/Object.h>
 
 namespace DB
 {
+namespace StorageObjectStorageSetting
+{
+extern const StorageObjectStorageSettingsBool allow_experimental_delta_kernel_rs;
+}
 
 struct DeltaLakePartitionColumn
 {
@@ -31,12 +35,14 @@ using DeltaLakePartitionColumns = std::unordered_map<std::string, std::vector<De
 class DeltaLakeMetadata final : public IDataLakeMetadata
 {
 public:
+    using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
     static constexpr auto name = "DeltaLake";
-    const char * getName() const override { return name; }
 
-    DeltaLakeMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, ContextPtr context_);
+    DeltaLakeMetadata(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_, ContextPtr context_);
 
-    NamesAndTypesList getTableSchema(ContextPtr /*local_context*/) const override { return schema; }
+    Strings getDataFiles() const override { return data_files; }
+
+    NamesAndTypesList getTableSchema() const override { return schema; }
 
     DeltaLakePartitionColumns getPartitionColumns() const { return partition_columns; }
 
@@ -48,44 +54,31 @@ public:
             && data_files == deltalake_metadata->data_files;
     }
 
-    static void createInitial(
-        const ObjectStoragePtr & /*object_storage*/,
-        const StorageObjectStorageConfigurationWeakPtr & /*configuration*/,
-        const ContextPtr & /*local_context*/,
-        const std::optional<ColumnsDescription> & /*columns*/,
-        ASTPtr /*partition_by*/,
-        ASTPtr /*order_by*/,
-        bool /*if_not_exists*/,
-        std::shared_ptr<DataLake::ICatalog> /*catalog*/,
-        const StorageID & /*table_id_*/)
-    {
-    }
-
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
-        StorageObjectStorageConfigurationWeakPtr configuration,
-        ContextPtr local_context);
+        ConfigurationObserverPtr configuration,
+        ContextPtr local_context)
+    {
+#if USE_DELTA_KERNEL_RS
+        auto configuration_ptr = configuration.lock();
+        if (configuration_ptr->getSettingsRef()[StorageObjectStorageSetting::allow_experimental_delta_kernel_rs])
+            return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration);
+        else
+            return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
+#else
+        return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
+#endif
+    }
 
     static DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable);
     static DataTypePtr getSimpleTypeByName(const String & type_name);
     static DataTypePtr getFieldValue(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable);
     static Field getFieldValue(const String & value, DataTypePtr data_type);
 
-protected:
-    ObjectIterator iterate(
-        const ActionsDAG * filter_dag,
-        FileProgressCallback callback,
-        size_t list_batch_size,
-        StorageMetadataPtr storage_metadata_snapshot,
-        ContextPtr context) const override;
-
 private:
     mutable Strings data_files;
     NamesAndTypesList schema;
     DeltaLakePartitionColumns partition_columns;
-    ObjectStoragePtr object_storage;
-
-    Strings getDataFiles(const ActionsDAG *) const { return data_files; }
 };
 
 }

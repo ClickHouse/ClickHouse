@@ -7,7 +7,6 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ExpressionElementParsers.h>
 
 #include <DataTypes/DataTypesNumber.h>
 
@@ -48,18 +47,6 @@ namespace Setting
 namespace
 {
 
-ASTPtr createIdentifierFromColumnName(const String & column_name)
-{
-    Tokens tokens(column_name.data(), column_name.data() + column_name.size(), DBMS_DEFAULT_MAX_QUERY_SIZE);
-    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-    ASTPtr res;
-    Expected expected;
-    ParserCompoundIdentifier().parse(pos, res, expected);
-    if (!res || getIdentifierName(res) != column_name)
-        return std::make_shared<ASTIdentifier>(column_name);
-    return res;
-}
-
 ASTPtr normalizeAndValidateQuery(const ASTPtr & query, const Names & column_names)
 {
     ASTPtr result_query;
@@ -96,7 +83,7 @@ ASTPtr normalizeAndValidateQuery(const ASTPtr & query, const Names & column_name
     projection_expression_list_ast->children.reserve(column_names.size());
 
     for (const auto & column_name : column_names)
-        projection_expression_list_ast->children.push_back(createIdentifierFromColumnName(column_name));
+        projection_expression_list_ast->children.push_back(std::make_shared<ASTIdentifier>(column_name));
 
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(projection_expression_list_ast));
 
@@ -158,7 +145,6 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     /// We should not apply any query tree level optimizations on shards
     /// because it can lead to a changed header.
     if (select_query_options.ignore_ast_optimizations
-        || select_query_options.is_create_view
         || context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
         query_tree_pass_manager.runOnlyResolve(query_tree);
     else
@@ -210,7 +196,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
 {
 }
 
-SharedHeader InterpreterSelectQueryAnalyzer::getSampleBlock(const ASTPtr & query,
+Block InterpreterSelectQueryAnalyzer::getSampleBlock(const ASTPtr & query,
     const ContextPtr & context,
     const SelectQueryOptions & select_query_options)
 {
@@ -221,7 +207,7 @@ SharedHeader InterpreterSelectQueryAnalyzer::getSampleBlock(const ASTPtr & query
     return interpreter.getSampleBlock();
 }
 
-std::pair<SharedHeader, PlannerContextPtr> InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(const QueryTreeNodePtr & query_tree,
+std::pair<Block, PlannerContextPtr> InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(const QueryTreeNodePtr & query_tree,
     const ContextPtr & context,
     const SelectQueryOptions & select_query_options)
 {
@@ -232,20 +218,20 @@ std::pair<SharedHeader, PlannerContextPtr> InterpreterSelectQueryAnalyzer::getSa
     return interpreter.getSampleBlockAndPlannerContext();
 }
 
-SharedHeader InterpreterSelectQueryAnalyzer::getSampleBlock(const QueryTreeNodePtr & query_tree,
+Block InterpreterSelectQueryAnalyzer::getSampleBlock(const QueryTreeNodePtr & query_tree,
     const ContextPtr & context,
     const SelectQueryOptions & select_query_options)
 {
     return getSampleBlockAndPlannerContext(query_tree, context, select_query_options).first;
 }
 
-SharedHeader InterpreterSelectQueryAnalyzer::getSampleBlock()
+Block InterpreterSelectQueryAnalyzer::getSampleBlock()
 {
     planner.buildQueryPlanIfNeeded();
     return planner.getQueryPlan().getCurrentHeader();
 }
 
-std::pair<SharedHeader, PlannerContextPtr> InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext()
+std::pair<Block, PlannerContextPtr> InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext()
 {
     planner.buildQueryPlanIfNeeded();
     return {planner.getQueryPlan().getCurrentHeader(), planner.getPlannerContext()};
