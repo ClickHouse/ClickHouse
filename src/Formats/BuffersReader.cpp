@@ -1,9 +1,10 @@
-#include <Common/Exception.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
 #include <Formats/BuffersReader.h>
+#include <Formats/NativeReader.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -25,25 +26,6 @@ BuffersReader::BuffersReader(ReadBuffer & istr_, const Block & header_, std::opt
 Block BuffersReader::getHeader() const
 {
     return header;
-}
-
-void readData(
-    const ISerialization & serialization,
-    ColumnPtr & column,
-    ReadBuffer & istr,
-    UInt64 num_rows,
-    const std::optional<FormatSettings> & format_settings)
-{
-    ISerialization::DeserializeBinaryBulkSettings settings;
-    settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
-    settings.position_independent_encoding = false;
-    settings.native_format = false;
-    settings.format_settings = format_settings.has_value() ? &format_settings.value() : nullptr;
-
-    ISerialization::DeserializeBinaryBulkStatePtr state;
-
-    serialization.deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-    serialization.deserializeBinaryBulkWithMultipleStreams(column, 0, num_rows, settings, state, nullptr);
 }
 
 Block BuffersReader::read()
@@ -87,7 +69,15 @@ Block BuffersReader::read()
         auto serialization = column.type->getDefaultSerialization();
 
         const size_t before = istr.count();
-        readData(*serialization, read_column, istr, num_rows, format_settings);
+        NameAndTypePair name_and_type = {column.name, column.type};
+        NativeReader::readData(
+            *serialization,
+            read_column,
+            istr,
+            format_settings.has_value() ? &format_settings.value() : nullptr,
+            num_rows,
+            &name_and_type,
+            nullptr);
         const size_t after = istr.count();
 
         const size_t consumed = after - before;

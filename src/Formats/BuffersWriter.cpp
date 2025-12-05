@@ -1,4 +1,5 @@
 #include <Formats/BuffersWriter.h>
+#include <Formats/NativeWriter.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
@@ -19,36 +20,6 @@ BuffersWriter::BuffersWriter(WriteBuffer & ostr_, SharedHeader header_, std::opt
 {
 }
 
-void writeData(
-    const ISerialization & serialization,
-    const ColumnPtr & column,
-    WriteBuffer & ostr,
-    const std::optional<FormatSettings> & format_settings)
-{
-    /** If there are columns-constants - then we materialize them.
-      * (Since the data type does not know how to serialize / deserialize constants.)
-      * The same for compressed columns in-memory.
-      */
-    ColumnPtr full_column = column->convertToFullColumnIfConst()->decompress();
-
-    if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(full_column.get()))
-    {
-        const auto & columns = column_lazy->getColumns();
-        full_column = ColumnTuple::create(columns);
-    }
-
-    ISerialization::SerializeBinaryBulkSettings settings;
-    settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
-    settings.position_independent_encoding = false;
-    settings.native_format = false;
-    settings.format_settings = format_settings.has_value() ? &format_settings.value() : nullptr;
-
-    ISerialization::SerializeBinaryBulkStatePtr state;
-    serialization.serializeBinaryBulkStatePrefix(*full_column, settings, state);
-    serialization.serializeBinaryBulkWithMultipleStreams(*full_column, 0, 0, settings, state);
-    serialization.serializeBinaryBulkStateSuffix(settings, state);
-}
-
 size_t BuffersWriter::write(const Block & block)
 {
     const size_t written_before = ostr.count();
@@ -63,14 +34,16 @@ size_t BuffersWriter::write(const Block & block)
 
     for (size_t i = 0; i < num_columns; ++i)
     {
-        const auto & column = block.safeGetByPosition(i);
+        auto column = block.safeGetByPosition(i);
 
-        auto serialization = column.type->getDefaultSerialization();
-        chassert(serialization != nullptr);
+        SerializationPtr serialization;
+
+        std::tie(serialization, std::ignore, column.column)
+            = NativeWriter::getSerializationAndColumn(format_settings->client_protocol_version, column);
 
         WriteBufferFromOwnString buffer;
 
-        writeData(*serialization, column.column, buffer, format_settings);
+        NativeWriter::writeData(*serialization, column.column, buffer, format_settings, 0, 0, format_settings->client_protocol_version);
 
         column_buffers[i] = std::move(buffer.str());
     }
