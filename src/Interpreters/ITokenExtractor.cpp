@@ -1,3 +1,4 @@
+#include <IO/Operators.h>
 #include <Interpreters/ITokenExtractor.h>
 #include <Storages/IndicesDescription.h>
 
