@@ -30,6 +30,7 @@
 #include <stack>
 namespace DB
 {
+
 namespace Setting
 {
     extern const SettingsBool group_by_use_nulls;
@@ -317,7 +318,9 @@ std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimizati
         return {};
 
     auto * first_argument_column_node = function_arguments_nodes.front()->as<ColumnNode>();
-    if (!first_argument_column_node || first_argument_column_node->getColumnName() == "__grouping_set")
+    if (!first_argument_column_node
+        || first_argument_column_node->getColumnName() == "__grouping_set"
+        || first_argument_column_node->hasExpression())
         return {};
 
     auto column_source = first_argument_column_node->getColumnSource();
