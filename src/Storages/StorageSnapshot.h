@@ -20,14 +20,17 @@ struct StorageSnapshot
     const StorageMetadataPtr metadata;
     const VirtualsDescriptionPtr virtual_columns;
 
+    struct Data;
+    using DataPtr = std::unique_ptr<Data>;
+
     /// Additional data, on which set of columns may depend.
     /// E.g. data parts in MergeTree, list of blocks in Memory, etc.
     struct Data
     {
+        virtual DataPtr clone() const = 0;
         virtual ~Data() = default;
     };
 
-    using DataPtr = std::unique_ptr<Data>;
     DataPtr data;
 
     StorageSnapshot(

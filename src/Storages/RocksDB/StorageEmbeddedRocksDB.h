@@ -86,7 +86,7 @@ public:
     std::vector<rocksdb::Status> multiGet(const std::vector<rocksdb::Slice> & slices_keys, std::vector<String> & values) const;
     Names getPrimaryKey() const override { return {primary_key}; }
 
-    Chunk getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map, const Names &) const override;
+    Chunk getByKeys(const ColumnsWithTypeAndName & keys, const Names &, PaddedPODArray<UInt8> & null_map, IColumn::Offsets & /* out_offsets */) const override;
 
     Block getSampleBlock(const Names &) const override;
 
