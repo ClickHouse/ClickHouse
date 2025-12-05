@@ -107,6 +107,7 @@ private:
     /// it needs to be available in Keeper metadata for older server versions.
     /// Therefore it is not in AfterProcessingSettings.
     AfterProcessingSettings after_processing_settings TSA_GUARDED_BY(mutex);
+    bool commit_on_select TSA_GUARDED_BY(mutex);
 
     size_t min_insert_block_size_rows_for_materialized_views TSA_GUARDED_BY(mutex);
     size_t min_insert_block_size_bytes_for_materialized_views TSA_GUARDED_BY(mutex);
@@ -120,7 +121,6 @@ private:
 
     UInt64 reschedule_processing_interval_ms TSA_GUARDED_BY(mutex);
 
-    std::atomic<bool> mv_attached = false;
     std::atomic<bool> shutdown_called = false;
     std::atomic<bool> startup_finished = false;
     std::atomic<bool> table_is_being_dropped = false;

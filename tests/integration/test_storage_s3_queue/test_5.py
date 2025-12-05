@@ -72,6 +72,7 @@ def started_cluster():
             user_configs=[
                 "configs/users.xml",
                 "configs/enable_keeper_fault_injection.xml",
+                "configs/keeper_retries.xml",
             ],
             stay_alive=True,
         )
@@ -80,6 +81,7 @@ def started_cluster():
             user_configs=[
                 "configs/users.xml",
                 "configs/enable_keeper_fault_injection.xml",
+                "configs/keeper_retries.xml",
             ],
             with_minio=True,
             with_zookeeper=True,
@@ -135,6 +137,7 @@ def started_cluster():
             ],
             user_configs=[
                 "configs/users.xml",
+                "configs/keeper_retries.xml",
             ],
             stay_alive=True,
         )
@@ -153,6 +156,7 @@ def started_cluster():
             user_configs=[
                 "configs/users.xml",
                 "configs/enable_keeper_fault_injection.xml",
+                "configs/keeper_retries.xml",
             ],
             stay_alive=True,
         )
@@ -1023,6 +1027,16 @@ def test_failed_startup(started_cluster):
     node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_startup")
 
     zk = started_cluster.get_kazoo_client("zoo1")
+
+    # Wait for table shutdown to be callled.
+    for i in range(5):
+        try:
+            zk.get(f"{keeper_path}")
+            time.sleep(1)
+            continue
+        except NoNodeError:
+            pass
+        break
     try:
         zk.get(f"{keeper_path}")
         assert False
@@ -1319,10 +1333,10 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
     node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_commit_once")
 
     assert node.contains_in_log(
-        f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 1/6"
+        f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 1"
     )
     assert not node.contains_in_log(
-        f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 5/6"
+        f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 5"
     )
 
     nodes = zk.get_children(f"{keeper_path}/processing")
@@ -1344,7 +1358,7 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
     assert found
 
     assert node.contains_in_log(
-        f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 6/6"
+        f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 10"
     )
 
     found = False

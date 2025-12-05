@@ -264,6 +264,12 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
             if (t.isAnyDeltaLakeEngine() || t.isAnyIcebergEngine())
             {
                 rel.cols.emplace_back(SQLRelationCol(rel_name, {"_data_lake_snapshot_version"}));
+                if (t.isAnyDeltaLakeEngine())
+                {
+                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"_change_type"}));
+                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"_commit_timestamp"}));
+                    rel.cols.emplace_back(SQLRelationCol(rel_name, {"_commit_version"}));
+                }
             }
             if (t.isURLEngine())
             {
@@ -1488,7 +1494,8 @@ void StatementGenerator::generateEngineDetails(
             sv->set_property("mode");
             sv->set_value(fmt::format("'{}ordered'", rg.nextBool() ? "un" : ""));
         }
-        if ((b.isMergeTreeFamily() || b.isLogFamily() || b.isShared()) && (b.isShared() || rg.nextSmallNumber() < 3)
+        const bool smt_disk = (b.isShared() && fc.set_smt_disk);
+        if ((b.isMergeTreeFamily() || b.isLogFamily() || smt_disk) && (smt_disk || rg.nextSmallNumber() < 3)
             && (!fc.storage_policies.empty() || !fc.keeper_disks.empty())
             && (!svs
                 || (svs->set_value().property() != "storage_policy" && svs->set_value().property() != "disk"
@@ -2388,7 +2395,8 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
     generateEngineDetails(rg, createTableRelation(rg, true, "", next), next, !added_pkey, te);
     this->entries.clear();
 
-    if (rg.nextSmallNumber() < 2)
+    /// No UUIDs in Shared databases
+    if (!next.isShared() && (!next.db || !next.db->isSharedDatabase()) && (next.db || !supports_cloud_features) && rg.nextSmallNumber() < 2)
     {
         ct->set_uuid(rg.nextUUID());
     }
@@ -2622,7 +2630,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         }
         dc->set_is_object_id(rg.nextMediumNumber() < 3);
     }
-    if (rg.nextSmallNumber() < 2)
+    if (!next.isShared() && (!next.db || !next.db->isSharedDatabase()) && (next.db || !supports_cloud_features) && rg.nextSmallNumber() < 2)
     {
         cd->set_uuid(rg.nextUUID());
     }
@@ -2744,7 +2752,7 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     SQLDatabase::setRandomDatabase(rg, next);
     next.deng = this->getNextDatabaseEngine(rg);
     deng->set_engine(next.deng);
-    if (rg.nextSmallNumber() < 2)
+    if (!next.isSharedDatabase() && rg.nextSmallNumber() < 2)
     {
         cd->set_uuid(rg.nextUUID());
     }

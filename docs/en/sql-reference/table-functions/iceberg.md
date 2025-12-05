@@ -70,6 +70,48 @@ SELECT * FROM icebergS3(iceberg_conf, filename = 'test_table')
 DESCRIBE icebergS3(iceberg_conf, filename = 'test_table')
 ```
 
+## Using a data catalog {#iceberg-writes-catalogs}
+
+Iceberg tables can also be used with various data catalogs, such as the [REST Catalog](https://iceberg.apache.org/rest-catalog-spec/), [AWS Glue Data Catalog](https://docs.aws.amazon.com/prescriptive-guidance/latest/serverless-etl-aws-glue/aws-glue-data-catalog.html) and [Unity Catalog](https://www.unitycatalog.io/).
+
+:::important
+When using a catalog, most users will want to use the `DataLakeCatalog` database engine, which connects ClickHouse to your catalog to discover your tables. You can use this database engine instead of manually creating individual tables with `IcebergS3` table engine.
+:::
+
+To use them, create a table with the `IcebergS3` engine and provide the necessary settings.
+
+For example, using REST Catalog with MinIO storage:
+```sql
+CREATE TABLE `database_name.table_name`
+ENGINE = IcebergS3(
+  'http://minio:9000/warehouse-rest/table_name/',
+  'minio_access_key',
+  'minio_secret_key'
+)
+SETTINGS 
+  storage_catalog_type="rest",
+  storage_warehouse="demo",
+  object_storage_endpoint="http://minio:9000/warehouse-rest",
+  storage_region="us-east-1",
+  storage_catalog_url="http://rest:8181/v1"
+```
+
+Or, using AWS Glue Data Catalog with S3:
+```sql
+CREATE TABLE `my_database.my_table`  
+ENGINE = IcebergS3(
+  's3://my-data-bucket/warehouse/my_database/my_table/',
+  'aws_access_key',
+  'aws_secret_key'
+)
+SETTINGS 
+  storage_catalog_type = 'glue',
+  storage_warehouse = 'my_database',
+  object_storage_endpoint = 's3://my-data-bucket/',
+  storage_region = 'us-east-1',
+  storage_catalog_url = 'https://glue.us-east-1.amazonaws.com/iceberg/v1'
+```
+
 ## Schema Evolution {#schema-evolution}
 
 At the moment, with the help of CH, you can read iceberg tables, the schema of which has changed over time. We currently support reading tables where columns have been added and removed, and their order has changed. You can also change a column where a value is required to one where NULL is allowed. Additionally, we support permitted type casting for simple types, namely:  
@@ -458,16 +500,6 @@ Row 1:
 ──────
 x: Ivanov
 y: 993
-```
-
-## Table with catalogs {#iceberg-writes-catalogs}
-
-All the write features described above are also available with REST and Glue catalogs.
-To use them, create a table with the `IcebergS3` engine and provide the necessary settings:
-
-```sql
-CREATE TABLE `database_name.table_name`  ENGINE = IcebergS3('http://minio:9000/warehouse-rest/table_name/', 'minio_access_key', 'minio_secret_key')
-SETTINGS storage_catalog_type="rest", storage_warehouse="demo", object_storage_endpoint="http://minio:9000/warehouse-rest", storage_region="us-east-1", storage_catalog_url="http://rest:8181/v1",
 ```
 
 ## See Also {#see-also}
