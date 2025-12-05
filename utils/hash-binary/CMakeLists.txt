@@ -1,20 +1,15 @@
-# This tool reuses ClickHouse's SipHash.h header (and its dependencies).
+# This is a standalone host tool with no ClickHouse dependencies.
 # It must be compilable with the host compiler during cross-compilation.
 
-if (NOT CMAKE_CROSSCOMPILING)
-    # When not cross-compiling, build hash-binary normally
-    add_executable(hash-binary hash-binary.cpp)
-
-    target_include_directories(hash-binary PRIVATE
-        ${ClickHouse_SOURCE_DIR}/src
-        ${ClickHouse_SOURCE_DIR}/base
-        ${ClickHouse_SOURCE_DIR}/contrib/cityhash102/include
-    )
-
-    # Mark for native build (this registers the target to be built in the native build directory during cross-compilation)
-    add_native_target(hash-binary)
+if (CMAKE_CROSSCOMPILING)
+    # When cross-compiling, we don't build hash-binary for the target.
+    # It's built for the host in the native/ subdirectory during cmake configure.
+    # We just need to register it so add_native_target knows about it.
+    # Use EXCLUDE_FROM_ALL so it doesn't get built for the target architecture.
+    add_executable(hash-binary EXCLUDE_FROM_ALL hash-binary.cpp)
 else()
-    # When cross-compiling, create an imported target pointing to the native-built binary
-    add_executable(hash-binary IMPORTED GLOBAL)
-    set_target_properties(hash-binary PROPERTIES IMPORTED_LOCATION "${PROJECT_BINARY_DIR}/native/utils/hash-binary/hash-binary")
+    add_executable(hash-binary hash-binary.cpp)
 endif()
+
+# Mark for native build when cross-compiling
+add_native_target(hash-binary)
