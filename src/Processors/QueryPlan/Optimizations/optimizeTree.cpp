@@ -326,9 +326,11 @@ void considerEnablingParallelReplicas(
     if (optimization_settings.parallel_replicas_enabled)
         return;
 
+    // Cannot guarantee projection usage with parallel replicas
     if (optimization_settings.force_use_projection)
         return;
 
+    // Some tests fail because on uninitialized `MergeTreeData::SnapshotData`
     if (optimization_settings.allow_experimental_full_text_index)
         return;
 
