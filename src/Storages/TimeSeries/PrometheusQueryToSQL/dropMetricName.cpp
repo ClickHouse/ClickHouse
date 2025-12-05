@@ -44,7 +44,7 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
             params.select_list.push_back(makeASTFunction(
                 "timeSeriesRemoveTag",
                 std::make_shared<ASTIdentifier>(ColumnNames::Group),
-                std::make_shared<ASTLiteral>("__name__")));
+                std::make_shared<ASTLiteral>(kMetricName)));
             params.select_list.back()->setAlias(ColumnNames::Group);
 
             auto coalesce_function = addParameterToAggregateFunction(

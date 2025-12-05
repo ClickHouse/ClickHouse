@@ -296,16 +296,16 @@ namespace
     /// {StoreMethod::CONST_SCALAR, StoreMethod::SCALAR_GRID, StoreMethod::VECTOR_GRID}.
     SQLQueryPiece binaryOperatorWithScalarByConstScalar(
         const PQT::BinaryOperator * operator_node,
-        SQLQueryPiece && argument,
+        SQLQueryPiece && scalar_argument,
         SQLQueryPiece && other_argument,
         bool left_to_right,
         ConverterContext & context)
     {
-        chassert((argument.type == ResultType::SCALAR) && (argument.store_method == StoreMethod::CONST_SCALAR));
+        chassert((scalar_argument.type == ResultType::SCALAR) && (scalar_argument.store_method == StoreMethod::CONST_SCALAR));
 
         const auto & operator_name = operator_node->operator_name;
         bool is_comparison_without_bool = isComparisonWithoutBool(operator_node);
-        auto scalar_value = argument.scalar_value;
+        auto scalar_value = scalar_argument.scalar_value;
         auto other_type = other_argument.type;
         auto other_store_method = other_argument.store_method;
 
@@ -388,12 +388,12 @@ namespace
     /// {StoreMethod::CONST_SCALAR, StoreMethod::SCALAR_GRID, StoreMethod::VECTOR_GRID}.
     SQLQueryPiece binaryOperatorWithScalarByScalarGrid(
         const PQT::BinaryOperator * operator_node,
-        SQLQueryPiece && argument,
+        SQLQueryPiece && scalar_argument,
         SQLQueryPiece && other_argument,
         bool left_to_right,
         ConverterContext & context)
     {
-        chassert((argument.type == ResultType::SCALAR) && (argument.store_method == StoreMethod::SCALAR_GRID));
+        chassert((scalar_argument.type == ResultType::SCALAR) && (scalar_argument.store_method == StoreMethod::SCALAR_GRID));
         chassert(!((other_argument.type == ResultType::SCALAR) && (other_argument.store_method == StoreMethod::CONST_SCALAR)));
 
         const auto & operator_name = operator_node->operator_name;
@@ -421,7 +421,7 @@ namespace
 
                 params.select_list.back()->setAlias(ColumnNames::Values);
 
-                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE});
+                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(scalar_argument.select_query), SQLSubqueryType::TABLE});
                 params.from_table = context.subqueries.back().name;
 
                 res.select_query = buildSelectQuery(std::move(params));
@@ -435,7 +435,7 @@ namespace
             case StoreMethod::SCALAR_GRID:
             case StoreMethod::VECTOR_GRID:
             {
-                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(argument.select_query), SQLSubqueryType::SCALAR});
+                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(scalar_argument.select_query), SQLSubqueryType::SCALAR});
                 String scalar_grid = context.subqueries.back().name;
 
                 SelectQueryParams params;
@@ -491,117 +491,260 @@ namespace
     }
 
 
-    struct GroupAST
+    /// Returns an AST to evaluate the `join_group` column to join the sides of a binary operator on instant vectors.
+    ASTPtr makeExpressionForJoinGroup(
+        const PQT::BinaryOperator * operator_node,
+        ASTPtr && argument_group,
+        bool metric_name_dropped_from_argument_group,
+        bool & metric_name_dropped_from_join_group)
     {
-        ASTPtr ast;
-        bool metric_name_dropped = false;
-    };
-
-
-    /// Returns an AST to evaluate the join group which is a parameter we join both sides of a binary operator on instant vectors on.
-    GroupAST makeJoinGroupAST(const PQT::BinaryOperator * operator_node, GroupAST && group)
-    {
-        if (const auto * literal = group.ast->as<const ASTLiteral>(); literal && literal->value == Field{0u})
-            return {.ast = std::move(group.ast), .metric_name_dropped = true};
+        /// Group #0 always means a group with no tags.
+        if (const auto * literal = argument_group->as<const ASTLiteral>(); literal && literal->value == Field{0u})
+        {
+            metric_name_dropped_from_join_group = true;
+            return std::move(argument_group);
+        }
 
         if (operator_node->on)
         {
             if (operator_node->labels.empty())
             {
-                /// ON() means we ignore all tags
-                return {.ast = std::make_shared<ASTLiteral>(0u), .metric_name_dropped = true};
+                /// ON() means we ignore all tags.
+                metric_name_dropped_from_join_group = true;
+                return std::make_shared<ASTLiteral>(0u);
             }
             else
             {
-                /// ON(tags) means we ignore all tags except the specified `tags`.
-                Strings tags = operator_node->labels;
-                std::sort(tags.begin(), tags.end());
-                tags.erase(std::unique(tags.begin(), tags.end()), tags.end());
-                bool metric_name_dropped = (std::find(tags.begin(), tags.end(), "__name__") == tags.end());
-                return {
-                    .ast = makeASTFunction(
-                        "timeSeriesRemoveAllTagsExcept", std::move(group.ast), std::make_shared<ASTLiteral>(Array{tags.begin(), tags.end()})),
-                    .metric_name_dropped = metric_name_dropped};
+                /// ON(tags) means we ignore all tags except the specified ones.
+                /// If the metric name "__name__" is among the tags in ON(tags) we don't remove it from the join group.
+
+                /// timeSeriesRemoveAllTagsExcept(argument_group, on_tags)
+                Strings tags_to_keep = operator_node->labels;
+                std::sort(tags_to_keep.begin(), tags_to_keep.end());
+                tags_to_keep.erase(std::unique(tags_to_keep.begin(), tags_to_keep.end()), tags_to_keep.end());
+
+                metric_name_dropped_from_join_group = !std::binary_search(tags_to_keep.begin(), tags_to_keep.end(), kMetricName);
+
+                return makeASTFunction(
+                           "timeSeriesRemoveAllTagsExcept",
+                           std::move(argument_group),
+                           std::make_shared<ASTLiteral>(Array{tags_to_keep.begin(), tags_to_keep.end()}));
             }
         }
         else if (operator_node->ignoring && !operator_node->labels.empty())
         {
-            /// IGNORE(tags) means we ignore the specified `tags`.
-            /// We ignore the metric name "__name__" even if it isn't specified in `tags`.
-            Strings tags = operator_node->labels;
-            if (std::find(tags.begin(), tags.end(), "__name__") == tags.end())
-                tags.push_back("__name__");
-            std::sort(tags.begin(), tags.end());
-            tags.erase(std::unique(tags.begin(), tags.end()), tags.end());
-            return {
-                .ast = makeASTFunction("timeSeriesRemoveTags", std::move(group.ast), std::make_shared<ASTLiteral>(Array{tags.begin(), tags.end()})),
-                .metric_name_dropped = true};
+            /// IGNORE(tags) means we ignore the specified tags, and also the metric name "__name__".
+
+            /// timeSeriesRemoveTags(argument_group, ignoring_tags + ['__name__'])
+            Strings tags_to_remove = operator_node->labels;
+            if (!metric_name_dropped_from_argument_group && (std::find(tags_to_remove.begin(), tags_to_remove.end(), kMetricName) == tags_to_remove.end()))
+                tags_to_remove.push_back(kMetricName);
+            std::sort(tags_to_remove.begin(), tags_to_remove.end());
+            tags_to_remove.erase(std::unique(tags_to_remove.begin(), tags_to_remove.end()), tags_to_remove.end());
+
+            metric_name_dropped_from_join_group = true;
+
+            return makeASTFunction(
+                       "timeSeriesRemoveTags",
+                       std::move(argument_group),
+                       std::make_shared<ASTLiteral>(Array{tags_to_remove.begin(), tags_to_remove.end()}));
         }
         else
         {
-            return std::move(group);
+            /// Neither ON() nor IGNORE() keywords are specified, we use all the tags except the metric name "__name__".
+            metric_name_dropped_from_join_group = true;
+            if (metric_name_dropped_from_argument_group)
+                return std::move(argument_group);
+            else
+                return makeASTFunction("timeSeriesRemoveTag", std::move(argument_group), std::make_shared<ASTLiteral>(kMetricName));
         }
     }
 
-    ASTPtr makeJoinGroupAST(const PQT::BinaryOperator * operator_node, ASTPtr && group)
+    ASTPtr makeExpressionForJoinGroup(
+        const PQT::BinaryOperator * operator_node,
+        ASTPtr && argument_group,
+        bool metric_name_dropped_from_argument_group)
     {
-        return makeJoinGroupAST(operator_node, GroupAST{.ast = std::move(group), .metric_name_dropped = false}).ast;
+        bool dummy;
+        return makeExpressionForJoinGroup(operator_node, std::move(argument_group), metric_name_dropped_from_argument_group, dummy);
     }
 
-    GroupAST makeResultGroupASTImpl(
-        const PQT::BinaryOperator * operator_node, GroupAST && join_group, bool group_keyword_presents, GroupAST && group, GroupAST && other_group)
+
+    /// Returns an AST to evaluate the result group of a binary operator on instant vectors if neither "group_left" nor "group_right" is used.
+    /// The function usually just returns `join_group`.
+    /// There are two special cases:
+    /// 1. If `join_group` contains the metric name "__name__", this function removes it
+    ///    because the result of a binary operator shouldn't contain the metric name.
+    ///    (`join_group` can contain the metric name if it's specified explicitly in ON(),
+    ///    for example "http_errors + on (__name__) http_failures")
+    /// 2. If it's a comparisons without the bool modifier the function doesn't remove the metric name, instead it copies it from the left side
+    ///    in case the ignoring list doesn't contain the metric name; or neither on() nor ignore() is specified.
+    ASTPtr makeExpressionForResultGroup_Default(
+        const PQT::BinaryOperator * operator_node,
+        ASTPtr && left_argument_group,
+        ASTPtr && /* right_argument_group */,
+        ASTPtr && join_group,
+        bool metric_name_dropped_from_left,
+        bool /* metric_name_dropped_from_right */,
+        bool metric_name_dropped_from_join_group,
+        bool & metric_name_dropped_from_result)
     {
-        if (!group_keyword_presents)
+        chassert(!operator_node->group_left && !operator_node->group_right);
+
+        if (isComparisonWithoutBool(operator_node))
         {
-            if (join_group.metric_name_dropped || isComparisonWithoutBool(operator_node))
+            /// For comparison operators without the bool modifier we add the metric name "__name__" to the result group from the left side by default
+            /// unless it's explicitly said that it should be ignored.
+            bool copy_metric_name;
+            if (operator_node->ignoring)
+                copy_metric_name = (std::find(operator_node->labels.begin(), operator_node->labels.end(), kMetricName) == operator_node->labels.end());
+            else
+                copy_metric_name = !operator_node->on;
+
+            copy_metric_name &= !metric_name_dropped_from_left;
+            
+            if (copy_metric_name)
+            {
+                /// timeSeriesCopyTag(join_group, left_argument_group, "__name__")
+                metric_name_dropped_from_result = false;
+                return makeASTFunction(
+                    "timeSeriesCopyTags", std::move(join_group), std::move(left_argument_group), std::make_shared<ASTLiteral>(Array{kMetricName}));
+            }
+            else
+            {
+                metric_name_dropped_from_result = metric_name_dropped_from_join_group;
                 return std::move(join_group);
-            else
-                return {
-                    .ast = makeASTFunction("timeSeriesRemoveTag", std::move(join_group.ast), std::make_shared<ASTLiteral>("__name__")),
-                    .metric_name_dropped = true};
+            }
         }
+       
+        /// If it's not a comparison operator or the bool modifier is specified,
+        /// then we always remove the metric name "__name__" from the result group.
+        metric_name_dropped_from_result = true;
+        if (metric_name_dropped_from_join_group)
+            return std::move(join_group);
+        else
+            return makeASTFunction("timeSeriesRemoveTag", std::move(join_group), std::make_shared<ASTLiteral>(kMetricName));
+    }
 
-        if (operator_node->extra_labels.empty())
-        {
-            if (group.metric_name_dropped || isComparisonWithoutBool(operator_node))
-                return std::move(group);
-            else
-                return {
-                    .ast = makeASTFunction("timeSeriesRemoveTag", std::move(group.ast), std::make_shared<ASTLiteral>("__name__")),
-                    .metric_name_dropped = true};
-        }
+
+    /// Returns an AST to evaluate the result group of a binary operator on instant vectors if "group_left" is specified.
+    /// The function usually returns
+    /// timeSeriesCopyTags(join_group, right_argument_group, extra_tags)
+    /// where `extra_tags` are the tags copied from the right side and specified in expression "group_left(extra_tags)".
+    /// Notes:
+    /// 1. If `join_group` contains the metric name "__name__" then this function removes it
+    ///    because the result of a binary operator shouldn't contain the metric name unless it's copied with `extra_tags`.
+    ///    (`join_group` can contain the metric name if it's specified explicitly in ON(),
+    ///    for example "http_errors + on (__name__) group_left(code) http_failures")
+    /// 2. If "group_left" is specified without `extra_tags` then the function just takes the left argument (and removes the metric name from it).
+    /// 3. If it's a comparison operator without bool modifier then the function doesn't remove the metric name from the result group.
+    ASTPtr makeExpressionForResultGroup_GroupLeft(
+        const PQT::BinaryOperator * operator_node,
+        ASTPtr && left_argument_group,
+        ASTPtr && right_argument_group,
+        ASTPtr && join_group,
+        bool metric_name_dropped_from_left,
+        bool metric_name_dropped_from_right,
+        bool metric_name_dropped_from_join_group,
+        bool & metric_name_dropped_from_result)
+    {
+        /// We use this function to implement both group_left() and group_right().
+        chassert(operator_node->group_left || operator_node->group_right);
 
         Strings tags_to_copy = operator_node->extra_labels;
-        std::sort(tags_to_copy.begin(), tags_to_copy.end());
-        tags_to_copy.erase(std::unique(tags_to_copy.begin(), tags_to_copy.end()), tags_to_copy.end());
-        bool copy_metric_name = (std::find(tags_to_copy.begin(), tags_to_copy.end(), "__name__") != tags_to_copy.end());
-        auto dest_group = std::move(join_group);
-        if (!dest_group.metric_name_dropped && !copy_metric_name && !isComparisonWithoutBool(operator_node))
+
+        if (tags_to_copy.empty())
         {
-            dest_group = {
-                .ast = makeASTFunction("timeSeriesRemoveTag", std::move(dest_group.ast), std::make_shared<ASTLiteral>("__name__")),
-                .metric_name_dropped = true};
+            /// group_left is used with an empty list of tags to copy.
+            if (isComparisonWithoutBool(operator_node) || metric_name_dropped_from_left)
+            {
+                metric_name_dropped_from_result = metric_name_dropped_from_left;
+                return std::move(left_argument_group);
+            }
+            else
+            {
+                /// If it's not a comparison operator or the bool modifier is specified,
+                /// then we always remove the metric name "__name__" from the result group.
+                metric_name_dropped_from_result = true;
+                return makeASTFunction("timeSeriesRemoveTag", std::move(left_argument_group), std::make_shared<ASTLiteral>(kMetricName));
+            }
         }
 
-        return {
-            .ast = makeASTFunction(
-                "timeSeriesCopyTags",
-                std::move(dest_group.ast),
-                std::move(other_group.ast),
-                std::make_shared<ASTLiteral>(Array{tags_to_copy.begin(), tags_to_copy.end()})),
-            .metric_name_dropped = dest_group.metric_name_dropped && (!copy_metric_name || other_group.metric_name_dropped)};
+        std::sort(tags_to_copy.begin(), tags_to_copy.end());
+        tags_to_copy.erase(std::unique(tags_to_copy.begin(), tags_to_copy.end()), tags_to_copy.end());
+        bool copy_metric_name = std::binary_search(tags_to_copy.begin(), tags_to_copy.end(), kMetricName) && !metric_name_dropped_from_right;
+
+        ASTPtr dest_group = join_group;
+        bool metric_name_dropped_from_dest_group = metric_name_dropped_from_join_group;
+
+        if (!metric_name_dropped_from_dest_group && !copy_metric_name && !isComparisonWithoutBool(operator_node))
+        {
+            /// If it's not a comparison operator or the bool modifier is specified,
+            /// then we always remove the metric name "__name__" from the result group.
+            dest_group = makeASTFunction("timeSeriesRemoveTag", std::move(dest_group), std::make_shared<ASTLiteral>(kMetricName));
+            metric_name_dropped_from_dest_group = true;
+        }
+
+        metric_name_dropped_from_result = metric_name_dropped_from_dest_group && !copy_metric_name;
+
+        return makeASTFunction(
+            "timeSeriesCopyTags",
+            std::move(dest_group),
+            std::move(right_argument_group),
+            std::make_shared<ASTLiteral>(Array{tags_to_copy.begin(), tags_to_copy.end()}));
     }
 
-    /// Returns an AST to evaluate the group which will be set for the result of a binary operator on instant vectors.
-    GroupAST makeResultGroupAST(
-        const PQT::BinaryOperator * operator_node, GroupAST && join_group, GroupAST && left_group, GroupAST && right_group)
+
+    ASTPtr makeExpressionForResultGroup_GroupRight(
+        const PQT::BinaryOperator * operator_node,
+        ASTPtr && left_argument_group,
+        ASTPtr && right_argument_group,
+        ASTPtr && join_group,
+        bool metric_name_dropped_from_left,
+        bool metric_name_dropped_from_right,
+        bool metric_name_dropped_from_join_group,
+        bool & metric_name_dropped_from_result)
     {
+        return makeExpressionForResultGroup_GroupLeft(operator_node,
+                                                      std::move(right_argument_group), std::move(left_argument_group), std::move(join_group),
+                                                      metric_name_dropped_from_right, metric_name_dropped_from_left, metric_name_dropped_from_join_group,
+                                                      metric_name_dropped_from_result);
+    }
+
+
+    /// Returns an AST to evaluate the group which will be set for the result of a binary operator on instant vectors.
+    ASTPtr makeExpressionForResultGroup(
+        const PQT::BinaryOperator * operator_node,
+        ASTPtr && left_argument_group,
+        ASTPtr && right_argument_group,
+        ASTPtr && join_group,
+        bool metric_name_dropped_from_left,
+        bool metric_name_dropped_from_right,
+        bool metric_name_dropped_from_join_group,
+        bool & metric_name_dropped_from_result)
+    {
+        chassert(!isSetOperator(operator_node->operator_name));
         if (operator_node->group_left)
-            return makeResultGroupASTImpl(operator_node, std::move(join_group), /* group_keyword_presents = */ true, std::move(left_group), std::move(right_group));
+        {
+            return makeExpressionForResultGroup_GroupLeft(operator_node,
+                                                          std::move(left_argument_group), std::move(right_argument_group), std::move(join_group),
+                                                          metric_name_dropped_from_left, metric_name_dropped_from_right, metric_name_dropped_from_join_group,
+                                                          metric_name_dropped_from_result);
+        }
         else if (operator_node->group_right)
-            return makeResultGroupASTImpl(operator_node, std::move(join_group), /* group_keyword_presents = */ true, std::move(right_group), std::move(left_group));
+        {
+            return makeExpressionForResultGroup_GroupRight(operator_node,
+                                                           std::move(left_argument_group), std::move(right_argument_group), std::move(join_group),
+                                                           metric_name_dropped_from_left, metric_name_dropped_from_right, metric_name_dropped_from_join_group,
+                                                           metric_name_dropped_from_result);
+        }
         else
-            return makeResultGroupASTImpl(operator_node, std::move(join_group), /* group_keyword_presents = */ false, std::move(left_group), std::move(right_group));
+        {
+            return makeExpressionForResultGroup_Default(operator_node,
+                                                        std::move(left_argument_group), std::move(right_argument_group), std::move(join_group),
+                                                        metric_name_dropped_from_left, metric_name_dropped_from_right, metric_name_dropped_from_join_group,
+                                                        metric_name_dropped_from_result);
+        }
     }
 
 
@@ -693,15 +836,23 @@ namespace
         context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(right_argument.select_query), SQLSubqueryType::TABLE});
         String right = context.subqueries.back().name;
 
-        auto join_group = makeJoinGroupAST(
+        bool metric_name_dropped_from_join_group;
+        auto join_group = makeExpressionForJoinGroup(
             operator_node,
-            GroupAST{.ast = std::make_shared<ASTIdentifier>(Strings{left, ColumnNames::Group}), .metric_name_dropped = left_argument.metric_name_dropped});
+            std::make_shared<ASTIdentifier>(Strings{left, ColumnNames::Group}),
+            left_argument.metric_name_dropped,
+            metric_name_dropped_from_join_group);
 
-        auto result_group = makeResultGroupAST(
+        bool metric_name_dropped_from_result;
+        auto result_group = makeExpressionForResultGroup(
             operator_node,
-            GroupAST{.ast = std::make_shared<ASTIdentifier>(ColumnNames::JoinGroup), .metric_name_dropped = join_group.metric_name_dropped},
-            GroupAST{.ast = std::make_shared<ASTIdentifier>(Strings{left, ColumnNames::Group}), .metric_name_dropped = left_argument.metric_name_dropped},
-            GroupAST{.ast = std::make_shared<ASTIdentifier>(Strings{right, ColumnNames::Group}), .metric_name_dropped = right_argument.metric_name_dropped});
+            std::make_shared<ASTIdentifier>(Strings{left, ColumnNames::Group}),
+            std::make_shared<ASTIdentifier>(Strings{right, ColumnNames::Group}),
+            std::make_shared<ASTIdentifier>(ColumnNames::JoinGroup),
+            left_argument.metric_name_dropped,
+            right_argument.metric_name_dropped,
+            metric_name_dropped_from_join_group,
+            metric_name_dropped_from_result);
 
         /// SELECT timeSeriesCopyTags(join_group, left.group, tags_to_copy) AS group,
         ///        timeSeriesCoalesceGridValues('throw')(arrayMap(x, y -> x + y, left.values, right.values), group) AS values
@@ -711,7 +862,7 @@ namespace
 
         SelectQueryParams params;
 
-        params.select_list.push_back(result_group.ast);
+        params.select_list.push_back(result_group);
         params.select_list.back()->setAlias(ColumnNames::Group);
 
         params.select_list.push_back(addParameterToAggregateFunction(
@@ -733,12 +884,12 @@ namespace
         params.join_strictness = JoinStrictness::All;
         params.join_table = right;
 
-        ASTPtr join_group_with_alias = join_group.ast;
-        join_group_with_alias->setAlias(ColumnNames::JoinGroup);
+        join_group->setAlias(ColumnNames::JoinGroup);
         params.join_on = makeASTFunction(
             "equals",
-            join_group_with_alias,
-            makeJoinGroupAST(operator_node, std::make_shared<ASTIdentifier>(Strings{right, ColumnNames::Group})));
+            std::move(join_group),
+            makeExpressionForJoinGroup(
+                operator_node, std::make_shared<ASTIdentifier>(Strings{right, ColumnNames::Group}), right_argument.metric_name_dropped));
 
         params.group_by.push_back(std::make_shared<ASTIdentifier>(ColumnNames::Group));
 
@@ -746,7 +897,7 @@ namespace
         res.node = operator_node;
         res.select_query = buildSelectQuery(std::move(params));
         res.store_method = StoreMethod::VECTOR_GRID;
-        res.metric_name_dropped = result_group.metric_name_dropped;
+        res.metric_name_dropped = metric_name_dropped_from_result;
 
         return res;
     }
@@ -783,7 +934,8 @@ namespace
         {
             SelectQueryParams params;
 
-            params.select_list.push_back(makeJoinGroupAST(operator_node, std::make_shared<ASTIdentifier>(ColumnNames::Group)));
+            params.select_list.push_back(makeExpressionForJoinGroup(
+                operator_node, std::make_shared<ASTIdentifier>(ColumnNames::Group), right_argument.metric_name_dropped));
             params.select_list.back()->setAlias(ColumnNames::JoinGroup);
 
             params.select_list.push_back(addParameterToAggregateFunction(
@@ -832,7 +984,8 @@ namespace
 
             params.join_on = makeASTFunction(
                 "equals",
-                makeJoinGroupAST(operator_node, std::make_shared<ASTIdentifier>(Strings{left, ColumnNames::Group})),
+                makeExpressionForJoinGroup(
+                    operator_node, std::make_shared<ASTIdentifier>(Strings{left, ColumnNames::Group}), left_argument.metric_name_dropped),
                 std::make_shared<ASTIdentifier>(Strings{step1, ColumnNames::JoinGroup}));
 
             step2 = buildSelectQuery(std::move(params));
@@ -879,7 +1032,8 @@ namespace
         {
             SelectQueryParams params;
 
-            params.select_list.push_back(makeJoinGroupAST(operator_node, std::make_shared<ASTIdentifier>(ColumnNames::Group)));
+            params.select_list.push_back(makeExpressionForJoinGroup(
+                operator_node, std::make_shared<ASTIdentifier>(ColumnNames::Group), right_argument.metric_name_dropped));
             params.select_list.back()->setAlias(ColumnNames::JoinGroup);
 
             params.select_list.push_back(addParameterToAggregateFunction(
@@ -932,7 +1086,8 @@ namespace
 
             params.join_on = makeASTFunction(
                 "equals",
-                makeJoinGroupAST(operator_node, std::make_shared<ASTIdentifier>(Strings{left, ColumnNames::Group})),
+                makeExpressionForJoinGroup(
+                    operator_node, std::make_shared<ASTIdentifier>(Strings{left, ColumnNames::Group}), left_argument.metric_name_dropped),
                 std::make_shared<ASTIdentifier>(Strings{step1, ColumnNames::JoinGroup}));
 
             step2 = buildSelectQuery(std::move(params));
@@ -1022,7 +1177,8 @@ namespace
         {
             SelectQueryParams params;
 
-            params.select_list.push_back(makeJoinGroupAST(operator_node, std::make_shared<ASTIdentifier>(ColumnNames::Group)));
+            params.select_list.push_back(makeExpressionForJoinGroup(
+                operator_node, std::make_shared<ASTIdentifier>(ColumnNames::Group), left_argument.metric_name_dropped));
             params.select_list.back()->setAlias(ColumnNames::JoinGroup);
 
             params.select_list.push_back(addParameterToAggregateFunction(
@@ -1076,7 +1232,10 @@ namespace
             params.join_on = makeASTFunction(
                 "equals",
                 std::make_shared<ASTIdentifier>(Strings{step2, ColumnNames::JoinGroup}),
-                makeJoinGroupAST(operator_node, std::make_shared<ASTIdentifier>(Strings{right, ColumnNames::Group})));
+                makeExpressionForJoinGroup(
+                    operator_node,
+                    std::make_shared<ASTIdentifier>(Strings{right, ColumnNames::Group}),
+                    right_argument.metric_name_dropped));
 
             ASTPtr step3_ast = buildSelectQuery(std::move(params));
             context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(step3_ast), SQLSubqueryType::TABLE});
