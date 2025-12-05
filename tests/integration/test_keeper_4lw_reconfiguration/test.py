@@ -49,6 +49,8 @@ def started_cluster():
 def five_to_three_reconfig(started_cluster):
     zk = keeper_utils.get_fake_zk(cluster, "node3", timeout=30)
     command = {
+        "max_action_wait_time_ms": 180000,
+        "max_total_wait_time_ms": 600000,
         "preconditions": {
            "leaders": [1, 2],
            "members": [1, 2, 3, 4, 5]
@@ -116,6 +118,8 @@ def three_to_five_reconfig(started_cluster):
     waiter2 = p.apply_async(start, (node7,))
 
     command = {
+        "max_action_wait_time_ms": 180000,
+        "max_total_wait_time_ms": 600000,
         "preconditions": {
               "leaders": [4, 5],
               "members": [3, 4, 5]
