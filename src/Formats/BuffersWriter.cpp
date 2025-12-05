@@ -27,13 +27,13 @@ void BuffersWriter::write(const Block & block)
     const UInt64 num_columns = static_cast<UInt64>(block.columns());
 
     /// Number of buffers (UInt64)
-    writeBinary(num_columns, ostr);
+    writeBinaryLittleEndian(num_columns, ostr);
 
     const UInt64 num_rows = static_cast<UInt64>(block.rows());
 
     /// Number of rows (UInt64)
     /// We encode number of rows because we need it to deserialize each column
-    writeBinary(num_rows, ostr);
+    writeBinaryLittleEndian(num_rows, ostr);
 
     for (size_t i = 0; i < num_columns; ++i)
     {
@@ -50,7 +50,7 @@ void BuffersWriter::write(const Block & block)
 
         /// Size of each buffer in bytes (UInt64)
         UInt64 buffer_size = static_cast<UInt64>(buffer.count());
-        writeBinary(buffer_size, ostr);
+        writeBinaryLittleEndian(buffer_size, ostr);
 
         /// Contents of each buffer (raw bytes, concatenated)
         ostr.write(buffer.str().data(), buffer_size);

@@ -36,7 +36,7 @@ Block BuffersReader::read()
 
     /// Number of buffers (UInt64)
     UInt64 num_columns = 0;
-    readBinary(num_columns, istr);
+    readBinaryLittleEndian(num_columns, istr);
 
     if (num_columns != header.columns())
         throw Exception(
@@ -47,7 +47,7 @@ Block BuffersReader::read()
 
     /// Number of rows (UInt64)
     UInt64 num_rows = 0;
-    readBinary(num_rows, istr);
+    readBinaryLittleEndian(num_rows, istr);
 
     if (num_rows > DEFAULT_NATIVE_BINARY_MAX_NUM_ROWS)
         throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Suspiciously many rows in Buffers format: {}", num_rows);
@@ -56,7 +56,7 @@ Block BuffersReader::read()
     for (size_t i = 0; i < num_columns; ++i)
     {
         UInt64 buffer_size = 0;
-        readBinary(buffer_size, istr);
+        readBinaryLittleEndian(buffer_size, istr);
 
         auto column = header.getByPosition(i).cloneEmpty();
 
