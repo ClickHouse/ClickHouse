@@ -598,6 +598,11 @@ Possible values:
 - 1 — validate settings.
 - 0 — do not validate settings.
 )", 0) \
+    DECLARE(Bool, compatibility_s3_presigned_url_query_in_path, false, R"(
+Compatibility: when enabled, folds pre-signed URL query parameters (e.g. X-Amz-*) into the S3 key (legacy behavior),
+so '?' acts as a wildcard in the path. When disabled (default), pre-signed URL query parameters are kept in the URL query
+to avoid interpreting '?' as a wildcard.
+)", 0) \
     DECLARE(Bool, s3_disable_checksum, S3::DEFAULT_DISABLE_CHECKSUM, R"(
 Do not calculate a checksum when sending a file to S3. This speeds up writes by avoiding excessive processing passes on a file. It is mostly safe as the data of MergeTree tables is checksummed by ClickHouse anyway, and when S3 is accessed with HTTPS, the TLS layer already provides integrity while transferring through the network. While additional checksums on S3 give defense in depth.
 )", 0) \
@@ -700,7 +705,8 @@ The maximum speed of local reads in bytes per second.
 The maximum speed of local writes in bytes per second.
 )", 0) \
     DECLARE(Bool, stream_like_engine_allow_direct_select, false, R"(
-Allow direct SELECT query for Kafka, RabbitMQ, FileLog, Redis Streams, and NATS engines. In case there are attached materialized views, SELECT query is not allowed even if this setting is enabled.
+Allow direct SELECT query for Kafka, RabbitMQ, FileLog, Redis Streams, S3Queue, AzureQueue and NATS engines. In case there are attached materialized views, SELECT query is not allowed even if this setting is enabled.
+If there are no attached materialized views, enabling this setting allows to read data. Be aware that usually the read data is removed from the queue. In order to avoid removing read data the related engine settings should be configured properly.
 )", 0) \
     DECLARE(String, stream_like_engine_insert_queue, "", R"(
 When stream-like engine reads from multiple queues, the user will need to select one queue to insert into when writing. Used by Redis Streams and NATS.
@@ -982,12 +988,6 @@ Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) a
 )", 0) \
     DECLARE(Bool, allow_suspicious_types_in_order_by, false, R"(
 Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) types in ORDER BY keys.
-)", 0) \
-    DECLARE(Bool, allow_not_comparable_types_in_order_by, false, R"(
-Allows or restricts using not comparable types (like JSON/AggregateFunction) in ORDER BY keys.
-)", 0) \
-    DECLARE(Bool, allow_not_comparable_types_in_comparison_functions, false, R"(
-Allows or restricts using not comparable types (like JSON/AggregateFunction) in comparison functions `equal/less/greater/etc`.
 )", 0) \
     DECLARE(Bool, compile_expressions, true, R"(
 Compile some scalar functions and operators to native code.
@@ -1534,6 +1534,15 @@ Possible values:
 Enable using data skipping indexes during data reading.
 
 When enabled, skip indexes are evaluated dynamically at the time each data granule is being read, rather than being analyzed in advance before query execution begins. This can reduce query startup latency.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
+    DECLARE(Bool, use_skip_indexes_for_disjunctions, true, R"(
+Evaluate WHERE filters with mixed AND and OR conditions using skip indexes. Example: WHERE A = 5 AND (B = 5 OR C = 5).
+If disabled, skip indexes are still used to evaluate WHERE conditions but they must only contain AND-ed clauses.
 
 Possible values:
 
@@ -5631,6 +5640,7 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
+    DECLARE(Bool, query_plan_read_in_order_through_join, true, "Keep reading in order from the left table in JOIN operations, which can be utilized by subsequent steps.", 0) \
     DECLARE(Bool, query_plan_aggregation_in_order, true, R"(
 Toggles the aggregation in-order query-plan-level optimization.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
@@ -6310,6 +6320,9 @@ SELECT * FROM test_table
 )", 0) \
     DECLARE(Bool, count_distinct_optimization, false, R"(
 Rewrite count distinct to subquery of group by
+)", 0) \
+    DECLARE(Bool, optimize_inverse_dictionary_lookup, true, R"(
+Avoid repeated inverse dictionary lookup by doing faster lookups into a precomputed set of possible key values.
 )", 0) \
     DECLARE(Bool, throw_if_no_data_to_insert, true, R"(
 Allows or forbids empty INSERTs, enabled by default (throws an error on an empty insert). Only applies to INSERTs using [`clickhouse-client`](/interfaces/cli) or using the [gRPC interface](/interfaces/grpc).
@@ -7137,6 +7150,13 @@ Possible values:
 - 0 — always,
 - negative integer - never.
 )", 0) \
+    DECLARE(Bool, serialize_string_in_memory_with_zero_byte, true, R"(
+Serialize String values during aggregation with zero byte at the end. Enable to keep compatibility when querying cluster of incompatible versions.
+)", 0) \
+    DECLARE(UInt64, s3_path_filter_limit, 1000, R"(
+Maximum number of `_path` values that can be extracted from query filters to use for file iteration
+instead of glob listing. 0 means disabled.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
@@ -7282,7 +7302,7 @@ Make distributed query plan.
     DECLARE(Bool, distributed_plan_execute_locally, false, R"(
 Run all tasks of a distributed query plan locally. Useful for testing and debugging.
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, distributed_plan_default_shuffle_join_bucket_count, 8, R"(
+    DECLARE(NonZeroUInt64, distributed_plan_default_shuffle_join_bucket_count, 8, R"(
 Default number of buckets for distributed shuffle-hash-join.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, distributed_plan_default_reader_bucket_count, 8, R"(
@@ -7404,6 +7424,8 @@ Use Paimon partition pruning for Paimon table functions
     MAKE_OBSOLETE(M, Bool, enable_json_type, true) \
     MAKE_OBSOLETE(M, Bool, s3_slow_all_threads_after_retryable_error, false) \
     MAKE_OBSOLETE(M, Bool, azure_sdk_use_native_client, true) \
+    MAKE_OBSOLETE(M, Bool, allow_not_comparable_types_in_order_by, false) \
+    MAKE_OBSOLETE(M, Bool, allow_not_comparable_types_in_comparison_functions, false) \
 \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \

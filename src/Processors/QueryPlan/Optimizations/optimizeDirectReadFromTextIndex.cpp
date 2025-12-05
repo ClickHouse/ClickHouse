@@ -105,6 +105,40 @@ String optimizationInfoToString(const IndexReadColumns & added_columns, const Na
     return result;
 }
 
+/// Helper function.
+/// Collects index conditions from the given ReadFromMergeTree step and stores them in index_conditions.
+void collectTextIndexConditions(const ReadFromMergeTree * read_from_merge_tree_step, IndexConditionsMap & text_index_conditions)
+{
+    const auto & indexes = read_from_merge_tree_step->getIndexes();
+    if (!indexes || indexes->skip_indexes.useful_indices.empty())
+        return;
+
+    const RangesInDataParts & parts_with_ranges = read_from_merge_tree_step->getParts();
+    if (parts_with_ranges.empty())
+        return;
+
+    std::unordered_set<DataPartPtr> unique_parts;
+    for (const auto & part : parts_with_ranges)
+        unique_parts.insert(part.data_part);
+
+    for (const auto & index : indexes->skip_indexes.useful_indices)
+    {
+        if (typeid_cast<MergeTreeIndexConditionText *>(index.condition.get()))
+        {
+            /// Index may be not materialized in some parts, e.g. after ALTER ADD INDEX query.
+            /// TODO: support partial read from text index with fallback to the brute-force
+            /// search for parts where index is not materialized.
+            bool has_index_in_all_parts = std::ranges::all_of(unique_parts, [&](const auto & part)
+            {
+                return !!index.index->getDeserializedFormat(part->checksums, index.index->getFileName());
+            });
+
+            if (has_index_in_all_parts)
+                text_index_conditions[index.index->index.name] = &index;
+        }
+    }
+}
+
 }
 
 /// This class substitutes filters with text-search functions by virtual columns which skip IO and read less data.
@@ -288,6 +322,27 @@ private:
     }
 };
 
+const ActionsDAG::Node * applyTextIndexDirectReadToDAG(
+    ReadFromMergeTree * read_from_merge_tree_step,
+    ActionsDAG & filter_dag,
+    const IndexConditionsMap & text_index_conditions,
+    const String & filter_column_name)
+{
+    FullTextMatchingFunctionDAGReplacer replacer(filter_dag, text_index_conditions);
+    auto result = replacer.replace(read_from_merge_tree_step->getContext(), filter_column_name);
+
+    if (result.added_columns.empty())
+        return nullptr;
+
+    auto logger = getLogger("optimizeDirectReadFromTextIndex");
+    LOG_DEBUG(logger, "{}", optimizationInfoToString(result.added_columns, result.removed_columns));
+
+    const auto & indexes = read_from_merge_tree_step->getIndexes();
+    bool is_final = read_from_merge_tree_step->isQueryWithFinal();
+    read_from_merge_tree_step->createReadTasksForTextIndex(indexes->skip_indexes, result.added_columns, result.removed_columns, is_final);
+    return result.filter_node;
+}
+
 /// Text index search queries have this form:
 ///     SELECT [...]
 ///     FROM tab
@@ -298,7 +353,7 @@ private:
 ///
 /// This function replaces text function nodes from the user query (using semi-brute-force process) with internal virtual columns
 /// which use only the index information to bypass the normal column scan which can consume significant amount of the execution time.
-void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*nodes*/)
+void optimizeWhereDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*nodes*/)
 {
     if (stack.size() < 2)
         return;
@@ -315,36 +370,8 @@ void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*n
     if (!read_from_merge_tree_step)
         return;
 
-    const auto & indexes = read_from_merge_tree_step->getIndexes();
-    if (!indexes || indexes->skip_indexes.useful_indices.empty())
-        return;
-
-    const RangesInDataParts & parts_with_ranges = read_from_merge_tree_step->getParts();
-    if (parts_with_ranges.empty())
-        return;
-
-    std::unordered_set<DataPartPtr> unique_parts;
-    for (const auto & part : parts_with_ranges)
-        unique_parts.insert(part.data_part);
-
     IndexConditionsMap index_conditions;
-    for (const auto & index : indexes->skip_indexes.useful_indices)
-    {
-        if (typeid_cast<MergeTreeIndexConditionText *>(index.condition.get()))
-        {
-            /// Index may be not materialized in some parts, e.g. after ALTER ADD INDEX query.
-            /// TODO: support partial read from text index with fallback to the brute-force
-            /// search for parts where index is not materialized.
-            bool has_index_in_all_parts = std::ranges::all_of(unique_parts, [&](const auto & part)
-            {
-                return !!index.index->getDeserializedFormat(part->checksums, index.index->getFileName());
-            });
-
-            if (has_index_in_all_parts)
-                index_conditions[index.index->index.name] = &index;
-        }
-    }
-
+    collectTextIndexConditions(read_from_merge_tree_step, index_conditions);
     if (index_conditions.empty())
         return;
 
@@ -354,20 +381,73 @@ void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*n
         return;
 
     ActionsDAG & filter_dag = filter_step->getExpression();
-    FullTextMatchingFunctionDAGReplacer replacer(filter_dag, index_conditions);
-    auto result = replacer.replace(read_from_merge_tree_step->getContext(), filter_step->getFilterColumnName());
+    const auto * result_filter_node = applyTextIndexDirectReadToDAG(read_from_merge_tree_step, filter_dag, index_conditions, filter_step->getFilterColumnName());
 
-    if (result.added_columns.empty())
+    if (!result_filter_node)
         return;
 
-    auto logger = getLogger("optimizeDirectReadFromTextIndex");
-    LOG_DEBUG(logger, "{}", optimizationInfoToString(result.added_columns, result.removed_columns));
-
     bool removes_filter_column = filter_step->removesFilterColumn();
-    read_from_merge_tree_step->createReadTasksForTextIndex(indexes->skip_indexes, result.added_columns, result.removed_columns);
-
-    auto new_filter_column_name = result.filter_node->result_name;
+    auto new_filter_column_name = result_filter_node->result_name;
     filter_node->step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_dag.clone(), new_filter_column_name, removes_filter_column);
+}
+
+/// Text index search queries have this form:
+///     SELECT [...]
+///     FROM tab
+///     PREWHERE text_function(...), [...]
+/// where
+/// - text_function is a text-matching functions, e.g. 'hasToken'
+/// - text-matching functions expect that the column on which the function is called has a text index
+///
+/// Same as `optimizeWhereDirectReadFromTextIndex, this function replaces text function nodes from the user query (using semi-brute-force process) with internal virtual columns
+/// which use only the index information to bypass the normal column scan which can consume significant amount of the execution time.
+bool optimizePrewhereDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*nodes*/)
+{
+    const auto & frame = stack.back();
+    ReadFromMergeTree * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
+    if (!read_from_merge_tree_step)
+        return false;
+
+    IndexConditionsMap index_conditions;
+    collectTextIndexConditions(read_from_merge_tree_step, index_conditions);
+    if (index_conditions.empty())
+        return false;
+
+    auto prewhere_info = read_from_merge_tree_step->getPrewhereInfo();
+    if (!prewhere_info)
+        return false;
+
+    read_from_merge_tree_step->updatePrewhereInfo({});
+    auto cloned_prewhere_info = prewhere_info->clone();
+    const auto * result_filter_node = applyTextIndexDirectReadToDAG(read_from_merge_tree_step, cloned_prewhere_info.prewhere_actions, index_conditions, cloned_prewhere_info.prewhere_column_name);
+
+    if (!result_filter_node)
+    {
+        read_from_merge_tree_step->updatePrewhereInfo(prewhere_info);
+        return false;
+    }
+
+    /// Finally, assign the corrected PrewhereInfo back to the plan node.
+    cloned_prewhere_info.prewhere_column_name = result_filter_node->result_name;
+    auto modified_prewhere_info = std::make_shared<PrewhereInfo>(std::move(cloned_prewhere_info));
+    read_from_merge_tree_step->updatePrewhereInfo(modified_prewhere_info);
+    return true;
+}
+
+/// Applies text index–based direct-read optimizations to the query.
+/// This includes both WHERE and PREWHERE clauses.
+///
+/// - optimizeWhereDirectReadFromTextIndex(): push down text-index
+///   filters from the WHERE clause.
+/// - optimizePrewhereDirectReadFromTextIndex(): apply the same
+///   optimization for the PREWHERE clause before data reads.
+void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & nodes)
+{
+    bool optimized = optimizePrewhereDirectReadFromTextIndex(stack, nodes);
+    /// Currently direct read optimization can be applied only once.
+    /// Do not optimize WHERE clause if PREWHERE was already optimized.
+    if (!optimized)
+        optimizeWhereDirectReadFromTextIndex(stack, nodes);
 }
 
 }

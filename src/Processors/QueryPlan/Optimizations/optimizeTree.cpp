@@ -123,7 +123,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
             if (update_depth)
             {
 #if defined(DEBUG_OR_SANITIZER_BUILD)
-                checkHeaders(*frame.node, String("after optimization") + optimization.name, update_depth);
+                checkHeaders(*frame.node, String("after optimization ") + optimization.name, update_depth);
 #endif
                 ++total_applied_optimizations;
             }
@@ -285,10 +285,10 @@ void optimizeTreeSecondPass(
         [&](auto & frame_node)
         {
             if (optimization_settings.read_in_order)
-                optimizeReadInOrder(frame_node, nodes);
+                optimizeReadInOrder(frame_node, nodes, optimization_settings);
 
             if (optimization_settings.distinct_in_order)
-                optimizeDistinctInOrder(frame_node, nodes);
+                optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
         });
 
     stack.push_back({.node = &root});
@@ -317,7 +317,7 @@ void optimizeTreeSecondPass(
                 }
 
                 if (optimization_settings.aggregation_in_order)
-                    optimizeAggregationInOrder(*frame.node, nodes);
+                    optimizeAggregationInOrder(*frame.node, nodes, optimization_settings);
             }
 
             /// Traverse all children first.

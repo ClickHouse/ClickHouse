@@ -236,7 +236,8 @@ public:
                 else
                 {
                     const char * begin = nullptr;
-                    auto serialized = data_column->serializeAggregationStateValueIntoArena(offset + i, *arena, begin);
+                    auto settings = IColumn::SerializationSettings::createForAggregationState();
+                    auto serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin, &settings);
                     chassert(!serialized.empty());
                     set.emplace(SerializedKeyHolder{serialized, *arena}, it, inserted);
                 }
@@ -256,7 +257,8 @@ public:
                 else
                 {
                     const char * begin = nullptr;
-                    auto serialized = data_column->serializeAggregationStateValueIntoArena(offset + i, *arena, begin);
+                    auto settings = IColumn::SerializationSettings::createForAggregationState();
+                    auto serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin, &settings);
                     chassert(!serialized.empty());
                     it = set.find(serialized);
 

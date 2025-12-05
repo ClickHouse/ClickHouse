@@ -13,6 +13,13 @@ INSERT INTO insert_dedup_token1 VALUES(1, 1001);
 INSERT INTO insert_dedup_token1 VALUES(1, 1001);
 SELECT * FROM insert_dedup_token1 ORDER BY id;
 
+SYSTEM FLUSH LOGS system.part_log;
+SELECT DISTINCT exception FROM system.part_log
+WHERE table = 'insert_dedup_token1'
+  AND database = currentDatabase()
+  AND event_type = 'NewPart'
+  AND error = 389;
+
 select 'two inserts with the same dedup token, one inserted, one deduplicated by the token';
 set insert_deduplication_token = '1';
 INSERT INTO insert_dedup_token1 VALUES(1, 1001);

@@ -6,6 +6,7 @@ from ci.praktika.utils import Shell
 
 
 class FuzzerLogParser:
+    UNKNOWN_ERROR = "Unknown error"
     MAX_INLINE_REPRODUCE_COMMANDS = 20
     SQL_COMMANDS = [
         "SELECT",
@@ -54,6 +55,7 @@ class FuzzerLogParser:
         is_sanitizer_error = False
         is_killed_by_signal = False
         is_segfault = False
+        is_memory_limit_exceeded = False
         error_patterns = [
             (
                 "Sanitizer",
@@ -76,6 +78,11 @@ class FuzzerLogParser:
                 "Signal",
                 "is_killed_by_signal",
                 r"Received signal.*|.*Child process was terminated by signal 9.*",
+            ),
+            (
+                "Memory limit exceeded",
+                "is_memory_limit_exceeded",
+                r".*\(total\) memory limit exceeded.*",
             ),
         ]
 
@@ -102,10 +109,12 @@ class FuzzerLogParser:
                     is_killed_by_signal = True
                 elif flag_name == "is_segfault":
                     is_segfault = True
+                elif flag_name == "is_memory_limit_exceeded":
+                    is_memory_limit_exceeded = True
                 break
 
         if not error_output:
-            return "Unknown error", "Lost connection to server. See the logs.\n"
+            return self.UNKNOWN_ERROR, "Lost connection to server. See the logs.\n"
 
         error_lines = error_output.splitlines()
         # keep all lines before next log line
@@ -125,8 +134,11 @@ class FuzzerLogParser:
             failed_query = self.get_failed_query()
             if failed_query:
                 reproduce_commands = self.get_reproduce_commands(failed_query)
+            result_name += f" (STID: {stack_trace_id})"
         elif is_killed_by_signal or is_segfault:
             result_name += f" (STID: {stack_trace_id})"
+        elif is_memory_limit_exceeded:
+            result_name = "Server unresponsive: memory limit exceeded"
         elif is_sanitizer_error:
             stack_trace = self.get_sanitizer_stack_trace()
             if not stack_trace:
@@ -380,7 +392,9 @@ class FuzzerLogParser:
         assert failure_first_line, "No failure first line found in server log"
         print(f"Failure first line: {failure_first_line}")
         query_id = failure_first_line.split(" ] {")[1].split("}")[0]
-        assert query_id, "No query id found in server log"
+        if not query_id:
+            print("ERROR: Query id not found")
+            return None
         print(f"Query id: {query_id}")
         query_command = Shell.get_output(
             f"grep -a '{query_id}' {self.server_log} | head -n1"
@@ -396,7 +410,8 @@ class FuzzerLogParser:
                 keyword_pos = query_command.find(keyword)
                 min_pos = min(min_pos, keyword_pos)
         if min_pos == len(query_command):
-            raise Exception("No SQL keyword found in query command")
+            print(f"No SQL keyword found in query command [{query_command}]")
+            return None
         query_command = query_command[min_pos:]
         return query_command
 
@@ -431,24 +446,30 @@ class FuzzerLogParser:
                 table_finctions.add(match)
             else:
                 tables.add(match)
-        assert (
-            tables or table_files or table_finctions
-        ), "No tables found in query command"
 
-        # get all write commands for found tables
+        if not (tables or table_files or table_finctions):
+            print("WARNING: No tables found in query command")
+            return [failed_query]
+
+        # Get all write commands for found tables
         commands_to_reproduce = []
         for table in list(tables) + list(table_files):
             for command in all_fuzzer_commands:
+                if command.endswith("FORMAT Values"):
+                    # meaningless empty INSERT: "INSERT INTO test FORMAT Values"
+                    continue
                 if any(
                     command.startswith(write_command)
                     for write_command in self.WRITE_SQL_COMMANDS
                 ) and (f" {table} " in command or f"'{table}'" in command):
                     commands_to_reproduce.append(command)
+
         commands_to_reproduce.append(failed_query)
 
-        # add table drop commands
-        for table in tables:
-            commands_to_reproduce.append(f"DROP TABLE IF EXISTS {table}")
+        if tables:
+            # Add table drop commands
+            for table in tables:
+                commands_to_reproduce.append(f"DROP TABLE IF EXISTS {table}")
 
         return commands_to_reproduce
 

@@ -5,6 +5,12 @@
 #include <Parsers/SyncReplicaMode.h>
 #include <Server/ServerType.h>
 
+#include "config.h"
+
+#if USE_XRAY
+#include <Interpreters/InstrumentationManager.h>
+#include <variant>
+#endif
 
 namespace DB
 {
@@ -125,6 +131,8 @@ public:
         START_REDUCE_BLOCKING_PARTS,
         UNLOCK_SNAPSHOT,
         RECONNECT_ZOOKEEPER,
+        INSTRUMENT_ADD,
+        INSTRUMENT_REMOVE,
         END
     };
 
@@ -180,6 +188,17 @@ public:
     std::vector<std::pair<String, String>> tables;
 
     ServerType server_type;
+
+#if USE_XRAY
+    /// For SYSTEM INSTRUMENT ADD/REMOVE
+    using InstrumentParameter = std::variant<String, Int64, Float64>;
+    String instrumentation_function_name;
+    String instrumentation_handler_name;
+    Instrumentation::EntryType instrumentation_entry_type;
+    std::optional<std::variant<UInt64, bool>> instrumentation_point_id;
+    std::vector<InstrumentParameter> instrumentation_parameters;
+    String instrumentation_subquery;
+#endif
 
     /// For SYSTEM TEST VIEW <name> (SET FAKE TIME <time> | UNSET FAKE TIME).
     /// Unix time.
