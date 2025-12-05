@@ -106,7 +106,7 @@ public:
         data.resize_assume_reserved(data.size() - n);
     }
 
-    void deserializeAndInsertFromArena(ReadBuffer & in) override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
     void skipSerializedInArena(ReadBuffer & in) const override;
 
@@ -164,6 +164,10 @@ public:
     llvm::Value * compileComparator(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*lhs*/, llvm::Value * /*rhs*/, llvm::Value * /*nan_direction_hint*/) const override;
 
 #endif
+
+    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
+        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+        int direction, int nan_direction_hint) const override;
 
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
