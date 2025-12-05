@@ -13,10 +13,10 @@
 namespace DB
 {
 
-BuffersWriter::BuffersWriter(WriteBuffer & ostr_, SharedHeader header_, std::optional<FormatSettings> format_settings_)
+BuffersWriter::BuffersWriter(WriteBuffer & ostr_, SharedHeader header_, const FormatSettings & format_settings_)
     : ostr(ostr_)
     , header(header_)
-    , format_settings(std::move(format_settings_))
+    , format_settings(format_settings_)
 {
 }
 
@@ -39,11 +39,11 @@ size_t BuffersWriter::write(const Block & block)
         SerializationPtr serialization;
 
         std::tie(serialization, std::ignore, column.column)
-            = NativeWriter::getSerializationAndColumn(format_settings->client_protocol_version, column);
+            = NativeWriter::getSerializationAndColumn(format_settings.client_protocol_version, column);
 
         WriteBufferFromOwnString buffer;
 
-        NativeWriter::writeData(*serialization, column.column, buffer, format_settings, 0, 0, format_settings->client_protocol_version);
+        NativeWriter::writeData(*serialization, column.column, buffer, format_settings, 0, 0, format_settings.client_protocol_version);
 
         column_buffers[i] = std::move(buffer.str());
     }

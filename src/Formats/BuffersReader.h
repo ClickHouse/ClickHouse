@@ -24,7 +24,7 @@ class ReadBuffer;
 class BuffersReader
 {
 public:
-    BuffersReader(ReadBuffer & istr_, const Block & header_, std::optional<FormatSettings> format_settings_);
+    BuffersReader(ReadBuffer & istr_, const Block & header_, const FormatSettings & format_settings_);
 
     Block getHeader() const;
 
@@ -34,7 +34,7 @@ public:
 private:
     ReadBuffer & istr;
     Block header;
-    std::optional<FormatSettings> format_settings;
+    FormatSettings format_settings;
 };
 
 }

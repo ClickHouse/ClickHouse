@@ -15,10 +15,10 @@ extern const int INCORRECT_DATA;
 extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
-BuffersReader::BuffersReader(ReadBuffer & istr_, const Block & header_, std::optional<FormatSettings> format_settings_)
+BuffersReader::BuffersReader(ReadBuffer & istr_, const Block & header_, const FormatSettings & format_settings_)
     : istr(istr_)
     , header(header_)
-    , format_settings(std::move(format_settings_))
+    , format_settings(format_settings_)
 {
     chassert(header.columns() > 0);
 }
@@ -70,14 +70,7 @@ Block BuffersReader::read()
 
         const size_t before = istr.count();
         NameAndTypePair name_and_type = {column.name, column.type};
-        NativeReader::readData(
-            *serialization,
-            read_column,
-            istr,
-            format_settings.has_value() ? &format_settings.value() : nullptr,
-            num_rows,
-            &name_and_type,
-            nullptr);
+        NativeReader::readData(*serialization, read_column, istr, &format_settings, num_rows, &name_and_type, nullptr);
         const size_t after = istr.count();
 
         const size_t consumed = after - before;

@@ -20,7 +20,7 @@ class WriteBuffer;
 class BuffersWriter
 {
 public:
-    BuffersWriter(WriteBuffer & ostr_, SharedHeader header_, std::optional<FormatSettings> format_settings_);
+    BuffersWriter(WriteBuffer & ostr_, SharedHeader header_, const FormatSettings & format_settings_);
 
     SharedHeader getHeader() const { return header; }
 
@@ -30,7 +30,7 @@ public:
 private:
     WriteBuffer & ostr;
     SharedHeader header;
-    std::optional<FormatSettings> format_settings;
+    FormatSettings format_settings;
 };
 
 }
