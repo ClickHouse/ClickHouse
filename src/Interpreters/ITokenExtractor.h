@@ -169,7 +169,7 @@ struct TokenizerFactory : public boost::noncopyable
 
     void validateTokenizerType(std::string_view tokenizer) const;
 
-    std::unique_ptr<ITokenExtractor> createTokenizer(std::string_view tokenizer_type, std::span<const Field> params) const;
+    std::unique_ptr<ITokenExtractor> createTokenizer(std::string_view tokenizer_type, std::span<const Field> params, bool only_validate = false) const;
 
     /// Param helper functions
     static UInt64 extractNgramParam(std::span<const Field> params);

@@ -26,6 +26,8 @@ SELECT tokens('a', 'splitByString', toInt8(-1)); -- { serverError ILLEGAL_TYPE_O
 SELECT tokens('a', 'splitByString', toFixedString('c', 1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT tokens('a', 'splitByString', materialize(['c'])); -- { serverError ILLEGAL_COLUMN }
 SELECT tokens('a', 'splitByString', [1, 2]); -- { serverError INCORRECT_QUERY }
+SELECT tokens('  a  bc d', 'splitByString', []); -- { serverError INCORRECT_QUERY }
+
 
 SELECT 'Default tokenizer';
 
@@ -43,7 +45,6 @@ SELECT tokens('abc def', 'ngrams', 8) AS tokenized, toTypeName(tokenized), isCon
 SELECT 'Split tokenizer';
 
 SELECT tokens('', 'splitByString') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
-SELECT tokens('  a  bc d', 'splitByString', []) AS tokenized, toTypeName(tokenized), isConstant(tokenized);
 SELECT tokens('  a  bc d', 'splitByString', [' ']) AS tokenized, toTypeName(tokenized), isConstant(tokenized);
 SELECT tokens('()()a()bc()d', 'splitByString', ['()']) AS tokenized, toTypeName(tokenized), isConstant(tokenized);
 SELECT tokens(',()a(),bc,(),d,', 'splitByString', ['()', ',']) AS tokenized, toTypeName(tokenized), isConstant(tokenized);

@@ -57,7 +57,7 @@ CREATE TABLE tab
     INDEX idx str TYPE text(tokenizer = 'invalid')
 )
 ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- tokenizer can be identifier or function.';
 
