@@ -6,6 +6,10 @@ if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
     add_subdirectory (self-extracting-executable)
 endif ()
 
+if (USE_BINARY_HASH)
+    add_subdirectory (hash-binary)
+endif ()
+
 # Not used in packages
 if (ENABLE_UTILS)
     add_subdirectory (corrector_utf8)
