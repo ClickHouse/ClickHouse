@@ -17,8 +17,8 @@ SELECT tokens('a', 'ngrams', 'c'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT tokens('a', 'ngrams', toInt8(-1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT tokens('a', 'ngrams', toFixedString('c', 1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT tokens('a', 'ngrams', materialize(1)); -- { serverError ILLEGAL_COLUMN }
--- If 2nd arg is "ngram", then the 3rd arg must be between 2 and 8
-SELECT tokens('a', 'ngrams', 1); -- { serverError BAD_ARGUMENTS}
+-- If 2nd arg is "ngram", then the 3rd arg must be between 1 and 8
+SELECT tokens('a', 'ngrams', 0); -- { serverError BAD_ARGUMENTS}
 SELECT tokens('a', 'ngrams', 9); -- { serverError BAD_ARGUMENTS}
 --    const Array (for "split")
 SELECT tokens('a', 'splitByString', 'c'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

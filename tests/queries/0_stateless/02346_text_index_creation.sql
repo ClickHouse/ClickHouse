@@ -149,7 +149,7 @@ SELECT '-- ngram size must be between 2 and 8.';
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = ngrams(1))
+    INDEX idx str TYPE text(tokenizer = ngrams(0))
 )
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
