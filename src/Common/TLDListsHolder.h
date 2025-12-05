@@ -1,7 +1,6 @@
 #pragma once
 
 #include <base/defines.h>
-#include <base/StringRef.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <mutex>
@@ -35,7 +34,7 @@ public:
     explicit TLDList(size_t size);
 
     void insert(const String & host, TLDType type);
-    TLDType lookup(StringRef host) const;
+    TLDType lookup(std::string_view host) const;
     size_t size() const { return tld_container.size(); }
 
 private:

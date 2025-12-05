@@ -255,7 +255,7 @@ public:
         {
             /// Note that const-const case is handled by useDefaultImplementationForConstants.
 
-            std::string_view copy_str = col_const->getDataColumn().getDataAt(0).toView();
+            std::string_view copy_str = col_const->getDataColumn().getDataAt(0);
 
             if (castType(arguments[1].type.get(), [&](const auto & type)
                 {

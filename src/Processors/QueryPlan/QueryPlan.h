@@ -62,6 +62,8 @@ struct ExplainPlanOptions
     bool distributed = false;
     /// Add input headers to step.
     bool input_headers = false;
+    /// Print structure of columns instead of just their names and types.
+    bool column_structure = false;
 
     SettingsChanges toSettingsChanges() const;
 };

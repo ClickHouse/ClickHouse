@@ -1,27 +1,25 @@
 #pragma once
 
-#include <base/StringRef.h>
-
 #include <Common/Arena.h>
 
 /**
   * In some aggregation scenarios, when adding a key to the hash table, we
   * start with a temporary key object, and if it turns out to be a new key,
   * we must make it persistent (e.g. copy to an Arena) and use the resulting
-  * persistent object as hash table key. This happens only for StringRef keys,
-  * because other key types are stored by value, but StringRef is a pointer-like
-  * type: the actual data are stored elsewhere. Even for StringRef, we don't
+  * persistent object as hash table key. This happens only for std::string_view keys,
+  * because other key types are stored by value, but std::string_view is a pointer-like
+  * type: the actual data are stored elsewhere. Even for std::string_view, we don't
   * make a persistent copy of the key in each of the following cases:
   * 1) the aggregation method doesn't use temporary keys, so they're persistent
   *    from the start;
   * 2) the key is already present in the hash table;
-  * 3) that particular key is stored by value, e.g. a short StringRef key in
+  * 3) that particular key is stored by value, e.g. a short std::string_view key in
   *    StringHashMap.
   *
   * In the past, the caller was responsible for making the key persistent after
   * in was inserted. emplace() returned whether the key is new or not, so the
   * caller only stored new keys (this is case (2) from the above list). However,
-  * now we are adding a compound hash table for StringRef keys, so case (3)
+  * now we are adding a compound hash table for std::string_view keys, so case (3)
   * appears. The decision about persistence now depends on some properties of
   * the key, and the logic of this decision is tied to the particular hash table
   * implementation. This means that the hash table user now doesn't have enough
@@ -41,7 +39,7 @@
   *   nothing.
   *
   * This file defines the default key persistence functions, as well as two
-  * different key holders and corresponding functions for storing StringRef
+  * different key holders and corresponding functions for storing std::string_view
   * keys to Arena.
   */
 
@@ -69,17 +67,17 @@ namespace DB
 {
 
 /**
-  * ArenaKeyHolder is a key holder for hash tables that serializes a StringRef
+  * ArenaKeyHolder is a key holder for hash tables that serializes a std::string_view
   * key to an Arena.
   */
 struct ArenaKeyHolder
 {
-    StringRef key;
+    std::string_view key;
     Arena & pool;
     /// When key is not held by any external instance, then it is held by this unique_ptr.
     std::unique_ptr<char[]> holder;
 
-    ArenaKeyHolder(const StringRef & key_, Arena & pool_, std::unique_ptr<char[]> holder_ = {})
+    ArenaKeyHolder(const std::string_view key_, Arena & pool_, std::unique_ptr<char[]> holder_ = {})
         : key(key_)
         , pool(pool_)
         , holder(std::move(holder_))
@@ -89,7 +87,7 @@ struct ArenaKeyHolder
 
 }
 
-inline StringRef & ALWAYS_INLINE keyHolderGetKey(DB::ArenaKeyHolder & holder)
+inline std::string_view & ALWAYS_INLINE keyHolderGetKey(DB::ArenaKeyHolder & holder)
 {
     return holder.key;
 }
@@ -100,9 +98,9 @@ inline void ALWAYS_INLINE keyHolderPersistKey(DB::ArenaKeyHolder & holder)
     // but it can happened in the case of clearable hash table (ClearableHashSet, for example).
     // The clearable hash table doesn't use zero storage and
     // distinguishes empty keys by using cell version, not the value itself.
-    // So, when an empty StringRef is inserted in ClearableHashSet we'll get here key of zero size.
+    // So, when an empty std::string_view is inserted in ClearableHashSet we'll get here key of zero size.
     // assert(holder.key.size > 0);
-    holder.key.data = holder.pool.insert(holder.key.data, holder.key.size);
+    holder.key = std::string_view{holder.pool.insert(holder.key.data(), holder.key.size()), holder.key.size()};
 }
 
 inline void ALWAYS_INLINE keyHolderDiscardKey(DB::ArenaKeyHolder &)
@@ -112,19 +110,19 @@ inline void ALWAYS_INLINE keyHolderDiscardKey(DB::ArenaKeyHolder &)
 namespace DB
 {
 
-/** SerializedKeyHolder is a key holder for a StringRef key that is already
+/** SerializedKeyHolder is a key holder for a std::string_view key that is already
   * serialized to an Arena. The key must be the last allocation in this Arena,
   * and is discarded by rolling back the allocation.
   */
 struct SerializedKeyHolder
 {
-    StringRef key;
+    std::string_view key;
     Arena & pool;
 };
 
 }
 
-inline StringRef & ALWAYS_INLINE keyHolderGetKey(DB::SerializedKeyHolder & holder)
+inline std::string_view & ALWAYS_INLINE keyHolderGetKey(DB::SerializedKeyHolder & holder)
 {
     return holder.key;
 }
@@ -135,9 +133,8 @@ inline void ALWAYS_INLINE keyHolderPersistKey(DB::SerializedKeyHolder &)
 
 inline void ALWAYS_INLINE keyHolderDiscardKey(DB::SerializedKeyHolder & holder)
 {
-    [[maybe_unused]] void * new_head = holder.pool.rollback(holder.key.size);
-    assert(new_head == holder.key.data);
-    holder.key.data = nullptr;
-    holder.key.size = 0;
+    [[maybe_unused]] void * new_head = holder.pool.rollback(holder.key.size());
+    chassert(new_head == holder.key.data());
+    holder.key = std::string_view();
 }
 

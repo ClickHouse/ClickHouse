@@ -78,16 +78,6 @@ public:
     {}
 };
 
-String buildDataPath(const String & database_name)
-{
-    return std::filesystem::path("data") / escapeForFileName(database_name) / "";
-}
-
-String buildReplacementRelativePath(const DatabaseBackup::Configuration & config)
-{
-    return buildDataPath(config.database_name);
-}
-
 String buildStoragePolicyName(const DatabaseBackup::Configuration & config)
 {
     return fmt::format("__database_backup_config_{}_{})", config.database_name, config.backup_info.toString());
@@ -160,7 +150,12 @@ void updateCreateQueryWithDatabaseBackupStoragePolicy(ASTCreateQuery * create_qu
 }
 
 DatabaseBackup::DatabaseBackup(const String & name_, const String & metadata_path_, const Configuration & config_, ContextPtr context_)
-    : DatabaseOrdinary(name_, metadata_path_, buildDataPath(name_), "DatabaseBackup(" + name_ + ")", context_)
+    : DatabaseOrdinary(
+        name_,
+        metadata_path_,
+        DatabaseCatalog::getDataDirPath(name_) / "",
+        "DatabaseBackup(" + name_ + ")",
+        context_)
     , config(config_)
 {
 }
@@ -225,7 +220,7 @@ void DatabaseBackup::beforeLoadingMetadata(ContextMutablePtr local_context, Load
     {
         DiskBackup::PathPrefixReplacement path_prefix_replacement;
         path_prefix_replacement.from = data_path;
-        path_prefix_replacement.to = buildReplacementRelativePath(config);
+        path_prefix_replacement.to = DatabaseCatalog::getDataDirPath(config.database_name) / "";
 
         DiskBackupConfiguration disk_backup_config;
 

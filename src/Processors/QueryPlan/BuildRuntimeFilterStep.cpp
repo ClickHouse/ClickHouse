@@ -55,7 +55,8 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
     String filter_name_,
     UInt64 exact_values_limit_,
     UInt64 bloom_filter_bytes_,
-    UInt64 bloom_filter_hash_functions_)
+    UInt64 bloom_filter_hash_functions_,
+    bool allow_to_use_not_exact_filter_)
     : ITransformingStep(
         input_header_,
         input_header_,
@@ -66,6 +67,7 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
     , exact_values_limit(exact_values_limit_)
     , bloom_filter_bytes(bloom_filter_bytes_)
     , bloom_filter_hash_functions(bloom_filter_hash_functions_)
+    , allow_to_use_not_exact_filter(allow_to_use_not_exact_filter_)
 {
     if (!bloom_filter_bytes)
         bloom_filter_bytes = DEFAULT_RUNTIME_BLOOM_FILTER_BYTES;
@@ -86,10 +88,19 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
 
 void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    auto streams = pipeline.getNumStreams();
     pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType)
     {
         return std::make_shared<BuildRuntimeFilterTransform>(
-            header, filter_column_name, filter_column_type, filter_name, exact_values_limit, bloom_filter_bytes, bloom_filter_hash_functions);
+            header,
+            filter_column_name,
+            filter_column_type,
+            filter_name,
+            /*filters_to_merge_=*/streams - 1,
+            exact_values_limit,
+            bloom_filter_bytes,
+            bloom_filter_hash_functions,
+            allow_to_use_not_exact_filter);
     });
 }
 
@@ -110,6 +121,7 @@ void BuildRuntimeFilterStep::serialize(Serialization & ctx) const
     writeStringBinary(filter_column_name, ctx.out);
     encodeDataType(filter_column_type, ctx.out);
     writeStringBinary(filter_name, ctx.out);
+    writeBinary(allow_to_use_not_exact_filter, ctx.out);
 }
 
 QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
@@ -125,6 +137,9 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
     String filter_name;
     readStringBinary(filter_name, ctx.in);
 
+    bool allow_to_use_not_exact_filter;
+    readBinary(allow_to_use_not_exact_filter, ctx.in);
+
     const UInt64 exact_values_limit = ctx.settings[QueryPlanSerializationSetting::join_runtime_filter_exact_values_limit];
     const UInt64 bloom_filter_bytes = ctx.settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_bytes];
     const UInt64 bloom_filter_hash_functions = ctx.settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_hash_functions];
@@ -136,7 +151,8 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
         std::move(filter_name),
         exact_values_limit,
         bloom_filter_bytes,
-        bloom_filter_hash_functions);
+        bloom_filter_hash_functions,
+        allow_to_use_not_exact_filter);
 }
 
 QueryPlanStepPtr BuildRuntimeFilterStep::clone() const

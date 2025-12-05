@@ -298,6 +298,10 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
         if (res_columns[i] == nullptr || isColumnConst(*res_columns[i]))
             continue;
 
+        /// Small hack. Currently sparse serialization is not supported with Arrays.
+        if (res_columns[i]->isSparse())
+            continue;
+
         auto serialization_info = available_column->type->getSerializationInfo(*res_columns[i]);
         auto serialization = available_column->type->getSerialization(serialization_info->getKindStack(), IDataType::getSerialization(*available_column));
         serialization->enumerateStreams([&](const auto & subpath)

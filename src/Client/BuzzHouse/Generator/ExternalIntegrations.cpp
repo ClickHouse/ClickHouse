@@ -1516,7 +1516,7 @@ bool DolorIntegration::performDatabaseIntegration(RandomGenerator & rg, SQLDatab
     }
     buf += fmt::format(
         R"({{"seed":{},"database_name":"{}","storage":"{}","lake":"{}","catalog":"{}"}})",
-        rg.nextRandomUInt64(),
+        rg.nextInFullRange(),
         d.getSparkCatalogName(),
         d.storage == LakeStorage::S3 ? "s3" : (d.storage == LakeStorage::Azure ? "azure" : "local"),
         d.format == LakeFormat::DeltaLake ? "deltalake" : "iceberg",
@@ -1657,7 +1657,7 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
     chassert(t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine());
     buf += fmt::format(
         R"({{"seed":{},"catalog_name":"{}","database_name":"{}","table_name":"{}","storage":"{}","lake":"{}","format":"{}","deterministic":{},"columns":[)",
-        rg.nextRandomUInt64(),
+        rg.nextInFullRange(),
         t.getSparkCatalogName(),
         t.getDatabaseName(),
         t.getTableName(false),

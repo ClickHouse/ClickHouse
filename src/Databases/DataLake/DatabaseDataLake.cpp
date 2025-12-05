@@ -7,7 +7,7 @@
 #include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Common/Exception.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 
 #if USE_AVRO && USE_PARQUET
 
@@ -536,6 +536,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         /* is_datalake_query*/true,
         /* distributed_processing */can_use_distributed_iterator,
         /* partition_by */nullptr,
+        /* order_by */nullptr,
         /* is_table_function */false,
         /* lazy_init */true);
 }

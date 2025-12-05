@@ -38,7 +38,7 @@ Float64 StatisticsCountMinSketch::estimateEqual(const Field & val) const
     /// For example: if data_type is Int32:
     ///     1. For 1.0, 1, '1', return Field(1)
     ///     2. For 1.1, max_value_int64, return null
-    Field val_converted = convertFieldToType(val, *data_type);
+    Field val_converted = convertFieldToType(val, *data_type, data_type.get());
     if (val_converted.isNull())
         return 0;
 
@@ -58,7 +58,7 @@ void StatisticsCountMinSketch::build(const ColumnPtr & column)
         if (column->isNullAt(row))
             continue;
         auto data = column->getDataAt(row);
-        sketch.update(data.data, data.size, 1);
+        sketch.update(data.data(), data.size(), 1);
     }
 }
 

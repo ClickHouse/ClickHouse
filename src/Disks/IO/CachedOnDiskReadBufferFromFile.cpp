@@ -2,7 +2,7 @@
 #include <algorithm>
 
 #include <Disks/IO/createReadBufferFromFileBase.h>
-#include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <IO/BoundedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>

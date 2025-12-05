@@ -86,7 +86,7 @@ public:
             {
                 std::stringstream str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
                 boost::geometry::correct(figures[i]);
-                str << boost::geometry::svg(figures[i], has_style ? style->getDataAt(i).toString() : "");
+                str << boost::geometry::svg(figures[i], has_style ? std::string{style->getDataAt(i)} : "");
                 std::string serialized = str.str();
                 res_column->insertData(serialized.data(), serialized.size());
             }

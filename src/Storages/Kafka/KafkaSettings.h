@@ -13,7 +13,8 @@ namespace DB
 class ASTStorage;
 struct KafkaSettingsImpl;
 
-const auto KAFKA_RESCHEDULE_MS = 500;
+// How often we check for expired consumers in the pool
+const auto KAFKA_CONSUMERS_CLEANUP_CHECK_INTERVAL_MS = 500;
 // once per minute leave do reschedule (we can't lock threads in pool forever)
 const auto KAFKA_MAX_THREAD_WORK_DURATION_MS = 60000;
 // 10min

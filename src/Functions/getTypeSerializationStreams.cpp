@@ -68,7 +68,7 @@ private:
         if (!arg_string)
             return argument.type;
 
-        return DataTypeFactory::instance().get(arg_string->getDataAt(0).toString());
+        return DataTypeFactory::instance().get(std::string{arg_string->getDataAt(0)});
     }
 };
 

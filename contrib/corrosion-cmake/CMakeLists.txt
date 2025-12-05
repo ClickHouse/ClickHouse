@@ -223,5 +223,10 @@ function(clickhouse_config_crate_flags target_name)
     #
     #   [1]: https://github.com/rust-lang/cc-rs/blob/7666d4f4f36d3bcacce9ab72fc6538fcc0ea1716/src/lib.rs#L762-L775
     corrosion_set_env_vars(${target_name} "CXXSTDLIB=cxx")
+    # Even with --offline it is still possible that some commands from build.rs
+    # will try to download, force them not to with CARGO_NET_OFFLINE=true
+    #
+    # Refs: https://github.com/rust-lang/cargo/issues/15099#issuecomment-2732847355
+    corrosion_set_env_vars(${target_name} "CARGO_NET_OFFLINE=true")
     corrosion_link_libraries(${target_name} cxx)
 endfunction()

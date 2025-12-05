@@ -338,6 +338,155 @@ void CacheMetadata::iterate(IterateFunc && func, const KeyMetadata::UserID & use
     }
 }
 
+class CacheMetadata::IteratorImpl
+{
+public:
+    IteratorImpl(MetadataBuckets & metadata_buckets_, const UserID & user_id_)
+        : user_id(user_id_)
+        , metadata_buckets(metadata_buckets_)
+        , bucket_it(metadata_buckets_.begin())
+    {
+    }
+
+    bool next(Iterator::OnFileSegmentFunc func)
+    {
+        while (true)
+        {
+            if (bucket_it == metadata_buckets.end())
+                return false;
+
+            if (!bucket_lock)
+                bucket_lock = bucket_it->lock();
+
+            if (!key_it.has_value())
+                key_it = bucket_it->begin();
+
+            if (key_it.value() == bucket_it->end())
+            {
+                ++bucket_it;
+                bucket_lock.reset();
+
+                key_it.reset();
+                key_lock.reset();
+
+                file_segment_it.reset();
+                continue;
+            }
+
+            const auto & key = key_it.value()->second;
+
+            if (!key_lock)
+            {
+                /// Will lock only if key is in state ACTIVE.
+                key_lock = key->tryLock();
+                if (!key_lock)
+                {
+                    ++key_it.value();
+                    continue;
+                }
+            }
+
+            if (!file_segment_it.has_value())
+                file_segment_it = key->begin();
+
+            if (file_segment_it.value() == key->end())
+            {
+                ++key_it.value();
+                key_lock.reset();
+
+                file_segment_it.reset();
+                continue;
+            }
+
+            func(FileSegment::getInfo(file_segment_it.value()->second->file_segment));
+            ++(file_segment_it.value());
+            return true;
+        }
+    }
+
+private:
+    const UserID user_id;
+    MetadataBuckets & metadata_buckets;
+    MetadataBuckets::iterator bucket_it;
+    std::optional<MetadataBucket::iterator> key_it;
+    std::optional<KeyMetadata::iterator> file_segment_it;
+
+    std::optional<CacheMetadataGuard::Lock> bucket_lock;
+    LockedKeyPtr key_lock;
+};
+
+class CacheMetadata::BatchedIteratorImpl
+{
+public:
+    BatchedIteratorImpl(MetadataBuckets & metadata_buckets_, const UserID & user_id_)
+        : user_id(user_id_)
+        , metadata_buckets(metadata_buckets_)
+        , bucket_it(metadata_buckets_.begin())
+    {
+    }
+
+    bool next(Iterator::OnFileSegmentFunc func)
+    {
+        bool result = false;
+        while (bucket_it != metadata_buckets.end())
+        {
+            auto bucket_lock = bucket_it->lock();
+            for (const auto & [_, key_metadata] : *bucket_it)
+            {
+                /// Will lock only if key is in state ACTIVE.
+                auto key_lock = key_metadata->tryLock();
+                if (!key_lock)
+                    continue;
+
+                result |= key_metadata->size();
+                for (const auto & [_, file_segment_metadata] : *key_metadata)
+                    func(FileSegment::getInfo(file_segment_metadata->file_segment));
+            }
+            ++bucket_it;
+            if (result)
+                break;
+        }
+        return result;
+    }
+
+private:
+    const UserID user_id;
+    MetadataBuckets & metadata_buckets;
+    MetadataBuckets::iterator bucket_it;
+};
+
+CacheMetadata::Iterator::Iterator(const UserID & user_id_, MetadataBuckets & metadata_buckets_)
+    : user_id(user_id_), metadata_buckets(metadata_buckets_)
+{
+}
+
+bool CacheMetadata::Iterator::next(OnFileSegmentFunc func)
+{
+    if (!impl.has_value())
+        impl = std::make_shared<IteratorImpl>(metadata_buckets, user_id);
+
+    if (auto * iterator = std::get_if<CacheMetadata::IteratorImplPtr>(&impl.value()); iterator)
+        return (*iterator)->next(func);
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected IteratorImplPtr");
+}
+
+bool CacheMetadata::Iterator::nextBatch(OnFileSegmentFunc func)
+{
+    if (!impl)
+        impl = std::make_shared<BatchedIteratorImpl>(metadata_buckets, user_id);
+
+    if (auto * iterator = std::get_if<CacheMetadata::BatchedIteratorImplPtr>(&impl.value()); iterator)
+        return (*iterator)->next(func);
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected BatchedIteratorImplPtr");
+}
+
+CacheMetadata::IteratorPtr CacheMetadata::getIterator(const UserID & user_id)
+{
+    return std::make_unique<Iterator>(user_id, metadata_buckets);
+}
+
 void CacheMetadata::removeAllKeys(bool if_releasable, const UserID & user_id)
 {
     for (auto & bucket : metadata_buckets)

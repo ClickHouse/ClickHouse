@@ -104,7 +104,7 @@ bool isStringOrArrayOfStringType(const IDataType & type)
 
 TokensWithPosition extractTokensFromString(std::string_view value)
 {
-    DefaultTokenExtractor default_token_extractor;
+    SplitByNonAlphaTokenExtractor default_token_extractor;
 
     size_t cur = 0;
     size_t token_start = 0;
@@ -234,7 +234,7 @@ void searchOnArray(
 
         for (size_t j = 0; j < array_size; ++j)
         {
-            std::string_view input = input_string.getDataAt(current_offset + j).toView();
+            std::string_view input = input_string.getDataAt(current_offset + j);
 
             forEachTokenPadded(*token_extractor, input.data(), input.size(), matcher([&] { col_result[i] = true; }));
 
@@ -256,7 +256,7 @@ void searchOnString(
 {
     for (size_t i = 0; i < input_rows_count; ++i)
     {
-        std::string_view input = col_input.getDataAt(i).toView();
+        std::string_view input = col_input.getDataAt(i);
         col_result[i] = false;
         matcher.reset();
 
@@ -370,11 +370,11 @@ ColumnPtr FunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
 
         if (const ColumnConst * col_needles_str_const = checkAndGetColumnConst<ColumnString>(col_needles.get()))
         {
-            search_tokens_from_args = extractTokensFromString(col_needles_str_const->getDataAt(0).toView());
+            search_tokens_from_args = extractTokensFromString(col_needles_str_const->getDataAt(0));
         }
         else if (const ColumnString * col_needles_str = checkAndGetColumn<ColumnString>(col_needles.get()))
         {
-            search_tokens_from_args = extractTokensFromString(col_needles_str->getDataAt(0).toView());
+            search_tokens_from_args = extractTokensFromString(col_needles_str->getDataAt(0));
         }
         else if (const ColumnConst * col_needles_array_const = checkAndGetColumnConst<ColumnArray>(col_needles.get()))
         {
@@ -391,19 +391,19 @@ ColumnPtr FunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
             const ColumnString & needles_data_string = checkAndGetColumn<ColumnString>(array_data);
 
             for (size_t i = 0; i < array_offsets[0]; ++i)
-                search_tokens_from_args.emplace(needles_data_string.getDataAt(i).toView(), i);
+                search_tokens_from_args.emplace(needles_data_string.getDataAt(i), i);
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needles argument for function '{}' has unsupported type", getName());
 
-        static DefaultTokenExtractor default_token_extractor;
+        static SplitByNonAlphaTokenExtractor default_token_extractor;
 
         execute<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, &default_token_extractor, search_tokens_from_args);
     }
     else
     {
         /// If token_extractor != nullptr, a text index exists and we are doing text index lookups
-        if (token_extractor->getType() == ITokenExtractor::Type::SparseGram)
+        if (token_extractor->getType() == ITokenExtractor::Type::SparseGrams)
         {
             /// The sparse gram token extractor stores an internal state which modified during the execution.
             /// This leads to an error while executing this function multi-threaded because that state is not protected.

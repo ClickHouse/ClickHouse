@@ -6,15 +6,16 @@
 #include <fmt/format.h>
 
 
-class GeneratorWithTemplate : public DB::IObjectStorageKeysGenerator
+class GeneratorWithTemplate : public DB::IObjectStorageKeyGenerator
 {
 public:
     explicit GeneratorWithTemplate(String key_template_)
-    : key_template(std::move(key_template_))
-    , re_gen(key_template)
+        : key_template(std::move(key_template_))
+        , re_gen(key_template)
     {
     }
-    DB::ObjectStorageKey generate(const String &, bool /* is_directory */, const std::optional<String> & /* key_prefix */) const override
+
+    DB::ObjectStorageKey generate(const String & /*path*/) const override
     {
         return DB::ObjectStorageKey::createAsAbsolute(re_gen.generate());
     }
@@ -27,14 +28,15 @@ private:
 };
 
 
-class GeneratorWithPrefix : public DB::IObjectStorageKeysGenerator
+class GeneratorWithPrefix : public DB::IObjectStorageKeyGenerator
 {
 public:
     explicit GeneratorWithPrefix(String key_prefix_)
         : key_prefix(std::move(key_prefix_))
-    {}
+    {
+    }
 
-    DB::ObjectStorageKey generate(const String &, bool /* is_directory */, const std::optional<String> & /* key_prefix */) const override
+    DB::ObjectStorageKey generate(const String & /*path*/) const override
     {
         /// Path to store the new S3 object.
 
@@ -60,15 +62,15 @@ private:
 };
 
 
-class GeneratorAsIsWithPrefix : public DB::IObjectStorageKeysGenerator
+class GeneratorAsIsWithPrefix : public DB::IObjectStorageKeyGenerator
 {
 public:
     explicit GeneratorAsIsWithPrefix(String key_prefix_)
         : key_prefix(std::move(key_prefix_))
-    {}
+    {
+    }
 
-    DB::ObjectStorageKey
-    generate(const String & path, bool /* is_directory */, const std::optional<String> & /* key_prefix */) const override
+    DB::ObjectStorageKey generate(const String & path) const override
     {
         return DB::ObjectStorageKey::createAsRelative(key_prefix, path);
     }
@@ -83,17 +85,17 @@ private:
 namespace DB
 {
 
-ObjectStorageKeysGeneratorPtr createObjectStorageKeysGeneratorAsIsWithPrefix(String key_prefix)
+ObjectStorageKeyGeneratorPtr createObjectStorageKeyGeneratorAsIsWithPrefix(String key_prefix)
 {
     return std::make_shared<GeneratorAsIsWithPrefix>(std::move(key_prefix));
 }
 
-ObjectStorageKeysGeneratorPtr createObjectStorageKeysGeneratorByPrefix(String key_prefix)
+ObjectStorageKeyGeneratorPtr createObjectStorageKeyGeneratorByPrefix(String key_prefix)
 {
     return std::make_shared<GeneratorWithPrefix>(std::move(key_prefix));
 }
 
-ObjectStorageKeysGeneratorPtr createObjectStorageKeysGeneratorByTemplate(String key_template)
+ObjectStorageKeyGeneratorPtr createObjectStorageKeyGeneratorByTemplate(String key_template)
 {
     return std::make_shared<GeneratorWithTemplate>(std::move(key_template));
 }
