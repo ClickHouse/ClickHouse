@@ -91,6 +91,9 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(
     const ContextPtr & context,
     const NamesAndTypesList & hive_columns = {});
 
+/// Extracts constant values expected for `_path` input from the query filter DAG.
+std::optional<Strings> extractPathValuesFromFilter(const ActionsDAG * filter_dag, ContextPtr context, size_t limit);
+
 ColumnPtr getFilterByPathAndFileIndexes(
     const std::vector<String> & paths,
     const ExpressionActionsPtr & actions,

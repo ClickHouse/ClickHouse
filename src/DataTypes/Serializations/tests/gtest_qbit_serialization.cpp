@@ -4,29 +4,35 @@
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <Common/ErrorCodes.h>
 
 #include <base/types.h>
 #include <gtest/gtest.h>
 
 
-using namespace DB;
+#define EXPECT_THROW_ERROR_CODE(statement, expected_exception, expected_code) \
+    EXPECT_THROW( \
+        try { statement; } catch (const expected_exception & e) { \
+            EXPECT_EQ(expected_code, e.code()); \
+            throw; \
+        }, \
+        expected_exception)
 
-class QBitSerializationTest : public ::testing::Test
+
+namespace DB
 {
-protected:
-    void SetUp() override
-    {
-        auto float32_type = DataTypeFactory::instance().get("Float32");
-        qbit_type_float32 = std::static_pointer_cast<DataTypeQBit>(std::make_shared<DataTypeQBit>(float32_type, 5));
-        serialization_float32 = qbit_type_float32->getDefaultSerialization();
-    }
 
-    std::shared_ptr<DataTypeQBit> qbit_type_float32;
-    SerializationPtr serialization_float32;
-};
-
-TEST_F(QBitSerializationTest, FieldBinarySerializationFloat32)
+namespace ErrorCodes
 {
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
+TEST(QBitSerialization, FieldBinarySerializationFloat32)
+{
+    auto float32_type = DataTypeFactory::instance().get("Float32");
+    auto qbit_type_float32 = std::static_pointer_cast<DataTypeQBit>(std::make_shared<DataTypeQBit>(float32_type, 5));
+    auto serialization_float32 = qbit_type_float32->getDefaultSerialization();
+
     const size_t bytes_per_fixedstring = 1;
 
     Tuple tuple_elements;
@@ -62,4 +68,12 @@ TEST_F(QBitSerializationTest, FieldBinarySerializationFloat32)
         ASSERT_EQ(fixed_string.size(), bytes_per_fixedstring);
         ASSERT_EQ(fixed_string[0], static_cast<char>(i));
     }
+}
+
+TEST(QBitSerialization, RejectInvalidElementType)
+{
+    auto int32_type = DataTypeFactory::instance().get("Int32");
+    EXPECT_THROW_ERROR_CODE(std::make_shared<DataTypeQBit>(int32_type, 5), Exception, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+}
+
 }

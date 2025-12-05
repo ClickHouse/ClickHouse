@@ -574,11 +574,12 @@ namespace
         if (!col_set || !col_set->getData())
             return {};
 
-        auto * set_from_tuple = typeid_cast<FutureSetFromTuple *>(col_set->getData().get());
-        if (!set_from_tuple)
-            return {};
+        SetPtr set = nullptr;
+        if (auto * set_from_tuple = typeid_cast<FutureSetFromTuple *>(col_set->getData().get()))
+            set = set_from_tuple->buildOrderedSetInplace(context);
+        else
+            set = col_set->getData().get()->get();
 
-        SetPtr set = set_from_tuple->buildOrderedSetInplace(context);
         if (!set || !set->hasExplicitSetElements())
             return {};
 
@@ -612,7 +613,7 @@ namespace
 
         if (!type->equals(*node->result_type))
         {
-            cast_col = tryCastColumn(column, value->result_type, node->result_type);
+            cast_col = tryCastColumn(column, type, node->result_type);
             if (!cast_col)
                 return {};
             const auto & col_nullable = assert_cast<const ColumnNullable &>(*cast_col);

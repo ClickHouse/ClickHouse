@@ -246,7 +246,7 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
         {
             String db_name = sub_path.filename().string();
             if (!isSystemOrInformationSchema(db_name))
-                orphan_directories_and_symlinks.emplace(unescapeForFileName(db_name), sub_path);
+                orphan_directories_and_symlinks.emplace(unescapeForFileName(db_name), fs::path(sub_path.string() + ".sql"));
             continue;
         }
 
@@ -256,7 +256,7 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
         if (sub_path.extension() == ".sql")
         {
             String db_name = sub_path.stem();
-            orphan_directories_and_symlinks.erase(db_name);
+            orphan_directories_and_symlinks.erase(unescapeForFileName(db_name));
             if (!isSystemOrInformationSchema(db_name))
                 databases.emplace(unescapeForFileName(db_name), sub_path);
         }
