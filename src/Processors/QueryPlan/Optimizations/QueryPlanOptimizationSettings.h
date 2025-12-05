@@ -140,6 +140,8 @@ struct QueryPlanOptimizationSettings
     UInt64 join_runtime_bloom_filter_bytes = 0;
     UInt64 join_runtime_bloom_filter_hash_functions = 0;
 
+    std::vector<JoinOrderAlgorithm> query_plan_optimize_join_order_algorithm;
+
     /// Please, avoid using this
     ///
     /// We should not have the number of threads in query plan.
