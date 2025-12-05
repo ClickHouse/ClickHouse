@@ -27,6 +27,13 @@ DataTypeQBit::DataTypeQBit(const DataTypePtr & element_type_, const size_t dimen
     : element_type(element_type_)
     , dimension(dimension_)
 {
+    /// Prevents maliciously crafted byte streams from being deserialized into illegal types, which could be exploited to crash the server
+    if (element_type_->getTypeId() != TypeIndex::BFloat16 && element_type_->getTypeId() != TypeIndex::Float32
+        && element_type_->getTypeId() != TypeIndex::Float64)
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "QBit data type only supports BFloat16, Float32, or Float64 as element type. Got: {}",
+            element_type_->getName());
 }
 
 std::string DataTypeQBit::doGetName() const
