@@ -86,8 +86,6 @@ Block BuffersReader::read()
 
         auto serialization = column.type->getDefaultSerialization();
 
-        read_column = column.type->createColumn(*serialization);
-
         const size_t before = istr.count();
         readData(*serialization, read_column, istr, num_rows, format_settings);
         const size_t after = istr.count();
