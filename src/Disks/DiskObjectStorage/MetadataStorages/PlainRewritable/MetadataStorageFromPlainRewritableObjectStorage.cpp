@@ -444,6 +444,9 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectory
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveDirectory(const std::string & path_from, const std::string & path_to)
 {
+    if (uncommitted_fs_tree->existsDirectory(path_from).first)
+        uncommitted_fs_tree->moveDirectory(path_from, path_to);
+
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation>(
         normalizeDirectoryPath(path_from),
         normalizeDirectoryPath(path_to),
