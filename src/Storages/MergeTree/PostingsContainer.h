@@ -9,6 +9,7 @@ extern "C" {
 #include <ic.h>
 }
 
+#pragma clang optimize off
 namespace DB
 {
 
@@ -492,8 +493,10 @@ public:
         auto offset = out.offset();
         writeVarUInt(block_count, out);
         writeVarUInt(total, out);
+        size_t data_size = data.size();
         writeVarUInt(data.size(), out);
         out.write(data.data(), data.size());
+        (void) data_size;
         return out.offset() - offset;
     }
 
@@ -528,8 +531,9 @@ public:
         std::string temp_buffer;
         std::vector<T> temp_compress_buffer;
         temp_compress_buffer.reserve(kBlockSize);
+        ReadBufferFromMemory data_buffer(data);
         for (size_t i = 0; i < block_count; ++i)
-            internal::Codec::decompressCurrent<T>(in, temp_buffer, temp_compress_buffer, [&out] (std::vector<uint32_t> & temp) { out.addMany(temp.size(), temp.data()); });
+            internal::Codec::decompressCurrent<T>(data_buffer, temp_buffer, temp_compress_buffer, [&out] (std::vector<uint32_t> & temp) { out.addMany(temp.size(), temp.data()); });
         if (!current.empty())
             out.addMany(current.size(), current.data());
     }

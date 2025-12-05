@@ -1,19 +1,9 @@
-#include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/AggregateFunctionFactory.h>
-
-#include <base/sort.h>
-#include <algorithm>
-#include <type_traits>
-#include <utility>
 #include <Common/RadixSort.h>
-#include <Common/Exception.h>
 #include <Common/ArenaAllocator.h>
 #include <Common/assert_cast.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
-#include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>

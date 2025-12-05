@@ -25,7 +25,7 @@
 
 #include <base/range.h>
 #include <fmt/ranges.h>
-
+#pragma clang optimize off
 namespace ProfileEvents
 {
     extern const Event TextIndexReadDictionaryBlocks;
@@ -196,8 +196,8 @@ PostingListPtr PostingsSerialization::deserialize(UInt64 header, UInt32 cardinal
     if (header & Flags::CompressedPostings)
     {
         PostingsContainer32 container;
-        PostingList postings;
-        container.decodeTo(istr, postings);
+        auto postings = std::make_shared<PostingList>();
+        container.decodeTo(istr, *postings);
         return postings;
     }
     if (header & Flags::RawPostings)
