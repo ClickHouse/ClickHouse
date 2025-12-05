@@ -75,6 +75,7 @@ namespace Setting
     extern const SettingsUInt64 max_subquery_depth;
     extern const SettingsBool prefer_column_name_to_alias;
     extern const SettingsBool rewrite_count_distinct_if_with_count_distinct_implementation;
+    extern const SettingsBool rewrite_in_to_join;
     extern const SettingsBool single_join_prefer_left_table;
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsBool allow_suspicious_types_in_group_by;
@@ -968,22 +969,43 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
     return result_aggregate_function_name;
 }
 
-/// Resolve identifier functions implementation
+/// Check if any argument of a function is a query or union node
+static bool hasQueryOrUnionArgument(const FunctionNode * func)
+{
+    for (const auto & arg : func->getArguments().getNodes())
+    {
+        auto arg_type = arg->getNodeType();
+        if (arg_type == QueryTreeNodeType::QUERY || arg_type == QueryTreeNodeType::UNION)
+            return true;
+    }
+    return false;
+}
 
-/** Check if a node contains expressions that cannot be safely cached. */
-static bool nodeRequiresCloneFromCache(const QueryTreeNodePtr & node)
+/** Check if a node contains expressions that cannot be safely shared from alias cache.
+  * IN/exists functions with query/union arguments need cloning when rewrite_in_to_join is enabled
+  * because each use needs unique table aliases after rewriting.
+  */
+static bool nodeRequiresCloneFromCache(const QueryTreeNodePtr & node, bool rewrite_in_to_join_enabled)
 {
     if (!node)
         return false;
 
     auto node_type = node->getNodeType();
 
-    /// Subqueries need unique table aliases assigned by createUniqueAliasesIfNecessary
-    if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
-        return true;
+    if (node_type == QueryTreeNodeType::FUNCTION && rewrite_in_to_join_enabled)
+    {
+        if (const auto * func = node->as<FunctionNode>())
+        {
+            const auto func_name = func->getFunctionName();
+            if ((isNameOfInFunction(func_name) || func_name == "exists") && hasQueryOrUnionArgument(func))
+            {
+                return true;
+            }
+        }
+    }
 
     for (const auto & child : node->getChildren())
-        if (nodeRequiresCloneFromCache(child))
+        if (nodeRequiresCloneFromCache(child, rewrite_in_to_join_enabled))
             return true;
 
     return false;
@@ -1298,8 +1320,11 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     /// Create a scope-aware version of the lookup for cache operations.
     /// Different values of allow_resolve_from_using need different cache entries
     /// (e.g., PREWHERE sets it to false to avoid resolving USING columns).
+    /// Each IN function instance gets its own cache entries to ensure
+    /// proper cloning when aliased IN expressions are expanded.
     IdentifierLookup cache_lookup = identifier_lookup;
     cache_lookup.allow_resolve_from_using = scope.allow_resolve_from_using;
+    cache_lookup.in_function_instance_id = scope.expressions_in_resolve_process_stack.getInFunctionInstanceId();
 
     auto it = scope.identifier_in_lookup_process.find(cache_lookup);
 
@@ -1325,10 +1350,8 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
             const auto * cached_result = scope.identifier_to_resolved_expression_cache.find(cache_lookup);
             if (cached_result)
             {
-                // aggregate functions can be rewritten in ways which require multiple instances
                 // requires_clone_from_cache is precomputed at insert time to avoid repeated tree traversal
-                if (scope.expressions_in_resolve_process_stack.hasAggregateFunction()
-                    || cached_result->requires_clone_from_cache)
+                if (cached_result->requires_clone_from_cache)
                 {
                     // cloning is obviously not as fast as returning the same pointer, but still faster
                     // than re-resolving from scratch
@@ -1457,7 +1480,8 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         scope.identifier_in_lookup_process.erase(it);
         if (can_use_cache && resolve_result.resolved_identifier)
         {
-            resolve_result.requires_clone_from_cache = nodeRequiresCloneFromCache(resolve_result.resolved_identifier);
+            bool rewrite_in_to_join_enabled = scope.context->getSettingsRef()[Setting::rewrite_in_to_join];
+            resolve_result.requires_clone_from_cache = nodeRequiresCloneFromCache(resolve_result.resolved_identifier, rewrite_in_to_join_enabled);
             scope.identifier_to_resolved_expression_cache.insert(cache_lookup, resolve_result);
         }
     }
