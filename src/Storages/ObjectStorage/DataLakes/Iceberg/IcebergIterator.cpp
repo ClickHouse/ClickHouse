@@ -79,8 +79,8 @@ using namespace Iceberg;
 
 namespace
 {
-std::span<const ManifestFileEntry>
-defineDeletesSpan(ManifestFileEntry data_object_, const std::vector<ManifestFileEntry> & deletes_objects, bool is_equality_delete)
+std::span<const ManifestFileEntryPtr>
+defineDeletesSpan(ManifestFileEntryPtr data_object_, const std::vector<ManifestFileEntryPtr> & deletes_objects, bool is_equality_delete)
 {
     ///Object in deletes_objects are sorted by common_partition_specification, partition_key_value and added_sequence_number.
     /// It is done to have an invariant that position deletes objects which corresponds
@@ -115,7 +115,7 @@ defineDeletesSpan(ManifestFileEntry data_object_, const std::vector<ManifestFile
 
 }
 
-std::optional<ManifestFileEntry> SingleThreadIcebergKeysIterator::next()
+std::optional<ManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
 {
     if (!data_snapshot)
     {
@@ -298,7 +298,7 @@ IcebergIterator::IcebergIterator(
         {
             while (!blocking_queue.isFinished())
             {
-                std::optional<ManifestFileEntry> entry;
+                std::optional<ManifestFileEntryPtr> entry;
                 try
                 {
                     entry = data_files_iterator.next();

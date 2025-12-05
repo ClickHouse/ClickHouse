@@ -129,7 +129,7 @@ namespace
 
 }
 
-const std::vector<ManifestFileEntry> & ManifestFileContent::getFilesWithoutDeleted(FileContentType content_type) const
+const std::vector<ManifestFileEntryPtr> & ManifestFileContent::getFilesWithoutDeleted(FileContentType content_type) const
 {
     if (content_type == FileContentType::DATA)
         return data_files_without_deleted;
@@ -507,7 +507,7 @@ ManifestFileContent::ManifestFileContent(
 }
 
 // We prefer files to be sorted by schema id, because it allows us to reuse ManifestFilePruner during partition and minmax pruning
-void ManifestFileContent::sortManifestEntriesBySchemaId(std::vector<ManifestFileEntry> & files)
+void ManifestFileContent::sortManifestEntriesBySchemaId(std::vector<ManifestFileEntryPtr> & files)
 {
     std::vector<size_t> indices(files.size());
     std::iota(indices.begin(), indices.end(), 0);
@@ -517,14 +517,14 @@ void ManifestFileContent::sortManifestEntriesBySchemaId(std::vector<ManifestFile
         indices.end(),
         [&](size_t i, size_t j)
         {
-            if (files[i].schema_id != files[j].schema_id)
+            if (files[i]->schema_id != files[j]->schema_id)
             {
-                return files[i].schema_id < files[j].schema_id;
+                return files[i]->schema_id < files[j]->schema_id;
             }
             return i < j;
         });
 
-    std::vector<ManifestFileEntry> sorted_files;
+    std::vector<ManifestFileEntryPtr> sorted_files;
     sorted_files.reserve(files.size());
     for (const auto & index : indices)
     {
@@ -590,7 +590,7 @@ std::optional<Int64> ManifestFileContent::getRowsCountInAllFilesExcludingDeleted
     {
         /// Have at least one column with rows count
         bool found = false;
-        for (const auto & [column, column_info] : file.columns_infos)
+        for (const auto & [column, column_info] : file->columns_infos)
         {
             if (column_info.rows_count.has_value())
             {
@@ -613,7 +613,7 @@ std::optional<Int64> ManifestFileContent::getBytesCountInAllDataFilesExcludingDe
     {
         /// Have at least one column with bytes count
         bool found = false;
-        for (const auto & [column, column_info] : file.columns_infos)
+        for (const auto & [column, column_info] : file->columns_infos)
         {
             if (column_info.bytes_size.has_value())
             {
