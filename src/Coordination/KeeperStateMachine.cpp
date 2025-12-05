@@ -6,7 +6,7 @@
 #include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Coordination/KeeperReconfiguration.h>
-#include <Common/thread_local_rng.h>
+#include <Coordination/KeeperSpans.h>
 #include <Coordination/KeeperStorage.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStateMachine.h>
@@ -21,8 +21,10 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/logger_useful.h>
+#include "Interpreters/Context.h"
 
 
 namespace ProfileEvents
@@ -213,11 +215,23 @@ struct LockGuardWithStats final
     ~LockGuardWithStats() = default;
 };
 
+union XidHelper
+{
+    struct
+    {
+        uint32_t lower;
+        uint32_t upper;
+    } parts;
+    int64_t xid;
+};
+
 }
 
 template<typename Storage>
 nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::pre_commit(uint64_t log_idx, nuraft::buffer & data)
 {
+    const UInt64 start_time_us = nowMicroseconds();
+
     double sleep_probability = keeper_context->getPrecommitSleepProbabilityForTesting();
     int64_t sleep_ms = keeper_context->getPrecommitSleepMillisecondsForTesting();
     if (sleep_ms != 0 && sleep_probability != 0)
@@ -245,24 +259,28 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::pre_commit(uint64_t log
 
     request_for_session->log_idx = log_idx;
 
+    if (request_for_session->request->server_tracing_context)
+        request_for_session->request->keeper_spans.write_pre_commit.start_time_us = start_time_us;
+
     preprocess(*request_for_session);
+
+    if (request_for_session->request->server_tracing_context)
+    {
+        request_for_session->request->keeper_spans.write_pre_commit.finish();
+        KeeperSpans::log(
+            *request_for_session->request->server_tracing_context,
+            request_for_session->request->keeper_spans.write_pre_commit,
+            OpenTelemetry::SpanStatus::OK,
+            {},
+            {
+                {"keeper.operation", Coordination::opNumToString(request_for_session->request->getOpNum())},
+                {"keeper.session_id", std::to_string(request_for_session->session_id)},
+                {"keeper.xid", std::to_string(request_for_session->request->xid)},
+            });
+    }
+
     return result;
 }
-
-namespace
-{
-
-union XidHelper
-{
-    struct
-    {
-        uint32_t lower;
-        uint32_t upper;
-    } parts;
-    int64_t xid;
-};
-
-};
 
 // Serialize the request for the log entry
 nuraft::ptr<nuraft::buffer> IKeeperStateMachine::getZooKeeperLogEntry(const KeeperRequestForSession & request_for_session)
@@ -288,8 +306,17 @@ nuraft::ptr<nuraft::buffer> IKeeperStateMachine::getZooKeeperLogEntry(const Keep
     DB::writeIntBinary(static_cast<uint8_t>(KeeperDigestVersion::NO_DIGEST), write_buf); /// digest version or NO_DIGEST flag
     DB::writeIntBinary(static_cast<uint64_t>(0), write_buf); /// digest value
 
+    // TODO(mstetsyuk): always use 64 bit xid
     if (request_for_session.use_xid_64)
         Coordination::write(xid_helper.parts.upper, write_buf); /// for 64bit XID MSB
+
+    const bool has_tracing = request->server_tracing_context.has_value();
+    DB::writeIntBinary(static_cast<uint8_t>(has_tracing), write_buf);
+    if (has_tracing)
+    {
+        request->server_tracing_context->serialize(write_buf);
+    }
+
     /// if new fields are added, update KeeperStateMachine::ZooKeeperLogSerializationVersion along with parseRequest function and PreAppendLog callback handler
     return write_buf.getBuffer();
 }
@@ -355,6 +382,19 @@ std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
     else
     {
         xid_helper.xid = static_cast<int32_t>(xid_helper.parts.lower);
+    }
+
+    if (!buffer.eof())
+    {
+        version = WITH_OPTIONAL_TRACING_CONTEXT;
+
+        uint8_t has_tracing;
+        readIntBinary(has_tracing, buffer);
+        if (has_tracing)
+        {
+            request_for_session->request->server_tracing_context.emplace();
+            request_for_session->request->server_tracing_context->deserialize(buffer);
+        }
     }
 
     if (serialization_version)
@@ -545,18 +585,25 @@ KeeperResponseForSession KeeperStateMachine<Storage>::processReconfiguration(
 template<typename Storage>
 nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t log_idx, nuraft::buffer & data)
 {
+    const UInt64 start_time_us = nowMicroseconds();
+
     auto request_for_session = parseRequest(data, true);
     if (!request_for_session->zxid)
         request_for_session->zxid = log_idx;
 
     request_for_session->log_idx = log_idx;
 
+    if (request_for_session->request->server_tracing_context)
+        request_for_session->request->keeper_spans.write_commit.start_time_us = start_time_us;
+
     if (!keeper_context->localLogsPreprocessed() && !preprocess(*request_for_session))
         return nullptr;
 
-    auto try_push = [&](const KeeperResponseForSession & response)
+    auto try_push = [&](KeeperResponseForSession & response)
     {
         response.response->enqueue_ts = std::chrono::steady_clock::now();
+        if (response.request && response.request->server_tracing_context)
+            response.request->keeper_spans.dispatcher_responses_queue.start();
         if (!responses_queue.push(response))
         {
             ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
@@ -620,6 +667,21 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
         }
 
         ProfileEvents::increment(ProfileEvents::KeeperCommits);
+
+        if (request_for_session->request->server_tracing_context)
+        {
+            request_for_session->request->keeper_spans.write_commit.finish();
+            KeeperSpans::log(
+                *request_for_session->request->server_tracing_context,
+                request_for_session->request->keeper_spans.write_commit,
+                OpenTelemetry::SpanStatus::OK,
+                {},
+                {
+                    {"keeper.operation", Coordination::opNumToString(request_for_session->request->getOpNum())},
+                    {"keeper.session_id", std::to_string(request_for_session->session_id)},
+                    {"keeper.xid", std::to_string(request_for_session->request->xid)},
+                });
+        }
 
         if (commit_callback)
             commit_callback(log_idx, *request_for_session);
@@ -947,17 +1009,21 @@ template<typename Storage>
 void KeeperStateMachine<Storage>::processReadRequest(const KeeperRequestForSession & request_for_session)
 {
     /// Pure local request, just process it with storage
-    LockGuardWithStats<true> storage_lock(storage_mutex);
-    std::lock_guard response_lock(process_and_responses_lock);
-    auto responses = storage->processRequest(
-        request_for_session.request, request_for_session.session_id, std::nullopt, true /*check_acl*/, true /*is_local*/);
-    for (auto & response_for_session : responses)
     {
-        if (response_for_session.response->xid != Coordination::WATCH_XID)
-            response_for_session.request = request_for_session.request;
-        response_for_session.response->enqueue_ts = std::chrono::steady_clock::now();
-        if (!responses_queue.push(response_for_session))
-            LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", response_for_session.session_id);
+        LockGuardWithStats<true> storage_lock(storage_mutex);
+        std::lock_guard response_lock(process_and_responses_lock);
+        auto responses = storage->processRequest(
+            request_for_session.request, request_for_session.session_id, std::nullopt, true /*check_acl*/, true /*is_local*/);
+        for (auto & response_for_session : responses)
+        {
+            if (response_for_session.response->xid != Coordination::WATCH_XID)
+                response_for_session.request = request_for_session.request;
+            response_for_session.response->enqueue_ts = std::chrono::steady_clock::now();
+            if (response_for_session.request && response_for_session.request->server_tracing_context)
+                response_for_session.request->keeper_spans.dispatcher_responses_queue.start();
+            if (!responses_queue.push(response_for_session))
+                LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", response_for_session.session_id);
+        }
     }
 }
 

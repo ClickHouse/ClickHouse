@@ -3,7 +3,9 @@
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Coordination/KeeperContext.h>
+#include <Coordination/WithSpanLog.h>
 #include <Common/SharedMutex.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <base/defines.h>
 #include <libnuraft/nuraft.hxx>
@@ -42,6 +44,7 @@ public:
         WITH_TIME = 1,
         WITH_ZXID_DIGEST = 2,
         WITH_XID_64 = 3,
+        WITH_OPTIONAL_TRACING_CONTEXT = 4,
     };
 
     /// lifetime of a parsed request is:
@@ -180,7 +183,7 @@ protected:
 /// ClickHouse Keeper state machine. Wrapper for KeeperStorage.
 /// Responsible for entries commit, snapshots creation and so on.
 template<typename Storage>
-class KeeperStateMachine : public IKeeperStateMachine
+class KeeperStateMachine : public IKeeperStateMachine, WithSpanLog
 {
 public:
     KeeperStateMachine(

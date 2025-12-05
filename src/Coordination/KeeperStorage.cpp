@@ -3356,6 +3356,24 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
             HistogramMetrics::KeeperServerProcessRequestDuration,
             {toOperationTypeMetricLabel(zk_request->getOpNum())},
             elapsed_ms);
+        
+        if (is_local && zk_request->server_tracing_context)
+        {
+            auto & span = zk_request->keeper_spans.read_process;
+
+            span.start_time_us = watch.getStartMicroseconds();
+            span.finish_time_us = watch.getEndMicroseconds();
+
+            KeeperSpans::log(
+                *zk_request->server_tracing_context,
+                span,
+                OpenTelemetry::SpanStatus::OK,
+                {},
+                {
+                    {"keeper.operation", Coordination::opNumToString(zk_request->getOpNum())},
+                    {"keeper.xid", std::to_string(zk_request->xid)},
+                });
+        }
     });
 
     if (!initialized)

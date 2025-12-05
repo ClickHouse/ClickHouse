@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Coordination/WithSpanLog.h"
 #include "config.h"
 
 #if USE_NURAFT
@@ -39,7 +40,7 @@ struct LastOp;
 using LastOpMultiVersion = MultiVersion<LastOp>;
 using LastOpPtr = LastOpMultiVersion::Version;
 
-class KeeperTCPHandler : public Poco::Net::TCPServerConnection
+class KeeperTCPHandler : public Poco::Net::TCPServerConnection, WithSpanLog
 {
 public:
     static void registerConnection(KeeperTCPHandler * conn);

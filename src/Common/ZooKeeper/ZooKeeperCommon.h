@@ -1,7 +1,9 @@
 #pragma once
 
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/OpenTelemetryTracingContext.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include <Coordination/KeeperSpans.h>
 #include <Interpreters/ZooKeeperLog.h>
 
 #include <vector>
@@ -63,7 +65,10 @@ struct ZooKeeperRequest : virtual Request
     std::chrono::steady_clock::time_point enqueue_ts = {};
     std::chrono::steady_clock::time_point send_ts = {};
 
-    OpenTelemetry::TracingContext tracing_context;
+    std::optional<OpenTelemetry::TracingContext> client_tracing_context;
+    std::optional<OpenTelemetry::TracingContext> server_tracing_context;
+
+    DB::KeeperSpans keeper_spans;
 
     ZooKeeperRequest() = default;
     ZooKeeperRequest(const ZooKeeperRequest &) = default;

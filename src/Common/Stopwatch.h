@@ -74,8 +74,13 @@ public:
     UInt64 elapsedMilliseconds() const { return elapsedNanoseconds() / 1000000UL; }
     double elapsedSeconds() const      { return static_cast<double>(elapsedNanoseconds()) / 1000000000ULL; }
 
-    UInt64 getStart() const { return start_ns; }
-    UInt64 getEnd() const { return stop_ns; }
+    UInt64 getStart() const { return getStartNanoseconds(); }
+    UInt64 getStartNanoseconds() const { return start_ns; }
+    UInt64 getStartMicroseconds() const { return start_ns / 1000U; }
+
+    UInt64 getEnd() const { return getEndNanoseconds(); }
+    UInt64 getEndNanoseconds() const { return stop_ns; }
+    UInt64 getEndMicroseconds() const { return stop_ns / 1000U; }
 
 private:
     UInt64 start_ns = 0;

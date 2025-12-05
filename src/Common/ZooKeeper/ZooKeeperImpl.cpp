@@ -1,4 +1,6 @@
 #include <chrono>
+#include <random>
+#include "Common/OpenTelemetryTracingContext.h"
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/Stopwatch.h>
@@ -1387,11 +1389,14 @@ void ZooKeeper::pushRequest(RequestInfo && info)
 
         maybeInjectSendFault();
 
-        if (const auto & current_trace_context = OpenTelemetry::CurrentContext(); current_trace_context.isTraceEnabled())
+        if (
+            const auto & current_trace_context = OpenTelemetry::CurrentContext();
+            current_trace_context.isTraceEnabled() && current_trace_context.trace_flags & DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS
+        )
         {
             if (isFeatureEnabled(KeeperFeatureFlag::PASS_TRACING_CONTEXT))
             {
-                info.request->tracing_context = current_trace_context;
+                info.request->client_tracing_context = current_trace_context;
             }
         }
 
