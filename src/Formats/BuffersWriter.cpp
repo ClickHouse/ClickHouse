@@ -48,11 +48,11 @@ void BuffersWriter::write(const Block & block)
 
         NativeWriter::writeData(*serialization, column.column, buffer, format_settings, 0, 0, format_settings.client_protocol_version);
 
-        /// Size of each buffer in bytes (UInt64)
+        /// Size of buffer in bytes (UInt64)
         UInt64 buffer_size = static_cast<UInt64>(buffer.count());
         writeBinaryLittleEndian(buffer_size, ostr);
 
-        /// Contents of each buffer (raw bytes, concatenated)
+        /// Contents of buffer (raw bytes)
         ostr.write(buffer.str().data(), buffer_size);
     }
 }
