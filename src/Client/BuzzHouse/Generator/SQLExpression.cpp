@@ -831,9 +831,11 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
         else
         {
             min_params = agg.min_params;
-            max_params = std::min(this->fc.max_width - this->width, std::min(agg.max_params, UINT32_C(5)));
+            const uint32_t max_possible_params = std::min(agg.max_params, UINT32_C(5));
+            max_params = std::min(this->fc.max_width - this->width, max_possible_params);
             min_args = agg.min_args;
-            max_args = std::min(this->fc.max_width - this->width, std::min(agg.max_args, UINT32_C(5)));
+            const uint32_t max_possible_args = std::min(agg.max_args, UINT32_C(5));
+            max_args = std::min(this->fc.max_width - this->width, max_possible_args);
         }
         /// Most of the times disallow nested aggregates, and window functions inside aggregates
         this->levels[this->current_level].inside_aggregate = rg.nextSmallNumber() < 9;
@@ -963,7 +965,8 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
             else
             {
                 min_args = func.min_args;
-                max_args = std::min(this->fc.max_width - this->width, std::min(func.max_args, UINT32_C(5)));
+                const uint32_t max_possible_args = std::min(func.max_args, UINT32_C(5));
+                max_args = std::min(this->fc.max_width - this->width, max_possible_args);
             }
             sfn->set_catalog_func(static_cast<SQLFunc>(func.fnum));
         }
