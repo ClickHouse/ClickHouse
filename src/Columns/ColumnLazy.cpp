@@ -213,6 +213,19 @@ ColumnPtr ColumnLazy::filter(const Filter & filt, ssize_t result_size_hint) cons
     return ColumnLazy::create(new_columns);
 }
 
+void ColumnLazy::filter(const Filter & filt)
+{
+    if (captured_columns.empty())
+    {
+        s = countBytesInFilter(filt);
+        return;
+    }
+
+    const size_t column_size = captured_columns.size();
+    for (size_t i = 0; i < column_size; ++i)
+        captured_columns[i]->filter(filt);
+}
+
 void ColumnLazy::expand(const Filter &, bool)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method expand is not supported for {}", getName());
