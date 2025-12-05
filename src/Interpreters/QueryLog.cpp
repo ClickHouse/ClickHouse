@@ -3,6 +3,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsDateTime.h>
@@ -180,7 +181,8 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
-    columns[i++]->insertData(getFQDNOrHostName());
+    const auto & hostname = getFQDNOrHostName();
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(hostname.data(), hostname.size());
     typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(type);
     typeid_cast<ColumnUInt16 &>(*columns[i++]).getData().push_back(DateLUT::instance().toDayNum(event_time).toUnderType());
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(event_time);
@@ -266,7 +268,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     }
     else
     {
-        columns[i++]->insertDefault();
+        typeid_cast<ColumnMap &>(*columns[i++]).insertDefault();
     }
 
     if (query_settings)
@@ -276,7 +278,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     }
     else
     {
-        columns[i++]->insertDefault();
+        typeid_cast<ColumnMap &>(*columns[i++]).insertDefault();
     }
 
     {
@@ -337,7 +339,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     if (async_read_counters)
         async_read_counters->dumpToMapColumn(columns[i++].get());
     else
-        columns[i++]->insertDefault();
+        typeid_cast<ColumnMap &>(*columns[i++]).insertDefault();
 
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(is_internal);
 }
@@ -346,26 +348,26 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
 {
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY);
 
-    columns[i++]->insertData(client_info.current_user);
-    columns[i++]->insertData(client_info.current_query_id);
-    columns[i++]->insertData(IPv6ToBinary(client_info.current_address->host()).data(), 16);
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.current_user.data(), client_info.current_user.size());
+    typeid_cast<ColumnString &>(*columns[i++]).insertData(client_info.current_query_id.data(), client_info.current_query_id.size());
+    typeid_cast<ColumnIPv6 &>(*columns[i++]).insertData(IPv6ToBinary(client_info.current_address->host()).data(), 16);
     typeid_cast<ColumnUInt16 &>(*columns[i++]).getData().push_back(client_info.current_address->port());
 
-    columns[i++]->insertData(client_info.initial_user);
-    columns[i++]->insertData(client_info.initial_query_id);
-    columns[i++]->insertData(IPv6ToBinary(client_info.initial_address->host()).data(), 16);
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.initial_user.data(), client_info.initial_user.size());
+    typeid_cast<ColumnString &>(*columns[i++]).insertData(client_info.initial_query_id.data(), client_info.initial_query_id.size());
+    typeid_cast<ColumnIPv6 &>(*columns[i++]).insertData(IPv6ToBinary(client_info.initial_address->host()).data(), 16);
     typeid_cast<ColumnUInt16 &>(*columns[i++]).getData().push_back(client_info.initial_address->port());
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.initial_query_start_time);
     typeid_cast<ColumnDateTime64 &>(*columns[i++]).getData().push_back(client_info.initial_query_start_time_microseconds);
 
-    columns[i++]->insertData(client_info.authenticated_user);
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.authenticated_user.data(), client_info.authenticated_user.size());
 
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(static_cast<UInt8>(client_info.interface));
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(static_cast<UInt8>(client_info.is_secure));
 
-    columns[i++]->insertData(client_info.os_user);
-    columns[i++]->insertData(client_info.client_hostname);
-    columns[i++]->insertData(client_info.client_name);
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.os_user.data(), client_info.os_user.size());
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.client_hostname.data(), client_info.client_hostname.size());
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.client_name.data(), client_info.client_name.size());
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.client_tcp_protocol_version);
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.client_version_major);
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.client_version_minor);
@@ -375,11 +377,11 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.script_line_number);
 
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(static_cast<UInt8>(client_info.http_method));
-    columns[i++]->insertData(client_info.http_user_agent);
-    columns[i++]->insertData(client_info.http_referer);
-    columns[i++]->insertData(client_info.forwarded_for);
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.http_user_agent.data(), client_info.http_user_agent.size());
+    typeid_cast<ColumnString &>(*columns[i++]).insertData(client_info.http_referer.data(), client_info.http_referer.size());
+    typeid_cast<ColumnString &>(*columns[i++]).insertData(client_info.forwarded_for.data(), client_info.forwarded_for.size());
 
-    columns[i++]->insertData(client_info.quota_key);
+    typeid_cast<ColumnString &>(*columns[i++]).insertData(client_info.quota_key.data(), client_info.quota_key.size());
     typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(client_info.distributed_depth);
 }
 }
