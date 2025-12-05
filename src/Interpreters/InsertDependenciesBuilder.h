@@ -120,6 +120,7 @@ protected:
 
 private:
     bool isView(StorageIDPrivate id) const;
+    bool isMerge(StorageIDPrivate id) const;
 
     std::pair<ContextPtr, ContextPtr> createSelectInsertContext(const DependencyPath & path);
     bool observePath(const DependencyPath & path);
@@ -131,6 +132,7 @@ private:
 
     Chain createPreSink(StorageIDPrivate view_id) const;
     Chain createSelect(StorageIDPrivate view_id) const;
+    Chain createMergeSink(StorageIDPrivate merge_id) const;
     Chain createSink(StorageIDPrivate view_id) const;
     Chain createPostSink(StorageIDPrivate view_id) const;
 
@@ -152,6 +154,7 @@ private:
 
     MapIdManyId dependent_views;
     MapIdId inner_tables;
+    MapIdId merge_tables;
     MapIdId source_tables;
     MapIdStorage storages;
     MapIdViewType view_types;
