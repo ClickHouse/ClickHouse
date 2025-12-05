@@ -92,8 +92,11 @@ class MetadataStorageFromPlainRewritableObjectStorageTransaction : public IMetad
 {
 protected:
     MetadataStorageFromPlainRewritableObjectStorage & metadata_storage;
-    std::shared_ptr<InMemoryDirectoryTree> uncommitted_fs_tree;
 
+    /// Plain rewritable disks extract key names for files from generated directory keys. Here we will
+    /// maintain uncommitted directory tree that was populated during metadata transaction filling to be able
+    /// to extrace remote path of directory during nested file creation in the same transaction.
+    std::shared_ptr<InMemoryDirectoryTree> uncommitted_fs_tree;
     MetadataOperationsHolder operations;
 
 public:
