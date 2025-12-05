@@ -7573,7 +7573,7 @@ void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
     size_t size = 0;
     for (const auto & setting : all(changed_only ? SKIP_UNCHANGED : SKIP_NONE))
     {
-        auto & name = setting.getName();
+        const auto & name = setting.getName();
         auto value = setting.getValueString();
         key_column.insertData(name.data(), name.size());
         value_column.insertData(value.data(), value.size());
