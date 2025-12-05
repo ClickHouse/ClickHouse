@@ -51,6 +51,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 min_free_disk_space_for_temporary_data;
     extern const QueryPlanSerializationSettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const QueryPlanSerializationSettingsBool optimize_group_by_constant_keys;
+    extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
 }
 
 namespace ErrorCodes
@@ -867,8 +868,8 @@ std::unique_ptr<IQueryPlanStep> AggregatingStep::deserialize(Deserialization & c
         /* only_merge */ false,
         ctx.settings[QueryPlanSerializationSetting::optimize_group_by_constant_keys],
         ctx.settings[QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization],
-        stats_collecting_params
-    };
+        stats_collecting_params,
+        ctx.settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte]};
 
     SortDescription sort_description_for_merging;
 

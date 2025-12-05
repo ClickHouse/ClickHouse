@@ -117,6 +117,8 @@ public:
         const float min_hit_rate_to_use_consecutive_keys_optimization = 0.;
         StatsCollectingParams stats_collecting_params;
 
+        bool serialize_string_with_zero_byte = false;
+
         static size_t getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by);
 
         Params(
@@ -139,7 +141,8 @@ public:
             bool only_merge_, // true for projections
             bool optimize_group_by_constant_keys_,
             float min_hit_rate_to_use_consecutive_keys_optimization_,
-            const StatsCollectingParams & stats_collecting_params_);
+            const StatsCollectingParams & stats_collecting_params_,
+            bool serialize_string_with_zero_byte_);
 
         /// Only parameters that matter during merge.
         Params(
@@ -148,7 +151,8 @@ public:
             bool overflow_row_,
             size_t max_threads_,
             size_t max_block_size_,
-            float min_hit_rate_to_use_consecutive_keys_optimization_);
+            float min_hit_rate_to_use_consecutive_keys_optimization_,
+            bool serialize_string_with_zero_byte_);
 
         Params cloneWithKeys(const Names & keys_, bool only_merge_ = false)
         {
