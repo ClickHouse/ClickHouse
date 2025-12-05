@@ -330,6 +330,13 @@ def test_alter_settings(started_cluster):
             f"SELECT value FROM system.s3_queue_settings WHERE name = 'enable_hash_ring_filtering' and table = '{table_name}'"
         ).strip()
     )
+    assert (
+        "false"
+        == node1.query(
+            f"SELECT value FROM system.s3_queue_settings WHERE name = 'commit_on_select' and table = '{table_name}'"
+        ).strip()
+    )
+
 
     node1.query(
         f"""
@@ -355,7 +362,8 @@ def test_alter_settings(started_cluster):
         min_insert_block_size_bytes_for_materialized_views=321,
         cleanup_interval_min_ms=34500,
         cleanup_interval_max_ms=45600,
-        persistent_processing_node_ttl_seconds=89
+        persistent_processing_node_ttl_seconds=89,
+        commit_on_select=true
     """
     )
 
@@ -385,6 +393,9 @@ def test_alter_settings(started_cluster):
         "after_processing_tag_key": "tagkey",
         "after_processing_tag_value": "tagvalue",
     }
+    bool_settings = {
+        "commit_on_select": "true",
+    }
 
     def check_alterable(setting):
         if setting.startswith("s3queue_"):
@@ -403,6 +414,9 @@ def test_alter_settings(started_cluster):
         check_alterable(setting)
 
     for setting, _ in string_settings.items():
+        check_alterable(setting)
+
+    for setting, _ in bool_settings.items():
         check_alterable(setting)
 
     assert 0 == int(
@@ -450,6 +464,7 @@ def test_alter_settings(started_cluster):
 
     for node in [node1, node2]:
         check_int_settings(node, int_settings)
+        check_int_settings(node, bool_settings)
         check_string_settings(node, string_settings)
 
         node.restart_clickhouse()
