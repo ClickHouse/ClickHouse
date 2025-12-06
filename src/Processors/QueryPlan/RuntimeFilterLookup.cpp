@@ -16,6 +16,46 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+void IRuntimeFilter::updateStats(UInt64 rows_checked, UInt64 rows_passed) const
+{
+    stats.rows_checked += rows_checked;
+    stats.rows_passed += rows_passed;
+
+    /// Skip next 10 blocks if too few rows got filtered out
+    if (rows_passed > 0.7 * rows_checked)
+        rows_to_skip = rows_checked * 10;
+}
+
+bool IRuntimeFilter::shouldSkip(size_t next_block_rows) const
+{
+    if (is_fully_disabled)
+    {
+        stats.rows_skipped += next_block_rows;
+        return true;
+    }
+
+    rows_to_skip -= next_block_rows;
+    if (rows_to_skip > 0)
+    {
+        stats.rows_skipped += next_block_rows;
+        return true;
+    }
+    rows_to_skip = 0;
+    return false;
+}
+
+ColumnPtr IRuntimeFilter::find(const ColumnWithTypeAndName & values) const
+{
+    if (!inserts_are_finished)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to lookup values in runtime filter before builiding it was finished");
+
+    const size_t rows_in_block = values.column->size();
+    if (shouldSkip(rows_in_block))
+        return DataTypeUInt8().createColumnConst(rows_in_block, true);
+
+    return doFind(values);
+}
+
 static void mergeBloomFilters(BloomFilter & destination, const BloomFilter & source)
 {
     auto & destination_words = destination.getFilter();
@@ -67,6 +107,9 @@ void ApproximateRuntimeFilter::insert(ColumnPtr values)
     }
     else
     {
+        if (isFull())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected 'full' state of ApproximateRuntimeFilter");
+
         Base::insert(std::move(values));
 
         if (isFull())
@@ -82,7 +125,10 @@ void ApproximateRuntimeFilter::finishInsert()
     inserts_are_finished = true;
 
     if (bloom_filter)
+    {
+        checkBloomFilterWorthiness();
         return;
+    }
 
     Base::finishInsert();
 }
@@ -125,16 +171,17 @@ static size_t countPassedStats(ColumnPtr values)
 }
 
 template <bool negate>
-ColumnPtr RuntimeFilterBase<negate>::find(const ColumnWithTypeAndName & values) const
+ColumnPtr RuntimeFilterBase<negate>::doFind(const ColumnWithTypeAndName & values) const
 {
+    chassert(inserts_are_finished);
+
     switch (values_count)
     {
         case ValuesCount::UNKNOWN:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Run time filter set is not ready for lookups");
         case ValuesCount::ZERO:
-            stats.rows_checked += values.column->size();
-            stats.rows_passed += negate ? values.column->size() : 0;
-            return std::make_shared<DataTypeUInt8>()->createColumnConst(values.column->size(), negate);
+            updateStats(values.column->size(), negate ? values.column->size() : 0);
+            return DataTypeUInt8().createColumnConst(values.column->size(), negate);
         case ValuesCount::ONE:
         {
             /// If only 1 element in the set then use "value == const" instead of set lookup
@@ -145,25 +192,22 @@ ColumnPtr RuntimeFilterBase<negate>::find(const ColumnWithTypeAndName & values) 
             };
             auto single_element_equals_function = FunctionFactory::instance().get(negate ? "notEquals" : "equals", nullptr)->build(arguments);
             auto result = single_element_equals_function->execute(arguments, single_element_equals_function->getResultType(), values.column->size(), /* dry_run = */ false);
-            stats.rows_checked += values.column->size();
-            stats.rows_passed += countPassedStats(result);
+            updateStats(values.column->size(), countPassedStats(result));
             return result;
         }
         case ValuesCount::MANY:
         {
             auto result = exact_values->execute({values}, negate);
-            stats.rows_checked += values.column->size();
-            stats.rows_passed += countPassedStats(result);
+            updateStats(values.column->size(), countPassedStats(result));
             return result;
         }
     }
     UNREACHABLE();
 }
 
-ColumnPtr ApproximateRuntimeFilter::find(const ColumnWithTypeAndName & values) const
+ColumnPtr ApproximateRuntimeFilter::doFind(const ColumnWithTypeAndName & values) const
 {
-    if (!inserts_are_finished)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to lookup values in runtime filter before builiding it was finished");
+    chassert(inserts_are_finished);
 
     if (bloom_filter)
     {
@@ -180,14 +224,13 @@ ColumnPtr ApproximateRuntimeFilter::find(const ColumnWithTypeAndName & values) c
             found_count += found ? 1 : 0;
             dst_data[row] = found;
         }
-        stats.rows_checked += values.column->size();
-        stats.rows_passed += found_count;
+        updateStats(values.column->size(), found_count);
 
         return dst;
     }
     else
     {
-        return Base::find(values);
+        return Base::doFind(values);
     }
 }
 
@@ -211,6 +254,18 @@ void ApproximateRuntimeFilter::switchToBloomFilter()
     insertIntoBloomFilter(getValuesColumn());
 
     releaseExactValues();
+}
+
+void ApproximateRuntimeFilter::checkBloomFilterWorthiness()
+{
+    const auto & raw_filter_words = bloom_filter->getFilter();
+    const size_t total_bits = raw_filter_words.size() * sizeof(raw_filter_words[0]) * 8;
+    size_t set_bits = 0;
+    for (auto word : raw_filter_words)
+        set_bits += std::popcount(word);
+    /// If too many bits are set then it is likely that the filter will not filter out much
+    if (set_bits > 0.7 * total_bits)
+        setFullyDisabled();
 }
 
 class RuntimeFilterLookup : public IRuntimeFilterLookup
@@ -247,8 +302,8 @@ public:
         for (const auto & [filter_name, filter] : filters_by_name)
         {
             const auto & stats = filter->getStats();
-            LOG_TRACE(getLogger("RuntimeFilter"), "Stats for '{}': rows checked {}, rows passed {}",
-                filter_name, stats.rows_checked.load(), stats.rows_passed.load());
+            LOG_TRACE(getLogger("RuntimeFilter"), "Stats for '{}': rows skipped {}, rows checked {}, rows passed {}",
+                filter_name, stats.rows_skipped.load(), stats.rows_checked.load(), stats.rows_passed.load());
         }
     }
 

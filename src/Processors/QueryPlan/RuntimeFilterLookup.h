@@ -29,6 +29,7 @@ struct RuntimeFilterStats
 {
     std::atomic<Int64> rows_checked = 0;
     std::atomic<Int64> rows_passed = 0;
+    std::atomic<Int64> rows_skipped = 0;
 };
 
 class IRuntimeFilter
@@ -42,13 +43,15 @@ public:
     virtual void finishInsert() = 0;
 
     /// Looks up each value and returns column of Bool-s
-    virtual ColumnPtr find(const ColumnWithTypeAndName & values) const = 0;
+    ColumnPtr find(const ColumnWithTypeAndName & values) const;
 
     /// Add all keys from one filter to the other so that destination filter contains the union of both filters.
     virtual void merge(const IRuntimeFilter * source) = 0;
 
     /// Usage statistics
+    void updateStats(UInt64 rows_checked, UInt64 rows_passed) const;
     const RuntimeFilterStats & getStats() const { return stats; }
+    void setFullyDisabled() { is_fully_disabled = true; }
 
 protected:
 
@@ -56,12 +59,22 @@ protected:
         : filters_to_merge(filters_to_merge_)
         , filter_column_target_type(filter_column_target_type_) {}
 
+    /// Checks if a block of rows should be skipped because this filter was disabled.
+    bool shouldSkip(size_t next_block_rows) const;
+
+    virtual ColumnPtr doFind(const ColumnWithTypeAndName & values) const = 0;
+
     size_t filters_to_merge;
     const DataTypePtr filter_column_target_type;
 
     std::atomic<bool> inserts_are_finished = false;
 
     mutable RuntimeFilterStats stats;
+
+    /// How many rows should be skipped before trying to re-enable the filter after it was disabled due to
+    /// low percentage of filtered rows
+    mutable std::atomic<Int64> rows_to_skip = 0;
+    std::atomic<bool> is_fully_disabled = false;
 };
 
 template <bool negate>
@@ -124,7 +137,7 @@ public:
         values_count = ValuesCount::MANY;
     }
 
-    ColumnPtr find(const ColumnWithTypeAndName & values) const override;
+    ColumnPtr doFind(const ColumnWithTypeAndName & values) const override;
 
 protected:
 
@@ -195,7 +208,7 @@ public:
     void finishInsert() override;
 
     /// Looks up each value and returns column of Bool-s
-    ColumnPtr find(const ColumnWithTypeAndName & values) const override;
+    ColumnPtr doFind(const ColumnWithTypeAndName & values) const override;
 
     /// Add all keys from one filter to the other so that destination filter contains the union of both filters.
     void merge(const IRuntimeFilter * source) override;
@@ -203,6 +216,9 @@ public:
 private:
     void insertIntoBloomFilter(ColumnPtr values);
     void switchToBloomFilter();
+
+    /// Disables bloom filter if it is likely to have bad selectivity
+    void checkBloomFilterWorthiness();
 
     const UInt64 bloom_filter_hash_functions;
 
