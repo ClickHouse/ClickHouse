@@ -705,6 +705,46 @@ class Result(MetaClasses.Serializable):
         else:
             sys.exit(0)
 
+    def get_info_truncated(
+        self,
+        max_info_lines_cnt=100,
+        truncate_from_top=True,
+        max_line_length=0,
+    ):
+        """
+        Get truncated info string with line count and line length limits applied.
+
+        Args:
+            max_info_lines_cnt: Maximum number of info lines to include
+            truncate_from_top: If True, truncate from the top; if False, truncate from the bottom
+            max_line_length: Maximum length of each line (0 means no limit)
+
+        Returns:
+            Truncated info string
+        """
+        info_lines = self.info.splitlines()
+
+        # Truncate info lines if too many
+        if len(info_lines) > max_info_lines_cnt:
+            truncated_count = len(info_lines) - max_info_lines_cnt
+            if truncate_from_top:
+                info_lines = [
+                    f"~~~~~ truncated {truncated_count} lines ~~~~~"
+                ] + info_lines[-max_info_lines_cnt:]
+            else:
+                info_lines = info_lines[:max_info_lines_cnt] + [
+                    f"~~~~~ truncated {truncated_count} lines ~~~~~"
+                ]
+
+        # Truncate individual lines if too long
+        if max_line_length > 0:
+            info_lines = [
+                line[:max_line_length] + "..." if len(line) > max_line_length else line
+                for line in info_lines
+            ]
+
+        return "\n".join(info_lines)
+
     def to_stdout_formatted(
         self,
         indent="",
@@ -734,23 +774,12 @@ class Result(MetaClasses.Serializable):
 
         if add_frame or not self.is_ok():
             output += f"{indent}{self.status} [{self.name}]\n"
-            info_lines = self.info.splitlines()
-
-            # Truncate info lines if too many
-            if len(info_lines) > max_info_lines_cnt:
-                truncated_count = len(info_lines) - max_info_lines_cnt
-                if truncate_from_top:
-                    info_lines = [
-                        f"~~~~~ truncated {truncated_count} lines ~~~~~"
-                    ] + info_lines[-max_info_lines_cnt:]
-                else:
-                    info_lines = info_lines[:max_info_lines_cnt] + [
-                        f"~~~~~ truncated {truncated_count} lines ~~~~~"
-                    ]
-
-            for line in info_lines:
-                if max_line_length > 0 and len(line) > max_line_length:
-                    line = line[:max_line_length] + "..."
+            truncated_info = self.get_info_truncated(
+                max_info_lines_cnt=max_info_lines_cnt,
+                truncate_from_top=truncate_from_top,
+                max_line_length=max_line_length,
+            )
+            for line in truncated_info.splitlines():
                 output += f"{sub_indent}| {line}\n"
 
         # Recursively format sub-results if this result is not ok
