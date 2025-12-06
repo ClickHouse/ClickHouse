@@ -185,6 +185,7 @@ void AuthenticationData::setPassword(const String & password_, bool validate)
         case AuthenticationType::NO_PASSWORD:
         case AuthenticationType::LDAP:
         case AuthenticationType::JWT:
+        case AuthenticationType::JWKS:
         case AuthenticationType::KERBEROS:
         case AuthenticationType::SSL_CERTIFICATE:
         case AuthenticationType::SSH_KEY:
@@ -312,6 +313,7 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash, bool validat
         case AuthenticationType::NO_PASSWORD:
         case AuthenticationType::LDAP:
         case AuthenticationType::JWT:
+        case AuthenticationType::JWKS:
         case AuthenticationType::KERBEROS:
         case AuthenticationType::SSL_CERTIFICATE:
         case AuthenticationType::SSH_KEY:
@@ -403,6 +405,11 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         case AuthenticationType::JWT:
         {
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is available only in ClickHouse Cloud");
+        }
+        case AuthenticationType::JWKS:
+        {
+            node->children.push_back(std::make_shared<ASTLiteral>(getNamedCollection()));
+            break;
         }
         case AuthenticationType::KERBEROS:
         {
@@ -650,6 +657,11 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
     {
         String value = checkAndGetLiteralArgument<String>(args[0], "ldap_server_name");
         auth_data.setLDAPServerName(value);
+    }
+    else if (query.type == AuthenticationType::JWKS)
+    {
+        String value = checkAndGetLiteralArgument<String>(args[0], "jwks_named_collection");
+        auth_data.setNamedCollection(value);
     }
     else if (query.type == AuthenticationType::KERBEROS)
     {

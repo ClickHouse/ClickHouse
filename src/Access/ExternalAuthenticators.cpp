@@ -561,13 +561,28 @@ bool ExternalAuthenticators::checkHTTPBasicCredentials(
     const String & server, const BasicCredentials & credentials, const ClientInfo & client_info, SettingsChanges & settings) const
 {
     auto params = getHTTPAuthenticationParams(server);
-    HTTPBasicAuthClient<SettingsAuthResponseParser> client(params);
+    HTTPAuthClient<SettingsAuthResponseParser> client(params);
 
-    auto [is_ok, settings_from_auth_server] = client.authenticate(credentials.getUserName(), credentials.getPassword(), client_info.http_headers);
+    auto [is_ok, settings_from_auth_server] = client.authenticateBasic(credentials.getUserName(), credentials.getPassword(), client_info.http_headers);
 
     if (is_ok)
         std::ranges::move(settings_from_auth_server, std::back_inserter(settings));
 
     return is_ok;
 }
+
+bool ExternalAuthenticators::checkHTTPBearerCredentials(
+    const String & server, const String & token, const ClientInfo & client_info, SettingsChanges & settings) const
+{
+    auto params = getHTTPAuthenticationParams(server);
+    HTTPAuthClient<SettingsAuthResponseParser> client(params);
+
+    auto [is_ok, settings_from_auth_server] = client.authenticateBearer(token, client_info.http_headers);
+
+    if (is_ok)
+        std::ranges::move(settings_from_auth_server, std::back_inserter(settings));
+
+    return is_ok;
+}
+
 }
