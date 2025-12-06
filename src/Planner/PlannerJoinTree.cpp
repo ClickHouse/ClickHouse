@@ -24,6 +24,8 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/StorageDummy.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageValues.h>
 
@@ -59,8 +61,6 @@
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-
-#include <Storages/StorageDummy.h>
 
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
@@ -1061,10 +1061,21 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                 auto parallel_replicas_enabled_for_storage = [](const StoragePtr & table, const Settings & query_settings)
                 {
-                    if (!table->isMergeTree())
+                    const auto * mv = typeid_cast<const StorageMaterializedView *>(table.get());
+                    const auto * table_ptr = table.get();
+                    if (mv)
+                    {
+                        // address refreshable MVs separately, currently leads to logical error
+                        if (mv->isRefreshable())
+                            return false;
+
+                        table_ptr = mv->getTargetTable().get();
+                    }
+
+                    if (!table_ptr->isMergeTree())
                         return false;
 
-                    if (!table->supportsReplication() && !query_settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
+                    if (!table_ptr->supportsReplication() && !query_settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
                         return false;
 
                     return true;
