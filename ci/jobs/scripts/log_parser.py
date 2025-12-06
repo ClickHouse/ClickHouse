@@ -1,4 +1,5 @@
 import re
+import string
 import sys
 
 sys.path.append(".")
@@ -55,6 +56,7 @@ class FuzzerLogParser:
         is_sanitizer_error = False
         is_killed_by_signal = False
         is_segfault = False
+        is_memory_limit_exceeded = False
         error_patterns = [
             (
                 "Sanitizer",
@@ -77,6 +79,11 @@ class FuzzerLogParser:
                 "Signal",
                 "is_killed_by_signal",
                 r"Received signal.*|.*Child process was terminated by signal 9.*",
+            ),
+            (
+                "Memory limit exceeded",
+                "is_memory_limit_exceeded",
+                r".*\(total\) memory limit exceeded.*",
             ),
         ]
 
@@ -103,12 +110,27 @@ class FuzzerLogParser:
                     is_killed_by_signal = True
                 elif flag_name == "is_segfault":
                     is_segfault = True
+                elif flag_name == "is_memory_limit_exceeded":
+                    is_memory_limit_exceeded = True
                 break
 
         if not error_output:
             return self.UNKNOWN_ERROR, "Lost connection to server. See the logs.\n"
 
         error_lines = error_output.splitlines()
+        result_name = error_lines[0].removesuffix(".")
+        format_message = ""
+        for i, line in enumerate(error_lines):
+            if "Format string: " in line:
+                # Extract the format string content between quotes
+                # Example: "... <Fatal> : Format string: 'Unknown numeric column of type: {}'."
+                start_idx = line.find("Format string: ")
+                if start_idx != -1:
+                    substring = line[start_idx + len("Format string: ") :]
+                    # Remove quotes and trailing period
+                    substring = substring.strip().strip("'\"").rstrip(".")
+                    format_message = substring
+                break
         # keep all lines before next log line
         for i, line in enumerate(error_lines):
             if "] {" in line and "} <" in line or line.startswith("    #"):
@@ -116,7 +138,6 @@ class FuzzerLogParser:
                 error_lines = error_lines[:i]
                 break
         error_output = "\n".join(error_lines)
-        result_name = error_lines[0].removesuffix(".")
         failed_query = ""
         reproduce_commands = []
         stack_trace = self.get_stack_trace()
@@ -126,8 +147,20 @@ class FuzzerLogParser:
             failed_query = self.get_failed_query()
             if failed_query:
                 reproduce_commands = self.get_reproduce_commands(failed_query)
+            if format_message:
+                # Replace {} placeholders with A, B, C, etc.
+                letters = string.ascii_uppercase
+                letter_index = 0
+                while "{}" in format_message and letter_index < len(letters):
+                    format_message = format_message.replace(
+                        "{}", letters[letter_index], 1
+                    )
+                    letter_index += 1
+                result_name = f"Logical error: {format_message}"
         elif is_killed_by_signal or is_segfault:
             result_name += f" (STID: {stack_trace_id})"
+        elif is_memory_limit_exceeded:
+            result_name = "Server unresponsive: memory limit exceeded"
         elif is_sanitizer_error:
             stack_trace = self.get_sanitizer_stack_trace()
             if not stack_trace:
@@ -340,8 +373,10 @@ class FuzzerLogParser:
         # Remove exception functions and everything above them
         for i, func in enumerate(functions):
             if "DB::Exception" in func:
-                functions = functions[:i]
+                functions = functions[i + 1 :]
                 break
+        # Remove all remaining DB::Exception functions
+        functions = [f for f in functions if "DB::Exception" not in f]
 
         # Limit to top ST_MAX_DEPTH functions for broader matching
         functions = functions[:ST_MAX_DEPTH]
@@ -379,9 +414,10 @@ class FuzzerLogParser:
         assert failure_output, "No failure found in server log"
         failure_first_line = failure_output.splitlines()[0]
         assert failure_first_line, "No failure first line found in server log"
-        print(f"Failure first line: {failure_first_line}")
         query_id = failure_first_line.split(" ] {")[1].split("}")[0]
-        assert query_id, "No query id found in server log"
+        if not query_id:
+            print("ERROR: Query id not found")
+            return None
         print(f"Query id: {query_id}")
         query_command = Shell.get_output(
             f"grep -a '{query_id}' {self.server_log} | head -n1"
@@ -502,7 +538,7 @@ class FuzzerLogParser:
 if __name__ == "__main__":
     # Test:
     fuzzer_log = "./asan_err/fuzzer.log"
-    server_log = "./asan_err/server.log"
+    server_log = "./no_stid/server.log"
     FTG = FuzzerLogParser(server_log, fuzzer_log)
     # FTG2 = FuzzerLogParser("", "", stack_trace_str="...")
     result_name, info = FTG.parse_failure()

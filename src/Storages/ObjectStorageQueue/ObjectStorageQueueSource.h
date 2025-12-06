@@ -127,6 +127,7 @@ public:
         };
         NextKeyFromBucket getNextKeyFromAcquiredBucket(size_t processor) TSA_REQUIRES(mutex);
         bool hasKeysForProcessor(const Processor & processor) const;
+        std::string bucketHoldersToString() const TSA_REQUIRES(mutex);
     };
 
     struct CommitSettings

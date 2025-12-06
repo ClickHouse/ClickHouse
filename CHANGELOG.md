@@ -1,5 +1,5 @@
 ### Table of Contents
-**[ClickHouse release v25.11, 2025-11-25](#2511)**<br/>
+**[ClickHouse release v25.11, 2025-11-27](#2511)**<br/>
 **[ClickHouse release v25.10, 2025-10-30](#2510)**<br/>
 **[ClickHouse release v25.9, 2025-09-25](#259)**<br/>
 **[ClickHouse release v25.8 LTS, 2025-08-28](#258)**<br/>

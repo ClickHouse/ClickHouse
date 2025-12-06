@@ -313,16 +313,16 @@ TEST(ColumnObject, SerializeDeserializerFromArena)
 
     Arena arena;
     const char * pos = nullptr;
-    auto ref1 = col_object.serializeValueIntoArena(0, arena, pos);
-    col_object.serializeValueIntoArena(1, arena, pos);
-    col_object.serializeValueIntoArena(2, arena, pos);
+    auto ref1 = col_object.serializeValueIntoArena(0, arena, pos, nullptr);
+    col_object.serializeValueIntoArena(1, arena, pos, nullptr);
+    col_object.serializeValueIntoArena(2, arena, pos, nullptr);
 
     auto col2 = type->createColumn();
     auto & col_object2 = assert_cast<ColumnObject &>(*col);
     ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
-    col_object2.deserializeAndInsertFromArena(in);
-    col_object2.deserializeAndInsertFromArena(in);
-    col_object2.deserializeAndInsertFromArena(in);
+    col_object2.deserializeAndInsertFromArena(in, nullptr);
+    col_object2.deserializeAndInsertFromArena(in, nullptr);
+    col_object2.deserializeAndInsertFromArena(in, nullptr);
     ASSERT_TRUE(in.eof());
 
     ASSERT_EQ(col_object2[0], (Object{{"b.d", Field(42u)}, {"a.b", Array{"Str1", "Str2"}}, {"a.a", Tuple{"Str3", 441u}}, {"a.c", Field("Str4")}, {"a.d", Array{Field(45), Field(46)}}, {"a.e", Field(47)}}));
@@ -341,9 +341,9 @@ TEST(ColumnObject, SkipSerializedInArena)
 
     Arena arena;
     const char * pos = nullptr;
-    auto ref1 = col_object.serializeValueIntoArena(0, arena, pos);
-    col_object.serializeValueIntoArena(1, arena, pos);
-    col_object.serializeValueIntoArena(2, arena, pos);
+    auto ref1 = col_object.serializeValueIntoArena(0, arena, pos, nullptr);
+    col_object.serializeValueIntoArena(1, arena, pos, nullptr);
+    col_object.serializeValueIntoArena(2, arena, pos, nullptr);
 
     auto col2 = type->createColumn();
     ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)

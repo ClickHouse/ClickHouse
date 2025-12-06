@@ -297,17 +297,16 @@ void StatementGenerator::generateHotTableSettingsValues(RandomGenerator & rg, co
 
     for (size_t i = 0; i < nsets; i++)
     {
+        /// During table creating enable settings if so
         const String & next = fc.hot_table_settings[this->ids[i]];
         SetValue * sv = vals->has_set_value() ? vals->add_other_values() : vals->mutable_set_value();
+        const auto & sett = allTableSettings.at(MergeTree).at(next);
+        const auto & ov = sett.oracle_values;
 
         sv->set_property(next);
         sv->set_value(
-            ((create
-              && (startsWith(next, "add_") || startsWith(next, "allow_") || startsWith(next, "index_") || startsWith(next, "enable_")
-                  || startsWith(next, "ttl_")))
-             || rg.nextBool())
-                ? "1"
-                : "0");
+            (create && ov.contains("0")) ? "1"
+                                         : ((ov.empty() || rg.nextSmallNumber() < 4) ? sett.random_func(rg, fc) : rg.pickRandomly(ov)));
     }
     this->ids.clear();
 }
@@ -636,7 +635,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
             next.cols.insert(i);
         }
     }
-    if (rg.nextSmallNumber() < 2)
+    if (!next.isShared() && (!next.db || !next.db->isSharedDatabase()) && (next.db || !supports_cloud_features) && rg.nextSmallNumber() < 2)
     {
         cv->set_uuid(rg.nextUUID());
     }
@@ -1194,7 +1193,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
             grf->set_random_seed(rg.nextInFullRange());
             grf->set_max_string_length(string_length_dist(rg.generator));
             grf->set_max_array_length(nested_rows_dist(rg.generator));
-            ssc->mutable_limit()->mutable_limit()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rows_dist(rg.generator));
+            ssc->mutable_limit()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rows_dist(rg.generator));
         }
         else if (number_func && nopt < (hardcoded_insert + random_values + generate_random + number_func + 1))
         {
@@ -2696,7 +2695,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
 
     const uint32_t reload_embedded_dictionaries = 1;
     const uint32_t reload_dictionaries = 3;
-    const uint32_t reload_models = 3;
+    const uint32_t reload_models = 0;
     const uint32_t reload_functions = 3;
     const uint32_t reload_function = 0 * static_cast<uint32_t>(!functions.empty());
     const uint32_t reload_asynchronous_metrics = 3;
@@ -2710,8 +2709,8 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
     const uint32_t reload_config = 3;
     const uint32_t reload_users = 3;
     /// For merge trees
-    const uint32_t stop_merges = 20 * has_merge_tree;
-    const uint32_t start_merges = 20 * has_merge_tree;
+    const uint32_t stop_merges = 0 * has_merge_tree;
+    const uint32_t start_merges = 0 * has_merge_tree;
     const uint32_t stop_ttl_merges = 20 * has_merge_tree;
     const uint32_t start_ttl_merges = 20 * has_merge_tree;
     const uint32_t stop_moves = 8 * has_merge_tree;
@@ -5041,40 +5040,38 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
     else if (ssq.has_explain() && !ssq.explain().is_explain() && query.has_drop() && success)
     {
         const Drop & drp = query.drop();
-        const bool istable = drp.object().has_est() && drp.object().est().table().table()[0] == 't';
-        const bool isview = drp.object().has_est() && drp.object().est().table().table()[0] == 'v';
-        const bool isdictionary = drp.object().has_est() && drp.object().est().table().table()[0] == 'd';
-        const bool isdatabase = drp.object().has_database();
-        const bool isfunction = drp.object().has_function();
 
-        if (istable)
+        if (drp.sobject() == SQLObject::TABLE)
         {
             dropTable(false, true, getIdentifierFromString(drp.object().est().table().table()));
         }
-        else if (isview)
+        else if (drp.sobject() == SQLObject::VIEW)
         {
             this->views.erase(getIdentifierFromString(drp.object().est().table().table()));
         }
-        else if (isdictionary)
+        else if (drp.sobject() == SQLObject::DICTIONARY)
         {
             this->dictionaries.erase(getIdentifierFromString(drp.object().est().table().table()));
         }
-        else if (isdatabase)
+        else if (drp.sobject() == SQLObject::DATABASE)
         {
             dropDatabase(getIdentifierFromString(drp.object().database().database()), true);
         }
-        else if (isfunction)
+        else if (drp.sobject() == SQLObject::FUNCTION)
         {
             this->functions.erase(getIdentifierFromString(drp.object().function().function()));
+        }
+        else
+        {
+            UNREACHABLE();
         }
     }
     else if (ssq.has_explain() && !ssq.explain().is_explain() && query.has_exchange() && success)
     {
         const Exchange & ex = query.exchange();
         const SQLObjectName & obj1 = ex.object1();
-        const bool istable = obj1.has_est() && obj1.est().table().table()[0] == 't';
-        const bool isview = obj1.has_est() && obj1.est().table().table()[0] == 'v';
-        const bool isdictionary = obj1.has_est() && obj1.est().table().table()[0] == 'd';
+        const bool istable = ex.sobject() == SQLObject::TABLE && obj1.est().table().table()[0] == 't';
+        const bool isview = ex.sobject() == SQLObject::TABLE && obj1.est().table().table()[0] == 'v';
         const uint32_t tname1 = getIdentifierFromString(obj1.est().table().table());
         const uint32_t tname2 = getIdentifierFromString(query.exchange().object2().est().table().table());
 
@@ -5086,9 +5083,13 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
         {
             this->exchangeObjects<SQLView>(tname1, tname2);
         }
-        else if (isdictionary)
+        else if (ex.sobject() == SQLObject::DICTIONARY)
         {
             this->exchangeObjects<SQLDictionary>(tname1, tname2);
+        }
+        else
+        {
+            UNREACHABLE();
         }
     }
     else if (ssq.has_explain() && !ssq.explain().is_explain() && query.has_rename() && success)
@@ -5096,10 +5097,9 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
         const Rename & ren = query.rename();
         const SQLObjectName & oobj = ren.old_object();
         const SQLObjectName & nobj = ren.new_object();
-        const bool istable = oobj.has_est() && oobj.est().table().table()[0] == 't';
-        const bool isview = oobj.has_est() && oobj.est().table().table()[0] == 'v';
-        const bool isdictionary = oobj.has_est() && oobj.est().table().table()[0] == 'd';
-        const bool isdatabase = oobj.has_database();
+        const bool istable = ren.sobject() == SQLObject::TABLE && oobj.est().table().table()[0] == 't';
+        const bool isview = ren.sobject() == SQLObject::TABLE && oobj.est().table().table()[0] == 'v';
+        const bool isdatabase = ren.sobject() == SQLObject::DATABASE;
         const uint32_t old_tname = getIdentifierFromString(isdatabase ? oobj.database().database() : oobj.est().table().table());
         const uint32_t new_tname = getIdentifierFromString(isdatabase ? nobj.database().database() : nobj.est().table().table());
         std::optional<uint32_t> new_db;
@@ -5116,13 +5116,17 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
         {
             this->renameObjects<SQLView>(old_tname, new_tname, new_db);
         }
-        else if (isdictionary)
+        else if (ren.sobject() == SQLObject::DICTIONARY)
         {
             this->renameObjects<SQLDictionary>(old_tname, new_tname, new_db);
         }
         else if (isdatabase)
         {
             this->renameObjects<std::shared_ptr<SQLDatabase>>(old_tname, new_tname, new_db);
+        }
+        else
+        {
+            UNREACHABLE();
         }
     }
     else if (ssq.has_explain() && !ssq.explain().is_explain() && query.has_alter())
@@ -5367,31 +5371,33 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
     }
     else if (ssq.has_explain() && !ssq.explain().is_explain() && (query.has_attach() || query.has_detach()) && success)
     {
+        const SQLObject & ob = query.has_attach() ? query.attach().sobject() : query.detach().sobject();
         const SQLObjectName & oobj = query.has_attach() ? query.attach().object() : query.detach().object();
-        const bool istable = oobj.has_est() && oobj.est().table().table()[0] == 't';
-        const bool isview = oobj.has_est() && oobj.est().table().table()[0] == 'v';
-        const bool isdictionary = oobj.has_est() && oobj.est().table().table()[0] == 'd';
-        const bool isdatabase = oobj.has_database();
-        const uint32_t tname = getIdentifierFromString(isdatabase ? oobj.database().database() : oobj.est().table().table());
+        const bool istable = ob == SQLObject::TABLE && oobj.est().table().table()[0] == 't';
+        const bool isview = ob == SQLObject::TABLE && oobj.est().table().table()[0] == 'v';
         const DetachStatus status = query.has_attach()
             ? DetachStatus::ATTACHED
             : (query.detach().permanently() ? DetachStatus::PERM_DETACHED : DetachStatus::DETACHED);
 
         if (istable)
         {
-            this->attachOrDetachObject<SQLTable>(tname, status);
+            this->attachOrDetachObject<SQLTable>(getIdentifierFromString(oobj.est().table().table()), status);
         }
         else if (isview)
         {
-            this->attachOrDetachObject<SQLView>(tname, status);
+            this->attachOrDetachObject<SQLView>(getIdentifierFromString(oobj.est().table().table()), status);
         }
-        else if (isdictionary)
+        else if (ob == SQLObject::DICTIONARY)
         {
-            this->attachOrDetachObject<SQLDictionary>(tname, status);
+            this->attachOrDetachObject<SQLDictionary>(getIdentifierFromString(oobj.est().table().table()), status);
         }
-        else if (isdatabase)
+        else if (ob == SQLObject::DATABASE)
         {
-            this->attachOrDetachObject<std::shared_ptr<SQLDatabase>>(tname, status);
+            this->attachOrDetachObject<std::shared_ptr<SQLDatabase>>(getIdentifierFromString(oobj.database().database()), status);
+        }
+        else
+        {
+            UNREACHABLE();
         }
     }
     else if (ssq.has_explain() && query.has_create_database())
@@ -5453,10 +5459,13 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                 {
                     const uint32_t tname = getIdentifierFromString(est.table().table());
 
-                    newb.tables[tname] = this->tables[tname];
-                    if (bro.partitions_size())
+                    if (this->tables.contains(tname))
                     {
-                        newb.partition_id = bro.partitions(0).partition_id();
+                        newb.tables[tname] = this->tables[tname];
+                        if (bro.partitions_size())
+                        {
+                            newb.partition_id = bro.partitions(0).partition_id();
+                        }
                     }
                 }
                 else
@@ -5469,44 +5478,57 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
             {
                 const uint32_t vname = getIdentifierFromString(bre.bobject().object().est().table().table());
 
-                newb.views[vname] = this->views[vname];
+                if (this->views.contains(vname))
+                {
+                    newb.views[vname] = this->views[vname];
+                }
             }
             else if (bre.has_bobject() && bre.bobject().sobject() == SQLObject::DICTIONARY)
             {
                 const uint32_t dname = getIdentifierFromString(bre.bobject().object().est().table().table());
 
-                newb.dictionaries[dname] = this->dictionaries[dname];
+                if (this->dictionaries.contains(dname))
+                {
+                    newb.dictionaries[dname] = this->dictionaries[dname];
+                }
             }
             else if (bre.has_bobject() && bre.bobject().sobject() == SQLObject::DATABASE)
             {
                 const uint32_t dname = getIdentifierFromString(bre.bobject().object().database().database());
 
-                for (const auto & [key, val] : this->tables)
+                if (this->databases.contains(dname))
                 {
-                    if (val.db && val.db->dname == dname)
+                    for (const auto & [key, val] : this->tables)
                     {
-                        newb.tables[key] = val;
+                        if (val.db && val.db->dname == dname)
+                        {
+                            newb.tables[key] = val;
+                        }
                     }
-                }
-                for (const auto & [key, val] : this->views)
-                {
-                    if (val.db && val.db->dname == dname)
+                    for (const auto & [key, val] : this->views)
                     {
-                        newb.views[key] = val;
+                        if (val.db && val.db->dname == dname)
+                        {
+                            newb.views[key] = val;
+                        }
                     }
-                }
-                for (const auto & [key, val] : this->dictionaries)
-                {
-                    if (val.db && val.db->dname == dname)
+                    for (const auto & [key, val] : this->dictionaries)
                     {
-                        newb.dictionaries[key] = val;
+                        if (val.db && val.db->dname == dname)
+                        {
+                            newb.dictionaries[key] = val;
+                        }
                     }
+                    newb.databases[dname] = this->databases[dname];
                 }
-                newb.databases[dname] = this->databases[dname];
+            }
+            else
+            {
+                UNREACHABLE();
             }
             this->backups[br.backup_number()] = std::move(newb);
         }
-        else
+        else if (backups.contains(br.backup_number()))
         {
             const CatalogBackup & backup = backups.at(br.backup_number());
 

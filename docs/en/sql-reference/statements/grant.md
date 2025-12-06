@@ -768,6 +768,12 @@ Allows using a specified table engine when creating a table. Applies to [table e
 - `GRANT TABLE ENGINE ON * TO john`
 - `GRANT TABLE ENGINE ON TinyLog TO john`
 
+:::note
+By default, for backward compatibility reasons, creating a table with a specific table engine ignores grants,
+however you can change this behaviour by setting [`table_engines_require_grant` to true](https://github.com/ClickHouse/ClickHouse/blob/df970ed64eaf472de1e7af44c21ec95956607ebb/programs/server/config.xml#L853-L855)
+in config.xml.
+:::
+
 ### ALL {#all}
 
 <CloudNotSupportedBadge/>

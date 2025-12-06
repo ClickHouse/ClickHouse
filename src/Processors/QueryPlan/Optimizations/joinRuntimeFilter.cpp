@@ -157,6 +157,9 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 common_type = join_key_build_side.type;
             }
 
+            LOG_TRACE(getLogger("joinRuntimeFilter"), "Runtime filter '{}' will be built from `{}` and applied to `{}`",
+                filter_name, join_key_build_side.name, join_key_probe_side.name);
+
             /// Add filter lookup to the probe subtree
             all_filter_conditions.push_back(&createRuntimeFilterCondition(filter_dag, filter_name, join_key_probe_side, common_type));
 
