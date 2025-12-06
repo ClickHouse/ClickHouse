@@ -12,6 +12,7 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -184,6 +185,85 @@ UInt64 & getInlineCountState(DB::AggregateDataPtr & ptr)
 namespace DB
 {
 
+namespace
+{
+
+/// Normalize an array column for GROUP BY based on the comparison mode.
+/// For ORDERED mode, returns the column unchanged.
+/// For MULTISET mode, sorts each array's elements.
+/// For SET mode, sorts and removes duplicates from each array.
+ColumnPtr normalizeArrayColumnForGroupBy(const ColumnPtr & column, ArrayGroupByMode mode)
+{
+    if (mode == ArrayGroupByMode::ORDERED)
+        return column;
+
+    const auto * col_array = typeid_cast<const ColumnArray *>(column.get());
+    if (!col_array)
+        return column;
+
+    const auto & offsets = col_array->getOffsets();
+    const auto & data = col_array->getData();
+    const size_t num_rows = offsets.size();
+
+    auto result_data = data.cloneEmpty();
+    auto result_offsets = ColumnArray::ColumnOffsets::create(num_rows);
+    auto & result_offsets_data = result_offsets->getData();
+
+    IColumn::Offset current_offset = 0;
+
+    for (size_t row = 0; row < num_rows; ++row)
+    {
+        const size_t array_offset = row > 0 ? offsets[row - 1] : 0;
+        const size_t array_size = offsets[row] - array_offset;
+
+        if (array_size == 0)
+        {
+            result_offsets_data[row] = current_offset;
+            continue;
+        }
+
+        /// Create a permutation for sorting
+        IColumn::Permutation perm(array_size);
+        for (size_t i = 0; i < array_size; ++i)
+            perm[i] = i;
+
+        /// Sort the permutation based on element values
+        ::sort(perm.begin(), perm.end(), [&](size_t a, size_t b)
+        {
+            return data.compareAt(array_offset + a, array_offset + b, data, 1) < 0;
+        });
+
+        if (mode == ArrayGroupByMode::SET)
+        {
+            /// Insert unique elements only
+            for (size_t i = 0; i < array_size; ++i)
+            {
+                size_t elem_idx = array_offset + perm[i];
+                /// Skip duplicates
+                if (i > 0 && data.compareAt(array_offset + perm[i - 1], elem_idx, data, 1) == 0)
+                    continue;
+                result_data->insertFrom(data, elem_idx);
+                ++current_offset;
+            }
+        }
+        else /// MULTISET
+        {
+            /// Insert all elements in sorted order
+            for (size_t i = 0; i < array_size; ++i)
+            {
+                result_data->insertFrom(data, array_offset + perm[i]);
+                ++current_offset;
+            }
+        }
+
+        result_offsets_data[row] = current_offset;
+    }
+
+    return ColumnArray::create(std::move(result_data), std::move(result_offsets));
+}
+
+}
+
 Block Aggregator::getHeader(bool final) const
 {
     return params.getHeader(header, final);
@@ -211,7 +291,8 @@ Aggregator::Params::Params(
     float min_hit_rate_to_use_consecutive_keys_optimization_,
     const StatsCollectingParams & stats_collecting_params_,
     bool enable_producing_buckets_out_of_order_in_aggregation_,
-    bool serialize_string_with_zero_byte_)
+    bool serialize_string_with_zero_byte_,
+    ArrayGroupByMode array_group_by_mode_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
@@ -236,6 +317,7 @@ Aggregator::Params::Params(
     , stats_collecting_params(stats_collecting_params_)
     , enable_producing_buckets_out_of_order_in_aggregation(enable_producing_buckets_out_of_order_in_aggregation_)
     , serialize_string_with_zero_byte(serialize_string_with_zero_byte_)
+    , array_group_by_mode(array_group_by_mode_)
 {
 }
 
@@ -1692,6 +1774,17 @@ bool Aggregator::executeOnBlock(Columns columns,
             if (column_no_lc.get() != key_columns[i])
             {
                 materialized_columns.emplace_back(std::move(column_no_lc));
+                key_columns[i] = materialized_columns.back().get();
+            }
+        }
+
+        /// Normalize array columns based on array_group_by_mode setting
+        if (params.array_group_by_mode != ArrayGroupByMode::ORDERED)
+        {
+            auto normalized = normalizeArrayColumnForGroupBy(key_columns[i]->getPtr(), params.array_group_by_mode);
+            if (normalized.get() != key_columns[i])
+            {
+                materialized_columns.emplace_back(std::move(normalized));
                 key_columns[i] = materialized_columns.back().get();
             }
         }
