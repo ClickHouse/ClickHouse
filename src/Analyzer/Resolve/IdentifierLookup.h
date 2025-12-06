@@ -45,6 +45,8 @@ struct IdentifierLookup
     Identifier identifier;
     IdentifierLookupContext lookup_context;
     ASTPtr original_ast_node = nullptr;
+    bool allow_resolve_from_using = true;  /// Part of cache key - PREWHERE sets this to false
+    size_t in_function_instance_id = 0;  /// Part of cache key - each IN function gets unique resolution context
 
     bool isExpressionLookup() const
     {
@@ -69,7 +71,10 @@ struct IdentifierLookup
 
 inline bool operator==(const IdentifierLookup & lhs, const IdentifierLookup & rhs)
 {
-    return lhs.identifier.getFullName() == rhs.identifier.getFullName() && lhs.lookup_context == rhs.lookup_context;
+    return lhs.identifier.getFullName() == rhs.identifier.getFullName()
+        && lhs.lookup_context == rhs.lookup_context
+        && lhs.allow_resolve_from_using == rhs.allow_resolve_from_using
+        && lhs.in_function_instance_id == rhs.in_function_instance_id;
 }
 
 [[maybe_unused]] inline bool operator!=(const IdentifierLookup & lhs, const IdentifierLookup & rhs)
@@ -81,7 +86,10 @@ struct IdentifierLookupHash
 {
     size_t operator()(const IdentifierLookup & identifier_lookup) const
     {
-        return std::hash<std::string>()(identifier_lookup.identifier.getFullName()) ^ static_cast<uint8_t>(identifier_lookup.lookup_context);
+        return std::hash<std::string>()(identifier_lookup.identifier.getFullName())
+            ^ static_cast<uint8_t>(identifier_lookup.lookup_context)
+            ^ (identifier_lookup.allow_resolve_from_using ? 0x100 : 0)
+            ^ (identifier_lookup.in_function_instance_id << 9);
     }
 };
 
@@ -116,6 +124,7 @@ struct IdentifierResolveResult
 {
     QueryTreeNodePtr resolved_identifier;
     IdentifierResolvePlace resolve_place = IdentifierResolvePlace::NONE;
+    bool requires_clone_from_cache = false;  /// Computed at cache insert time to avoid repeated tree traversal
 
     explicit operator bool() const
     {
@@ -211,6 +220,11 @@ struct IdentifierResolveContext
     /// Initial scope where identifier resolution started.
     /// Should be used to resolve aliased expressions.
     IdentifierResolveScope * scope_to_resolve_alias_expression = nullptr;
+
+    bool isInitialContext() const
+    {
+        return scope_to_resolve_alias_expression == nullptr;
+    }
 
     IdentifierResolveContext & resolveAliasesAt(IdentifierResolveScope * scope_to_resolve_alias_expression_)
     {
