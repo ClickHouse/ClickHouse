@@ -9,8 +9,8 @@
 #include <Core/ServerSettings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadBuffer.h>
-#include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
+#include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
