@@ -22,11 +22,11 @@ Unlike [Native](./Native.md), it does **not** store column names, column types, 
 In this format, data is written and read by [blocks](/development/architecture#block) in a binary format. Buffers uses the same per-column binary representation as the [Native](./Native.md) format and respects the same Native format settings.
 
 For each block, the following sequence is written:
-1. Number of columns (UInt64, little endian).
-2. Number of rows (UInt64, little endian).
+1. Number of columns (UInt64, little-endian).
+2. Number of rows (UInt64, little-endian).
 3. For each column:
-  - Total byte size of the serialized column data (UInt64, little endian).
-  - Serialized column data bytes, exactly as in the Native format.
+- Total byte size of the serialized column data (UInt64, little-endian).
+- Serialized column data bytes, exactly as in the [Native](./Native.md) format.
 
 ## Example usage {#example-usage}
 
