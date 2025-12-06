@@ -60,6 +60,10 @@ bool ParserUpdateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!parser_exp_elem.parse(pos, query->predicate, expected))
         return false;
 
+    /// Aliases are not allowed in the predicate.
+    if (!query->predicate->tryGetAlias().empty())
+        return false;
+
     if (s_settings.ignore(pos, expected))
     {
         ParserSetQuery parser_settings(true);
