@@ -61,6 +61,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
@@ -722,6 +723,32 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
         .getDatabase(storage_id.database_name)
         ->alterTable(context, storage_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
+
+    /// Ensure that the partition strategy is reinitialized when there are column changes. If the partition
+    /// strategy is not updated correctly, then this might lead to logical errors due to a mismatch between
+    /// the expected block structure and the actual chunk.
+    if (configuration->partition_strategy)
+    {
+        bool has_column_changes = false;
+        for (const auto & command : params)
+        {
+            if (command.type == AlterCommand::ADD_COLUMN || command.type == AlterCommand::DROP_COLUMN
+                || command.type == AlterCommand::MODIFY_COLUMN || command.type == AlterCommand::RENAME_COLUMN)
+            {
+                has_column_changes = true;
+                break;
+            }
+        }
+
+        if (has_column_changes)
+        {
+            /// Get the parititon key from the newest metadata.
+            const auto & partition_key = new_metadata.getPartitionKey();
+            if (!partition_key.definition_ast)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Partition key AST is missing");
+            configuration->initPartitionStrategy(partition_key.definition_ast, new_metadata.getColumns(), context);
+        }
+    }
 }
 
 void StorageObjectStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /*context*/) const
