@@ -68,7 +68,7 @@ Required parameters:
 Optional parameters:
 
 - `kafka_security_protocol` - Protocol used to communicate with brokers. Possible values: `plaintext`, `ssl`, `sasl_plaintext`, `sasl_ssl`.
-- `kafka_sasl_mechanism` - SASL mechanism to use for authentication. Possible values: `GSSAPI`, `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER`.
+- `kafka_sasl_mechanism` - SASL mechanism to use for authentication. Possible values: `GSSAPI`, `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER`, `AWS_MSK_IAM`.
 - `kafka_sasl_username` - SASL username for use with the `PLAIN` and `SASL-SCRAM-..` mechanisms.
 - `kafka_sasl_password` - SASL password for use with the `PLAIN` and `SASL-SCRAM-..` mechanisms.
 - `kafka_schema` — Parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
@@ -232,6 +232,69 @@ Similar to GraphiteMergeTree, the Kafka engine supports extended configuration u
 ```
 
 For a list of possible configuration options, see the [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). Use the underscore (`_`) instead of a dot in the ClickHouse configuration. For example, `check.crcs=true` will be `<check_crcs>true</check_crcs>`.
+
+### AWS MSK IAM Authentication {#kafka-aws-msk-iam}
+
+:::note
+AWS MSK IAM authentication requires ClickHouse to be built with AWS S3 support enabled.
+:::
+
+AWS Managed Streaming for Apache Kafka (MSK) supports IAM-based authentication for both Standard and Serverless clusters. This allows you to connect to MSK clusters without managing separate credentials.
+
+To use AWS MSK IAM authentication:
+
+1. Set `kafka_sasl_mechanism` to `AWS_MSK_IAM`
+2. Configure `kafka_broker_list` with your MSK broker endpoints
+3. Ensure AWS credentials are available through one of the standard AWS credential providers (environment variables, IAM role, credentials file, etc.)
+
+The AWS region will be automatically detected from the broker endpoint format. Supported broker formats include:
+- Standard MSK: `b-X.cluster.kafka.<region>.amazonaws.com:9098`
+- Serverless MSK: `boot-X.kafka-serverless.<region>.amazonaws.com:9098`
+- VPC Endpoint: `vpce-X.kafka.<region>.vpce.amazonaws.com:9098`
+
+Example for AWS MSK Standard cluster:
+
+```sql
+CREATE TABLE msk_queue (
+    timestamp UInt64,
+    level String,
+    message String
+) ENGINE = Kafka()
+SETTINGS
+    kafka_broker_list = 'b-1.mycluster.kafka.us-east-1.amazonaws.com:9098',
+    kafka_topic_list = 'my-topic',
+    kafka_group_name = 'my-group',
+    kafka_format = 'JSONEachRow',
+    kafka_sasl_mechanism = 'AWS_MSK_IAM';
+```
+
+Example for AWS MSK Serverless cluster:
+
+```sql
+CREATE TABLE msk_serverless_queue (
+    timestamp UInt64,
+    level String,
+    message String
+) ENGINE = Kafka()
+SETTINGS
+    kafka_broker_list = 'boot-abc123.kafka-serverless.us-west-2.amazonaws.com:9098',
+    kafka_topic_list = 'my-topic',
+    kafka_group_name = 'my-group',
+    kafka_format = 'JSONEachRow',
+    kafka_sasl_mechanism = 'AWS_MSK_IAM';
+```
+
+The engine automatically handles:
+- AWS credential retrieval using the default credential provider chain
+- Token generation and refresh (tokens are automatically refreshed every 5 minutes)
+- Detection of cluster type (Standard vs Serverless)
+- Region extraction from broker endpoints
+
+**Authentication Requirements:**
+
+- AWS credentials must have appropriate IAM permissions for Kafka operations (e.g., `kafka-cluster:Connect`, `kafka-cluster:DescribeTopic`, `kafka-cluster:ReadData`)
+- The broker port must be configured for IAM authentication (typically port 9098 for MSK)
+- Network connectivity to AWS MSK cluster
 
 ### Kerberos support {#kafka-kerberos-support}
 

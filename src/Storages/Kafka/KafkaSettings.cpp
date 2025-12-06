@@ -46,7 +46,7 @@ namespace ErrorCodes
     DECLARE(String, kafka_keeper_path, "", "The path to the table in ClickHouse Keeper", 0) \
     DECLARE(String, kafka_replica_name, "", "The replica name in ClickHouse Keeper", 0) \
     DECLARE(String, kafka_security_protocol, "", "Protocol used to communicate with brokers.", 0) \
-    DECLARE(String, kafka_sasl_mechanism, "", "SASL mechanism to use for authentication. Supported: GSSAPI, PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER.", 0) \
+    DECLARE(String, kafka_sasl_mechanism, "", "SASL mechanism to use for authentication. Supported: GSSAPI, PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER, AWS_MSK_IAM.", 0) \
     DECLARE(String, kafka_sasl_username, "", "SASL username for use with the PLAIN and SASL-SCRAM-.. mechanisms", 0) \
     DECLARE(String, kafka_sasl_password, "", "SASL password for use with the PLAIN and SASL-SCRAM-.. mechanisms", 0) \
     DECLARE(String, kafka_compression_codec, "", "Compression codec used for producing messages. Supported: empty string, none, gzip, snappy, lz4, zstd. In case of empty string the compression codec is not set by the table, thus values from the config files or default value from `librdkafka` will be used.", 0) \

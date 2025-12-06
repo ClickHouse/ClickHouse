@@ -1,11 +1,13 @@
 #include <Storages/Kafka/KafkaConfigLoader.h>
 
 #include <Access/KerberosInit.h>
+#include <Storages/Kafka/AWSMSKIAMAuth.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/StorageKafka2.h>
 #include <Storages/Kafka/parseSyslogLevel.h>
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -364,7 +366,33 @@ void updateConfigurationFromConfig(
     if (!kafka_settings[KafkaSetting::kafka_security_protocol].value.empty())
         kafka_config.set("security.protocol", kafka_settings[KafkaSetting::kafka_security_protocol]);
     if (!kafka_settings[KafkaSetting::kafka_sasl_mechanism].value.empty())
-        kafka_config.set("sasl.mechanism", kafka_settings[KafkaSetting::kafka_sasl_mechanism]);
+    {
+        String sasl_mechanism = kafka_settings[KafkaSetting::kafka_sasl_mechanism].value;
+
+        // Check if this is AWS MSK IAM authentication (case-insensitive to match librdkafka behavior)
+        if (boost::iequals(sasl_mechanism, "AWS_MSK_IAM"))
+        {
+            // User specified rdkafka.sasl.mechanism=AWS_MSK_IAM
+            // Convert to OAUTHBEARER and configure AWS MSK IAM token generation
+            LOG_INFO(params.log, "Detected rdkafka.sasl.mechanism=AWS_MSK_IAM, configuring AWS MSK IAM OAuth");
+
+            String broker_list = kafka_config.has_property("metadata.broker.list")
+                ? kafka_config.get("metadata.broker.list")
+                : "";
+
+            // configureOAuthCallbacks will:
+            // 1. Auto-detect region from broker addresses
+            // 2. Set sasl.mechanism=OAUTHBEARER
+            // 3. Set security.protocol=SASL_SSL
+            // 4. Register OAuth callbacks for token generation
+            AWSMSKIAMAuth::configureOAuthCallbacks(kafka_config, "" /* auto-detect region */, broker_list, params.log);
+        }
+        else
+        {
+            // Standard SASL mechanisms
+            kafka_config.set("sasl.mechanism", sasl_mechanism);
+        }
+    }
     if (!kafka_settings[KafkaSetting::kafka_sasl_username].value.empty())
         kafka_config.set("sasl.username", kafka_settings[KafkaSetting::kafka_sasl_username]);
     if (!kafka_settings[KafkaSetting::kafka_sasl_password].value.empty())

@@ -1099,6 +1099,7 @@ SelfManaged
 Sematext
 SendExternalTables
 SendScalars
+Serverless
 ServerSettings
 SetOperationMode
 ShareAlike
