@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Common/typeid_cast.h>
+#include <Common/Exception.h>
 
 
 namespace DB
@@ -39,6 +40,9 @@ public:
 
         if (arg.type->lowCardinality())
             return arg.column;
+
+        if (!res_type->lowCardinality())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected LowCardinality type as result type for toLowCardinality function, got: {}", res_type->getName());
 
         auto column = res_type->createColumn();
         typeid_cast<ColumnLowCardinality &>(*column).insertRangeFromFullColumn(*arg.column, 0, arg.column->size());
