@@ -31,7 +31,7 @@ std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & 
     FieldVector params;
     for (size_t i = 2; i < arguments.size(); ++i)
     {
-        auto col = arguments[i].column;
+        const auto & col = arguments[i].column;
         WhichDataType which_type(arguments[i].type);
         if (which_type.isUInt())
         {

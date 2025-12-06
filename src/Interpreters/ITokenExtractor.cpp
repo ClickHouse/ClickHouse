@@ -1,6 +1,5 @@
 #include <IO/Operators.h>
 #include <Interpreters/ITokenExtractor.h>
-#include <Storages/IndicesDescription.h>
 
 #include <boost/algorithm/string.hpp>
 
@@ -24,6 +23,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+static constexpr UInt64 MIN_NGRAM_SIZE = 1;
+static constexpr UInt64 MAX_NGRAM_SIZE = 8;
 static constexpr UInt64 DEFAULT_NGRAM_SIZE = 3;
 static constexpr UInt64 DEFAULT_SPARSE_GRAMS_MIN_LENGTH = 3;
 static constexpr UInt64 DEFAULT_SPARSE_GRAMS_MAX_LENGTH = 100;
@@ -75,8 +76,10 @@ UInt64 TokenizerFactory::extractNgramParam(std::span<const Field> params)
     if (ngram_size < 1 || ngram_size > 8)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Incorrect param of {} tokenizer: ngram length must be between 2 and 8, but got {}",
+            "Incorrect param of {} tokenizer: ngram length must be between {} and {}, but got {}",
             NgramsTokenExtractor::getExternalName(),
+            MIN_NGRAM_SIZE,
+            MAX_NGRAM_SIZE,
             ngram_size);
 
     return ngram_size;
@@ -127,16 +130,18 @@ std::tuple<UInt64, UInt64, std::optional<UInt64>> TokenizerFactory::extractSpars
     {
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
-            "Incorrect params of {} tokenizer: minimal length must be at least 3, but got {}",
+            "Incorrect params of {} tokenizer: minimal length must be at least {}, but got {}",
             tokenizer_name,
+            DEFAULT_SPARSE_GRAMS_MIN_LENGTH,
             min_length);
     }
     if (max_length > 100)
     {
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
-            "Incorrect params of {} tokenizer: maximal length must be at most 100, but got {}",
+            "Incorrect params of {} tokenizer: maximal length must be at most {}, but got {}",
             tokenizer_name,
+            DEFAULT_SPARSE_GRAMS_MAX_LENGTH,
             max_length);
     }
     if (min_length > max_length)
@@ -154,8 +159,8 @@ std::tuple<UInt64, UInt64, std::optional<UInt64>> TokenizerFactory::extractSpars
             ErrorCodes::INCORRECT_QUERY,
             "Incorrect params of {} tokenizer: minimal cutoff length {} cannot be smaller than minimal length {}",
             tokenizer_name,
-            min_length,
-            min_cutoff_length.value());
+            min_cutoff_length.value(),
+            min_length);
     }
     if (min_cutoff_length.has_value() && min_cutoff_length.value() > max_length)
     {
