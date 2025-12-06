@@ -5,6 +5,8 @@ ARG TARGETARCH
 ENV CC=clang-${LLVM_VERSION}
 ENV CXX=clang++-${LLVM_VERSION}
 
+#non-functional change
+
 # If the cctools is updated, then first build it in the CI, then update here in a different commit
 COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /cctools /cctools
 

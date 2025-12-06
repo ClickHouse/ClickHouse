@@ -416,6 +416,11 @@ public:
         const T * __restrict p_in = in.data();
         T * __restrict p_out = out.data();
 
+        /// clang-21 vectorization on aarch64 shows 20% performance decrease.
+        /// Let's use scalar variant instead.
+#if defined(__aarch64__)
+        _Pragma("clang loop vectorize(disable)")
+#endif
         while (p_in < end_in)
         {
             Op::compute(p_in, scale, p_out);
