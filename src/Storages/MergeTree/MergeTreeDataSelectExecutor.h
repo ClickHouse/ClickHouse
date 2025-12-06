@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 
 #include <boost/dynamic_bitset.hpp>
 
@@ -103,6 +104,17 @@ public:
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache,
         LoggerPtr log);
+
+    static MergeTreeIndexBulkGranulesMinMaxPtr getMinMaxIndexGranules(
+        MergeTreeData::DataPartPtr part,
+        MergeTreeIndexPtr skip_index_minmax,
+        const MarkRanges & ranges,
+        int direction,
+        bool access_by_mark,
+        const MergeTreeReaderSettings & reader_settings,
+        MarkCache * mark_cache,
+        UncompressedCache * uncompressed_cache,
+        VectorSimilarityIndexCache * vector_similarity_index_cache);
 
     /// Maximum number of elements in the RPN condition when evaluation of OR-connected filter conditions using skip indexes (setting
     /// 'use_skip_indexes_for_disjunctions') is enabled.
@@ -217,6 +229,7 @@ public:
         const std::optional<KeyCondition> & total_offset_condition,
         const std::optional<KeyCondition> & key_condition_rpn_template,
         const UsefulSkipIndexes & skip_indexes,
+        const std::optional<TopKFilterInfo> & top_k_filter_info,
         const MergeTreeReaderSettings & reader_settings,
         LoggerPtr log,
         size_t num_streams,
