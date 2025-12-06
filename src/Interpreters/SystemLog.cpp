@@ -640,6 +640,13 @@ void SystemLog<LogElement>::savingThreadFunction()
 template <typename LogElement>
 void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, uint64_t to_flush_end)
 {
+    Stopwatch stopwatch;
+    UInt64 prepare_table_time = 0;
+    UInt64 prepare_reserve_block = 0;
+    UInt64 prepare_insert_data_to_block = 0;
+    UInt64 execute_insert_time = 0;
+    UInt64 confirm_time = 0;
+
     try
     {
         LOG_TRACE(log, "Flushing system log, {} entries to flush up to offset {}",
@@ -655,6 +662,8 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         /// (new empty table will be created automatically). BTW, flush method
         /// is called from single thread.
         prepareTable();
+        prepare_table_time = stopwatch.elapsedMilliseconds();
+        stopwatch.restart();
 
         ColumnsWithTypeAndName log_element_columns;
         auto log_element_names_and_types = LogElement::getColumnsDescription();
@@ -669,10 +678,15 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         for (auto & column : columns)
             column->reserve(to_flush.size());
 
+        prepare_reserve_block = stopwatch.elapsedMilliseconds();
+        stopwatch.restart();
+
         for (const auto & elem : to_flush)
             elem.appendToBlock(columns);
 
         block.setColumns(std::move(columns));
+        prepare_insert_data_to_block = stopwatch.elapsedMilliseconds();
+        stopwatch.restart();
 
         /// We write to table indirectly, using InterpreterInsertQuery.
         /// This is needed to support DEFAULT-columns in table.
@@ -700,6 +714,8 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         executor.start();
         executor.push(block);
         executor.finish();
+        execute_insert_time = stopwatch.elapsedMilliseconds();
+        stopwatch.restart();
     }
     catch (...)
     {
@@ -709,8 +725,17 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     }
 
     queue->confirm(to_flush_end);
+    confirm_time = stopwatch.elapsedMilliseconds();
 
-    LOG_TRACE(log, "Flushed system log up to offset {}", to_flush_end);
+    LOG_TRACE(
+        log,
+        "Flushed system log up to offset {}. Timings: {}/{}/{}/{}/{}",
+        to_flush_end,
+        prepare_table_time,
+        prepare_reserve_block,
+        prepare_insert_data_to_block,
+        execute_insert_time,
+        confirm_time);
 }
 
 template <typename LogElement>
