@@ -94,6 +94,18 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
 
         reader.emplace();
         reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
+        if (metadata_cache)
+        {
+            auto [file_path, file_attr] = extractObjectAttributes(*in);
+            ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_path, file_attr);
+            reader->reader.file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
+                return Parquet::Reader::readFileMetaData(reader->reader.prefetcher);
+            });
+        }
+        else
+        {
+            reader->reader.file_metadata = Parquet::Reader::readFileMetaData(reader->reader.prefetcher);
+        }
         reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
         reader->init(parser_shared_resources, buckets_to_read ? std::optional(buckets_to_read->row_group_ids) : std::nullopt);
     }
