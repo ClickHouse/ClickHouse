@@ -1085,7 +1085,7 @@ void QueryOracle::replaceQueryWithTablePeers(
         Insert * ins = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
         SelectStatementCore * sel = ins->mutable_select()->mutable_select()->mutable_select_core();
 
-        if (t.isMergeTreeFamily())
+        if (t.isMergeTreeFamily() && t.can_run_merges)
         {
             /// Apply delete mask
             SQLQuery next;

@@ -201,7 +201,7 @@ struct SQLBase
 public:
     String prefix;
     bool is_temp = false, is_deterministic = false, has_metadata = false, has_partition_by = false, has_order_by = false,
-         random_engine = false;
+         random_engine = false, can_run_merges = true;
     uint32_t tname = 0;
     std::shared_ptr<SQLDatabase> db = nullptr;
     std::optional<String> cluster, file_comp, partition_strategy, partition_columns_in_data_file, storage_class_name, host_params,

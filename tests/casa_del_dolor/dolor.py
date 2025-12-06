@@ -5,6 +5,8 @@ import mmap
 import os
 import pathlib
 import random
+import re
+import subprocess
 import tempfile
 import time
 import signal
@@ -351,19 +353,35 @@ random.seed(seed)
 logger.info(f"Using seed: {seed}")
 
 # Start the cluster, by using one the server binaries
-server_path = os.path.join(tempfile.gettempdir(), f"clickhouse{seed}")
-new_temp_server_path = os.path.join(tempfile.gettempdir(), f"clickhousetemp{seed}")
-try:
-    os.unlink(server_path)
-except FileNotFoundError:
-    pass
-current_server = random.choice(args.server_binaries)
-os.symlink(current_server, server_path)
-os.environ["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = server_path
+if len(args.server_binaries) != 2:
+    raise Exception("Only two binaries are supported at the moment")
+
+if random.randint(1, 100) <= 90:
+    # Pick the lowest version most of the times
+    def get_clickhouse_version(binary_path):
+        result = subprocess.run(
+            [binary_path, "--version"], capture_output=True, text=True
+        )
+        # Output like: "ClickHouse client version 24.3.1.2 (official build)."
+        match = re.search(r"version (\d+\.\d+\.\d+\.?\d*)", result.stdout)
+        if match:
+            return tuple(int(x) for x in match.group(1).split("."))
+        raise ValueError(f"Could not parse version from {binary_path}")
+
+    first_server = args.server_binaries[
+        (
+            0
+            if get_clickhouse_version(args.server_binaries[0])
+            < get_clickhouse_version(args.server_binaries[1])
+            else 1
+        )
+    ]
+else:
+    first_server = random.choice(args.server_binaries)
 
 # Find if private binary is being used
 is_private_binary = False
-with open(current_server, "rb") as f:
+with open(first_server, "rb") as f:
     mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
     is_private_binary = mm.find(b"isCoordinatedMergesTasksActivated") > -1
     mm.close()
@@ -389,7 +407,11 @@ if args.with_minio:
     os.environ["AWS_SHARED_CREDENTIALS_FILE"] = credentials_file.name
 
 cluster = ClickHouseCluster(
-    __file__, custom_keeper_configs=keeper_configs, azurite_default_port=10000
+    __file__,
+    custom_keeper_configs=keeper_configs,
+    azurite_default_port=10000,
+    server_bin_path=first_server,
+    client_bin_path=args.client_binary,
 )
 
 # Set environment variables such as locales and timezones
@@ -448,9 +470,14 @@ for i in range(0, len(args.replica_values)):
             macros={"replica": args.replica_values[i], "shard": args.shard_values[i]},
         )
     )
-cluster.start()
+# Copy the binaries into the containers
+server_versions = {}
+first_id = 0 if first_server == args.server_binaries[0] else 1
+for server in servers:
+    server_versions[server.name] = args.server_binaries[first_id]
+cluster.start(server_binaries=args.server_binaries, first_id=first_id)
 logger.info(
-    f"Starting cluster with {len(servers)} server(s) and server binary {current_server} "
+    f"Starting cluster with {len(servers)} server(s) and server binary {first_server}"
 )
 for i in range(0, len(args.replica_values)):
     logger.info(
@@ -514,14 +541,6 @@ def dolor_cleanup():
             os.unlink(user_settings)
         except FileNotFoundError:
             pass
-    try:
-        os.unlink(server_path)
-    except FileNotFoundError:
-        pass
-    try:
-        os.unlink(new_temp_server_path)
-    except FileNotFoundError:
-        pass
     try:
         os.unlink(generator.temp.name)
     except FileNotFoundError:
@@ -643,27 +662,30 @@ while all_running:
         )
 
         next_pick.stop_clickhouse(stop_wait_sec=10, kill=kill_server)
-        # Replace server binary, using a new temporary symlink, then replace the old one
+        time.sleep(1)
+        # Replace server binary, using a new temporary symlink
         if (
             len(args.server_binaries) > 1
             and random.randint(1, 100) <= args.change_server_version_prob
         ):
-            if len(servers) == 1 and len(args.server_binaries) == 2:
-                current_server = (
-                    args.server_binaries[0]
-                    if current_server == args.server_binaries[1]
-                    else args.server_binaries[1]
-                )
-            else:
-                current_server = random.choice(args.server_binaries)
-            logger.info(f"Using the server binary {current_server} after restart")
-            try:
-                os.unlink(new_temp_server_path)
-            except FileNotFoundError:
-                pass
-            os.symlink(current_server, new_temp_server_path)
-            os.rename(new_temp_server_path, server_path)
-        time.sleep(15)  # Let the zookeeper session expire
+            next_server = args.server_binaries[
+                0 if server_versions[next_pick.name] == args.server_binaries[1] else 1
+            ]
+            logger.info(f"Picked the server binary {next_server} for restart")
+            next_pick.exec_in_container(
+                [
+                    "ln",
+                    "-sf",
+                    f"/usr/bin/clickhouse{0 if server_versions[next_pick.name] == args.server_binaries[1] else 1}",
+                    "/usr/bin/clickhouse",
+                ],
+                user="root",
+            )
+            next_pick.exec_in_container(
+                ["chmod", "+777", "/usr/bin/clickhouse"], user="root"
+            )
+            server_versions[next_pick.name] = next_server
+        time.sleep(3)  # Let the keeper session expire
         next_pick.start_clickhouse(start_wait_sec=10, retry_start=False)
         if args.with_leak_detection and next_pick.name == "node0":
             # Has to reset leak detector
