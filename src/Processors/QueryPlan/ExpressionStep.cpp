@@ -48,9 +48,7 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
     auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag), settings.getActionsSettings());
 
     pipeline.addSimpleTransform([&](const SharedHeader & header)
-    {
-        return std::make_shared<ExpressionTransform>(header, expression);
-    });
+                                { return std::make_shared<ExpressionTransform>(header, expression, dataflow_cache_updater); });
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), *output_header))
     {

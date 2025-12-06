@@ -75,9 +75,12 @@ namespace Setting
     extern const SettingsBool query_plan_direct_read_from_text_index;
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_on_data_read;
+    extern const SettingsBool allow_experimental_full_text_index;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsBool query_plan_read_in_order_through_join;
+    extern const SettingsUInt64 automatic_parallel_replicas_mode;
+    extern const SettingsUInt64 automatic_parallel_replicas_min_bytes_per_replica;
 }
 
 namespace ServerSetting
@@ -143,6 +146,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
     query_condition_cache_store_conditions_as_plaintext = from[Setting::query_condition_cache_store_conditions_as_plaintext];
     direct_read_from_text_index = from[Setting::query_plan_direct_read_from_text_index] && from[Setting::use_skip_indexes] && from[Setting::use_skip_indexes_on_data_read];
+    allow_experimental_full_text_index = from[Setting::allow_experimental_full_text_index];
     read_in_order_through_join = from[Setting::query_plan_read_in_order_through_join];
 
     optimize_use_implicit_projections = optimize_projection && from[Setting::optimize_use_implicit_projections];
@@ -195,6 +199,11 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     join_runtime_bloom_filter_hash_functions = from[Setting::join_runtime_bloom_filter_hash_functions];
 
     max_threads = from[Setting::max_threads];
+
+    parallel_replicas_enabled = from[Setting::allow_experimental_parallel_reading_from_replicas];
+    max_parallel_replicas = from[Setting::max_parallel_replicas];
+    automatic_parallel_replicas_mode = from[Setting::automatic_parallel_replicas_mode];
+    automatic_parallel_replicas_min_bytes_per_replica = from[Setting::automatic_parallel_replicas_min_bytes_per_replica];
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
