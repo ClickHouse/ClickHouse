@@ -17,9 +17,10 @@ endif()
 
 option (ENABLE_PRQL "Enable prql" ${ENABLE_LIBRARIES})
 option (ENABLE_SKIM "Enable skim" ${ENABLE_LIBRARIES})
+option (ENABLE_AHO_CORASICK "Enable Aho-Corasick multi-pattern search" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_PRQL AND NOT ENABLE_SKIM)
-    message(STATUS "prql and skim are disabled")
+if (NOT ENABLE_PRQL AND NOT ENABLE_SKIM AND NOT ENABLE_AHO_CORASICK)
+    message(STATUS "prql, skim, and aho_corasick are disabled")
     return()
 endif()
 
@@ -35,4 +36,10 @@ if (ENABLE_SKIM)
     clickhouse_config_crate_flags(_ch_rust_skim_rust)
     target_include_directories(_ch_rust_skim_rust INTERFACE skim/include)
     add_library(ch_rust::skim ALIAS _ch_rust_skim_rust)
+endif()
+
+if (ENABLE_AHO_CORASICK)
+    clickhouse_config_crate_flags(_ch_rust_aho_corasick)
+    target_include_directories(_ch_rust_aho_corasick INTERFACE aho_corasick/include)
+    add_library(ch_rust::aho_corasick ALIAS _ch_rust_aho_corasick)
 endif()
