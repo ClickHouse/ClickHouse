@@ -20,7 +20,7 @@
 #include <memory>
 #include <vector>
 #include <type_traits>
-
+#pragma clang optimize off
 namespace llvm
 {
     class LLVMContext;
