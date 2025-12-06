@@ -4452,7 +4452,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     if (!columns_to_check_conversion.empty())
     {
         auto old_header = old_metadata.getSampleBlock();
-        performRequiredConversions(old_header, columns_to_check_conversion, local_context);
+        performRequiredConversions(old_header, columns_to_check_conversion, local_context, new_metadata.getColumns().getDefaults(), true);
     }
 
     if (old_metadata.hasSettingsChanges())
