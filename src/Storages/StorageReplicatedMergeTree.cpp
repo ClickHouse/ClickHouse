@@ -6503,7 +6503,7 @@ void StorageReplicatedMergeTree::alter(
 
     if (!query_settings[Setting::allow_suspicious_primary_key])
     {
-        MergeTreeData::verifySortingKey(future_metadata.sorting_key);
+        MergeTreeData::verifySortingKey(future_metadata.sorting_key, merging_params);
     }
 
     {
