@@ -175,7 +175,7 @@ void CachedObjectStorage::copyObject( // NOLINT
     object_storage->copyObject(object_from, object_to, read_settings, write_settings, object_to_attributes);
 }
 
-void CachedObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
+void CachedObjectStorage::listObjects(const std::string & path, PathsWithMetadata & children, size_t max_keys) const
 {
     object_storage->listObjects(path, children, max_keys);
 }

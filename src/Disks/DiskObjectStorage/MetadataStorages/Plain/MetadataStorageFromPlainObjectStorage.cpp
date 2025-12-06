@@ -103,7 +103,7 @@ std::vector<std::string> MetadataStorageFromPlainObjectStorage::listDirectory(co
 {
     auto key_prefix = key_generator->generate(path).serialize();
 
-    RelativePathsWithMetadata files;
+    PathsWithMetadata files;
     std::string absolute_key = key_prefix;
     if (!absolute_key.ends_with('/'))
         absolute_key += '/';

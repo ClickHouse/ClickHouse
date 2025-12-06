@@ -69,13 +69,15 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
     {
         /// Skip position deletes that do not match the data file path.
         if (position_deletes_object.reference_data_file_path.has_value()
-            && position_deletes_object.reference_data_file_path != iceberg_data_path)
+            && position_deletes_object.reference_data_file_path.value() != iceberg_data_path)
             continue;
 
-        auto object_path = position_deletes_object.file_path;
-        auto object_metadata = object_storage->getObjectMetadata(object_path, /*with_tags=*/ false);
-        auto object_info = RelativePathWithMetadata{object_path, object_metadata};
+        /// Resolve the position delete file path to get the correct storage and key
+        auto [delete_storage_to_use, resolved_key] = resolveObjectStorageForPath(
+            table_location, position_deletes_object.file_path, object_storage, secondary_storages, context);
 
+        auto object_metadata = delete_storage_to_use->getObjectMetadata(resolved_key, /*with_tags=*/ false);
+        PathWithMetadata object_info(resolved_key, object_metadata, position_deletes_object.file_path, delete_storage_to_use);
 
         String format = position_deletes_object.file_format;
         if (boost::to_lower_copy(format) != "parquet")
@@ -83,7 +85,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
         Block initial_header;
         {
-            std::unique_ptr<ReadBuffer> read_buf_schema = createReadBuffer(object_info, object_storage, context, log);
+            std::unique_ptr<ReadBuffer> read_buf_schema = createReadBuffer(object_info, delete_storage_to_use, context, log);
             auto schema_reader = FormatFactory::instance().getSchemaReader(format, *read_buf_schema, context);
             auto columns_with_names = schema_reader->readSchema();
             ColumnsWithTypeAndName initial_header_data;
@@ -94,9 +96,9 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
             initial_header = Block(initial_header_data);
         }
 
-        CompressionMethod compression_method = chooseCompressionMethod(object_path, "auto");
+        CompressionMethod compression_method = chooseCompressionMethod(resolved_key, "auto");
 
-        delete_read_buffers.push_back(createReadBuffer(object_info, object_storage, context, log));
+        delete_read_buffers.push_back(createReadBuffer(object_info, delete_storage_to_use, context, log));
 
         auto syntax_result = TreeRewriter(context).analyze(where_ast, initial_header.getNamesAndTypesList());
         ExpressionAnalyzer analyzer(where_ast, syntax_result, context);
@@ -193,10 +195,8 @@ void IcebergBitmapPositionDeleteTransform::initialize()
         while (auto delete_chunk = delete_source->read())
         {
             int position_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::positions_column_name);
-            int filename_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::data_file_path_column_name);
 
             auto position_column = delete_chunk.getColumns()[position_index];
-            auto filename_column = delete_chunk.getColumns()[filename_index];
 
             for (size_t i = 0; i < delete_chunk.getNumRows(); ++i)
             {

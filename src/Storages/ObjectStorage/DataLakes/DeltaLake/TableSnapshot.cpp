@@ -345,7 +345,7 @@ public:
         }
 
         std::string full_path = fs::path(context->data_prefix) / DB::unescapeForFileName(KernelUtils::fromDeltaString(path));
-        auto object = std::make_shared<DB::ObjectInfo>(DB::RelativePathWithMetadata(std::move(full_path)));
+        auto object = std::make_shared<DB::ObjectInfo>(DB::PathWithMetadata(std::move(full_path)));
 
         if (transform && !context->partition_columns.empty())
         {
