@@ -17,15 +17,17 @@ SELECT tokens('a', 'ngrams', 'c'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT tokens('a', 'ngrams', toInt8(-1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT tokens('a', 'ngrams', toFixedString('c', 1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT tokens('a', 'ngrams', materialize(1)); -- { serverError ILLEGAL_COLUMN }
--- If 2nd arg is "ngram", then the 3rd arg must be between 2 and 8
-SELECT tokens('a', 'ngrams', 1); -- { serverError BAD_ARGUMENTS}
+-- If 2nd arg is "ngram", then the 3rd arg must be between 1 and 8
+SELECT tokens('a', 'ngrams', 0); -- { serverError BAD_ARGUMENTS}
 SELECT tokens('a', 'ngrams', 9); -- { serverError BAD_ARGUMENTS}
 --    const Array (for "split")
 SELECT tokens('a', 'splitByString', 'c'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT tokens('a', 'splitByString', toInt8(-1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT tokens('a', 'splitByString', toFixedString('c', 1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT tokens('a', 'splitByString', materialize(['c'])); -- { serverError ILLEGAL_COLUMN }
-SELECT tokens('a', 'splitByString', [1, 2]); -- { serverError BAD_GET }
+SELECT tokens('a', 'splitByString', [1, 2]); -- { serverError INCORRECT_QUERY }
+SELECT tokens('  a  bc d', 'splitByString', []); -- { serverError INCORRECT_QUERY }
+
 
 SELECT 'Default tokenizer';
 
@@ -43,7 +45,6 @@ SELECT tokens('abc def', 'ngrams', 8) AS tokenized, toTypeName(tokenized), isCon
 SELECT 'Split tokenizer';
 
 SELECT tokens('', 'splitByString') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
-SELECT tokens('  a  bc d', 'splitByString', []) AS tokenized, toTypeName(tokenized), isConstant(tokenized);
 SELECT tokens('  a  bc d', 'splitByString', [' ']) AS tokenized, toTypeName(tokenized), isConstant(tokenized);
 SELECT tokens('()()a()bc()d', 'splitByString', ['()']) AS tokenized, toTypeName(tokenized), isConstant(tokenized);
 SELECT tokens(',()a(),bc,(),d,', 'splitByString', ['()', ',']) AS tokenized, toTypeName(tokenized), isConstant(tokenized);
