@@ -114,7 +114,7 @@ IProcessor::Status FractionalLimitTransform::prepare(const PortNumbers & updated
             /// Some input ports still available => we can read more data
             return Status::NeedData;
 
-        /// Calculate remaining integral limit and offset
+        /// Calculate remaining integral limit and offset to be used at push phase.
         limit = static_cast<UInt64>(std::ceil(rows_cnt * limit_fraction)) - outputed_rows_cnt;
         offset += static_cast<UInt64>(std::ceil(rows_cnt * offset_fraction)) - evicted_rows_cnt;
     }
@@ -165,9 +165,9 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
     rows_cnt += rows;
 
     /// Ignore chunk if it should be offsetted
-    if (rows <= offset)
+    if (rows <= (offset - evicted_rows_cnt))
     {
-        offset -= rows;
+        evicted_rows_cnt += rows;
         data.current_chunk.clear();
 
         if (input.isFinished())
@@ -206,24 +206,23 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
 
         auto & cache_chunk = chunks_cache.front().chunk;
         auto num_rows = cache_chunk.getNumRows();
+        UInt64 remaining_offset = offset - evicted_rows_cnt;
 
-        if (std::ceil(rows_cnt * limit_fraction) - outputed_rows_cnt >= num_rows - offset)
+        if (std::ceil(rows_cnt * limit_fraction) - outputed_rows_cnt >= num_rows - remaining_offset)
         {
             /// If we still have an integral offset that didn't cause the chunk
             /// to be dropped entirely above then its offset in part of the chunk => split it
-            if (offset)
+            if (remaining_offset > 0)
             {
                 auto num_columns = cache_chunk.getNumColumns();
                 auto columns = cache_chunk.detachColumns();
 
                 for (UInt64 i = 0; i < num_columns; ++i)
-                    columns[i] = columns[i]->cut(offset, num_rows - offset);
-                chunks_cache.front().chunk.setColumns(std::move(columns), num_rows - offset);
+                    columns[i] = columns[i]->cut(remaining_offset, num_rows - remaining_offset);
+                chunks_cache.front().chunk.setColumns(std::move(columns), num_rows - remaining_offset);
 
-                /// zero offset to ensure we don't enter here again.
-                num_rows -= offset;
-                rows_read_from_cache = num_rows;
-                offset = 0;
+                num_rows -= remaining_offset;
+                evicted_rows_cnt += remaining_offset;
             }
 
             outputed_rows_cnt += num_rows;
