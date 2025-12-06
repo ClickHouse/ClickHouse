@@ -1,6 +1,5 @@
 SET insert_deduplicate = 1;
 SET deduplicate_blocks_in_dependent_materialized_views = 1;
-SET update_insert_deduplication_token_in_dependent_materialized_views = 1;
 SET insert_deduplication_token = 'test';
 
 DROP TABLE IF EXISTS landing;
