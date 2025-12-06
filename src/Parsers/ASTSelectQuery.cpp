@@ -202,6 +202,11 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         }
     }
 
+    if (shuffle()) 
+    {
+        ostr << " SHUFFLE";
+    }
+
     if (limitByLength())
     {
         ostr << s.nl_or_ws << indent_str << "LIMIT ";
