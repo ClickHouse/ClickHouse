@@ -1,4 +1,5 @@
 -- {echo}
+SET allow_suspicious_variant_types = 1;
 SELECT flipCoordinates(CAST((10.0, 20.0) AS Point));
 (20,10)
 SELECT flipCoordinates(CAST([(10, 20), (30, 40), (50, 60)] AS LineString));
@@ -22,3 +23,42 @@ SELECT flipCoordinates(([[[(0, 0), (10, 0), (10, 10), (0, 10)]], [[(20, 20), (50
 [[[(0,0),(0,10),(10,10),(10,0)]],[[(20,20),(20,50),(50,50),(50,20)],[(30,30),(50,50),(30,50)]]]
 SELECT flipCoordinates((1.23, 4.56)::Point), (([(1.23, 4.56)::Point, (2.34, 5.67)::Point])::Ring);
 (4.5600000000000005,1.23)	[(1.23,4.5600000000000005),(2.34,5.67)]
+SELECT flipCoordinates(readWkt('POINT(10 20)'));
+(20,10)
+SELECT flipCoordinates(readWkt('LINESTRING(10 20, 30 40, 50 60)'));
+[(20,10),(40,30),(60,50)]
+SELECT flipCoordinates(readWkt('POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))'));
+[[(0,0),(0,10),(10,10),(10,0),(0,0)]]
+SELECT flipCoordinates(readWkt('POLYGON((-111.0544 45.0016, -104.0527 45.0016, -104.0527 40.9982, -111.0544 40.9982, -111.0544 45.0016))'));
+[[(45.0016,-111.0544),(45.0016,-104.0527),(40.9982,-104.0527),(40.9982,-111.0544),(45.0016,-111.0544)]]
+SELECT flipCoordinates(readWkt('POLYGON((0 0, 100 0, 100 100, 0 100, 0 0), (25 25, 75 25, 75 75, 25 75, 25 25))'));
+[[(0,0),(0,100),(100,100),(100,0),(0,0)],[(25,25),(25,75),(75,75),(75,25),(25,25)]]
+SELECT flipCoordinates(readWkt('MULTILINESTRING((10 20, 30 40), (50 60, 70 80))'));
+[[(20,10),(40,30)],[(60,50),(80,70)]]
+SELECT flipCoordinates(readWkt('MULTIPOLYGON(((0 0, 10 0, 10 10, 0 10, 0 0)))'));
+[[[(0,0),(0,10),(10,10),(10,0),(0,0)]]]
+SELECT flipCoordinates(readWkt('MULTIPOLYGON(((0 0, 10 0, 10 10, 0 10)), ((20 20, 50 20, 50 50, 20 50), (30 30, 50 50, 50 30)))'));
+[[[(0,0),(0,10),(10,10),(10,0)]],[[(20,20),(20,50),(50,50),(50,20)],[(30,30),(50,50),(30,50)]]]
+SELECT flipCoordinates(readWkt('POINT(-73.935242 40.730610)'));
+(40.73061,-73.935242)
+SELECT flipCoordinates(readWkt('POLYGON((-180 -90, 180 -90, 180 90, -180 90, -180 -90))'));
+[[(-90,-180),(-90,180),(90,180),(90,-180),(-90,-180)]]
+SELECT flipCoordinates(materialize(readWkt('POINT(5 10)'))) FROM numbers(3);
+(10,5)
+(10,5)
+(10,5)
+DROP TABLE IF EXISTS test_geom;
+CREATE TABLE test_geom (id UInt32, geom Geometry) ENGINE = Memory;
+INSERT INTO test_geom VALUES
+    (1, readWkt('POINT(10 20)')),
+    (2, readWkt('LINESTRING(1 2, 3 4)')),
+    (3, readWkt('POLYGON((0 0, 5 0, 5 5, 0 5, 0 0))')),
+    (4, readWkt('POINT(30 40)')),
+    (5, readWkt('MULTIPOLYGON(((0 0, 2 0, 2 2, 0 2, 0 0)))'));
+SELECT id, flipCoordinates(geom) FROM test_geom ORDER BY id;
+1	(20,10)
+2	[(2,1),(4,3)]
+3	[[(0,0),(0,5),(5,5),(5,0),(0,0)]]
+4	(40,30)
+5	[[[(0,0),(0,2),(2,2),(2,0),(0,0)]]]
+DROP TABLE test_geom;
