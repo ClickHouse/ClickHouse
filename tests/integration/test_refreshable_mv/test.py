@@ -266,10 +266,9 @@ def test_refreshable_mv_in_read_only_node(started_cluster, cleanup):
 
     # refresh the view manually
     reading_node.query("system sync database replica re")
+    reading_node.query("system wait view re.a", ignore_error=True)
     reading_node.query("system refresh view re.a")
-
-    # slepp 3 seconds to make sure the view is refreshed
-    reading_node.query("select sleep(3)")
+    reading_node.query("system wait view re.a", ignore_error=True)
 
     # check if there's RefreshTask on read_only node
     reading_node.query("system flush logs")
@@ -332,10 +331,9 @@ def test_refreshable_mv_in_read_only_node_no_ddl(started_cluster, cleanup):
         )
 
         reading_node.query("system sync database replica re")
+        reading_node.query("system wait view re.a", ignore_error=True)
         reading_node.query("system refresh view re.a")
-
-        # slepp 3 seconds to make sure the view is refreshed
-        reading_node.query("select sleep(3)")
+        reading_node.query("system wait view re.a", ignore_error=True)
 
         # check if there's RefreshTask on read_only node
         assert (
