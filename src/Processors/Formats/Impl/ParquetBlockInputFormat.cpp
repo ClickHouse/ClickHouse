@@ -1,5 +1,7 @@
 #include <atomic>
 #include <memory>
+#include <fmt/format.h>
+#include <Core/Settings.h>
 #include <mutex>
 #include <optional>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
@@ -28,12 +30,14 @@
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <Processors/Formats/Impl/ArrowFieldIndexUtil.h>
+#include <Processors/Formats/Impl/ParquetMetadataCache.h>
+#include <Interpreters/Context.h>
+#include <Common/CurrentThread.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
@@ -60,6 +64,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool use_parquet_metadata_cache;
+}
 
 namespace ErrorCodes
 {
@@ -646,13 +655,15 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(
     const FormatSettings & format_settings_,
     FormatParserSharedResourcesPtr parser_shared_resources_,
     FormatFilterInfoPtr format_filter_info_,
-    size_t min_bytes_for_seek_)
+    size_t min_bytes_for_seek_,
+    ParquetMetadataCachePtr metadata_cache_)
     : IInputFormat(header_, &buf)
     , format_settings(format_settings_)
     , skip_row_groups(format_settings.parquet.skip_row_groups)
     , parser_shared_resources(std::move(parser_shared_resources_))
     , format_filter_info(std::move(format_filter_info_))
     , min_bytes_for_seek(min_bytes_for_seek_)
+    , metadata_cache(metadata_cache_)
     , pending_chunks(PendingChunk::Compare{.row_group_first = format_settings_.parquet.preserve_order})
     , previous_block_missing_values(getPort().getHeader().columns())
 {
@@ -681,6 +692,7 @@ ParquetBlockInputFormat::~ParquetBlockInputFormat()
         io_pool->wait();
 }
 
+
 void ParquetBlockInputFormat::initializeIfNeeded()
 {
     if (std::exchange(is_initialized, true))
@@ -697,7 +709,17 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     if (is_stopped)
         return;
 
-    metadata = parquet::ReadMetaData(arrow_file);
+    /// Use cache if available
+    if (metadata_cache)
+    {
+        auto [file_path, file_attr] = extractObjectAttributes(*in);
+        ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_path, file_attr);
+        metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() { return parquet::ReadMetaData(arrow_file); });
+    }
+    else
+    {
+        metadata = parquet::ReadMetaData(arrow_file);
+    }
     if (buckets_to_read)
     {
         std::unordered_set<size_t> set_to_read(buckets_to_read->row_group_ids.begin(), buckets_to_read->row_group_ids.end());
@@ -1285,8 +1307,8 @@ const BlockMissingValues * ParquetBlockInputFormat::getMissingValues() const
     return &previous_block_missing_values;
 }
 
-ArrowParquetSchemaReader::ArrowParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
-    : ISchemaReader(in_), format_settings(format_settings_)
+ArrowParquetSchemaReader::ArrowParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, ParquetMetadataCachePtr metadata_cache_)
+    : ISchemaReader(in_), format_settings(format_settings_), metadata_cache(metadata_cache_)
 {
 }
 
@@ -1297,6 +1319,12 @@ void ArrowParquetSchemaReader::initializeIfNeeded()
 
     std::atomic<int> is_stopped{0};
     arrow_file = asArrowFile(in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true);
+    if (metadata_cache)
+    {
+        auto [file_path, file_attr] = extractObjectAttributes(in);
+        ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_path, file_attr);
+        metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() { return parquet::ReadMetaData(arrow_file); });
+    }
     metadata = parquet::ReadMetaData(arrow_file);
 }
 
@@ -1413,23 +1441,27 @@ void registerInputFormatParquet(FormatFactory & factory)
                 = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
             if (settings.parquet.use_native_reader_v3)
             {
+                auto v3_cache = CurrentThread::getQueryContext()->getParquetV3MetadataCache();
                 return std::make_shared<ParquetV3BlockInputFormat>(
                     buf,
                     std::make_shared<const Block>(sample),
                     settings,
                     std::move(parser_shared_resources),
                     std::move(format_filter_info),
-                    min_bytes_for_seek);
+                    min_bytes_for_seek,
+                    v3_cache);
             }
             else
             {
+                auto v2_cache = CurrentThread::getQueryContext()->getParquetMetadataCache();
                 return std::make_shared<ParquetBlockInputFormat>(
                     buf,
                     std::make_shared<const Block>(sample),
                     settings,
                     std::move(parser_shared_resources),
                     std::move(format_filter_info),
-                    min_bytes_for_seek);
+                    min_bytes_for_seek,
+                    v2_cache);
             }
         });
     factory.markFormatSupportsSubsetOfColumns("Parquet");
@@ -1450,9 +1482,15 @@ void registerParquetSchemaReader(FormatFactory & factory)
         [](ReadBuffer & buf, const FormatSettings & settings) -> SchemaReaderPtr
         {
             if (settings.parquet.use_native_reader_v3)
-                return std::make_shared<NativeParquetSchemaReader>(buf, settings);
+            {
+                auto v3_cache = CurrentThread::getQueryContext()->getParquetV3MetadataCache();
+                return std::make_shared<NativeParquetSchemaReader>(buf, settings, v3_cache);
+            }
             else
-                return std::make_shared<ArrowParquetSchemaReader>(buf, settings);
+            {
+                auto v2_cache = CurrentThread::getQueryContext()->getParquetMetadataCache();
+                return std::make_shared<ArrowParquetSchemaReader>(buf, settings, v2_cache);
+            }
         }
         );
 
