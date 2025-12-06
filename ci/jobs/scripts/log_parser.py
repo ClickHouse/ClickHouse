@@ -128,7 +128,7 @@ class FuzzerLogParser:
                 if start_idx != -1:
                     substring = line[start_idx + len("Format string: ") :]
                     # Remove quotes and trailing period
-                    substring = substring.strip().strip("'\"").rstrip(".")
+                    substring = substring.strip().rstrip(".").strip("'\"")
                     format_message = substring
                 break
         # keep all lines before next log line
