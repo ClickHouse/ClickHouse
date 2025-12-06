@@ -294,3 +294,33 @@ def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with
     buffers_count_default = get_buffers_count(lambda: instance.query(f"SELECT * FROM {table_function_expr_s3_cluster} ORDER BY ALL SETTINGS input_format_parquet_use_native_reader_v3={input_format_parquet_use_native_reader_v3}, cluster_table_function_buckets_batch_size={cluster_table_function_buckets_batch_size}").strip().split())
     if buffers_count_with_splitted_tasks != 0:
         assert buffers_count_with_splitted_tasks > buffers_count_default
+
+@pytest.mark.parametrize("format_version", ["1", "2"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_bucket_split_single_node(started_cluster_iceberg_with_spark, format_version, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = (
+        "test_partition_by_"
+        + format_version
+        + "_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
+    )
+
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id bigint) USING iceberg TBLPROPERTIES ('format-version' = '2', 'write.update.mode'='merge-on-read', 'write.delete.mode'='merge-on-read', 'write.merge.mode'='merge-on-read', 'write.parquet.row-group-size-bytes'='1')
+        """
+    )
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+    assert instance.query(f"SELECT id FROM {TABLE_NAME} SETTINGS cluster_table_function_split_granularity = 'bucket'") == ''
