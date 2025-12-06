@@ -238,13 +238,20 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     /// resolution that is neither guaranteed nor sensible here.
     mut_context->setSetting("enable_positional_arguments", Field(0));
 
+    auto storage_snapshot = storage->getStorageSnapshotWithoutData(storage->getInMemoryMetadataPtr(), mut_context);
+    TableWithColumnNamesAndTypes table_with_columns(
+        DatabaseAndTableWithAlias(), storage_snapshot->getColumns(GetColumnsOptions::Kind::Ordinary));
+    auto syntax_result = TreeRewriter(mut_context)
+                             .analyzeSelect(result.query_ast, TreeRewriterResult({}, storage, storage_snapshot), {}, {table_with_columns});
+    bool is_aggregate = query.groupBy() || !syntax_result->aggregates.empty();
+
     InterpreterSelectQuery select(
         result.query_ast,
         mut_context,
         storage,
         {},
         /// Here we ignore ast optimizations because otherwise aggregation keys may be removed from result header as constants.
-        SelectQueryOptions{QueryProcessingStage::WithMergeableState}
+        SelectQueryOptions{is_aggregate ? QueryProcessingStage::WithMergeableState : QueryProcessingStage::FetchColumns}
             .modify()
             .ignoreAlias()
             .ignoreASTOptimizations()
@@ -257,7 +264,7 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     metadata.partition_key = KeyDescription::buildEmptyKey();
 
     const auto & query_select = result.query_ast->as<const ASTSelectQuery &>();
-    if (select.hasAggregation())
+    if (is_aggregate)
     {
         /// Aggregate projections cannot hold parent part offset.
         can_hold_parent_part_offset = false;
@@ -316,11 +323,8 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
         result.with_parent_part_offset = true;
     }
 
-    auto block = result.sample_block;
-    for (const auto & [name, type] : metadata.sorting_key.expression->getRequiredColumnsWithTypes())
-        block.insertUnique({nullptr, type, name});
     NamesAndTypesList metadata_columns;
-    for (const auto & column_with_type_name : block)
+    for (const auto & column_with_type_name : result.sample_block)
     {
         if (column_with_type_name.column && isColumnConst(*column_with_type_name.column))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Projections cannot contain constant columns: {}", column_with_type_name.name);
@@ -329,7 +333,7 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
         if (columns.hasSubcolumn(column_with_type_name.name))
         {
             auto subcolumn = columns.getColumnOrSubcolumn(GetColumnsOptions::All, column_with_type_name.name);
-            if (!block.has(subcolumn.getNameInStorage()))
+            if (!result.sample_block.has(subcolumn.getNameInStorage()))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Projections cannot contain individual subcolumns: {}", column_with_type_name.name);
             /// Also remove this subcolumn from the required columns as we have the original column.
             std::erase_if(result.required_columns, [&](const String & column_name){ return column_name == column_with_type_name.name; });
