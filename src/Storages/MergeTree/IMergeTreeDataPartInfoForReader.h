@@ -98,7 +98,9 @@ public:
 
     virtual void reportBroken() = 0;
 
-    virtual size_t getRowCount() const = 0;
+    virtual size_t getRowsCount() const = 0;
+
+    virtual size_t getRowsCountForLastGranuleOrZero(size_t mark) const = 0;
 
     virtual void setReadHints(const RangesInDataPartReadHints & /*read_hints_*/, const NamesAndTypesList & /*read_columns*/)
     {
