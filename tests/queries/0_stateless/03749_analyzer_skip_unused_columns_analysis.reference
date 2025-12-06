@@ -1,0 +1,36 @@
+QUERY id: 0
+  PROJECTION COLUMNS
+    x Int32
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: x, result_type: Int32, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.test_view
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+QUERY id: 0
+  PROJECTION COLUMNS
+    c Int32
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: c, result_type: Int32, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.test_view
+2
+4
+6
+8
+10
+12
+14
+16
+18
+20
