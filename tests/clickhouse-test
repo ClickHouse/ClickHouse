@@ -1030,6 +1030,45 @@ def randomize_external_sort_group_by():
     }
 
 
+def randomize_auto_pr_related_settings():
+    class AutoPRRelatedSettings:
+        def __init__(self):
+            self._automatic_parallel_replicas_mode = None
+            self._cluster_for_parallel_replicas = None
+            self._parallel_replicas_local_plan = None
+
+        def automatic_parallel_replicas_mode(self):
+            if self._automatic_parallel_replicas_mode is None:
+                self._generate()
+            self._automatic_parallel_replicas_mode, ret = None, self._automatic_parallel_replicas_mode
+            return ret
+
+        def cluster_for_parallel_replicas(self):
+            if self._cluster_for_parallel_replicas is None:
+                self._generate()
+            self._cluster_for_parallel_replicas, ret = None, self._cluster_for_parallel_replicas
+            return ret
+
+        def parallel_replicas_local_plan(self):
+            if self._parallel_replicas_local_plan is None:
+                self._generate()
+            self._parallel_replicas_local_plan, ret = None, self._parallel_replicas_local_plan
+            return ret
+
+        def _generate(self):
+            enable = random.random() < 0.25
+            self._automatic_parallel_replicas_mode = 2 if enable else 0
+            self._cluster_for_parallel_replicas = "parallel_replicas" if enable else ""
+            self._parallel_replicas_local_plan = 1 if enable else random.randint(0, 1)
+
+    settings = AutoPRRelatedSettings()
+    return {
+            "automatic_parallel_replicas_mode": settings.automatic_parallel_replicas_mode,
+            "cluster_for_parallel_replicas": settings.cluster_for_parallel_replicas,
+            "parallel_replicas_local_plan": settings.parallel_replicas_local_plan,
+    }
+
+
 # To keep dependency list as short as possible, tzdata is not used here (to
 # avoid try/except block for import)
 def get_localzone():
@@ -1160,7 +1199,6 @@ class SettingsRandomizer:
         "min_external_table_block_size_bytes": lambda: random.choice([0, 1, 100000000]),
         "max_parsing_threads": lambda: random.choice([0, 1, 10]),
         "optimize_functions_to_subcolumns": lambda: random.randint(0, 1),
-        "parallel_replicas_local_plan": lambda: random.randint(0, 1),
         "query_plan_join_swap_table": lambda: random.choice(["auto", "false"]), # true forces swap, which is harmfull for some tests
         "enable_vertical_final": lambda: random.randint(0, 1),
         "optimize_extract_common_expressions": lambda: random.randint(0, 1),
@@ -1175,6 +1213,7 @@ class SettingsRandomizer:
         "enable_lazy_columns_replication": lambda: random.randint(0, 1),
         "allow_special_serialization_kinds_in_output_formats": lambda: random.randint(0, 1),
         **randomize_external_sort_group_by(),
+        **randomize_auto_pr_related_settings(),
     }
 
     dependent_settings = {
