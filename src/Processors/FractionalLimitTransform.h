@@ -50,6 +50,7 @@ private:
     std::vector<size_t> sort_column_positions;
 
     UInt64 rows_read_from_cache = 0;
+
     RowsBeforeStepCounterPtr rows_before_limit_at_least;
 
     /// State of port's pair.
@@ -66,8 +67,11 @@ private:
     std::vector<PortsData> ports_data;
     UInt64 num_finished_ports = 0;
 
+    /// Total number of input rows.
     UInt64 rows_cnt = 0;
+    /// Number of rows offsetted at pull phase.
     UInt64 evicted_rows_cnt = 0;
+    /// Number of rows output-ed at pull phase.
     UInt64 outputed_rows_cnt = 0;
 
     struct CacheEntry
