@@ -216,7 +216,9 @@ public:
         }
 
         const String attr_col_name = dictget_function_info.attr_col_name_node->getValue().safeGet<String>();
-        chassert(dict_structure.hasAttribute(attr_col_name) && "Attribute not found in dictionary structure of dictionary");
+
+        if (!dict_structure.hasAttribute(attr_col_name))
+            return;
 
         DataTypePtr dict_attr_col_type = dict_structure.getAttribute(attr_col_name).type;
 
@@ -264,7 +266,16 @@ public:
         in_function_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, querytree_subquery_node};
         resolveOrdinaryFunctionNodeByName(*in_function_node, "in", getContext());
 
-        node = std::move(in_function_node);
+        /// Preserve the original result type of the comparison node.
+        /// For example, original "equals(...)" might have result type Nullable(UInt8),
+        /// while "IN" might return UInt8.
+        DataTypePtr original_result_type = node_function->getResultType();
+
+        QueryTreeNodePtr replacement_node = in_function_node;
+        if (original_result_type && !in_function_node->getResultType()->equals(*original_result_type))
+            replacement_node = createCastFunction(in_function_node, original_result_type, getContext());
+
+        node = std::move(replacement_node);
     }
 };
 
