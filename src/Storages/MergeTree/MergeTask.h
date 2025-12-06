@@ -34,6 +34,7 @@ namespace ProfileEvents
 {
     extern const Event MergeHorizontalStageTotalMilliseconds;
     extern const Event MergeVerticalStageTotalMilliseconds;
+    extern const Event MergeInvertedIndexStageTotalMilliseconds;
     extern const Event MergeProjectionStageTotalMilliseconds;
 }
 
@@ -46,6 +47,12 @@ class RowsSourcesTemporaryFile;
 
 class MergedPartOffsets;
 using MergedPartOffsetsPtr = std::shared_ptr<MergedPartOffsets>;
+
+class MergeInvertedIndexesTask;
+using MergeInvertedIndexesTaskPtr = std::unique_ptr<MergeInvertedIndexesTask>;
+
+class BuildInvertedIndexTransform;
+using BuildInvertedIndexTransformPtr = std::shared_ptr<BuildInvertedIndexTransform>;
 
 /**
  * Overview of the merge algorithm
@@ -196,6 +203,7 @@ private:
         Names deduplicate_by_columns{};
         bool cleanup{false};
         bool vertical_lightweight_delete{false};
+        CompressionCodecPtr compression_codec{nullptr};
 
         NamesAndTypesList gathering_columns{};
         NamesAndTypesList merging_columns{};
@@ -205,6 +213,10 @@ private:
 
         IndicesDescription merging_skip_indexes;
         std::unordered_map<String, IndicesDescription> skip_indexes_by_column;
+
+        IndicesDescription inverted_indexes_to_merge;
+        MutableDataPartStoragePtr temporary_inverted_index_storage;
+        std::unordered_map<String, BuildInvertedIndexTransformPtr> build_inverted_index_transforms;
 
         MergeAlgorithm chosen_merge_algorithm{MergeAlgorithm::Undecided};
 
@@ -257,7 +269,6 @@ private:
     {
         bool need_remove_expired_values{false};
         bool force_ttl{false};
-        CompressionCodecPtr compression_codec{nullptr};
         std::shared_ptr<RowsSourcesTemporaryFile> rows_sources_temporary_file;
         std::optional<ColumnSizeEstimator> column_sizes{};
 
@@ -342,7 +353,6 @@ private:
         /// Begin dependencies from previous stage
         std::shared_ptr<RowsSourcesTemporaryFile> rows_sources_temporary_file;
         std::optional<ColumnSizeEstimator> column_sizes;
-        CompressionCodecPtr compression_codec;
         std::list<DB::NameAndTypePair>::const_iterator it_name_and_type;
         bool read_with_direct_io{false};
         bool need_sync{false};
@@ -418,6 +428,48 @@ private:
         GlobalRuntimeContextPtr global_ctx;
     };
 
+    struct MergeInvertedIndexRuntimeContext : IStageRuntimeContext
+    {
+        bool need_sync{false};
+        UInt64 elapsed_execute_ns{0};
+        std::vector<MergeInvertedIndexesTaskPtr> merge_tasks;
+    };
+
+    using MergeInvertedIndexRuntimeContextPtr = std::shared_ptr<MergeInvertedIndexRuntimeContext>;
+
+    struct MergeInvertedIndexStage : IStage
+    {
+        bool execute() override;
+        void cancel() noexcept override;
+
+        void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) override
+        {
+            ctx = static_pointer_cast<MergeInvertedIndexRuntimeContext>(local);
+            global_ctx = static_pointer_cast<GlobalRuntimeContext>(global);
+        }
+
+        StageRuntimeContextPtr getContextForNextStage() override;
+        ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeInvertedIndexStageTotalMilliseconds; }
+
+        bool prepare() const;
+        bool execute() const;
+        bool finalize() const;
+
+        /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
+        using MergeInvertedIndexStageSubtasks = std::array<bool(MergeInvertedIndexStage::*)()const, 3>;
+
+        const MergeInvertedIndexStageSubtasks subtasks
+        {
+            &MergeInvertedIndexStage::prepare,
+            &MergeInvertedIndexStage::execute,
+            &MergeInvertedIndexStage::finalize,
+        };
+
+        MergeInvertedIndexStageSubtasks::const_iterator subtasks_iterator = subtasks.begin();
+        MergeInvertedIndexRuntimeContextPtr ctx;
+        GlobalRuntimeContextPtr global_ctx;
+    };
+
     /// By default this context is uninitialized, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
@@ -473,12 +525,13 @@ private:
 
     GlobalRuntimeContextPtr global_ctx;
 
-    using Stages = std::array<StagePtr, 3>;
+    using Stages = std::array<StagePtr, 4>;
 
     const Stages stages
     {
         std::make_shared<ExecuteAndFinalizeHorizontalPart>(),
         std::make_shared<VerticalMergeStage>(),
+        std::make_shared<MergeInvertedIndexStage>(),
         std::make_shared<MergeProjectionsStage>()
     };
 
@@ -488,6 +541,7 @@ private:
     static bool enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx);
     static void addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type);
     static bool isVerticalLightweightDelete(const GlobalRuntimeContext & global_ctx);
+    static void addBuildInvertedIndexStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);
 };
 
 /// FIXME

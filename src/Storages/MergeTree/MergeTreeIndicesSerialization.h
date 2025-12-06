@@ -54,7 +54,6 @@ struct MergeTreeIndexDeserializationState
     const IMergeTreeIndexCondition * condition;
     const IMergeTreeDataPart & part;
     const IMergeTreeIndex & index;
-    size_t index_mark;
 };
 
 }

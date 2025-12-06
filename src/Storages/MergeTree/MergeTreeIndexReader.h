@@ -38,7 +38,7 @@ private:
     MergeTreeIndexPtr index;
     MergeTreeData::DataPartPtr part;
     size_t marks_count;
-    const MarkRanges & all_mark_ranges;
+    MarkRanges all_mark_ranges;
     MarkCache * mark_cache;
     UncompressedCache * uncompressed_cache;
     VectorSimilarityIndexCache * vector_similarity_index_cache;
