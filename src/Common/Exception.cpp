@@ -43,10 +43,12 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
 }
 
-void abortOnFailedAssertion(const String & description, void * const * trace, size_t trace_offset, size_t trace_size)
+void abortOnFailedAssertion(const String & description, std::string_view format_string, void * const * trace, size_t trace_offset, size_t trace_size)
 {
     auto & logger = Poco::Logger::root();
     LOG_FATAL(&logger, "Logical error: '{}'.", description);
+    if (!format_string.empty())
+        LOG_FATAL(&logger, "Format string: '{}'.", format_string);
     if (trace)
         LOG_FATAL(&logger, "Stack trace (when copying this message, always include the lines below):\n\n{}", StackTrace::toString(trace, trace_offset, trace_size));
     abort();
@@ -55,7 +57,7 @@ void abortOnFailedAssertion(const String & description, void * const * trace, si
 void abortOnFailedAssertion(const String & description)
 {
     StackTrace st;
-    abortOnFailedAssertion(description, st.getFramePointers().data(), st.getOffset(), st.getSize());
+    abortOnFailedAssertion(description, "", st.getFramePointers().data(), st.getOffset(), st.getSize());
 }
 
 bool terminate_on_any_exception = false;
@@ -82,7 +84,7 @@ static size_t handle_error_code(
     if (code == ErrorCodes::LOGICAL_ERROR)
     {
         if (debug_or_sanitizer_build || abort_on_logical_error.load(std::memory_order_relaxed))
-            abortOnFailedAssertion(msg, trace.data(), 0, trace.size());
+            abortOnFailedAssertion(msg, format_string, trace.data(), 0, trace.size());
     }
 
     if (Exception::callback)

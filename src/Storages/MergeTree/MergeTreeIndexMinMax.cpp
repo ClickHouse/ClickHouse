@@ -196,10 +196,10 @@ bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
          KeyCondition::RPNElement::ALWAYS_FALSE});
 }
 
-bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
+bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
 {
     const MergeTreeIndexGranuleMinMax & granule = typeid_cast<const MergeTreeIndexGranuleMinMax &>(*idx_granule);
-    return condition.checkInHyperrectangle(granule.hyperrectangle, index_data_types).can_be_true;
+    return condition.checkInHyperrectangle(granule.hyperrectangle, index_data_types, {}, update_partial_disjunction_result_fn).can_be_true;
 }
 
 

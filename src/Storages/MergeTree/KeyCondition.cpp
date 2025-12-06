@@ -931,6 +931,11 @@ bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants
     return node.tryGetConstant(out_value, out_type);
 }
 
+bool KeyCondition::hasOnlyConjunctions() const
+{
+    return std::ranges::none_of(rpn, [](RPNElement element) { return element.function == RPNElement::FUNCTION_OR; });
+}
+
 
 static Field applyFunctionForField(
     const FunctionBasePtr & func,
@@ -3120,7 +3125,8 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
 BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,
-    const ColumnIndexToBloomFilter & column_index_to_column_bf) const
+    const ColumnIndexToBloomFilter & column_index_to_column_bf,
+    const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
 {
     std::vector<BoolMask> rpn_stack;
 
@@ -3132,6 +3138,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
         return SpaceFillingCurveType::Unknown;
     };
 
+    size_t element_idx = 0;
     for (const auto & element : rpn)
     {
         if (element.argument_num_of_space_filling_curve.has_value())
@@ -3442,6 +3449,12 @@ BoolMask KeyCondition::checkInHyperrectangle(
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
+
+        if (update_partial_disjunction_result_fn)
+        {
+            update_partial_disjunction_result_fn(element_idx, rpn_stack.back().can_be_true, (element.function == RPNElement::FUNCTION_UNKNOWN));
+            ++element_idx;
+        }
     }
 
     if (rpn_stack.size() != 1)

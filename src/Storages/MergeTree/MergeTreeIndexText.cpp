@@ -93,11 +93,11 @@ size_t DictionaryBlockBase::size() const
     return tokens ? tokens->size() : 0;
 }
 
-size_t DictionaryBlockBase::upperBound(const StringRef & token) const
+size_t DictionaryBlockBase::upperBound(const std::string_view token) const
 {
     auto range = collections::range(0, tokens->size());
 
-    auto it = std::upper_bound(range.begin(), range.end(), token, [this](const StringRef & lhs_ref, size_t rhs_idx)
+    auto it = std::upper_bound(range.begin(), range.end(), token, [this](const std::string_view lhs_ref, size_t rhs_idx)
     {
         return lhs_ref < assert_cast<const ColumnString &>(*tokens).getDataAt(rhs_idx);
     });
@@ -440,7 +440,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
 
     const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
     auto global_search_mode = condition_text.getGlobalSearchMode();
-    std::map<size_t, std::vector<StringRef>> block_to_tokens;
+    std::map<size_t, std::vector<std::string_view>> block_to_tokens;
 
     for (const auto & [token, _] : remaining_tokens)
     {
@@ -480,7 +480,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
         {
             auto it = remaining_tokens.find(token);
             chassert(it != remaining_tokens.end());
-            auto * token_info = dictionary_block->getTokenInfo(token.toView());
+            auto * token_info = dictionary_block->getTokenInfo(token);
 
             if (token_info)
             {
@@ -585,11 +585,11 @@ struct SerializationStats
     }
 };
 
-size_t computeCommonPrefixLength(const StringRef & lhs, const StringRef & rhs)
+size_t computeCommonPrefixLength(const std::string_view lhs, const std::string_view rhs)
 {
     size_t common_prefix_length = 0;
-    for (size_t max_length = std::min(lhs.size, rhs.size);
-         common_prefix_length < max_length && lhs.data[common_prefix_length] == rhs.data[common_prefix_length];
+    for (size_t max_length = std::min(lhs.size(), rhs.size());
+         common_prefix_length < max_length && lhs[common_prefix_length] == rhs[common_prefix_length];
          ++common_prefix_length)
         ;
     return common_prefix_length;
@@ -608,11 +608,11 @@ void serializeTokensRaw(
     for (size_t i = block_begin; i < block_end; ++i)
     {
         auto current_token = tokens_and_postings[i].first;
-        writeVarUInt(current_token.size, write_buffer);
-        write_buffer.write(current_token.data, current_token.size);
+        writeVarUInt(current_token.size(), write_buffer);
+        write_buffer.write(current_token.data(), current_token.size());
 
-        stats.raw_strings_size += getLengthOfVarUInt(current_token.size);
-        stats.raw_strings_size += (current_token.size);
+        stats.raw_strings_size += getLengthOfVarUInt(current_token.size());
+        stats.raw_strings_size += (current_token.size());
     }
 }
 
@@ -629,24 +629,24 @@ void serializeTokensFrontCoding(
     size_t block_end)
 {
     const auto & first_token = tokens_and_postings[block_begin].first;
-    writeVarUInt(first_token.size, write_buffer);
-    write_buffer.write(first_token.data, first_token.size);
+    writeVarUInt(first_token.size(), write_buffer);
+    write_buffer.write(first_token.data(), first_token.size());
 
-    StringRef previous_token = first_token;
+    std::string_view previous_token = first_token;
     for (size_t i = block_begin + 1; i < block_end; ++i)
     {
         auto current_token = tokens_and_postings[i].first;
         auto lcp = computeCommonPrefixLength(previous_token, current_token);
         writeVarUInt(lcp, write_buffer);
-        writeVarUInt(current_token.size - lcp, write_buffer);
-        write_buffer.write(current_token.data + lcp, current_token.size - lcp);
+        writeVarUInt(current_token.size() - lcp, write_buffer);
+        write_buffer.write(current_token.data() + lcp, current_token.size() - lcp);
         previous_token = current_token;
 
-        stats.raw_strings_size += getLengthOfVarUInt(current_token.size);
-        stats.raw_strings_size += (current_token.size);
+        stats.raw_strings_size += getLengthOfVarUInt(current_token.size());
+        stats.raw_strings_size += (current_token.size());
         stats.front_coded_strings_size += getLengthOfVarUInt(lcp);
-        stats.front_coded_strings_size += getLengthOfVarUInt(current_token.size - lcp);
-        stats.front_coded_strings_size += (current_token.size - lcp);
+        stats.front_coded_strings_size += getLengthOfVarUInt(current_token.size() - lcp);
+        stats.front_coded_strings_size += (current_token.size() - lcp);
     }
 }
 }
@@ -688,7 +688,7 @@ TextIndexHeader::DictionarySparseIndex serializeTokensAndPostings(
 
         const auto & first_token = tokens_and_postings[block_begin].first;
         sparse_index_offsets_data.emplace_back(current_mark.offset_in_compressed_file);
-        sparse_index_str.insertData(first_token.data, first_token.size);
+        sparse_index_str.insertData(first_token.data(), first_token.size());
 
         size_t num_tokens_in_block = block_end - block_begin;
         writeVarUInt(static_cast<UInt64>(tokens_format), dictionary_stream.compressed_hashing);
@@ -853,20 +853,24 @@ void PostingListBuilder::add(UInt32 value, PostingListsHolder & postings_holder)
     }
 }
 
-void MergeTreeIndexTextGranuleBuilder::addDocument(StringRef document)
+void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
 {
-    forEachTokenPadded(*token_extractor, document.data, document.size, [&](const char * token_start, size_t token_length)
-    {
-        bool inserted;
-        TokenToPostingsMap::LookupResult it;
+    forEachTokenPadded(
+        *token_extractor,
+        document.data(),
+        document.size(),
+        [&](const char * token_start, size_t token_length)
+        {
+            bool inserted;
+            TokenToPostingsMap::LookupResult it;
 
-        ArenaKeyHolder key_holder{StringRef(token_start, token_length), *arena};
-        tokens_map.emplace(key_holder, it, inserted);
+            ArenaKeyHolder key_holder{std::string_view(token_start, token_length), *arena};
+            tokens_map.emplace(key_holder, it, inserted);
 
-        auto & posting_list_builder = it->getMapped();
-        posting_list_builder.add(current_row, posting_lists);
-        return false;
-    });
+            auto & posting_list_builder = it->getMapped();
+            posting_list_builder.add(current_row, posting_lists);
+            return false;
+        });
 }
 
 std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuilder::build()
@@ -880,7 +884,7 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
     tokens_map.forEachValue([&](const auto & key, auto & mapped)
     {
         sorted_values.emplace_back(key, &mapped);
-        bloom_filter.add(key.data, key.size);
+        bloom_filter.add(key.data(), key.size());
     });
 
     std::ranges::sort(sorted_values, [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
@@ -964,7 +968,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
 
         for (size_t i = 0; i < rows_read; ++i)
         {
-            const StringRef ref = processed_column->getDataAt(offset + i);
+            const std::string_view ref = processed_column->getDataAt(offset + i);
             granule_builder.addDocument(ref);
             granule_builder.incrementCurrentRow();
         }

@@ -1323,17 +1323,21 @@ def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kerne
 
     with PartitionManager() as pm:
         pm_rule_reject = {
+            "instance": node2,
             "probability": 1,
             "destination": node2.ip_address,
             "source_port": started_cluster.minio_port,
             "action": "REJECT --reject-with tcp-reset",
+            "protocol": "tcp",
         }
         pm_rule_drop_all = {
+            "instance": node2,
             "destination": node2.ip_address,
             "source_port": started_cluster.minio_port,
             "action": "DROP",
+            "protocol": "tcp",
         }
-        pm._add_rule(pm_rule_reject)
+        pm.add_rule(pm_rule_reject)
 
         node1.query(
             f"""

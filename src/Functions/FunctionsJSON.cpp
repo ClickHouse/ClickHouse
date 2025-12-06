@@ -274,7 +274,7 @@ private:
                 }
                 case MoveType::Key:
                 {
-                    key = arguments[j + 1].column->getDataAt(row).toView();
+                    key = arguments[j + 1].column->getDataAt(row);
                     if constexpr (case_insensitive)
                     {
                         if (!moveToElementByKeyCaseInsensitive<JSONParser>(res_element, key))

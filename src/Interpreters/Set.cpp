@@ -765,7 +765,17 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
         }) - indices.begin();
 
     if (begin > end)
+    {
+        /// TODO: Remove the #ifndef and always throw after
+        ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
+        ///       (What happens here is: the applyMonotonicFunctionsChainToRange call above applies
+        ///        nonmonotonic functions, and we end up with left > right.)
+#ifndef NDEBUG
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid binary search result in MergeTreeSetIndex");
+#else
+        return {true, true};
+#endif
+    }
 
     bool can_be_true = begin < end;
 

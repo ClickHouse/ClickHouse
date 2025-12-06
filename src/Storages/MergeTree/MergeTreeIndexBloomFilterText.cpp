@@ -125,7 +125,7 @@ void MergeTreeIndexAggregatorBloomFilterText::update(const Block & block, size_t
                 for (size_t row_num = 0; row_num < elements_size; ++row_num)
                 {
                     auto ref = column_key.getDataAt(element_start_row + row_num);
-                    token_extractor->stringPaddedToBloomFilter(ref.data, ref.size, granule->bloom_filters[col]);
+                    token_extractor->stringPaddedToBloomFilter(ref.data(), ref.size(), granule->bloom_filters[col]);
                 }
 
                 current_position += 1;
@@ -136,7 +136,7 @@ void MergeTreeIndexAggregatorBloomFilterText::update(const Block & block, size_t
             for (size_t i = 0; i < rows_read; ++i)
             {
                 auto ref = column->getDataAt(current_position + i);
-                token_extractor->stringPaddedToBloomFilter(ref.data, ref.size, granule->bloom_filters[col]);
+                token_extractor->stringPaddedToBloomFilter(ref.data(), ref.size(), granule->bloom_filters[col]);
             }
         }
     }
@@ -186,7 +186,7 @@ bool MergeTreeConditionBloomFilterText::alwaysUnknownOrTrue() const
 }
 
 /// Keep in-sync with MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart
-bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
+bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
 {
     std::shared_ptr<MergeTreeIndexGranuleBloomFilterText> granule
             = std::dynamic_pointer_cast<MergeTreeIndexGranuleBloomFilterText>(idx_granule);
@@ -195,6 +195,7 @@ bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranule
 
     /// Check like in KeyCondition.
     std::vector<BoolMask> rpn_stack;
+    size_t element_idx = 0;
     for (const auto & element : rpn)
     {
         switch (element.function)
@@ -292,6 +293,12 @@ bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranule
                 rpn_stack.emplace_back(true, false);
                 break;
             /// No `default:` to make the compiler warn if not all enum values are handled.
+        }
+
+        if (update_partial_disjunction_result_fn)
+        {
+            update_partial_disjunction_result_fn(element_idx, rpn_stack.back().can_be_true, element.function == RPNElement::FUNCTION_UNKNOWN);
+            ++element_idx;
         }
     }
 
@@ -741,7 +748,7 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
         {
             bloom_filters.back().emplace_back(params);
             auto ref = column->getDataAt(row);
-            token_extractor->stringPaddedToBloomFilter(ref.data, ref.size, bloom_filters.back().back());
+            token_extractor->stringPaddedToBloomFilter(ref.data(), ref.size(), bloom_filters.back().back());
         }
     }
 
