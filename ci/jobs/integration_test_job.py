@@ -159,6 +159,7 @@ def main():
     is_parallel = False
     is_sequential = False
     is_targeted_check = False
+    is_llvm_coverage = False
 
     if args.param:
         for item in args.param.split(","):
@@ -199,6 +200,8 @@ def main():
             is_bugfix_validation = True
         elif "targeted" in to:
             is_targeted_check = True
+        elif "llvm coverage" in to:
+            is_llvm_coverage = True
         else:
             assert False, f"Unknown job option [{to}]"
 
@@ -349,7 +352,14 @@ def main():
         "CLICKHOUSE_USE_DATABASE_DISK": "1" if use_database_disk else "0",
         "PYTEST_CLEANUP_CONTAINERS": "1",
         "JAVA_PATH": java_path,
+        # "LLVM_PROFILE_FILE" :f"it-{batch_num}.profraw"
     }
+    if is_llvm_coverage:
+        test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}.profraw"
+        print(
+            f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
+        )
+
     test_results = []
     failed_tests_files = []
 
@@ -439,10 +449,25 @@ def main():
             if Path("./ci/tmp/docker-in-docker.log").exists():
                 files.append("./ci/tmp/docker-in-docker.log")
 
+    # Collect coverage reports 
+    # for p in Path("./").glob("*.profraw"):
+    #     files.append(str(p))    
+
+    # print("Following files will be attached to the report: ")
+    # for f in files:
+    #     print(f)
+    # print("\n")
+
+
     # Rerun failed tests if any to check if failure is reproducible
     if 0 < len(failed_test_cases) < 10 and not (
         is_flaky_check or is_bugfix_validation or is_targeted_check or info.is_local_run
     ):
+        if is_llvm_coverage:
+            test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}-rerun.profraw"
+            print(
+                f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
+            )
         test_result_retries = Result.from_pytest_run(
             command=f"{' '.join(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=1200",
             env=test_env,
@@ -479,11 +504,30 @@ def main():
                 )
 
     R = Result.create_from(results=test_results, stopwatch=sw, files=files)
+       
+    if is_llvm_coverage:
+        assert is_bugfix_validation is False, "LLVM coverage with bugfix validation is not supported"
+        has_failure = False
+        for r in R.results:
+            if r.status == Result.StatusExtended.FAIL:
+                if r.has_label(Result.Label.OK_ON_RETRY):
+                    # Remove label and set to OK
+                    r.remove_label(Result.Label.OK_ON_RETRY)
+                    r.status = Result.StatusExtended.OK
+                else:
+                    has_failure = True
+        if has_failure:
+            R.set_failed()
+            R.set_info("Some tests failed during LLVM coverage run")
+        else:
+            R.set_success()
+            has_error = False
 
     if has_error:
         R.set_error().set_info("\n".join(error_info))
 
     if is_bugfix_validation:
+        assert is_llvm_coverage is False, "Bugfix validation with LLVM coverage is not supported"
         has_failure = False
         for r in R.results:
             # invert statuses

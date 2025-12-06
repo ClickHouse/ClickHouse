@@ -952,6 +952,7 @@ class FailureReason(enum.Enum):
     SKIP = "skip"
     NO_JINJA = "no jinja"
     NO_ZOOKEEPER = "no zookeeper"
+    NO_DEBUG = "no debug"
     NO_SHARD = "no shard"
     FAST_ONLY = "running fast tests only"
     NOT_FAST_ONLY = "running not only fast tests"
@@ -1512,15 +1513,14 @@ class TestCase:
             new_options += f" --allow_merge_tree_settings {self.cli_format_settings(self.effective_merge_tree_settings)}"
 
         if new_options != "":
-            new_options += " --allow_repeated_settings"
             os.environ["CLICKHOUSE_CLIENT_OPT"] = (
                 self.base_client_options + new_options + " "
             )
-        elif client_options:
-            client_options += " --allow_repeated_settings"
-            os.environ["CLICKHOUSE_CLIENT_OPT"] = (
-                self.base_client_options + client_options + " "
-            )
+
+        client_options += " --allow_repeated_settings"    
+        os.environ["CLICKHOUSE_CLIENT_OPT"] = (
+            self.base_client_options + client_options + " "
+        )
 
         return client_options + new_options
 
@@ -1675,6 +1675,13 @@ class TestCase:
         ):
             return FailureReason.NO_ZOOKEEPER
 
+        if (
+            tags
+            and ("no-debug" in tags)
+            and args.no_debug
+        ):
+            return FailureReason.NO_DEBUG
+        
         if (
             tags
             and (("shard" in tags) or ("distributed" in tags) or ("global" in tags))
@@ -4147,6 +4154,13 @@ def parse_args():
         default=None,
         dest="zookeeper",
         help="Do not run zookeeper related tests",
+    )
+    group.add_argument(
+        "--no-debug",
+        action="store_false",
+        default=None,
+        dest="no_debug",
+        help="Do not run debug related tests",
     )
 
     group = parser.add_mutually_exclusive_group(required=False)

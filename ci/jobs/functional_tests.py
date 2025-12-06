@@ -117,7 +117,7 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "azure": " --azure-blob-storage --no-random-settings --no-random-merge-tree-settings",  # azurite is slow, with randomization it can be super slow
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
-    "flaky check": "--flaky-check",
+    "flaky check": "--flaky-check"
 }
 
 
@@ -135,6 +135,7 @@ def main():
     is_shared_catalog = False
     is_encrypted_storage = random.choice([True, False])
     is_parallel_replicas = False
+    is_llvm_coverage = False
     is_coverage = False
     runner_options = ""
     # optimal value for most of the jobs
@@ -152,20 +153,20 @@ def main():
             or to.startswith("arm_")
             or "flaky" in to
             or "targeted" in to
+            or "llvm coverage" in to
         ):
             pass
         elif to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
-            print(
-                f"NOTE: Enabled test runner option [{OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}]"
-            )
-        else:
-            assert False, f"Unknown option [{to}]"
-
-        if to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
             if to in ("parallel", "sequential") and args.test:
                 # skip setting up parallel/sequential if specific tests are provided
                 continue
-            runner_options += f" {OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}"
+            else:
+                runner_options += f" {OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}"
+                print(
+                    f"NOTE: Enabled test runner option [{OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}]"
+                )
+        else:
+            assert False, f"Unknown option [{to}]"           
 
         if "targeted" in to:
             is_targeted_check = True
@@ -173,9 +174,10 @@ def main():
             is_flaky_check = True
         elif "BugfixValidation" in to:
             is_bugfix_validation = True
+        elif "llvm coverage" in to:
+            is_llvm_coverage = True
         elif "coverage" in to:
             is_coverage = True
-
         if "s3 storage" in to:
             is_s3_storage = True
         if "azure" in to:
@@ -209,6 +211,9 @@ def main():
         print(f"Workers count set to optimal value: {nproc}")
         runner_options += f" --jobs {nproc}"
 
+    if is_llvm_coverage:
+        runner_options += " --no-random-settings --no-random-merge-tree-settings --no-long"
+
     rerun_count = 1
     if args.count:
         print(f"Rerun count set from --count: {args.count}")
@@ -234,6 +239,8 @@ def main():
         config_installs_args += " --encrypted-storage"
         runner_options += f" --encrypted-storage"
 
+    if is_llvm_coverage:
+        os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}.profraw"
     if is_bugfix_validation:
         os.environ["GLOBAL_TAGS"] = "no-random-settings"
         ch_path = temp_dir

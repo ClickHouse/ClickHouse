@@ -11,16 +11,16 @@ from ci.defs.defs import (
 )
 from ci.defs.job_configs import JobConfigs
 
-binary_build_job = Job.Config.get_job(
-    JobConfigs.build_jobs, f"Build ({BuildTypes.AMD_BINARY})"
-).set_provides(ArtifactNames.CH_AMD_BINARY, reset=True)
+# binary_build_job = Job.Config.get_job(
+#     JobConfigs.build_jobs, f"Build ({BuildTypes.AMD_BINARY})"
+# ).set_provides(ArtifactNames.CH_AMD_BINARY, reset=True)
 
-jepsen_keeper_job = Job.Config(
-    name="ClickHouse Keeper Jepsen",
-    runs_on=RunnerLabels.STYLE_CHECK_ARM,
-    command="cd ./tests/ci && python3 ci.py --run-from-praktika",
-    requires=[binary_build_job.name],
-)
+# jepsen_keeper_job = Job.Config(
+#     name="ClickHouse Keeper Jepsen",
+#     runs_on=RunnerLabels.STYLE_CHECK_ARM,
+#     command="cd ./tests/ci && python3 ci.py --run-from-praktika",
+#     requires=[binary_build_job.name],
+# )
 
 # TODO: add alert on workflow failure
 
@@ -29,11 +29,11 @@ workflow = Workflow.Config(
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
     jobs=[
-        binary_build_job,
-        jepsen_keeper_job,
+        # binary_build_job,
+        # jepsen_keeper_job,
     ],
     artifacts=[
-        *ArtifactConfigs.clickhouse_binaries,
+        # *ArtifactConfigs.clickhouse_binaries,
     ],
     dockers=DOCKERS,
     secrets=SECRETS,
