@@ -8,6 +8,7 @@
 
 #include <list>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace DB
@@ -60,12 +61,20 @@ struct ExplainPlanOptions
     bool sorting = false;
     /// Show remote plans for distributed query.
     bool distributed = false;
+    /// Show estimates
+    bool estimates = false;
     /// Add input headers to step.
     bool input_headers = false;
     /// Print structure of columns instead of just their names and types.
     bool column_structure = false;
 
     SettingsChanges toSettingsChanges() const;
+};
+
+struct CostEstimationInfo
+{
+    Float64 cost = 0.0;
+    Float64 rows = 0.0;
 };
 
 /// A tree of query steps.
@@ -131,6 +140,7 @@ public:
     {
         QueryPlanStepPtr step;
         std::vector<Node *> children = {};
+        std::optional<CostEstimationInfo> cost_estimation = std::nullopt;
     };
 
     using Nodes = std::list<Node>;
