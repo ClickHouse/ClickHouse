@@ -43,6 +43,9 @@ public:
     void addHashWithSeed(const UInt64 & hash, const UInt64 & hash_seed);
     bool findHashWithSeed(const UInt64 & hash, const UInt64 & hash_seed) const;
 
+    void addRawHash(const UInt64 & hash);
+    bool findRawHash(const UInt64 & hash);
+
     /// Checks if this contains everything from another bloom filter.
     /// Bloom filters must have equal size and seed.
     bool contains(const BloomFilter & bf);
