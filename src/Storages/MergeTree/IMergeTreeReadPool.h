@@ -25,6 +25,7 @@ public:
     /// to get required task. E.g. it may be number of thread in case of Default reading type or an index of a part in case of InOrder/InReverseOrder reading type.
     virtual MergeTreeReadTaskPtr getTask(size_t task_idx, MergeTreeReadTask * previous_task) = 0;
     virtual void profileFeedback(ReadBufferFromFileBase::ProfileInfo info) = 0;
+    virtual void cancel() = 0;
 };
 
 using MergeTreeReadPoolPtr = std::shared_ptr<IMergeTreeReadPool>;

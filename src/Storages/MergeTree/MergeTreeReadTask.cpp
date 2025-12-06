@@ -7,8 +7,16 @@
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
+#include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
 #include <Common/Exception.h>
 #include <IO/Operators.h>
+#include <Common/ProfileEvents.h>
+
+namespace ProfileEvents
+{
+    extern const Event EmptyMergeTreeReadTasks;
+    extern const Event MarksInEmptyMergeTreeReadTasks;
+}
 
 namespace DB
 {
@@ -68,15 +76,24 @@ MergeTreeReadTask::MergeTreeReadTask(
     Readers readers_,
     MarkRanges mark_ranges_,
     std::vector<MarkRanges> patches_mark_ranges_,
+    MergeTreeIndexReadResultPtr index_read_result_,
     const BlockSizeParams & block_size_params_,
-    MergeTreeBlockSizePredictorPtr size_predictor_)
+    MergeTreeBlockSizePredictorPtr size_predictor_,
+    bool is_empty_)
     : info(std::move(info_))
     , readers(std::move(readers_))
     , mark_ranges(std::move(mark_ranges_))
     , patches_mark_ranges(std::move(patches_mark_ranges_))
+    , index_read_result(std::move(index_read_result_))
     , block_size_params(block_size_params_)
     , size_predictor(std::move(size_predictor_))
+    , is_empty(is_empty_)
 {
+    if (is_empty)
+    {
+        ProfileEvents::increment(ProfileEvents::EmptyMergeTreeReadTasks);
+        ProfileEvents::increment(ProfileEvents::MarksInEmptyMergeTreeReadTasks, mark_ranges.getNumberOfMarks());
+    }
 }
 
 /// Returns pointer to the index if all columns in the read step belongs to the read step for that index.
@@ -267,16 +284,21 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
 
 void MergeTreeReadTask::initializeReadersChain(
     const PrewhereExprInfo & prewhere_actions,
-    MergeTreeIndexBuildContextPtr index_build_context,
     const ReadStepsPerformanceCounters & read_steps_performance_counters)
 {
+    if (is_empty)
+        return;
+
     if (readers_chain.isInitialized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Range readers chain is already initialized");
 
     PrewhereExprInfo all_prewhere_actions;
 
-    if (index_build_context)
-        initializeIndexReader(*index_build_context);
+    /// Optionally initialize the index filter for the current read task. If the build context exists and contains
+    /// relevant read ranges for the current part, retrieve or construct index filter for all involved skip indexes.
+    /// This filter will later be used to filter granules during the first reading step.
+    if (index_read_result)
+        readers.prepared_index = std::make_unique<MergeTreeReaderIndex>(readers.main.get(), index_read_result);
 
     for (const auto & step : info->mutation_steps)
         all_prewhere_actions.steps.push_back(step);
@@ -287,18 +309,11 @@ void MergeTreeReadTask::initializeReadersChain(
     readers_chain = createReadersChain(readers, all_prewhere_actions, read_steps_performance_counters);
 }
 
-void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContext & index_build_context)
-{
-    /// Optionally initialize the index filter for the current read task. If the build context exists and contains
-    /// relevant read ranges for the current part, retrieve or construct index filter for all involved skip indexes.
-    /// This filter will later be used to filter granules during the first reading step.
-    auto index_read_result = index_build_context.getPreparedIndexReadResult(*this);
-    if (index_read_result)
-        readers.prepared_index = std::make_unique<MergeTreeReaderIndex>(readers.main.get(), std::move(index_read_result));
-}
-
 UInt64 MergeTreeReadTask::estimateNumRows() const
 {
+    if (is_empty)
+        return 0;
+
     if (!size_predictor)
     {
         if (block_size_params.preferred_block_size_bytes)
@@ -339,6 +354,9 @@ UInt64 MergeTreeReadTask::estimateNumRows() const
 
 MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
 {
+    if (is_empty)
+        return {Block{}, MarkRanges{}, 0, 0, 0};
+
     if (size_predictor)
         size_predictor->startBlock();
 

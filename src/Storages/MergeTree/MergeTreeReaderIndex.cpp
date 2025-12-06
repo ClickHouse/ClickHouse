@@ -1,6 +1,11 @@
 #include <Storages/MergeTree/MergeTreeReaderIndex.h>
-
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
+#include <Common/ProfileEvents.h>
+
+namespace ProfileEvents
+{
+    extern const Event MarksSkippedByIndexReader;
+}
 
 namespace DB
 {
@@ -93,16 +98,24 @@ bool MergeTreeReaderIndex::canSkipMark(size_t mark, size_t /*current_task_last_m
     if (index_read_result->skip_index_read_result)
     {
         chassert(mark < index_read_result->skip_index_read_result->size());
+
         if (!index_read_result->skip_index_read_result->at(mark))
+        {
+            ProfileEvents::increment(ProfileEvents::MarksSkippedByIndexReader);
             return true;
+        }
     }
 
     if (index_read_result->projection_index_read_result)
     {
         size_t begin = data_part_info_for_read->getIndexGranularity().getMarkStartingRow(mark);
         size_t end = begin + data_part_info_for_read->getIndexGranularity().getMarkRows(mark);
+
         if (index_read_result->projection_index_read_result->rangeAllZero(begin, end))
+        {
+            ProfileEvents::increment(ProfileEvents::MarksSkippedByIndexReader);
             return true;
+        }
     }
 
     return false;

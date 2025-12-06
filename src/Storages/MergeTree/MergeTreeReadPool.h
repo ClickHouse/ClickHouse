@@ -28,7 +28,7 @@ public:
         RangesInDataParts && parts_,
         MutationsSnapshotPtr mutations_snapshot_,
         VirtualFields shared_virtual_fields_,
-        const IndexReadTasks & index_read_tasks_,
+        MergeTreeIndexBuildContextPtr index_build_context_,
         const StorageSnapshotPtr & storage_snapshot_,
         const FilterDAGInfoPtr & row_level_filter_,
         const PrewhereInfoPtr & prewhere_info_,
