@@ -610,6 +610,35 @@ ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_na
         return res;
     }
 
+    /// When there are no key columns (e.g., ON FALSE), or when we can't dispatch properly,
+    /// or when the block doesn't have any rows (empty/header block),
+    /// all rows go to the first shard and the rest get empty blocks
+    /// Also check if all key columns exist in the block
+    bool can_dispatch = !key_columns_names.empty() && from_block.rows() > 0;
+    if (can_dispatch)
+    {
+        /// verify all key columns exist in the block
+        for (const auto & key_name : key_columns_names)
+        {
+            if (!from_block.has(key_name))
+            {
+                can_dispatch = false;
+                break;
+            }
+        }
+    }
+
+    if (!can_dispatch)
+    {
+        ScatteredBlocks res;
+        res.reserve(num_shards);
+        Block empty_block = from_block.cloneEmpty();
+        res.emplace_back(std::move(from_block));
+        for (size_t i = 1; i < num_shards; ++i)
+            res.emplace_back(empty_block.cloneEmpty());
+        return res;
+    }
+
     IColumn::Selector selector = selectDispatchBlock(*hash_joins[0]->data, num_shards, key_columns_names, from_block);
 
     /// With zero-copy approach we won't copy the source columns, but will create a new one with indices.
