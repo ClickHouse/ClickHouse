@@ -23,6 +23,8 @@ using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadRespon
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 
+class LazilyReadFromMergeTree;
+
 struct MergeTreeDataSelectSamplingData
 {
     bool use_sampling = false;
@@ -222,6 +224,7 @@ public:
     static constexpr auto name = "ReadFromMergeTree";
     String getName() const override { return name; }
 
+    std::unique_ptr<ReadFromMergeTree> cloneWithRequiredColumns(const NameSet & required_columns) const;
     QueryPlanStepPtr clone() const override;
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
@@ -333,6 +336,9 @@ public:
 
     const ProjectionIndexReadDescription & getProjectionIndexReadDescription() const { return projection_index_read_desc; }
     ProjectionIndexReadDescription & getProjectionIndexReadDescription() { return projection_index_read_desc; }
+
+    std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
+    int addStartingPartOffsetAndPartOffset();
 
 private:
     MergeTreeReaderSettings reader_settings;

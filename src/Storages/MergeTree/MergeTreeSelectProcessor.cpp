@@ -132,7 +132,8 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     const IndexReadTasks & index_read_tasks_,
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReaderSettings & reader_settings_,
-    MergeTreeIndexBuildContextPtr merge_tree_index_build_context_)
+    MergeTreeIndexBuildContextPtr merge_tree_index_build_context_,
+    LazyMaterializingRowsPtr lazy_materializing_rows_)
     : pool(std::move(pool_))
     , algorithm(std::move(algorithm_))
     , row_level_filter(row_level_filter_)
@@ -149,6 +150,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     , reader_settings(reader_settings_)
     , result_header(transformHeader(pool->getHeader(), lazily_read_info, row_level_filter, prewhere_info))
     , merge_tree_index_build_context(std::move(merge_tree_index_build_context_))
+    , lazy_materializing_rows(std::move(lazy_materializing_rows_))
 {
     bool has_prewhere_actions_steps = !prewhere_actions.steps.empty();
     if (has_prewhere_actions_steps)
@@ -233,7 +235,7 @@ ChunkAndProgress
 MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMergeTreeSelectAlgorithm & task_algorithm) const
 {
     if (!current_task.getReadersChain().isInitialized())
-        current_task.initializeReadersChain(prewhere_actions, merge_tree_index_build_context, read_steps_performance_counters);
+        current_task.initializeReadersChain(prewhere_actions, merge_tree_index_build_context, lazy_materializing_rows, read_steps_performance_counters);
 
     auto res = task_algorithm.readFromTask(current_task);
 

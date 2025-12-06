@@ -26,4 +26,5 @@ void stableGetPermutation(const Block & block, const SortDescription & descripti
   */
 bool isAlreadySorted(const Block & block, const SortDescription & description);
 
+bool isIdentityPermutation(const IColumn::Permutation & permutation, size_t limit);
 }

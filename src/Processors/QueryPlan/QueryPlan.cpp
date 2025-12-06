@@ -840,32 +840,35 @@ void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_ro
 }
 
 
-void QueryPlan::replaceNodeWithPlan(Node * node, QueryPlanPtr plan)
+void QueryPlan::replaceNodeWithPlan(Node * node, QueryPlan plan)
 {
     chassert(nodes.end() != std::find_if(cbegin(nodes), cend(nodes), [node](const Node & n) { return n.step == node->step; }));
 
-    const auto & header = node->step->getOutputHeader();
-    const auto & plan_header = plan->getCurrentHeader();
-
-    if (!blocksHaveEqualStructure(*header, *plan_header))
+    if (node->step)
     {
-        auto converting_dag = ActionsDAG::makeConvertingActions(
-            plan_header->getColumnsWithTypeAndName(),
-            header->getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name,
-            nullptr);
+        const auto & header = node->step->getOutputHeader();
+        const auto & plan_header = plan.getCurrentHeader();
 
-        auto expression = std::make_unique<ExpressionStep>(plan_header, std::move(converting_dag));
-        plan->addStep(std::move(expression));
+        if (!blocksHaveEqualStructure(*header, *plan_header))
+        {
+            auto converting_dag = ActionsDAG::makeConvertingActions(
+                plan_header->getColumnsWithTypeAndName(),
+                header->getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name,
+                nullptr);
+
+            auto expression = std::make_unique<ExpressionStep>(plan_header, std::move(converting_dag));
+            plan.addStep(std::move(expression));
+        }
     }
 
-    nodes.splice(nodes.end(), std::move(plan->nodes));
+    nodes.splice(nodes.end(), std::move(plan.nodes));
 
-    node->step = std::move(plan->getRootNode()->step);
-    node->children = std::move(plan->getRootNode()->children);
+    node->step = std::move(plan.getRootNode()->step);
+    node->children = std::move(plan.getRootNode()->children);
 
-    max_threads = std::max(max_threads, plan->max_threads);
-    resources = std::move(plan->resources);
+    max_threads = std::max(max_threads, plan.max_threads);
+    resources = std::move(plan.resources);
 }
 
 }
