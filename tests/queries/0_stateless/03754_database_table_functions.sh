@@ -7,10 +7,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_LOCAL} --query "SELECT * FROM (SELECT 'ALTER TABLE src' AS query, 123 AS query_duration_ms) INTO OUTFILE '${CLICKHOUSE_TMP}/query_log.tsv.zst' FORMAT TSVWithNames"
 ${CLICKHOUSE_LOCAL} --query "
 SELECT *
-FROM 'query_log.tsv.zst'
+FROM '${CLICKHOUSE_TMP}/query_log.tsv.zst'
 WHERE query_duration_ms = (
     SELECT max(query_duration_ms)
-    FROM 'query_log.tsv.zst'
+    FROM '${CLICKHOUSE_TMP}/query_log.tsv.zst'
     WHERE query LIKE 'ALTER TABLE src%'
 )
 LIMIT 1
