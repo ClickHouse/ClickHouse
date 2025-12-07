@@ -184,9 +184,8 @@ endif()
 add_contrib (sqlite-cmake sqlite-amalgamation)
 add_contrib (s2geometry-cmake s2geometry)
 add_contrib (c-ares-cmake c-ares)
-add_contrib (streamvbyte-cmake streamvbyte)
 
-if (OS_LINUX AND ARCH_AMD64 AND ENABLE_SSE42)
+if (OS_LINUX AND ARCH_AMD64 AND NO_SSE3_OR_HIGHER)
     option (ENABLE_QPL "Enable Intel® Query Processing Library (QPL)" ${ENABLE_LIBRARIES})
 elseif(ENABLE_QPL)
     message (${RECONFIGURE_MESSAGE_LEVEL} "QPL library is only supported on x86_64 with SSE 4.2 or higher")
@@ -280,6 +279,12 @@ add_contrib (sha3iuf-cmake SHA3IUF)
 add_contrib (ai-sdk-cpp-cmake ai-sdk-cpp)
 
 add_contrib (bech32)
+
+if (OS_LINUX AND ARCH_AMD64 AND (NO_SSE3_OR_HIGHER EQUAL 0))
+    add_contrib(simdcomp-cmake simdcomp)
+else()
+    add_contrib(streamvbyte-cmake streamvbyte)
+endif()
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

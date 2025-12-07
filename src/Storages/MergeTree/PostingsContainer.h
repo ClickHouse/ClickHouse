@@ -54,14 +54,15 @@ namespace ErrorCodes
 struct Codec
 {
     template<typename Out>
-    static void writeHeader(uint16_t n, uint32_t bytes, Out & out)
+    static void writeHeader(uint16_t n, uint32_t bytes, uint32_t max_bits, Out & out)
     {
         writeVarUInt(n, out);
         writeVarUInt(bytes, out);
+        writeVarUInt(max_bits, out);
     }
 
     template<typename Input>
-    static void readHeader(uint16_t & n, uint32_t & bytes, Input & in)
+    static void readHeader(uint16_t & n, uint32_t & bytes, uint32_t & max_bits, Input & in)
     {
         uint64_t v = 0;
         readVarUInt(v, in);
@@ -70,12 +71,16 @@ struct Codec
         v = 0;
         readVarUInt(v, in);
         bytes = static_cast<uint32_t>(v);
+
+        v = 0;
+        readVarUInt(v, in);
+        max_bits = static_cast<uint32_t>(v);
     }
     template<typename T>
-    static void decodeBlock(unsigned char *src, uint16_t n, std::vector<T> & out, uint32_t bytes_expected)
+    static void decodeBlock(unsigned char *src, uint16_t n, uint32_t max_bits, std::vector<T> & out, uint32_t bytes_expected)
     {
         out.resize(n);
-        size_t used = CodecTraits<T>::decode(src, n, out.data());
+        size_t used = CodecTraits<T>::decode(src, n, max_bits, out.data());
         if (used != bytes_expected)
             throw Exception(ErrorCodes::CORRUPTED_DATA, "compressed/decompressed mismatch");
     }
@@ -85,13 +90,14 @@ struct Codec
         /// Decode block header.
         uint16_t n = 0;
         uint32_t bytes = 0;
-        Codec::readHeader(n, bytes, in);
+        uint32_t max_bits = 0;
+        Codec::readHeader(n, bytes, max_bits, in);
         temp.resize(n);
         temp_buffer.resize(bytes);
         in.readStrict(temp_buffer.data(), bytes);
         /// Decode postings
         unsigned char * p = reinterpret_cast<unsigned char *>(temp_buffer.data());
-        auto used = CodecTraits<T>::decode(p, n, temp.data());
+        auto used = CodecTraits<T>::decode(p, n, max_bits, temp.data());
         if (used != bytes)
             throw Exception(ErrorCodes::CORRUPTED_DATA,
                             "Compressed and decompressed byte counts do not match. compressed = {}, decompressed = {}",
@@ -117,11 +123,12 @@ struct Source
             return false;
         uint16_t n = 0;
         uint32_t bytes = 0;
-        Codec::readHeader(n, bytes, in);
+        uint32_t max_bits = 0;
+        Codec::readHeader(n, bytes, max_bits, in);
         raw.resize(bytes);
         in.readStrict(raw.data(), bytes);
         auto p = reinterpret_cast<unsigned char*>(raw.data());
-        Codec::decodeBlock<T>(p, n, decoded, bytes);
+        Codec::decodeBlock<T>(p, n, max_bits, decoded, bytes);
         ++current_block;
         return true;
     }
@@ -530,12 +537,11 @@ private:
     }
     void compressCurrent()
     {
-        const uint32_t n = current.size();
-        const uint32_t cap = CodecTraits<T>::bound(n);
+        auto [cap, bits] = CodecTraits<T>::evaluateSizeAndMaxBits(current);
         temp_compression_data.resize(cap);
-        auto bytes = CodecTraits<T>::encode(current.data(), n, reinterpret_cast<unsigned char*>(temp_compression_data.data()));
+        auto bytes = CodecTraits<T>::encode(current.data(), current.size(), bits, reinterpret_cast<unsigned char*>(temp_compression_data.data()));
         WriteBufferFromString wb(data, AppendModeTag{});
-        Codec::writeHeader(n, bytes, wb);
+        Codec::writeHeader(current.size(), bytes, bits, wb);
         wb.write(temp_compression_data.data(), bytes);
         block_count++;
         current.clear();

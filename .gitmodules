@@ -393,3 +393,6 @@
 [submodule "contrib/streamvbyte"]
 	path = contrib/streamvbyte
 	url = https://github.com/fast-pack/streamvbyte.git
+[submodule "contrib/simdcomp"]
+    path = contrib/simdcomp
+    url = https://github.com/lemire/simdcomp.git
