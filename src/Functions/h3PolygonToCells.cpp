@@ -92,10 +92,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto non_const_arguments = arguments;
-        for (auto & argument : non_const_arguments)
-            argument.column = argument.column->convertToFullColumnIfConst();
-
         auto [col_array, is_const_array] = getArgumentOrConstArgument<ColumnArray>(arguments, 0, getName());
         auto [col_resolution, is_const_resolution] = getArgumentOrConstArgument<ColumnUInt8>(arguments, 1, getName());
         const auto & data_resolution = col_resolution->getData();
