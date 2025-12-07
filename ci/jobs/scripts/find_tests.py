@@ -256,7 +256,7 @@ class Targeting:
                 if len(tests) > max_tests_per_symbol:
                     info += f" select {max_tests_per_symbol} random tests out of {len(tests)}\n"
                     tests = sample(tests, max_tests_per_symbol)
-            selected_tests.update(tests)
+                selected_tests.update(tests)
             for test in tests[:10]:
                 info += f"  - {test}\n"
             if len(tests) > 10:
