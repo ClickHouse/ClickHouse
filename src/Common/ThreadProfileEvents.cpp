@@ -561,10 +561,10 @@ void PerfEventsCounters::finalizeProfileEvents(ProfileEvents::Counters & profile
         const auto enabled = current_value.time_enabled - previous_value.time_enabled;
         const auto running = current_value.time_running - previous_value.time_running;
 
-        const auto denominator = static_cast<Float64>(enabled) / std::max(1., static_cast<Float64>(running));
-        const auto nominator = static_cast<Float64>((current_value.value - previous_value.value));
+        const auto multiplexing_scale_factor = static_cast<Float64>(enabled) / std::max(1., static_cast<Float64>(running));
+        const auto difference_current_previous = static_cast<Float64>((current_value.value - previous_value.value));
         const auto max_unsigned_integer = static_cast<Float64>(std::numeric_limits<UInt64>::max());
-        const UInt64 delta = static_cast<UInt64>(std::min(denominator * nominator, max_unsigned_integer));
+        const UInt64 delta = static_cast<UInt64>(std::min(multiplexing_scale_factor * difference_current_previous, max_unsigned_integer));
 
         if (min_enabled_time > enabled)
         {
