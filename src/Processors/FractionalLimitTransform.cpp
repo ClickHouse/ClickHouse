@@ -6,6 +6,8 @@
 #include <Processors/Port.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <base/types.h>
+#include <sys/stat.h>
+#include <algorithm>
 
 namespace DB
 {
@@ -114,9 +116,9 @@ IProcessor::Status FractionalLimitTransform::prepare(const PortNumbers & updated
             /// Some input ports still available => we can read more data
             return Status::NeedData;
 
-        /// Calculate remaining integral limit and offset to be used at push phase.
-        limit = static_cast<UInt64>(std::ceil(rows_cnt * limit_fraction)) - outputed_rows_cnt;
-        offset += static_cast<UInt64>(std::ceil(rows_cnt * offset_fraction)) - evicted_rows_cnt;
+        /// Calculate integral limit and offset
+        limit = static_cast<UInt64>(std::ceil(rows_cnt * limit_fraction));
+        offset += static_cast<UInt64>(std::ceil(rows_cnt * offset_fraction));
     }
 
     /// If we reached here all input ports are finished.
@@ -165,9 +167,11 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
     rows_cnt += rows;
 
     /// Ignore chunk if it should be offsetted
-    if (rows <= (offset - evicted_rows_cnt))
+    if (rows <= (offset - rows_read_from_cache))
     {
-        evicted_rows_cnt += rows;
+        /// As if it was put in cache then evicted due to offset.
+        rows_read_from_cache += rows;
+
         data.current_chunk.clear();
 
         if (input.isFinished())
@@ -184,9 +188,9 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
     ///
     /// Detect blocks that will 100% get removed by the fractional offset and remove them as early as possible.
     /// example: if we have 10 blocks with same num of rows and offset 0.1 we can freely drop the first block even before reading all data.
-    while (!chunks_cache.empty() && std::ceil(rows_cnt * offset_fraction) - evicted_rows_cnt >= chunks_cache.front().chunk.getNumRows())
+    while (!chunks_cache.empty() && std::ceil(rows_cnt * offset_fraction) - rows_read_from_cache >= chunks_cache.front().chunk.getNumRows())
     {
-        evicted_rows_cnt += chunks_cache.front().chunk.getNumRows();
+        rows_read_from_cache += chunks_cache.front().chunk.getNumRows();
         chunks_cache.pop_front();
     }
 
@@ -206,13 +210,13 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
 
         auto & cache_chunk = chunks_cache.front().chunk;
         auto num_rows = cache_chunk.getNumRows();
-        UInt64 remaining_offset = offset - evicted_rows_cnt;
+        UInt64 remaining_offset = std::max(static_cast<UInt64>(0), offset - rows_read_from_cache);
 
         if (std::ceil(rows_cnt * limit_fraction) - outputed_rows_cnt >= num_rows - remaining_offset)
         {
             /// If we still have an integral offset that didn't cause the chunk
             /// to be dropped entirely above then its offset in part of the chunk => split it
-            if (remaining_offset > 0)
+            if (remaining_offset)
             {
                 auto num_columns = cache_chunk.getNumColumns();
                 auto columns = cache_chunk.detachColumns();
@@ -222,9 +226,10 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
                 chunks_cache.front().chunk.setColumns(std::move(columns), num_rows - remaining_offset);
 
                 num_rows -= remaining_offset;
-                evicted_rows_cnt += remaining_offset;
+                rows_read_from_cache += remaining_offset;
             }
 
+            rows_read_from_cache += num_rows;
             outputed_rows_cnt += num_rows;
             if (with_ties)
                 previous_row_chunk = makeChunkWithPreviousRow(chunks_cache.front().chunk, num_rows - 1);

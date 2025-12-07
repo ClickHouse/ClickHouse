@@ -31,7 +31,7 @@ namespace DB
 ///        chunks that we became 100% sure will be offsetted entirely.
 ///     4. remove from cache and push to output, chunks that we
 ///        we becamse 100% sure will be pushed
-/// 5. calculate remaining integral limit/offset
+/// 5. calculate integral limit/offset = (rows_cnt * fraction)
 /// 6. apply normal limit/offset logic on remaining cached chunks.
 class FractionalLimitTransform final : public IProcessor
 {
@@ -69,8 +69,6 @@ private:
 
     /// Total number of input rows.
     UInt64 rows_cnt = 0;
-    /// Number of rows offsetted at pull phase.
-    UInt64 evicted_rows_cnt = 0;
     /// Number of rows output-ed at pull phase.
     UInt64 outputed_rows_cnt = 0;
 
