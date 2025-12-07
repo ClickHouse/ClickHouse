@@ -34,8 +34,7 @@ else()
 endif()
 
 set(dbms_headers)
-set(dbms_sources
-        BridgeHelper/XDBCBridgeHelper.cpp)
+set(dbms_sources)
 
 add_subdirectory (Access)
 add_subdirectory (Backups)
