@@ -209,16 +209,14 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         result_path, server_log_path
     )
 
-    Shell.check("pwd", verbose=True)
-    Result.create_from(
+    r = Result.create_from(
         results=test_results,
         stopwatch=stopwatch,
-        files=additional_logs,
         info=description,
-    ).dump()
-
-    if state == "failure":
-        sys.exit(1)
+    )
+    if not r.is_ok():
+        r.set_files(additional_logs)
+    r.complete_job()
 
 
 if __name__ == "__main__":
