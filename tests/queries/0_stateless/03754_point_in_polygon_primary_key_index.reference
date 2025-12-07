@@ -9,7 +9,7 @@ Expression ((Project names + Projection))
             Keys:
               x
               y
-            Condition: pointInPolygon((x, y), [])
+            Condition: pointInPolygon((x, y), [(0, 0), (0, 25000), (25000, 25000), (25000, 0), (0, 0)])
             Parts: 1/1
             Granules: 26/100
             Search Algorithm: generic exclusion search
