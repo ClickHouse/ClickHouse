@@ -3,7 +3,6 @@ import logging
 import os
 import subprocess
 import sys
-import traceback
 from pathlib import Path
 
 from ci.jobs.scripts.docker_image import DockerImage
@@ -155,9 +154,10 @@ def run_fuzz_job(check_name: str):
                 is_failed = False
         else:
             # Check for OOM in dmesg for non-sanitized builds
-            if Shell.check(f"dmesg > {dmesg_log}"):
+            if Shell.check(f"dmesg > {dmesg_log}", verbose=True):
                 if Shell.check(
-                    f"cat {dmesg_log} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q ."
+                    f"cat {dmesg_log} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
+                    verbose=True,
                 ):
                     info.append("ERROR: OOM in dmesg")
                     status = Result.Status.ERROR
@@ -190,7 +190,7 @@ def run_fuzz_job(check_name: str):
         # generate fatal log
         Shell.check(f"rg --text '\s<Fatal>\s' {server_log} > {fatal_log}")
         for file in paths:
-            if file.exists():
+            if file.exists() and file.stat().st_size > 0:
                 result.set_files(file)
 
     result.complete_job()

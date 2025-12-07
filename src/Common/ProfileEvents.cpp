@@ -20,6 +20,7 @@
     M(SelectQuery, "Same as Query, but only for SELECT queries.", ValueType::Number) \
     M(InsertQuery, "Same as Query, but only for INSERT queries.", ValueType::Number) \
     M(InitialQuery, "Same as Query, but only counts initial queries (see is_initial_query).", ValueType::Number) \
+    M(InitialSelectQuery, "Same as InitialQuery, but only for SELECT queries.", ValueType::Number) \
     M(QueriesWithSubqueries, "Count queries with all subqueries", ValueType::Number) \
     M(SelectQueriesWithSubqueries, "Count SELECT queries with all subqueries", ValueType::Number) \
     M(InsertQueriesWithSubqueries, "Count INSERT queries with all subqueries", ValueType::Number) \
@@ -31,6 +32,8 @@
     M(FailedInternalQuery, "Number of failed internal queries.", ValueType::Number) \
     M(FailedInternalSelectQuery, "Same as FailedInternalQuery, but only for SELECT queries.", ValueType::Number) \
     M(FailedInternalInsertQuery, "Same as FailedInternalQuery, but only for INSERT queries.", ValueType::Number) \
+    M(FailedInitialQuery, "Number of failed initial queries.", ValueType::Number) \
+    M(FailedInitialSelectQuery, "Same as FailedInitialQuery, but only for SELECT queries.", ValueType::Number) \
     M(FailedQuery, "Number of total failed queries, both internal and user queries.", ValueType::Number) \
     M(FailedSelectQuery, "Same as FailedQuery, but only for SELECT queries.", ValueType::Number) \
     M(FailedInsertQuery, "Same as FailedQuery, but only for INSERT queries.", ValueType::Number) \

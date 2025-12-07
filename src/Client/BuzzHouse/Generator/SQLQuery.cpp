@@ -1946,7 +1946,7 @@ void StatementGenerator::generateLimitExpr(RandomGenerator & rg, Expr * expr)
         }
         else
         {
-            std::uniform_int_distribution<uint32_t> frange(1, 999);
+            std::uniform_int_distribution<uint32_t> frange(1, 9999);
 
             buf += fmt::format("0.{}", frange(rg.generator));
         }
@@ -1960,50 +1960,47 @@ void StatementGenerator::generateLimitExpr(RandomGenerator & rg, Expr * expr)
     }
 }
 
-void StatementGenerator::generateLimit(RandomGenerator & rg, const bool has_order_by, LimitStatement * ls)
+void StatementGenerator::generateLimitBy(RandomGenerator & rg, LimitByStatement * ls)
 {
     generateLimitExpr(rg, ls->mutable_limit());
     if (rg.nextBool())
     {
+        ls->set_comma(rg.nextBool());
         generateLimitExpr(rg, ls->mutable_offset());
     }
-    ls->set_with_ties(has_order_by && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7));
-    if (!ls->with_ties() && rg.nextSmallNumber() < 4)
+    if (rg.nextSmallNumber() < 8)
     {
-        if (rg.nextSmallNumber() < 8)
+        Expr * expr = ls->mutable_by_expr();
+
+        if (this->depth >= this->fc.max_depth || rg.nextSmallNumber() < 8)
         {
-            Expr * expr = ls->mutable_by_expr();
+            LiteralValue * lv = expr->mutable_lit_val();
 
-            if (this->depth >= this->fc.max_depth || rg.nextSmallNumber() < 8)
-            {
-                LiteralValue * lv = expr->mutable_lit_val();
-
-                lv->mutable_int_lit()->set_uint_lit(rg.randomInt<uint32_t>(0, 6));
-            }
-            else
-            {
-                this->depth++;
-                generateExpression(rg, expr);
-                this->depth--;
-            }
+            lv->mutable_int_lit()->set_uint_lit(rg.randomInt<uint32_t>(0, 6));
         }
         else
         {
-            ls->set_lall(true);
+            this->depth++;
+            generateExpression(rg, expr);
+            this->depth--;
         }
+    }
+    else
+    {
+        ls->set_lall(true);
     }
 }
 
 void StatementGenerator::generateOffset(RandomGenerator & rg, const bool has_order_by, OffsetStatement * off)
 {
+    off->set_comma(rg.nextBool());
     generateLimitExpr(rg, off->mutable_row_count());
-    off->set_rows(rg.nextBool());
     if (has_order_by && (!this->allow_not_deterministic || rg.nextBool()))
     {
         FetchStatement * fst = off->mutable_fetch();
 
         generateLimitExpr(rg, fst->mutable_row_count());
-        fst->set_rows(rg.nextBool());
+        fst->set_rows(rg.nextBool() ? RowsKeyword::OFF_ROW : RowsKeyword::OFF_ROWS);
         fst->set_first(rg.nextBool());
         fst->set_only(this->allow_not_deterministic && rg.nextBool());
     }
@@ -2262,16 +2259,18 @@ void StatementGenerator::generateSelect(
             generateOrderBy(rg, ncols, (allowed_clauses & allow_orderby_settings), false, ssc->mutable_orderby());
             this->depth--;
         }
-        if ((allowed_clauses & allow_limit) && (ssc->has_orderby() || this->allow_not_deterministic) && rg.nextSmallNumber() < 4)
+        const bool order_safe = ssc->has_orderby() || this->levels[this->current_level].global_aggregate || this->allow_not_deterministic;
+        if ((allowed_clauses & allow_limitby) && order_safe && rg.nextMediumNumber() < 23)
         {
-            if (rg.nextBool())
-            {
-                generateLimit(rg, ssc->has_orderby(), ssc->mutable_limit());
-            }
-            else
-            {
-                generateOffset(rg, ssc->has_orderby(), ssc->mutable_offset());
-            }
+            generateLimitBy(rg, ssc->mutable_limit_by());
+        }
+        if ((allowed_clauses & allow_limit) && order_safe && rg.nextMediumNumber() < 23)
+        {
+            generateLimitExpr(rg, ssc->mutable_limit());
+        }
+        if ((allowed_clauses & allow_offset) && order_safe && rg.nextMediumNumber() < 23)
+        {
+            generateOffset(rg, ssc->has_orderby(), ssc->mutable_offset());
         }
     }
     /// This doesn't work: SELECT 1 FROM ((SELECT 1) UNION (SELECT 1) SETTINGS page_cache_inject_eviction = 1) x;

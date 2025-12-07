@@ -404,7 +404,7 @@ private:
             while (!in.eof())
             {
                 for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
-                    result_cols[key_pos]->deserializeAndInsertFromArena(in);
+                    result_cols[key_pos]->deserializeAndInsertFromArena(in, /*settings=*/nullptr);
 
                 ++out_offset;
             }
@@ -495,7 +495,7 @@ private:
                 {
                     const auto & key_col = key_columns[key_pos];
                     const char * begin = nullptr;
-                    auto ref = key_col->serializeValueIntoArena(row_id, arena, begin);
+                    std::string_view ref = key_col->serializeValueIntoArena(row_id, arena, begin, nullptr);
 
                     chassert(begin != nullptr);
                     chassert(ref.data() >= begin);

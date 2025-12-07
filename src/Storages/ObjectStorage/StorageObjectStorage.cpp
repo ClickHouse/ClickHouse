@@ -533,10 +533,11 @@ SinkToStoragePtr StorageObjectStorage::write(
     return std::make_shared<StorageObjectStorageSink>(
         paths.back().path,
         object_storage,
-        configuration,
         format_settings,
         sample_block,
-        local_context);
+        local_context,
+        configuration->format,
+        configuration->compression_method);
 }
 
 bool StorageObjectStorage::optimize(
