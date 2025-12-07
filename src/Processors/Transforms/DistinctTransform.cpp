@@ -1,11 +1,15 @@
 #include <Processors/Transforms/DistinctTransform.h>
 
+#include <Columns/ColumnsNumber.h>
+#include <Common/assert_cast.h>
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int SET_SIZE_LIMIT_EXCEEDED;
+    extern const int LOGICAL_ERROR;
 }
 
 DistinctTransform::DistinctTransform(
@@ -48,6 +52,108 @@ void DistinctTransform::buildFilter(
     }
 }
 
+template <typename Method>
+void DistinctTransform::buildFilterWithMask(
+    Method & method,
+    const ColumnRawPtrs & columns,
+    IColumn::Filter & filter,
+    const size_t rows,
+    SetVariants & variants,
+    const IColumn::Filter & mask) const
+{
+    typename Method::State state(columns, key_sizes, nullptr);
+
+    for (size_t i = 0; i < rows; ++i)
+    {
+        if (!mask[i])
+        {
+            /// Already known duplicate row (by LC index), skip insertion
+            filter[i] = 0;
+            continue;
+        }
+
+        auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+        filter[i] = emplace_result.isInserted();
+    }
+}
+
+IColumn::Filter DistinctTransform::buildLowCardinalityMask(const ColumnLowCardinality & column, size_t num_rows)
+{
+    IColumn::Filter mask(num_rows, 0);
+
+    const auto & dictionary = column.getDictionary();
+    const auto dict_size = dictionary.size();
+
+    LCDictionaryKey dict_key;
+    dict_key.hash = dictionary.getHash();
+    dict_key.size = dict_size;
+
+    auto & state = lc_dict_states[dict_key];
+
+    /// The first time we see this dictionary, initialize the seen_indices array to keep track which entries
+    /// in the dictionary have been seen.
+    chassert(state.seen_count <= dict_size);
+    if (state.seen_indices.size() != dict_size)
+    {
+        chassert(state.seen_indices.empty());
+        chassert(state.seen_count == 0);
+        state.seen_indices.resize_fill(dict_size);
+    }
+
+    /// If we've already seen all dictionary indices for this dictionary,
+    /// then no row in this chunk (and also other chunks with the same dictionary) can produce a new distinct value.
+    if (state.seen_count == dict_size)
+        return mask;
+
+    auto & seen = state.seen_indices;
+
+    const auto index_type_size = column.getSizeOfIndexType();
+    const IColumn & indexes_column = *column.getIndexesPtr();
+
+    auto handle_index = [&](UInt64 idx, size_t row)
+    {
+        chassert(idx < dict_size);
+        if (!seen[idx])
+        {
+            seen[idx] = 1;
+            ++state.seen_count;
+            mask[row] = 1; /// first time we see this dictionary index for this dictionary
+        }
+    };
+
+    switch (index_type_size)
+    {
+        case sizeof(UInt8): {
+            const auto & col = assert_cast<const ColumnUInt8 &>(indexes_column).getData();
+            for (size_t row = 0; row < num_rows; ++row)
+                handle_index(col[row], row);
+            break;
+        }
+        case sizeof(UInt16): {
+            const auto & col = assert_cast<const ColumnUInt16 &>(indexes_column).getData();
+            for (size_t row = 0; row < num_rows; ++row)
+                handle_index(col[row], row);
+            break;
+        }
+        case sizeof(UInt32): {
+            const auto & col = assert_cast<const ColumnUInt32 &>(indexes_column).getData();
+            for (size_t row = 0; row < num_rows; ++row)
+                handle_index(col[row], row);
+            break;
+        }
+        case sizeof(UInt64): {
+            const auto & col = assert_cast<const ColumnUInt64 &>(indexes_column).getData();
+            for (size_t row = 0; row < num_rows; ++row)
+                handle_index(col[row], row);
+            break;
+        }
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for LowCardinality column in DistinctTransform");
+    }
+
+    return mask;
+}
+
 void DistinctTransform::transform(Chunk & chunk)
 {
     if (unlikely(!chunk.hasRows()))
@@ -76,6 +182,18 @@ void DistinctTransform::transform(Chunk & chunk)
     for (auto pos : key_columns_pos)
         column_ptrs.emplace_back(columns[pos].get());
 
+    bool has_lc_mask{false};
+    IColumn::Filter lc_mask;
+
+    if (key_columns_pos.size() == 1)
+    {
+        if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(column_ptrs[0]))
+        {
+            lc_mask = buildLowCardinalityMask(*lc, num_rows);
+            has_lc_mask = true;
+        }
+    }
+
     if (data.empty())
         data.init(SetVariants::chooseMethod(column_ptrs, key_sizes));
 
@@ -87,9 +205,12 @@ void DistinctTransform::transform(Chunk & chunk)
         case SetVariants::Type::EMPTY:
             break;
 #define M(NAME) \
-            case SetVariants::Type::NAME: \
+        case SetVariants::Type::NAME: \
+            if (has_lc_mask) \
+                buildFilterWithMask(*data.NAME, column_ptrs, filter, num_rows, data, lc_mask); \
+            else \
                 buildFilter(*data.NAME, column_ptrs, filter, num_rows, data); \
-                break;
+            break;
         APPLY_FOR_SET_VARIANTS(M)
 #undef M
     }
