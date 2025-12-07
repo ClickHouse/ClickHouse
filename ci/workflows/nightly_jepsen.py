@@ -15,13 +15,6 @@ binary_build_job = Job.Config.get_job(
     JobConfigs.build_jobs, f"Build ({BuildTypes.AMD_BINARY})"
 ).set_provides(ArtifactNames.CH_AMD_BINARY, reset=True)
 
-jepsen_keeper_job = Job.Config(
-    name="ClickHouse Keeper Jepsen",
-    runs_on=RunnerLabels.STYLE_CHECK_ARM,
-    command="cd ./tests/ci && python3 ci.py --run-from-praktika",
-    requires=[binary_build_job.name],
-)
-
 # TODO: add alert on workflow failure
 
 workflow = Workflow.Config(
@@ -30,7 +23,7 @@ workflow = Workflow.Config(
     branches=[BASE_BRANCH],
     jobs=[
         binary_build_job,
-        jepsen_keeper_job,
+        JobConfigs.jepsen_keeper,
     ],
     artifacts=[
         *ArtifactConfigs.clickhouse_binaries,
