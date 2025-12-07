@@ -116,7 +116,7 @@ IProcessor::Status FractionalLimitTransform::prepare(const PortNumbers & updated
             /// Some input ports still available => we can read more data
             return Status::NeedData;
 
-        /// Calculate integral limit and offset
+        /// Calculate integral limit and offset values.
         limit = static_cast<UInt64>(std::ceil(rows_cnt * limit_fraction));
         offset += static_cast<UInt64>(std::ceil(rows_cnt * offset_fraction));
     }
