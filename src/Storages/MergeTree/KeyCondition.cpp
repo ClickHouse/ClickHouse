@@ -1943,8 +1943,16 @@ bool KeyCondition::canSetValuesBeWrappedByFunctions(
 struct KeyCondition::RPNElement::Polygon
 {
     using PointT = boost::geometry::model::d2::point_xy<Float64>;
-    using PolygonT = boost::geometry::model::polygon<PointT>;
-    PolygonT data;
+    using RingT = boost::geometry::model::ring<PointT>;
+    using BoxT = boost::geometry::model::box<PointT>;
+
+    /// Outer ring of the polygon. We do not store holes; index analysis only
+    /// uses the outer boundary
+    RingT ring;
+
+    /// Bounding box of the ring, precomputed once when the RPN element is built
+    /// Useful for quick rejection to avoid costly `intersects` checks
+    BoxT bbox;
 };
 
 KeyCondition::RPNElement::RPNElement()
@@ -2059,9 +2067,14 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
                 auto x = applyVisitor(FieldVisitorConvertToNumber<Float64>(), elem_tuple[0]);
                 auto y = applyVisitor(FieldVisitorConvertToNumber<Float64>(), elem_tuple[1]);
-                out.polygon->data.outer().push_back({x, y});
+                out.polygon->ring.emplace_back(x, y);
             }
-            boost::geometry::correct(out.polygon->data);
+            boost::geometry::correct(out.polygon->ring);
+
+            /// Store bounding box of the polygon so that we can quickly reject blocks/parts and avoid
+            /// costly `intersects` checks
+            boost::geometry::envelope(out.polygon->ring, out.polygon->bbox);
+
             return atom_it->second(out, const_value);
         };
 
@@ -3308,7 +3321,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
         else if (element.function == RPNElement::FUNCTION_POINT_IN_POLYGON)
         {
             /** There are 2 kinds of polygons:
-              *   1. Polygon by minmax index
+              *   1. Polygon by minmax index or primary key index
               *   2. Polygons which is provided by user
               *
               * Polygon by minmax index:
@@ -3317,10 +3330,25 @@ BoolMask KeyCondition::checkInHyperrectangle(
               * Algorithm:
               *   Check whether there is any intersection of the 2 polygons. If true return {true, true}, else return {false, true}.
               */
-            Float64 x_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[element.key_columns[0]].left);
-            Float64 x_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[element.key_columns[0]].right);
-            Float64 y_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[element.key_columns[1]].left);
-            Float64 y_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[element.key_columns[1]].right);
+
+            /// `FieldVisitorConvertToNumber` cannot handle if `Field` is `Null`. So we need to separately handle `Null` case here.
+            auto convert_to_float64 = [](const FieldRef & ref, bool is_left_bound) -> Float64
+            {
+                if (ref.isNull())
+                {
+                    return is_left_bound ? -std::numeric_limits<Float64>::infinity() : std::numeric_limits<Float64>::infinity();
+                }
+
+                return applyVisitor(FieldVisitorConvertToNumber<Float64>(), static_cast<const Field &>(ref));
+            };
+    
+            const auto & range_x = hyperrectangle[element.key_columns[0]];
+            const auto & range_y = hyperrectangle[element.key_columns[1]];
+
+            Float64 x_min = convert_to_float64(range_x.left, /*is_left_bound*/ true);
+            Float64 x_max = convert_to_float64(range_x.right, /*is_left_bound*/ false);
+            Float64 y_min = convert_to_float64(range_y.left, /*is_left_bound*/ true);
+            Float64 y_max = convert_to_float64(range_y.right, /*is_left_bound*/ false);
 
             if (unlikely(isNaN(x_min) || isNaN(x_max) || isNaN(y_min) || isNaN(y_max)))
             {
@@ -3328,20 +3356,31 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 continue;
             }
 
-            using Point = boost::geometry::model::d2::point_xy<Float64>;
-            using Polygon = boost::geometry::model::polygon<Point>;
-            Polygon  polygon_by_minmax_index;
-            polygon_by_minmax_index.outer().emplace_back(x_min, y_min);
-            polygon_by_minmax_index.outer().emplace_back(x_min, y_max);
-            polygon_by_minmax_index.outer().emplace_back(x_max, y_max);
-            polygon_by_minmax_index.outer().emplace_back(x_max, y_min);
+            using Point = KeyCondition::RPNElement::Polygon::PointT;
+            using Box   = boost::geometry::model::box<Point>;
 
-            /// Close ring
-            boost::geometry::correct(polygon_by_minmax_index);
+            Box index_box(Point(x_min, y_min), Point(x_max, y_max));
+
+            // Very cheap bbox vs bbox check
+            const auto & poly_bbox = element.polygon->bbox;
+            const auto & poly_min = poly_bbox.min_corner();
+            const auto & poly_max = poly_bbox.max_corner();
+            const auto & index_min = index_box.min_corner();
+            const auto & index_max = index_box.max_corner();
+
+            bool disjoint
+                = index_max.x() < poly_min.x() || index_min.x() > poly_max.x() || index_max.y() < poly_min.y() || index_min.y() > poly_max.y();
+
+            if (disjoint)
+            {
+                // Indices box does not overlap with polygon bbox. So we can skip expensive `boost::geometry::intersects` call
+                rpn_stack.emplace_back(false, true);
+                continue;
+            }
 
             /// Because the polygon may have a hole so the "can_be_false" should always be true.
-            rpn_stack.emplace_back(
-                boost::geometry::intersects(polygon_by_minmax_index, element.polygon->data), true);
+            bool intersects = boost::geometry::intersects(index_box, element.polygon->ring);
+            rpn_stack.emplace_back(intersects, true);
         }
         else if (
             element.function == RPNElement::FUNCTION_IS_NULL
@@ -3671,16 +3710,16 @@ String KeyCondition::RPNElement::toString(const std::vector<String> & key_names)
         }
         case FUNCTION_POINT_IN_POLYGON:
         {
-            auto points_in_polygon = polygon->data.outer();
+            const auto & ring = polygon->ring;
             buf << point_in_polygon_function_name.value_or("") << "(";
             print_wrapped_columns();
             buf << ", ";
             buf << "[";
-            for (size_t i = 0; i < points_in_polygon.size(); ++i)
+            for (size_t i = 0; i < ring.size(); ++i)
             {
                 if (i != 0)
                     buf << ", ";
-                buf << "(" << points_in_polygon[i].x() << ", " << points_in_polygon[i].y() << ")";
+                buf << "(" << ring[i].x() << ", " << ring[i].y() << ")";
             }
             buf << "]";
             buf << ")";
