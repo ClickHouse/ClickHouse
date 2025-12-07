@@ -6,6 +6,8 @@
 #include <Common/RemoteHostFilter.h>
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Dictionaries/DictionaryStructure.h>
+#include <IO/WriteHelpers.h>
+
 
 namespace DB
 {
