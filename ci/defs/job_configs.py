@@ -70,12 +70,12 @@ common_ft_job_config = Job.Config(
 common_stress_job_config = Job.Config(
     name=JobNames.STRESS,
     runs_on=[],  # from parametrize()
-    command="cd ./tests/ci && python3 ./stress_check.py",
+    command="python3 ./ci/jobs/stress_job.py",
     digest_config=Job.CacheDigestConfig(
         include_paths=[
             "./tests/queries/0_stateless/",
-            "./tests/ci/stress.py",
-            "./tests/ci/stress_check.py",
+            "./ci/jobs/stress_job.py",
+            "./ci/jobs/scripts/stress/stress.py",
             "./tests/clickhouse-test",
             "./tests/config",
             "./tests/*.txt",
@@ -680,11 +680,12 @@ class JobConfigs:
     upgrade_test_jobs = Job.Config(
         name=JobNames.UPGRADE,
         runs_on=["from param"],
-        command="cd ./tests/ci && python3 ./upgrade_check.py",
+        command="python3 ./ci/jobs/upgrade_job.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "./tests/ci/upgrade_check.py",
-                "./tests/ci/stress_check.py",
+                "./ci/jobs/upgrade_job.py",
+                "./ci/jobs/stress_job.py",
+                "./ci/jobs/scripts/stress/stress.py",
                 "./tests/docker_scripts/",
                 "./ci/docker/stress-test",
             ]
