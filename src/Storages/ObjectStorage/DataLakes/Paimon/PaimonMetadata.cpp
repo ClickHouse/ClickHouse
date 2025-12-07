@@ -60,7 +60,8 @@ DataLakeMetadataPtr PaimonMetadata::create(
         "path: {} raw path: {}",
         configuration_ptr->getPathForRead().path,
         configuration_ptr->getRawPath().path);
-    PaimonTableClientPtr table_client_ptr = std::make_shared<PaimonTableClient>(object_storage, configuration, local_context);
+    PaimonTableClientPtr table_client_ptr
+        = std::make_shared<PaimonTableClient>(object_storage, configuration_ptr->getPathForRead().path, local_context);
     auto schema_json = table_client_ptr->getTableSchemaJSON(table_client_ptr->getLastestTableSchemaInfo());
     Int32 version = -1;
     Paimon::getValueFromJSON(version, schema_json, "version");
@@ -128,16 +129,16 @@ void PaimonMetadata::updateState()
 
 PaimonMetadata::PaimonMetadata(
     ObjectStoragePtr object_storage_,
-    StorageObjectStorageConfigurationWeakPtr configuration_,
+    StorageObjectStorageConfigurationPtr configuration_,
     const DB::ContextPtr & context_,
     const Poco::JSON::Object::Ptr & schema_json_object_,
     PaimonTableClientPtr table_client_ptr_)
     : WithContext(context_)
     , object_storage(std::move(object_storage_))
-    , configuration(std::move(configuration_))
     , log(getLogger("PaimonMetadata"))
     , table_client_ptr(table_client_ptr_)
     , last_metadata_object(schema_json_object_)
+    , table_path(configuration_->getPathForRead().path)
 {
     updateState();
 }
@@ -169,7 +170,6 @@ ObjectIterator PaimonMetadata::iterate(
     ContextPtr context_) const
 {
     SharedLockGuard shared_lock(mutex);
-    auto configuration_ptr = configuration.lock();
     Strings data_files;
     std::optional<PartitionPruner> partition_pruner;
     if (filter_dag_ && context_->getSettingsRef()[Setting::use_paimon_partition_pruning])
@@ -188,9 +188,7 @@ ObjectIterator PaimonMetadata::iterate(
                 LOG_TEST(log, "partition prun manifest file: {}, {}", file_entry.file.file_name, file_entry.file.bucket_path);
                 continue;
             }
-            data_files.emplace_back(
-                std::filesystem::path(configuration_ptr->getPathForRead().path) / file_entry.file.bucket_path
-                / file_entry.file.file_name);
+            data_files.emplace_back(std::filesystem::path(table_path) / file_entry.file.bucket_path / file_entry.file.file_name);
             LOG_TEST(log, "base_manifest data file: {}", data_files.back());
         }
     }
@@ -206,9 +204,7 @@ ObjectIterator PaimonMetadata::iterate(
                 LOG_TEST(log, "partition prun manifest file: {}, {}", file_entry.file.file_name, file_entry.file.bucket_path);
                 continue;
             }
-            data_files.emplace_back(
-                std::filesystem::path(configuration_ptr->getPathForRead().path) / file_entry.file.bucket_path
-                / file_entry.file.file_name);
+            data_files.emplace_back(std::filesystem::path(table_path) / file_entry.file.bucket_path / file_entry.file.file_name);
             LOG_TEST(log, "delta_manifest data file: {}", data_files.back());
         }
     }
