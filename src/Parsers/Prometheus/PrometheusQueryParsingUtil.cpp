@@ -334,8 +334,8 @@ namespace
         return true;
     }
 
-    /// Whether this input represents an interval, i.e. it contains time units.
-    bool isIntervalFormat(std::string_view input)
+    /// Whether this input represents a duration, i.e. it contains time units.
+    bool isDurationFormat(std::string_view input)
     {
         bool found_time_unit = (input.find_first_of("ywdhms") != String::npos);
         return found_time_unit;
@@ -345,7 +345,7 @@ namespace
     /// If it succeeds the function returns true and sets `result`.
     /// If it fails the function returns false and sets either `allow_other_formats` or `error_pos` & `error_message`.
     template <typename T>
-    bool parseInterval(std::string_view input, T & result, String & error_message, size_t & error_pos)
+    bool parseDuration(std::string_view input, T & result, String & error_message, size_t & error_pos)
     {
         Decimal64 current = 0;
         UInt32 current_scale = 0;
@@ -363,7 +363,7 @@ namespace
 
             if (pos == number_start_pos)
             {
-                error_message = fmt::format("Cannot parse time duration {}: Expected a number combined with a time unit, got {}",
+                error_message = fmt::format("Cannot parse duration {}: Expected a number combined with a time unit, got {}",
                                             quoteString(input), quoteString(input.substr(pos)));
                 error_pos = pos;
                 return false;
@@ -373,7 +373,7 @@ namespace
             std::string_view number_as_str = input.substr(number_start_pos, pos - number_start_pos);
             if (!tryParse(number, number_as_str))
             {
-                error_message = fmt::format("Cannot parse time duration {}: Number {} is too big", quoteString(input), number_as_str);
+                error_message = fmt::format("Cannot parse duration {}: Number {} is too big", quoteString(input), number_as_str);
                 error_pos = number_start_pos;
                 return false;
             }
@@ -406,7 +406,7 @@ namespace
             }
             else
             {
-                error_message = fmt::format("Cannot parse time duration {}: Expected one of the supported time units ('y', 'w', 'd', 'h', 'm', 's', 'ms'), got {}",
+                error_message = fmt::format("Cannot parse duration {}: Expected one of the supported time units ('y', 'w', 'd', 'h', 'm', 's', 'ms'), got {}",
                                             quoteString(input), quoteString(unit_name));
                 error_pos = unit_start_pos;
                 return false;
@@ -421,7 +421,7 @@ namespace
                 auto scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(unit_scale - current_scale);
                 if (common::mulOverflow(current.value, scale_multiplier, current.value))
                 {
-                    error_message = fmt::format("Cannot parse time duration {}: It's too big", quoteString(input));
+                    error_message = fmt::format("Cannot parse duration {}: It's too big", quoteString(input));
                     error_pos = 0;
                     return false;
                 }
@@ -431,7 +431,7 @@ namespace
 
             if (previous_unit && (unit >= previous_unit))
             {
-                error_message = fmt::format("Cannot parse time duration {}: Time units must be ordered from the longest to the shortest: {} must appear before {}",
+                error_message = fmt::format("Cannot parse duration {}: Time units must be ordered from the longest to the shortest: {} must appear before {}",
                                             quoteString(input), quoteString(unit_name), quoteString(previous_unit_name));
                 error_pos = unit_start_pos;
                 return false;
@@ -441,7 +441,7 @@ namespace
             bool overflow = common::mulOverflow(number, unit.value, add.value) || common::addOverflow(add.value, current.value, current.value);
             if (overflow)
             {
-                error_message = fmt::format("Cannot parse time duration {}: It's too big", quoteString(input));
+                error_message = fmt::format("Cannot parse duration {}: It's too big", quoteString(input));
                 error_pos = 0;
                 return false;
             }
@@ -453,7 +453,7 @@ namespace
         /// There should be at least one number with a time unit.
         if (!previous_unit)
         {
-            error_message = fmt::format("Cannot parse time duration {}: Expected numbers combined with time units", quoteString(input));
+            error_message = fmt::format("Cannot parse duration {}: Expected numbers combined with time units", quoteString(input));
             error_pos = 0;
             return false;
         }
@@ -467,23 +467,23 @@ namespace
     }
 }
 
-/// Changes the sign of a scalar or an interval stored in `ScalarOrInterval`.
-void PrometheusQueryParsingUtil::ScalarOrInterval::negate()
+/// Changes the sign of a scalar or a duration stored in `ScalarOrDuration`.
+void PrometheusQueryParsingUtil::ScalarOrDuration::negate()
 {
     if (scalar)
     {
         auto & scalar_ref = *scalar;
         scalar_ref = -scalar_ref;
     }
-    else if (interval)
+    else if (duration)
     {
-        auto & interval_ref = *interval;
-        interval_ref = IntervalType{-interval_ref.getValue(), interval_ref.getScale()};
+        auto & duration_ref = *duration;
+        duration_ref = DurationType{-duration_ref.getValue(), duration_ref.getScale()};
     }
 }
 
-/// Parses a scalar or an interval literal.
-bool PrometheusQueryParsingUtil::parseScalarOrInterval(std::string_view input, ScalarOrInterval & result, String & error_message, size_t & error_pos)
+/// Parses a scalar or a duration literal.
+bool PrometheusQueryParsingUtil::parseScalarOrDuration(std::string_view input, ScalarOrDuration & result, String & error_message, size_t & error_pos)
 {
     size_t pos = 0;
 
@@ -506,7 +506,7 @@ bool PrometheusQueryParsingUtil::parseScalarOrInterval(std::string_view input, S
     std::string_view unsigned_input = input.substr(pos);
 
     ScalarType scalar;
-    IntervalType interval;
+    DurationType duration;
     bool ok = false;
 
     /// Parse an unsigned number in one of three formats.
@@ -514,19 +514,19 @@ bool PrometheusQueryParsingUtil::parseScalarOrInterval(std::string_view input, S
     {
         ok = parseNumberInHex(unsigned_input, scalar, error_message, error_pos);
         if (ok)
-            result = ScalarOrInterval{scalar};
+            result = ScalarOrDuration{scalar};
     }
-    else if (isIntervalFormat(unsigned_input))
+    else if (isDurationFormat(unsigned_input))
     {
-        ok = parseInterval(unsigned_input, interval, error_message, error_pos);
+        ok = parseDuration(unsigned_input, duration, error_message, error_pos);
         if (ok)
-            result = ScalarOrInterval{interval};
+            result = ScalarOrDuration{duration};
     }
     else
     {
         ok = parseNumber(unsigned_input, scalar, error_message, error_pos);
         if (ok)
-            result = ScalarOrInterval{scalar};
+            result = ScalarOrDuration{scalar};
     }
 
     if (!ok)
@@ -573,7 +573,7 @@ bool PrometheusQueryParsingUtil::findTimeRange(std::string_view input, std::stri
 
     if (start_pos == end_pos)
     {
-        error_message = fmt::format("Cannot parse time range {}: Expected an interval between brackets [ ]", quoteString(input));
+        error_message = fmt::format("Cannot parse time range {}: Expected a duration between brackets [ ]", quoteString(input));
         error_pos = start_pos;
         return false;
     }
@@ -635,7 +635,7 @@ bool PrometheusQueryParsingUtil::findSubqueryRangeAndResolution(std::string_view
 
     if (range_start_pos == range_end_pos)
     {
-        error_message = fmt::format("Cannot parse time range {}: Expected an interval between opening bracket [ and colon :", quoteString(input));
+        error_message = fmt::format("Cannot parse time range {}: Expected a duration between opening bracket [ and colon :", quoteString(input));
         error_pos = range_start_pos;
         return false;
     }
