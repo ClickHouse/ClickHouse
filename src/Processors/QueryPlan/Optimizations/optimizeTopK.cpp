@@ -79,7 +79,7 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
         return 0;
 
     const auto & sort_column = sorting_step->getInputHeaders().front()->getByName(sort_description.front().column_name);
-    if (!sort_column.type->isValueRepresentedByNumber() && !sort_column.type->isNullable())
+    if (!sort_column.type->isValueRepresentedByNumber() || sort_column.type->isNullable())
         return 0;
 
     const bool where_clause = filter_step || read_from_mergetree_step->getPrewhereInfo();
