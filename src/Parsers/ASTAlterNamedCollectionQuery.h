@@ -27,6 +27,8 @@ public:
 
     bool hasSecretParts() const override { return true; }
 
+    void writeJSON(WriteBuffer & buf, size_t indent) const override;
+
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 };
