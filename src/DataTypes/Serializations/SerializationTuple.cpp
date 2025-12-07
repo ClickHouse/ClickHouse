@@ -11,7 +11,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
-
 namespace DB
 {
 
@@ -145,6 +144,10 @@ void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr, 
 
 void SerializationTuple::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
+    if (settings.is_pretty_format && has_explicit_names) {
+        serializeTextJSONPretty(column, row_num, ostr, settings, 1);
+    }
+    else {
     writeChar('(', ostr);
     for (size_t i = 0; i < elems.size(); ++i)
     {
@@ -153,6 +156,7 @@ void SerializationTuple::serializeText(const IColumn & column, size_t row_num, W
         elems[i]->serializeTextQuoted(extractElementColumn(column, i), row_num, ostr, settings);
     }
     writeChar(')', ostr);
+    }
 }
 
 template <typename ReturnType>
@@ -279,9 +283,11 @@ void SerializationTuple::serializeTextJSON(const IColumn & column, size_t row_nu
 
 void SerializationTuple::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
 {
+
     if (settings.json.write_named_tuples_as_objects
         && has_explicit_names)
     {
+        
         writeCString("{\n", ostr);
 
         bool first = true;
