@@ -4,10 +4,6 @@ import pathlib
 import pytest
 
 
-def _sink_env():
-    return os.environ.get("KEEPER_METRICS_CLICKHOUSE_URL", "").strip()
-
-
 def pytest_addoption(parser):
     pa = parser.addoption
     pa(
@@ -16,7 +12,7 @@ def pytest_addoption(parser):
         default=os.environ.get("KEEPER_BACKEND", "default"),
     )
     pa("--commit-sha", action="store", default=os.environ.get("COMMIT_SHA", "local"))
-    pa("--sink-url", action="store", default=_sink_env())
+    # Sink URL is resolved via CI ClickHouse helper; no explicit option needed
     pa("--duration", type=int, default=int(os.environ.get("KEEPER_DURATION", "120")))
     pa(
         "--total-shards",

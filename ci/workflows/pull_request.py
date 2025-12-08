@@ -1,4 +1,4 @@
-from praktika import Workflow
+from praktika import Workflow, Job
 
 from ci.defs.defs import (
     BASE_BRANCH,
@@ -39,6 +39,11 @@ REGULAR_BUILD_NAMES = [job.name for job in JobConfigs.build_jobs]
 PLAIN_FUNCTIONAL_TEST_JOB = [
     j for j in JobConfigs.functional_tests_jobs if "amd_debug, parallel" in j.name
 ][0]
+
+# Ensure Keeper stress (PR) becomes a hard gate for other tests
+KEEPER_STRESS_PR_NAME = "Keeper Stress Tests (PR)"
+# Use Keeper as an additional blocker so dependent jobs will start only after Keeper finishes
+BLOCKERS_AFTER_KEEPER = FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES + [KEEPER_STRESS_PR_NAME]
 
 workflow = Workflow.Config(
     name="PR",
@@ -129,6 +134,18 @@ workflow = Workflow.Config(
         JobConfigs.sqllogic_test_master_job.set_dependency(
             FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         ),
+        # Keeper stress: runs only when src/Coordination changes (filter_job.should_skip_job)
+        Job.Config(
+            name=KEEPER_STRESS_PR_NAME,
+            runs_on=JobConfigs.keeper_stress_job.runs_on,
+            command=JobConfigs.keeper_stress_job.command,
+            run_in_docker=JobConfigs.keeper_stress_job.run_in_docker,
+            digest_config=JobConfigs.keeper_stress_job.digest_config,
+            timeout=3600 * 12,
+            requires=[ArtifactNames.CH_AMD_BINARY],
+            result_name_for_cidb="Keeper Stress",
+        ),
+        # --- /TEMP ---
         *JobConfigs.toolchain_build_jobs,
     ],
     artifacts=[
