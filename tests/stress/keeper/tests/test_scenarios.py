@@ -23,7 +23,7 @@ from ..framework.io.probes import (
     prom_metrics,
 )
 from ..framework.io.prom_parse import parse_prometheus_text
-from ..framework.io.sink import sink_clickhouse, has_ci_sink
+from ..framework.io.sink import has_ci_sink, sink_clickhouse
 from ..framework.metrics.sampler import MetricsSampler
 from ..gates.base import apply_gate, single_leader
 from ..workloads.adapter import servers_arg
@@ -347,7 +347,11 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             except Exception:
                 cli_dur = None
             try:
-                env_dur = int(os.environ.get("KEEPER_DURATION")) if os.environ.get("KEEPER_DURATION") else None
+                env_dur = (
+                    int(os.environ.get("KEEPER_DURATION"))
+                    if os.environ.get("KEEPER_DURATION")
+                    else None
+                )
             except Exception:
                 env_dur = None
             eff_dur = cli_dur or env_dur or wl.get("duration") or 120
