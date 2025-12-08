@@ -22,10 +22,9 @@ extern "C"
 {
 #if defined(USE_SIMDCOMP)
 #include <simdcomp.h>
-#else
+#endif
 #include <streamvbyte.h>
 #include <streamvbytedelta.h>
-#endif
 }
 
 namespace DB
