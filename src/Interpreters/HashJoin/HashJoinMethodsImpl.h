@@ -683,13 +683,13 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchJoin
     }
 }
 
-template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 template <typename AddedColumns, typename Selector>
-ColumnPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::buildAdditionalFilter(
+ColumnPtr buildAdditionalFilter(
     const Selector & selector,
-    const std::vector<const RowRef *> & selected_rows,
-    const std::vector<size_t> & row_replicate_offset,
-    AddedColumns & added_columns)
+    const PODArray<const RowRef *> & selected_rows,
+    const IColumn::Offsets & row_replicate_offset,
+    const AddedColumns & added_columns,
+    size_t start_offset, size_t end_offset)
 {
     ColumnPtr result_column;
     do
@@ -725,15 +725,16 @@ ColumnPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::buildAdditionalFilter
         {
             if (rhs_pos_it != added_columns.additional_filter_required_rhs_pos.end() && pos == rhs_pos_it->first)
             {
-
                 const auto & req_col = *req_cols_it;
                 required_columns.emplace_back(nullptr, req_col.type, req_col.name);
 
                 auto col = req_col.type->createColumn();
-                for (const auto & selected_row : selected_rows)
+                size_t start_row = row_replicate_offset[start_offset - 1];
+                size_t end_row = row_replicate_offset[end_offset - 1];
+                for (size_t i = start_row; i < end_row; ++i)
                 {
-                    const auto [src_col, row_num] = getBlockColumnAndRow(selected_row, rhs_pos_it->second);
-                    col->insertFrom(*src_col, row_num);
+                    const auto [src_col, row_pos] = getBlockColumnAndRow(selected_rows[i], rhs_pos_it->second);
+                    col->insertFrom(*src_col, row_pos);
                 }
                 required_columns[pos].column = std::move(col);
                 ++rhs_pos_it;
@@ -751,14 +752,11 @@ ColumnPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::buildAdditionalFilter
                         col_name);
 
                 auto new_col = src_col->column->cloneEmpty();
-                size_t prev_left_offset = 0;
-                for (size_t i = 0; i < row_replicate_offset.size(); ++i)
+                for (size_t i = start_offset; i < end_offset; ++i)
                 {
-                    const size_t & left_offset = row_replicate_offset[i];
-                    size_t rows = left_offset - prev_left_offset;
+                    size_t rows = row_replicate_offset[i] - row_replicate_offset[i - 1];
                     if (rows)
                         new_col->insertManyFrom(*src_col->column, selector[i], rows);
-                    prev_left_offset = left_offset;
                 }
                 required_columns.push_back({std::move(new_col), src_col->type, col_name});
             }
@@ -825,22 +823,41 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtit
     if constexpr (join_features.need_replication)
         added_columns.offsets_to_replicate = IColumn::Offsets(left_block_rows);
 
-    std::vector<size_t> row_replicate_offset;
-    row_replicate_offset.reserve(left_block_rows);
-
     using FindResult = typename KeyGetter::FindResult;
-    PreSelectedRows selected_rows;
+
+    /// Adapter class to pass into addFoundRowAll
+    /// We don't want to add rows directly into AddedColumns, because they need to be filtered by additional_filter_expression.
+    class PreSelectedRows
+    {
+    public:
+        explicit PreSelectedRows(PODArray<const RowRef *> & container_) : container(container_) {}
+        void appendFromBlock(const RowRef * row_ref, bool /* has_default */) { container.push_back(row_ref); }
+        static constexpr bool isLazy() { return false; }
+
+        PODArray<const RowRef *> & container;
+    };
+
+    PODArray<const RowRef *> selected_rows;
     selected_rows.reserve(left_block_rows);
     std::vector<FindResult> find_results;
     find_results.reserve(left_block_rows);
     IColumn::Offset total_added_rows = 0;
-    IColumn::Offset current_added_rows = 0;
+
+    IColumn::Offsets row_replicate_offset;
+    row_replicate_offset.reserve(left_block_rows);
 
     {
+        IColumn::Offset current_added_rows = 0;
+
         pool = std::make_unique<Arena>();
-        current_added_rows = 0;
-        for (size_t ind : selector)
+        find_results.clear();
+        selected_rows.clear();
+        row_replicate_offset.clear();
+
+        for (size_t i = start_row; i < end_row; ++i)
         {
+            size_t ind = selector[i];
+
             KnownRowsHolder<true> all_flag_known_rows;
             KnownRowsHolder<false> single_flag_know_rows;
             for (size_t join_clause_idx = 0; join_clause_idx < added_columns.join_on_keys.size(); ++join_clause_idx)
@@ -859,33 +876,49 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtit
                     find_results.push_back(find_result);
                     /// We don't add missing in addFoundRowAll here. we will add it after filter is applied.
                     /// it's different from `joinRightColumns`.
+                    PreSelectedRows selected_rows_view{selected_rows};
                     if (flag_per_row)
-                        addFoundRowAll<Map, false, true>(mapped, selected_rows, current_added_rows, all_flag_known_rows, nullptr);
+                        addFoundRowAll<Map, false, true>(mapped, selected_rows_view, current_added_rows, all_flag_known_rows, nullptr);
                     else
-                        addFoundRowAll<Map, false, false>(mapped, selected_rows, current_added_rows, single_flag_know_rows, nullptr);
+                        addFoundRowAll<Map, false, false>(mapped, selected_rows_view, current_added_rows, single_flag_know_rows, nullptr);
                 }
             }
             row_replicate_offset.push_back(current_added_rows);
         }
+
+
+        if (selected_rows.size() != current_added_rows)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Sizes are mismatched. selected_rows.size:{}, current_added_rows:{}, row_replicate_offset.size:{}",
+                selected_rows.size(),
+                current_added_rows,
+                row_replicate_offset.size());
     }
 
-    if (selected_rows.size() != current_added_rows)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Sizes are mismatched. selected_rows.size:{}, current_added_rows:{}, row_replicate_offset.size:{}",
-            selected_rows.size(),
-            current_added_rows,
-            row_replicate_offset.size());
-
-    auto filter_col = buildAdditionalFilter(selector, selected_rows, row_replicate_offset, added_columns);
-
+    size_t start_offset = 0;
+    size_t find_result_index = 0;
+    while (start_offset < row_replicate_offset.size())
     {
+        size_t max_block_size_limit = added_columns.max_joined_block_rows;
+        size_t end_offset = max_block_size_limit == 0 ? row_replicate_offset.size() : start_offset + 1;
+        for (; end_offset < row_replicate_offset.size(); ++end_offset)
+        {
+            if (row_replicate_offset[end_offset] - row_replicate_offset[start_offset - 1] >= max_block_size_limit)
+                break;
+        }
+
+        auto filter_col = buildAdditionalFilter(selector, selected_rows, row_replicate_offset, added_columns, start_offset, end_offset);
+
         const PaddedPODArray<UInt8> & filter_flags = assert_cast<const ColumnUInt8 &>(*filter_col).getData();
 
-        size_t prev_replicated_row = 0;
-        auto selected_right_row_it = selected_rows.begin();
-        size_t find_result_index = 0;
-        for (size_t i = 0, n = row_replicate_offset.size(); i < n; ++i)
+        size_t prev_replicated_row = row_replicate_offset[start_offset - 1];
+        auto selected_right_row_it = selected_rows.begin() + prev_replicated_row;
+
+        size_t i = start_offset;
+
+        start_offset = end_offset;
+        for (; i < end_offset; ++i)
         {
             bool any_matched = false;
             /// right/full join or multiple disjuncts, we need to mark used flags for each row.
@@ -893,6 +926,7 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtit
             {
                 for (size_t replicated_row = prev_replicated_row; replicated_row < row_replicate_offset[i]; ++replicated_row)
                 {
+                    chassert(replicated_row < filter_flags.size());
                     if (filter_flags[replicated_row])
                     {
                         if constexpr (join_features.is_semi_join || join_features.is_any_join)
@@ -947,6 +981,8 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtit
             {
                 for (size_t replicated_row = prev_replicated_row; replicated_row < row_replicate_offset[i]; ++replicated_row)
                 {
+                    chassert(replicated_row < filter_flags.size());
+
                     if constexpr (join_features.is_anti_join)
                     {
                         any_matched |= filter_flags[replicated_row];
