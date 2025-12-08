@@ -104,7 +104,7 @@ private:
             size_t curr_offset = 0;
             for (size_t i = 0; i < concrete_column->size(); ++i)
             {
-                auto a = concrete_column->getDataAt(i);
+                auto a = concrete_column->getDataAt(i).toView();
                 s = fmt::sprintf(format, a);
 
                 res_chars.resize(curr_offset + s.size());
@@ -219,7 +219,7 @@ public:
             {
                 concat_args[i] = instruction.execute();
             }
-            catch (const fmt::v12::format_error & e)
+            catch (const fmt::v11::format_error & e)
             {
                 if (instruction.is_literal)
                     throw Exception(

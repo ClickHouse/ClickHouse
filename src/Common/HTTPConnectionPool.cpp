@@ -92,7 +92,6 @@ namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_URI_SCHEME;
-    extern const int HTTP_CONNECTION_LIMIT_REACHED;
 }
 
 
@@ -172,12 +171,6 @@ public:
         mute_warning_until = 0;
     }
 
-    HTTPConnectionPools::Limits getLimits() const
-    {
-        std::lock_guard lock(mutex);
-        return limits;
-    }
-
     bool isSoftLimitReached() const
     {
         std::lock_guard lock(mutex);
@@ -188,12 +181,6 @@ public:
     {
         std::lock_guard lock(mutex);
         return total_connections_in_group >= limits.store_limit;
-    }
-
-    bool isHardLimitReached() const
-    {
-        std::lock_guard lock(mutex);
-        return limits.hard_limit > 0 && total_connections_in_group >= limits.hard_limit;
     }
 
     void atConnectionCreate()
@@ -677,12 +664,6 @@ private:
 
     ConnectionPtr prepareNewConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time)
     {
-        if (group->isHardLimitReached())
-            throw Exception(
-                ErrorCodes::HTTP_CONNECTION_LIMIT_REACHED,
-                "Cannot create new connection to {}:{}, hard limit {} for connections in group {} is reached",
-                host, port, group->getLimits().hard_limit, group->getType());
-
         auto connection = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
 
         connection->setKeepAlive(true);
@@ -705,7 +686,7 @@ private:
         {
             address.setFail();
             ProfileEvents::increment(getMetrics().errors);
-            (*connection).reset();
+            connection->reset();
             throw;
         }
 

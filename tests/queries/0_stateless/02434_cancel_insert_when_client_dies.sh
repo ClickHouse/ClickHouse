@@ -95,7 +95,6 @@ wait
 
 $CLICKHOUSE_CLIENT -q 'select count() from dedup_test'
 
-$CLICKHOUSE_CLIENT -q "system flush distributed dedup_dist"
 $CLICKHOUSE_CLIENT -q 'system flush logs text_log'
 
 # Ensure that thread_cancel actually did something

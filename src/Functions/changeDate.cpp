@@ -222,14 +222,14 @@ public:
         }
         else
         {
-            min_date = DecimalUtils::dateTimeFromComponents(
+            min_date = DecimalUtils::decimalFromComponents<DateTime64>(
                 date_lut.makeDateTime(1900, 1, 1, 0, 0, 0),
                 static_cast<Int64>(0),
                 static_cast<UInt32>(scale));
             Int64 deg = 1;
             for (Int64 j = 0; j < scale; ++j)
                 deg *= 10;
-            max_date = DecimalUtils::dateTimeFromComponents(
+            max_date = DecimalUtils::decimalFromComponents<DateTime64>(
                 date_lut.makeDateTime(2299, 12, 31, 23, 59, 59),
                 static_cast<Int64>(deg - 1),
                 static_cast<UInt32>(scale));
@@ -283,7 +283,7 @@ public:
             /// ^^ This looks funny. It is the least terrible suppression of a false positive reported by clang-analyzer (a sub-class
             /// of clang-tidy checks) deep down in 'decimalFromComponents'. Usual suppressions of the form NOLINT* don't work here (they
             /// would only affect code in _this_ file), and suppressing the issue in 'decimalFromComponents' may suppress true positives.
-            result = DecimalUtils::dateTimeFromComponents(
+            result = DecimalUtils::decimalFromComponents<DateTime64>(
                 date_lut.makeDateTime(year, month, day, hours, minutes, seconds),
                 fraction,
                 static_cast<UInt32>(scale));
@@ -345,7 +345,7 @@ REGISTER_FUNCTION(ChangeDate)
 {
     {
         FunctionDocumentation::Description description = "Changes the year component of a date or date time.";
-        FunctionDocumentation::Syntax syntax = "changeYear(date_or_datetime, value)";
+        FunctionDocumentation::Syntax syntax = "changeYear(date_or_datetime, value);";
         FunctionDocumentation::Arguments arguments = {
             {"date_or_datetime", "The value to change.", {"Date", "Date32", "DateTime", "DateTime64"}},
             {"value", "The new value.", {"(U)Int*"}}
@@ -361,7 +361,7 @@ REGISTER_FUNCTION(ChangeDate)
     }
     {
         FunctionDocumentation::Description description = "Changes the month component of a date or date time.";
-        FunctionDocumentation::Syntax syntax = "changeMonth(date_or_datetime, value)";
+        FunctionDocumentation::Syntax syntax = "changeMonth(date_or_datetime, value);";
         FunctionDocumentation::Arguments arguments = {
             {"date_or_datetime", "The value to change.", {"Date", "Date32", "DateTime", "DateTime64"}},
             {"value", "The new value.", {"(U)Int*"}}
@@ -377,7 +377,7 @@ REGISTER_FUNCTION(ChangeDate)
     }
     {
         FunctionDocumentation::Description description = "Changes the day component of a date or date time.";
-        FunctionDocumentation::Syntax syntax = "changeDay(date_or_datetime, value)";
+        FunctionDocumentation::Syntax syntax = "changeDay(date_or_datetime, value);";
         FunctionDocumentation::Arguments arguments = {
             {"date_or_datetime", "The value to change.", {"Date", "Date32", "DateTime", "DateTime64"}},
             {"value", "The new value.", {"(U)Int*"}}
@@ -393,7 +393,7 @@ REGISTER_FUNCTION(ChangeDate)
     }
     {
         FunctionDocumentation::Description description = "Changes the hour component of a date or date time.";
-        FunctionDocumentation::Syntax syntax = "changeHour(date_or_datetime, value)";
+        FunctionDocumentation::Syntax syntax = "changeHour(date_or_datetime, value);";
         FunctionDocumentation::Arguments arguments = {
             {"date_or_datetime", "The value to change.", {"Date", "Date32", "DateTime", "DateTime64"}},
             {"value", "The new value.", {"(U)Int*"}}
@@ -409,7 +409,7 @@ REGISTER_FUNCTION(ChangeDate)
     }
     {
         FunctionDocumentation::Description description = "Changes the minute component of a `date or date time`.";
-        FunctionDocumentation::Syntax syntax = "changeMinute(date_or_datetime, value)";
+        FunctionDocumentation::Syntax syntax = "changeMinute(date_or_datetime, value);";
         FunctionDocumentation::Arguments arguments = {
             {"date_or_datetime", "The value to change.", {"Date", "Date32", "DateTime", "DateTime64"}},
             {"value", "The new value.", {"(U)Int*"}}
@@ -425,7 +425,7 @@ REGISTER_FUNCTION(ChangeDate)
     }
     {
         FunctionDocumentation::Description description = "Changes the second component of a date or date time.";
-        FunctionDocumentation::Syntax syntax = "changeSecond(date_or_datetime, value)";
+        FunctionDocumentation::Syntax syntax = "changeSecond(date_or_datetime, value);";
         FunctionDocumentation::Arguments arguments = {
             {"date_or_datetime", "The value to change.", {"Date", "Date32", "DateTime", "DateTime64"}},
             {"value", "The new value.", {"(U)Int*"}}

@@ -831,9 +831,6 @@ SETTINGS disk = disk(type = cache,
     """
     )
 
-    wait_for_cache_initialized(node, "test_filesystem_cache_log")
-    
-
     node.query(
         """
 INSERT INTO test SELECT 1, 'test';
