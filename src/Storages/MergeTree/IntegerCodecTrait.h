@@ -4,9 +4,8 @@ extern "C"
 {
 #if defined(__x86_64__) || defined(_M_X64)
 #include <simdcomp.h>
-#else
-#include <streamvbyte.h>
 #endif
+#include <streamvbyte.h>
 }
 
 namespace DB
@@ -43,16 +42,17 @@ struct CodecTraits<uint32_t>
     {
 #if defined(__x86_64__) || defined(_M_X64)
 #if defined(__AVX512F__)
-        const auto * end = avx512pack(p, static_cast<__m512i*>(out), bits);
-        return static_cast<uint32_t>(end - out);
+        avx512pack(p, reinterpret_cast<__m512i*>(out), bits);
+        return static_cast<uint32_t>();
 #endif
 #if defined(__AVX2__)
-        const auto * end = avxpack(p, static_cast<__m256i*>(out), bits);
+        const auto * end = avxpack(p, reinterpret_cast<__m256i*>(out), bits);
         return static_cast<uint32_t>(end - out);
 #endif
 #if defined(__SSE4_1__)
-        return simdpack(p, static_cast<__m128i*>(out), bits);
-        return static_cast<uint32_t>(end - out);
+        simdpack(p, reinterpret_cast<__m128i*>(out), bits);
+        //return static_cast<uint32_t>(out - p);
+        return 0;
 #endif
 #endif
         return streamvbyte_delta_encode(p, n, out, 0);
@@ -62,15 +62,15 @@ struct CodecTraits<uint32_t>
     {
 #if defined(__x86_64__) || defined(_M_X64)
 #if defined(__AVX512F__)
-        avx512unpack(p, static_cast<__m512i*>(out), bits);
+        avx512unpack(p, reinterpret_cast<__m512i*>(out), bits);
         return n * bits;
 #endif
 #if defined(__AVX2__)
-        avxunpack(p, static_cast<__m256i*>(out), bits);
+        avxunpack(p, reinterpret_cast<__m256i*>(out), bits);
         return n * bits;
 #endif
 #if defined(__SSE4_1__)
-        simdunpack(p, static_cast<__m128i*>(out), bits);
+        simdunpack(p, reinterpret_cast<__m128i*>(out), bits);
         return n * bits;
 #endif
 #endif
