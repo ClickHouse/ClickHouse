@@ -490,6 +490,17 @@ void JoinStepLogical::updateOutputHeader()
     if (!header.columns())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is empty, actions_dag: {}", actions_dag->dumpDAG());
 
+    /// Materialize constant columns because we need a constant dummy column as result
+    const auto & outputs = actions_dag->getOutputs();
+    for (const auto * node : outputs)
+    {
+        if (isDummyColumnOfThisStep(node))
+        {
+            materializeBlockInplace(header);
+            break;
+        }
+    }
+
     output_header = std::make_shared<const Block>(std::move(header));
 }
 
