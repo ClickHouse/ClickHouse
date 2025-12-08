@@ -118,6 +118,7 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
     "flaky check": "--flaky-check",
+    "targeted": "--flaky-check",  # to disable tests not compatible with the thread fuzzer
 }
 
 
@@ -147,12 +148,7 @@ def main():
         elif to in OPTIONS_TO_INSTALL_ARGUMENTS:
             print(f"NOTE: Enabled config option [{OPTIONS_TO_INSTALL_ARGUMENTS[to]}]")
             config_installs_args += f" {OPTIONS_TO_INSTALL_ARGUMENTS[to]}"
-        elif (
-            to.startswith("amd_")
-            or to.startswith("arm_")
-            or "flaky" in to
-            or "targeted" in to
-        ):
+        elif to.startswith("amd_") or to.startswith("arm_"):
             pass
         elif to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
             print(

@@ -255,6 +255,7 @@ struct FormatSettings
         bool throw_on_bad_escape_sequence = true;
         bool ignore_unnecessary_fields = true;
         bool empty_as_default = false;
+        bool type_json_skip_invalid_typed_paths = false;
         bool type_json_skip_duplicated_paths = false;
         bool pretty_print = true;
         char pretty_print_indent = ' ';
