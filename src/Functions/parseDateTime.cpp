@@ -2425,7 +2425,7 @@ REGISTER_FUNCTION(ParseDateTime)
     FunctionDocumentation::Description parseDateTime_description = R"(
 Parses a date and time string according to a MySQL date format string.
 
-This function is the inverse of [`formatDateTime`](./format-date-time.md).
+This function is the inverse of [`formatDateTime`](/sql-reference/functions/date-time-functions).
 It parses a String argument using a format String. Returns a DateTime type.
     )";
     FunctionDocumentation::Syntax parseDateTime_syntax = "parseDateTime(time_string, format[, timezone])";

@@ -2410,8 +2410,8 @@ struct ConvertImplGenericFromString
                 continue;
             }
 
-            const auto & val = column_from.getDataAt(i);
-            ReadBufferFromMemory read_buffer(val.data(), val.size());
+            const auto val = column_from.getDataAt(i);
+            ReadBufferFromMemory read_buffer(val);
             try
             {
                 serialization_from.deserializeWholeText(column_to, read_buffer, format_settings);
@@ -2506,7 +2506,7 @@ struct ConvertImplFromDynamicToColumn
                 if (local_discriminators[i] == shared_variant_local_discr)
                 {
                     auto value = shared_variant.getDataAt(offsets[i]);
-                    ReadBufferFromMemory buf(value.data(), value.size());
+                    ReadBufferFromMemory buf(value);
                     auto type = decodeDataType(buf);
                     auto type_name = type->getName();
                     auto it = shared_variant_to_index.find(type_name);

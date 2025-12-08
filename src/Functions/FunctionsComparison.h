@@ -49,7 +49,6 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_not_comparable_types_in_comparison_functions;
     extern const SettingsBool validate_enum_literals_in_operators;
 }
 
@@ -654,12 +653,10 @@ struct ComparisonParams
 {
     bool check_decimal_overflow = false;
     bool validate_enum_literals_in_operators = false;
-    bool allow_not_comparable_types = false;
 
     explicit ComparisonParams(const ContextPtr & context)
         : check_decimal_overflow(decimalCheckComparisonOverflow(context))
         , validate_enum_literals_in_operators(context->getSettingsRef()[Setting::validate_enum_literals_in_operators])
-        , allow_not_comparable_types(context->getSettingsRef()[Setting::allow_not_comparable_types_in_comparison_functions])
     {}
 
     ComparisonParams() = default;
@@ -1175,29 +1172,24 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!params.allow_not_comparable_types)
+        if ((name == NameEquals::name || name == NameNotEquals::name))
         {
-            if ((name == NameEquals::name || name == NameNotEquals::name))
-            {
-                if (!arguments[0]->isComparableForEquality() || !arguments[1]->isComparableForEquality())
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable for equality."
-                        "Set setting allow_not_comparable_types_in_comparison_functions = 1 in order to allow it",
-                        backQuote(arguments[0]->getName()),
-                        backQuote(arguments[1]->getName()),
-                        backQuote(getName()));
-            }
-            else if (!arguments[0]->isComparable() || !arguments[1]->isComparable())
-            {
+            if (!arguments[0]->isComparableForEquality() || !arguments[1]->isComparableForEquality())
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable."
-                    "Set setting allow_not_comparable_types_in_comparison_functions = 1 in order to allow it",
+                    "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable for equality",
                     backQuote(arguments[0]->getName()),
                     backQuote(arguments[1]->getName()),
                     backQuote(getName()));
-            }
+        }
+        else if (!arguments[0]->isComparable() || !arguments[1]->isComparable())
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable",
+                backQuote(arguments[0]->getName()),
+                backQuote(arguments[1]->getName()),
+                backQuote(getName()));
         }
 
         WhichDataType left(arguments[0].get());
