@@ -17,6 +17,7 @@ namespace ErrorCodes
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int PARAMETER_OUT_OF_BOUND;
 }
 
 namespace
@@ -651,6 +652,12 @@ void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t len
 void ColumnObject::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
 #endif
 {
+    if (length == 0)
+        return;
+
+    if (start + length > src.size())
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameter out of bound in ColumnObject::insertRangeFrom method.");
+
     /// TODO: try to parallelize doInsertRangeFrom over typed/dynamic paths if it makes sense.
     const auto & src_object_column = assert_cast<const ColumnObject &>(src);
 
