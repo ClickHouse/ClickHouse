@@ -6,6 +6,7 @@ extern "C"
 #include <simdcomp.h>
 #endif
 #include <streamvbyte.h>
+#include <streamvbytedelta.h>
 }
 
 namespace DB
@@ -32,7 +33,8 @@ struct CodecTraits<uint32_t>
     {
 #if defined(__x86_64__) || defined(_M_X64)
         auto bits = maxbits_length(data.data(), data.size());
-        return { bits * data.size(), bits };
+        auto bytes = simdpack_compressedbytes(data.size(), bits);
+        return { bytes, bits };
 #else
         return { streamvbyte_max_compressedbytes(data.size()), 0 };
 #endif
@@ -50,9 +52,9 @@ struct CodecTraits<uint32_t>
         return static_cast<uint32_t>(end - out);
 #endif
 #if defined(__SSE4_1__)
-        simdpack(p, reinterpret_cast<__m128i*>(out), bits);
-        //return static_cast<uint32_t>(out - p);
-        return 0;
+        auto * m128_out = reinterpret_cast<__m128i*>(out);
+        auto end = simdpack_length(p, n, m128_out, bits);
+        return static_cast<uint32_t>(end - m128_out);
 #endif
 #endif
         return streamvbyte_delta_encode(p, n, out, 0);
@@ -70,8 +72,9 @@ struct CodecTraits<uint32_t>
         return n * bits;
 #endif
 #if defined(__SSE4_1__)
-        simdunpack(p, reinterpret_cast<__m128i*>(out), bits);
-        return n * bits;
+        auto * m128i_p = reinterpret_cast<__m128i*>(p);
+        const auto * end = simdunpack_length(m128i_p, n, out, bits);
+        return static_cast<size_t>(end - m128i_p);
 #endif
 #endif
         return streamvbyte_delta_decode(p, out, n, 0);
