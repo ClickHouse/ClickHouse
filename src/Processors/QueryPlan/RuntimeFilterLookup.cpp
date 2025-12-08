@@ -1,9 +1,11 @@
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
-
+#include <Functions/FunctionFactory.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnsCommon.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/SharedMutex.h>
 #include <Common/typeid_cast.h>
-#include <Functions/FunctionFactory.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -107,6 +109,57 @@ void ApproximateRuntimeFilter::merge(const IRuntimeFilter * source)
     --filters_to_merge;
 }
 
+static size_t countPassedStats(ColumnPtr values)
+{
+    if (const auto * column_bool = typeid_cast<const ColumnUInt8 *>(values.get()))
+    {
+        return countBytesInFilter(column_bool->getData());
+    }
+    else if (const auto * column_const = typeid_cast<const ColumnConst *>(values.get()))
+    {
+        const bool all_true = column_const->getValue<UInt8>();
+        return all_true ? values->size() : 0;
+    }
+    /// If for some reason value column type is unexpected then just assume that all rows passed
+    return values->size();
+}
+
+template <bool negate>
+ColumnPtr RuntimeFilterBase<negate>::find(const ColumnWithTypeAndName & values) const
+{
+    switch (values_count)
+    {
+        case ValuesCount::UNKNOWN:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Run time filter set is not ready for lookups");
+        case ValuesCount::ZERO:
+            stats.rows_checked += values.column->size();
+            stats.rows_passed += negate ? values.column->size() : 0;
+            return std::make_shared<DataTypeUInt8>()->createColumnConst(values.column->size(), negate);
+        case ValuesCount::ONE:
+        {
+            /// If only 1 element in the set then use "value == const" instead of set lookup
+            auto const_column = filter_column_target_type->createColumnConst(values.column->size(), *single_element_in_set);
+            ColumnsWithTypeAndName arguments = {
+                values,
+                ColumnWithTypeAndName(const_column, filter_column_target_type, String())
+            };
+            auto single_element_equals_function = FunctionFactory::instance().get(negate ? "notEquals" : "equals", nullptr)->build(arguments);
+            auto result = single_element_equals_function->execute(arguments, single_element_equals_function->getResultType(), values.column->size(), /* dry_run = */ false);
+            stats.rows_checked += values.column->size();
+            stats.rows_passed += countPassedStats(result);
+            return result;
+        }
+        case ValuesCount::MANY:
+        {
+            auto result = exact_values->execute({values}, negate);
+            stats.rows_checked += values.column->size();
+            stats.rows_passed += countPassedStats(result);
+            return result;
+        }
+    }
+    UNREACHABLE();
+}
+
 ColumnPtr ApproximateRuntimeFilter::find(const ColumnWithTypeAndName & values) const
 {
     if (!inserts_are_finished)
@@ -118,12 +171,17 @@ ColumnPtr ApproximateRuntimeFilter::find(const ColumnWithTypeAndName & values) c
         auto & dst_data = dst->getData();
         dst_data.resize(values.column->size());
 
+        size_t found_count = 0;
         for (size_t row = 0; row < values.column->size(); ++row)
         {
             /// TODO: optimize: consider replacing hash calculation with vectorized version
             const auto & value = values.column->getDataAt(row);
-            dst_data[row] = bloom_filter->find(value.data(), value.size());
+            const bool found = bloom_filter->find(value.data(), value.size());
+            found_count += found ? 1 : 0;
+            dst_data[row] = found;
         }
+        stats.rows_checked += values.column->size();
+        stats.rows_passed += found_count;
 
         return dst;
     }
@@ -181,6 +239,17 @@ public:
             return nullptr;
         else
             return it->second;
+    }
+
+    void logStats() const override
+    {
+        SharedLockGuard g(rw_lock);
+        for (const auto & [filter_name, filter] : filters_by_name)
+        {
+            const auto & stats = filter->getStats();
+            LOG_TRACE(getLogger("RuntimeFilter"), "Stats for '{}': rows checked {}, rows passed {}",
+                filter_name, stats.rows_checked.load(), stats.rows_passed.load());
+        }
     }
 
 private:
