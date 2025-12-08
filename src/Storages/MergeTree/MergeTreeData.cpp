@@ -283,6 +283,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
+    extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsUInt32 min_level_for_wide_part;
 }
 
@@ -2423,7 +2424,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         }
 
         unexpected_data_parts_loading_task = getContext()->getSchedulePool().createTask(
-            "MergeTreeData::loadUnexpectedDataParts",
+            getStorageID(), "MergeTreeData::loadUnexpectedDataParts",
             [this] { loadUnexpectedDataParts(); });
     }
 
@@ -2445,7 +2446,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         }
 
         outdated_data_parts_loading_task = getContext()->getSchedulePool().createTask(
-            "MergeTreeData::loadOutdatedDataParts",
+            getStorageID(), "MergeTreeData::loadOutdatedDataParts",
             [this] { loadOutdatedDataParts(/*is_async=*/ true); });
     }
 
@@ -2459,7 +2460,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     if (all_disks_are_readonly && refresh_parts_interval && !refresh_parts_task)
     {
         refresh_parts_task = getContext()->getSchedulePool().createTask(
-            "MergeTreeData::refreshDataParts",
+            getStorageID(), "MergeTreeData::refreshDataParts",
             [this, refresh_parts_interval] { refreshDataParts(refresh_parts_interval); });
 
         refresh_parts_task->scheduleAfter(refresh_parts_interval);
@@ -2469,7 +2470,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     if (refresh_statistics_seconds && !refresh_stats_task)
     {
         refresh_stats_task = getContext()->getSchedulePool().createTask(
-            "MergeTreeData::refreshStatistics",
+            getStorageID(), "MergeTreeData::refreshStatistics",
             [this, refresh_statistics_seconds] { refreshStatistics(refresh_statistics_seconds); });
 
         refresh_stats_task->activateAndSchedule();
@@ -8537,6 +8538,7 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
         false,
         settings[MergeTreeSetting::serialization_info_version],
         settings[MergeTreeSetting::string_serialization_version],
+        settings[MergeTreeSetting::nullable_serialization_version],
     };
 
     for (const auto & column : columns_list)
@@ -9945,6 +9947,7 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
         true,
         (*getSettings())[MergeTreeSetting::serialization_info_version],
         (*getSettings())[MergeTreeSetting::string_serialization_version],
+        (*getSettings())[MergeTreeSetting::nullable_serialization_version],
     };
 
     const auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -10160,6 +10163,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         false,
         (*settings)[MergeTreeSetting::serialization_info_version],
         (*settings)[MergeTreeSetting::string_serialization_version],
+        (*settings)[MergeTreeSetting::nullable_serialization_version],
     };
 
     new_data_part->setColumns(columns, SerializationInfoByName{info_settings}, metadata_snapshot->getMetadataVersion());

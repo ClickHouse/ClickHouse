@@ -23,6 +23,7 @@ set(DBMS_FUNCTIONS
     FunctionsConversion_impl1.cpp
     FunctionsConversion_impl2.cpp
     FunctionsConversion_impl3.cpp
+    FunctionTopKFilter.cpp # createInternalFunctionTopKFilterResolver used from optimizeTopK.cpp
     extractTimeZoneFromFunctionArguments.cpp # extractTimeZoneFromFunctionArguments (DateTimeTransforms.h, FunctionsConversion.cpp)
     generateSnowflakeID.cpp
 )

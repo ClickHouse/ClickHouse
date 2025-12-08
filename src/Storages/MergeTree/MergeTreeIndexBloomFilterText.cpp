@@ -186,7 +186,7 @@ bool MergeTreeConditionBloomFilterText::alwaysUnknownOrTrue() const
 }
 
 /// Keep in-sync with MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart
-bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
+bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
 {
     std::shared_ptr<MergeTreeIndexGranuleBloomFilterText> granule
             = std::dynamic_pointer_cast<MergeTreeIndexGranuleBloomFilterText>(idx_granule);
@@ -195,6 +195,7 @@ bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranule
 
     /// Check like in KeyCondition.
     std::vector<BoolMask> rpn_stack;
+    size_t element_idx = 0;
     for (const auto & element : rpn)
     {
         switch (element.function)
@@ -292,6 +293,12 @@ bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranule
                 rpn_stack.emplace_back(true, false);
                 break;
             /// No `default:` to make the compiler warn if not all enum values are handled.
+        }
+
+        if (update_partial_disjunction_result_fn)
+        {
+            update_partial_disjunction_result_fn(element_idx, rpn_stack.back().can_be_true, element.function == RPNElement::FUNCTION_UNKNOWN);
+            ++element_idx;
         }
     }
 
