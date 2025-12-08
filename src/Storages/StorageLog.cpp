@@ -196,12 +196,14 @@ Chunk LogSource::generate()
     std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> deserialize_states_caches;
     Block res;
 
+    /// First, read prefixes for all columns/subcolumns.
     for (const auto & name_and_type : columns)
     {
         auto name_and_type_on_disk = getColumnOnDisk(name_and_type);
         readPrefix(name_and_type_on_disk, caches[name_and_type_on_disk.getNameInStorage()], deserialize_states_caches[name_and_type_on_disk.getNameInStorage()]);
     }
 
+    /// Second, read the data of all columns/subcolumns.
     for (const auto & name_type : columns)
     {
         ColumnPtr column;
