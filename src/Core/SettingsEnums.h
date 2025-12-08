@@ -454,6 +454,14 @@ enum class MergeTreeStringSerializationVersion : uint8_t
 
 DECLARE_SETTING_ENUM(MergeTreeStringSerializationVersion)
 
+enum class MergeTreeNullableSerializationVersion : uint8_t
+{
+    BASIC = 0,
+    ALLOW_SPARSE = 1,
+};
+
+DECLARE_SETTING_ENUM(MergeTreeNullableSerializationVersion)
+
 enum class MergeTreeObjectSerializationVersion : uint8_t
 {
     V1,

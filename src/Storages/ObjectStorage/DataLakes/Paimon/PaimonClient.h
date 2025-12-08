@@ -20,7 +20,6 @@
 #include <Storages/ObjectStorage/DataLakes/Paimon/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/Types.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
-#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 #include <Poco/JSON/Array.h>
@@ -301,8 +300,7 @@ struct PaimonManifest
 class PaimonTableClient : private WithContext
 {
 public:
-    PaimonTableClient(
-        ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, const DB::ContextPtr & context_);
+    PaimonTableClient(ObjectStoragePtr object_storage_, const String & table_location_, const DB::ContextPtr & context_);
 
     Poco::JSON::Object::Ptr getTableSchemaJSON(const std::pair<Int32, String> & schema_meta_info);
     std::pair<Int32, String> getLastestTableSchemaInfo();
@@ -312,7 +310,6 @@ public:
     std::vector<PaimonManifestFileMeta> getManifestMeta(String manifest_list_path);
 private:
     const ObjectStoragePtr object_storage;
-    const StorageObjectStorageConfigurationWeakPtr configuration;
     const String table_location;
     LoggerPtr log;
 };
