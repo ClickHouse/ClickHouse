@@ -849,7 +849,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
     auto logger = getLogger("S3CredentialsProviderChain");
 
     /// we don't provide any credentials to avoid signing
-    if (credentials_configuration.no_sign_request)
+    if (credentials_configuration.no_sign_request || configuration.http_client == "gcp_oauth")
         return;
 
     /// add explicit credentials to the front of the chain
