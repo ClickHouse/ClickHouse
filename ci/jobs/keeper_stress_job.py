@@ -34,6 +34,19 @@ def main():
     dur = os.environ.get("KEEPER_DURATION")
     dur_arg = f" --duration={int(dur)}" if dur else ""
 
+    # Install Python dependencies required by Keeper stress framework (PyYAML, etc.)
+    install_cmd = (
+        "python3 -m pip install --no-cache-dir -r tests/stress/keeper/requirements.txt "
+        "|| python3 -m pip install --no-cache-dir pyyaml"
+    )
+    results.append(
+        Result.from_commands_run(name="Install Keeper Python deps", command=install_cmd)
+    )
+    if not results[-1].is_ok():
+        # Publish aggregated job result (deps install failed)
+        Result.create_from(results=results, stopwatch=stop_watch).complete_job()
+        return
+
     # Construct pytest command (Result.from_pytest_run adds 'pytest' itself)
     # - quiet output, show per-test durations, run the keeper stress suite
     cmd = f"-q tests/stress/keeper/tests --durations=0{dur_arg}"
