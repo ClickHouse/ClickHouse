@@ -80,7 +80,7 @@ Float64 ColumnDecimal<T>::getFloat64(size_t n) const
 }
 
 template <is_decimal T>
-void ColumnDecimal<T>::deserializeAndInsertFromArena(ReadBuffer & in)
+void ColumnDecimal<T>::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings *)
 {
     T dec;
     readBinaryLittleEndian(dec, in);

@@ -740,28 +740,7 @@ void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::Co
                 /// Deserialize binary value into dynamic column from shared data.
                 if (it->second->size() != current_size)
                 {
-                    if (src_object_column.getDynamicPaths().contains(path))
-                        throw Exception(
-                            ErrorCodes::LOGICAL_ERROR,
-                            "Path {} is present both in shared data and in dynamic paths at row {}. Dynamic path value type: {}. Shared data path value type: {}",
-                            path,
-                            row,
-                            src_object_column.getDynamicPathsPtrs().at(toString(path))->getTypeNameAt(row),
-                            decodeDataType(src_shared_data_values->getDataAt(i))->getName());
-
-                    for (size_t j = offset; j != end; ++j)
-                    {
-                        if (j != i && src_shared_data_paths->getDataAt(j) == path)
-                            throw Exception(
-                            ErrorCodes::LOGICAL_ERROR,
-                            "Path {} is duplicated inside shared data at offsets {} and {}. First value type: {}. Second value type: {}",
-                            path,
-                            i,
-                            j,
-                            decodeDataType(src_shared_data_values->getDataAt(i))->getName(),
-                            decodeDataType(src_shared_data_values->getDataAt(j))->getName());
-                    }
-
+                    src_object_column.validateDynamicPathsAndSharedData();
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {} != {}", path, it->second->size(), current_size);
                 }
                 deserializeValueFromSharedData(src_shared_data_values, i, *it->second);
@@ -927,28 +906,13 @@ void ColumnObject::rollback(const ColumnCheckpoint & checkpoint)
     shared_data->rollback(*object_checkpoint.shared_data);
 }
 
-std::string_view ColumnObject::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin) const
+std::string_view ColumnObject::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin, const IColumn::SerializationSettings * settings) const
 {
     std::string_view res;
     /// First serialize values from typed paths in sorted order. They are the same for all instances of this column.
     for (auto path : sorted_typed_paths)
     {
-        auto data_ref = typed_paths.find(path)->second->serializeValueIntoArena(n, arena, begin);
-        res = std::string_view{data_ref.data() - res.size(), res.size() + data_ref.size()};
-    }
-
-    /// Second, serialize paths and values in binary format from dynamic paths and shared data in sorted by path order.
-    serializeDynamicPathsAndSharedDataIntoArena(n, arena, begin, res);
-    return res;
-}
-
-std::string_view ColumnObject::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
-{
-    std::string_view res;
-    /// First serialize values from typed paths in sorted order. They are the same for all instances of this column.
-    for (auto path : sorted_typed_paths)
-    {
-        auto data_ref = typed_paths.find(path)->second->serializeAggregationStateValueIntoArena(n, arena, begin);
+        auto data_ref = typed_paths.find(path)->second->serializeValueIntoArena(n, arena, begin, settings);
         res = std::string_view{data_ref.data() - res.size(), res.size() + data_ref.size()};
     }
 
@@ -1018,21 +982,11 @@ void ColumnObject::serializePathAndValueIntoArena(DB::Arena & arena, const char 
     res = std::string_view{pos - res.size(), res.size() + sizeof(size_t) + path_size + sizeof(size_t) + value_size};
 }
 
-void ColumnObject::deserializeAndInsertFromArena(ReadBuffer & in)
+void ColumnObject::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     /// First deserialize typed paths. They come first.
     for (auto path : sorted_typed_paths)
-        typed_paths.find(path)->second->deserializeAndInsertFromArena(in);
-
-    /// Second deserialize all other paths and values and insert them into dynamic paths or shared data.
-    deserializeDynamicPathsAndSharedDataFromArena(in);
-}
-
-void ColumnObject::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
-{
-    /// First deserialize typed paths. They come first.
-    for (auto path : sorted_typed_paths)
-        typed_paths.find(path)->second->deserializeAndInsertAggregationStateValueFromArena(in);
+        typed_paths.find(path)->second->deserializeAndInsertFromArena(in, settings);
 
     /// Second deserialize all other paths and values and insert them into dynamic paths or shared data.
     deserializeDynamicPathsAndSharedDataFromArena(in);

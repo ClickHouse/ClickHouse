@@ -2866,10 +2866,15 @@ message GroupByStatement {
     optional WhereStatement having_expr = 3;
 }
 
-message LimitStatement {
+enum RowsKeyword {
+    OFF_ROW = 1;
+    OFF_ROWS = 2;
+}
+
+message LimitByStatement {
     required Expr limit = 1;
-    optional Expr offset = 2;
-    optional bool with_ties = 3;
+    optional bool comma = 2;
+    optional Expr offset = 3;
     oneof limit_by_oneof {
         Expr by_expr = 4;
         bool lall = 5;
@@ -2879,14 +2884,15 @@ message LimitStatement {
 message FetchStatement {
     required bool first = 1;
     required Expr row_count = 2;
-    required bool rows = 3;
+    required RowsKeyword rows = 3;
     required bool only = 4;
 }
 
 message OffsetStatement {
-    required Expr row_count = 1;
-    required bool rows = 2;
-    optional FetchStatement fetch = 3;
+    optional bool comma = 1;
+    required Expr row_count = 2;
+    optional RowsKeyword rows = 3;
+    optional FetchStatement fetch = 4;
 }
 
 enum AllOrDistinct {
@@ -2905,10 +2911,9 @@ message SelectStatementCore {
     optional OrderByStatement orderby = 8;
     repeated WindowDef window_defs = 9;
     optional WhereStatement qualify_expr = 10;
-    oneof limit_oneof {
-        LimitStatement limit = 11;
-        OffsetStatement offset = 12;
-    }
+    optional LimitByStatement limit_by = 11;
+    optional Expr limit = 12;
+    optional OffsetStatement offset = 13;
 }
 
 message SetQuery {

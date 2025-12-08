@@ -727,7 +727,7 @@ void ColumnDynamic::serializeValueIntoSharedVariant(
     shared_variant.getOffsets().push_back(chars.size());
 }
 
-std::string_view ColumnDynamic::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin) const
+std::string_view ColumnDynamic::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin, const IColumn::SerializationSettings *) const
 {
     /// We cannot use Variant serialization here as it serializes discriminator + value,
     /// but Dynamic doesn't have fixed mapping discriminator <-> variant type
@@ -767,7 +767,7 @@ std::string_view ColumnDynamic::serializeValueIntoArena(size_t n, Arena & arena,
     return {pos, sizeof(UInt8) + sizeof(size_t) + type_and_value.size()};
 }
 
-void ColumnDynamic::deserializeAndInsertFromArena(ReadBuffer & in)
+void ColumnDynamic::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings *)
 {
     auto & variant_col = getVariantColumn();
     UInt8 null_bit;
