@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 import os
+import subprocess
+import time
 from pathlib import Path
 
 from praktika.result import Result
-from praktika.utils import Utils
+from praktika.utils import Shell, Utils
 
 
 def main():
@@ -12,6 +14,21 @@ def main():
 
     stop_watch = Utils.Stopwatch()
     results = []
+
+    # Ensure docker-in-docker is up for nested compose workloads
+    os.makedirs("./ci/tmp", exist_ok=True)
+    if not Shell.check("docker info > /dev/null", verbose=True):
+        with open("./ci/tmp/docker-in-docker.log", "w") as log_file:
+            dockerd_proc = subprocess.Popen(
+                "./ci/jobs/scripts/docker_in_docker.sh",
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+            )
+        # wait until docker responds
+        for i in range(60):
+            if Shell.check("docker info > /dev/null", verbose=True):
+                break
+            time.sleep(2)
 
     # Respect optional duration override if provided
     dur = os.environ.get("KEEPER_DURATION")
