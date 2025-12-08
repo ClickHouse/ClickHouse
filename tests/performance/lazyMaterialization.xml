@@ -1,4 +1,9 @@
 <test>
+    <settings>
+        <!-- Always enable lazy materialization optimization (0 means no limit) -->
+        <query_plan_max_limit_for_lazy_materialization>0</query_plan_max_limit_for_lazy_materialization>
+    </settings>
+
     <query>SELECT * FROM test.hits ORDER BY EventTime LIMIT 1 FORMAT Null</query>
     <query>SELECT * FROM test.hits WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 1 FORMAT Null</query>
     <query>SELECT * FROM test.hits WHERE URL LIKE '%google%' ORDER BY CounterID, EventDate LIMIT 1 FORMAT Null</query>
