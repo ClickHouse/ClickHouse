@@ -2783,7 +2783,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         }
     }
 
-    result.checkLimits(local_settings, query_info);
     shared_virtual_fields.emplace("_sample_factor", result.sampling.used_sample_factor);
 
     LOG_DEBUG(
