@@ -863,10 +863,7 @@ class JobConfigs:
         name="Keeper Stress",
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command=(
-            "bash -lc \"set -euo pipefail; "
-            "./ci/jobs/scripts/docker_in_docker.sh >/tmp/dind.log 2>&1 & "
-            "for i in $(seq 1 60); do docker info >/dev/null 2>&1 && break || sleep 2; done; "
-            "python3 ./ci/jobs/keeper_stress_job.py\""
+            "python3 ./ci/jobs/keeper_stress_job.py"
         ),
         run_in_docker=(
             f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+"
