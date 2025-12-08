@@ -24,46 +24,6 @@ class ClusterBuilder:
     def __init__(self, file_anchor):
         self.file_anchor = file_anchor
 
-    def _render_embedded_xml(self, names, sid, start_sid=ID_BASE):
-        peers = "\n".join(
-            [
-                f"        <server><id>{i}</id><hostname>{n}</hostname><port>{RAFT_PORT}</port></server>"
-                for i, n in enumerate(names, start=start_sid)
-            ]
-        )
-        # Only inject control endpoint when explicitly enabled to avoid failures on older images.
-        enable_ctrl = bool(CONTROL_PORT) and parse_bool(
-            os.environ.get("KEEPER_ENABLE_CONTROL", "0")
-        )
-        http_ctrl = (
-            f"<http_control><port>{CONTROL_PORT}</port><readiness><endpoint>/ready</endpoint></readiness></http_control>"
-            if enable_ctrl
-            else ""
-        )
-        return f"""<clickhouse>
-  <keeper_server>
-    <tcp_port>{CLIENT_PORT}</tcp_port>
-    <server_id>{sid}</server_id>
-    <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
-    <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
-    {http_ctrl}
-    <coordination_settings>
-      <operation_timeout_ms>10000</operation_timeout_ms>
-      <session_timeout_ms>30000</session_timeout_ms>
-      <heart_beat_interval_ms>500</heart_beat_interval_ms>
-      <election_timeout_lower_bound_ms>1000</election_timeout_lower_bound_ms>
-      <election_timeout_upper_bound_ms>2000</election_timeout_upper_bound_ms>
-      <force_sync>true</force_sync>
-      <quorum_reads>false</quorum_reads>
-      <shutdown_timeout>5000</shutdown_timeout>
-      <startup_timeout>30000</startup_timeout>
-    </coordination_settings>
-    <raft_configuration>
-{peers}
-    </raft_configuration>
-  </keeper_server>
-</clickhouse>"""
-
     def build(self, topology, backend, opts):
         feature_flags = opts.get("feature_flags", {})
         coord_overrides_xml = opts.get("coord_overrides_xml", "")
@@ -109,6 +69,38 @@ class ClusterBuilder:
         )
         if coord_overrides_xml:
             extra_coord += coord_overrides_xml
+        # Shared blocks reused across instances
+        backend_extra = (
+            "<experimental_use_rocksdb>1</experimental_use_rocksdb>" if backend == "rocksdb" else ""
+        )
+        coord_settings = (
+            "<coordination_settings>"
+            "<operation_timeout_ms>10000</operation_timeout_ms>"
+            "<session_timeout_ms>30000</session_timeout_ms>"
+            "<heart_beat_interval_ms>500</heart_beat_interval_ms>"
+            "<election_timeout_lower_bound_ms>1000</election_timeout_lower_bound_ms>"
+            "<election_timeout_upper_bound_ms>2000</election_timeout_upper_bound_ms>"
+            "<force_sync>true</force_sync>"
+            "<quorum_reads>false</quorum_reads>"
+            "<shutdown_timeout>5000</shutdown_timeout>"
+            "<startup_timeout>30000</startup_timeout>"
+            + backend_extra
+            + extra_coord
+            + "</coordination_settings>"
+        )
+        feature_flags_xml = (
+            "<feature_flags>"
+            + "".join(f"<{k}>{1 if v else 0}</{k}>" for k, v in ff.items())
+            + "</feature_flags>"
+        )
+        enable_ctrl = bool(CONTROL_PORT) and parse_bool(
+            os.environ.get("KEEPER_ENABLE_CONTROL", "0")
+        )
+        http_ctrl = (
+            f"<http_control><port>{CONTROL_PORT}</port><readiness><endpoint>/ready</endpoint></readiness></http_control>"
+            if enable_ctrl
+            else ""
+        )
         # Keeper disk selection tags
         use_s3 = bool(use_minio or S3_LOG_ENDPOINT or S3_SNAPSHOT_ENDPOINT)
         if use_s3:
@@ -163,47 +155,19 @@ class ClusterBuilder:
         nodes = []
         # Use 1-based server ids by default for raft members
         start_sid = 1 if ID_BASE <= 0 else ID_BASE
+        peers_xml = "\n".join(
+            [
+                f"        <server><id>{j}</id><hostname>{n}</hostname><port>{RAFT_PORT}</port></server>"
+                for j, n in enumerate(names, start=start_sid)
+            ]
+        )
+        disks_block = (
+            "<storage_configuration><disks>" + "\n".join(disks_xml) + "</disks></storage_configuration>"
+        )
+        prom_block = f"<prometheus><endpoint>/metrics</endpoint><port>{PROM_PORT}</port><metrics>true</metrics><events>true</events><asynchronous_metrics>true</asynchronous_metrics></prometheus>"
+        zk_block = f"<zookeeper>{zk_nodes}</zookeeper>"
         for i, name in enumerate(names, start=start_sid):
             # Build a single per-node config file with all required sections
-            peers = "\n".join(
-                [
-                    f"        <server><id>{j}</id><hostname>{n}</hostname><port>{RAFT_PORT}</port></server>"
-                    for j, n in enumerate(names, start=start_sid)
-                ]
-            )
-            enable_ctrl = bool(CONTROL_PORT) and parse_bool(
-                os.environ.get("KEEPER_ENABLE_CONTROL", "0")
-            )
-            http_ctrl = (
-                f"<http_control><port>{CONTROL_PORT}</port><readiness><endpoint>/ready</endpoint></readiness></http_control>"
-                if enable_ctrl
-                else ""
-            )
-            # Merge baseline and extra coordination settings
-            coord_settings = (
-                "<coordination_settings>"
-                "<operation_timeout_ms>10000</operation_timeout_ms>"
-                "<session_timeout_ms>30000</session_timeout_ms>"
-                "<heart_beat_interval_ms>500</heart_beat_interval_ms>"
-                "<election_timeout_lower_bound_ms>1000</election_timeout_lower_bound_ms>"
-                "<election_timeout_upper_bound_ms>2000</election_timeout_upper_bound_ms>"
-                "<force_sync>true</force_sync>"
-                "<quorum_reads>false</quorum_reads>"
-                "<shutdown_timeout>5000</shutdown_timeout>"
-                "<startup_timeout>30000</startup_timeout>"
-                + (
-                    "<experimental_use_rocksdb>1</experimental_use_rocksdb>"
-                    if backend == "rocksdb"
-                    else ""
-                )
-                + extra_coord
-                + "</coordination_settings>"
-            )
-            feature_flags_xml = (
-                "<feature_flags>"
-                + "".join(f"<{k}>{1 if v else 0}</{k}>" for k, v in ff.items())
-                + "</feature_flags>"
-            )
             keeper_server = (
                 "<keeper_server>"
                 f"<tcp_port>{CLIENT_PORT}</tcp_port>"
@@ -215,18 +179,11 @@ class ClusterBuilder:
                 + "<digest_enabled>true</digest_enabled>"
                 + feature_flags_xml
                 + "<raft_configuration>\n"
-                + peers
+                + peers_xml
                 + "\n    </raft_configuration>"
                 + disk_select
                 + "</keeper_server>"
             )
-            disks_block = (
-                "<storage_configuration><disks>"
-                + "\n".join(disks_xml)
-                + "</disks></storage_configuration>"
-            )
-            prom_block = f"<prometheus><endpoint>/metrics</endpoint><port>{PROM_PORT}</port><metrics>true</metrics><events>true</events><asynchronous_metrics>true</asynchronous_metrics></prometheus>"
-            zk_block = f"<zookeeper>{zk_nodes}</zookeeper>"
             macros_block = f"<macros><replica>{name}</replica><shard>1</shard></macros>"
             full_xml = (
                 "<clickhouse>"

@@ -16,8 +16,28 @@ def apply_step(step, nodes, leader, ctx):
         return fn(ctx, nodes, leader, step)
     # Orchestrators / helpers
     if kind == "parallel":
-        for sub in step.get("steps") or []:
-            apply_step(sub, nodes, leader, ctx)
+        subs = step.get("steps") or []
+        if not subs:
+            return
+        import threading as _th
+
+        ths = []
+        errs = []
+
+        def _run(sub):
+            try:
+                apply_step(sub, nodes, leader, ctx)
+            except Exception as e:
+                errs.append(e)
+
+        for sub in subs:
+            t = _th.Thread(target=_run, args=(sub,), daemon=True)
+            t.start()
+            ths.append(t)
+        for t in ths:
+            t.join()
+        if errs:
+            raise errs[0]
         return
     if kind == "background_schedule":
         # Run each step once (no scheduler loop)

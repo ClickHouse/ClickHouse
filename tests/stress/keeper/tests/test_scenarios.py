@@ -23,7 +23,7 @@ from ..framework.io.probes import (
     prom_metrics,
 )
 from ..framework.io.prom_parse import parse_prometheus_text
-from ..framework.io.sink import sink_clickhouse
+from ..framework.io.sink import sink_clickhouse, has_ci_sink
 from ..framework.metrics.sampler import MetricsSampler
 from ..gates.base import apply_gate, single_leader
 from ..workloads.adapter import servers_arg
@@ -186,13 +186,27 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
     if faults_mode == "off":
         fs_effective = []
     elif faults_mode == "random":
+        # Prefer CLI/env duration override to enable ad-hoc long runs
         try:
-            dur_default = int(
-                (scenario.get("workload") or {}).get("duration")
-                or request.config.getoption("--duration")
-            )
+            cli_dur = request.config.getoption("--duration")
         except Exception:
-            dur_default = int(os.environ.get("KEEPER_DURATION", "120"))
+            cli_dur = None
+        try:
+            env_dur = os.environ.get("KEEPER_DURATION")
+        except Exception:
+            env_dur = None
+        yaml_dur = None
+        try:
+            yaml_dur = (scenario.get("workload") or {}).get("duration")
+        except Exception:
+            yaml_dur = None
+        try:
+            dur_default = int(cli_dur or env_dur or yaml_dur or 120)
+        except Exception:
+            try:
+                dur_default = int(env_dur or yaml_dur or 120)
+            except Exception:
+                dur_default = 120
         if seed_val <= 0:
             import os as _os
 
@@ -260,7 +274,7 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
         ensure_environment(nodes, scenario_for_env)
         single_leader(nodes)
         leader = [n for n in nodes if is_leader(n)][0]
-        sink_url = request.config.getoption("--sink-url")
+        sink_url = "ci" if has_ci_sink() else ""
         _snapshot_and_sink(
             nodes, "pre", scenario.get("id", ""), topo, run_meta_eff, sink_url, run_id
         )
@@ -327,11 +341,21 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             except Exception:
                 clients_env = None
             secure = False
+            # Prefer CLI/environment duration over YAML to support ad-hoc longer runs
+            try:
+                cli_dur = int(request.config.getoption("--duration"))
+            except Exception:
+                cli_dur = None
+            try:
+                env_dur = int(os.environ.get("KEEPER_DURATION")) if os.environ.get("KEEPER_DURATION") else None
+            except Exception:
+                env_dur = None
+            eff_dur = cli_dur or env_dur or wl.get("duration") or 120
             kb = KeeperBench(
                 nodes[0],
                 servers_arg(nodes),
                 cfg_path=str(WORKDIR / wl.get("config")) if wl.get("config") else None,
-                duration_s=wl.get("duration", request.config.getoption("--duration")),
+                duration_s=eff_dur,
                 replay_path=wl.get("replay"),
                 secure=secure,
                 clients=clients_env,
@@ -362,7 +386,7 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             pass
         # Attempt to snapshot fail state as well
         try:
-            sink_url = request.config.getoption("--sink-url")
+            sink_url = "ci" if has_ci_sink() else ""
             _snapshot_and_sink(
                 nodes,
                 "fail",

@@ -8,23 +8,11 @@ import pytest
 import yaml
 
 from ..framework.core.schema import validate_scenario
-from ..framework.core.settings import DEFAULT_ERROR_RATE, DEFAULT_P99_MS, parse_bool
+from ..framework.core.settings import DEFAULT_ERROR_RATE, DEFAULT_P99_MS
 
 _SCN_BASE = pathlib.Path(__file__).parents[1] / "scenarios"
 from ..framework import presets as _presets
 from ..framework.fuzz import generate_fuzz_scenario
-
-
-def _capabilities_ok(reqs):
-    caps = {
-        "minio": bool(os.environ.get("KEEPER_MINIO_ENDPOINT")),
-        "weekly": parse_bool(os.environ.get("KEEPER_RUN_WEEKLY")),
-        "zookeeper_artifacts": bool(os.environ.get("ZK_LOGS_DIR")),
-    }
-    if not reqs:
-        return True
-    return all(caps.get(r, False) for r in reqs)
-
 
 def _tags_ok(tags):
     inc = set([t for t in os.environ.get("KEEPER_INCLUDE_TAGS", "").split(",") if t])
@@ -72,8 +60,20 @@ def _inject_gate_macros(s):
         if not _has_gate(s, "config_converged"):
             _append_gate(s, {"type": "config_converged", "timeout_s": 30})
         if not _has_gate(s, "config_members_len_eq"):
-            expected = 2 if sid == "RCFG-02" else 3
-            _append_gate(s, {"type": "config_members_len_eq", "expected": expected})
+            exp = None
+            try:
+                exp = int((s.get("opts") or {}).get("expected_members"))
+            except Exception:
+                exp = None
+            if exp is None:
+                try:
+                    exp = int(s.get("topology", 3))
+                except Exception:
+                    exp = 3
+                # known special case where we expect two members after a remove
+                if sid == "RCFG-02":
+                    exp = 2
+            _append_gate(s, {"type": "config_members_len_eq", "expected": exp})
         if not _has_gate(s, "backlog_drains"):
             _append_gate(s, {"type": "backlog_drains"})
     # INT scenarios: ensure backlog drains after count gate
@@ -193,65 +193,6 @@ def pytest_generate_tests(metafunc):
     mtops = (_getopt(metafunc.config, "--matrix-topologies", None, "") or "").split(",")
     mtops = [int(x.strip()) for x in mtops if x.strip()]
 
-    def _marks_for(s):
-        ms = []
-        faults = s.get("faults", []) or []
-        gates = s.get("gates", []) or []
-        opts = s.get("opts", {}) or {}
-        tags = set(s.get("tags", []) or [])
-        # chaos if any fault exists
-        if faults:
-            ms.append(pytest.mark.chaos)
-        # network / disk marks
-        nf = {"netem", "partition_symmetric", "partition_oneway", "dns_blackhole"}
-        df = {"dm_delay", "dm_error", "enospc", "volume_detach", "volume_attach"}
-        if any((f.get("kind") in nf) for f in faults):
-            ms.append(pytest.mark.network)
-        if any((f.get("kind") in df) for f in faults):
-            ms.append(pytest.mark.disk)
-        # weekly
-        if "weekly" in tags:
-            ms.append(pytest.mark.weekly)
-        # slow: duration >= 180
-        wl = s.get("workload", {}) or {}
-        try:
-            if int(wl.get("duration", 0)) >= 180:
-                ms.append(pytest.mark.slow)
-        except Exception:
-            pass
-
-        # Also consider run_bench faults (possibly nested under parallel/background_schedule)
-        def _max_bench_duration(steps):
-            if not steps:
-                return 0
-            m = 0
-            for st in steps:
-                try:
-                    k = st.get("kind")
-                except Exception:
-                    continue
-                if k == "run_bench":
-                    try:
-                        m = max(m, int(st.get("duration_s", 0)))
-                    except Exception:
-                        pass
-                elif k in ("parallel", "background_schedule"):
-                    m = max(m, _max_bench_duration(st.get("steps", []) or []))
-            return m
-
-        try:
-            if _max_bench_duration(faults) >= 180:
-                ms.append(pytest.mark.slow)
-        except Exception:
-            pass
-        # backend markers
-        b = s.get("backend") or "default"
-        if b in ("rocks", "rocksdb"):
-            ms.append(pytest.mark.backend_rocks)
-        else:
-            ms.append(pytest.mark.backend_default)
-        return ms
-
     params = []
     seen_ids = set()
     for s in data["scenarios"]:
@@ -282,8 +223,6 @@ def pytest_generate_tests(metafunc):
             continue
         if not _should_run(s["id"], total, index):
             continue
-        if not _capabilities_ok(s.get("requires")):
-            continue
         if not _tags_ok(s.get("tags")):
             continue
         _inject_gate_macros(s)
@@ -292,10 +231,15 @@ def pytest_generate_tests(metafunc):
         if errs:
             raise AssertionError(f"Scenario {s.get('id')} invalid: {', '.join(errs)}")
         seen_ids.add(s.get("id"))
-        # Build matrix expansions (TLS dimension removed)
+        # Build matrix expansions
         for clone in expand_matrix_clones(s, mb, mtops):
-            mark_list = _marks_for(clone)
-            params.append(pytest.param(clone, marks=mark_list, id=clone["id"]))
+            marks = []
+            try:
+                if "weekly" in (clone.get("tags") or []):
+                    marks.append(pytest.mark.weekly)
+            except Exception:
+                pass
+            params.append(pytest.param(clone, marks=marks, id=clone["id"]))
     # Optional fuzz scenario
     if bool(_getopt(metafunc.config, "--fuzz", None, False)):
         seed = int(_getopt(metafunc.config, "--fuzz-seed", None, 0) or 0)
@@ -326,9 +270,7 @@ def pytest_generate_tests(metafunc):
         errs = validate_scenario(fs)
         if errs:
             raise AssertionError(f"Fuzz scenario invalid: {', '.join(errs)}")
-        params.append(
-            pytest.param(fs, marks=[pytest.mark.chaos, pytest.mark.slow], id=fs["id"])
-        )
+        params.append(pytest.param(fs, id=fs["id"]))
     metafunc.parametrize("scenario", params)
 
 
