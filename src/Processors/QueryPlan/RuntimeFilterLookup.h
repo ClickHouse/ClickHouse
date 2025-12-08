@@ -30,6 +30,8 @@ struct RuntimeFilterStats
     std::atomic<Int64> rows_checked = 0;
     std::atomic<Int64> rows_passed = 0;
     std::atomic<Int64> rows_skipped = 0;
+    std::atomic<Int64> blocks_processed = 0;
+    std::atomic<Int64> blocks_skipped = 0;
 };
 
 class IRuntimeFilter
@@ -68,6 +70,9 @@ protected:
     const DataTypePtr filter_column_target_type;
 
     std::atomic<bool> inserts_are_finished = false;
+
+    const Float64 pass_ratio_threshold_for_disabling = 0.7;
+    const UInt64 blocks_to_skip_before_reenabling = 30;
 
     mutable RuntimeFilterStats stats;
 
@@ -221,6 +226,7 @@ private:
     void checkBloomFilterWorthiness();
 
     const UInt64 bloom_filter_hash_functions;
+    const Float64 max_ratio_of_set_bits_in_bloom_filter = 0.7;
 
     BloomFilterPtr bloom_filter;
 };

@@ -18,12 +18,13 @@ namespace ErrorCodes
 
 void IRuntimeFilter::updateStats(UInt64 rows_checked, UInt64 rows_passed) const
 {
+    stats.blocks_processed++;
     stats.rows_checked += rows_checked;
     stats.rows_passed += rows_passed;
 
-    /// Skip next 10 blocks if too few rows got filtered out
-    if (rows_passed > 0.7 * rows_checked)
-        rows_to_skip = rows_checked * 10;
+    /// Skip next 30 blocks if too few rows got filtered out
+    if (rows_passed > pass_ratio_threshold_for_disabling * rows_checked)
+        rows_to_skip = rows_checked * blocks_to_skip_before_reenabling;
 }
 
 bool IRuntimeFilter::shouldSkip(size_t next_block_rows) const
@@ -31,6 +32,7 @@ bool IRuntimeFilter::shouldSkip(size_t next_block_rows) const
     if (is_fully_disabled)
     {
         stats.rows_skipped += next_block_rows;
+        stats.blocks_skipped++;
         return true;
     }
 
@@ -38,8 +40,10 @@ bool IRuntimeFilter::shouldSkip(size_t next_block_rows) const
     if (rows_to_skip > 0)
     {
         stats.rows_skipped += next_block_rows;
+        stats.blocks_skipped++;
         return true;
     }
+
     rows_to_skip = 0;
     return false;
 }
@@ -264,7 +268,7 @@ void ApproximateRuntimeFilter::checkBloomFilterWorthiness()
     for (auto word : raw_filter_words)
         set_bits += std::popcount(word);
     /// If too many bits are set then it is likely that the filter will not filter out much
-    if (set_bits > 0.7 * total_bits)
+    if (set_bits > max_ratio_of_set_bits_in_bloom_filter * total_bits)
         setFullyDisabled();
 }
 
@@ -302,8 +306,9 @@ public:
         for (const auto & [filter_name, filter] : filters_by_name)
         {
             const auto & stats = filter->getStats();
-            LOG_TRACE(getLogger("RuntimeFilter"), "Stats for '{}': rows skipped {}, rows checked {}, rows passed {}",
-                filter_name, stats.rows_skipped.load(), stats.rows_checked.load(), stats.rows_passed.load());
+            LOG_TRACE(getLogger("RuntimeFilter"),
+                "Stats for '{}': rows skipped {}, rows checked {}, rows passed {}, blocks skipped {}, blocks processed {}",
+                filter_name, stats.rows_skipped.load(), stats.rows_checked.load(), stats.rows_passed.load(), stats.blocks_skipped.load(), stats.blocks_processed.load());
         }
     }
 
