@@ -515,7 +515,8 @@ ASTPtr InterpreterCreateQuery::formatIndices(const IndicesDescription & indices)
     auto res = std::make_shared<ASTExpressionList>();
 
     for (const auto & index : indices)
-        res->children.push_back(index.definition_ast->clone());
+        if (!index.isImplicitlyCreated())
+            res->children.push_back(index.definition_ast->clone());
 
     return res;
 }
@@ -773,7 +774,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         if (create.columns_list->indices)
             for (const auto & index : create.columns_list->indices->children)
             {
-                IndexDescription index_desc = IndexDescription::getIndexFromAST(index->clone(), properties.columns, getContext());
+                IndexDescription index_desc = IndexDescription::getIndexFromAST(index->clone(), properties.columns, /* is_implicitly_created */ false, getContext());
                 if (properties.indices.has(index_desc.name))
                     throw Exception(ErrorCodes::ILLEGAL_INDEX, "Duplicated index name {} is not allowed. Please use a different index name", backQuoteIfNeed(index_desc.name));
 

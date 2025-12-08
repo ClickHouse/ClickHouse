@@ -175,7 +175,8 @@ void BackgroundSchedulePoolTaskInfo::execute(BackgroundSchedulePool & pool)
     {
         if (auto context = Context::getGlobalContextInstance())
         {
-            if (auto background_schedule_pool_log = context->getBackgroundSchedulePoolLog())
+            auto background_schedule_pool_log = context->getBackgroundSchedulePoolLog();
+            if (background_schedule_pool_log && milliseconds >= background_schedule_pool_log->getDurationMillisecondsThreshold())
             {
                 BackgroundSchedulePoolLogElement elem;
 

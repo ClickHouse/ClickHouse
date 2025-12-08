@@ -423,6 +423,12 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
                                                                 DEFAULT_AGGREGATED_ZOOKEEPER_LOG_COLLECT_INTERVAL_MILLISECONDS);
         aggregated_zookeeper_log->startCollect(ThreadName::AGGREGATED_ZOOKEEPER_LOG, collect_interval_milliseconds);
     }
+
+    if (background_schedule_pool_log)
+    {
+        size_t duration_threshold_milliseconds = config.getUInt64("background_schedule_pool_log.duration_threshold_milliseconds", 0);
+        background_schedule_pool_log->setDurationMillisecondsThreshold(duration_threshold_milliseconds);
+    }
 }
 
 std::vector<ISystemLog *> SystemLogs::getAllLogs() const
