@@ -32,7 +32,6 @@ namespace DB
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
-    extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
 }
 
 namespace ErrorCodes
@@ -195,22 +194,20 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         };
     };
 
-    SerializationInfoByName serialization_infos({});
+    auto ratio_of_defaults = (*data_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization];
+    SerializationInfoByName serialization_infos;
+
     if (data_part_storage.existsFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME))
     {
         try
         {
             auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, read_settings, std::nullopt);
-            serialization_infos = SerializationInfoByName::readJSON(columns_txt, *serialization_file);
+            SerializationInfo::Settings settings{ratio_of_defaults, false};
+            serialization_infos = SerializationInfoByName::readJSON(columns_txt, settings, *serialization_file);
         }
         catch (...)
         {
-            throw Exception(
-                ErrorCodes::CORRUPTED_DATA,
-                "Failed to load file {} of data part {}, with error {}",
-                IMergeTreeDataPart::SERIALIZATION_FILE_NAME,
-                data_part->name,
-                getCurrentExceptionMessage(true));
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Failed to load file {} of data part {}, with error {}", IMergeTreeDataPart::SERIALIZATION_FILE_NAME, data_part->name, getCurrentExceptionMessage(true));
         }
     }
 
@@ -218,7 +215,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     {
         auto it = serialization_infos.find(column.name);
         return it == serialization_infos.end()
-            ? column.type->getSerialization(serialization_infos.getSettings())
+            ? column.type->getDefaultSerialization()
             : column.type->getSerialization(*it->second);
     };
 
@@ -252,7 +249,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
                 if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
                     return;
 
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", data_part_storage, data_part->storage.getSettings());
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", data_part_storage);
 
                 if (!stream_name)
                     throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,

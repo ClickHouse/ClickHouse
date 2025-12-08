@@ -19,9 +19,7 @@ class Docker:
         platforms: List[str]
 
     @classmethod
-    def build(
-        cls, config: "Docker.Config", digests, amd_only, arm_only, disable_push=False
-    ):
+    def build(cls, config: "Docker.Config", digests, amd_only, arm_only):
         from .result import Result
 
         sw = Utils.Stopwatch()
@@ -59,7 +57,7 @@ class Docker:
                     continue
                 platforms.append(platform)
 
-            command = f"docker buildx build --builder default {tags_substr} {from_tag} --platform {','.join(platforms)} --cache-to type=inline --cache-from type=registry,ref={config.name} {config.path} {'' if disable_push else ' --push'}"
+            command = f"docker buildx build --builder default {tags_substr} {from_tag} --platform {','.join(platforms)} --cache-to type=inline --cache-from type=registry,ref={config.name} {config.path} --push"
 
             return Result.from_commands_run(
                 name=name,

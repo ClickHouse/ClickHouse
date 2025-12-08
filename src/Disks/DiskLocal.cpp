@@ -27,8 +27,8 @@
 #include <IO/WriteHelpers.h>
 #include <pcg_random.hpp>
 #include <Common/logger_useful.h>
-#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
 
 
 namespace CurrentMetrics
@@ -279,6 +279,12 @@ void DiskLocal::createDirectory(const String & path)
 void DiskLocal::createDirectories(const String & path)
 {
     fs::create_directories(fs::path(disk_path) / path);
+}
+
+void DiskLocal::clearDirectory(const String & path)
+{
+    for (const auto & entry : fs::directory_iterator(fs::path(disk_path) / path))
+        (void)fs::remove(entry.path());
 }
 
 void DiskLocal::moveDirectory(const String & from_path, const String & to_path)
