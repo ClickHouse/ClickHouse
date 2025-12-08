@@ -180,7 +180,7 @@ void DB::PrometheusHTTPProtocolAPI::writeScalarResult(WriteBuffer & response, co
         // Write timestamp
         const auto & time_column = result_block.getByName(TimeSeriesColumnNames::Time).column;
         auto time = time_column->getFloat64(0);
-        writeString(std::to_string(time), response);
+        writeFloatText(time, response);
 
         writeString(",", response);
 
@@ -188,7 +188,7 @@ void DB::PrometheusHTTPProtocolAPI::writeScalarResult(WriteBuffer & response, co
         const auto & scalar_column = result_block.getByName(TimeSeriesColumnNames::Value).column;
         auto value = scalar_column->getFloat64(0);
         writeString("\"", response);
-        writeFloatText(std::round(value * 100.0) / 100.0, response);
+        writeFloatText(value, response);
         writeString("\"", response);
     }
 
@@ -220,7 +220,7 @@ void DB::PrometheusHTTPProtocolAPI::writeVectorResult(WriteBuffer & response, co
             // Write timestamp
             const auto & time_column = result_block.getByName(TimeSeriesColumnNames::Time).column;
             auto time = time_column->getFloat64(i);
-            writeFloatText(std::round(time * 100.0) / 100.0, response);
+            writeFloatText(time, response);
 
             writeString(",", response);
 
@@ -228,7 +228,7 @@ void DB::PrometheusHTTPProtocolAPI::writeVectorResult(WriteBuffer & response, co
             const auto & value_column = result_block.getByName(TimeSeriesColumnNames::Value).column;
             auto value = value_column->getFloat64(i);
             writeString("\"", response);
-            writeFloatText(std::round(value * 100.0) / 100.0, response);
+            writeFloatText(value, response);
             writeString("\"", response);
 
             writeString("]}", response);
@@ -330,7 +330,7 @@ void DB::PrometheusHTTPProtocolAPI::writeRangeQueryResponse(WriteBuffer & respon
                         writeString("[", response);
                         writeFloatText(timestamp_column.getFloat64(j), response);
                         writeString(",\"", response);
-                        writeFloatText(std::round(value_column.getFloat64(j) * 100.0) / 100.0, response);
+                        writeFloatText(value_column.getFloat64(j), response);
                         writeString("\"]", response);
                     }
                 }
