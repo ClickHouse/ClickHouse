@@ -44,12 +44,14 @@ struct CodecTraits<uint32_t>
     {
 #if defined(__x86_64__) || defined(_M_X64)
 #if defined(__AVX512F__)
-        avx512pack(p, reinterpret_cast<__m512i*>(out), bits);
-        return static_cast<uint32_t>();
+        auot * m512i_out = reinterpret_cast<__m512i*>(out);
+        avx512pack(p, m512i_out, bits);
+        return static_cast<uint32_t>(m512i_out - reinterpret_cast<__m512i*>(out));
 #endif
 #if defined(__AVX2__)
-        const auto * end = avxpack(p, reinterpret_cast<__m256i*>(out), bits);
-        return static_cast<uint32_t>(end - out);
+        auto * m256i_out = reinterpret_cast<__m256i*>(out);
+        avxpack(p, m256i_out, bits);
+        return static_cast<uint32_t>(m256i_out - reinterpret_cast<__m256i*>(out));
 #endif
 #if defined(__SSE4_1__)
         auto * m128_out = reinterpret_cast<__m128i*>(out);
@@ -64,12 +66,14 @@ struct CodecTraits<uint32_t>
     {
 #if defined(__x86_64__) || defined(_M_X64)
 #if defined(__AVX512F__)
-        avx512unpack(p, reinterpret_cast<__m512i*>(out), bits);
-        return n * bits;
+        auot * m512i_out = reinterpret_cast<__m512i*>(out);
+        avx512unpack(p, m512i_out, bits);
+        return static_cast<uint32_t>(m512i_out - reinterpret_cast<__m512i*>(out));
 #endif
 #if defined(__AVX2__)
-        avxunpack(p, reinterpret_cast<__m256i*>(out), bits);
-        return n * bits;
+        auto * m256i_out = reinterpret_cast<__m256i*>(out);
+        avxunpack(p, m256i_out, bits);
+        return static_cast<uint32_t>(m256i_out - reinterpret_cast<__m256i*>(out));
 #endif
 #if defined(__SSE4_1__)
         auto * m128i_p = reinterpret_cast<__m128i*>(p);
