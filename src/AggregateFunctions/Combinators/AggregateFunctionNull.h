@@ -375,12 +375,21 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
-        const IColumn * nested_column = &column->getNestedColumn();
-        if (!column->isNullAt(row_num))
+        /// Column may not be ColumnNullable when called from addBatchSparse with sparse column values
+        if (const auto * column = typeid_cast<const ColumnNullable *>(columns[0]))
         {
+            if (!column->isNullAt(row_num))
+            {
+                const IColumn * nested_column = &column->getNestedColumn();
+                this->setFlag(place);
+                this->nested_function->add(this->nestedPlace(place), &nested_column, row_num, arena);
+            }
+        }
+        else
+        {
+            /// Not a ColumnNullable - all values are non-null
             this->setFlag(place);
-            this->nested_function->add(this->nestedPlace(place), &nested_column, row_num, arena);
+            this->nested_function->add(this->nestedPlace(place), columns, row_num, arena);
         }
     }
 
@@ -392,16 +401,29 @@ public:
         Arena * arena,
         ssize_t if_argument_pos = -1) const override
     {
-        const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
-        const IColumn * nested_column = &column->getNestedColumn();
-        const UInt8 * null_map = column->getNullMapData().data();
+        /// Column may not be ColumnNullable when called from addBatchSparseSinglePlace
+        if (const auto * column = typeid_cast<const ColumnNullable *>(columns[0]))
+        {
+            const IColumn * nested_column = &column->getNestedColumn();
+            const UInt8 * null_map = column->getNullMapData().data();
 
-        this->nested_function->addBatchSinglePlaceNotNull(
-            row_begin, row_end, this->nestedPlace(place), &nested_column, null_map, arena, if_argument_pos);
+            this->nested_function->addBatchSinglePlaceNotNull(
+                row_begin, row_end, this->nestedPlace(place), &nested_column, null_map, arena, if_argument_pos);
 
-        if constexpr (result_is_nullable)
-            if (!memoryIsByte(null_map, row_begin, row_end, 1))
-                this->setFlag(place);
+            if constexpr (result_is_nullable)
+                if (!memoryIsByte(null_map, row_begin, row_end, 1))
+                    this->setFlag(place);
+        }
+        else
+        {
+            /// Not a ColumnNullable - all values are non-null
+            this->nested_function->addBatchSinglePlace(
+                row_begin, row_end, this->nestedPlace(place), columns, arena, if_argument_pos);
+
+            if constexpr (result_is_nullable)
+                if (row_end > row_begin)
+                    this->setFlag(place);
+        }
     }
 
     void addManyDefaults(
@@ -422,7 +444,6 @@ public:
         const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
         const auto & offsets = column_sparse.getOffsetsData();
         const auto & values = column_sparse.getValuesColumn();
-        const auto * nested_column = &assert_cast<const ColumnNullable &>(values).getNestedColumn();
 
         auto from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin() + 1;
         auto to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin() + 1;
@@ -431,6 +452,15 @@ public:
             return;
 
         this->setFlag(place);
+
+        /// Sparse column's values may not be wrapped in ColumnNullable even if the type is Nullable
+        /// (e.g., when all non-default values are non-null)
+        const IColumn * nested_column;
+        if (const auto * nullable_values = typeid_cast<const ColumnNullable *>(&values))
+            nested_column = &nullable_values->getNestedColumn();
+        else
+            nested_column = &values;
+
         this->nested_function->addBatchSinglePlace(from, to, this->nestedPlace(place), &nested_column, arena, -1);
     }
 
@@ -445,10 +475,17 @@ public:
         const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
         const auto & offsets = column_sparse.getOffsetsData();
         const auto & values = column_sparse.getValuesColumn();
-        const auto * nested_column = &assert_cast<const ColumnNullable &>(values).getNestedColumn();
 
         size_t from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin();
         size_t to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin();
+
+        /// Sparse column's values may not be wrapped in ColumnNullable even if the type is Nullable
+        /// (e.g., when all non-default values are non-null)
+        const IColumn * nested_column;
+        if (const auto * nullable_values = typeid_cast<const ColumnNullable *>(&values))
+            nested_column = &nullable_values->getNestedColumn();
+        else
+            nested_column = &values;
 
         for (size_t i = from; i < to; ++i)
         {
