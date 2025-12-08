@@ -77,7 +77,8 @@ namespace
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                auto str_view = col->getDataAt(i);
+                auto str_ref = col->getDataAt(i);
+                std::string_view str_view(str_ref.data, str_ref.size);
                 bool ok = parser.parse(std::move(str_view), element);
                 if (!ok || !element.isArray())
                 {

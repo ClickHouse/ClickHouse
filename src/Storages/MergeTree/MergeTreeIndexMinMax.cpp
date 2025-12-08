@@ -23,12 +23,6 @@ MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(const String & index_na
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
 {
-    for (size_t i = 0; i < index_sample_block.columns(); ++i)
-    {
-        const DataTypePtr & type = index_sample_block.getByPosition(i).type;
-        serializations.push_back(type->getDefaultSerialization());
-    }
-    datatypes = index_sample_block.getDataTypes();
 }
 
 MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(
@@ -39,12 +33,6 @@ MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(
     , index_sample_block(index_sample_block_)
     , hyperrectangle(std::move(hyperrectangle_))
 {
-    for (size_t i = 0; i < index_sample_block.columns(); ++i)
-    {
-        const DataTypePtr & type = index_sample_block.getByPosition(i).type;
-        serializations.push_back(type->getDefaultSerialization());
-    }
-    datatypes = index_sample_block.getDataTypes();
 }
 
 void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
@@ -54,8 +42,11 @@ void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
 
     for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
-        serializations[i]->serializeBinary(hyperrectangle[i].left, ostr, {});
-        serializations[i]->serializeBinary(hyperrectangle[i].right, ostr, {});
+        const DataTypePtr & type = index_sample_block.getByPosition(i).type;
+        auto serialization = type->getDefaultSerialization();
+
+        serialization->serializeBinary(hyperrectangle[i].left, ostr, {});
+        serialization->serializeBinary(hyperrectangle[i].right, ostr, {});
     }
 }
 
@@ -65,15 +56,19 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
     Field min_val;
     Field max_val;
 
+    FormatSettings format_settings;
     for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
+        const DataTypePtr & type = index_sample_block.getByPosition(i).type;
+        auto serialization = type->getDefaultSerialization();
+
         switch (version)
         {
             case 1:
-                if (!datatypes[i]->isNullable())
+                if (!type->isNullable())
                 {
-                    serializations[i]->deserializeBinary(min_val, istr, format_settings);
-                    serializations[i]->deserializeBinary(max_val, istr, format_settings);
+                    serialization->deserializeBinary(min_val, istr, format_settings);
+                    serialization->deserializeBinary(max_val, istr, format_settings);
                 }
                 else
                 {
@@ -87,8 +82,8 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
                     readBinary(is_null, istr);
                     if (!is_null)
                     {
-                        serializations[i]->deserializeBinary(min_val, istr, format_settings);
-                        serializations[i]->deserializeBinary(max_val, istr, format_settings);
+                        serialization->deserializeBinary(min_val, istr, format_settings);
+                        serialization->deserializeBinary(max_val, istr, format_settings);
                     }
                     else
                     {
@@ -100,8 +95,8 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
 
             /// New format with proper Nullable support for values that includes Null values
             case 2:
-                serializations[i]->deserializeBinary(min_val, istr, format_settings);
-                serializations[i]->deserializeBinary(max_val, istr, format_settings);
+                serialization->deserializeBinary(min_val, istr, format_settings);
+                serialization->deserializeBinary(max_val, istr, format_settings);
 
                 // NULL_LAST
                 if (min_val.isNull())
@@ -196,10 +191,10 @@ bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
          KeyCondition::RPNElement::ALWAYS_FALSE});
 }
 
-bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
+bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
     const MergeTreeIndexGranuleMinMax & granule = typeid_cast<const MergeTreeIndexGranuleMinMax &>(*idx_granule);
-    return condition.checkInHyperrectangle(granule.hyperrectangle, index_data_types, {}, update_partial_disjunction_result_fn).can_be_true;
+    return condition.checkInHyperrectangle(granule.hyperrectangle, index_data_types).can_be_true;
 }
 
 
@@ -209,7 +204,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexMinMax::createIndexGranule() const
 }
 
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
 {
     return std::make_shared<MergeTreeIndexAggregatorMinMax>(index.name, index.sample_block);
 }

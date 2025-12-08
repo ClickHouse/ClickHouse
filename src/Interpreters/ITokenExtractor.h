@@ -16,11 +16,11 @@ struct ITokenExtractor
 public:
     enum class Type
     {
-        SplitByNonAlpha,
-        Ngrams,
-        SplitByString,
-        Array,
-        SparseGrams,
+        Default,
+        Ngram,
+        Split,
+        NoOp,
+        SparseGram,
     };
 
     ITokenExtractor() = default;
@@ -160,9 +160,9 @@ private:
 
 
 /// Parser extracting all ngrams from string.
-struct NgramsTokenExtractor final : public ITokenExtractorHelper<NgramsTokenExtractor>
+struct NgramTokenExtractor final : public ITokenExtractorHelper<NgramTokenExtractor>
 {
-    explicit NgramsTokenExtractor(size_t n_) : ITokenExtractorHelper(Type::Ngrams), n(n_) {}
+    explicit NgramTokenExtractor(size_t n_) : ITokenExtractorHelper(Type::Ngram), n(n_) {}
 
     static const char * getName() { return "ngrambf_v1"; }
     static const char * getExternalName() { return "ngrams"; }
@@ -178,9 +178,9 @@ private:
 };
 
 /// Parser extracting tokens which consist of alphanumeric ASCII characters or Unicode characters (not necessarily alphanumeric)
-struct SplitByNonAlphaTokenExtractor final : public ITokenExtractorHelper<SplitByNonAlphaTokenExtractor>
+struct DefaultTokenExtractor final : public ITokenExtractorHelper<DefaultTokenExtractor>
 {
-    SplitByNonAlphaTokenExtractor() : ITokenExtractorHelper(Type::SplitByNonAlpha) {}
+    DefaultTokenExtractor() : ITokenExtractorHelper(Type::Default) {}
 
     static const char * getName() { return "tokenbf_v1"; }
     static const char * getExternalName() { return "splitByNonAlpha"; }
@@ -196,9 +196,9 @@ struct SplitByNonAlphaTokenExtractor final : public ITokenExtractorHelper<SplitB
 
 /// Parser extracting tokens which are separated by certain strings.
 /// Allows to emulate e.g. BigQuery's LOG_ANALYZER.
-struct SplitByStringTokenExtractor final : public ITokenExtractorHelper<SplitByStringTokenExtractor>
+struct SplitTokenExtractor final : public ITokenExtractorHelper<SplitTokenExtractor>
 {
-    explicit SplitByStringTokenExtractor(const std::vector<String> & separators_) : ITokenExtractorHelper(Type::SplitByString), separators(separators_) {}
+    explicit SplitTokenExtractor(const std::vector<String> & separators_) : ITokenExtractorHelper(Type::Split), separators(separators_) {}
 
     static const char * getName() { return "splitByString"; }
     static const char * getExternalName() { return getName(); }
@@ -212,9 +212,9 @@ private:
 };
 
 /// Parser doing "no operation". Returns the entire input as a single token.
-struct ArrayTokenExtractor final : public ITokenExtractorHelper<ArrayTokenExtractor>
+struct NoOpTokenExtractor final : public ITokenExtractorHelper<NoOpTokenExtractor>
 {
-    ArrayTokenExtractor() : ITokenExtractorHelper(Type::Array) {}
+    NoOpTokenExtractor() : ITokenExtractorHelper(Type::NoOp) {}
 
     static const char * getName() { return "array"; }
     static const char * getExternalName() { return getName(); }
@@ -227,9 +227,9 @@ struct ArrayTokenExtractor final : public ITokenExtractorHelper<ArrayTokenExtrac
 
 /// Parser extracting sparse grams (the same as function sparseGrams).
 /// See sparseGrams.h for more details.
-struct SparseGramsTokenExtractor final : public ITokenExtractorHelper<SparseGramsTokenExtractor>
+struct SparseGramTokenExtractor final : public ITokenExtractorHelper<SparseGramTokenExtractor>
 {
-    explicit SparseGramsTokenExtractor(size_t min_length = 3, size_t max_length = 100, std::optional<size_t> min_cutoff_length_ = std::nullopt);
+    explicit SparseGramTokenExtractor(size_t min_length = 3, size_t max_length = 100, std::optional<size_t> min_cutoff_length_ = std::nullopt);
 
     static const char * getBloomFilterIndexName() { return "sparse_grams"; }
     static const char * getName() { return "sparseGrams"; }
@@ -282,37 +282,40 @@ void forEachTokenCase(const ITokenExtractor & extractor, const char * __restrict
 
     switch (extractor.getType())
     {
-        case ITokenExtractor::Type::SplitByNonAlpha:
+        case ITokenExtractor::Type::Default:
         {
-            const auto & split_by_non_alpha_extractor = assert_cast<const SplitByNonAlphaTokenExtractor &>(extractor);
-            forEachTokenImpl<is_padded>(split_by_non_alpha_extractor, data, length, callback);
+            const auto & default_extractor = assert_cast<const DefaultTokenExtractor &>(extractor);
+            forEachTokenImpl<is_padded>(default_extractor, data, length, callback);
             return;
         }
-        case ITokenExtractor::Type::Ngrams:
+        case ITokenExtractor::Type::Ngram:
         {
-            const auto & ngrams_tokenizer = assert_cast<const NgramsTokenExtractor &>(extractor);
+            const auto & ngram_extractor = assert_cast<const NgramTokenExtractor &>(extractor);
 
-            if (length < ngrams_tokenizer.getN())
+            if (length < ngram_extractor.getN())
+            {
+                callback(data, length);
                 return;
+            }
 
-            forEachTokenImpl<is_padded>(ngrams_tokenizer, data, length, callback);
+            forEachTokenImpl<is_padded>(ngram_extractor, data, length, callback);
             return;
         }
-        case ITokenExtractor::Type::SplitByString:
+        case ITokenExtractor::Type::Split:
         {
-            const auto & split_by_string_extractor = assert_cast<const SplitByStringTokenExtractor &>(extractor);
-            forEachTokenImpl<is_padded>(split_by_string_extractor, data, length, callback);
+            const auto & split_extractor = assert_cast<const SplitTokenExtractor &>(extractor);
+            forEachTokenImpl<is_padded>(split_extractor, data, length, callback);
             return;
         }
-        case ITokenExtractor::Type::Array:
+        case ITokenExtractor::Type::NoOp:
         {
             callback(data, length);
             return;
         }
-        case ITokenExtractor::Type::SparseGrams:
+        case ITokenExtractor::Type::SparseGram:
         {
-            const auto & sparse_grams_extractor = assert_cast<const SparseGramsTokenExtractor &>(extractor);
-            forEachTokenImpl<is_padded>(sparse_grams_extractor, data, length, callback);
+            const auto & sparse_gram_extractor = assert_cast<const SparseGramTokenExtractor &>(extractor);
+            forEachTokenImpl<is_padded>(sparse_gram_extractor, data, length, callback);
             return;
         }
     }

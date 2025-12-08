@@ -2,7 +2,7 @@
 #include <algorithm>
 
 #include <Disks/IO/createReadBufferFromFileBase.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
+#include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <IO/BoundedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
@@ -1275,7 +1275,7 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
         resetWorkingBuffer();
 
     first_offset = file_offset_of_buffer_end = new_pos;
-    file_segments = nullptr;
+    file_segments.reset();
     implementation_buffer.reset();
     cache_file_reader.reset();
     initialized = false;
@@ -1311,7 +1311,7 @@ void CachedOnDiskReadBufferFromFile::setReadUntilPosition(size_t position)
 
     file_offset_of_buffer_end = getPosition();
     resetWorkingBuffer();
-    file_segments = nullptr;
+    file_segments.reset();
     implementation_buffer.reset();
     initialized = false;
     cache_file_reader.reset();

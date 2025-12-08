@@ -36,7 +36,6 @@ from integration.helpers.s3_tools import (
 )
 from integration.helpers.config_cluster import minio_access_key, minio_secret_key
 from generators import Generator, BuzzHouseGenerator
-from leaks import ElOracloDeLeaks
 from oracles import ElOraculoDeTablas
 from properties import (
     modify_server_settings,
@@ -310,20 +309,6 @@ parser.add_argument(
     type=pathlib.Path,
     help="With Unity catalog for Spark, path to Unity dir",
 )
-parser.add_argument(
-    "--with-leak-detection", action="store_true", help="Check for memory leaks"
-)
-parser.add_argument(
-    "--time-between-leak-detections",
-    type=ordered_pair,
-    default=(20, 30),
-    help="In seconds. Two ordered integers separated by comma (e.g., 30,60)",
-)
-parser.add_argument(
-    "--set-shared-mergetree-disk",
-    action="store_true",
-    help="Set shared merge tree disk or policy",
-)
 
 args = parser.parse_args()
 
@@ -363,8 +348,8 @@ os.environ["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = server_path
 
 # Find if private binary is being used
 is_private_binary = False
-with open(current_server, "rb") as f:
-    mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+with open(current_server, "r+") as f:
+    mm = mmap.mmap(f.fileno(), 0)
     is_private_binary = mm.find(b"isCoordinatedMergesTasksActivated") > -1
     mm.close()
 
@@ -490,7 +475,7 @@ catalog_server = create_spark_http_server(cluster, args.with_unity, test_env_var
 # Start the load generator, at the moment only BuzzHouse is available
 generator: Generator = Generator(pathlib.Path(), pathlib.Path(), None)
 if args.generator == "buzzhouse":
-    generator = BuzzHouseGenerator(args, cluster, catalog_server, server_settings)
+    generator = BuzzHouseGenerator(args, cluster, catalog_server)
 logger.info("Start load generator")
 client = generator.run_generator(servers[0], logger, args)
 
@@ -568,60 +553,25 @@ if args.with_redis:
 # This is the main loop, run while client and server are running
 all_running = True
 tables_oracle: ElOraculoDeTablas = ElOraculoDeTablas()
-# Shutdown info
 lower_bound, upper_bound = args.time_between_shutdowns
 integration_lower_bound, integration_upper_bound = (
     args.time_between_integration_shutdowns
 )
-# Leak detection
-leak_detector: ElOracloDeLeaks = ElOracloDeLeaks()
-leak_lower_bound, leak_upper_bound = args.time_between_leak_detections
-if args.with_leak_detection:
-    leak_detector.reset_and_capture_baseline(cluster)
-
-
-def explain_returncode(rc: int) -> str:
-    if rc == 0:
-        return "successfully (0)."
-    if rc < 0:
-        sig = -rc
-        try:
-            name = signal.Signals(sig).name
-        except ValueError:
-            name = f"SIG{sig}"
-        try:
-            reason = signal.strsignal(sig)  # Py3.8+ (wording varies by platform)
-        except Exception:
-            reason = ""
-        extra = f" - {reason}" if reason else ""
-        return f"terminated by signal {sig} ({name}){extra}."
-    return f"with status {rc}."
-
-
 while all_running:
     start = time.time()
     finish = start + random.randint(lower_bound, upper_bound)
-    next_leak_detection = start + random.randint(leak_lower_bound, leak_upper_bound)
 
     while all_running and start < finish:
         interval = 1
         if client.process.poll() is not None:
-            logger.info(
-                f"Load generator finished {explain_returncode(client.process.returncode)}"
-            )
+            logger.info("Load generator finished")
             all_running = False
         for server in servers:
-            pid = server.get_process_pid("clickhouse")
-            if pid is None:
+            try:
+                server.query("SELECT 1;")
+            except:
                 logger.info(f"The server {server.name} is not running")
                 all_running = False
-        if (
-            all_running
-            and args.with_leak_detection
-            and next_leak_detection < time.time()
-        ):
-            leak_detector.run_next_leak_detection(cluster, client)
-            next_leak_detection += random.randint(leak_lower_bound, leak_upper_bound)
         time.sleep(interval)
         start += interval
 
@@ -665,9 +615,6 @@ while all_running:
             os.rename(new_temp_server_path, server_path)
         time.sleep(15)  # Let the zookeeper session expire
         next_pick.start_clickhouse(start_wait_sec=10, retry_start=False)
-        if args.with_leak_detection and next_pick.name == "node0":
-            # Has to reset leak detector
-            leak_detector.reset_and_capture_baseline(cluster)
     elif len(integrations) > 0:
         # Restart any other integration
         next_pick = random.choice(integrations)

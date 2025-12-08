@@ -56,8 +56,10 @@ class Result(MetaClasses.Serializable):
         ERROR = "ERROR"
 
     class Label:
-        OK_ON_RETRY = "retry_ok"
-        FAILED_ON_RETRY = "retry_failed"
+        REQUIRED = "required"
+        NOT_REQUIRED = "not required"
+        FLAKY = "flaky"
+        BROKEN = "broken"
 
     name: str
     status: str
@@ -174,9 +176,6 @@ class Result(MetaClasses.Serializable):
     def is_running(self):
         return self.status in (Result.Status.RUNNING,)
 
-    def is_pending(self):
-        return self.status in (Result.Status.PENDING,)
-
     def is_ok(self):
         return self.status in (
             Result.Status.SKIPPED,
@@ -184,9 +183,6 @@ class Result(MetaClasses.Serializable):
             Result.StatusExtended.OK,
             Result.StatusExtended.SKIPPED,
         )
-
-    def is_success(self):
-        return self.status in (Result.Status.SUCCESS, Result.StatusExtended.OK)
 
     def is_failure(self):
         return self.status in (Result.Status.FAILED, Result.StatusExtended.FAIL)
@@ -254,6 +250,12 @@ class Result(MetaClasses.Serializable):
                 total += 1
             self.set_info(f"Failures: {fail_cnt}/{total}")
 
+        if not self.is_ok():
+            # Suggest local command to rerun
+            command_info = f'To run locally: python -m ci.praktika run "{self.name}"'
+            command_info += f" --test TEST_NAME_1..TEST_NAME_N"
+            self.set_info(command_info)
+
         return self
 
     @classmethod
@@ -309,39 +311,17 @@ class Result(MetaClasses.Serializable):
             self.ext["labels"] = []
         self.ext["labels"].append(label)
 
-    def set_comment(self, comment):
-        self.ext["comment"] = comment
-
     def set_clickable_label(self, label, link):
         if not self.ext.get("hlabels", None):
             self.ext["hlabels"] = []
-        for i, (existing_label, existing_link) in enumerate(self.ext["hlabels"]):
-            if existing_label == label:
-                if existing_link != link:
-                    print(
-                        f"WARNING: Updating hlabel '{label}' from '{existing_link}' to '{link}'"
-                    )
-                    self.ext["hlabels"][i] = (label, link)
-                return
         self.ext["hlabels"].append((label, link))
 
-    def get_hlabel_link(self, label):
-        if not self.ext.get("hlabels", None):
-            return None
-        for hlabel in self.ext["hlabels"]:
-            if hlabel[0] == label:
-                return hlabel[1]
-        return None
+    def set_required_label(self):
+        self.set_label(self.Label.REQUIRED)
 
     @classmethod
     def from_pytest_run(
-        cls,
-        command,
-        cwd=None,
-        name="Tests",
-        env=None,
-        pytest_report_file=None,
-        logfile=None,
+        cls, command, cwd=None, name="Tests", env=None, pytest_report_file=None
     ):
         """
         Runs a pytest command, captures results in jsonl format, and creates a Result object.
@@ -351,26 +331,21 @@ class Result(MetaClasses.Serializable):
             cwd (str, optional): Working directory to run the command in
             name (str, optional): Name for the root Result object
             env (dict, optional): Environment variables for the pytest command
-            pytest_report_file (str, optional): Path to write the pytest jsonl report
-            logfile (str, optional): Path to write pytest output logs
+            verbose (bool, optional): Whether to print pytest output to console
 
         Returns:
             Result: A Result object with test cases as sub-Results
         """
         sw = Utils.Stopwatch()
-        files = []
         if pytest_report_file:
-            files.append(pytest_report_file)
+            files = [pytest_report_file]
         else:
+            files = []
             pytest_report_file = ResultTranslator.PYTEST_RESULT_FILE
-        if logfile:
-            files.append(logfile)
 
         with ContextManager.cd(cwd):
             # Construct the full pytest command with jsonl report
             full_command = f"pytest {command} --report-log={pytest_report_file}"
-            if logfile:
-                full_command += f" --log-file={logfile}"
 
             # Apply environment
             for key, value in (env or {}).items():
@@ -450,11 +425,13 @@ class Result(MetaClasses.Serializable):
         assert self.results, "BUG?"
         for i, result_ in enumerate(self.results):
             if result_.name == result.name:
-                if result_.is_skipped() and result.is_dropped():
+                if result_.is_skipped():
                     # job was skipped in workflow configuration by a user' hook
                     print(
                         f"NOTE: Job [{result.name}] has completed status [{result_.status}] - do not switch status to [{result.status}]"
                     )
+                    if not result.is_dropped():
+                        print(f"ERROR: Unexpected new result status [{result.status}]")
                     continue
                 if drop_nested_results:
                     # self.results[i] = self._filter_out_ok_results(result)
@@ -550,14 +527,15 @@ class Result(MetaClasses.Serializable):
                 f"chmod +x {unit_tests_path}",
                 command,
             ],
+            with_log=with_log,
         )
         is_error = not result.is_ok()
         status, results, info = ResultTranslator.from_gtest()
         result.set_status(status).set_results(results).set_info(info)
-        if is_error and result.is_ok():
+        if is_error:
             # test cases can be OK but gtest binary run failed, for instance due to sanitizer error
             result.set_info("gtest binary run has non-zero exit code - see logs")
-            result.set_status(Result.Status.ERROR)
+            result.set_status(Result.Status.FAILED)
         return result
 
     @classmethod
@@ -621,25 +599,16 @@ class Result(MetaClasses.Serializable):
                     # If command is a Python function, call it with provided arguments
                     if with_info or with_info_on_failure:
                         buffer = io.StringIO()
-                    else:
-                        buffer = "stdout"
-                    try:
                         with Utils.Tee(stdout=buffer):
                             result = command_(*command_args, **command_kwargs)
-                    except Exception as e:
-                        result = False
-                        info_lines.extend(
-                            [
-                                f"Command [{command_}] failed with exception [{e}]:",
-                                *traceback.format_exc().splitlines(),
-                            ]
-                        )
+                    else:
+                        result = command_(*command_args, **command_kwargs)
                     res = result if isinstance(result, bool) else not bool(result)
                     if (with_info_on_failure and not res) or with_info:
                         if isinstance(result, bool):
-                            info_lines.extend(buffer.getvalue().splitlines())
+                            info_lines = buffer.getvalue().splitlines()
                         else:
-                            info_lines.extend(str(result).splitlines())
+                            info_lines = str(result).splitlines()
                 else:
                     # Run shell command in a specified directory with logging and verbosity
                     exit_code = Shell.run(
@@ -683,21 +652,12 @@ class Result(MetaClasses.Serializable):
         return self.ext.get("do_not_block_pipeline_on_failure", False)
 
     def complete_job(
-        self,
-        with_job_summary_in_info=True,
-        do_not_block_pipeline_on_failure=False,
-        disable_attached_files_sorting=False,
+        self, with_job_summary_in_info=True, do_not_block_pipeline_on_failure=False
     ):
         if with_job_summary_in_info:
             self._add_job_summary_to_info()
         if do_not_block_pipeline_on_failure and not self.is_ok():
             self.ext["do_not_block_pipeline_on_failure"] = True
-        if not disable_attached_files_sorting:
-            try:
-                # Normalize to string and sort by filename case-insensitively
-                self.files.sort(key=lambda f: Path(str(f)).name.lower())
-            except Exception as e:
-                print(f"WARNING: Failed to sort attached files: {e}")
         self.dump()
         print(self.to_stdout_formatted())
         if not self.is_ok():
@@ -705,69 +665,33 @@ class Result(MetaClasses.Serializable):
         else:
             sys.exit(0)
 
-    def to_stdout_formatted(
-        self,
-        indent="",
-        output="",
-        max_info_lines_cnt=100,
-        truncate_from_top=True,
-        max_line_length=0,
-    ):
-        """
-        Format the result and its sub-results as a human-readable string for stdout output.
-
-        Args:
-            indent: Current indentation level (used for nested results)
-            output: Accumulated output string (used for recursive calls)
-            max_info_lines_cnt: Maximum number of info lines to display
-            truncate_from_top: If True, truncate from the top; if False, truncate from the bottom
-            max_line_length: Maximum length of each line (0 means no limit)
-
-        Returns:
-            Formatted string representation of the result
-        """
-        add_frame = not output
+    def to_stdout_formatted(self, indent="", res=""):
+        add_frame = not res
         sub_indent = indent + "  "
 
         if add_frame:
-            output = indent + "+" * 80 + "\n"
-
+            res = "+" * 80 + "\n"
         if add_frame or not self.is_ok():
-            output += f"{indent}{self.status} [{self.name}]\n"
+            res += f"{indent}{self.status} [{self.name}]\n"
             info_lines = self.info.splitlines()
-
-            # Truncate info lines if too many
-            if len(info_lines) > max_info_lines_cnt:
-                truncated_count = len(info_lines) - max_info_lines_cnt
-                if truncate_from_top:
-                    info_lines = [
-                        f"~~~~~ truncated {truncated_count} lines ~~~~~"
-                    ] + info_lines[-max_info_lines_cnt:]
-                else:
-                    info_lines = info_lines[:max_info_lines_cnt] + [
-                        f"~~~~~ truncated {truncated_count} lines ~~~~~"
+            if len(info_lines) > 30:
+                info_lines = (
+                    info_lines[:10]
+                    + [
+                        f"~~~~~ truncated {len(info_lines) - 20} lines ~~~~~",
                     ]
-
+                    + info_lines[-10:]
+                )
             for line in info_lines:
-                if max_line_length > 0 and len(line) > max_line_length:
-                    line = line[:max_line_length] + "..."
-                output += f"{sub_indent}| {line}\n"
+                res += f"{sub_indent}| {line}\n"
 
-        # Recursively format sub-results if this result is not ok
         if not self.is_ok():
             for sub_result in self.results:
-                output = sub_result.to_stdout_formatted(
-                    indent=sub_indent,
-                    output=output,
-                    max_info_lines_cnt=max_info_lines_cnt,
-                    truncate_from_top=truncate_from_top,
-                    max_line_length=max_line_length,
-                )
+                res = sub_result.to_stdout_formatted(sub_indent, res)
 
         if add_frame:
-            output += indent + "+" * 80 + "\n"
-
-        return output
+            res += "+" * 80 + "\n"
+        return res
 
     def get_sub_result_by_name(self, name, recursive=False) -> Optional["Result"]:
         if not name:
@@ -1175,13 +1099,13 @@ class ResultTranslator:
         )
 
     @classmethod
-    def from_pytest_jsonl(cls, pytest_report_file, enable_capture_output_to_info=False):
+    def from_pytest_jsonl(cls, pytest_report_file):
         """
         Parses a pytest jsonl report file and creates a hierarchical Result object.
 
         Args:
-            pytest_report_file (str): Path to the pytest jsonl report file
-            enable_capture_output_to_info (bool): Whether to capture test output in Result.info
+            jsonl_path (str): Path to the pytest jsonl report file
+            name (str): Name for the root Result object
 
         Returns:
             List[Result]: A list of Result objects representing individual test cases
@@ -1285,22 +1209,21 @@ class ResultTranslator:
                                             info_parts.append(lr_txt)
                                     except Exception:
                                         pass
-                                if enable_capture_output_to_info:
-                                    # Sections (captured output) if any
-                                    sections = entry.get("sections", [])
-                                    try:
-                                        sec_chunks = []
-                                        for sec in sections:
-                                            if isinstance(sec, list) and len(sec) == 2:
-                                                title, content = sec
-                                                if content:
-                                                    sec_chunks.append(
-                                                        f"===== {title} =====\n{content}"
-                                                    )
-                                        if sec_chunks:
-                                            info_parts.append("\n".join(sec_chunks))
-                                    except Exception:
-                                        pass
+                                # Sections (captured output) if any
+                                sections = entry.get("sections", [])
+                                try:
+                                    sec_chunks = []
+                                    for sec in sections:
+                                        if isinstance(sec, list) and len(sec) == 2:
+                                            title, content = sec
+                                            if content:
+                                                sec_chunks.append(
+                                                    f"===== {title} =====\n{content}"
+                                                )
+                                    if sec_chunks:
+                                        info_parts.append("\n".join(sec_chunks))
+                                except Exception:
+                                    pass
 
                                 # Create a result for the module/node that failed to collect
                                 test_results[node_id or "<collection>"] = Result(
@@ -1477,11 +1400,7 @@ class ResultTranslator:
                                 test_failures[node_id][when] = status
 
                             # Include captured sections (stdout/stderr) for failures to help debugging
-                            if (
-                                outcome in ("failed", "error")
-                                and entry.get("sections")
-                                and enable_capture_output_to_info
-                            ):
+                            if outcome in ("failed", "error") and entry.get("sections"):
                                 try:
                                     sec_chunks = []
                                     for sec in entry.get("sections", []):
@@ -1534,7 +1453,11 @@ class ResultTranslator:
                                     Result.StatusExtended.ERROR,
                                 ):
                                     # For non-failures, prefer 'call' phase over others
-                                    if when == "call":
+                                    if (
+                                        when == "call"
+                                        or test_results[node_id].ext.get("when")
+                                        != "call"
+                                    ):
                                         test_results[node_id].status = status
                                         test_results[node_id].duration = duration
 

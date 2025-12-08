@@ -244,104 +244,6 @@ llvm::Value * ColumnVector<T>::compileComparator(llvm::IRBuilderBase & builder, 
 
 #endif
 
-MULTITARGET_FUNCTION_AVX512BW_AVX2(
-MULTITARGET_FUNCTION_HEADER(
-template <typename T>
-void), compareColumnImpl, MULTITARGET_FUNCTION_BODY((
-    const typename ColumnVector<T>::Container & data,
-    T value,
-    PaddedPODArray<Int8> & compare_results,
-    int direction,
-    int nan_direction_hint)
-{
-    auto * result_data = compare_results.data();
-    size_t num_rows = data.size();
-    /// 2 independent loops, otherwise the compiler does not vectorize it
-    if (direction < 0)
-    {
-        for (size_t row = 0; row < num_rows; row++)
-            result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(value, data[row], nan_direction_hint));
-    }
-    else
-    {
-        for (size_t row = 0; row < num_rows; row++)
-            result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(data[row], value, nan_direction_hint));
-    }
-})
-)
-
-template <typename T>
-void ColumnVector<T>::compareColumn(
-    const IColumn & rhs,
-    size_t rhs_row_num,
-    PaddedPODArray<UInt64> * row_indexes,
-    PaddedPODArray<Int8> & compare_results,
-    int direction,
-    int nan_direction_hint) const
-{
-    size_t num_rows = size();
-    if (compare_results.empty())
-        compare_results.resize(num_rows);
-    else if (compare_results.size() != num_rows)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Size of compare_results: {} doesn't match rows_num: {}", compare_results.size(), num_rows);
-
-    const auto & rhs_derived = static_cast<const ColumnVector<T> &>(rhs);
-    T value = rhs_derived.data[rhs_row_num];
-
-    /// We don't push the row_indexes part into compareColumnImpl because the code is not vectorized as-is, as it needs to
-    /// jump over the different indices to compare them
-    /// It could be rewritten to allow vectorization by reading all memory and then discarding results not in row_indexes
-    /// but I did not expect it to be worth the risk
-    if (row_indexes)
-    {
-        auto * result_data = compare_results.data();
-        UInt64 * next_index = row_indexes->data();
-        if (direction < 0)
-        {
-            for (auto row : *row_indexes)
-            {
-                result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(value, data[row], nan_direction_hint));
-                if (result_data[row] == 0)
-                {
-                    *next_index = row;
-                    ++next_index;
-                }
-            }
-        }
-        else
-        {
-            for (auto row : *row_indexes)
-            {
-                result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(data[row], value, nan_direction_hint));
-                if (result_data[row] == 0)
-                {
-                    *next_index = row;
-                    ++next_index;
-                }
-            }
-        }
-
-        size_t equal_row_indexes_size = next_index - row_indexes->data();
-        row_indexes->resize(equal_row_indexes_size);
-        return;
-    }
-
-#if USE_MULTITARGET_CODE
-    if (isArchSupported(TargetArch::AVX512BW))
-    {
-        compareColumnImplAVX512BW<T>(data, value, compare_results, direction, nan_direction_hint);
-        return;
-    }
-    if (isArchSupported(TargetArch::AVX2))
-    {
-        compareColumnImplAVX2<T>(data, value, compare_results, direction, nan_direction_hint);
-        return;
-    }
-#endif
-    compareColumnImpl<T>(data, value, compare_results, direction, nan_direction_hint);
-}
-
 template <typename T>
 void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                                     size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
@@ -523,7 +425,7 @@ size_t ColumnVector<T>::estimateCardinalityInPermutedRange(const IColumn::Permut
     for (size_t i = equal_range.from; i < equal_range.to; ++i)
     {
         size_t permuted_i = permutation[i];
-        std::string_view value = getDataAt(permuted_i);
+        StringRef value = getDataAt(permuted_i);
         elements.emplace(value, inserted);
     }
     return elements.size();
@@ -550,13 +452,11 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
 }
 
 template <typename T>
-DataTypePtr ColumnVector<T>::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options & options) const
+std::pair<String, DataTypePtr> ColumnVector<T>::getValueNameAndType(size_t n) const
 {
     chassert(n < data.size()); /// This assert is more strict than the corresponding assert inside PODArray.
     const auto & val = castToNearestFieldType(data[n]);
-    if (options.notFull(name_buf))
-        name_buf << FieldVisitorToString()(val);
-    return FieldToDataType()(val);
+    return {FieldVisitorToString()(val), FieldToDataType()(val)};
 }
 
 template <typename T>
