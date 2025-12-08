@@ -6,30 +6,49 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
+#include <Common/TargetSpecific.h>
 #include <Core/ColumnWithTypeAndName.h>
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
+MULTITARGET_FUNCTION_AVX512BW_AVX2(
+MULTITARGET_FUNCTION_HEADER(
 template <typename T>
-bool tryConvertColumnToBool(const IColumn & column, IColumnFilter & res)
+void), convertColumnToBoolImpl, MULTITARGET_FUNCTION_BODY((const typename ColumnVector<T>::Container & data, IColumnFilter & res)
+{
+    for (size_t i = 0; i < res.size(); ++i)
+        res[i] = static_cast<bool>(data[i]);
+})
+);
+
+template <typename T>
+ALWAYS_INLINE bool tryConvertColumnToBool(const IColumn & column, IColumnFilter & res)
 {
     const auto * column_typed = checkAndGetColumn<ColumnVector<T>>(&column);
     if (!column_typed)
         return false;
-
+    chassert(res.size() == column.size());
 
     auto & data = column_typed->getData();
-    size_t data_size = data.size();
-    res.resize(data_size);
-    for (size_t i = 0; i < data_size; ++i)
-        res[i] = static_cast<bool>(data[i]);
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::AVX512BW))
+    {
+        convertColumnToBoolImplAVX512BW<T>(data, res);
+        return true;
+    }
+    if (isArchSupported(TargetArch::AVX2))
+    {
+        convertColumnToBoolImplAVX2<T>(data, res);
+        return true;
+    }
+#endif
+    convertColumnToBoolImpl<T>(data, res);
 
     return true;
 }

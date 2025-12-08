@@ -10,6 +10,7 @@
 #include <Compression/getCompressionCodecForFile.h>
 #include <Core/Defines.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/NestedUtils.h>
 #include <IO/HashingWriteBuffer.h>
@@ -94,6 +95,11 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool replace_long_file_name_to_hash;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
+}
+
+namespace Setting
+{
+    extern const SettingsBool merge_tree_use_prefixes_deserialization_thread_pool;
 }
 
 namespace ErrorCodes
@@ -2739,7 +2745,8 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
     settings.can_read_part_without_marks = true;
     /// Use prefixes deserialization thread pool to read prefixes faster.
     /// In JSON type there might be hundreds of small files that needs to be read.
-    settings.use_prefixes_deserialization_thread_pool = true;
+    /// Set this to value from storage settings rather than true by default as this could cause starvation on huge JSON.
+    settings.use_prefixes_deserialization_thread_pool = storage.getContext()->getSettingsRef()[Setting::merge_tree_use_prefixes_deserialization_thread_pool];
 
     auto alter_conversions = std::make_shared<AlterConversions>();
     auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);

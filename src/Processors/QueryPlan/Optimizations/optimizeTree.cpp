@@ -71,6 +71,10 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.vector_search_filter_strategy,
         optimization_settings.use_index_for_in_with_subqueries_max_values,
         optimization_settings.network_transfer_limits,
+        optimization_settings.use_skip_indexes_for_top_k,
+        optimization_settings.use_top_k_dynamic_filtering,
+        optimization_settings.max_limit_for_top_k_optimization,
+        optimization_settings.use_skip_indexes_on_data_read,
     };
 
     while (!stack.empty())
@@ -196,6 +200,10 @@ void optimizeTreeSecondPass(
         optimization_settings.vector_search_filter_strategy,
         optimization_settings.use_index_for_in_with_subqueries_max_values,
         optimization_settings.network_transfer_limits,
+        optimization_settings.use_skip_indexes_for_top_k,
+        optimization_settings.use_top_k_dynamic_filtering,
+        optimization_settings.max_limit_for_top_k_optimization,
+        optimization_settings.use_skip_indexes_on_data_read,
     };
 
     Stack stack;
@@ -285,10 +293,10 @@ void optimizeTreeSecondPass(
         [&](auto & frame_node)
         {
             if (optimization_settings.read_in_order)
-                optimizeReadInOrder(frame_node, nodes);
+                optimizeReadInOrder(frame_node, nodes, optimization_settings);
 
             if (optimization_settings.distinct_in_order)
-                optimizeDistinctInOrder(frame_node, nodes);
+                optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
         });
 
     stack.push_back({.node = &root});
@@ -317,7 +325,7 @@ void optimizeTreeSecondPass(
                 }
 
                 if (optimization_settings.aggregation_in_order)
-                    optimizeAggregationInOrder(*frame.node, nodes);
+                    optimizeAggregationInOrder(*frame.node, nodes, optimization_settings);
             }
 
             /// Traverse all children first.

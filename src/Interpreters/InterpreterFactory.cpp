@@ -75,6 +75,7 @@ namespace ProfileEvents
 {
     extern const Event Query;
     extern const Event InitialQuery;
+    extern const Event InitialSelectQuery;
     extern const Event QueriesWithSubqueries;
     extern const Event SelectQuery;
     extern const Event InsertQuery;
@@ -111,7 +112,11 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
 {
     ProfileEvents::increment(ProfileEvents::Query);
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    {
         ProfileEvents::increment(ProfileEvents::InitialQuery);
+         if (!query || query->as<ASTSelectQuery>() || query->as<ASTSelectWithUnionQuery>())
+            ProfileEvents::increment(ProfileEvents::InitialSelectQuery);
+    }
     /// SELECT and INSERT query will handle QueriesWithSubqueries on their own.
     if (!(query->as<ASTSelectQuery>() ||
         query->as<ASTSelectWithUnionQuery>() ||
