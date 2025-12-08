@@ -3,7 +3,7 @@ import time
 import uuid
 
 import pytest
-from kazoo.exceptions import NoNodeError, NodeExistsError
+from kazoo.exceptions import NoNodeError
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
