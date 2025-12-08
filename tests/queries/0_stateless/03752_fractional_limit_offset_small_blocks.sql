@@ -15,6 +15,8 @@ SELECT '*';
 SELECT number FROM numbers(20) ORDER BY number LIMIT 0.5 OFFSET 10;
 SELECT '*';
 SELECT number FROM numbers(20) ORDER BY number LIMIT 0.9 OFFSET 5;
+SELECT '*';
+SELECT number FROM numbers(15) ORDER BY number LIMIT 0.5 OFFSET 5;
 
 SELECT 'Fractional Limit, Fractional Offset - Early Pushing/Evicting';
 
@@ -25,6 +27,8 @@ SELECT '*';
 SELECT number FROM numbers(20) ORDER BY number LIMIT 0.5 OFFSET 0.5;
 SELECT '*';
 SELECT number FROM numbers(20) ORDER BY number LIMIT 0.9 OFFSET 0.25;
+SELECT '*';
+SELECT number FROM numbers(15) ORDER BY number LIMIT 0.5 OFFSET 0.33;
 
 SELECT 'Fractional Offset Only - Early Evicting';
 

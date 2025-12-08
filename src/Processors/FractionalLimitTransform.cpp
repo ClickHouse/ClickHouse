@@ -165,12 +165,8 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
 
     rows_cnt += rows;
 
-    UInt64 remaining_offset = 0;
-    if (rows_read_from_cache < offset)
-        remaining_offset = offset - rows_read_from_cache;
-
     /// Ignore chunk if it should be offsetted
-    if (rows <= remaining_offset)
+    if (rows_cnt <= offset)
     {
         /// As if it was put in cache then evicted due to offset.
         rows_read_from_cache += rows;
@@ -213,6 +209,10 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
 
         auto & cache_chunk = chunks_cache.front().chunk;
         auto num_rows = cache_chunk.getNumRows();
+
+        UInt64 remaining_offset = 0;
+        if (rows_read_from_cache < offset)
+            remaining_offset = offset - rows_read_from_cache;
 
         if (std::ceil(rows_cnt * limit_fraction) - outputed_rows_cnt >= num_rows - remaining_offset)
         {
