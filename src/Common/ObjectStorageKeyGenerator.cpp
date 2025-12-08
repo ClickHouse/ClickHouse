@@ -1,5 +1,6 @@
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/MatchGenerator.h>
+#include <Common/escapeString.h>
 
 #include <fmt/format.h>
 
@@ -34,7 +35,7 @@ namespace DB
 
 ObjectStorageKeyGeneratorPtr createObjectStorageKeyGeneratorByPrefix(String key_prefix)
 {
-    return std::make_shared<GeneratorWithTemplate>(std::filesystem::path(key_prefix) / "[a-z]{3}/[a-z]{29}");
+    return std::make_shared<GeneratorWithTemplate>(std::filesystem::path(escapeString(key_prefix)) / "[a-z]{3}/[a-z]{29}");
 }
 
 ObjectStorageKeyGeneratorPtr createObjectStorageKeyGeneratorByTemplate(String key_template)
