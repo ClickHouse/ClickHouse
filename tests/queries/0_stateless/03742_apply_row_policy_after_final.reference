@@ -36,3 +36,8 @@
 2
 --- SELECT x, version (row policy on y should still work)
 2	1
+--- PREWHERE after FINAL
+2
+--- PREWHERE before FINAL
+1
+2

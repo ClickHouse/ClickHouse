@@ -1445,6 +1445,13 @@ Possible values:
 - 0 — Row policy and PREWHERE are applied before FINAL (default).
 - 1 — Row policy and PREWHERE are applied after FINAL.
 )", 0) \
+    DECLARE(Bool, apply_prewhere_after_final, false, R"(
+When enabled, PREWHERE conditions are applied after FINAL processing for ReplacingMergeTree and similar engines.
+This can be useful when PREWHERE references columns that may have different values across duplicate rows,
+and you want FINAL to select the winning row before filtering. When disabled, PREWHERE is applied during reading.
+Note: If apply_row_level_security_after_final is enabled and row policy uses non-sorting-key columns, PREWHERE will also
+be deferred to maintain correct execution order (row policy must be applied before PREWHERE).
+)", 0) \
     \
     DECLARE(UInt64, mysql_max_rows_to_insert, 65536, R"(
 The maximum number of rows in MySQL batch insertion of the MySQL storage engine

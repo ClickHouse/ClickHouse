@@ -114,3 +114,21 @@ SELECT x, version FROM tab4 FINAL ORDER BY x;
 
 DROP ROW POLICY pol4 ON tab4;
 DROP TABLE tab4;
+
+DROP TABLE IF EXISTS tab_final;
+DROP ROW POLICY IF EXISTS pol_final ON tab_final;
+
+CREATE TABLE tab_final (x UInt32, y String, version UInt32) ENGINE = ReplacingMergeTree(version) ORDER BY x;
+
+INSERT INTO tab_final VALUES (1, 'aaa', 1), (2, 'bbb', 1);
+INSERT INTO tab_final VALUES (1, 'ccc', 2);
+
+SET apply_prewhere_after_final = 1;
+SELECT '--- PREWHERE after FINAL';
+SELECT x FROM tab_final FINAL PREWHERE y != 'ccc' ORDER BY x;
+
+SET apply_prewhere_after_final = 0;
+SELECT '--- PREWHERE before FINAL';
+SELECT x FROM tab_final FINAL PREWHERE y != 'ccc' ORDER BY x;
+
+DROP TABLE tab_final;

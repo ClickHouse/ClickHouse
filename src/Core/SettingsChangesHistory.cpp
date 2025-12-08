@@ -57,6 +57,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"delta_lake_snapshot_start_version", -1, -1, "New setting."},
             {"delta_lake_snapshot_end_version", -1, -1, "New setting."},
             {"apply_row_policy_after_final", false, false, "New setting to control if row policies and PREWHERE are applied after FINAL processing for *MergeTree tables"},
+            {"apply_prewhere_after_final", false, false, "New setting. When enabled, PREWHERE conditions are applied after FINAL processing."},
             {"serialize_string_in_memory_with_zero_byte", true, true, "New setting"},
             {"optimize_inverse_dictionary_lookup", false, true, "New setting"},
         });

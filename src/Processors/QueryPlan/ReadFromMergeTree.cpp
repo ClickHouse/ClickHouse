@@ -2690,44 +2690,91 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// also PREWHERE must always be executed after row policy, so if row policy is deferred, prewhere must be too
     FilterDAGInfoPtr deferred_row_level_filter;
     PrewhereInfoPtr deferred_prewhere_info;
-    if (local_settings[Setting::apply_row_policy_after_final]
-        && isQueryWithFinal()
-        && query_info.row_level_filter)
+
+    if (isQueryWithFinal())
     {
-        const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
-        NameSet sorting_key_columns_set(sorting_key_columns.begin(), sorting_key_columns.end());
+        bool defer_row_policy = local_settings[Setting::apply_row_level_security_after_final] && query_info.row_level_filter;
+        bool defer_prewhere = local_settings[Setting::apply_prewhere_after_final] && query_info.prewhere_info;
 
-        auto filter_required_columns = query_info.row_level_filter->actions.getRequiredColumnsNames();
-
-        /// Check if ALL required columns are in sorting key
-        /// if not, we must apply after FINAL
-        /// if they are, we do not change (more optimal)
-        bool all_columns_in_sorting_key = true;
-        for (const auto & col : filter_required_columns)
+        /// If row policy is deferred and uses non-sorting-key columns, prewhere must also be deferred
+        /// to maintain correct execution order (row policy before prewhere).
+        if (defer_row_policy && query_info.prewhere_info)
         {
-            if (!sorting_key_columns_set.contains(col))
+            const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
+            NameSet sorting_key_columns_set(sorting_key_columns.begin(), sorting_key_columns.end());
+
+            auto filter_required_columns = query_info.row_level_filter->actions.getRequiredColumnsNames();
+            bool all_columns_in_sorting_key = true;
+            for (const auto & col : filter_required_columns)
             {
-                all_columns_in_sorting_key = false;
-                break;
+                if (!sorting_key_columns_set.contains(col))
+                {
+                    all_columns_in_sorting_key = false;
+                    break;
+                }
             }
+
+            /// If row policy uses non-sorting-key columns, we must defer prewhere too
+            if (!all_columns_in_sorting_key)
+                defer_prewhere = true;
         }
 
-        if (!all_columns_in_sorting_key)
+        if (defer_row_policy || defer_prewhere)
         {
-            /// save the filters and clear it from query_info so it won't be applied before final
-            deferred_row_level_filter = query_info.row_level_filter;
-            deferred_prewhere_info = query_info.prewhere_info;
-            query_info.row_level_filter = nullptr;
-            query_info.prewhere_info = nullptr;
+            /// Save the filters and clear them from query_info so they won't be applied during reading
+            if (defer_row_policy)
+            {
+                deferred_row_level_filter = query_info.row_level_filter;
+                query_info.row_level_filter = nullptr;
+            }
 
-            /// update output_header since row_level_filter and prewhere was part of its calculation
+            if (defer_prewhere)
+            {
+                deferred_prewhere_info = query_info.prewhere_info;
+                query_info.prewhere_info = nullptr;
+            }
+
+            /// Ensure columns required by deferred filters are included in the columns to read.
+            /// Without this, SELECT x would fail if row policy uses column y.
+            NameSet columns_to_read_set(result.column_names_to_read.begin(), result.column_names_to_read.end());
+            NameSet all_columns_set(all_column_names.begin(), all_column_names.end());
+
+            auto add_required_columns = [&](const Names & required_columns)
+            {
+                for (const auto & col : required_columns)
+                {
+                    if (!columns_to_read_set.contains(col))
+                    {
+                        result.column_names_to_read.push_back(col);
+                        columns_to_read_set.insert(col);
+                    }
+                    if (!all_columns_set.contains(col))
+                    {
+                        all_column_names.push_back(col);
+                        all_columns_set.insert(col);
+                    }
+                }
+            };
+
+            if (deferred_row_level_filter)
+                add_required_columns(deferred_row_level_filter->actions.getRequiredColumnsNames());
+
+            if (deferred_prewhere_info)
+                add_required_columns(deferred_prewhere_info->prewhere_actions.getRequiredColumnsNames());
+
+            /// Recreate output_header without the deferred filters since they will be applied after FINAL
             output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
                 storage_snapshot->getSampleBlockForColumns(all_column_names),
                 lazily_read_info,
-                nullptr, // <-- row_level_filter
-                nullptr)); // <-- prewhere
+                defer_row_policy ? nullptr : query_info.row_level_filter,
+                defer_prewhere ? nullptr : query_info.prewhere_info));
 
-            LOG_DEBUG(log, "Deferring row policy filter and prewhere to after FINAL");
+            LOG_DEBUG(
+                log,
+                "Deferring filters to after FINAL: row_policy={}, prewhere={}. columns_to_read={}",
+                defer_row_policy,
+                defer_prewhere,
+                fmt::join(result.column_names_to_read, ","));
         }
     }
 
