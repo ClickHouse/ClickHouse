@@ -87,10 +87,10 @@ void IcebergDataObjectInfo::addPositionDeleteObject(Iceberg::ManifestFileEntryPt
 void IcebergDataObjectInfo::addEqualityDeleteObject(const Iceberg::ManifestFileEntryPtr & equality_delete_object)
 {
     info.equality_deletes_objects.emplace_back(
-        equality_delete_object.file_path,
-        equality_delete_object.file_format,
-        equality_delete_object.equality_ids,
-        equality_delete_object.schema_id);
+        equality_delete_object->file_path,
+        equality_delete_object->file_format,
+        equality_delete_object->equality_ids,
+        equality_delete_object->schema_id);
 }
 
 #endif

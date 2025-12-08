@@ -428,7 +428,7 @@ ManifestFileContent::ManifestFileContent(
         switch (content_type)
         {
             case FileContentType::DATA:
-                this->data_files_without_deleted.emplace_back(
+                this->data_files_without_deleted.emplace_back(std::make_shared<ManifestFileEntry>(
                     file_path_key,
                     file_path,
                     i,
@@ -442,7 +442,7 @@ ManifestFileContent::ManifestFileContent(
                     file_format,
                     /*reference_data_file = */ std::nullopt,
                     /*equality_ids*/ std::nullopt,
-                    sort_order_id);
+                    sort_order_id));
                 break;
             case FileContentType::POSITION_DELETE:
             {
@@ -456,7 +456,7 @@ ManifestFileContent::ManifestFileContent(
                         reference_file_path = reference_file_path_field.safeGet<String>();
                     }
                 }
-                this->position_deletes_files_without_deleted.emplace_back(
+                this->position_deletes_files_without_deleted.emplace_back(std::make_shared<ManifestFileEntry>(
                     file_path_key,
                     file_path,
                     i,
@@ -469,7 +469,8 @@ ManifestFileContent::ManifestFileContent(
                     columns_infos,
                     file_format,
                     reference_file_path,
-                    /*equality_ids*/ std::nullopt);
+                    /*equality_ids*/ std::nullopt,
+                    sort_order_id));
                 break;
             }
             case FileContentType::EQUALITY_DELETE:
@@ -485,7 +486,7 @@ ManifestFileContent::ManifestFileContent(
                     throw Exception(
                             DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                             "Couldn't find field {} in equality delete file entry", c_data_file_equality_ids);
-                this->equality_deletes_files.emplace_back(
+                this->equality_deletes_files.emplace_back(std::make_shared<ManifestFileEntry>(
                     file_path_key,
                     file_path,
                     i,
@@ -498,7 +499,8 @@ ManifestFileContent::ManifestFileContent(
                     columns_infos,
                     file_format,
                     /*reference_data_file = */ std::nullopt,
-                    equality_ids);
+                    equality_ids,
+                    sort_order_id));
                 break;
             }
         }
@@ -563,7 +565,7 @@ bool ManifestFileContent::areAllDataFilesSortedBySortOrderID(Int32 sort_order_id
         // This can happen if:
         // 1. The field is not present in older Iceberg format versions.
         // 2. The data file was written without sort order information.
-        if (!file.sort_order_id.has_value() || (*file.sort_order_id != sort_order_id))
+        if (!file->sort_order_id.has_value() || (*file->sort_order_id != sort_order_id))
             return false;
     }
     /// Empty manifest (no data files) is considered sorted by definition

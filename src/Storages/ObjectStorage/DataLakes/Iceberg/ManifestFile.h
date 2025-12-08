@@ -84,6 +84,7 @@ struct ManifestFileEntry : public boost::noncopyable
     ManifestFileEntry(
         const String& file_path_key_,
         const String& file_path_,
+        Int64 row_number_,
         ManifestEntryStatus status_,
         Int64 added_sequence_number_,
         Int64 snapshot_id_,
@@ -97,6 +98,7 @@ struct ManifestFileEntry : public boost::noncopyable
         std::optional<Int32> sort_order_id_)
         : file_path_key(file_path_key_)
         , file_path(file_path_)
+        , row_number(row_number_)
         , status(status_)
         , added_sequence_number(added_sequence_number_)
         , snapshot_id(snapshot_id_)
