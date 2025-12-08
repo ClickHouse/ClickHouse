@@ -662,32 +662,38 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
              {"min_free_disk_ratio_to_perform_insert", CHSetting(probRange, {}, false)}});
     }
 
+    std::unordered_map<String, CHSetting> queueSettings
+        = {{"after_processing",
+            CHSetting(
+                [](RandomGenerator & rg, FuzzConfig &)
+                {
+                    static const DB::Strings & choices = {"'keep'", "'delete'", "'move'", "'tag'"};
+                    return rg.pickRandomly(choices);
+                },
+                {},
+                false)},
+           {"commit_on_select", trueOrFalseSettingNoOracle},
+           {"enable_hash_ring_filtering", trueOrFalseSetting},
+           {"list_objects_batch_size",
+            CHSetting(
+                [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 3000)); },
+                {"0", "1", "2", "8", "10", "100", "1000"},
+                false)},
+           {"max_processed_bytes_before_commit", CHSetting(bytesRange, {}, false)},
+           {"max_processed_files_before_commit", CHSetting(rowsRange, {}, false)},
+           {"max_processed_rows_before_commit", CHSetting(rowsRange, {}, false)},
+           {"parallel_inserts", trueOrFalseSetting},
+           {"use_persistent_processing_nodes", trueOrFalseSettingNoOracle}};
     s3QueueTableSettings.insert(s3Settings.begin(), s3Settings.end());
-    azureQueueSettings.insert(azureBlobStorageSettings.begin(), azureBlobStorageSettings.end());
+    s3QueueTableSettings.insert(queueSettings.begin(), queueSettings.end());
+    /// s3queue_ settings are exclusive to S3Queue
     s3QueueTableSettings.insert(
-        {{"after_processing",
-          CHSetting(
-              [](RandomGenerator & rg, FuzzConfig &)
-              {
-                  static const DB::Strings & choices = {"'keep'", "'delete'"};
-                  return rg.pickRandomly(choices);
-              },
-              {},
-              false)},
-         {"enable_hash_ring_filtering", trueOrFalseSetting},
-         {"list_objects_batch_size",
-          CHSetting(
-              [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 3000)); },
-              {"0", "1", "2", "8", "10", "100", "1000"},
-              false)},
-         {"max_processed_bytes_before_commit", CHSetting(bytesRange, {}, false)},
-         {"max_processed_files_before_commit", CHSetting(rowsRange, {}, false)},
-         {"max_processed_rows_before_commit", CHSetting(rowsRange, {}, false)},
-         {"parallel_inserts", trueOrFalseSetting},
-         {"s3queue_buckets", bucketsRangeSetting},
+        {{"s3queue_buckets", bucketsRangeSetting},
          {"s3queue_enable_logging_to_s3queue_log", trueOrFalseSetting},
          {"s3queue_processing_threads_num", threadSetting},
          {"s3queue_tracked_files_limit", CHSetting(rowsRange, {}, false)}});
+    azureQueueSettings.insert(azureBlobStorageSettings.begin(), azureBlobStorageSettings.end());
+    azureQueueSettings.insert(queueSettings.begin(), queueSettings.end());
 
     for (const auto & entry : fc.disallowed_settings)
     {
