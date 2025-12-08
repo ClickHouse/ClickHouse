@@ -209,7 +209,7 @@ class KeeperBench:
             hflags = " ".join(f"-h {h}" for h in hosts)
             cmd = f"{self._bench_cmd()} --input-request-log {self.replay_path} {hflags} -c {int(clients)} -t {int(self.duration_s)} --continue_on_errors --config /tmp/keeper_bench.yaml"
         else:
-            cmd = f"{self._bench_cmd()} --config /tmp/keeper_bench.yaml"
+            cmd = f"{self._bench_cmd()} --config /tmp/keeper_bench.yaml -t {int(self.duration_s)}"
         run_out = sh(self.node, cmd)
         # Parse JSON output if present
         out = sh(

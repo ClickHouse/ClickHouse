@@ -6,10 +6,6 @@ import sys
 from pathlib import Path
 
 
-def _get_sink_env():
-    return os.environ.get("KEEPER_METRICS_CLICKHOUSE_URL", "").strip()
-
-
 def run(cmd, cwd):
     p = subprocess.run(cmd, cwd=cwd)
     return p.returncode
@@ -34,7 +30,7 @@ def main():
         action="store_true",
         default=os.environ.get("KEEPER_INCLUDE_FAULTS_OFF", "") == "1",
     )
-    ap.add_argument("--sink-url", default=_get_sink_env())
+    # Sink URL/env not needed: metrics are sent via CI helper like other tests
     ap.add_argument(
         "--feature-flags", default=os.environ.get("KEEPER_FEATURE_FLAGS", "")
     )
@@ -53,8 +49,6 @@ def main():
     tests_path = "tests/stress/keeper/tests"
     env = os.environ.copy()
     env.setdefault("KEEPER_SCENARIO_FILE", args.files)
-    if args.sink_url:
-        env["KEEPER_METRICS_CLICKHOUSE_URL"] = args.sink_url
     if args.feature_flags:
         env["KEEPER_FEATURE_FLAGS"] = args.feature_flags
     if args.coord_overrides_xml:
