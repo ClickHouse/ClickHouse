@@ -684,12 +684,12 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchJoin
 }
 
 template <typename AddedColumns, typename Selector>
-ColumnPtr buildAdditionalFilter(
+static ColumnPtr buildAdditionalFilter(
     const Selector & selector,
     const PODArray<const RowRef *> & selected_rows,
     const IColumn::Offsets & row_replicate_offset,
     const AddedColumns & added_columns,
-    size_t start_offset, size_t end_offset)
+    size_t selector_pos)
 {
     ColumnPtr result_column;
     do
@@ -729,11 +729,9 @@ ColumnPtr buildAdditionalFilter(
                 required_columns.emplace_back(nullptr, req_col.type, req_col.name);
 
                 auto col = req_col.type->createColumn();
-                size_t start_row = row_replicate_offset[start_offset - 1];
-                size_t end_row = row_replicate_offset[end_offset - 1];
-                for (size_t i = start_row; i < end_row; ++i)
+                for (const auto & selected_row : selected_rows)
                 {
-                    const auto [src_col, row_pos] = getBlockColumnAndRow(selected_rows[i], rhs_pos_it->second);
+                    const auto [src_col, row_pos] = getBlockColumnAndRow(selected_row, rhs_pos_it->second);
                     col->insertFrom(*src_col, row_pos);
                 }
                 required_columns[pos].column = std::move(col);
@@ -752,11 +750,14 @@ ColumnPtr buildAdditionalFilter(
                         col_name);
 
                 auto new_col = src_col->column->cloneEmpty();
-                for (size_t i = start_offset; i < end_offset; ++i)
+                for (size_t i = 0; i < row_replicate_offset.size(); ++i)
                 {
                     size_t rows = row_replicate_offset[i] - row_replicate_offset[i - 1];
                     if (rows)
-                        new_col->insertManyFrom(*src_col->column, selector[i], rows);
+                    {
+                        chassert(i + selector_pos < selector.size());
+                        new_col->insertManyFrom(*src_col->column, selector[i + selector_pos], rows);
+                    }
                 }
                 required_columns.push_back({std::move(new_col), src_col->type, col_name});
             }
@@ -846,17 +847,22 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtit
     IColumn::Offsets row_replicate_offset;
     row_replicate_offset.reserve(left_block_rows);
 
+    size_t max_joined_rows = added_columns.max_joined_block_rows;
+    if (max_joined_rows == 0)
+        max_joined_rows = std::numeric_limits<size_t>::max();
+
+    auto get_selected_rows = [&](size_t selector_pos) -> size_t
     {
+        pool = std::make_unique<Arena>();
         IColumn::Offset current_added_rows = 0;
 
-        pool = std::make_unique<Arena>();
         find_results.clear();
         selected_rows.clear();
         row_replicate_offset.clear();
 
-        for (size_t i = start_row; i < end_row; ++i)
+        for (; selector_pos < selector.size(); ++selector_pos)
         {
-            size_t ind = selector[i];
+            size_t ind = selector[selector_pos];
 
             KnownRowsHolder<true> all_flag_known_rows;
             KnownRowsHolder<false> single_flag_know_rows;
@@ -882,10 +888,14 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtit
                     else
                         addFoundRowAll<Map, false, false>(mapped, selected_rows_view, current_added_rows, single_flag_know_rows, nullptr);
                 }
+
             }
             row_replicate_offset.push_back(current_added_rows);
-        }
 
+
+            if (current_added_rows >= max_joined_rows)
+                return selector_pos + 1;
+        }
 
         if (selected_rows.size() != current_added_rows)
             throw Exception(
@@ -894,31 +904,22 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtit
                 selected_rows.size(),
                 current_added_rows,
                 row_replicate_offset.size());
-    }
+        return selector.size();
+    };
 
-    size_t start_offset = 0;
-    size_t find_result_index = 0;
-    while (start_offset < row_replicate_offset.size())
+    size_t selector_pos = 0;
+    size_t next_pos = get_selected_rows(0);
+
+    for (; selector_pos < selector.size(); selector_pos = next_pos, next_pos = get_selected_rows(selector_pos))
     {
-        size_t max_block_size_limit = added_columns.max_joined_block_rows;
-        size_t end_offset = max_block_size_limit == 0 ? row_replicate_offset.size() : start_offset + 1;
-        for (; end_offset < row_replicate_offset.size(); ++end_offset)
-        {
-            if (row_replicate_offset[end_offset] - row_replicate_offset[start_offset - 1] >= max_block_size_limit)
-                break;
-        }
-
-        auto filter_col = buildAdditionalFilter(selector, selected_rows, row_replicate_offset, added_columns, start_offset, end_offset);
+        auto filter_col = buildAdditionalFilter(selector, selected_rows, row_replicate_offset, added_columns, selector_pos);
 
         const PaddedPODArray<UInt8> & filter_flags = assert_cast<const ColumnUInt8 &>(*filter_col).getData();
 
-        size_t prev_replicated_row = row_replicate_offset[start_offset - 1];
-        auto selected_right_row_it = selected_rows.begin() + prev_replicated_row;
-
-        size_t i = start_offset;
-
-        start_offset = end_offset;
-        for (; i < end_offset; ++i)
+        size_t prev_replicated_row = 0;
+        auto * selected_right_row_it = selected_rows.begin();
+        size_t find_result_index = 0;
+        for (size_t i = 0, n = row_replicate_offset.size(); i < n; ++i)
         {
             bool any_matched = false;
             /// right/full join or multiple disjuncts, we need to mark used flags for each row.
@@ -926,7 +927,6 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtit
             {
                 for (size_t replicated_row = prev_replicated_row; replicated_row < row_replicate_offset[i]; ++replicated_row)
                 {
-                    chassert(replicated_row < filter_flags.size());
                     if (filter_flags[replicated_row])
                     {
                         if constexpr (join_features.is_semi_join || join_features.is_any_join)
@@ -981,8 +981,6 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtit
             {
                 for (size_t replicated_row = prev_replicated_row; replicated_row < row_replicate_offset[i]; ++replicated_row)
                 {
-                    chassert(replicated_row < filter_flags.size());
-
                     if constexpr (join_features.is_anti_join)
                     {
                         any_matched |= filter_flags[replicated_row];
@@ -1019,7 +1017,7 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtit
                 {
                     if constexpr (join_features.left)
                         if (need_filter)
-                            setUsed<true>(added_columns.filter, i, added_columns.matched_rows);
+                            setUsed<true>(added_columns.filter, i + selector_pos, added_columns.matched_rows);
                     addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, total_added_rows);
                 }
             }
@@ -1034,7 +1032,7 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtit
                     if (!flag_per_row)
                         used_flags.template setUsed<join_features.need_flags, false>(find_results[find_result_index]);
                     if (need_filter)
-                        setUsed<true>(added_columns.filter, i, added_columns.matched_rows);
+                        setUsed<true>(added_columns.filter, i + selector_pos, added_columns.matched_rows);
                     if constexpr (join_features.add_missing)
                         added_columns.applyLazyDefaults();
                 }
@@ -1043,7 +1041,7 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtit
 
             if constexpr (join_features.need_replication)
             {
-                added_columns.offsets_to_replicate[i] = total_added_rows;
+                added_columns.offsets_to_replicate[i + selector_pos] = total_added_rows;
             }
             prev_replicated_row = row_replicate_offset[i];
         }

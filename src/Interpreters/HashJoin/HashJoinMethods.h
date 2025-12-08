@@ -191,13 +191,6 @@ private:
         JoinStuff::JoinUsedFlags & used_flags,
         const Selector & selector);
 
-    template <typename AddedColumns, typename Selector>
-    static ColumnPtr buildAdditionalFilter(
-        const Selector & selector,
-        const std::vector<const RowRef *> & selected_rows,
-        const std::vector<size_t> & row_replicate_offset,
-        AddedColumns & added_columns);
-
     /// First to collect all matched rows refs by join keys, then filter out rows which are not true in additional filter expression.
     template <typename KeyGetter, typename Map, typename AddedColumns>
     static void joinRightColumnsWithAddtitionalFilter(
