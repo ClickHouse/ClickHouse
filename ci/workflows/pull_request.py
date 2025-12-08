@@ -1,6 +1,6 @@
 from praktika import Workflow, Job
 
-from ci.defs.defs import BASE_BRANCH, DOCKERS, SECRETS, ArtifactConfigs, JobNames
+from ci.defs.defs import BASE_BRANCH, DOCKERS, SECRETS, ArtifactConfigs, JobNames, ArtifactNames
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 from ci.jobs.scripts.workflow_hooks.trusted import can_be_trusted
@@ -147,6 +147,7 @@ workflow = Workflow.Config(
             command=JobConfigs.keeper_stress_job.command,
             run_in_docker=JobConfigs.keeper_stress_job.run_in_docker,
             digest_config=JobConfigs.keeper_stress_job.digest_config,
+            requires=[ArtifactNames.CH_ARM_BINARY],
         ),
         # --- /TEMP ---
     ],
