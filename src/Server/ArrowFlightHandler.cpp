@@ -36,6 +36,8 @@
 #include <Poco/URI.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
+#include <Common/config_version.h>
+
 #include <boost/algorithm/string.hpp>
 
 #include <arrow/array/builder_base.h>
@@ -1093,9 +1095,14 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
                 if (any_msg.Is<arrow::flight::protocol::sql::CommandGetSqlInfo>())
                 {
                     arrow::flight::protocol::sql::CommandGetSqlInfo command;
-                    if (any_msg.UnpackTo(&command) && command.info(0) == 8)
+                    if (any_msg.UnpackTo(&command))
                     {
                         arrow::MemoryPool* pool = arrow::default_memory_pool();
+
+                        auto string_builder = std::make_shared<arrow::StringBuilder>();
+                        auto boolean_builder = std::make_shared<arrow::BooleanBuilder>();
+                        auto int64_builder = std::make_shared<arrow::Int64Builder>();
+                        auto int32_builder = std::make_shared<arrow::Int32Builder>();
 
                         // string_list: list<item: string> not null
                         auto string_list_type = arrow::list(arrow::utf8());
@@ -1121,31 +1128,100 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
                         auto dense_union_builder = std::make_shared<arrow::DenseUnionBuilder>(
                             pool,
                             std::vector<std::shared_ptr<arrow::ArrayBuilder>>{
-                                std::make_shared<arrow::StringBuilder>(),
-                                std::make_shared<arrow::BooleanBuilder>(),
-                                std::make_shared<arrow::Int64Builder>(),
-                                std::make_shared<arrow::Int32Builder>(),
+                                string_builder,
+                                boolean_builder,
+                                int64_builder,
+                                int32_builder,
                                 string_list_builder,
                                 int32_to_int32_list_map_builder
                             },
                             dense_union_type);
 
-                        // Add bool_value false
-                        int8_t bool_value_type_id = 1;
-                        auto status = dense_union_builder->Append(bool_value_type_id);
-                        ARROW_RETURN_NOT_OK(status);
-                        status = dense_union_builder->child_builder(bool_value_type_id)->AppendScalar(arrow::BooleanScalar(false));
-                        ARROW_RETURN_NOT_OK(status);
+                        using SqlInfo = arrow::flight::protocol::sql::SqlInfo;
+
+                        auto info_name_builder = std::make_shared<arrow::UInt32Builder>();
+                        
+                        [[maybe_unused]] static const size_t SQL_INFO_STRING = 0;
+                        [[maybe_unused]] static const size_t SQL_INFO_BOOLEAN = 1;
+                        [[maybe_unused]] static const size_t SQL_INFO_INT64 = 2;
+                        [[maybe_unused]] static const size_t SQL_INFO_INT32 = 3;
+
+                        [[maybe_unused]] auto builder_string_append = [&](auto i, const std::string & v)
+                        {
+                            ARROW_RETURN_NOT_OK(info_name_builder->Append(i));
+                            ARROW_RETURN_NOT_OK(dense_union_builder->Append(SQL_INFO_STRING));
+                            return string_builder->Append(v);
+                        };
+
+                        [[maybe_unused]] auto builder_boolean_append = [&](auto i, bool v)
+                        {
+                            ARROW_RETURN_NOT_OK(info_name_builder->Append(i));
+                            ARROW_RETURN_NOT_OK(dense_union_builder->Append(SQL_INFO_BOOLEAN));
+                            return boolean_builder->Append(v);
+                        };
+
+                        [[maybe_unused]] auto builder_int64_append = [&](auto i, int64_t v)
+                        {
+                            ARROW_RETURN_NOT_OK(info_name_builder->Append(i));
+                            ARROW_RETURN_NOT_OK(dense_union_builder->Append(SQL_INFO_INT64));
+                            return int64_builder->Append(v);
+                        };
+
+                        [[maybe_unused]] auto builder_int32_append = [&](auto i, int32_t v)
+                        {
+                            ARROW_RETURN_NOT_OK(info_name_builder->Append(i));
+                            ARROW_RETURN_NOT_OK(dense_union_builder->Append(SQL_INFO_INT32));
+                            return int32_builder->Append(v);
+                        };
+
+                        for (const auto & info_name : command.info())
+                        {
+                            switch (info_name)
+                            {
+                                case SqlInfo::FLIGHT_SQL_SERVER_NAME:
+                                    ARROW_RETURN_NOT_OK(builder_string_append(info_name, "ClickHouse"));
+                                    break;
+                                case SqlInfo::FLIGHT_SQL_SERVER_VERSION:
+                                    ARROW_RETURN_NOT_OK(builder_string_append(info_name, VERSION_STRING));
+                                    break;
+                                case SqlInfo::FLIGHT_SQL_SERVER_ARROW_VERSION:
+                                    ARROW_RETURN_NOT_OK(builder_string_append(info_name, ARROW_VERSION_STRING));
+                                    break;
+                                case SqlInfo::FLIGHT_SQL_SERVER_READ_ONLY:
+                                    ARROW_RETURN_NOT_OK(builder_boolean_append(info_name, false));
+                                    break;
+                                case SqlInfo::FLIGHT_SQL_SERVER_SQL:
+                                    ARROW_RETURN_NOT_OK(builder_boolean_append(info_name, true));
+                                    break;
+                                case SqlInfo::FLIGHT_SQL_SERVER_SUBSTRAIT:
+                                    ARROW_RETURN_NOT_OK(builder_boolean_append(info_name, false));
+                                    break;
+                                case SqlInfo::FLIGHT_SQL_SERVER_SUBSTRAIT_MIN_VERSION:
+                                    ARROW_RETURN_NOT_OK(builder_string_append(info_name, ""));
+                                    break;
+                                case SqlInfo::FLIGHT_SQL_SERVER_SUBSTRAIT_MAX_VERSION:
+                                    ARROW_RETURN_NOT_OK(builder_string_append(info_name, ""));
+                                    break;
+                                case SqlInfo::FLIGHT_SQL_SERVER_TRANSACTION:
+                                    ARROW_RETURN_NOT_OK(builder_int32_append(info_name, arrow::flight::protocol::sql::SQL_SUPPORTED_TRANSACTION_NONE));
+                                    break;
+                                case SqlInfo::FLIGHT_SQL_SERVER_CANCEL:
+                                    ARROW_RETURN_NOT_OK(builder_boolean_append(info_name, false));
+                                    break;
+                                case SqlInfo::FLIGHT_SQL_SERVER_STATEMENT_TIMEOUT:
+                                case SqlInfo::FLIGHT_SQL_SERVER_TRANSACTION_TIMEOUT:
+                                    ARROW_RETURN_NOT_OK(builder_int32_append(info_name, 0));
+                                    break;
+                                default:
+                                    return arrow::Status::Invalid("CommandGetSqlInfo for info_name " + std::to_string(info_name) + " is not supported.");
+                            }
+                        }
 
                         // Schema for table
                         std::shared_ptr<arrow::Schema> table_schema = arrow::schema({
                             arrow::field("info_name", arrow::uint32()),
                             arrow::field("value", dense_union_type)
                         });
-
-                        auto info_name_builder = std::make_shared<arrow::UInt32Builder>();
-                        status = info_name_builder->Append(8);
-                        ARROW_RETURN_NOT_OK(status);
 
                         auto info_name = info_name_builder->Finish();
                         ARROW_RETURN_NOT_OK(info_name);
@@ -1166,7 +1242,7 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
                             *table_schema,
                             request,
                             endpoints,
-                            /* total_rows = */ 1,
+                            /* total_rows = */ table->num_rows(),
                             /* total_bytes = */ -1);
                         ARROW_RETURN_NOT_OK(flight_info_res);
                         *info = std::make_unique<arrow::flight::FlightInfo>(std::move(flight_info_res).ValueOrDie());
@@ -1174,6 +1250,56 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
                         LOG_INFO(log, "GetFlightInfo returns flight info {}", (*info)->ToString());
                         return arrow::Status::OK();
                     }
+                }
+                else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetCrossReference>())
+                {
+                    return arrow::Status::NotImplemented("CommandGetCrossReference is not implemented");
+                }
+                else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetCatalogs>())
+                {
+                    sql = "SELECT '' AS catalog_name FROM numbers(0)";
+                }
+                else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetDbSchemas>())
+                {
+                    arrow::flight::protocol::sql::CommandGetDbSchemas command;
+                    any_msg.UnpackTo(&command);
+
+                    std::vector<std::string> where;
+                    if (command.has_db_schema_filter_pattern())
+                        where.push_back("database LIKE '" + command.db_schema_filter_pattern() + "'");
+
+                    auto where_expression = where.size() ? " WHERE " + boost::algorithm::join(where, " AND ") : "";
+
+                    sql = "SELECT NULL::Nullable(String) AS catalog_name, name AS db_schema_name FROM system.databases" + where_expression;
+                }
+                else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetExportedKeys>())
+                {
+                    return arrow::Status::NotImplemented("CommandGetExportedKeys is not implemented");
+                }
+                else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetImportedKeys>())
+                {
+                    return arrow::Status::NotImplemented("CommandGetImportedKeys is not implemented");
+                }
+                else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetPrimaryKeys>())
+                {
+                    arrow::flight::protocol::sql::CommandGetPrimaryKeys command;
+                    any_msg.UnpackTo(&command);
+
+                    std::vector<std::string> where;
+                    where.push_back("database = '" + (command.has_db_schema() ? command.db_schema() : "default") + "'");
+                    where.push_back("name = '" + command.table() + "'");
+                    auto where_expression = where.size() ? " WHERE " + boost::algorithm::join(where, " AND ") : "";
+
+                    sql =
+                        "SELECT "
+                            "NULL::Nullable(String) AS catalog_name, "
+                            "database AS schema_name, "
+                            "name AS table_name, "
+                            "(arrayJoin(arrayMap((x, y) -> (trimBoth(x), y), splitByChar(',', primary_key) AS p_keys, arrayEnumerate(p_keys))) AS p_key).1 AS column_name, "
+                            "p_key.2 AS key_seq, "
+                            "NULL::Nullable(String) AS pk_name "
+                        "FROM system.tables "
+                        + where_expression;
                 }
                 else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetTables>())
                 {
@@ -1247,6 +1373,16 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
                     }
                     else
                         sql = "SELECT NULL::Nullable(String) AS catalog_name, database::Nullable(String) AS db_schema_name, table AS table_name, engine AS table_type FROM system.tables" + where_expression;
+                }
+                else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetTableTypes>())
+                {
+                    sql = "SELECT name AS table_type FROM system.table_engines";
+                }
+                else if (any_msg.Is<arrow::flight::protocol::sql::CommandStatementQuery>())
+                {
+                    arrow::flight::protocol::sql::CommandStatementQuery command;
+                    any_msg.UnpackTo(&command);
+                    sql = command.query();
                 }
             }
 

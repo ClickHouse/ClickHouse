@@ -970,6 +970,7 @@ namespace DB
         std::shared_ptr<arrow::Array> arrow_array;
 
         column = column->convertToFullColumnIfConst();
+        column = column->convertToFullColumnIfReplicated();
 
         switch (column_type->getTypeId())
         {
@@ -1152,7 +1153,10 @@ namespace DB
         DataTypePtr column_type, ColumnPtr column, const std::string & column_name, const std::string & format_name, const CHColumnToArrowColumn::Settings & settings, bool * out_is_column_nullable)
     {
         if (column)
+        {
             column = column->convertToFullColumnIfConst();
+            column = column->convertToFullColumnIfReplicated();
+        }
 
         if (column_type->isNullable())
         {
