@@ -13,7 +13,7 @@ workflow = Workflow.Config(
     enable_cache=True,
     enable_report=True,
     enable_cidb=True,
-    cron_schedules=["17 3 * * *"],
+    cron_schedules=["17 1 * * *"],
     pre_hooks=["python3 ./ci/jobs/scripts/workflow_hooks/store_data.py"],
 )
 
