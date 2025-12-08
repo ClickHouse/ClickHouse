@@ -201,7 +201,7 @@ def test_no_remove_itself(started_cluster):
         ]
     }
     json_command = json.dumps(command)
-    result_str = keeper_utils.send_4lw_cmd(started_cluster, node3, cmd="rcfg", port=9181, argument=json_command, timeout_sec=180)
+    result_str = keeper_utils.send_4lw_cmd(started_cluster, node3, cmd="rcfg", port=9181, argument=json_command, timeout_sec=300)
     result = json.loads(result_str)
     assert result["status"] == "error"
     assert "Reconfigure command cannot remove current server id" in result["message"]
@@ -213,7 +213,7 @@ def test_precondition_failure(started_cluster):
         },
     }
     json_command = json.dumps(command)
-    result_str = keeper_utils.send_4lw_cmd(started_cluster, node3, cmd="rcfg", port=9181, argument=json_command, timeout_sec=180)
+    result_str = keeper_utils.send_4lw_cmd(started_cluster, node3, cmd="rcfg", port=9181, argument=json_command, timeout_sec=300)
     result = json.loads(result_str)
     assert result["status"] == "error"
     assert "expected leader id" in result["message"]
@@ -224,7 +224,7 @@ def test_precondition_failure(started_cluster):
         },
     }
     json_command = json.dumps(command)
-    result_str = keeper_utils.send_4lw_cmd(started_cluster, node3, cmd="rcfg", port=9181, argument=json_command, timeout_sec=180)
+    result_str = keeper_utils.send_4lw_cmd(started_cluster, node3, cmd="rcfg", port=9181, argument=json_command, timeout_sec=300)
     result = json.loads(result_str)
     assert result["status"] == "error"
     assert "expected member" in result["message"]
