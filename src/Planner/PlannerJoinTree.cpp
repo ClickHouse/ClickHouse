@@ -128,6 +128,7 @@ namespace Setting
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool query_plan_display_internal_aliases;
     extern const SettingsBool enable_lazy_columns_replication;
+    extern const SettingsBool parallel_replicas_allow_materialized_views;
 }
 
 namespace ErrorCodes
@@ -1065,6 +1066,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     const auto * table_ptr = table.get();
                     if (mv)
                     {
+                        if (!query_settings[Setting::parallel_replicas_allow_materialized_views])
+                            return false;
+
                         // address refreshable MVs separately, currently leads to logical error
                         if (mv->isRefreshable())
                             return false;
