@@ -32,7 +32,7 @@ def four(node, cmd):
             f"cat <&3; "
             f"exec 3<&-; exec 3>&-"
         )
-        out = sh(node, f"timeout 2s bash -lc \"{devtcp_inner}\"")["out"]
+        out = sh(node, f'timeout 2s bash -lc "{devtcp_inner}"')["out"]
         if str(out).strip():
             return out
     except Exception:

@@ -71,7 +71,9 @@ class ClusterBuilder:
             extra_coord += coord_overrides_xml
         # Shared blocks reused across instances
         backend_extra = (
-            "<experimental_use_rocksdb>1</experimental_use_rocksdb>" if backend == "rocksdb" else ""
+            "<experimental_use_rocksdb>1</experimental_use_rocksdb>"
+            if backend == "rocksdb"
+            else ""
         )
         coord_settings = (
             "<coordination_settings>"
@@ -162,7 +164,9 @@ class ClusterBuilder:
             ]
         )
         disks_block = (
-            "<storage_configuration><disks>" + "\n".join(disks_xml) + "</disks></storage_configuration>"
+            "<storage_configuration><disks>"
+            + "\n".join(disks_xml)
+            + "</disks></storage_configuration>"
         )
         prom_block = f"<prometheus><endpoint>/metrics</endpoint><port>{PROM_PORT}</port><metrics>true</metrics><events>true</events><asynchronous_metrics>true</asynchronous_metrics></prometheus>"
         zk_block = f"<zookeeper>{zk_nodes}</zookeeper>"

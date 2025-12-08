@@ -14,6 +14,7 @@ _SCN_BASE = pathlib.Path(__file__).parents[1] / "scenarios"
 from ..framework import presets as _presets
 from ..framework.fuzz import generate_fuzz_scenario
 
+
 def _tags_ok(tags):
     inc = set([t for t in os.environ.get("KEEPER_INCLUDE_TAGS", "").split(",") if t])
     exc = set([t for t in os.environ.get("KEEPER_EXCLUDE_TAGS", "").split(",") if t])

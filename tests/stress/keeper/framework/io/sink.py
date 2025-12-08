@@ -28,8 +28,8 @@ def ensure_sink_schema(_url_ignored=None):
     if _SEEDED:
         return
     try:
-        from tests.ci.clickhouse_helper import ClickHouseHelper  # type: ignore
         import requests
+        from tests.ci.clickhouse_helper import ClickHouseHelper  # type: ignore
     except Exception:
         return
 
