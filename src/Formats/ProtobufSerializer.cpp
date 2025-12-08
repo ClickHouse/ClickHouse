@@ -65,7 +65,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
-    extern const int PROTOBUF_ONEOF_HAS_SEVERAL_VALUES;
 }
 
 namespace
@@ -2022,7 +2021,7 @@ namespace
             if (presence_column)
             {
                 if (row_num < presence_column->size())
-                    throw Exception(ErrorCodes::PROTOBUF_ONEOF_HAS_SEVERAL_VALUES, "Invalid protobuf data: OneOf has more than one value to track via column `{}`", oneof_column_name);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid protobuf data: OneOf has more than one value to track via column `{}`", oneof_column_name);
                 presence_column->insert(field_tag);
             }
             nested_serializer->readRow(row_num);
