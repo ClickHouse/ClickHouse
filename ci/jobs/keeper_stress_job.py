@@ -47,19 +47,69 @@ def main():
         Result.create_from(results=results, stopwatch=stop_watch).complete_job()
         return
 
+    # Ensure ClickHouse client binary is available for integration helpers
+    repo_dir = str(Path(__file__).resolve().parents[2])
+    temp_dir = f"{repo_dir}/ci/tmp"
+    ch_path = f"{temp_dir}/clickhouse"
+    built_path = f"{repo_dir}/ci/tmp/build/programs/self-extracting/clickhouse"
+    if Path(built_path).is_file():
+        # Use locally built artifact from build jobs
+        ch_path = built_path
+        results.append(
+            Result.from_commands_run(
+                name="Use built ClickHouse binary",
+                command=[
+                    f"chmod +x {ch_path}",
+                    f"{ch_path} --version",
+                    f"ln -sf {ch_path} {temp_dir}/clickhouse",
+                    f"ln -sf {ch_path} {temp_dir}/clickhouse-client",
+                ],
+            )
+        )
+        if not results[-1].is_ok():
+            Result.create_from(results=results, stopwatch=stop_watch).complete_job()
+            return
+    else:
+        if Utils.is_arm():
+            ch_url = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
+        else:
+            ch_url = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
+        if not Path(ch_path).is_file():
+            results.append(
+                Result.from_commands_run(
+                    name="Download ClickHouse client",
+                    command=[
+                        f"wget -nv -P {temp_dir} {ch_url}",
+                        f"chmod +x {ch_path}",
+                        f"{ch_path} --version",
+                        f"ln -sf {ch_path} {temp_dir}/clickhouse",
+                        f"ln -sf {ch_path} {temp_dir}/clickhouse-client",
+                    ],
+                )
+            )
+            if not results[-1].is_ok():
+                Result.create_from(results=results, stopwatch=stop_watch).complete_job()
+                return
+
     # Construct pytest command (Result.from_pytest_run adds 'pytest' itself)
     # - quiet output, show per-test durations, run the keeper stress suite
     cmd = f"-q tests/stress/keeper/tests --durations=0{dur_arg}"
 
-    # Run in repo root
-    repo_dir = str(Path(__file__).resolve().parents[2])
+    # Prepare env for pytest
+    env = os.environ.copy()
+    env.setdefault("CLICKHOUSE_BINARY", ch_path)
+    env.setdefault("CLICKHOUSE_TESTS_CLIENT_BIN_PATH", ch_path)
+    env.setdefault("CLICKHOUSE_TESTS_SERVER_BIN_PATH", ch_path)
+    env.setdefault("CLICKHOUSE_TESTS_BASE_CONFIG_DIR", f"{repo_dir}/programs/server")
+    # Ensure PATH contains the downloaded binary directory so helpers.find_binary can locate it
+    env["PATH"] = f"{Path(ch_path).parent}:{env.get('PATH','')}"
 
     results.append(
         Result.from_pytest_run(
             command=cmd,
             cwd=repo_dir,
             name="Keeper Stress",
-            env=os.environ.copy(),
+            env=env,
             pytest_report_file=None,
             logfile=None,
         )
