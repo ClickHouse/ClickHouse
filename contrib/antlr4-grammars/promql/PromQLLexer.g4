@@ -67,6 +67,8 @@ DIV  : '/';
 MOD  : '%';
 POW  : '^';
 
+ATAN2 : 'atan2';
+
 AND    : 'and';
 OR     : 'or';
 UNLESS : 'unless';
