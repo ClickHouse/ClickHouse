@@ -9,9 +9,9 @@ gorilla32	62559	60000	0.9591
 Test incompressible data compression ratio
 0
 0
+alp32	21452	60000	2.7969
 base64	100050	100000	0.9995
 alp64	100072	100000	0.9993
 base32	60050	60000	0.9992
-alp32	60072	60000	0.9988
 Test different precisions in one data series compression ratio
 alp64	50054	81920	1.6366

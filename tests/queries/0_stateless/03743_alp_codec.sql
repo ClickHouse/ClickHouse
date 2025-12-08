@@ -36,10 +36,10 @@ GROUP BY table
 ORDER BY compression_ratio DESC;
 
 SELECT 'Test incompressible data compression ratio';
-TRUNCATE TABLE base32; INSERT INTO base32 SELECT number, toFloat32(9223372036854774784 + number * pi()) FROM numbers(10000);
-TRUNCATE TABLE base64; INSERT INTO base64 SELECT number, toFloat64(9223372036854774784+ number * pi()) FROM numbers(10000);
-TRUNCATE TABLE alp32; INSERT INTO alp32 SELECT number, toFloat32(9223372036854774784 + number * pi()) FROM numbers(10000);
-TRUNCATE TABLE alp64; INSERT INTO alp64 SELECT number, toFloat64(9223372036854774784 + number * pi()) FROM numbers(10000);
+TRUNCATE TABLE base32; INSERT INTO base32 SELECT number, toFloat32(922337203685477478 + number * pi()) FROM numbers(10000);
+TRUNCATE TABLE base64; INSERT INTO base64 SELECT number, toFloat64(922337203685477478 + number * pi()) FROM numbers(10000);
+TRUNCATE TABLE alp32; INSERT INTO alp32 SELECT number, toFloat32(922337203685477478 + number * pi()) FROM numbers(10000);
+TRUNCATE TABLE alp64; INSERT INTO alp64 SELECT number, toFloat64(922337203685477478 + number * pi()) FROM numbers(10000);
 OPTIMIZE TABLE alp32 FINAL; OPTIMIZE TABLE alp64 FINAL; OPTIMIZE TABLE base32 FINAL; OPTIMIZE TABLE base64 FINAL;
 SELECT SUM(a.f <> b.f) AS errors FROM base32 AS b INNER JOIN alp32 AS a USING i;
 SELECT SUM(a.f <> b.f) AS errors FROM base64 AS b INNER JOIN alp64 AS a USING i;
