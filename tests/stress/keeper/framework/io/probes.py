@@ -15,8 +15,8 @@ def four(node, cmd):
         pass
     # Fallbacks: keeper-client variants (avoid history file by setting HOME)
     for c in [
-        f"HOME=/tmp clickhouse keeper-client --host 127.0.0.1 --port {CLIENT_PORT} -q '{cmd}'",
-        f"HOME=/tmp clickhouse keeper-client -p {CLIENT_PORT} -q '{cmd}'",
+        f"timeout 2s HOME=/tmp clickhouse keeper-client --host 127.0.0.1 --port {CLIENT_PORT} -q '{cmd}'",
+        f"timeout 2s HOME=/tmp clickhouse keeper-client -p {CLIENT_PORT} -q '{cmd}'",
     ]:
         try:
             out = sh(node, c + " 2>/dev/null")["out"]
@@ -26,13 +26,13 @@ def four(node, cmd):
             continue
     # Last resort: use bash /dev/tcp to send 4lw and read reply
     try:
-        devtcp = (
+        devtcp_inner = (
             f"exec 3<>/dev/tcp/127.0.0.1/{CLIENT_PORT}; "
             f"printf '{cmd}\\n' >&3; "
             f"cat <&3; "
             f"exec 3<&-; exec 3>&-"
         )
-        out = sh(node, devtcp)["out"]
+        out = sh(node, f"timeout 2s bash -lc \"{devtcp_inner}\"")["out"]
         if str(out).strip():
             return out
     except Exception:

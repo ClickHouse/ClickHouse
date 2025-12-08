@@ -2,7 +2,7 @@ import struct
 import time
 
 import pytest
-from kazoo.exceptions import NoNodeError
+from kazoo.exceptions import NoNodeError, NodeExistsError
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
@@ -186,3 +186,32 @@ def test_session_close_shutdown(started_cluster):
         time.sleep(1)
     else:
         assert False, "Session wasn't properly cleaned up on shutdown"
+
+def test_create2_stats_match_get(started_cluster):
+    zk = _create_zk_for_node1()
+    try:
+        uid = uuid.uuid4().hex
+        path = f"/create2_stats_{uid}"
+
+        path_created, stat_create = zk.create(path, b"hello", include_data=True)
+        assert path_created == path
+
+        data, stat_get = zk.get(path)
+        assert data == b"hello"
+
+        # Kazoo's ZnodeStat exposes these fields; Create2 must be consistent with Get. 
+        for attr in (
+            "czxid",
+            "mzxid",
+            "ctime",
+            "mtime",
+            "version",
+            "cversion",
+            "aversion",
+            "ephemeralOwner",
+            "dataLength",
+            "numChildren",
+        ):
+            assert getattr(stat_create, attr) == getattr(stat_get, attr)
+    finally:
+        zk.stop()
