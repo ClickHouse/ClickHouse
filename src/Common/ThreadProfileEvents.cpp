@@ -562,23 +562,14 @@ void PerfEventsCounters::finalizeProfileEvents(ProfileEvents::Counters & profile
         // deltas from old values.
         const auto enabled = current_value.time_enabled - previous_value.time_enabled;
         const auto running = current_value.time_running - previous_value.time_running;
-        const auto difference_current_previous = static_cast<Float64>(current_value.value) - static_cast<Float64>(previous_value.value);
-
-        if (difference_current_previous < 0)
-        {
-            LOG_WARNING(getLogger("PerfEvents"),
-                "Previous value of event {} is larger than the current value. Previous value is {}, current value is {}",
-                info.settings_name, previous_value.value, current_value.value);
-                continue;
-        }
-
+        const auto difference_current_previous = static_cast<Float64>(current_value.value - previous_value.value);
         const auto multiplexing_scale_factor = static_cast<Float64>(enabled) / std::max(1., static_cast<Float64>(running));
         const auto scaled_time = multiplexing_scale_factor * difference_current_previous;
 
         UInt64 delta;
         if (!accurate::convertNumeric<Float64, UInt64, false>(scaled_time, delta))
         {
-            delta = std::numeric_limits<UInt64>::max();
+            delta = 0;
         }
 
         if (min_enabled_time > enabled)
