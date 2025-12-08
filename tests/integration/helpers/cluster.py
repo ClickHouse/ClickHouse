@@ -1969,22 +1969,20 @@ class ClickHouseCluster:
                 )
             with_remote_database_disk = False
 
-<<<<<<< HEAD
-        if not with_dolor and with_remote_database_disk is None:
-            with_remote_database_disk = int(os.getenv("CLICKHOUSE_USE_DATABASE_DISK", "0"))
-=======
         if with_remote_database_disk is None:
-            if ClickHouseInstance.is_local_server_asan_build == None:
-                build_opts = subprocess.check_output(
-                    f"""{self.server_bin_path} local -q "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'" """,
-                    stderr=subprocess.STDOUT,
-                    shell=True,
-                ).decode()
-                ClickHouseInstance.is_local_server_asan_build = (
-                    "-fsanitize=address" in build_opts
-                )
-            with_remote_database_disk = ClickHouseInstance.is_local_server_asan_build
->>>>>>> bdea215f845 (Keeper stress tests)
+            # FIXME: https://github.com/ClickHouse/ClickHouse/issues/87656
+            #
+            # if ClickHouseInstance.is_local_server_asan_build == None:
+            #     build_opts = subprocess.check_output(
+            #         f"""{self.server_bin_path} local -q "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'" """,
+            #         stderr=subprocess.STDOUT,
+            #         shell=True,
+            #     ).decode()
+            #     ClickHouseInstance.is_local_server_asan_build = (
+            #         "-fsanitize=address" in build_opts
+            #     )
+            # with_remote_database_disk = ClickHouseInstance.is_local_server_asan_build
+            with_remote_database_disk = False
 
         if with_remote_database_disk:
             logging.debug(f"Instance {name}, with_remote_database_disk enabled")
