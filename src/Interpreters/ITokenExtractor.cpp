@@ -18,9 +18,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
-    extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_QUERY;
+    extern const int NOT_IMPLEMENTED;
 }
 
 static constexpr UInt64 MIN_NGRAM_SIZE = 1;
@@ -175,7 +175,7 @@ std::tuple<UInt64, UInt64, std::optional<UInt64>> TokenizerFactory::extractSpars
     return {min_length, max_length, min_cutoff_length};
 }
 
-void TokenizerFactory::validateTokenizer(std::string_view tokenizer, const std::vector<String> & allowed_tokenizers, std::string_view caller_name)
+void TokenizerFactory::isAllowedTokenizer(std::string_view tokenizer, const std::vector<String> & allowed_tokenizers, std::string_view caller_name)
 {
     if (std::ranges::find(allowed_tokenizers, tokenizer) == allowed_tokenizers.end())
     {
@@ -199,7 +199,7 @@ std::unique_ptr<ITokenExtractor> TokenizerFactory::createTokenizer(
         std::string_view caller_name,
         bool only_validate)
 {
-    validateTokenizer(tokenizer, allowed_tokenizers, caller_name);
+    isAllowedTokenizer(tokenizer, allowed_tokenizers, caller_name);
 
     if (tokenizer == NgramsTokenExtractor::getName() || tokenizer == NgramsTokenExtractor::getExternalName())
     {

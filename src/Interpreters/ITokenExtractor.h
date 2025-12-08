@@ -161,7 +161,7 @@ private:
 class TokenizerFactory : public boost::noncopyable
 {
 public:
-    static void validateTokenizer(std::string_view tokenizer, const std::vector<String> & allowed_tokenizers, std::string_view caller_name);
+    static void isAllowedTokenizer(std::string_view tokenizer, const std::vector<String> & allowed_tokenizers, std::string_view caller_name);
 
     static std::unique_ptr<ITokenExtractor> createTokenizer(
             std::string_view tokenizer, /// internal or external tokenizer name

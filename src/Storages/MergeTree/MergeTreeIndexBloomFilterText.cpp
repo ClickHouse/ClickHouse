@@ -779,7 +779,7 @@ MergeTreeIndexPtr bloomFilterIndexTextCreator(const IndexDescription & index)
     std::vector<String> allowed_tokenizers
         = {NgramsTokenExtractor::getName(), SplitByNonAlphaTokenExtractor::getName(), SparseGramsTokenExtractor::getBloomFilterIndexName()};
 
-    TokenizerFactory::validateTokenizer(index.type, allowed_tokenizers, index.name);
+    TokenizerFactory::isAllowedTokenizer(index.type, allowed_tokenizers, index.name);
 
     size_t num_tokenizer_params = 0;
     /// Depending on tokenizer type, first n params are for tokenizer, then n, n+1, n+2 are for bloom filter

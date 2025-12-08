@@ -42,7 +42,7 @@ std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & 
             const ColumnArray * col_separators = checkAndGetColumn<ColumnArray>(col.get());
             const ColumnArray * col_separators_const = checkAndGetColumnConstData<ColumnArray>(col.get());
 
-            if (!col_separators_const && !col_separators)
+            if (!col_separators && !col_separators_const)
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
                     "Argument {} of function {} should be Array(String), got: {}",
