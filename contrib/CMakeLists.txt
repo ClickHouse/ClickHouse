@@ -280,7 +280,7 @@ add_contrib (ai-sdk-cpp-cmake ai-sdk-cpp)
 
 add_contrib (bech32)
 
-if (OS_LINUX AND ARCH_AMD64 AND (NO_SSE3_OR_HIGHER EQUAL 0))
+if (OS_LINUX AND ARCH_AMD64)
     add_contrib(simdcomp-cmake simdcomp)
 else()
     add_contrib(streamvbyte-cmake streamvbyte)

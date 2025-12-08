@@ -22,6 +22,7 @@ set (SRCS
     "${LIBRARY_DIR}/src/streamvbytedelta_x64_decode.c"
     "${LIBRARY_DIR}/src/streamvbytedelta_x64_encode.c"
     "${LIBRARY_DIR}/src/streamvbytedelta.c"
+    "${LIBRARY_DIR}/utils/shuffle_tables.c"
 )
 
 add_library (_streamvbyte ${SRCS})
@@ -36,13 +37,8 @@ if (OMIT_HEAVY_DEBUG_SYMBOLS)
 endif()
 
 target_compile_options(_streamvbyte PRIVATE
-        -Wno-unused-parameter
-        -Wno-sign-compare
-        -Wno-missing-field-initializers
-        -Wno-unused-function
-        -Wno-unused-variable
-        -Wno-implicit-fallthrough
-        -Wno-implicit-function-declaration
+    -Wno-int-conversion
+    -Wno-implicit-function-declaration
 )
 
 add_library (ch_contrib::streamvbyte ALIAS _streamvbyte)
