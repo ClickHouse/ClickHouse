@@ -191,6 +191,7 @@ namespace Setting
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsBool apply_row_policy_after_final;
+    extern const SettingsBool apply_prewhere_after_final;
 }
 
 namespace MergeTreeSetting
@@ -2697,7 +2698,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     if (isQueryWithFinal())
     {
-        bool defer_row_policy = local_settings[Setting::apply_row_level_security_after_final] && query_info.row_level_filter;
+        bool defer_row_policy = local_settings[Setting::apply_row_policy_after_final] && query_info.row_level_filter;
         bool defer_prewhere = local_settings[Setting::apply_prewhere_after_final] && query_info.prewhere_info;
 
         /// If row policy is deferred and uses non-sorting-key columns, prewhere must also be deferred
