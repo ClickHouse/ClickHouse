@@ -275,7 +275,6 @@ void LogSource::readPrefix(const NameAndTypePair & name_and_type, ISerialization
 void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & column,
     size_t max_rows_to_read, ISerialization::SubstreamsCache & cache)
 {
-    LOG_DEBUG(getLogger("LogSource"), "Read column {}/{}/{}, is_subcolumn: {}", name_and_type.name, name_and_type.type->getName(), column->getName(), name_and_type.isSubcolumn());
     ISerialization::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
     const auto & [name, type] = name_and_type;
     auto serialization = IDataType::getSerialization(name_and_type);
@@ -300,7 +299,6 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
     };
 
     serialization->deserializeBinaryBulkWithMultipleStreams(column, 0, max_rows_to_read, settings, deserialize_states[name], &cache);
-    LOG_DEBUG(getLogger("LogSource"), "Result column {}", column->getName());
 }
 
 bool LogSource::isFinished()
