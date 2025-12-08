@@ -20,6 +20,7 @@ public:
     void updateHashImpl(SipHash & hash) const override;
 
     MutableColumnPtr createColumn() const override;
+    MutableColumnPtr createUninitializedColumnWithSize(size_t size) const override;
 
     Field getDefault() const override;
 
