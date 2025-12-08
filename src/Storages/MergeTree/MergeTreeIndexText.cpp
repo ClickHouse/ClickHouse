@@ -1151,8 +1151,7 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
            ArrayTokenExtractor::getExternalName(),
            SparseGramsTokenExtractor::getExternalName()};
 
-    TokenizerFactory factory(index.name, allowed_tokenizers);
-    auto token_extractor = factory.createTokenizer(tokenizer, params);
+    auto token_extractor = TokenizerFactory::createTokenizer(tokenizer, params, allowed_tokenizers, index.name);
 
     String preprocessor = extractOption<String>(options, ARGUMENT_PREPROCESSOR).value_or("");
     UInt64 dictionary_block_size = extractOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE).value_or(DEFAULT_DICTIONARY_BLOCK_SIZE);
@@ -1187,8 +1186,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
            ArrayTokenExtractor::getExternalName(),
            SparseGramsTokenExtractor::getExternalName()};
 
-    TokenizerFactory factory(index.name, allowed_tokenizers);
-    factory.createTokenizer(tokenizer, params, true /*only_validate*/);
+    TokenizerFactory::createTokenizer(tokenizer, params, allowed_tokenizers, index.name, true /*only_validate*/);
 
     double bloom_filter_false_positive_rate = extractOption<double>(options, ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE).value_or(DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE);
 

@@ -158,26 +158,22 @@ private:
     }
 };
 
-struct TokenizerFactory : public boost::noncopyable
+class TokenizerFactory : public boost::noncopyable
 {
-    TokenizerFactory(std::string_view caller_name_, const std::vector<String> & allowed_tokenizers_)
-        : caller_name(caller_name_)
-        , allowed_tokenizers(allowed_tokenizers_)
-    {
-        chassert(!allowed_tokenizers.empty());
-    }
+public:
+    static void validateTokenizer(std::string_view tokenizer, const std::vector<String> & allowed_tokenizers, std::string_view caller_name);
 
-    void validateTokenizerType(std::string_view tokenizer) const;
+    static std::unique_ptr<ITokenExtractor> createTokenizer(
+            std::string_view tokenizer, /// internal or external tokenizer name
+            std::span<const Field> params,
+            const std::vector<String> & allowed_tokenizers,
+            std::string_view caller_name,
+            bool only_validate = false);
 
-    std::unique_ptr<ITokenExtractor> createTokenizer(std::string_view tokenizer_type, std::span<const Field> params, bool only_validate = false) const;
-
-    /// Param helper functions
+private:
     static UInt64 extractNgramParam(std::span<const Field> params);
     static std::vector<String> extractSplitByStringParam(std::span<const Field> params);
     static std::tuple<UInt64, UInt64, std::optional<UInt64>> extractSparseGramsParams(std::span<const Field> params);
-
-    String caller_name;
-    std::vector<String> allowed_tokenizers;
 };
 
 /// Parser extracting all ngrams from string.

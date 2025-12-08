@@ -23,10 +23,10 @@ namespace
 constexpr size_t arg_value = 0;
 constexpr size_t arg_tokenizer = 1;
 
-std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & arguments, std::string_view name)
+std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & arguments, std::string_view function_name)
 {
-    const auto tokenizer_type = arguments.size() < 2 ? SplitByNonAlphaTokenExtractor::getExternalName()
-                                                        : arguments[arg_tokenizer].column->getDataAt(0);
+    const auto tokenizer = arguments.size() < 2 ? SplitByNonAlphaTokenExtractor::getExternalName()
+                                                : arguments[arg_tokenizer].column->getDataAt(0);
 
     FieldVector params;
     for (size_t i = 2; i < arguments.size(); ++i)
@@ -47,7 +47,7 @@ std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & 
                     ErrorCodes::ILLEGAL_COLUMN,
                     "Argument {} of function {} should be Array(String), got: {}",
                     i + 1 /*1-based*/,
-                    name,
+                    function_name,
                     col->getFamilyName());
 
             if (col_separators_const)
@@ -64,8 +64,7 @@ std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & 
            ArrayTokenExtractor::getExternalName(),
            SparseGramsTokenExtractor::getExternalName()};
 
-    TokenizerFactory factory(name, allowed_tokenizers);
-    return factory.createTokenizer(tokenizer_type, params);
+    return TokenizerFactory::createTokenizer(tokenizer, params, allowed_tokenizers, function_name);
 }
 
 class ExecutableFunctionTokens : public IExecutableFunction
