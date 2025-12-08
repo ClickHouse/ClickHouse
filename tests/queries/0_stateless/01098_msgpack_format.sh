@@ -96,34 +96,34 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE msgpack_lc_nullable";
 
 $CLICKHOUSE_CLIENT --query="SELECT toString(number) FROM  numbers(10) FORMAT MsgPack" > "$USER_FILES_PATH/$CLICKHOUSE_DATABASE/data.msgpack"
 
-$CLICKHOUSE_CLIENT --query="SELECT * FROM file('data.msgpack', 'MsgPack', 'x UInt64')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
-$CLICKHOUSE_CLIENT --query="SELECT * FROM file('data.msgpack', 'MsgPack', 'x Float32')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
-$CLICKHOUSE_CLIENT --query="SELECT * FROM file('data.msgpack', 'MsgPack', 'x Array(UInt32)')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
-$CLICKHOUSE_CLIENT --query="SELECT * FROM file('data.msgpack', 'MsgPack', 'x Map(UInt64, UInt64)')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
+$CLICKHOUSE_CLIENT --query="SELECT * FROM file(currentDatabase() || '/data.msgpack', 'MsgPack', 'x UInt64')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
+$CLICKHOUSE_CLIENT --query="SELECT * FROM file(currentDatabase() || '/data.msgpack', 'MsgPack', 'x Float32')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
+$CLICKHOUSE_CLIENT --query="SELECT * FROM file(currentDatabase() || '/data.msgpack', 'MsgPack', 'x Array(UInt32)')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
+$CLICKHOUSE_CLIENT --query="SELECT * FROM file(currentDatabase() || '/data.msgpack', 'MsgPack', 'x Map(UInt64, UInt64)')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
 
 
 $CLICKHOUSE_CLIENT --query="SELECT number FROM  numbers(10) FORMAT MsgPack" > "$USER_FILES_PATH/$CLICKHOUSE_DATABASE/data.msgpack"
 
-$CLICKHOUSE_CLIENT --query="SELECT * FROM file('data.msgpack', 'MsgPack', 'x Float32')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
-$CLICKHOUSE_CLIENT --query="SELECT * FROM file('data.msgpack', 'MsgPack', 'x String')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
-$CLICKHOUSE_CLIENT --query="SELECT * FROM file('data.msgpack', 'MsgPack', 'x Array(UInt64)')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
-$CLICKHOUSE_CLIENT --query="SELECT * FROM file('data.msgpack', 'MsgPack', 'x Map(UInt64, UInt64)')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
+$CLICKHOUSE_CLIENT --query="SELECT * FROM file(currentDatabase() || '/data.msgpack', 'MsgPack', 'x Float32')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
+$CLICKHOUSE_CLIENT --query="SELECT * FROM file(currentDatabase() || '/data.msgpack', 'MsgPack', 'x String')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
+$CLICKHOUSE_CLIENT --query="SELECT * FROM file(currentDatabase() || '/data.msgpack', 'MsgPack', 'x Array(UInt64)')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
+$CLICKHOUSE_CLIENT --query="SELECT * FROM file(currentDatabase() || '/data.msgpack', 'MsgPack', 'x Map(UInt64, UInt64)')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
 
 
 $CLICKHOUSE_CLIENT --query="SELECT [number, number + 1] FROM  numbers(10) FORMAT MsgPack" > "$USER_FILES_PATH/$CLICKHOUSE_DATABASE/data.msgpack"
 
-$CLICKHOUSE_CLIENT --query="SELECT * FROM file('data.msgpack', 'MsgPack', 'x Float32')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
-$CLICKHOUSE_CLIENT --query="SELECT * FROM file('data.msgpack', 'MsgPack', 'x String')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
-$CLICKHOUSE_CLIENT --query="SELECT * FROM file('data.msgpack', 'MsgPack', 'x UInt64')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
-$CLICKHOUSE_CLIENT --query="SELECT * FROM file('data.msgpack', 'MsgPack', 'x Map(UInt64, UInt64)')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
+$CLICKHOUSE_CLIENT --query="SELECT * FROM file(currentDatabase() || '/data.msgpack', 'MsgPack', 'x Float32')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
+$CLICKHOUSE_CLIENT --query="SELECT * FROM file(currentDatabase() || '/data.msgpack', 'MsgPack', 'x String')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
+$CLICKHOUSE_CLIENT --query="SELECT * FROM file(currentDatabase() || '/data.msgpack', 'MsgPack', 'x UInt64')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
+$CLICKHOUSE_CLIENT --query="SELECT * FROM file(currentDatabase() || '/data.msgpack', 'MsgPack', 'x Map(UInt64, UInt64)')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
 
 
 $CLICKHOUSE_CLIENT --query="SELECT map(number, number + 1) FROM  numbers(10) FORMAT MsgPack" > "$USER_FILES_PATH/$CLICKHOUSE_DATABASE/data.msgpack"
 
-$CLICKHOUSE_CLIENT --query="SELECT * FROM file('data.msgpack', 'MsgPack', 'x Float32')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
-$CLICKHOUSE_CLIENT --query="SELECT * FROM file('data.msgpack', 'MsgPack', 'x String')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
-$CLICKHOUSE_CLIENT --query="SELECT * FROM file('data.msgpack', 'MsgPack', 'x UInt64')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
-$CLICKHOUSE_CLIENT --query="SELECT * FROM file('data.msgpack', 'MsgPack', 'x Array(UInt64)')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
+$CLICKHOUSE_CLIENT --query="SELECT * FROM file(currentDatabase() || '/data.msgpack', 'MsgPack', 'x Float32')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
+$CLICKHOUSE_CLIENT --query="SELECT * FROM file(currentDatabase() || '/data.msgpack', 'MsgPack', 'x String')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
+$CLICKHOUSE_CLIENT --query="SELECT * FROM file(currentDatabase() || '/data.msgpack', 'MsgPack', 'x UInt64')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
+$CLICKHOUSE_CLIENT --query="SELECT * FROM file(currentDatabase() || '/data.msgpack', 'MsgPack', 'x Array(UInt64)')" 2>&1 | grep -F -q "ILLEGAL_COLUMN" && echo 'OK' || echo 'FAIL';
 
 
 rm -rf "${CURDIR:?}/tmp_${CLICKHOUSE_DATABASE:?}"
