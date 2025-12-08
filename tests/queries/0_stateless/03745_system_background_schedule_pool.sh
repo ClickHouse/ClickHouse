@@ -11,7 +11,7 @@ $CLICKHOUSE_CLIENT -q "SELECT count() >= 0 AS has_tasks FROM system.background_s
 function get_background_schedule_pool_with_retries()
 {
   for _ in {1..100}; do
-    res="$($CLICKHOUSE_CLIENT -q "SELECT pool, database, table, table_uuid != toUUIDOrDefault(0) AS has_uuid, log_name FROM system.background_schedule_pool WHERE database = currentDatabase()")"
+    res="$($CLICKHOUSE_CLIENT -q "SELECT pool, database, table, table_uuid != toUUIDOrDefault(0) AS has_uuid, log_name FROM system.background_schedule_pool WHERE database = currentDatabase() ORDER BY ALL")"
     if [ -n "$res" ]; then
       echo "$res"
       return

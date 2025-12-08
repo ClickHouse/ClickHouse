@@ -6,6 +6,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+on_exit() {
+    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT storage_merge_tree_background_schedule_merge_fail;"
+}
+
+trap on_exit EXIT
+
 # Prepare
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS m;
@@ -50,5 +56,4 @@ $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS m;"
 
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS m;
-    SYSTEM DISABLE FAILPOINT storage_merge_tree_background_schedule_merge_fail;
 "

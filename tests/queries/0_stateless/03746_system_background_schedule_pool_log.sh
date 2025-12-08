@@ -43,7 +43,7 @@ if ! wait_distributed_background_flush; then
 fi
 $CLICKHOUSE_CLIENT -nmq "
   SYSTEM FLUSH LOGS background_schedule_pool_log;
-  SELECT database, table, table_uuid != toUUIDOrDefault(0) AS has_uuid, log_name, max(duration_ms) > 0, query_id != '' FROM system.background_schedule_pool_log WHERE database = currentDatabase() AND table = 'test_distributed_03745' GROUP BY ALL;
+  SELECT database, table, table_uuid != toUUIDOrDefault(0) AS has_uuid, log_name, max(duration_ms) > 0, query_id != '' FROM system.background_schedule_pool_log WHERE database = currentDatabase() AND table = 'test_distributed_03745' GROUP BY ALL ORDER BY ALL;
   DROP TABLE test_distributed_03745;
   DROP TABLE test_local_03745;
 "
