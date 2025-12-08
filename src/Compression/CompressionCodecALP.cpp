@@ -155,13 +155,13 @@ struct ALPFloatTraits<Float64>
     static constexpr Float64 UPPER = 9223372036854774784.0;
     static constexpr Float64 LOWER = -9223372036854774784.0;
 
-    static constexpr double ROUND_MAGIC = 6755399441055744.0; // 2^51 + 2^52
+    static constexpr Float64 ROUND_MAGIC = 6755399441055744.0; // 2^51 + 2^52
 };
 
 template<>
 struct ALPFloatTraits<Float32>
 {
-    static constexpr UInt8 EXPONENT_COUNT = 11;
+    static constexpr UInt8 EXPONENT_COUNT = 10;
 
     static constexpr std::array<Float32, EXPONENT_COUNT> EXPONENTS = generatePowersOf10<Float32, EXPONENT_COUNT, false>();
     static constexpr std::array<Float32, EXPONENT_COUNT> FRACTIONS = generatePowersOf10<Float32, EXPONENT_COUNT, true>();
@@ -169,7 +169,7 @@ struct ALPFloatTraits<Float32>
     static constexpr Float32 UPPER = 9223372036854774784.0f;
     static constexpr Float32 LOWER = -9223372036854774784.0f;
 
-    static constexpr float ROUND_MAGIC = 12582912.0; // 2^22 + 2^23
+    static constexpr Float32 ROUND_MAGIC = 12582912.0; // 2^22 + 2^23
 };
 
 template<FLOAT T>
