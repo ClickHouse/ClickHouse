@@ -254,9 +254,16 @@ std::string RestCatalog::retrieveAccessToken() const
     }
     else
     {
+        String encoded_auth_scope;
+        String encoded_client_id;
+        String encoded_client_secret;
+        Poco::URI::encode(auth_scope, auth_scope, encoded_auth_scope);
+        Poco::URI::encode(client_id, client_id, encoded_client_id);
+        Poco::URI::encode(client_secret, client_secret, encoded_client_secret);
+
         body = fmt::format(
             "grant_type=client_credentials&scope={}&client_id={}&client_secret={}",
-            auth_scope, client_id, client_secret);
+            encoded_auth_scope, encoded_client_id, encoded_client_secret);
         body_size = body.size();
         out_stream_callback = [&](std::ostream & os)
         {
