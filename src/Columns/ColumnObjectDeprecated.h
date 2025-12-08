@@ -250,9 +250,9 @@ public:
     StringRef getDataAt(size_t) const override { throwMustBeConcrete(); }
     bool isDefaultAt(size_t) const override { throwMustBeConcrete(); }
     void insertData(const char *, size_t) override { throwMustBeConcrete(); }
-    StringRef serializeValueIntoArena(size_t, Arena &, char const *&) const override { throwMustBeConcrete(); }
-    char * serializeValueIntoMemory(size_t, char *) const override { throwMustBeConcrete(); }
-    void deserializeAndInsertFromArena(ReadBuffer &) override { throwMustBeConcrete(); }
+    StringRef serializeValueIntoArena(size_t, Arena &, char const *&, const IColumn::SerializationSettings *) const override { throwMustBeConcrete(); }
+    char * serializeValueIntoMemory(size_t, char *, const IColumn::SerializationSettings *) const override { throwMustBeConcrete(); }
+    void deserializeAndInsertFromArena(ReadBuffer &, const IColumn::SerializationSettings *) override { throwMustBeConcrete(); }
     void skipSerializedInArena(ReadBuffer &) const override { throwMustBeConcrete(); }
     void updateHashWithValue(size_t, SipHash &) const override { throwMustBeConcrete(); }
     WeakHash32 getWeakHash32() const override { throwMustBeConcrete(); }

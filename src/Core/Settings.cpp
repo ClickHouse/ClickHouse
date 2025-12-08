@@ -7032,6 +7032,10 @@ Applied only for subquery depth = 0. Subqueries and INSERT INTO ... SELECT are n
 If the top-level construct is UNION, 'ORDER BY rand()' is injected into all children independently.
 Only useful for testing and development (missing ORDER BY is a source of non-deterministic query results).
     )", 0) \
+    DECLARE(Bool, serialize_string_in_memory_with_zero_byte, true, R"(
+Serialize String values during aggregation with zero byte at the end. Enable to keep compatibility when querying cluster of incompatible versions.
+)", 0) \
+    \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
     /* ## ADD PRODUCTION / BETA FEATURES BEFORE THIS BLOCK  ## */ \

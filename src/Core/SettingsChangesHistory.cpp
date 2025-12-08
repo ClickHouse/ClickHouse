@@ -75,6 +75,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_receive_timeout_ms", 3000, 3000, "New setting"},
             {"distributed_cache_send_timeout_ms", 3000, 3000, "New setting"},
             {"distributed_cache_tcp_keep_alive_timeout_ms", 2900, 2900, "New setting"},
+            {"serialize_string_in_memory_with_zero_byte", true, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.9",
         {
@@ -158,7 +159,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_ytsaurus_table_function", false, false, "New setting."},
             {"allow_experimental_ytsaurus_dictionary_source", false, false, "New setting."},
             {"per_part_index_stats", false, false, "New setting."},
-            {"allow_experimental_iceberg_compaction", 0, 0, "New setting "},
+            {"allow_experimental_iceberg_compaction", 0, 0, "New setting"},
             {"delta_lake_snapshot_version", -1, -1, "New setting"},
             {"use_roaring_bitmap_iceberg_positional_deletes", false, false, "New setting"},
             {"iceberg_metadata_compression_method", "", "", "New setting"},
@@ -170,6 +171,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_lightweight_update", false, true, "Lightweight updates were moved to Beta. Added an alias for setting 'allow_experimental_lightweight_update'."},
             {"allow_experimental_lightweight_update", false, true, "Lightweight updates were moved to Beta."},
             {"s3_slow_all_threads_after_retryable_error", false, false, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
+            {"serialize_string_in_memory_with_zero_byte", true, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
