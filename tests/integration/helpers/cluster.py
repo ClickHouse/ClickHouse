@@ -2606,6 +2606,16 @@ class ClickHouseCluster:
             ],
         )
 
+    def remove_directory_from_container(self, container_id, path):
+        self.exec_in_container(
+            container_id,
+            [
+                "bash",
+                "-c",
+                "rm -rf {}".format(path),
+            ],
+        )
+
     def wait_for_url(
         self, url="http://localhost:8123/ping", conn_timeout=2, interval=2, timeout=60
     ):

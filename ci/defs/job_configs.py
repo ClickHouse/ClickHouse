@@ -62,7 +62,6 @@ common_ft_job_config = Job.Config(
             "./tests/config",
             "./tests/*.txt",
             "./ci/docker/stateless-test",
-            "./ci/defs/job_configs.py",
         ],
     ),
     result_name_for_cidb="Tests",
@@ -71,12 +70,12 @@ common_ft_job_config = Job.Config(
 common_stress_job_config = Job.Config(
     name=JobNames.STRESS,
     runs_on=[],  # from parametrize()
-    command="cd ./tests/ci && python3 ./stress_check.py",
+    command="python3 ./ci/jobs/stress_job.py",
     digest_config=Job.CacheDigestConfig(
         include_paths=[
             "./tests/queries/0_stateless/",
-            "./tests/ci/stress.py",
-            "./tests/ci/stress_check.py",
+            "./ci/jobs/stress_job.py",
+            "./ci/jobs/scripts/stress/stress.py",
             "./tests/clickhouse-test",
             "./tests/config",
             "./tests/*.txt",
@@ -681,11 +680,12 @@ class JobConfigs:
     upgrade_test_jobs = Job.Config(
         name=JobNames.UPGRADE,
         runs_on=["from param"],
-        command="cd ./tests/ci && python3 ./upgrade_check.py",
+        command="python3 ./ci/jobs/upgrade_job.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "./tests/ci/upgrade_check.py",
-                "./tests/ci/stress_check.py",
+                "./ci/jobs/upgrade_job.py",
+                "./ci/jobs/stress_job.py",
+                "./ci/jobs/scripts/stress/stress.py",
                 "./tests/docker_scripts/",
                 "./ci/docker/stress-test",
             ]
@@ -851,6 +851,7 @@ class JobConfigs:
             include_paths=[
                 "./ci/docker/fuzzer",
                 "./ci/jobs/buzzhouse_job.py",
+                "./ci/jobs/scripts/log_parser.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./ci/jobs/scripts/fuzzer/",
                 "./ci/docker/fuzzer",
@@ -860,27 +861,27 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter="amd_debug",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
         Job.ParamSet(
             parameter="arm_asan",
-            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            runs_on=RunnerLabels.ARM_MEDIUM,
             requires=[ArtifactNames.CH_ARM_ASAN],
         ),
         Job.ParamSet(
             parameter="amd_tsan",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_TSAN],
         ),
         Job.ParamSet(
             parameter="amd_msan",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_MSAN],
         ),
         Job.ParamSet(
             parameter="amd_ubsan",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_UBSAN],
         ),
     )
@@ -1047,13 +1048,13 @@ class JobConfigs:
     jepsen_keeper = Job.Config(
         name=JobNames.JEPSEN_KEEPER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
+        command="python3 ./ci/jobs/jepsen_check.py keeper",
         requires=["Build (amd_binary)"],
     )
     jepsen_server = Job.Config(
         name=JobNames.JEPSEN_KEEPER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
+        command="python3 ./ci/jobs/jepsen_check.py server",
         requires=["Build (amd_binary)"],
     )
     libfuzzer_job = Job.Config(

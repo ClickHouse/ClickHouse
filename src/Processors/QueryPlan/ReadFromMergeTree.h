@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/PartitionPruner.h>
+#include <Processors/TopKThresholdTracker.h>
 
 namespace DB
 {
@@ -46,11 +47,13 @@ struct UsefulSkipIndexes
         }
     };
 
-    bool empty() const { return useful_indices.empty() && merged_indices.empty(); }
+    bool empty() const { return useful_indices.empty() && merged_indices.empty() && !skip_index_for_top_k_filtering; }
 
     std::vector<MergeTreeIndexWithCondition> useful_indices;
     std::vector<MergedDataSkippingIndexAndCondition> merged_indices;
     std::vector<std::vector<size_t>> per_part_index_orders;
+    MergeTreeIndexPtr skip_index_for_top_k_filtering{nullptr};
+    TopKThresholdTrackerPtr threshold_tracker{nullptr};
 };
 
 /// Contains parts each from different projection index
@@ -71,6 +74,16 @@ struct ProjectionIndexReadDescription
 
 struct MergeTreeIndexBuildContext;
 using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;
+
+struct TopKFilterInfo
+{
+    String column_name;
+    DataTypePtr data_type;
+    size_t limit_n;
+    int direction; /// 1 = ASC, -1 = DESC
+    bool where_clause;
+    TopKThresholdTrackerPtr threshold_tracker;
+};
 
 /// This step is created to read from MergeTree* table.
 /// For now, it takes a list of parts and creates source from it.
@@ -141,14 +154,52 @@ public:
         UInt64 total_marks_pk = 0;
         UInt64 selected_rows = 0;
         bool has_exact_ranges = false;
+        std::atomic<bool> exceeded_row_limits = false;
 
         AnalysisResult() = default;
 
-        AnalysisResult(const AnalysisResult &) = default;
-        AnalysisResult(AnalysisResult &&) noexcept = default;
+        AnalysisResult(const AnalysisResult & other)
+            : parts_with_ranges(other.parts_with_ranges)
+            , split_parts(other.split_parts)
+            , sampling(other.sampling)
+            , index_stats(other.index_stats)
+            , projection_stats(other.projection_stats)
+            , column_names_to_read(other.column_names_to_read)
+            , read_type(other.read_type)
+            , total_parts(other.total_parts)
+            , parts_before_pk(other.parts_before_pk)
+            , selected_parts(other.selected_parts)
+            , selected_ranges(other.selected_ranges)
+            , selected_marks(other.selected_marks)
+            , selected_marks_pk(other.selected_marks_pk)
+            , total_marks_pk(other.total_marks_pk)
+            , selected_rows(other.selected_rows)
+            , has_exact_ranges(other.has_exact_ranges)
+            , exceeded_row_limits(other.exceeded_row_limits.load())
+        {}
+
+        AnalysisResult(AnalysisResult && other) noexcept
+            : parts_with_ranges(std::move(other.parts_with_ranges))
+            , split_parts(std::move(other.split_parts))
+            , sampling(std::move(other.sampling))
+            , index_stats(std::move(other.index_stats))
+            , projection_stats(std::move(other.projection_stats))
+            , column_names_to_read(std::move(other.column_names_to_read))
+            , read_type(other.read_type)
+            , total_parts(other.total_parts)
+            , parts_before_pk(other.parts_before_pk)
+            , selected_parts(other.selected_parts)
+            , selected_ranges(other.selected_ranges)
+            , selected_marks(other.selected_marks)
+            , selected_marks_pk(other.selected_marks_pk)
+            , total_marks_pk(other.total_marks_pk)
+            , selected_rows(other.selected_rows)
+            , has_exact_ranges(other.has_exact_ranges)
+            , exceeded_row_limits(other.exceeded_row_limits.load())
+        {}
 
         bool readFromProjection() const { return !parts_with_ranges.empty() && parts_with_ranges.front().data_part->isProjectionPart(); }
-        void checkLimits(const Settings & settings, const SelectQueryInfo & query_info_) const;
+        bool isUsable() const { return !exceeded_row_limits; }
     };
 
     using AnalysisResultPtr = std::shared_ptr<AnalysisResult>;
@@ -227,6 +278,7 @@ public:
         const RangesInDataParts & parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const std::optional<VectorSearchParameters> & vector_search_parameters,
+        const std::optional<TopKFilterInfo> & top_k_filter_info,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
@@ -245,7 +297,8 @@ public:
     const LazilyReadInfoPtr & getLazilyReadInfo() const { return lazily_read_info; }
 
     /// Returns `false` if requested reading cannot be performed.
-    bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit, std::optional<ActionsDAG> virtual_row_conversion_);
+    bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
+    bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
     bool readsInOrder() const;
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
     const SortDescription & getSortDescription() const override { return result_sort_description; }
@@ -292,8 +345,12 @@ public:
     const std::optional<Indexes> & getIndexes() const { return indexes; }
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator() const;
 
+    void setTopKColumn(const TopKFilterInfo & top_k_filter_info_);
+    bool isSkipIndexAvailableForTopK(const String & sort_column) const;
     const ProjectionIndexReadDescription & getProjectionIndexReadDescription() const { return projection_index_read_desc; }
     ProjectionIndexReadDescription & getProjectionIndexReadDescription() { return projection_index_read_desc; }
+
+    bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
 
 private:
     MergeTreeReaderSettings reader_settings;
@@ -427,6 +484,7 @@ private:
 
     std::optional<size_t> number_of_current_replica;
 
+    std::optional<TopKFilterInfo> top_k_filter_info;
     ProjectionIndexReadDescription projection_index_read_desc;
 };
 

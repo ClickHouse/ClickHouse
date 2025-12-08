@@ -740,28 +740,7 @@ void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::Co
                 /// Deserialize binary value into dynamic column from shared data.
                 if (it->second->size() != current_size)
                 {
-                    if (src_object_column.getDynamicPaths().contains(path))
-                        throw Exception(
-                            ErrorCodes::LOGICAL_ERROR,
-                            "Path {} is present both in shared data and in dynamic paths at row {}. Dynamic path value type: {}. Shared data path value type: {}",
-                            path,
-                            row,
-                            src_object_column.getDynamicPathsPtrs().at(toString(path))->getTypeNameAt(row),
-                            decodeDataType(src_shared_data_values->getDataAt(i))->getName());
-
-                    for (size_t j = offset; j != end; ++j)
-                    {
-                        if (j != i && src_shared_data_paths->getDataAt(j) == path)
-                            throw Exception(
-                            ErrorCodes::LOGICAL_ERROR,
-                            "Path {} is duplicated inside shared data at offsets {} and {}. First value type: {}. Second value type: {}",
-                            path,
-                            i,
-                            j,
-                            decodeDataType(src_shared_data_values->getDataAt(i))->getName(),
-                            decodeDataType(src_shared_data_values->getDataAt(j))->getName());
-                    }
-
+                    src_object_column.validateDynamicPathsAndSharedData();
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {} != {}", path, it->second->size(), current_size);
                 }
                 deserializeValueFromSharedData(src_shared_data_values, i, *it->second);
