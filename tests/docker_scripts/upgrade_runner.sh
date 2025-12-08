@@ -9,7 +9,7 @@ dmesg --clear
 set -x
 
 # we mount tests folder from repo to /usr/share
-ln -s /repo/tests/ci/stress.py /usr/bin/stress
+ln -s /repo/ci/jobs/scripts/stress/stress.py /usr/bin/stress
 ln -s /repo/tests/clickhouse-test /usr/bin/clickhouse-test
 ln -s /repo/tests/ci/download_release_packages.py /usr/bin/download_release_packages
 ln -s /repo/tests/ci/get_previous_release_tag.py /usr/bin/get_previous_release_tag

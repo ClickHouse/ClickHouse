@@ -214,7 +214,7 @@ def main():
         rerun_count = 50
     elif is_targeted_check:
         print(f"Rerun count set to 5 for targeted check")
-        rerun_count = 10
+        rerun_count = 5
 
     if not info.is_local_run:
         # TODO: find a way to work with Azure secret so it's ok for local tests as well, for now keep azure disabled
