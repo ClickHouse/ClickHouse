@@ -103,18 +103,18 @@ struct ManifestFileEntry : public boost::noncopyable
         , added_sequence_number(added_sequence_number_)
         , snapshot_id(snapshot_id_)
         , schema_id(schema_id_)
-        , partition_key_value(partition_key_value_)
-        , common_partition_specification(common_partition_specification_)
-        , columns_infos(columns_infos_)
+        , partition_key_value(std::move(partition_key_value_))
+        , common_partition_specification(std::move(common_partition_specification_))
+        , columns_infos(std::move(columns_infos_))
         , file_format(file_format_)
         , reference_data_file_path(reference_data_file_path_)
-        , equality_ids(equality_ids_)
+        , equality_ids(std::move(equality_ids_))
         , sort_order_id(sort_order_id_)
     {
     }
 };
 
-using ManifestFileEntryPtr = std::shared_ptr<ManifestFileEntry>;
+using ManifestFileEntryPtr = std::shared_ptr<const ManifestFileEntry>;
 
 /**
  * Manifest file has the following format: '/iceberg_data/db/table_name/metadata/c87bfec7-d36c-4075-ad04-600b6b0f2020-m0.avro'
