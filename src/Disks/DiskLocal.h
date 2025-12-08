@@ -155,7 +155,7 @@ public:
     bool supportsChmod() const override { return true; }
     void chmod(const String & path, mode_t mode) override;
 
-    ObjectStoragePtr getObjectStorage() override;
+    ObjectStoragePtr getObjectStorage() const override;
 
 protected:
     void checkAccessImpl(const String & path) override;
