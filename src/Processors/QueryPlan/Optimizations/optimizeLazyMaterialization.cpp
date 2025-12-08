@@ -119,7 +119,6 @@ static void collectLazilyReadColumnNames(
     NameSet lazily_read_column_name_set;
 
     const auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
-        .withExtendedObjects()
         .withSubcolumns(storage_snapshot->storage.supportsSubcolumns());
 
     for (const auto & column_name : all_column_names)

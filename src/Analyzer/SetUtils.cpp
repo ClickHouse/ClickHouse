@@ -42,16 +42,13 @@ size_t getCompoundTypeDepth(const IDataType & type)
         else if (which_type.isTuple())
         {
             const auto & tuple_elements = assert_cast<const DataTypeTuple &>(*current_type).getElements();
+            ++result;
             if (!tuple_elements.empty())
                 current_type = tuple_elements.at(0).get();
             else
             {
-                /// Special case: tuple with no element - tuple(). In this case, what's the compound type depth?
-                /// I'm not certain about the theoretical answer, but from experiment, 1 is the most reasonable choice.
-                return 1;
+                break;
             }
-
-            ++result;
         }
         else
         {
@@ -162,7 +159,8 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(const DataTypePtr & expres
     DataTypes set_element_types = {expression_type};
     const auto * lhs_tuple_type = typeid_cast<const DataTypeTuple *>(expression_type.get());
 
-    if (lhs_tuple_type && lhs_tuple_type->getElements().size() != 1)
+    /// Do not unpack if empty tuple or single element tuple
+    if (lhs_tuple_type && lhs_tuple_type->getElements().size() > 1)
         set_element_types = lhs_tuple_type->getElements();
 
     for (auto & set_element_type : set_element_types)

@@ -10,6 +10,7 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/PODArray.h>
 #include <Common/formatReadable.h>
+#include <Common/setThreadName.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -161,7 +162,7 @@ void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
             {
                 thread.emplace([this, thread_group = CurrentThread::getGroup()]
                 {
-                    ThreadGroupSwitcher switcher(thread_group, "PrettyWriter");
+                    ThreadGroupSwitcher switcher(thread_group, ThreadName::PRETTY_WRITER);
 
                     writingThread();
                 });

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/DatabaseCatalog.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
@@ -23,10 +24,17 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query);
 String readMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path);
 void writeMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path, std::string_view content, bool fsync_metadata);
 
-void updateDatabaseCommentWithMetadataFile(DatabasePtr db, const AlterCommand & command, ContextPtr query_context);
+/// TODO: move more common code to here
+class DatabaseWithAltersOnDiskBase : public IDatabase
+{
+    using IDatabase::IDatabase;
+
+public:
+    void alterDatabaseComment(const AlterCommand & command, ContextPtr query_context) override;
+};
 
 /// A base class for databases that manage their own list of tables.
-class DatabaseWithOwnTablesBase : public IDatabase, protected WithContext
+class DatabaseWithOwnTablesBase : public DatabaseWithAltersOnDiskBase, protected WithContext
 {
 public:
     bool isExternal() const override { return false; }

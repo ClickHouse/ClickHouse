@@ -187,7 +187,10 @@ void SerializationSubObject::deserializeBinaryBulkWithMultipleStreams(
     auto & column_object = assert_cast<ColumnObject &>(*mutable_column);
     /// If it's a new object column, set dynamic paths and statistics.
     if (column_object.empty())
+    {
+        column_object.setMaxDynamicPaths(sub_object_state->dynamic_sub_paths.size());
         column_object.setDynamicPaths(sub_object_state->dynamic_sub_paths);
+    }
 
     auto & typed_paths = column_object.getTypedPaths();
     auto & dynamic_paths = column_object.getDynamicPaths();

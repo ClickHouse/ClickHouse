@@ -1,4 +1,5 @@
 import pytest
+import json
 
 from helpers.iceberg_utils import (
     default_upload_directory,
@@ -16,7 +17,7 @@ def get_array(query_result: str):
 def test_read_in_order(started_cluster_iceberg_with_spark,  storage_type):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
-    TABLE_NAME = "test_position_deletes_" + storage_type + "_" + get_uuid_str()
+    TABLE_NAME = "test_read_in_order_" + storage_type + "_" + get_uuid_str()
 
     spark.sql(f"""
         CREATE TABLE {TABLE_NAME} (
@@ -32,6 +33,27 @@ def test_read_in_order(started_cluster_iceberg_with_spark,  storage_type):
 
     spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1,'a'), (3, 'c')")
     spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (2,'d'), (4, 'f')")
+
+    # HACK This is terribly ugly hack, because of the issue:https://github.com/apache/iceberg/issues/13634
+    # Iceberg sort order looks relatively new feature. There are no writer implementations which support it properly.
+    # For example pyiceberg doesn't support it at all, you can specify sort order, but data will be written unsorted.
+    # Spark implementation supports it, i.e. writes sorted data, but doesn't write proper sort_order_id in manifest files (always writes 0).
+    # Here we manually modify metadata file to set actual sort order to id 0.
+    with open(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata/v4.metadata.json", "rb") as f:
+        content = json.load(f)
+        for order in content['sort-orders']:
+            if order['order-id'] == 1:
+                order_found = order
+                break
+        else:
+            raise Exception("Sort order with id 1 not found")
+        order_found['order-id'] = 0
+        content['sort-orders'] = [order_found]
+        content['default-sort-order-id'] = 0
+
+        with open(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata/v4.metadata.json", "w") as out_f:
+            json.dump(content, out_f)
+    # HACK END
 
     files = default_upload_directory(
         started_cluster_iceberg_with_spark,

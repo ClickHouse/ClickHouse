@@ -145,7 +145,16 @@ public:
     }
 };
 
-class TextIndexPostingsCache : public CacheBase<UInt128, PostingList, UInt128TrivialHash>
+/// Estimate of the memory usage (bytes) of a text index posting list in cache
+struct TextIndexPostingsWeightFunction
+{
+    size_t operator()(const PostingList & postings) const
+    {
+        return postings.getSizeInBytes();
+    }
+};
+
+class TextIndexPostingsCache : public CacheBase<UInt128, PostingList, UInt128TrivialHash, TextIndexPostingsWeightFunction>
 {
 public:
     TextIndexPostingsCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)

@@ -319,6 +319,11 @@ parser.add_argument(
     default=(20, 30),
     help="In seconds. Two ordered integers separated by comma (e.g., 30,60)",
 )
+parser.add_argument(
+    "--set-shared-mergetree-disk",
+    action="store_true",
+    help="Set shared merge tree disk or policy",
+)
 
 args = parser.parse_args()
 
@@ -485,7 +490,7 @@ catalog_server = create_spark_http_server(cluster, args.with_unity, test_env_var
 # Start the load generator, at the moment only BuzzHouse is available
 generator: Generator = Generator(pathlib.Path(), pathlib.Path(), None)
 if args.generator == "buzzhouse":
-    generator = BuzzHouseGenerator(args, cluster, catalog_server)
+    generator = BuzzHouseGenerator(args, cluster, catalog_server, server_settings)
 logger.info("Start load generator")
 client = generator.run_generator(servers[0], logger, args)
 
@@ -574,6 +579,25 @@ leak_lower_bound, leak_upper_bound = args.time_between_leak_detections
 if args.with_leak_detection:
     leak_detector.reset_and_capture_baseline(cluster)
 
+
+def explain_returncode(rc: int) -> str:
+    if rc == 0:
+        return "successfully (0)."
+    if rc < 0:
+        sig = -rc
+        try:
+            name = signal.Signals(sig).name
+        except ValueError:
+            name = f"SIG{sig}"
+        try:
+            reason = signal.strsignal(sig)  # Py3.8+ (wording varies by platform)
+        except Exception:
+            reason = ""
+        extra = f" - {reason}" if reason else ""
+        return f"terminated by signal {sig} ({name}){extra}."
+    return f"with status {rc}."
+
+
 while all_running:
     start = time.time()
     finish = start + random.randint(lower_bound, upper_bound)
@@ -582,12 +606,13 @@ while all_running:
     while all_running and start < finish:
         interval = 1
         if client.process.poll() is not None:
-            logger.info("Load generator finished")
+            logger.info(
+                f"Load generator finished {explain_returncode(client.process.returncode)}"
+            )
             all_running = False
         for server in servers:
-            try:
-                server.query("SELECT 1;")
-            except:
+            pid = server.get_process_pid("clickhouse")
+            if pid is None:
                 logger.info(f"The server {server.name} is not running")
                 all_running = False
         if (

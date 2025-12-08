@@ -1,0 +1,9 @@
+<clickhouse>
+    <!-- Allow merge tree settings to avoid errors while fuzzing definitions of tables -->
+    <merge_tree>
+        <allow_nullable_key>1</allow_nullable_key>
+    </merge_tree>
+    <!-- Definitions to be used by BuzzHouse -->
+    <allow_experimental_transactions>1</allow_experimental_transactions>
+    <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
+</clickhouse>

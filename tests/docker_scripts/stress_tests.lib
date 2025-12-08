@@ -49,10 +49,10 @@ function run_with_retry()
 
 function install_packages()
 {
-    run_with_retry 3 dpkg -i "$1"/clickhouse-common-static_*.deb
-    run_with_retry 3 dpkg -i "$1"/clickhouse-common-static-dbg_*.deb
-    run_with_retry 3 dpkg -i "$1"/clickhouse-server_*.deb
-    run_with_retry 3 dpkg -i "$1"/clickhouse-client_*.deb
+    dpkg -i "$1"/clickhouse-common-static_*.deb
+    dpkg -i "$1"/clickhouse-common-static-dbg_*.deb
+    dpkg -i "$1"/clickhouse-server_*.deb
+    dpkg -i "$1"/clickhouse-client_*.deb
 }
 
 function configure()
@@ -169,11 +169,6 @@ EOL
                 <enable_analyzer>
                     <readonly/>
                 </enable_analyzer>
-
-                <!-- This feature is broken, deprecated and will be removed. We don't want more reports about it -->
-                <allow_experimental_object_type>
-                    <readonly/>
-                </allow_experimental_object_type>
 
                 <!-- Prevent stack overflow -->
                 <max_ast_depth>

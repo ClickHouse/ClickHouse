@@ -20,6 +20,8 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 using IColumnPermutation = PaddedPODArray<size_t>;
 
+struct KeyDescription;
+
 /// Description of projections for Storage
 struct ProjectionDescription
 {
@@ -76,7 +78,7 @@ struct ProjectionDescription
         const ColumnsDescription & columns,
         ASTPtr partition_columns,
         const Names & minmax_columns,
-        const ASTs & primary_key_asts,
+        const KeyDescription & primary_key,
         ContextPtr query_context);
 
     ProjectionDescription() = default;

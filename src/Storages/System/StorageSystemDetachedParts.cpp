@@ -15,6 +15,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <IO/SharedThreadPools.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/setThreadName.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
@@ -165,7 +166,7 @@ private:
 
         auto max_thread_to_run = std::max(size_t(1), std::min(support_threads, worker_state.tasks.size() / 10));
 
-        ThreadPoolCallbackRunnerLocal<void> runner(getIOThreadPool().get(), "DP_BytesOnDisk");
+        ThreadPoolCallbackRunnerLocal<void> runner(getIOThreadPool().get(), ThreadName::DETACHED_PARTS_BYTES);
 
         for (size_t i = 0; i < max_thread_to_run; ++i)
         {

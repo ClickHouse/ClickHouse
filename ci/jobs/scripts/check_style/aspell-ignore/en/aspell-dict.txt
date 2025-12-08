@@ -313,6 +313,7 @@ Doxygen
 Dresseler
 Durre
 ECMA
+EntryAndExit
 ETag
 EachRow
 Ecto
@@ -326,6 +327,7 @@ Encodings
 Enum
 Enums
 Eoan
+epilog
 EphemeralNode
 EscapingRule
 Ethereum
@@ -570,6 +572,7 @@ JSONExtractStringCaseInsensitive
 JSONExtractUInt
 JSONExtractUIntCaseInsensitive
 JSONHas
+JSONL
 JSONLength
 JSONLines
 JSONObjectEachRow
@@ -863,6 +866,7 @@ Observability
 Octonica
 Ok
 OnTime
+OneLake
 OpenAI
 OpenCelliD
 OpenFileForRead
@@ -913,6 +917,7 @@ PeerDB
 PendingAsyncInsert
 Percona
 PerfEventInfo
+Perfetto
 PhpStorm
 PlantUML
 Poess
@@ -952,6 +957,7 @@ PrivatePreviewBadge
 ProfileEvents
 Profiler
 Proleptic
+prolog
 PromHouse
 PromQL
 Promql
@@ -1331,6 +1337,7 @@ Zabbix
 Zipkin
 ZooKeeper
 ZooKeeper's
+ZooKeeperClientLastZXIDSeen
 ZooKeeperRequest
 ZooKeeperSession
 ZooKeeperWatch
@@ -1395,10 +1402,14 @@ appendTrailingCharIfAbsent
 approximative
 approxtopk
 approxtopsum
+areaCartesian
+areaSpherical
 argMax
 argMin
 argmax
 argmin
+argAndMax
+argAndMin
 arrayAUC
 arrayAUCPR
 arrayAll
@@ -1862,6 +1873,7 @@ dictGetAll
 dictGetChildren
 dictGetDescendant
 dictGetHierarchy
+dictGetKeys
 dictGetOrDefault
 dictGetOrNull
 dictGetUUID
@@ -1987,6 +1999,8 @@ flamegraph
 flatbuffers
 flattenTuple
 flink
+Flink
+flipCoordinates
 fluentd
 fmtlib
 formatDateTime
@@ -2503,6 +2517,7 @@ multiline
 multilinestring
 multiplyDecimal
 multipolygon
+multipolygons
 multiquery
 multiread
 multisearchany
@@ -2671,6 +2686,8 @@ pclmulqdq
 pcre
 perf
 performant
+perimeterCartesian
+perimeterSpherical
 perkey
 perl
 persistency
@@ -2860,6 +2877,7 @@ readWKTMultiPolygon
 readWKTPoint
 readWKTPolygon
 readWKTRing
+readWkt
 readahead
 readline
 readme
@@ -3532,6 +3550,8 @@ xeus
 xkcd
 xlarge
 xml
+XRay
+xray
 xxHash
 xz
 yaml
@@ -3547,3 +3567,4 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+zxid

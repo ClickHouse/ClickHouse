@@ -27,19 +27,19 @@ Positions: 5 0 1 2 3
     Locality: UNSPECIFIED
     Expression: equals(__table1.name, __table2.name)
     Expression:
-    Actions: INPUT : 0 -> __table1.name String : 0
-             INPUT : 1 -> __table2.name String : 1
-             INPUT :: 2 -> __table1.uid Int16 : 2
-             INPUT :: 3 -> __table1.age Int16 : 3
-             INPUT :: 4 -> __table2.age_sum Nullable(Int64) : 4
-             FUNCTION equals(__table1.name : 0, __table2.name : 1) -> equals(__table1.name, __table2.name) UInt8 : 5
-    Positions: 2 0 3 4 1
+    Actions: INPUT :: 0 -> __table1.uid Int16 : 0
+             INPUT : 1 -> __table1.name String : 1
+             INPUT :: 2 -> __table1.age Int16 : 2
+             INPUT :: 3 -> __table2.age_sum Nullable(Int64) : 3
+             INPUT : 4 -> __table2.name String : 4
+             FUNCTION equals(__table1.name : 1, __table2.name : 4) -> equals(__table1.name, __table2.name) UInt8 : 5
+    Positions: 0 1 2 3 4
     Expression Sources:
-    __table1.name: {0}
-    __table2.name: {1}
     __table1.uid: {0}
+    __table1.name: {0}
     __table1.age: {0}
     __table2.age_sum: {1}
+    __table2.name: {1}
       Expression (Change column names to column identifiers)
       Actions: INPUT : 0 -> uid Int16 : 0
                INPUT : 1 -> name String : 1
@@ -102,19 +102,19 @@ Positions: 5 0 1 2 3
     Locality: UNSPECIFIED
     Expression: equals(__table1.name, __table2.name)
     Expression:
-    Actions: INPUT : 0 -> __table1.name String : 0
-             INPUT : 1 -> __table2.name String : 1
-             INPUT :: 2 -> __table1.uid Int16 : 2
-             INPUT :: 3 -> __table1.age Int16 : 3
-             INPUT :: 4 -> __table2.age_sum Nullable(Int64) : 4
-             FUNCTION equals(__table1.name : 0, __table2.name : 1) -> equals(__table1.name, __table2.name) UInt8 : 5
-    Positions: 2 0 3 4 1
+    Actions: INPUT :: 0 -> __table1.uid Int16 : 0
+             INPUT : 1 -> __table1.name String : 1
+             INPUT :: 2 -> __table1.age Int16 : 2
+             INPUT :: 3 -> __table2.age_sum Nullable(Int64) : 3
+             INPUT : 4 -> __table2.name String : 4
+             FUNCTION equals(__table1.name : 1, __table2.name : 4) -> equals(__table1.name, __table2.name) UInt8 : 5
+    Positions: 0 1 2 3 4
     Expression Sources:
-    __table1.name: {0}
-    __table2.name: {1}
     __table1.uid: {0}
+    __table1.name: {0}
     __table1.age: {0}
     __table2.age_sum: {1}
+    __table2.name: {1}
       Expression (Change column names to column identifiers)
       Actions: INPUT : 0 -> uid Int16 : 0
                INPUT : 1 -> name String : 1
@@ -179,19 +179,19 @@ Positions: 5 0 1 2 3
     Locality: UNSPECIFIED
     Expression: equals(__table1.name, __table2.name)
     Expression:
-    Actions: INPUT : 0 -> __table1.name String : 0
-             INPUT : 1 -> __table2.name String : 1
-             INPUT :: 2 -> __table1.uid Int16 : 2
-             INPUT :: 3 -> __table1.age Int16 : 3
-             INPUT :: 4 -> __table2.age_sum Nullable(Int64) : 4
-             FUNCTION equals(__table1.name : 0, __table2.name : 1) -> equals(__table1.name, __table2.name) UInt8 : 5
-    Positions: 2 0 3 4 1
+    Actions: INPUT :: 0 -> __table1.uid Int16 : 0
+             INPUT : 1 -> __table1.name String : 1
+             INPUT :: 2 -> __table1.age Int16 : 2
+             INPUT :: 3 -> __table2.age_sum Nullable(Int64) : 3
+             INPUT : 4 -> __table2.name String : 4
+             FUNCTION equals(__table1.name : 1, __table2.name : 4) -> equals(__table1.name, __table2.name) UInt8 : 5
+    Positions: 0 1 2 3 4
     Expression Sources:
-    __table1.name: {0}
-    __table2.name: {1}
     __table1.uid: {0}
+    __table1.name: {0}
     __table1.age: {0}
     __table2.age_sum: {1}
+    __table2.name: {1}
       Expression (Change column names to column identifiers)
       Actions: INPUT : 0 -> uid Int16 : 0
                INPUT : 1 -> name String : 1
@@ -256,19 +256,19 @@ Positions: 5 0 1 2 3
     Locality: UNSPECIFIED
     Expression: equals(__table1.name, __table2.name)
     Expression:
-    Actions: INPUT : 0 -> __table1.name String : 0
-             INPUT : 1 -> __table2.name String : 1
-             INPUT :: 2 -> __table1.uid Int16 : 2
-             INPUT :: 3 -> __table1.age Int16 : 3
-             INPUT :: 4 -> __table2.age_sum Nullable(Int64) : 4
-             FUNCTION equals(__table1.name : 0, __table2.name : 1) -> equals(__table1.name, __table2.name) UInt8 : 5
-    Positions: 2 0 3 4 1
+    Actions: INPUT :: 0 -> __table1.uid Int16 : 0
+             INPUT : 1 -> __table1.name String : 1
+             INPUT :: 2 -> __table1.age Int16 : 2
+             INPUT :: 3 -> __table2.age_sum Nullable(Int64) : 3
+             INPUT : 4 -> __table2.name String : 4
+             FUNCTION equals(__table1.name : 1, __table2.name : 4) -> equals(__table1.name, __table2.name) UInt8 : 5
+    Positions: 0 1 2 3 4
     Expression Sources:
-    __table1.name: {0}
-    __table2.name: {1}
     __table1.uid: {0}
+    __table1.name: {0}
     __table1.age: {0}
     __table2.age_sum: {1}
+    __table2.name: {1}
       Expression (Change column names to column identifiers)
       Actions: INPUT : 0 -> uid Int16 : 0
                INPUT : 1 -> name String : 1

@@ -3628,6 +3628,51 @@ def test_kafka_assigned_partitions(kafka_cluster):
         metrics_before,
     )
 
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [k.generate_old_create_table_query, k.generate_new_create_table_query],
+)
+def test_kafka_consumer_reschedule_validation(kafka_cluster, create_query_generator):
+    """
+    Test that kafka_consumer_reschedule_ms is properly validated against
+    kafka_consumers_pool_ttl_ms (reschedule_ms < pool_ttl_ms).
+    """
+    suffix = k.random_string(6)
+    kafka_table = f"kafka_reschedule_invalid_{suffix}"
+    topic_name = f"test_reschedule_validation_{suffix}"
+
+    # Should fail: reschedule_ms > pool_ttl_ms
+    create_query = create_query_generator(
+        kafka_table,
+        "key UInt64, value UInt64",
+        topic_list=topic_name,
+        consumer_group=topic_name,
+        settings={
+            "kafka_consumers_pool_ttl_ms": 1000,
+            "kafka_consumer_reschedule_ms": 2000,  # Invalid: greater than TTL
+        },
+    )
+    with pytest.raises(
+        QueryRuntimeException, 
+        match=r".*kafka_consumers_pool_ttl_ms.*cannot be less than.*kafka_consumer_reschedule_ms.*"
+    ):
+        instance.query(create_query)
+
+    # Should succeed: reschedule_ms < pool_ttl_ms
+    kafka_table_valid = f"kafka_reschedule_valid_{suffix}"
+    create_query = create_query_generator(
+        kafka_table_valid,
+        "key UInt64, value UInt64",
+        topic_list=topic_name,
+        consumer_group=f"{topic_name}_valid",
+        settings={
+            "kafka_consumers_pool_ttl_ms": 10000,
+            "kafka_consumer_reschedule_ms": 100,  # Valid
+        },
+    )
+    instance.query(create_query)
+
+
 
 if __name__ == "__main__":
     cluster.start()

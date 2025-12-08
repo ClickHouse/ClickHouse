@@ -28,7 +28,7 @@ struct ExtractTopLevelDomain
 
             const auto * host_end = host.data() + host.size();
 
-            Pos last_dot = find_last_symbols_or_null<'.'>(host.data(), host_end);  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+            Pos last_dot = find_last_symbols_or_null<'.'>(host.data(), host_end); /// NOLINT(bugprone-suspicious-stringview-data-usage)
             if (!last_dot)
                 return;
 

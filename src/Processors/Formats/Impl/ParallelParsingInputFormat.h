@@ -99,7 +99,7 @@ public:
         , max_block_size(params.max_block_size)
         , last_block_missing_values(getPort().getHeader().columns())
         , is_server(params.is_server)
-        , runner(getFormatParsingThreadPool().get(), "ChunkParser")
+        , runner(getFormatParsingThreadPool().get(), ThreadName::PARALLEL_FORMATER_PARSER)
     {
         // One unit for each thread, including segmentator and reader, plus a
         // couple more units so that the segmentation thread doesn't spuriously
