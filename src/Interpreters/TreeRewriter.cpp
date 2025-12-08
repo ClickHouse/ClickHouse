@@ -1021,11 +1021,6 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
             source_columns.insert(source_columns.end(), columns_from_storage.begin(), columns_from_storage.end());
 
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-        source_columns_ordinary = metadata_snapshot->getColumns().getOrdinary();
-    }
-    else
-    {
-        source_columns_ordinary = source_columns;
     }
 
     source_columns_set = removeDuplicateColumns(source_columns);
@@ -1216,7 +1211,7 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
     /// Check for subcolumns in unknown required columns.
     if (!unknown_required_source_columns.empty() && (!storage || storage->supportsSubcolumns()))
     {
-        for (const NameAndTypePair & pair : source_columns_ordinary)
+        for (const NameAndTypePair & pair : required_source_columns)
         {
             for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
             {
