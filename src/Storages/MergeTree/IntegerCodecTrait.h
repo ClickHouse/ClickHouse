@@ -1,29 +1,11 @@
 #pragma once
 
-#if defined(__x86_64__) || defined(_M_X64)
-#if defined(__AVX512F__)
-# define USE_SIMDCOMP_AVX512 1
-#elif defined(__AVX2__)
-# define USE_SIMDCOMP_AVX 1
-#elif defined(__SSE4_1__)
-# define USE_SIMDCOMP_SSE41 1
-#else
-# define USE_STREAMVBYTE 1
-#endif
-#else
-# define USE_STREAMVBYTE 1
-#endif
 extern "C"
 {
-#if USE_STREAMVBYTE
-#include <streamvbyte.h>
-#include <streamvbytedelta.h>
-#elif USE_SIMDCOMP_AVX512
-#include "avx512bitpacking.h"
-#elif USE_SIMDCOMP_AVX2
-#include "avxbitpacking.h"
+#if defined(__x86_64__) || defined(_M_X64)
+#include <simdcomp.h>
 #else
-#include "simdbitpacking.h"
+#include <streamvbyte.h>
 #endif
 }
 
@@ -49,46 +31,51 @@ struct CodecTraits<uint32_t>
 {
     ALWAYS_INLINE static std::pair<size_t, size_t> evaluateSizeAndMaxBits(const std::vector<uint32_t> & data)
     {
-#if USE_STREAMVBYTE
-        return { streamvbyte_max_compressedbytes(data.size()), 0 };
-#else
+#if defined(__x86_64__) || defined(_M_X64)
         auto bits = maxbits_length(data.data(), data.size());
         return { bits * data.size(), bits };
+#else
+        return { streamvbyte_max_compressedbytes(data.size()), 0 };
 #endif
     }
 
     ALWAYS_INLINE static uint32_t encode(uint32_t * p, std::size_t n, [[maybe_unused]] uint32_t bits, unsigned char *out)
     {
-#if USE_STREAMVBYTE
-        return streamvbyte_delta_encode(p, n, out, 0);
-#elif USE_SIMDCOMP_AVX512
+#if defined(__x86_64__) || defined(_M_X64)
+#if defined(__AVX512F__)
         const auto * end = avx512pack(p, static_cast<__m512i*>(out), bits);
         return static_cast<uint32_t>(end - out);
-#elif USE_SIMDCOMP_AVX
+#endif
+#if defined(__AVX2__)
         const auto * end = avxpack(p, static_cast<__m256i*>(out), bits);
         return static_cast<uint32_t>(end - out);
-#else
+#endif
+#if defined(__SSE4_1__)
         return simdpack(p, static_cast<__m128i*>(out), bits);
         return static_cast<uint32_t>(end - out);
 #endif
+#endif
+        return streamvbyte_delta_encode(p, n, out, 0);
     }
 
     ALWAYS_INLINE static std::size_t decode(unsigned char * p, std::size_t n, [[maybe_unused]] uint32_t bits, uint32_t *out)
     {
-#if USE_STREAMVBYTE
-        return streamvbyte_delta_decode(p, out, n, 0);
-#elif USE_SIMDCOMP_AVX512
+#if defined(__x86_64__) || defined(_M_X64)
+#if defined(__AVX512F__)
         avx512unpack(p, static_cast<__m512i*>(out), bits);
         return n * bits;
-#elif USE_SIMDCOMP_AVX
+#endif
+#if defined(__AVX2__)
         avxunpack(p, static_cast<__m256i*>(out), bits);
         return n * bits;
-#else
+#endif
+#if defined(__SSE4_1__)
         simdunpack(p, static_cast<__m128i*>(out), bits);
         return n * bits;
 #endif
+#endif
+        return streamvbyte_delta_decode(p, out, n, 0);
     }
-
 };
 
 /// Specialization of CodecTraits for uint64_t.
