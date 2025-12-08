@@ -352,11 +352,9 @@ if seed == 0:
 random.seed(seed)
 logger.info(f"Using seed: {seed}")
 
-# Start the cluster, by using one the server binaries
-if len(args.server_binaries) != 2:
-    raise Exception("Only two binaries are supported at the moment")
-
-if random.randint(1, 100) <= 90:
+sorted_binaries = []
+# Start the cluster, by using one of the server binaries
+if len(args.server_binaries) > 1 and random.randint(1, 100) <= 90:
     # Pick the lowest version most of the times
     def get_clickhouse_version(binary_path):
         result = subprocess.run(
@@ -368,16 +366,20 @@ if random.randint(1, 100) <= 90:
             return tuple(int(x) for x in match.group(1).split("."))
         raise ValueError(f"Could not parse version from {binary_path}")
 
-    first_server = args.server_binaries[
-        (
-            0
-            if get_clickhouse_version(args.server_binaries[0])
-            < get_clickhouse_version(args.server_binaries[1])
-            else 1
-        )
-    ]
+    first_server = args.server_binaries[0]
+    lowest_version = get_clickhouse_version(first_server)
+    for val in args.server_binaries:
+        next_version = get_clickhouse_version(val)
+        if next_version < lowest_version:
+            first_server = val
+            lowest_version = next_version
 else:
     first_server = random.choice(args.server_binaries)
+# Make sure the first server version is always first
+sorted_binaries.append(first_server)
+for val in args.server_binaries:
+    if val != first_server:
+        sorted_binaries.append(val)
 
 # Find if private binary is being used
 is_private_binary = False
@@ -412,6 +414,7 @@ cluster = ClickHouseCluster(
     azurite_default_port=10000,
     server_bin_path=first_server,
     client_bin_path=args.client_binary,
+    server_binaries=sorted_binaries,
 )
 
 # Set environment variables such as locales and timezones
@@ -472,10 +475,9 @@ for i in range(0, len(args.replica_values)):
     )
 # Copy the binaries into the containers
 server_versions = {}
-first_id = 0 if first_server == args.server_binaries[0] else 1
 for server in servers:
-    server_versions[server.name] = args.server_binaries[first_id]
-cluster.start(server_binaries=args.server_binaries, first_id=first_id)
+    server_versions[server.name] = first_server
+cluster.start()
 logger.info(
     f"Starting cluster with {len(servers)} server(s) and server binary {first_server}"
 )
@@ -665,24 +667,26 @@ while all_running:
         time.sleep(1)
         # Replace server binary, using a new temporary symlink
         if (
-            len(args.server_binaries) > 1
+            len(sorted_binaries) > 1
             and random.randint(1, 100) <= args.change_server_version_prob
         ):
-            next_server = args.server_binaries[
-                0 if server_versions[next_pick.name] == args.server_binaries[1] else 1
-            ]
+            if len(servers) == 1 and len(sorted_binaries) == 2:
+                # Pick the other server version
+                next_server = sorted_binaries[
+                    0 if server_versions[next_pick.name] == sorted_binaries[1] else 1
+                ]
+            else:
+                next_server = random.choice(sorted_binaries)
             logger.info(f"Picked the server binary {next_server} for restart")
+            # Update symlink in the container
             next_pick.exec_in_container(
                 [
                     "ln",
                     "-sf",
-                    f"/usr/bin/clickhouse{0 if server_versions[next_pick.name] == args.server_binaries[1] else 1}",
+                    f"/usr/bin/clickhouse{sorted_binaries.index(next_server)}",
                     "/usr/bin/clickhouse",
                 ],
                 user="root",
-            )
-            next_pick.exec_in_container(
-                ["chmod", "+777", "/usr/bin/clickhouse"], user="root"
             )
             server_versions[next_pick.name] = next_server
         time.sleep(3)  # Let the keeper session expire

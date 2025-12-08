@@ -517,6 +517,7 @@ class ClickHouseCluster:
         enable_thread_fuzzer=False,
         thread_fuzzer_settings={},
         azurite_default_port=0,
+        server_binaries=[],
     ):
         for param in list(os.environ.keys()):
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
@@ -908,6 +909,8 @@ class ClickHouseCluster:
             )
 
         self.port_pool = PortPoolManager()
+        # For La Casa Del Dolor to run upgrades
+        self.server_binaries = server_binaries
 
     def compose_cmd(self, *args: str) -> List[str]:
         return ["docker", "compose", "--project-name", self.project_name, *args]
@@ -3294,7 +3297,7 @@ class ClickHouseCluster:
     def wait_arrowflight_to_start(self):
         time.sleep(5) # TODO
 
-    def start(self, server_binaries=[], first_id=0):
+    def start(self):
         pytest_xdist_logging_to_separate_files.setup()
         logging.info("Running tests in {}".format(self.base_path))
         if not os.path.exists(self.instances_dir):
@@ -3826,7 +3829,7 @@ class ClickHouseCluster:
             for instance in self.instances.values():
                 if instance.with_dolor:
                     i = 0
-                    for val in server_binaries:
+                    for val in self.server_binaries:
                         subprocess.run(
                             [
                                 "docker",
@@ -3836,7 +3839,8 @@ class ClickHouseCluster:
                             ],
                             check=True,
                         )
-                        if i == first_id:
+                        if i == 0:
+                            # The first binary will be used first
                             instance.exec_in_container(
                                 [
                                     "ln",
