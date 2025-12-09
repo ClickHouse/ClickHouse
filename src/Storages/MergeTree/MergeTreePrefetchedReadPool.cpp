@@ -16,6 +16,7 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/setThreadName.h>
 
 
 namespace ProfileEvents
@@ -70,7 +71,7 @@ MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
     MergeTreePrefetchedReadPool & read_prefetch)
     : is_valid(true)
     , readers(std::move(readers_))
-    , prefetch_runner(pool, "ReadPrepare")
+    , prefetch_runner(pool, ThreadName::PREFETCH_READER)
 {
     prefetch_runner(read_prefetch.createPrefetchedTask(readers.main.get(), priority_));
 

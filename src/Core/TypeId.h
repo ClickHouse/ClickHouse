@@ -49,7 +49,6 @@ enum class TypeIndex : uint8_t
     AggregateFunction,
     LowCardinality,
     Map,
-    ObjectDeprecated,
     Object,
     IPv4,
     IPv6,

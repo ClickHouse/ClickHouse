@@ -27,17 +27,6 @@ SELECT `t`.`1`.`1`, `t`.`1`.`2`, `t`.`2` FROM t_tuple_numeric;
 
 DROP TABLE t_tuple_numeric;
 
-SET allow_experimental_object_type = 1;
-CREATE TABLE t_tuple_numeric (t Object('json')) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO t_tuple_numeric FORMAT JSONEachRow {"t":{"1":{"2":2,"3":3},"4":4}}
-
-SELECT toTypeName(t) FROM t_tuple_numeric LIMIT 1;
-
-SELECT * FROM t_tuple_numeric FORMAT JSONEachRow;
-SELECT `t`.`1`.`2`, `t`.`1`.`3`, `t`.`4` FROM t_tuple_numeric;
-
-DROP TABLE t_tuple_numeric;
-
 WITH
     '{"1":{"key":"value"}}' AS data,
     JSONExtract(data, 'Tuple("1" Tuple(key String))') AS parsed_json

@@ -862,7 +862,7 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t de
              || func->name == "countMatches" || func->name == "splitByRegexp"
              || func->name == "regexp_replace" || func->name == "REGEXP_REPLACE")
     {
-        is_regexp = true;
+        is_regexp = true;  /// NOLINT(clang-analyzer-deadcode.DeadStores)
     }
     else
     {
@@ -1757,6 +1757,12 @@ public:
 
         if (state == 2)
         {
+            if (ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                action = Action::OPERAND;
+                return mergeElement();
+            }
+
             if (ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
             {
                 if (!mergeElement())
@@ -2457,6 +2463,7 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {toStringView(Keyword::OR),            Operator("or",              3,  2, OperatorType::Mergeable)},
     {toStringView(Keyword::AND),           Operator("and",             4,  2, OperatorType::Mergeable)},
     {toStringView(Keyword::IS_NOT_DISTINCT_FROM), Operator("isNotDistinctFrom", 6, 2)},
+    {toStringView(Keyword::IS_DISTINCT_FROM), Operator("isDistinctFrom", 6, 2)},
     {toStringView(Keyword::IS_NULL),       Operator("isNull",          6,  1, OperatorType::IsNull)},
     {toStringView(Keyword::IS_NOT_NULL),   Operator("isNotNull",       6,  1, OperatorType::IsNull)},
     {toStringView(Keyword::BETWEEN),       Operator("",                7,  0, OperatorType::StartBetween)},

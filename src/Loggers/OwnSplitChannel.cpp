@@ -57,7 +57,7 @@ void OwnSplitChannel::log(Poco::Message && msg)
     if (const auto & masker = SensitiveDataMasker::getInstance())
     {
         auto message_text = msg.getText();
-        auto matches = masker->wipeSensitiveData(message_text);
+        auto matches = masker->wipeSensitiveDataThrow(message_text);
         if (matches > 0)
         {
             msg.setText(message_text);
@@ -94,7 +94,7 @@ void pushExtendedMessageToInternalTCPTextLogQueue(
 void logToSystemTextLogQueue(
     const std::shared_ptr<SystemLogQueue<TextLogElement>> & text_log_locked,
     const ExtendedLogMessage & msg_ext,
-    const std::string & msg_thread_name)
+    ThreadName msg_thread_name)
 {
     const Poco::Message & msg = *msg_ext.base;
     TextLogElement elem;
@@ -137,7 +137,7 @@ void logToSystemTextLogQueue(
 }
 
 void OwnSplitChannel::logSplit(
-    const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, const std::string & msg_thread_name)
+    const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, ThreadName msg_thread_name)
 {
     const Poco::Message & msg = *msg_ext.base;
 
@@ -296,7 +296,7 @@ public:
         if (const auto & masker = SensitiveDataMasker::getInstance())
         {
             auto message_text = msg.getText();
-            auto matches = masker->wipeSensitiveData(message_text);
+            auto matches = masker->wipeSensitiveDataThrow(message_text);
             if (matches > 0)
                 msg.setText(message_text);
         }
@@ -304,7 +304,7 @@ public:
 
     Message msg; /// Need to keep a copy until we finish logging
     ExtendedLogMessage msg_ext;
-    std::string msg_thread_name;
+    ThreadName msg_thread_name;
 };
 
 
@@ -323,7 +323,7 @@ void AsyncLogMessageQueue::enqueueMessage(AsyncLogMessagePtr message)
     ProfileEvents::incrementNoTrace(event_on_passed_message);
     std::unique_lock lock(mutex);
     size_t current_size = message_queue.size();
-    if (unlikely(current_size >= max_size || (dropped_messages && current_size > max_size / 2)))
+    if (unlikely(current_size >= max_size))
     {
         /// If the queue is full we start dropping messages until it's less than half of the max size
         /// in order to give the thread a change to recover and to reduce the amount of warning messages (about dropped messages)
@@ -344,6 +344,9 @@ void AsyncLogMessageQueue::enqueueMessage(AsyncLogMessagePtr message)
     }
 
     message_queue.push_back(std::move(message));
+    /// Request the thread to flush as fast as possible (without acquiring the mutex every time)
+    if (current_size > max_size / 2)
+        request_flush = true;
     condition.notify_one();
 }
 
@@ -352,7 +355,7 @@ AsyncLogMessagePtr AsyncLogMessageQueue::waitDequeueMessage()
     std::unique_lock lock(mutex);
     if (!message_queue.empty())
     {
-        auto notification = message_queue.front();
+        auto notification = std::move(message_queue.front());
         message_queue.pop_front();
         return notification;
     }
@@ -361,7 +364,7 @@ AsyncLogMessagePtr AsyncLogMessageQueue::waitDequeueMessage()
     if (message_queue.empty())
         return nullptr;
 
-    auto notification = message_queue.front();
+    auto notification = std::move(message_queue.front());
     message_queue.pop_front();
     return notification;
 }
@@ -410,14 +413,14 @@ void OwnAsyncSplitChannel::log(Poco::Message && msg)
         if (channels.empty() && !text_log_max_priority_loaded)
             return;
 
-        if (text_log_max_priority_loaded >= msg_priority)
-            text_log_queue.enqueueMessage(notification);
-
         for (size_t i = 0; i < queues.size(); i++)
         {
             if (channels[i]->getPriority() >= msg_priority)
                 queues[i]->enqueueMessage(notification);
         }
+
+        if (text_log_max_priority_loaded >= msg_priority)
+            text_log_queue.enqueueMessage(std::move(notification));
     }
     catch (...)
     {
@@ -440,14 +443,14 @@ void OwnAsyncSplitChannel::flushTextLogs()
     /// once the previous flush is finished, which is not what we need
     /// This is not ideal and we could use some kind of flush id to wait only until the point when you entered this function
     /// But notice that even if you call in many threads, they will all wait and be processed together in the same block once this is unlocked
-    flush_text_logs.wait(true, std::memory_order_seq_cst);
+    text_log_queue.request_flush.wait(true, std::memory_order_seq_cst);
 
     /// We need to send an empty notification to wake up the thread if necessary
-    flush_text_logs = true;
+    text_log_queue.request_flush = true;
     text_log_queue.wakeUp();
 
     /// Now we simply wait for the async thread to notify it has finished flushing
-    flush_text_logs.wait(true, std::memory_order_seq_cst);
+    text_log_queue.request_flush.wait(true, std::memory_order_seq_cst);
 }
 
 AsyncLogQueueSizes OwnAsyncSplitChannel::getAsynchronousMetrics()
@@ -473,7 +476,7 @@ AsyncLogQueueSizes OwnAsyncSplitChannel::getAsynchronousMetrics()
 
 void OwnAsyncSplitChannel::runChannel(size_t i)
 {
-    setThreadName("AsyncLog");
+    DB::setThreadName(ThreadName::ASYNC_LOGGER);
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
     auto notification = queues[i]->waitDequeueMessage();
     const auto & extended_channel = channels[i];
@@ -486,11 +489,29 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
             extended_channel->logExtended(own_notification->msg_ext);
     };
 
+    auto flush_queue = [&]()
+    {
+        /// We want to process only what's currently in the queue and not block other logging
+        auto queue = queues[i]->getCurrentQueueAndClear();
+        while (!queue.empty())
+        {
+            auto notif = std::move(queue.front());
+            queue.pop_front();
+            log_notification(notif);
+        }
+    };
+
     while (is_open)
     {
         try
         {
             log_notification(notification);
+            if (queues[i]->request_flush)
+            {
+                flush_queue();
+                queues[i]->request_flush = false;
+            }
+
             notification = queues[i]->waitDequeueMessage();
         }
         catch (...)
@@ -506,15 +527,7 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
     {
         /// Flush everything before closing
         log_notification(notification);
-
-        /// We want to process only what's currently in the queue and not block other logging
-        auto queue = queues[i]->getCurrentQueueAndClear();
-        while (!queue.empty())
-        {
-            notification = queue.front();
-            queue.pop_front();
-            log_notification(notification);
-        }
+        flush_queue();
     }
     catch (...)
     {
@@ -527,7 +540,7 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
 
 void OwnAsyncSplitChannel::runTextLog()
 {
-    setThreadName("AsyncTextLog", true);
+    DB::setThreadName(ThreadName::ASYNC_TEXT_LOG);
 
     auto log_notification = [](auto & message, const std::shared_ptr<SystemLogQueue<TextLogElement>> & text_log_locked)
     {
@@ -541,7 +554,7 @@ void OwnAsyncSplitChannel::runTextLog()
         auto queue = text_log_queue.getCurrentQueueAndClear();
         while (!queue.empty())
         {
-            auto notif = queue.front();
+            auto notif = std::move(queue.front());
             queue.pop_front();
             if (notif)
                 log_notification(notif, text_log_locked);
@@ -553,7 +566,7 @@ void OwnAsyncSplitChannel::runTextLog()
     {
         try
         {
-            if (flush_text_logs)
+            if (text_log_queue.request_flush)
             {
                 auto text_log_locked = text_log.lock();
                 if (!text_log_locked)
@@ -564,8 +577,8 @@ void OwnAsyncSplitChannel::runTextLog()
 
                 flush_queue(text_log_locked);
 
-                flush_text_logs = false;
-                flush_text_logs.notify_all();
+                text_log_queue.request_flush = false;
+                text_log_queue.request_flush.notify_all();
             }
             else if (notification)
             {

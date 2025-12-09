@@ -3,9 +3,7 @@
 -- Tests that text indexes can be build on and used with Map columns.
 
 SET enable_analyzer = 1;
-SET use_query_condition_cache = 0;
 SET allow_experimental_full_text_index = 1;
-SET use_skip_indexes_on_data_read = 0; --- for EXPLAIN indexes = 1 <query>
 
 SELECT 'Function mapKeys';
 
@@ -202,6 +200,127 @@ SELECT * FROM explain_index_has(use_idx_fixed = 1, filter = toFixedString('K1', 
 SELECT '-- -- -- key does not exist in granules';
 SELECT * FROM explain_index_has(use_idx_fixed = 1, filter = toFixedString('K3', 2));
 
+SELECT '-- hasAnyTokens support';
+
+SELECT '-- -- query with String';
+
+SELECT count() FROM tab WHERE hasAnyTokens(mapKeys(map), 'K0 K1');
+SELECT count() FROM tab WHERE hasAnyTokens(mapKeys(map), 'K1 K2');
+SELECT count() FROM tab WHERE hasAnyTokens(mapKeys(map), 'K2 K3');
+SELECT count() FROM tab WHERE hasAnyTokens(mapKeys(map), 'K3 K4');
+
+SELECT '-- -- query with FixedString';
+
+SELECT count() FROM tab WHERE hasAnyTokens(mapKeys(map_fixed), 'K0 K1');
+SELECT count() FROM tab WHERE hasAnyTokens(mapKeys(map_fixed), 'K1 K2');
+SELECT count() FROM tab WHERE hasAnyTokens(mapKeys(map_fixed), 'K2 K3');
+SELECT count() FROM tab WHERE hasAnyTokens(mapKeys(map_fixed), 'K3 K4');
+
+DROP VIEW IF EXISTS explain_index_has_any_tokens;
+CREATE VIEW explain_index_has_any_tokens AS (
+    SELECT trimLeft(explain) AS explain FROM (
+        EXPLAIN indexes=1
+        SELECT count() FROM tab WHERE (
+            CASE 
+                WHEN {use_idx_fixed:boolean} = 1 THEN hasAnyTokens(mapKeys(map_fixed), {filter:String})
+                ELSE hasAnyTokens(mapKeys(map), {filter:String})
+            END
+        )
+    )
+    WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+    LIMIT 2, 3
+);
+
+SELECT '-- -- Check that the text index actually gets used (String)';
+
+SELECT '-- -- -- keys exist in both granules';
+SELECT * FROM explain_index_has_any_tokens(use_idx_fixed = 0, filter = 'K0 K1');
+
+SELECT '-- -- -- keys exist in both granules';
+SELECT * FROM explain_index_has_any_tokens(use_idx_fixed = 0, filter = 'K1 K2');
+
+SELECT '-- -- -- keys exist only in the first granule';
+SELECT * FROM explain_index_has_any_tokens(use_idx_fixed = 0, filter = 'K2 K3');
+
+SELECT '-- -- -- keys do not exist in granules';
+SELECT * FROM explain_index_has_any_tokens(use_idx_fixed = 0, filter = 'K3 K4');
+
+SELECT '-- -- Check that the text index actually gets used (FixedString)';
+
+SELECT '-- -- -- keys exist in both granules';
+SELECT * FROM explain_index_has_any_tokens(use_idx_fixed = 1, filter = 'K0 K1');
+
+SELECT '-- -- -- keys exist in both granules';
+SELECT * FROM explain_index_has_any_tokens(use_idx_fixed = 1, filter = 'K1 K2');
+
+SELECT '-- -- -- keys exist only in the first granule';
+SELECT * FROM explain_index_has_any_tokens(use_idx_fixed = 1, filter = 'K2 K3');
+
+SELECT '-- -- -- keys do not exist in granules';
+SELECT * FROM explain_index_has_any_tokens(use_idx_fixed = 1, filter = 'K3 K4');
+
+SELECT '-- hasAllTokens support';
+
+SELECT '-- -- query with String';
+
+SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'K0 K1');
+SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'K1 K2');
+SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'K2 K3');
+SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'K3 K4');
+
+SELECT '-- -- query with FixedString';
+
+SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map_fixed), 'K0 K1');
+SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map_fixed), 'K1 K2');
+SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map_fixed), 'K2 K3');
+SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map_fixed), 'K3 K4');
+
+DROP VIEW IF EXISTS explain_index_has_all_tokens;
+CREATE VIEW explain_index_has_all_tokens AS (
+    SELECT trimLeft(explain) AS explain FROM (
+        EXPLAIN indexes=1
+        SELECT count() FROM tab WHERE (
+            CASE 
+                WHEN {use_idx_fixed:boolean} = 1 THEN hasAllTokens(mapKeys(map_fixed), {filter:String})
+                ELSE hasAllTokens(mapKeys(map), {filter:String})
+            END
+        )
+    )
+    WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+    LIMIT 2, 3
+);
+
+SELECT '-- -- Check that the text index actually gets used (String)';
+
+SELECT '-- -- -- keys exist in the first granule';
+SELECT * FROM explain_index_has_all_tokens(use_idx_fixed = 0, filter = 'K0 K1');
+
+SELECT '-- -- -- keys exist in the second granule';
+SELECT * FROM explain_index_has_all_tokens(use_idx_fixed = 0, filter = 'K1 K2');
+
+SELECT '-- -- -- keys do not exist in granules';
+SELECT * FROM explain_index_has_all_tokens(use_idx_fixed = 0, filter = 'K2 K3');
+
+SELECT '-- -- -- keys do not exist in granules';
+SELECT * FROM explain_index_has_all_tokens(use_idx_fixed = 0, filter = 'K3 K4');
+
+SELECT '-- -- Check that the text index actually gets used (FixedString)';
+
+SELECT '-- -- -- keys exist in the first granule';
+SELECT * FROM explain_index_has_all_tokens(use_idx_fixed = 1, filter = 'K0 K1');
+
+SELECT '-- -- -- keys exist in the second granule';
+SELECT * FROM explain_index_has_all_tokens(use_idx_fixed = 1, filter = 'K1 K2');
+
+SELECT '-- -- -- keys do not exist in granules';
+SELECT * FROM explain_index_has_all_tokens(use_idx_fixed = 1, filter = 'K2 K3');
+
+SELECT '-- -- -- keys do not exist in granules';
+SELECT * FROM explain_index_has_all_tokens(use_idx_fixed = 1, filter = 'K3 K4');
+
+DROP VIEW explain_index_has_any_tokens;
+DROP VIEW explain_index_has_all_tokens;
+
 SELECT 'Function mapValues';
 
 DROP TABLE tab;
@@ -269,7 +388,7 @@ CREATE VIEW explain_index_has AS (
     SELECT trimLeft(explain) AS explain FROM (
         EXPLAIN indexes=1
         SELECT count() FROM tab WHERE (
-            CASE 
+            CASE
                 WHEN {use_idx_fixed:boolean} = 1 THEN has(mapValues(map_fixed), {filter:FixedString(2)})
                 ELSE has(mapValues(map), {filter:String})
             END
@@ -309,7 +428,127 @@ SELECT * FROM explain_index_has(use_idx_fixed = 1, filter = 'V1');
 SELECT '-- -- -- key does not exist in granules';
 SELECT * FROM explain_index_has(use_idx_fixed = 1, filter = 'V3');
 
+SELECT '-- hasAnyTokens support';
+
+SELECT '-- -- query with String';
+
+SELECT count() FROM tab WHERE hasAnyTokens(mapValues(map), 'V0 V1');
+SELECT count() FROM tab WHERE hasAnyTokens(mapValues(map), 'V1 V2');
+SELECT count() FROM tab WHERE hasAnyTokens(mapValues(map), 'V2 V3');
+SELECT count() FROM tab WHERE hasAnyTokens(mapValues(map), 'V3 V4');
+
+SELECT '-- -- query with FixedString';
+
+SELECT count() FROM tab WHERE hasAnyTokens(mapValues(map_fixed), 'V0 V1');
+SELECT count() FROM tab WHERE hasAnyTokens(mapValues(map_fixed), 'V1 V2');
+SELECT count() FROM tab WHERE hasAnyTokens(mapValues(map_fixed), 'V2 V3');
+SELECT count() FROM tab WHERE hasAnyTokens(mapValues(map_fixed), 'V3 V4');
+
+DROP VIEW IF EXISTS explain_index_has_any_tokens;
+CREATE VIEW explain_index_has_any_tokens AS (
+    SELECT trimLeft(explain) AS explain FROM (
+        EXPLAIN indexes=1
+        SELECT count() FROM tab WHERE (
+            CASE 
+                WHEN {use_idx_fixed:boolean} = 1 THEN hasAnyTokens(mapValues(map_fixed), {filter:String})
+                ELSE hasAnyTokens(mapValues(map), {filter:String})
+            END
+        )
+    )
+    WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+    LIMIT 2, 3
+);
+
+SELECT '-- -- Check that the text index actually gets used (String)';
+
+SELECT '-- -- -- key exists only in the first granule';
+SELECT * FROM explain_index_has_any_tokens(use_idx_fixed = 0, filter = 'V0');
+
+SELECT '-- -- -- key exists only in the second granule';
+SELECT * FROM explain_index_has_any_tokens(use_idx_fixed = 0, filter = 'V2');
+
+SELECT '-- -- -- key exists only in both granules';
+SELECT * FROM explain_index_has_any_tokens(use_idx_fixed = 0, filter = 'V0 V1');
+
+SELECT '-- -- -- key does not exist in granules';
+SELECT * FROM explain_index_has_any_tokens(use_idx_fixed = 0, filter = 'V3');
+
+SELECT '-- -- Check that the text index actually gets used (FixedString)';
+
+SELECT '-- -- -- key exists only in the first granule';
+SELECT * FROM explain_index_has_any_tokens(use_idx_fixed = 1, filter = 'V0');
+
+SELECT '-- -- -- key exists only in the second granule';
+SELECT * FROM explain_index_has_any_tokens(use_idx_fixed = 1, filter = 'V2');
+
+SELECT '-- -- -- key exists only in both granules';
+SELECT * FROM explain_index_has_any_tokens(use_idx_fixed = 1, filter = 'V0 V1');
+
+SELECT '-- -- -- key does not exist in granules';
+SELECT * FROM explain_index_has_any_tokens(use_idx_fixed = 1, filter = 'V3');
+
+SELECT '-- hasAllTokens support';
+
+SELECT '-- -- query with String';
+
+SELECT count() FROM tab WHERE hasAllTokens(mapValues(map), 'V0 V1');
+SELECT count() FROM tab WHERE hasAllTokens(mapValues(map), 'V1 V2');
+SELECT count() FROM tab WHERE hasAllTokens(mapValues(map), 'V2 V3');
+SELECT count() FROM tab WHERE hasAllTokens(mapValues(map), 'V3 V4');
+
+SELECT '-- -- query with FixedString';
+
+SELECT count() FROM tab WHERE hasAllTokens(mapValues(map_fixed), 'V0 V1');
+SELECT count() FROM tab WHERE hasAllTokens(mapValues(map_fixed), 'V1 V2');
+SELECT count() FROM tab WHERE hasAllTokens(mapValues(map_fixed), 'V2 V3');
+SELECT count() FROM tab WHERE hasAllTokens(mapValues(map_fixed), 'V3 V4');
+
+DROP VIEW IF EXISTS explain_index_has_all_tokens;
+CREATE VIEW explain_index_has_all_tokens AS (
+    SELECT trimLeft(explain) AS explain FROM (
+        EXPLAIN indexes=1
+        SELECT count() FROM tab WHERE (
+            CASE 
+                WHEN {use_idx_fixed:boolean} = 1 THEN hasAllTokens(mapValues(map_fixed), {filter:String})
+                ELSE hasAllTokens(mapValues(map), {filter:String})
+            END
+        )
+    )
+    WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+    LIMIT 2, 3
+);
+
+SELECT '-- -- Check that the text index actually gets used (String)';
+
+SELECT '-- -- -- key exists only in the first granule';
+SELECT * FROM explain_index_has_all_tokens(use_idx_fixed = 0, filter = 'V0');
+
+SELECT '-- -- -- key exists only in the second granule';
+SELECT * FROM explain_index_has_all_tokens(use_idx_fixed = 0, filter = 'V2');
+
+SELECT '-- -- -- key exists only in the first granules';
+SELECT * FROM explain_index_has_all_tokens(use_idx_fixed = 0, filter = 'V0 V1');
+
+SELECT '-- -- -- key does not exist in granules';
+SELECT * FROM explain_index_has_all_tokens(use_idx_fixed = 0, filter = 'V3');
+
+SELECT '-- -- Check that the text index actually gets used (FixedString)';
+
+SELECT '-- -- -- key exists only in the first granule';
+SELECT * FROM explain_index_has_all_tokens(use_idx_fixed = 1, filter = 'V0');
+
+SELECT '-- -- -- key exists only in the second granule';
+SELECT * FROM explain_index_has_all_tokens(use_idx_fixed = 1, filter = 'V2');
+
+SELECT '-- -- -- key exists only in the first granules';
+SELECT * FROM explain_index_has_all_tokens(use_idx_fixed = 1, filter = 'V0 V1');
+
+SELECT '-- -- -- key does not exist in granules';
+SELECT * FROM explain_index_has_all_tokens(use_idx_fixed = 1, filter = 'V3');
+
 DROP VIEW explain_index_mapContains;
 DROP VIEW explain_index_equals;
 DROP VIEW explain_index_has;
+DROP VIEW explain_index_has_any_tokens;
+DROP VIEW explain_index_has_all_tokens;
 DROP TABLE tab;

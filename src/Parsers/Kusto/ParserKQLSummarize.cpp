@@ -83,7 +83,7 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             {
                 String alias;
                 String aggregate_fun = String(begin_pos->begin, begin_pos->end);
-                if (aggregate_functions.find(aggregate_fun) == aggregate_functions.end())
+                if (!aggregate_functions.contains(aggregate_fun))
                 {
                     alias = fmt::format("Columns{}", new_column_index);
                     ++new_column_index;

@@ -12,7 +12,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/MemorySettings.h>
-#include <DataTypes/ObjectUtils.h>
 
 #include <IO/WriteHelpers.h>
 #include <QueryPipeline/Pipe.h>
@@ -91,14 +90,6 @@ public:
     {
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
         storage_snapshot->metadata->check(block, true);
-        if (!storage_snapshot->object_columns.empty())
-        {
-            auto extended_storage_columns = storage_snapshot->getColumns(
-                GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects());
-
-            convertDynamicColumnsToTuples(block, storage_snapshot);
-        }
-
         if (storage.getMemorySettingsRef()[MemorySetting::compress])
         {
             Block compressed_block;
@@ -190,17 +181,7 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
     /// Not guaranteed to match `blocks`, but that's ok. It would probably be better to move
     /// rows and bytes counters into the MultiVersion-ed struct, then everything would be consistent.
     snapshot_data->rows_approx = total_size_rows.load(std::memory_order_relaxed);
-
-    if (!hasDynamicSubcolumnsDeprecated(metadata_snapshot->getColumns()))
-        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, ColumnsDescription{}, std::move(snapshot_data));
-
-    auto object_columns = getConcreteObjectColumns(
-        snapshot_data->blocks->begin(),
-        snapshot_data->blocks->end(),
-        metadata_snapshot->getColumns(),
-        [](const auto & block) -> const auto & { return block.getColumnsWithTypeAndName(); });
-
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(object_columns), std::move(snapshot_data));
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(snapshot_data));
 }
 
 void StorageMemory::read(

@@ -140,8 +140,7 @@ GlueCatalog::GlueCatalog(
         enable_s3_requests_logging,
         /* for_disk_s3 = */ false,
         /* opt_disk_name = */ {},
-        /* get_request_throttler = */ nullptr,
-        /* put_request_throttler = */ nullptr);
+        /* request_throttler = */ {});
 
     Aws::Glue::GlueClientConfiguration client_configuration;
     client_configuration.maxConnections = static_cast<unsigned>(global_settings[DB::Setting::s3_max_connections]);
@@ -478,7 +477,7 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
         DB::StoredObject metadata_stored_object(metadata_path);
         auto read_buf = object_storage->readObject(metadata_stored_object, read_settings);
         String metadata_file;
-        readString(metadata_file, *read_buf);
+        readStringUntilEOF(metadata_file, *read_buf);
 
         Poco::JSON::Parser parser;
         Poco::Dynamic::Var result = parser.parse(metadata_file);

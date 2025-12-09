@@ -98,6 +98,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     , sorting_key_names{NameSet(
           storage_snapshot->metadata->getSortingKey().column_names.begin(), storage_snapshot->metadata->getSortingKey().column_names.end())}
     , primary_key_names_positions(fillNamesPositions(storage_snapshot->metadata->getPrimaryKey().column_names))
+    , storage_metadata(storage_snapshot->metadata)
     , log{log_}
     , column_sizes{std::move(column_sizes_)}
 {
@@ -355,7 +356,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         {
             cond.good = cond.viable;
 
-            cond.estimated_row_count = estimator->estimateRelationProfile(node).rows;
+            cond.estimated_row_count = estimator->estimateRelationProfile(storage_metadata, node).rows;
 
             if (node.getASTNode() != nullptr)
                 LOG_DEBUG(log, "Condition {} has estimated row count {}", node.getASTNode()->dumpTree(), cond.estimated_row_count);

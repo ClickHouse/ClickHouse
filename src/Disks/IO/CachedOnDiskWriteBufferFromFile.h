@@ -69,6 +69,7 @@ private:
     const bool is_distributed_cache;
 
     FileSegmentsHolderPtr file_segments;
+    size_t ignore_bytes = 0;
 
     size_t expected_write_offset = 0;
 
@@ -137,6 +138,8 @@ private:
     FileSegmentKind file_segment_kind;
 
     std::unique_ptr<FileSegmentRangeWriter> cache_writer;
+    size_t cache_writer_start_position = 0;
+
     std::shared_ptr<FilesystemCacheLog> cache_log;
 };
 

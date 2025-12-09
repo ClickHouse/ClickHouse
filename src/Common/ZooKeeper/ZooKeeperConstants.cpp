@@ -40,4 +40,45 @@ OpNum getOpNum(int32_t raw_op_num)
     return static_cast<OpNum>(raw_op_num);
 }
 
+const char * toOperationTypeMetricLabel(OpNum op_num)
+{
+    switch (op_num)
+    {
+        case OpNum::Exists:
+        case OpNum::Get:
+        case OpNum::GetACL:
+        case OpNum::SimpleList:
+        case OpNum::List:
+        case OpNum::FilteredList:
+        case OpNum::Check:
+        case OpNum::CheckNotExists:
+        case OpNum::CheckStat:
+            return "readonly";
+
+        case OpNum::Multi:
+            return "multi";
+
+        case OpNum::MultiRead:
+            return "multi-read";
+
+        case OpNum::Create:
+        case OpNum::Remove:
+        case OpNum::Set:
+        case OpNum::SetACL:
+        case OpNum::Sync:
+        case OpNum::CreateIfNotExists:
+        case OpNum::RemoveRecursive:
+        case OpNum::Reconfig:
+            return "write";
+
+        case OpNum::Close:
+        case OpNum::Error:
+        case OpNum::Heartbeat:
+        case OpNum::Auth:
+        case OpNum::SessionID:
+            return "session";
+    }
+    UNREACHABLE();
+}
+
 }

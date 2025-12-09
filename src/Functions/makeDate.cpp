@@ -303,7 +303,7 @@ protected:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Argument 'timezone' for function {} must be const string", getName());
 
-        String timezone = timezone_argument.column->getDataAt(0).toString();
+        String timezone{timezone_argument.column->getDataAt(0)};
 
         return timezone;
     }
@@ -330,7 +330,7 @@ protected:
     static constexpr std::array mandatory_argument_names = {"year", "month", "day", "hour", "minute", "second"};
 };
 
-/// makeDateTime(year, month, day, hour, minute, second, [timezone])
+/// makeDateTime(year, month, day, hour, minute, second[, timezone])
 class FunctionMakeDateTime : public FunctionMakeDateTimeBase
 {
 private:

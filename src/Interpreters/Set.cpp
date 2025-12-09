@@ -633,6 +633,10 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
             return std::tie(l.key_index, l.tuple_index) < std::tie(r.key_index, r.tuple_index);
         });
 
+    /// Deduplicate key columns. This can make the condition weaker, e.g.:
+    ///     (x + 1, x + 2) IN (10, 10)
+    /// effectively turns into:
+    ///     (x + 1) IN (10)
     indexes_mapping.erase(std::unique(
         indexes_mapping.begin(), indexes_mapping.end(),
         [](const KeyTuplePositionMapping & l, const KeyTuplePositionMapping & r)
@@ -761,7 +765,17 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
         }) - indices.begin();
 
     if (begin > end)
+    {
+        /// TODO: Remove the #ifndef and always throw after
+        ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
+        ///       (What happens here is: the applyMonotonicFunctionsChainToRange call above applies
+        ///        nonmonotonic functions, and we end up with left > right.)
+#ifndef NDEBUG
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid binary search result in MergeTreeSetIndex");
+#else
+        return {true, true};
+#endif
+    }
 
     bool can_be_true = begin < end;
 

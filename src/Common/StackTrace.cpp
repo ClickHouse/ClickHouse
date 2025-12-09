@@ -226,6 +226,8 @@ static void * getCallerAddress(const ucontext_t & context)
     return reinterpret_cast<void *>(context.uc_mcontext.psw.addr);
 #elif defined(__loongarch64)
     return reinterpret_cast<void *>(context.uc_mcontext.__pc);
+#elif defined(__e2k__)
+    return reinterpret_cast<void *>(context.uc_mcontext.cr0_hi);
 #else
     return nullptr;
 #endif
