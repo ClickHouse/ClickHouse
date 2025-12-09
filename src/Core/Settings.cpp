@@ -6859,7 +6859,7 @@ The timeout in milliseconds for connecting to a remote replica during query exec
 Replace table function engines with their -Cluster alternatives
 )", 0) \
     DECLARE(Bool, parallel_replicas_allow_materialized_views, true, R"(
-Replace table function engines with their -Cluster alternatives
+Allow usage of materialized views with parallel replicas
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, allow_experimental_database_iceberg, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'iceberg'
