@@ -192,7 +192,7 @@ protected:
     std::string replicas_dir;
 
     mutable std::mutex zookeeper_mutex;
-    const std::string zookeeper_name = "default";
+    const std::string zookeeper_name;
     ZooKeeperPtr current_zookeeper TSA_GUARDED_BY(zookeeper_mutex);
 
     /// Save state of executed task to avoid duplicate execution on ZK error

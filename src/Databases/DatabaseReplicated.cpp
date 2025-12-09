@@ -2531,7 +2531,7 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
             info.table_id.uuid = args.uuid;
         zookeeper_path = args.context->getMacros()->expand(zookeeper_path, info);
         auto zookeeper_name = zkutil::extractZooKeeperName(zookeeper_path);
-        zookeeper_path = zkutil::extractZooKeeperPath(zookeeper_path, true);
+        zookeeper_path = zkutil::extractZooKeeperPath(zookeeper_path, /*check_starts_with_slash*/false);
 
         info.level = 0;
         info.table_id.uuid = UUIDHelpers::Nil;
