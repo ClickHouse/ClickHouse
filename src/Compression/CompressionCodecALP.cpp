@@ -499,8 +499,11 @@ private:
 
     static UInt8 calculateBitWidth(const Int64 min_value, const Int64 max_value)
     {
+        if (unlikely(min_value > max_value))
+            return sizeof(Int64) * 8; // Edge case when no values are encoded or overflow happened.
+
         const Int64 values_diff = max_value - min_value;
-        if (values_diff == 0)
+        if (unlikely(values_diff == 0))
             return 1; // Edge case when all values are identical, need at least 1 bit to represent.
 
         const auto bit_width = sizeof(Int64) * 8 - getLeadingZeroBitsUnsafe<UInt64>(static_cast<UInt64>(values_diff));
