@@ -205,7 +205,7 @@ namespace
             std::unique_ptr<PositionCaseSensitiveUTF8::SearcherInBigHaystack> searcher
                 = !is_utf8 || all_ascii ? nullptr : std::make_unique<PositionCaseSensitiveUTF8::SearcherInBigHaystack>(delim.data(), delim.size());
 
-            std::string_view str_ref{str.data(), str.size()};
+            std::string_view str_ref{str};
             for (size_t i = 0; i < rows; ++i)
             {
                 Int64 count = count_column->getInt(i);

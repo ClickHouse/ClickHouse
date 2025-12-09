@@ -129,6 +129,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64Auto merge_max_dynamic_subcolumns_in_wide_part;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
+    extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
 }
 
 namespace ErrorCodes
@@ -281,17 +282,18 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
             key_columns.insert(String(Nested::getColumnFromSubcolumn(name, storage_columns)));
     }
 
-    /// Force sign column for Collapsing mode
-    if (global_ctx->merging_params.mode == MergeTreeData::MergingParams::Collapsing)
+    /// Force sign column for Collapsing mode and VersionedCollapsing mode
+    if (!global_ctx->merging_params.sign_column.empty())
         key_columns.emplace(global_ctx->merging_params.sign_column);
 
-    /// Force version column for Replacing mode
-    if (global_ctx->merging_params.mode == MergeTreeData::MergingParams::Replacing)
-    {
+    /// Force is_deleted column for Replacing mode
+    if (!global_ctx->merging_params.is_deleted_column.empty())
         key_columns.emplace(global_ctx->merging_params.is_deleted_column);
-        key_columns.emplace(global_ctx->merging_params.version_column);
-    }
 
+    /// Force version column for Replacing mode and VersionedCollapsing mode
+    if (!global_ctx->merging_params.version_column.empty())
+        key_columns.emplace(global_ctx->merging_params.version_column);
+  
     /// Force all columns params of Graphite mode.
     if (global_ctx->merging_params.mode == MergeTreeData::MergingParams::Graphite)
     {
@@ -300,10 +302,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
         key_columns.emplace(global_ctx->merging_params.graphite_params.value_column_name);
         key_columns.emplace(global_ctx->merging_params.graphite_params.version_column_name);
     }
-
-    /// Force sign column for VersionedCollapsing mode. Version is already in primary key.
-    if (global_ctx->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
-        key_columns.emplace(global_ctx->merging_params.sign_column);
 
     /// Force to merge at least one column in case of empty key
     if (key_columns.empty())
@@ -622,6 +620,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         true,
         (*merge_tree_settings)[MergeTreeSetting::serialization_info_version],
         (*merge_tree_settings)[MergeTreeSetting::string_serialization_version],
+        (*merge_tree_settings)[MergeTreeSetting::nullable_serialization_version],
     };
 
     SerializationInfoByName infos(global_ctx->storage_columns, info_settings);

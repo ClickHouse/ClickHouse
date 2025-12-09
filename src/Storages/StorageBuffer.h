@@ -184,12 +184,14 @@ private:
     void writeBlockToDestination(const Block & block, StoragePtr table);
 
     void backgroundFlush();
-    void reschedule();
+    void reschedule(size_t min_delay);
 
     StoragePtr getDestinationTable() const;
 
     BackgroundSchedulePool & bg_pool;
     BackgroundSchedulePoolTaskHolder flush_handle;
+
+    static constexpr size_t BACKGROUND_RESCHEDULE_MIN_DELAY = 1;
 };
 
 }

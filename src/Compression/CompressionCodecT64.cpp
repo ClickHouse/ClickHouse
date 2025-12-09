@@ -400,7 +400,7 @@ void transpose(const T * src, char * dst, UInt32 num_bits, UInt32 tail = 64)
 MULTITARGET_FUNCTION_AVX512BW_AVX2(
 MULTITARGET_FUNCTION_HEADER(
 template <typename T, bool full>
-void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((const char * src, T * buf, UInt32 num_bits, UInt32 tail)
+void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((const char * src, T * buf, UInt32 num_bits, UInt32 tail) /// NOLINT
 {
     UInt64 matrix[64] = {};
     memcpy(matrix, src, num_bits * sizeof(UInt64));
