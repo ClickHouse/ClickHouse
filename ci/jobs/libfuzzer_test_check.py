@@ -116,13 +116,21 @@ def download_corpus(path):
     logging.info("Download corpus...")
 
     corpus_path = path / "corpus"
-    corpus_path.mkdir(exist_ok=True)
+    corpus_path.mkdir(parents=True, exist_ok=True)
 
-    S3.copy_file_from_s3(
-        s3_path=f"{Settings.S3_ARTIFACT_PATH}/fuzzer/corpus/",
-        local_path=str(corpus_path),
-        include_pattern="*.zip",
-    )
+    try:
+        S3.copy_file_from_s3(
+            s3_path=f"{Settings.S3_ARTIFACT_PATH}/fuzzer/corpus",
+            local_path=str(corpus_path),
+            include_pattern="*.zip",
+            recursive=True,
+        )
+    except Exception as e:
+        error_message = str(e).lower()
+        if "does not exist" in error_message or "not found" in error_message:
+            logging.info("Corpus does not exist in S3, starting with empty corpus")
+        else:
+            raise
 
     subprocess.check_call(f"ls -al {corpus_path}", shell=True)
     logging.info("...downloaded %d corpora", len(list(corpus_path.glob("*.zip"))))
@@ -372,6 +380,7 @@ def main():
 
     args = parse_args()
     check_name = args.check_name
+    info = Info()
 
     temp_path.mkdir(parents=True, exist_ok=True)
 
@@ -385,7 +394,9 @@ def main():
     docker_image = DockerImage.get_docker_image(
         "clickhouse/stateless-test"
     ).pull_image()
+
     fuzzers_path = temp_path
+    download_corpus(fuzzers_path)
 
     for file in os.listdir(fuzzers_path):
         if file.endswith("_fuzzer"):
@@ -417,7 +428,7 @@ def main():
 
     if Shell.run(run_command) == 0:
         logging.info("Run successfully")
-        if Info().pr_number == 0:
+        if info.pr_number == 0 and info.git_branch == "master":
             logging.info("Uploading corpus - running in master")
             upload_corpus(fuzzers_path)
         else:
