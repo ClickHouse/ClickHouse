@@ -690,6 +690,33 @@ String FuzzConfig::tableGetRandomPartitionOrPart(
     return res;
 }
 
+void FuzzConfig::validateClickHouseHealth()
+{
+    String buf;
+
+    if (processServerQuery(
+            true,
+            fmt::format(
+                "(SELECT count() FROM \"system\".\"detached_parts\" WHERE startsWith(\"name\", 'broken')) UNION ALL (SELECT "
+                "sum(\"lost_part_count\") FROM \"system\".\"replicas\" WHERE \"total_replicas\" <> 1) INTO OUTFILE '{}' TRUNCATE FORMAT "
+                "TabSeparated;",
+                fuzz_server_out.generic_string())))
+    {
+        std::ifstream infile(fuzz_client_out, std::ios::in);
+
+        for (uint32_t i = 0; i < 2; i++)
+        {
+            std::getline(infile, buf);
+            const uint32_t val = static_cast<std::uint32_t>(std::stoul(buf));
+            if (val != 0)
+            {
+                static const DB::Strings & health_errors = {"broken detached parts", "broken replicas"};
+                throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "ClickHouse health check: found {} {}", val, health_errors[i]);
+            }
+        }
+    }
+}
+
 void FuzzConfig::comparePerformanceResults(const String & oracle_name, PerformanceResult & server, PerformanceResult & peer) const
 {
     server.result_strings.clear();

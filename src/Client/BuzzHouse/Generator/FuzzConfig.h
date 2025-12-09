@@ -308,6 +308,8 @@ public:
     String tableGetRandomPartitionOrPart(uint64_t rand_val, bool detached, bool partition, const String & database, const String & table);
 
     void comparePerformanceResults(const String & oracle_name, PerformanceResult & server, PerformanceResult & peer) const;
+
+    void validateClickHouseHealth();
 };
 
 }
