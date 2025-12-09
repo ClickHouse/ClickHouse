@@ -5,6 +5,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --multiline -q """
+  SET enable_analyzer=1;
+
   CREATE TABLE t0 (c Int32 DEFAULT 7) ENGINE = MergeTree() ORDER BY tuple();
   INSERT INTO TABLE FUNCTION file(database() || '.test.bin', RowBinary) SELECT (5*number)::Int32 FROM numbers(3);
 
@@ -22,4 +24,7 @@ $CLICKHOUSE_CLIENT --multiline -q """
 """
 
 # Check that there is no exception
-$CLICKHOUSE_CLIENT -q "EXPLAIN PIPELINE INSERT INTO t0 SELECT * FROM file(database() || '.test.bin', RowBinary)" | grep digraph
+$CLICKHOUSE_CLIENT -q """
+  SET enable_analyzer=1;
+  EXPLAIN PIPELINE INSERT INTO t0 SELECT * FROM file(database() || '.test.bin', RowBinary)
+""" | grep digraph
