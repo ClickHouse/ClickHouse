@@ -40,6 +40,7 @@ $CLICKHOUSE_CLIENT -nmq "
   DROP TABLE IF EXISTS test_merge_tree_03745;
   CREATE TABLE test_merge_tree_03745 (x UInt64, y String) ENGINE = MergeTree() ORDER BY x;
   INSERT INTO test_merge_tree_03745 VALUES (1, 'a'), (2, 'b');
+  ALTER TABLE test_merge_tree_03745 DELETE WHERE x = 1;
 "
 get_background_schedule_pool_with_retries
 $CLICKHOUSE_CLIENT -nmq "

@@ -10,7 +10,7 @@ $CLICKHOUSE_CLIENT -nmq "
   CREATE TABLE test_merge_tree_03745 (x UInt64, y String) ENGINE = MergeTree() ORDER BY x;
   INSERT INTO test_merge_tree_03745 VALUES (1, 'a'), (2, 'b');
   SYSTEM FLUSH LOGS background_schedule_pool_log;
-  SELECT DISTINCT database, table, table_uuid != toUUIDOrDefault(0) AS has_uuid, log_name, query_id != '' FROM system.background_schedule_pool_log WHERE database = currentDatabase() AND table = 'test_merge_tree_03745';
+  SELECT DISTINCT database, table, table_uuid != toUUIDOrDefault(0) AS has_uuid, log_name, query_id != '' FROM system.background_schedule_pool_log WHERE database = currentDatabase() AND table = 'test_merge_tree_03745' ORDER BY ALL;
   DROP TABLE test_merge_tree_03745;
 "
 
