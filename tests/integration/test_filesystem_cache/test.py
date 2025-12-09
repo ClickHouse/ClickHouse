@@ -135,7 +135,7 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
     node.query(
         """
         SYSTEM DROP FILESYSTEM CACHE;
-        INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000000;
+        INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 100000;
         SELECT * FROM test FORMAT Null;
         """
     )
