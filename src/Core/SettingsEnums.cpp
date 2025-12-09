@@ -414,5 +414,12 @@ IMPLEMENT_SETTING_ENUM(
 IMPLEMENT_SETTING_ENUM(ArrowFlightDescriptorType, ErrorCodes::BAD_ARGUMENTS,
     {{"path", ArrowFlightDescriptorType::Path},
      {"command", ArrowFlightDescriptorType::Command}})
+
+IMPLEMENT_SETTING_ENUM(
+    ArrayGroupByMode,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"ordered", ArrayGroupByMode::ORDERED},
+     {"multiset", ArrayGroupByMode::MULTISET},
+     {"set", ArrayGroupByMode::SET}})
 }
 

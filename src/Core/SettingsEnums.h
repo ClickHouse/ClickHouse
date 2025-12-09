@@ -399,6 +399,15 @@ enum class GroupArrayActionWhenLimitReached : uint8_t
 };
 DECLARE_SETTING_ENUM(GroupArrayActionWhenLimitReached)
 
+/// How arrays are compared in GROUP BY
+enum class ArrayGroupByMode : uint8_t
+{
+    ORDERED,   /// Default: [1,2,3] != [3,2,1]
+    MULTISET,  /// Unordered with duplicates: [1,2,3] == [3,2,1], [1,1,2] != [1,2,2]
+    SET,       /// Unordered without duplicates: [1,2,3] == [3,2,1] == [1,1,2,3]
+};
+DECLARE_SETTING_ENUM(ArrayGroupByMode)
+
 DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 
 enum class DatabaseDataLakeCatalogType : uint8_t

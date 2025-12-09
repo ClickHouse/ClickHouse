@@ -1,0 +1,18 @@
+ordered mode (default):
+[1,2,3]	2
+[3,2,1]	1
+multiset mode:
+[1,2,3]	3
+multiset mode with duplicates:
+[1,1,2]	2
+[1,2,2]	1
+set mode:
+[1,2,3]	3
+set mode with duplicates:
+[1,2]	4
+empty arrays:
+[]	2
+multiset with GROUP BY ALL:
+[1,2,3]	2
+string arrays in multiset mode:
+['a','b','c']	3

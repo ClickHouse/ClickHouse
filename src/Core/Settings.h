@@ -46,6 +46,7 @@ class WriteBuffer;
     M(CLASS_NAME, AggregateFunctionInputFormat) \
     M(CLASS_NAME, ArrowCompression) \
     M(CLASS_NAME, ArrowFlightDescriptorType) \
+    M(CLASS_NAME, ArrayGroupByMode) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, BoolAuto) \
     M(CLASS_NAME, CapnProtoEnumComparingMode) \
