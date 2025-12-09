@@ -7,9 +7,6 @@
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
-#include <Common/Exception.h>
-#include <Common/Logger.h>
-#include <Common/logger_useful.h>
 #include <Core/Settings.h>
 
 #include "config.h"
@@ -149,7 +146,7 @@ QualifiedTableName ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase
     if (qualified_name->database.empty() && !has(qualified_name->table))
     {
         std::string current_database_name = query_context->getCurrentDatabase();
-        std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name, current_database_name);
+        std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name, query_context);
 
         /// If after qualify dictionary_name with default_database_name we find it, add default_database to qualified name.
         if (has(resolved_name))
@@ -160,76 +157,19 @@ QualifiedTableName ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase
 }
 
 std::string ExternalDictionariesLoader::resolveDictionaryName(const std::string & dictionary_name, ContextPtr local_context) const
-{  
-    if (has(dictionary_name)) 
+{
+    if (has(dictionary_name))
         return dictionary_name;
-
-    auto qualified_name = QualifiedTableName::tryParseFromString(dictionary_name);
-
-    if (!qualified_name) 
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Invalid dictionary name format: {}",
-            backQuote(dictionary_name)
-        );
-    }
-
-    if (!qualified_name->database.empty()) 
-    {
-        std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(
-            qualified_name->table,
-            qualified_name->database
-        );
-
-        if (has(resolved_name))
-            return resolved_name;
-
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Dictionary '{}' not found in database '{}'",
-            backQuote(qualified_name->table),
-            backQuote(qualified_name->database)
-        );
-    }
-
-    if (!local_context) 
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Local context is empty"
-        );
-    }
     
-    std::string dict_table_name = qualified_name->table;
-    std::string current_database_name = local_context->getCurrentDatabase();
-    if (!current_database_name.empty()) 
-    {
-        std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(
-            dict_table_name,
-            current_database_name  
-        );
+    std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name, local_context);
+    
+    if (has(resolved_name))
+        return resolved_name;
 
-        if (has(resolved_name)) 
-            return resolved_name;
-    }
-
-    std::string default_dict_db = local_context->getDefaultDictionaryDatabase();
-    if (!default_dict_db.empty() && default_dict_db != current_database_name) 
-    {
-        std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(
-            dict_table_name,
-            default_dict_db
-        );
-
-        if (has(resolved_name)) 
-            return resolved_name;
-    }
-
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary ({}) not found", backQuote(dictionary_name));
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary ({}) not dounfd", backQuote(dictionary_name));
 }
 
-std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog(const std::string & name, const std::string & current_database_name) const
+std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog(const std::string & name, ContextPtr local_context) const
 {
     /// If it's dictionary from Atomic database, then we need to convert qualified name to UUID.
     /// Try to split name and get id from associated StorageDictionary.
@@ -241,21 +181,36 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
     if (!qualified_name)
         return res;
 
-    if (qualified_name->database.empty())
+    std::string default_database_name = local_context->getDefaultDictionaryDatabase();
+    bool is_empty_qualified_name = qualified_name->database.empty();
+    if (is_empty_qualified_name)
     {
-        /// Either database name is not specified and we should use current one
-        /// or it's an XML dictionary.
+        /// Either database name is not specified and we should use default or current one
+        qualified_name->database = default_database_name;
+        res = default_database_name + '.' + name;
+    }
+
+    auto [db, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(
+        {qualified_name->database, qualified_name->table},
+        const_pointer_cast<Context>(getContext()));
+
+    std::string current_database_name = local_context->getCurrentDatabase();
+    if (is_empty_qualified_name && !db)
+    {
+        res = name;
         bool is_xml_dictionary = has(name);
         if (is_xml_dictionary)
             return res;
 
         qualified_name->database = current_database_name;
         res = current_database_name + '.' + name;
-    }
 
-    auto [db, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(
-        {qualified_name->database, qualified_name->table},
-        const_pointer_cast<Context>(getContext()));
+        auto [db_, table_] = DatabaseCatalog::instance().tryGetDatabaseAndTable(
+            {qualified_name->database, qualified_name->table},
+            const_pointer_cast<Context>(getContext()));
+        db = std::move(db_);
+        table = std::move(table_);
+    }
 
     if (!db)
         return res;
