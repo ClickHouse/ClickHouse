@@ -654,11 +654,11 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
         case Coordination::OpNum::Reconfig:
         case Coordination::OpNum::Auth:
         case Coordination::OpNum::SessionID:
-        case Coordination::OpNum::SetWatches:
-        case Coordination::OpNum::SetWatches2:
+        case Coordination::OpNum::SetWatch:
+        case Coordination::OpNum::SetWatch2:
         case Coordination::OpNum::AddWatch:
-        case Coordination::OpNum::CheckWatches:
-        case Coordination::OpNum::RemoveWatches:
+        case Coordination::OpNum::CheckWatch:
+        case Coordination::OpNum::RemoveWatch:
             return true;
     }
 }

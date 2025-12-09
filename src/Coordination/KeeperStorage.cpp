@@ -192,7 +192,7 @@ KeeperResponsesForSessions processWatchesImplBase(
 
     auto parent_path = String(Coordination::parentNodePath(path));
 
-    Strings paths_to_check_for_list_watches;
+    std::vector<String> paths_to_check_for_list_watches;
     if (should_delete)
     {
         if (event_type == Coordination::Event::CREATED)
@@ -211,7 +211,7 @@ KeeperResponsesForSessions processWatchesImplBase(
         while (current_path.size() > 1)
         {
             paths_to_check_for_list_watches.push_back(current_path);
-            current_path = String(Coordination::parentNodePath(current_path));
+            current_path = Coordination::parentNodePath(current_path);
         }
         paths_to_check_for_list_watches.push_back("/");
     }
@@ -258,7 +258,7 @@ KeeperResponsesForSessions processWatchesImplBase(
     return result;
 }
 
-KeeperResponsesForSessions processWatchesImpl(
+std::pair<KeeperResponsesForSessions, Int64> processWatchesImpl(
     const String & path,
     KeeperStorageBase::Watches & watches,
     KeeperStorageBase::Watches & list_watches,
@@ -293,16 +293,14 @@ KeeperResponsesForSessions processWatchesImpl(
         }
     }
 
-    auto process_non_persistent_watches = processWatchesImplBase(path, watches, list_watches, sessions_and_watchers, event_type, true);
-    auto process_persistent_watches = processWatchesImplBase(path, persistent_watches, persistent_recursive_watches, sessions_and_watchers, event_type, false);
+    auto process_non_persistent_watches = processWatchesImplBase(path, watches, list_watches, sessions_and_watchers, event_type, /*should_delete=*/true);
+    auto process_persistent_watches = processWatchesImplBase(path, persistent_watches, persistent_recursive_watches, sessions_and_watchers, event_type, /*should_delete=*/false);
 
-    for (const auto & response : process_non_persistent_watches)
-        result.push_back(response);
+    result.reserve(result.size() + process_non_persistent_watches.size() + process_persistent_watches.size());
+    std::ranges::copy(process_non_persistent_watches, std::back_inserter(result));
+    std::ranges::copy(process_persistent_watches, std::back_inserter(result));
 
-    for (const auto & response : process_persistent_watches)
-        result.push_back(response);
-
-    return result;
+    return {result, process_non_persistent_watches.size()};
 }
 
 // When this function is updated, update KEEPER_CURRENT_DIGEST_VERSION!!
@@ -1534,15 +1532,15 @@ auto callOnConcreteRequestType(const Coordination::ZooKeeperRequest & zk_request
         case Coordination::OpNum::GetACL:
             return function(static_cast<const Coordination::ZooKeeperGetACLRequest &>(zk_request));
         case Coordination::OpNum::AddWatch:
-            return function(dynamic_cast<const Coordination::ZooKeeperAddWatchRequest &>(zk_request));
-        case Coordination::OpNum::SetWatches:
-            return function(dynamic_cast<const Coordination::ZooKeeperSetWatchRequest &>(zk_request));
-        case Coordination::OpNum::SetWatches2:
-            return function(dynamic_cast<const Coordination::ZooKeeperSetWatch2Request &>(zk_request));
-        case Coordination::OpNum::CheckWatches:
-            return function(dynamic_cast<const Coordination::ZooKeeperCheckWatchRequest &>(zk_request));
-        case Coordination::OpNum::RemoveWatches:
-            return function(dynamic_cast<const Coordination::ZooKeeperRemoveWatchRequest &>(zk_request));
+            return function(static_cast<const Coordination::ZooKeeperAddWatchRequest &>(zk_request));
+        case Coordination::OpNum::SetWatch:
+            return function(static_cast<const Coordination::ZooKeeperSetWatchRequest &>(zk_request));
+        case Coordination::OpNum::SetWatch2:
+            return function(static_cast<const Coordination::ZooKeeperSetWatch2Request &>(zk_request));
+        case Coordination::OpNum::CheckWatch:
+            return function(static_cast<const Coordination::ZooKeeperCheckWatchRequest &>(zk_request));
+        case Coordination::OpNum::RemoveWatch:
+            return function(static_cast<const Coordination::ZooKeeperRemoveWatchRequest &>(zk_request));
         default:
             throw Exception{DB::ErrorCodes::LOGICAL_ERROR, "Unexpected request type: {}", zk_request.getOpNum()};
     }
@@ -1631,7 +1629,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
 }
 
 template <std::derived_from<Coordination::ZooKeeperRequest> T>
-KeeperResponsesForSessions processWatches(
+std::pair<KeeperResponsesForSessions, Int64> processWatches(
     const T & /*zk_request*/,
     KeeperStorageBase::DeltaRange /*deltas*/,
     KeeperStorageBase::Watches & /*watches*/,
@@ -1684,7 +1682,7 @@ bool checkAuth(const Coordination::ZooKeeperCreateRequest & zk_request, Storage 
     return storage.checkACL(Coordination::parentNodePath(path), Coordination::ACL::Create, session_id, is_local);
 }
 
-KeeperResponsesForSessions processWatches(
+std::pair<KeeperResponsesForSessions, Int64> processWatches(
     const Coordination::ZooKeeperCreateRequest & zk_request,
     KeeperStorageBase::DeltaRange /*deltas*/,
     KeeperStorageBase::Watches & watches,
@@ -1935,7 +1933,7 @@ bool checkAuth(const Coordination::ZooKeeperRemoveRequest & zk_request, Storage 
     return storage.checkACL(Coordination::parentNodePath(zk_request.getPath()), Coordination::ACL::Delete, session_id, is_local);
 }
 
-KeeperResponsesForSessions processWatches(
+std::pair<KeeperResponsesForSessions, Int64> processWatches(
     const Coordination::ZooKeeperRemoveRequest & zk_request,
     KeeperStorageBase::DeltaRange /*deltas*/,
     KeeperStorageBase::Watches & watches,
@@ -2248,7 +2246,7 @@ bool checkAuth(const Coordination::ZooKeeperRemoveRecursiveRequest & zk_request,
     return storage.checkACL(Coordination::parentNodePath(zk_request.getPath()), Coordination::ACL::Delete, session_id, is_local);
 }
 
-KeeperResponsesForSessions processWatches(
+std::pair<KeeperResponsesForSessions, Int64> processWatches(
     const Coordination::ZooKeeperRemoveRecursiveRequest & /*zk_request*/,
     KeeperStorageBase::DeltaRange deltas,
     KeeperStorageBase::Watches & watches,
@@ -2259,17 +2257,19 @@ KeeperResponsesForSessions processWatches(
     KeeperStorageBase::SessionAndWatcher & sessions_and_watchers)
 {
     KeeperResponsesForSessions responses;
+    Int64 total_removed_watches = 0;
     for (const auto & delta : deltas)
     {
         const auto * remove_delta = std::get_if<RemoveNodeDelta>(&delta.operation);
         if (remove_delta)
         {
-            auto new_responses = processWatchesImpl(delta.path, watches, list_watches, exist_watches, persistent_watches, persistent_recursive_watches, sessions_and_watchers, Coordination::Event::DELETED);
+            auto [new_responses, removed_watches] = processWatchesImpl(delta.path, watches, list_watches, exist_watches, persistent_watches, persistent_recursive_watches, sessions_and_watchers, Coordination::Event::DELETED);
             responses.insert(responses.end(), std::make_move_iterator(new_responses.begin()), std::make_move_iterator(new_responses.end()));
+            total_removed_watches += removed_watches;
         }
     }
 
-    return responses;
+    return {responses, total_removed_watches};
 }
 
 template <typename Storage>
@@ -2456,7 +2456,7 @@ bool checkAuth(const Coordination::ZooKeeperSetRequest & zk_request, Storage & s
     return storage.checkACL(zk_request.getPath(), Coordination::ACL::Write, session_id, is_local);
 }
 
-KeeperResponsesForSessions processWatches(
+std::pair<KeeperResponsesForSessions, Int64> processWatches(
     const Coordination::ZooKeeperSetRequest & zk_request,
     KeeperStorageBase::DeltaRange /*deltas*/,
     KeeperStorageBase::Watches & watches,
@@ -2566,7 +2566,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     ProfileEvents::increment(ProfileEvents::KeeperCheckWatchRequest);
 
     if (!storage.uncommitted_state.getNode(zk_request.getPath()))
-        return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
 
     return {};
 }
@@ -2627,7 +2627,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     ProfileEvents::increment(ProfileEvents::KeeperRemoveWatchRequest);
 
     if (!storage.uncommitted_state.getNode(zk_request.path))
-        return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
 
     return {};
 }
@@ -2667,7 +2667,6 @@ processLocal(const Coordination::ZooKeeperRemoveWatchRequest & zk_request, Stora
 
 /// REMOVE WATCHES Request ///
 
-
 /// ADD WATCHES Request ///
 template <typename Storage>
 bool checkAuth(const Coordination::ZooKeeperAddWatchRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
@@ -2688,7 +2687,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     ProfileEvents::increment(ProfileEvents::KeeperAddWatchRequest);
 
     if (!storage.uncommitted_state.getNode(zk_request.getPath()))
-        return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
 
     return {};
 }
@@ -2751,19 +2750,19 @@ std::list<KeeperStorageBase::Delta> preprocess(
     for (const auto & path : zk_request.data_watches)
     {
         if (!storage.uncommitted_state.getNode(path))
-            return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+            return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
     }
 
     for (const auto & path : zk_request.child_watches)
     {
         if (!storage.uncommitted_state.getNode(path))
-            return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+            return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
     }
 
     for (const auto & path : zk_request.exist_watches)
     {
         if (!storage.uncommitted_state.getNode(path))
-            return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+            return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
     }
 
     return {};
@@ -2834,31 +2833,31 @@ std::list<KeeperStorageBase::Delta> preprocess(
     for (const auto & path : zk_request.data_watches)
     {
         if (!storage.uncommitted_state.getNode(path))
-            return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+            return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
     }
 
     for (const auto & path : zk_request.child_watches)
     {
         if (!storage.uncommitted_state.getNode(path))
-            return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+            return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
     }
 
     for (const auto & path : zk_request.exist_watches)
     {
         if (!storage.uncommitted_state.getNode(path))
-            return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+            return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
     }
 
     for (const auto & path : zk_request.persistent_watches)
     {
         if (!storage.uncommitted_state.getNode(path))
-            return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+            return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
     }
 
     for (const auto & path : zk_request.persistent_recursive_watches)
     {
         if (!storage.uncommitted_state.getNode(path))
-            return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+            return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
     }
 
     return {};
@@ -3337,7 +3336,7 @@ Coordination::ZooKeeperResponsePtr processLocal(const Coordination::ZooKeeperMul
     return response;
 }
 
-KeeperResponsesForSessions processWatches(
+std::pair<KeeperResponsesForSessions, Int64> processWatches(
     const Coordination::ZooKeeperMultiRequest & zk_request,
     KeeperStorageBase::DeltaRange deltas,
     KeeperStorageBase::Watches & watches,
@@ -3350,17 +3349,24 @@ KeeperResponsesForSessions processWatches(
     KeeperResponsesForSessions result;
 
     if (deltas.empty() || std::get_if<FailedMultiDelta>(&deltas.front().operation))
-        return result;
+        return {result, 0};
 
     const auto & subrequests = zk_request.requests;
+    Int64 total_removed_watches = 0;
     for (const auto & generic_request : subrequests)
     {
         auto subdeltas = extractSubdeltas(deltas);
         auto responses = callOnConcreteRequestType(
-            *generic_request, [&](const auto & subrequest) { return processWatches(subrequest, subdeltas, watches, list_watches, exist_watches, persistent_watches, persistent_recursive_watches, sessions_and_watchers); });
+            *generic_request,
+            [&](const auto & subrequest)
+            {
+                auto [rsp, removed_watches] = processWatches(subrequest, subdeltas, watches, list_watches, exist_watches, persistent_watches, persistent_recursive_watches, sessions_and_watchers);
+                total_removed_watches += removed_watches;
+                return rsp;
+            });
         result.insert(result.end(), responses.begin(), responses.end());
     }
-    return result;
+    return {result, total_removed_watches};
 }
 /// MULTI Request ///
 
@@ -3882,8 +3888,8 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
         {
             if (std::holds_alternative<RemoveNodeDelta>(delta.operation))
             {
-                auto responses = processWatchesImpl(delta.path, watches, list_watches, exist_watches, persistent_watches, persistent_recursive_watches, sessions_and_watchers, Coordination::Event::DELETED);
-                total_watches_count -= responses.size();
+                auto [responses, cnt_removed_watches] = processWatchesImpl(delta.path, watches, list_watches, exist_watches, persistent_watches, persistent_recursive_watches, sessions_and_watchers, Coordination::Event::DELETED);
+                total_watches_count -= cnt_removed_watches;
                 results.insert(results.end(), responses.begin(), responses.end());
             }
         }
@@ -4007,8 +4013,8 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
             /// If this requests processed successfully we need to check watches
             if (response->error == Coordination::Error::ZOK)
             {
-                auto watch_responses = processWatches(concrete_zk_request, deltas_range, watches, list_watches, exist_watches, persistent_watches, persistent_recursive_watches, sessions_and_watchers);
-                total_watches_count -= watch_responses.size();
+                auto [watch_responses, total_removed_watches] = processWatches(concrete_zk_request, deltas_range, watches, list_watches, exist_watches, persistent_watches, persistent_recursive_watches, sessions_and_watchers);
+                total_watches_count -= total_removed_watches;
                 results.insert(results.end(), watch_responses.begin(), watch_responses.end());
             }
 
@@ -4178,7 +4184,7 @@ uint64_t KeeperStorage<Container>::getArenaDataSize() const
 
 uint64_t KeeperStorageBase::getWatchedPathsCount() const
 {
-    return watches.size() + list_watches.size();
+    return watches.size() + list_watches.size() + exist_watches.size() + persistent_watches.size() + persistent_recursive_watches.size();
 }
 
 void KeeperStorageBase::clearDeadWatches(int64_t session_id)
@@ -4193,33 +4199,21 @@ void KeeperStorageBase::clearDeadWatches(int64_t session_id)
         if (is_persistent)
             continue;
 
+        auto erase_session_from_map = [session_id, watch_path](auto & watch_map)
+        {
+            auto it = watch_map.find(watch_path);
+            chassert(it != watch_map.end());
+            auto & watches_for_path = it->second;
+            watches_for_path.erase(session_id);
+            if (watches_for_path.empty())
+                watch_map.erase(it);
+        };
         if (is_list_watch)
-        {
-            auto list_watch = list_watches.find(watch_path);
-            chassert(list_watch != list_watches.end());
-            auto & list_watches_for_path = list_watch->second;
-            list_watches_for_path.erase(session_id);
-            if (list_watches_for_path.empty())
-                list_watches.erase(list_watch);
-        }
+            erase_session_from_map(list_watches);
         else if (!trigger_on_exists)
-        {
-            auto watch = watches.find(watch_path);
-            chassert(watch != watches.end());
-            auto & watches_for_path = watch->second;
-            watches_for_path.erase(session_id);
-            if (watches_for_path.empty())
-                watches.erase(watch);
-        }
+            erase_session_from_map(watches);
         else
-        {
-            auto watch = exist_watches.find(watch_path);
-            chassert(watch != exist_watches.end());
-            auto & watches_for_path = watch->second;
-            watches_for_path.erase(session_id);
-            if (watches_for_path.empty())
-                exist_watches.erase(watch);
-        }
+            erase_session_from_map(exist_watches);
     }
 
     total_watches_count -= watches_it->second.size();
@@ -4345,6 +4339,8 @@ UInt64 KeeperStorageBase::WatchInfoHash::operator()(WatchInfo info) const
     SipHash hash;
     hash.update(info.path);
     hash.update(info.is_list_watch);
+    hash.update(info.is_persistent);
+    hash.update(info.trigger_on_exists);
     return hash.get64();
 }
 
@@ -4369,13 +4365,7 @@ bool KeeperStorageBase::containsWatch(const String & path, Coordination::CheckWa
             if (watch_it == watches.end())
                 return false;
 
-            for (int64_t session_id : watch_it->second)
-            {
-                for (const auto & watch : sessions_and_watchers.at(session_id))
-                    if (watch.path == path)
-                        return true;
-            }
-            return false;
+            return true;
         }
         case Coordination::CheckWatchRequest::CheckWatchType::CHILDREN:
         {
@@ -4383,13 +4373,7 @@ bool KeeperStorageBase::containsWatch(const String & path, Coordination::CheckWa
             if (watch_it == list_watches.end())
                 return false;
 
-            for (int64_t session_id : watch_it->second)
-            {
-                for (const auto & watch : sessions_and_watchers.at(session_id))
-                    if (watch.path == path)
-                        return true;
-            }
-            return false;
+            return true;
         }
     }
 }
@@ -4401,12 +4385,14 @@ void KeeperStorageBase::addPersistentWatch(const String & path, Coordination::Ad
         case Coordination::AddWatchRequest::AddWatchMode::PERSISTENT:
         {
             persistent_watches[path].insert(session_id);
+            ++total_watches_count;
             sessions_and_watchers[session_id].emplace(WatchInfo{.path = path, .is_list_watch = false, .is_persistent = true, .trigger_on_exists = false});
             break;
         }
         case Coordination::AddWatchRequest::AddWatchMode::PERSISTENT_RECURSIVE:
         {
             persistent_recursive_watches[path].insert(session_id);
+            ++total_watches_count;
             sessions_and_watchers[session_id].emplace(WatchInfo{.path = path, .is_list_watch = true, .is_persistent = true, .trigger_on_exists = false});
             break;
         }
@@ -4424,30 +4410,35 @@ void KeeperStorageBase::setWatches(const std::vector<String> & watches_paths,
     {
         watches[path].insert(session_id);
         sessions_and_watchers[session_id].emplace(WatchInfo{.path = path, .is_list_watch = false, .is_persistent = false, .trigger_on_exists = false});
+        ++total_watches_count;
     }
 
     for (const auto & path : list_watches_paths)
     {
         list_watches[path].insert(session_id);
         sessions_and_watchers[session_id].emplace(WatchInfo{.path = path, .is_list_watch = true, .is_persistent = false, .trigger_on_exists = false});
+        ++total_watches_count;
     }
 
     for (const auto & path : exist_watches_paths)
     {
         exist_watches[path].insert(session_id);
         sessions_and_watchers[session_id].emplace(WatchInfo{.path = path, .is_list_watch = false, .is_persistent = false, .trigger_on_exists = true});
+        ++total_watches_count;
     }
 
     for (const auto & path : persistent_watches_paths)
     {
         persistent_watches[path].insert(session_id);
         sessions_and_watchers[session_id].emplace(WatchInfo{.path = path, .is_list_watch = false, .is_persistent = true, .trigger_on_exists = false});
+        ++total_watches_count;
     }
 
     for (const auto & path : persistent_recursive_watches_paths)
     {
         persistent_recursive_watches[path].insert(session_id);
         sessions_and_watchers[session_id].emplace(WatchInfo{.path = path, .is_list_watch = true, .is_persistent = true, .trigger_on_exists = false});
+        ++total_watches_count;
     }
 }
 
@@ -4457,41 +4448,52 @@ void KeeperStorageBase::removePersistentWatch(const String& path,
 {
     switch (type)
     {
-        case Coordination::RemoveWatchRequest::WatchType::Any:
+        case Coordination::RemoveWatchRequest::WatchType::ANY:
         {
-            removePersistentWatch(path, Coordination::RemoveWatchRequest::WatchType::Data, session_id);
-            removePersistentWatch(path, Coordination::RemoveWatchRequest::WatchType::Children, session_id);
-            removePersistentWatch(path, Coordination::RemoveWatchRequest::WatchType::Persistent, session_id);
-            removePersistentWatch(path, Coordination::RemoveWatchRequest::WatchType::PersistentRecursive, session_id);
+            removePersistentWatch(path, Coordination::RemoveWatchRequest::WatchType::DATA, session_id);
+            removePersistentWatch(path, Coordination::RemoveWatchRequest::WatchType::CHILDREN, session_id);
+            removePersistentWatch(path, Coordination::RemoveWatchRequest::WatchType::PERSISTENT, session_id);
+            removePersistentWatch(path, Coordination::RemoveWatchRequest::WatchType::PERSISTENTRECURSIVE, session_id);
             break;
         }
-        case Coordination::RemoveWatchRequest::WatchType::Data:
+        case Coordination::RemoveWatchRequest::WatchType::DATA:
         {
-            watches[path].erase(session_id);
+            total_watches_count -= watches[path].erase(session_id);
+            if (watches[path].size() == 0)
+                watches.erase(path);
             sessions_and_watchers[session_id].erase(WatchInfo{.path = path, .is_list_watch = false, .is_persistent = false, .trigger_on_exists = false});
 
-            exist_watches[path].erase(session_id);
+            total_watches_count -= exist_watches[path].erase(session_id);
+            if (exist_watches[path].size() == 0)
+                exist_watches.erase(path);
             sessions_and_watchers[session_id].erase(WatchInfo{.path = path, .is_list_watch = false, .is_persistent = false, .trigger_on_exists = true});
 
             break;
         }
-        case Coordination::RemoveWatchRequest::WatchType::Children:
+        case Coordination::RemoveWatchRequest::WatchType::CHILDREN:
         {
-            list_watches[path].erase(session_id);
+            total_watches_count -= list_watches[path].erase(session_id);
+            if (list_watches[path].size() == 0)
+                list_watches.erase(path);
             sessions_and_watchers[session_id].erase(WatchInfo{.path = path, .is_list_watch = true, .is_persistent = false, .trigger_on_exists = false});
 
             break;
         }
-        case Coordination::RemoveWatchRequest::WatchType::Persistent:
+        case Coordination::RemoveWatchRequest::WatchType::PERSISTENT:
         {
-            persistent_watches[path].erase(session_id);
+            total_watches_count -= persistent_watches[path].erase(session_id);
+            if (persistent_watches[path].size() == 0)
+                persistent_watches.erase(path);
             sessions_and_watchers[session_id].erase(WatchInfo{.path = path, .is_list_watch = false, .is_persistent = true, .trigger_on_exists = false});
 
             break;
         }
-        case Coordination::RemoveWatchRequest::WatchType::PersistentRecursive:
+        case Coordination::RemoveWatchRequest::WatchType::PERSISTENTRECURSIVE:
         {
-            persistent_recursive_watches[path].erase(session_id);
+            total_watches_count -= persistent_recursive_watches[path].erase(session_id);
+            if (persistent_recursive_watches[path].size() == 0)
+                persistent_recursive_watches.erase(path);
+
             sessions_and_watchers[session_id].erase(WatchInfo{.path = path, .is_list_watch = true, .is_persistent = true, .trigger_on_exists = false});
 
             break;

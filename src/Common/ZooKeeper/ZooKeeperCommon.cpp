@@ -628,7 +628,7 @@ size_t ZooKeeperCheckWatchRequest::sizeImpl() const
 std::string ZooKeeperCheckWatchRequest::toStringImpl(bool /*short_format*/) const
 {
     String result = fmt::format("path: {}\n", path);
-    result += fmt::format("type: {}\n", static_cast<Int32>(type));
+    result += fmt::format("type: {}\n", String(magic_enum::enum_name(type)));
     return result;
 }
 
@@ -1533,10 +1533,10 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::FilteredList, ZooKeeperFilteredListRequest>(*this);
     registerZooKeeperRequest<OpNum::RemoveRecursive, ZooKeeperRemoveRecursiveRequest>(*this);
     registerZooKeeperRequest<OpNum::AddWatch, ZooKeeperAddWatchRequest>(*this);
-    registerZooKeeperRequest<OpNum::CheckWatches, ZooKeeperCheckWatchRequest>(*this);
-    registerZooKeeperRequest<OpNum::RemoveWatches, ZooKeeperRemoveWatchRequest>(*this);
-    registerZooKeeperRequest<OpNum::SetWatches, ZooKeeperSetWatchRequest>(*this);
-    registerZooKeeperRequest<OpNum::SetWatches2, ZooKeeperSetWatch2Request>(*this);
+    registerZooKeeperRequest<OpNum::CheckWatch, ZooKeeperCheckWatchRequest>(*this);
+    registerZooKeeperRequest<OpNum::RemoveWatch, ZooKeeperRemoveWatchRequest>(*this);
+    registerZooKeeperRequest<OpNum::SetWatch, ZooKeeperSetWatchRequest>(*this);
+    registerZooKeeperRequest<OpNum::SetWatch2, ZooKeeperSetWatch2Request>(*this);
 }
 
 PathMatchResult matchPath(std::string_view path, std::string_view match_to)

@@ -293,11 +293,11 @@ struct RemoveWatchRequest : virtual Request
     String path;
     enum class WatchType : int32_t
     {
-        Children = 1,
-        Data = 2,
-        Persistent = 4,
-        PersistentRecursive = 5,
-        Any = 3
+        CHILDREN = 1,
+        DATA = 2,
+        PERSISTENT = 4,
+        PERSISTENTRECURSIVE = 5,
+        ANY = 3
     } type;
 
     String getPath() const override { return path; }

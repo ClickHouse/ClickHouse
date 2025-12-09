@@ -9,6 +9,7 @@ import subprocess
 from kazoo.exceptions import NoNodeError
 import helpers.keeper_utils as ku
 import threading
+import re
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
@@ -82,6 +83,22 @@ def get_fake_zk(node, timeout=30.0):
 def get_keeper_socket(node_name):
     return keeper_utils.get_keeper_socket(cluster, node_name)
 
+def parse_watch_stats():
+    data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="wchs")
+    list_data = [n for n in data.split("\n") if len(n.strip()) > 0]
+
+    # 37 connections watching 632141 paths
+    # Total watches:632141
+    matcher = re.match(
+        r"([0-9].*) connections watching ([0-9].*) paths", list_data[0], re.S
+    )
+    conn_count = int(matcher.group(1))
+    watch_path_count = int(matcher.group(2))
+    watch_count = int(
+        re.match(r"Total watches:([0-9].*)", list_data[1], re.S).group(1)
+    )
+    return conn_count, watch_path_count, watch_count
+
 def test_persistent_watch(started_cluster):
     keeper_utils.wait_until_connected(cluster, node1)
     client = get_fake_zk(node1)
@@ -99,6 +116,12 @@ def test_persistent_watch(started_cluster):
     client.create(FAKE_PATH, b"1")
 
     client.add_watch(NODE_PATH, callback, AddWatchMode.PERSISTENT)
+    conn_count, watch_path_count, watch_count = parse_watch_stats()
+    # there could be connection to system node.
+    if conn_count == 1:
+        assert watch_path_count == 1
+        assert watch_count == 1
+
     full_path = client.chroot + NODE_PATH
     assert len(client._persistent_watchers[full_path]) == 1
 
@@ -141,13 +164,16 @@ def test_persistent_recursive_watch(started_cluster):
         events.append(dict(type=event.type, path=event.path))
         event_lock.set()
 
-    # --- Prepare nodes ---
     client.create(NODE_PATH, b"1")
     client.create(CHILD_NODE, b"1")
     client.create(FAKE_PATH, b"1")
 
-    # --- Add PERSISTENT_RECURSIVE watch ---
     client.add_watch(NODE_PATH, callback, AddWatchMode.PERSISTENT_RECURSIVE)
+
+    conn_count, watch_path_count, watch_count = parse_watch_stats()
+    if conn_count == 1:
+        assert watch_path_count == 1
+        assert watch_count == 1
 
     event_lock.clear()
     client.set(NODE_PATH, b"2")
@@ -174,6 +200,6 @@ def test_persistent_recursive_watch(started_cluster):
     time.sleep(1)
 
     assert len(events) == 2
+    client.delete(CHILD_NODE)
     client.delete(NODE_PATH)
     client.delete(FAKE_PATH)
-    client.delete(CHILD_NODE)
