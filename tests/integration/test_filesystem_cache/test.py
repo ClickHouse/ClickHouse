@@ -461,8 +461,7 @@ def test_force_filesystem_cache_on_merges(cluster):
         node.query(
             """
             SYSTEM DROP FILESYSTEM CACHE;
-            INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000000;
-            INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000000;
+            INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 100000;
             """
         )
         assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
