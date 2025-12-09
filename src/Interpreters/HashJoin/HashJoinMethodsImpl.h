@@ -117,9 +117,8 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     if (0 < processed_rows && processed_rows < block.rows())
     {
         auto [raw_block, raw_selector] = std::move(block).detachData();
-        auto current_block = raw_block.cloneWithCutColumns(0, processed_rows);
         auto split_selector = raw_selector.split(processed_rows);
-        block = ScatteredBlock(std::move(current_block), std::move(split_selector.first));
+        block = ScatteredBlock(raw_block, std::move(split_selector.first));
         next_scattered_block = ScatteredBlock(std::move(raw_block), std::move(split_selector.second));
     }
 
