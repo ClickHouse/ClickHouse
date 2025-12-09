@@ -684,7 +684,7 @@ inline void checkAreLowCardinalityInsertable(const Source &, const Sink &)
 }
 
 template <typename Source>
-requires (std::is_same_v<typename Source::Slice, GenericArraySlice>)
+requires std::same_as<typename Source::Slice, GenericArraySlice>
 inline void checkAreLowCardinalityInsertable(const Source & source, const GenericArraySink & sink)
 {
     const IColumn & source_elements = source.elements;
