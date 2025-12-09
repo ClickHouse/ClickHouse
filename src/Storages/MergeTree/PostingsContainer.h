@@ -436,6 +436,24 @@ public:
         if (current.size() == kBlockSize)
             compressCurrent();
     }
+    void addMany(const std::vector<T> & many)
+    {
+        if (!std::is_sorted(many.begin(), many.end()))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The current value must be greater than the previous value.");
+        size_t i = 0;
+        size_t many_size = many.size();
+        while (i < many_size)
+        {
+            size_t write_pos = current.size();
+            size_t can_fill = std::min(kBlockSize - write_pos, many_size - i);
+            current.resize(write_pos + can_fill);
+            std::copy_n(many.data() + i, can_fill, current.data() + write_pos);
+            i += can_fill;
+            total += can_fill;
+            if (current.size() == kBlockSize)
+                compressCurrent();
+        }
+    }
 
     size_t size() const { return total; }
 

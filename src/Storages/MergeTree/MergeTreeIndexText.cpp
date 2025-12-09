@@ -135,10 +135,10 @@ static UInt64 serializeWithCompressedPostings(PostingListBuilder && postings, Wr
     else
     {
         const auto & posting_list = postings.getLarge();
-        for (const auto row_id : posting_list)
-        {
-            container.add(row_id);
-        }
+        std::vector<uint32_t> postings_array;
+        postings_array.resize(posting_list.cardinality());
+        posting_list.toUint32Array(postings_array.data());
+        container.addMany(postings_array);
     }
     return container.serialize(ostr);
 }
@@ -766,6 +766,7 @@ TextIndexHeader::DictionarySparseIndex serializeTokensAndPostings(
             if (embedded_postings)
             {
                 stats.posting_lists_size += PostingsSerialization::serialize(header, std::move(postings), dictionary_stream.compressed_hashing, settings);
+                LOG_DEBUG(&Poco::Logger::get("__test__"), "embedded postings serialized size {}", stats.posting_lists_size);
             }
             else
             {
@@ -778,6 +779,7 @@ TextIndexHeader::DictionarySparseIndex serializeTokensAndPostings(
                 writeVarUInt(offset_in_file, dictionary_stream.compressed_hashing);
                 stats.posting_lists_size += getLengthOfVarUInt(offset_in_file);
                 stats.posting_lists_size += PostingsSerialization::serialize(header, std::move(postings), postings_stream.compressed_hashing, settings);
+                LOG_DEBUG(&Poco::Logger::get("__test__"), "normal postings serialized size {}", stats.posting_lists_size);
             }
         }
     }
