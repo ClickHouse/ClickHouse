@@ -114,11 +114,26 @@ def main():
 
     # Prepare env for pytest
     env = os.environ.copy()
+    # IMPORTANT: containers launched by docker-compose will bind-mount this exact host path
+    # Prefer the built artifact path if present, otherwise fall back to the installed binary
+    server_bin_for_mount = built_path if Path(built_path).is_file() else ch_path
     env["CLICKHOUSE_BINARY"] = ch_path
     env["CLICKHOUSE_TESTS_CLIENT_BIN_PATH"] = ch_path
-    env["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = ch_path
+    env["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = server_bin_for_mount
     env.setdefault("CLICKHOUSE_TESTS_BASE_CONFIG_DIR", f"{repo_dir}/programs/server")
     env["PATH"] = f"/usr/local/bin:{env.get('PATH','')}"
+
+    # Quick preflight to aid debugging in CI artifacts
+    results.append(
+        Result.from_commands_run(
+            name="Binary preflight",
+            command=[
+                "which clickhouse || true",
+                "clickhouse --version || true",
+                f"ls -l {server_bin_for_mount} || true",
+            ],
+        )
+    )
 
     results.append(
         Result.from_pytest_run(
