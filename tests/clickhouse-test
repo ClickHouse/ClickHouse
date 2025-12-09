@@ -1176,9 +1176,6 @@ class SettingsRandomizer:
         "allow_special_serialization_kinds_in_output_formats": lambda: random.randint(0, 1),
         "query_plan_read_in_order_through_join": lambda: random.randint(0, 1),
         "read_in_order_use_virtual_row": lambda: random.randint(0, 1),
-        "use_skip_indexes_for_top_k": lambda: random.randint(0, 1),
-        "use_top_k_dynamic_filtering": lambda: random.randint(0, 1),
-        "query_plan_max_limit_for_top_k_optimization": lambda: random.choice([0, 1, 10, 100, 1000, 100000]),
         **randomize_external_sort_group_by(),
     }
 
