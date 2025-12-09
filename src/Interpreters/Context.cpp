@@ -299,6 +299,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool parallel_replicas_only_with_analyzer;
     extern const SettingsBool enable_hdfs_pread;
+    extern const SettingsString default_dictionary_database;
 }
 
 namespace MergeTreeSetting
@@ -6932,16 +6933,9 @@ Poco::Timespan HTTPContext::getSendTimeout() const
     return context->getSettingsRef()[Setting::http_send_timeout];
 }
 
+String Coordination::Context::getDefaultDictionaryDatabase() const
+{
+    return getSettingsRef()[Setting::default_dictionary_database];
 }
 
-namespace DB
-{
-namespace Setting
-{
-    extern const SettingsString default_dictionary_database;
-}
-}
-
-String Coordination::Context::getDefaultDictionaryDatabase() const {
-    return getSettingsRef()[DB::Setting::default_dictionary_database];
 }
