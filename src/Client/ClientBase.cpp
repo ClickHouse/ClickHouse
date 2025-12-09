@@ -1384,13 +1384,14 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
                     double elapsed = receive_watch.elapsedSeconds();
                     if (break_on_timeout && elapsed > receive_timeout.totalSeconds())
                     {
-                        std::string error_message = fmt::format(
+                        PreformattedMessage error_message = PreformattedMessage::create
+                        (
                             "Timeout exceeded while receiving data from server. Waited for {} seconds, timeout is {} seconds.",
                             static_cast<size_t>(elapsed),
-                            receive_timeout.totalSeconds());
+                            receive_timeout.totalSeconds()
+                        );
 
-                        client_exception = std::make_unique<Exception>(
-                            Exception::createRuntime(ErrorCodes::TIMEOUT_EXCEEDED, error_message));
+                        client_exception = std::make_unique<Exception>(error_message, ErrorCodes::TIMEOUT_EXCEEDED);
                         have_error = true;
 
                         cancelQuery();
