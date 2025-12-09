@@ -1908,7 +1908,16 @@ Possible values:
 <max_concurrent_queries_for_user>5</max_concurrent_queries_for_user>
 ```
 )", 0) \
-    \
+\
+    DECLARE(BoolAuto, insert_select_deduplicate, Field("auto"), R"(
+Enables or disables block deduplication of `INSERT SELECT` (for Replicated\* tables).
+The setting overrids `insert_deduplicate` for `INSERT SELECT` queries.
+That setting has three possible values:
+- 0 — Disabled.
+- 1 — Enabled. If select result is not stable, exception is thrown.
+- auto — Enabled if `insert_deduplicate` is enable and select result is stable, otherwise disabled.
+    )", 0) \
+\
     DECLARE(Bool, insert_deduplicate, true, R"(
 Enables or disables block deduplication of `INSERT` (for Replicated\* tables).
 

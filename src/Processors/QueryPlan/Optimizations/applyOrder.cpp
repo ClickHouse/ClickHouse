@@ -25,19 +25,6 @@ namespace ErrorCodes
 namespace QueryPlanOptimizations
 {
 
-struct SortingProperty
-{
-    /// Sorting scope.
-    enum class SortScope : uint8_t
-    {
-        Stream = 0, /// Each data steam is sorted
-        Global = 1, /// Data is globally sorted
-    };
-
-    SortDescription sort_description = {};
-    SortScope sort_scope = SortScope::Stream;
-};
-
 SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * properties, const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (const auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(parent->step.get()))
@@ -166,7 +153,7 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
     return {};
 }
 
-void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root)
+SortingProperty applyOrder(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root)
 {
     Stack stack;
     stack.push_back({.node = &root});
@@ -195,6 +182,13 @@ void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, Que
         properties.erase(it, properties.end());
         properties.push_back(std::move(property));
     }
+
+    if (properties.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "After applying order optimization, properties size is {}, expected 1",
+            properties.size());
+
+    return std::move(properties[0]);
 }
 
 }
