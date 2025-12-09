@@ -76,7 +76,8 @@ def instance_insert_statement(
         template = """
             INSERT INTO {table_name}
                 SELECT {insert_columns}
-                FROM numbers({count}) {insert_settings};
+                FROM numbers({count}) {insert_settings}
+                ORDER BY ALL;
             """
         return __format(
             template,

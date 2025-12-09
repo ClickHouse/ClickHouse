@@ -93,6 +93,9 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
     if (auto * filter_step = typeid_cast<FilterStep *>(parent->step.get()))
     {
         const auto & expr = filter_step->getExpression();
+        if (expr.getNodes().empty())
+            return std::move(*properties);
+
         const ActionsDAG::Node * out_to_skip = nullptr;
         if (filter_step->removesFilterColumn())
         {
@@ -188,7 +191,7 @@ SortingProperty applyOrder(const QueryPlanOptimizationSettings & optimization_se
             "After applying order optimization, properties size is {}, expected 1",
             properties.size());
 
-    return std::move(properties[0]);
+    return properties[0];
 }
 
 }

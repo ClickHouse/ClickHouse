@@ -54,3 +54,11 @@ ${CLICKHOUSE_CLIENT} --insert_select_deduplicate=0 --insert_deduplicate=1 -q "
     SELECT count() FROM dst;
     TRUNCATE TABLE dst;
 "
+
+echo "insert_select_deduplicate=1 and insert_deduplicate=1 with stable select, deduplication happens"
+${CLICKHOUSE_CLIENT} --insert_select_deduplicate=1 --insert_deduplicate=1 -q "
+    INSERT INTO dst SELECT 1, 'one' ORDER BY all;
+    INSERT INTO dst SELECT 1, 'one' ORDER BY all;
+    SELECT count() FROM dst;
+    TRUNCATE TABLE dst;
+"

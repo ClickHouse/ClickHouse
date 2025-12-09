@@ -9,3 +9,5 @@ insert_select_deduplicate=auto and insert_deduplicate=1 with stable select, dedu
 10
 insert_select_deduplicate=0 and insert_deduplicate=1 with stable select, deduplication disabled
 20
+insert_select_deduplicate=1 and insert_deduplicate=1 with stable select, deduplication happens
+1
