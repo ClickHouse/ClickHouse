@@ -351,6 +351,8 @@ protected:
     bool is_default_format = true; /// false, if format is set in the config or command line.
     std::optional<size_t> insert_format_max_block_size_rows_from_config; /// Max block size in rows when reading INSERT data.
     std::optional<size_t> insert_format_max_block_size_bytes_from_config; /// Max block size in rows when reading INSERT data.
+    std::optional<size_t> insert_format_min_block_size_rows_from_config; /// Max block size in rows when reading INSERT data.
+    std::optional<size_t> insert_format_min_block_size_bytes_from_config; /// Max block size in rows when reading INSERT data.
     size_t max_client_network_bandwidth = 0; /// The maximum speed of data exchange over the network for the client in bytes per second.
 
     bool has_vertical_output_suffix = false; /// Is \G present at the end of the query string?

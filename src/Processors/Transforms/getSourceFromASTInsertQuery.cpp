@@ -23,6 +23,8 @@ namespace Setting
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_insert_block_size_bytes;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsUInt64 min_insert_block_size_bytes;
 }
 
 namespace ErrorCodes
@@ -63,8 +65,14 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
 
     UInt64 max_insert_block_size_rows_setting = settings[Setting::max_insert_block_size];
     UInt64 max_insert_block_size_bytes_setting = settings[Setting::max_insert_block_size_bytes];
+    UInt64 min_insert_block_size_rows_setting = settings[Setting::min_insert_block_size_rows];
+    UInt64 min_insert_block_size_bytes_setting = settings[Setting::min_insert_block_size_bytes];
     /// Create a source from input buffer using format from query
-    auto format = context->getInputFormat(ast_insert_query->format, *input_buffer, header, max_insert_block_size_rows_setting, std::nullopt, max_insert_block_size_bytes_setting);
+    auto format = context->getInputFormat(ast_insert_query->format, *input_buffer, header,
+                                           max_insert_block_size_rows_setting, std::nullopt,
+                                           max_insert_block_size_bytes_setting,
+                                           min_insert_block_size_rows_setting,
+                                           min_insert_block_size_bytes_setting);
     format->addBuffer(std::move(input_buffer));
     return format;
 }

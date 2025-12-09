@@ -122,7 +122,7 @@ Chunk IRowInputFormat::read()
     {
         if (need_only_count && supportsCountRows())
         {
-            num_rows = countRows(params.max_block_size);
+            num_rows = countRows(params.max_block_size_rows);
             if (num_rows == 0)
             {
                 readSuffix();
@@ -136,7 +136,15 @@ Chunk IRowInputFormat::read()
         RowReadExtension info;
         bool continue_reading = true;
         size_t total_bytes = 0;
-        for (size_t rows = 0; ((rows < params.max_block_size && (!params.max_block_size_bytes || total_bytes < params.max_block_size_bytes)) || num_rows == 0) && continue_reading; ++rows)
+
+        size_t max_block_size_rows = params.max_block_size_rows;
+        size_t max_block_size_bytes = params.max_block_size_bytes;
+        size_t min_block_size_rows = params.min_block_size_rows;
+        size_t min_block_size_bytes = params.min_block_size_bytes;
+
+        for (size_t rows = 0; ((rows < max_block_size_rows && (!max_block_size_bytes || total_bytes < max_block_size_bytes)) || num_rows == 0) 
+                                && ((!min_block_size_rows || rows < min_block_size_rows) || (!min_block_size_bytes || total_bytes < min_block_size_bytes))
+                                && continue_reading; ++rows)
         {
             try
             {

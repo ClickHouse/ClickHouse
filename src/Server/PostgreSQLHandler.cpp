@@ -52,6 +52,8 @@ namespace Setting
     extern const SettingsBool implicit_select;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_insert_block_size_bytes;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsUInt64 min_insert_block_size_bytes;
 }
 
 namespace ErrorCodes
@@ -468,6 +470,8 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         const Settings & settings = query_context->getSettingsRef();
         auto max_insert_block_size_rows_setting = settings[Setting::max_insert_block_size];
         auto max_insert_block_size_bytes_setting = settings[Setting::max_insert_block_size_bytes];
+        UInt64 min_insert_block_size_rows_setting = settings[Setting::min_insert_block_size_rows];
+        UInt64 min_insert_block_size_bytes_setting = settings[Setting::min_insert_block_size_bytes];
 
         message_transport->send(PostgreSQLProtocol::Messaging::CopyInResponse(), true);
         executor->start();
@@ -482,7 +486,10 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
 
                 ReadBufferFromString buf(data_query->query);
                 auto format_ptr = FormatFactory::instance().getInput(format, buf, io.pipeline.getHeader(), query_context, max_insert_block_size_rows_setting, 
-                                                                            std::nullopt, nullptr, nullptr, false, CompressionMethod::None, false, max_insert_block_size_bytes_setting);
+                                                                            std::nullopt, nullptr, nullptr, false, CompressionMethod::None, false, 
+                                                                            max_insert_block_size_bytes_setting,
+                                                                            min_insert_block_size_rows_setting,
+                                                                            min_insert_block_size_bytes_setting);
                 while (true)
                 {
                     auto chunk = format_ptr->generate();

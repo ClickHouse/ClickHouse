@@ -76,6 +76,8 @@ namespace Setting
     extern const SettingsString send_logs_source_regexp;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_insert_block_size_bytes;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -1143,9 +1145,15 @@ namespace
         const Settings & settings = query_context->getSettingsRef();
         UInt64 max_insert_block_size_rows_setting = settings[Setting::max_insert_block_size];
         UInt64 max_insert_block_size_bytes_setting = settings[Setting::max_insert_block_size_bytes];
+        UInt64 min_insert_block_size_rows_setting = settings[Setting::min_insert_block_size_rows];
+        UInt64 min_insert_block_size_bytes_setting = settings[Setting::min_insert_block_size_bytes];
 
         auto source
-            = query_context->getInputFormat(input_format, *read_buffer, header, max_insert_block_size_rows_setting, std::nullopt, max_insert_block_size_bytes_setting);
+            = query_context->getInputFormat(input_format, *read_buffer, header, 
+                                            max_insert_block_size_rows_setting, std::nullopt,
+                                            max_insert_block_size_bytes_setting,
+                                            min_insert_block_size_rows_setting,
+                                            min_insert_block_size_bytes_setting);
 
         pipeline = std::make_unique<QueryPipeline>(std::move(source));
         pipeline_executor = std::make_unique<PullingPipelineExecutor>(*pipeline);
