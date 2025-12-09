@@ -96,6 +96,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 
+#include <base/defines.h>
 #include <boost/algorithm/string/join.hpp>
 
 #include <base/insertAtEnd.h>
@@ -7445,6 +7446,27 @@ DetachedPartsInfo MergeTreeData::getDetachedParts() const
         }
     }
     return res;
+}
+
+bool MergeTreeData::checkTransactionMetadata(const std::filesystem::path & data_path)
+{
+    std::vector<String> parts_with_txn;
+    std::error_code ec;
+
+    chassert(std::filesystem::exists(data_path, ec));
+
+    for (const auto & entry : std::filesystem::directory_iterator(data_path, ec))
+    {
+        if (!entry.is_directory(ec))
+            continue;
+
+        /// Check for transaction metadata file in the part directory
+        std::filesystem::path txn_file = entry.path() / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME;
+        if (std::filesystem::exists(txn_file, ec))
+            return false;
+    }
+
+    return true;
 }
 
 void MergeTreeData::validateDetachedPartName(const String & name)
