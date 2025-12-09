@@ -64,6 +64,7 @@ private:
         SUCCESS,
     };
 
+    MergeTaskPtr merge_task{nullptr};
     State state{State::NEED_PREPARE};
 
     StorageMergeTree & storage;
@@ -85,7 +86,6 @@ private:
     std::function<void(const ExecutionStatus &)> write_part_log;
     std::function<void()> transfer_profile_counters_to_initial_query;
     IExecutableTask::TaskResultCallback task_result_callback;
-    MergeTaskPtr merge_task{nullptr};
 
     MergeTreeTransactionHolder txn_holder;
     MergeTreeTransactionPtr txn;
