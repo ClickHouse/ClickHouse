@@ -604,7 +604,9 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
             optimization_settings.optimize_plan = false;
 
             auto properties = QueryPlanOptimizations::applyOrder(optimization_settings, *interpreter_select_analyzer.getQueryPlan().getRootNode());
-            select_query_sorted = !properties.sort_description.empty() && properties.sort_scope == QueryPlanOptimizations::SortingProperty::SortScope::Global;
+            select_query_sorted = !properties.sort_description.empty()
+                && properties.sort_scope == QueryPlanOptimizations::SortingProperty::SortScope::Global
+                && pipeline.getNumStreams() == 1;
         }
         else
         {
