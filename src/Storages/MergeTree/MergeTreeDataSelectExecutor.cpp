@@ -17,6 +17,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSampleRatio.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -37,10 +38,12 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <base/sleep.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/setThreadName.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/CurrentMetrics.h>
@@ -66,6 +69,9 @@ extern const Event FilteringMarksWithPrimaryKeyMicroseconds;
 extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
 extern const Event IndexBinarySearchAlgorithm;
 extern const Event IndexGenericExclusionSearchAlgorithm;
+extern const Event SelectPartsDurationMicroseconds;
+extern const Event PartitionPrefixFilterPrunedParts;
+extern const Event PartitionPrefixFilterOverprunedParts;
 }
 
 namespace DB
@@ -102,6 +108,8 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_for_top_k;
     extern const SettingsUInt64 max_rows_to_read_leaf;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
+    extern const SettingsBool allow_partition_prefix_part_filter;
+    extern const SettingsBool enable_partition_prefix_part_filter_dry_run;
 }
 
 namespace MergeTreeSetting
@@ -571,6 +579,375 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
     return VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 }
 
+namespace
+{
+    struct PartitionRange
+    {
+        String min_partition_prefix;
+        String max_partition_prefix;
+        String comment;
+
+        bool isNull() const { return min_partition_prefix.empty() && max_partition_prefix.empty(); }
+    };
+
+    /// Represents the result of evaluating an RPN sub-expression for partition prefix extraction.
+    /// We track ranges for each partition key column that are ANDed together.
+    struct PartitionRangeRPNResult
+    {
+        explicit PartitionRangeRPNResult(size_t num_partition_columns, bool empty = false) : partition_key_ranges(num_partition_columns)
+        {
+            for (auto & range : partition_key_ranges)
+                range = empty ? std::optional<Range>{} : std::optional<Range>{Range::createWholeUniverse()};
+        }
+
+        // A range for each partition key column.
+        // nullopt means the range is empty.
+        std::vector<std::optional<Range>> partition_key_ranges;
+
+        PartitionRangeRPNResult operator&(const PartitionRangeRPNResult & other) const
+        {
+            if (partition_key_ranges.size() != other.partition_key_ranges.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionRangeRPNResult operator&: partition key ranges have different sizes");
+
+            PartitionRangeRPNResult result(partition_key_ranges.size());
+
+            for (size_t i = 0; i < partition_key_ranges.size(); ++i)
+            {
+                if (partition_key_ranges[i] && other.partition_key_ranges[i])
+                    result.partition_key_ranges[i] = partition_key_ranges[i]->intersectWith(*other.partition_key_ranges[i]);
+                else
+                    result.partition_key_ranges[i] = std::nullopt;
+            }
+
+            return result;
+        }
+
+        PartitionRangeRPNResult operator|(const PartitionRangeRPNResult & other) const
+        {
+            if (partition_key_ranges.size() != other.partition_key_ranges.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionRangeRPNResult operator|: partition key ranges have different sizes");
+
+            PartitionRangeRPNResult result(partition_key_ranges.size());
+
+            for (size_t i = 0; i < partition_key_ranges.size(); ++i)
+            {
+                // If either side is nullopt (empty), the union is the other side
+                if (!partition_key_ranges[i])
+                {
+                    result.partition_key_ranges[i] = other.partition_key_ranges[i];
+                    continue;
+                }
+                if (!other.partition_key_ranges[i])
+                {
+                    result.partition_key_ranges[i] = partition_key_ranges[i];
+                    continue;
+                }
+
+                const auto & mine = *partition_key_ranges[i];
+                const auto & theirs = *other.partition_key_ranges[i];
+
+                bool left_bound_use_mine = false;
+                bool right_bound_use_mine = false;
+
+                if (Range::less(mine.left, theirs.left) || ((!mine.left_included && theirs.left_included) && Range::equals(mine.left, theirs.left)))
+                    left_bound_use_mine = true;
+
+                if (Range::less(theirs.right, mine.right) || ((!theirs.right_included && mine.right_included) && Range::equals(theirs.right, mine.right)))
+                    right_bound_use_mine = true;
+
+                result.partition_key_ranges[i] = Range(
+                    left_bound_use_mine ? mine.left : theirs.left,
+                    left_bound_use_mine ? mine.left_included : theirs.left_included,
+                    right_bound_use_mine ? mine.right : theirs.right,
+                    right_bound_use_mine ? mine.right_included : theirs.right_included);
+            }
+
+            return result;
+        }
+    };
+
+    PartitionRange extractPartitionRange(const StorageMetadataPtr & metadata_snapshot, const std::optional<KeyCondition> & condition)
+    {
+        if (!metadata_snapshot->hasPartitionKey())
+            return PartitionRange{"", "", "table has no partition key"};
+        if (!condition)
+            return PartitionRange{"", "", "no condition"};
+        if (condition->alwaysFalse())
+            return PartitionRange{"", "", "condition is always false"};
+        if (condition->alwaysUnknownOrTrue())
+            return PartitionRange{"", "", "condition is always unknown or true"};
+
+        const auto & partition_key_column_names = metadata_snapshot->partition_key.column_names;
+        const auto & partition_key_types = metadata_snapshot->partition_key.data_types;
+        const size_t num_partition_columns = partition_key_column_names.size();
+
+        if (num_partition_columns == 0)
+            return PartitionRange{"", "", "partition key has no columns"};
+
+        // Only partition ids in the form "firstKey[-secondKey[-otherKeys...]]" can be searched by prefix.
+        // Partition id has such form if all keys are integer (see MergeTreePartition::getID).
+        // (The other partition id type is hash, we cannot handle them.)
+        // Also avoid signed integers (not sure if we can handle them correctly).
+        for (const auto & partition_key_type : partition_key_types)
+        {
+            if (!partition_key_type->isValueRepresentedByUnsignedInteger())
+                return PartitionRange{"", "", "partition key not represented by unsigned integer"};
+        }
+
+        const auto & rpn = condition->getRPN();
+        const auto & key_columns = condition->getKeyColumns();
+
+        // Pre-compute mapping from partition column index to key column index
+        std::vector<std::optional<size_t>> partition_col_to_key_col(num_partition_columns);
+        for (size_t i = 0; i < num_partition_columns; ++i)
+        {
+            if (auto it = key_columns.find(partition_key_column_names[i]); it != key_columns.end())
+                partition_col_to_key_col[i] = it->second;
+        }
+
+        std::vector<PartitionRangeRPNResult> rpn_stack;
+        rpn_stack.reserve(rpn.size());
+        for (const auto & element : rpn)
+        {
+            if (element.function == KeyCondition::RPNElement::FUNCTION_IN_RANGE)
+            {
+                PartitionRangeRPNResult result(num_partition_columns);
+                // we can't handle applying functions
+                if (element.monotonic_functions_chain.empty())
+                {
+                    for (size_t i = 0; i < num_partition_columns; ++i)
+                    {
+                        if (partition_col_to_key_col[i] && element.getKeyColumn() == *partition_col_to_key_col[i])
+                        {
+                            result.partition_key_ranges[i] = element.range;
+                            break;
+                        }
+                    }
+                }
+                rpn_stack.emplace_back(std::move(result));
+            }
+            else if (element.function == KeyCondition::RPNElement::FUNCTION_AND)
+            {
+                if (rpn_stack.size() < 2)
+                    return PartitionRange{"", "", "invalid stack size for AND"};
+                auto arg1 = std::move(rpn_stack.back()); rpn_stack.pop_back();
+                auto arg2 = std::move(rpn_stack.back()); rpn_stack.pop_back();
+                rpn_stack.push_back(arg1 & arg2);
+            }
+            else if (element.function == KeyCondition::RPNElement::FUNCTION_OR)
+            {
+                if (rpn_stack.size() < 2)
+                    return PartitionRange{"", "", "invalid stack size for OR"};
+                auto arg1 = std::move(rpn_stack.back()); rpn_stack.pop_back();
+                auto arg2 = std::move(rpn_stack.back()); rpn_stack.pop_back();
+                rpn_stack.push_back(arg1 | arg2);
+            }
+            else if (element.function == KeyCondition::RPNElement::FUNCTION_NOT)
+            {
+                if (rpn_stack.size() < 1)
+                    return PartitionRange{"", "", "invalid stack size for NOT"};
+                // match everything, ignore whatever is being negated
+                rpn_stack.pop_back();
+                rpn_stack.emplace_back(num_partition_columns);
+            }
+            else if (
+                   element.function == KeyCondition::RPNElement::ALWAYS_TRUE
+                || element.function == KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE
+                || element.function == KeyCondition::RPNElement::FUNCTION_IS_NULL
+                || element.function == KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL
+                || element.function == KeyCondition::RPNElement::FUNCTION_IN_SET
+                || element.function == KeyCondition::RPNElement::FUNCTION_NOT_IN_SET
+                || element.function == KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE
+                || element.function == KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON
+                || element.function == KeyCondition::RPNElement::FUNCTION_UNKNOWN)
+            {
+                // match everything
+                rpn_stack.emplace_back(num_partition_columns);
+            }
+            else if (element.function == KeyCondition::RPNElement::ALWAYS_FALSE)
+            {
+                // match nothing
+                rpn_stack.emplace_back(num_partition_columns, /* empty */ true);
+            }
+            else
+            {
+                return PartitionRange{"", "", "unexpected function in RPN: " + element.toString()};
+            }
+        }
+
+        if (rpn_stack.size() != 1)
+            return PartitionRange{"", "", "invalid stack size for final result"};
+
+        auto rpn_result = std::move(rpn_stack.back());
+
+        // Helper to check if a partition key type has a fixed-width string representation.
+        // For fixed-width types, lexicographic ordering always matches numeric ordering,
+        // so we can safely use a single bound even if the other is unbounded.
+        auto is_fixed_width_type = [&partition_key_types](size_t col_idx) -> bool
+        {
+            const auto * col_type = partition_key_types[col_idx].get();
+            // Date is formatted as YYYYMMDD (always 8 digits)
+            return typeid_cast<const DataTypeDate *>(col_type) != nullptr;
+        };
+
+        // Helper to convert a field value to its partition ID string representation
+        auto field_to_partition_string = [&partition_key_types](size_t col_idx, const Field & field) -> String
+        {
+            const auto * col_type = partition_key_types[col_idx].get();
+            const auto val = convertFieldToType(field, *col_type);
+            if (val.isNull())
+                return "";
+
+            // copied from MergeTreePartition::getID
+            if (typeid_cast<const DataTypeDate *>(col_type))
+                return toString(DateLUT::instance().toNumYYYYMMDD(DayNum(val.safeGet<UInt64>())));
+            else if (typeid_cast<const DataTypeIPv4 *>(col_type))
+                return toString(val.safeGet<IPv4>().toUnderType());
+            else
+                return convertFieldToString(val);
+        };
+
+        String min_prefix;
+        bool min_prefix_completed = false;
+        String max_prefix;
+        bool max_prefix_completed = false;
+
+        for (size_t i = 0; i < num_partition_columns; ++i)
+        {
+            // TODO: If we get an empty range, it should mean match nothing (condition always false)?
+            bool has_min = rpn_result.partition_key_ranges[i] && !rpn_result.partition_key_ranges[i]->left.isNull();
+            bool has_max = rpn_result.partition_key_ranges[i] && !rpn_result.partition_key_ranges[i]->right.isNull();
+
+            if (!has_min)
+                min_prefix_completed = true;
+            if (!has_max)
+                max_prefix_completed = true;
+
+            if (min_prefix_completed && max_prefix_completed)
+                break;
+
+            // For variable-width types (e.g., integers), lexicographic ordering only matches
+            // numeric ordering when both bounds have the same string length.
+            // For fixed-width types (e.g., Date as YYYYMMDD), this is always true.
+            bool is_fixed_width = is_fixed_width_type(i);
+
+            String min_component;
+            String max_component;
+
+            if (has_min)
+                min_component = field_to_partition_string(i, rpn_result.partition_key_ranges[i]->left);
+            if (has_max)
+                max_component = field_to_partition_string(i, rpn_result.partition_key_ranges[i]->right);
+
+            if (!is_fixed_width)
+            {
+                // For variable-width types, we need both bounds with matching string lengths
+                if (!has_min || !has_max || min_component.size() != max_component.size())
+                {
+                    // Cannot safely extend prefix for this column - stop here
+                    // (but keep any prefix we've already built from previous columns)
+                    break;
+                }
+            }
+
+            if (!min_prefix_completed && !min_component.empty())
+                min_prefix += min_component + "-";
+            else
+                min_prefix_completed = true;
+
+            if (!max_prefix_completed && !max_component.empty())
+                max_prefix += max_component + "-";
+            else
+                max_prefix_completed = true;
+        }
+
+        return PartitionRange{min_prefix, max_prefix, ""};
+    }
+
+    RangesInDataPartsSpan filterPartsByPartitionRange(
+        const RangesInDataParts & parts,
+        const std::optional<PartitionRange> & partition_range)
+    {
+        if (!partition_range || partition_range->isNull())
+            return parts;
+
+        auto prefix_comparator = [](std::string_view first, std::string_view second)
+        {
+            // 'less', except that it treats a string as equal to its prefix
+            return first.size() < second.size()
+                       ? first < second.substr(0, first.size())
+                       : first.substr(0, second.size()) < second;
+        };
+
+        // Determine the range boundaries
+        auto begin_it = parts.begin();
+        auto end_it = parts.end();
+
+        // Binary search for lower bound if min_partition_prefix is specified
+        if (!partition_range->min_partition_prefix.empty())
+        {
+            begin_it = std::lower_bound(
+                parts.begin(), parts.end(),
+                partition_range->min_partition_prefix,
+                [&](const auto& part, const String& prefix)
+                {
+                    return prefix_comparator(part.data_part->info.getOriginalPartitionId() + "-", prefix);
+                });
+        }
+
+        // Binary search for upper bound if max_partition_prefix is specified
+        if (!partition_range->max_partition_prefix.empty())
+        {
+            end_it = std::upper_bound(
+                begin_it, parts.end(),
+                partition_range->max_partition_prefix,
+                [&](const String& prefix, const auto& part)
+                {
+                    return prefix_comparator(prefix, part.data_part->info.getOriginalPartitionId() + "-");
+                });
+        }
+
+        return RangesInDataPartsSpan(begin_it, end_it);
+    }
+
+    size_t determineOverPrunedParts(
+        const RangesInDataParts & selected_parts,
+        const RangesInDataPartsSpan & prefix_filtered_parts)
+    {
+        if (selected_parts.empty())
+            return 0;
+
+        if (prefix_filtered_parts.empty())
+            return selected_parts.size();
+
+        const auto & prefix_min_info = prefix_filtered_parts.front().data_part->info;
+        const auto & prefix_max_info = prefix_filtered_parts.back().data_part->info;
+
+        size_t overpruned = 0;
+        auto it_from_begin = selected_parts.begin();
+
+        // Count parts before the prefix range
+        while (it_from_begin != selected_parts.end() && it_from_begin->data_part->info < prefix_min_info)
+        {
+            ++overpruned;
+            ++it_from_begin;
+        }
+
+        if (it_from_begin == selected_parts.end())
+            return overpruned;
+
+        // Count parts after the prefix range
+        auto it_from_end = selected_parts.end();
+        while (it_from_end != it_from_begin && prefix_max_info < std::prev(it_from_end)->data_part->info)
+        {
+            ++overpruned;
+            --it_from_end;
+        }
+
+        return overpruned;
+    }
+}
+
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     const RangesInDataParts & parts,
     const std::optional<PartitionPruner> & partition_pruner,
@@ -583,6 +960,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     LoggerPtr log,
     ReadFromMergeTree::IndexStats & index_stats)
 {
+    const auto start_time = std::chrono::steady_clock::now();
     RangesInDataParts res;
     const Settings & settings = context->getSettingsRef();
     DataTypes minmax_columns_types;
@@ -604,11 +982,25 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
 
     auto query_context = context->hasQueryContext() ? context->getQueryContext() : context;
     QueryStatusPtr query_status = context->getProcessListElement();
+    std::optional<PartitionRange> partition_range = std::nullopt;
+    RangesInDataPartsSpan parts_span = parts;
+    RangesInDataPartsSpan prefix_filter_parts_span;
+
+    if (settings[Setting::allow_partition_prefix_part_filter] && partition_pruner)
+    {
+        partition_range = extractPartitionRange(metadata_snapshot, partition_pruner->getKeyCondition());
+        prefix_filter_parts_span = filterPartsByPartitionRange(parts, partition_range);
+        if (!settings[Setting::enable_partition_prefix_part_filter_dry_run])
+        {
+            parts_span = prefix_filter_parts_span;
+        }
+        ProfileEvents::increment(ProfileEvents::PartitionPrefixFilterPrunedParts, parts.size() - prefix_filter_parts_span.size());
+    }
 
     PartFilterCounters part_filter_counters;
     if (query_context->getSettingsRef()[Setting::allow_experimental_query_deduplication])
         res = selectPartsToReadWithUUIDFilter(
-            parts,
+            parts_span,
             part_values,
             data.getPinnedPartUUIDs(),
             minmax_idx_condition,
@@ -620,7 +1012,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
             log);
     else
         res = selectPartsToRead(
-            parts,
+            parts_span,
             part_values,
             minmax_idx_condition,
             minmax_columns_types,
@@ -629,10 +1021,45 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
             part_filter_counters,
             query_status);
 
-    index_stats.emplace_back(ReadFromMergeTree::IndexStat{
-        .type = ReadFromMergeTree::IndexType::None,
-        .num_parts_after = part_filter_counters.num_initial_selected_parts,
-        .num_granules_after = part_filter_counters.num_initial_selected_granules});
+    auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start_time).count();
+    ProfileEvents::increment(ProfileEvents::SelectPartsDurationMicroseconds, elapsed_us);
+
+    if (settings[Setting::allow_partition_prefix_part_filter] && partition_pruner)
+    {
+        chassert(partition_range);
+
+        index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::None,
+            .num_parts_after = parts.size(),
+            .num_granules_after = 0, // we don't count granules before partition range filtering
+        });
+
+        String condition_str = "[" + partition_range->min_partition_prefix + "," + partition_range->max_partition_prefix + "]";
+        if (!partition_range->comment.empty())
+            condition_str += " (" + partition_range->comment + ")";
+
+        if (settings[Setting::enable_partition_prefix_part_filter_dry_run])
+        {
+            condition_str += " (dry run)";
+            const size_t overpruned = determineOverPrunedParts(res, prefix_filter_parts_span);
+            ProfileEvents::increment(ProfileEvents::PartitionPrefixFilterOverprunedParts, overpruned);
+        }
+
+        index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::PartitionPrefix,
+            .condition = condition_str,
+            .num_parts_after = part_filter_counters.num_initial_selected_parts,
+            .num_granules_after = part_filter_counters.num_initial_selected_granules
+        });
+    }
+    else
+    {
+        index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::None,
+            .num_parts_after = part_filter_counters.num_initial_selected_parts,
+            .num_granules_after = part_filter_counters.num_initial_selected_granules
+        });
+    }
 
     if (minmax_idx_condition)
     {
@@ -2234,7 +2661,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
 }
 
 RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
-    const RangesInDataParts & parts,
+    const RangesInDataPartsSpan & parts,
     const std::optional<std::unordered_set<String>> & part_values,
     const std::optional<KeyCondition> & minmax_idx_condition,
     const DataTypes & minmax_columns_types,
@@ -2293,7 +2720,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
 }
 
 RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
-    const RangesInDataParts & parts,
+    const RangesInDataPartsSpan & parts,
     const std::optional<std::unordered_set<String>> & part_values,
     MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
     const std::optional<KeyCondition> & minmax_idx_condition,
@@ -2306,7 +2733,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
 {
     /// process_parts prepare parts that have to be read for the query,
     /// returns false if duplicated parts' UUID have been met
-    auto select_parts = [&](const RangesInDataParts & in_parts, RangesInDataParts & selected_parts) -> bool
+    auto select_parts = [&](const RangesInDataPartsSpan & in_parts, RangesInDataParts & selected_parts) -> bool
     {
         auto ignored_part_uuids = query_context->getIgnoredPartUUIDs();
         std::unordered_set<UUID> temp_part_uuids;

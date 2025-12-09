@@ -131,5 +131,6 @@ struct RangesInDataParts : public std::vector<RangesInDataPart>
     size_t getRowsCountAllParts() const;
 };
 using RangesInDataPartsPtr = std::shared_ptr<const RangesInDataParts>;
+using RangesInDataPartsSpan = std::span<const RangesInDataPart>;
 
 }
