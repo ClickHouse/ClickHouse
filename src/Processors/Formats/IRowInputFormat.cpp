@@ -142,9 +142,21 @@ Chunk IRowInputFormat::read()
         size_t min_block_size_rows = params.min_block_size_rows;
         size_t min_block_size_bytes = params.min_block_size_bytes;
 
-        for (size_t rows = 0; ((rows < max_block_size_rows && (!max_block_size_bytes || total_bytes < max_block_size_bytes)) || num_rows == 0) 
-                                && ((!min_block_size_rows || rows < min_block_size_rows) || (!min_block_size_bytes || total_bytes < min_block_size_bytes))
-                                && continue_reading; ++rows)
+        auto larger_min_threshold_exists = [&](size_t rows, size_t bytes)-> bool
+        {
+            return (!min_block_size_rows && !min_block_size_bytes) || rows < min_block_size_rows || bytes < min_block_size_bytes;
+        };
+
+        auto smaller_than_any_max_threshold = [&](size_t rows, size_t bytes)-> bool
+        {
+            return (!max_block_size_rows || rows < max_block_size_rows) && (!max_block_size_rows || bytes < max_block_size_bytes);
+        };
+
+        for (size_t rows = 0; 
+             (smaller_than_any_max_threshold(rows, total_bytes) || num_rows == 0) 
+                && larger_min_threshold_exists(rows, total_bytes)
+                && continue_reading; 
+            ++rows)
         {
             try
             {
@@ -179,7 +191,7 @@ Chunk IRowInputFormat::read()
                 if (columns.empty())
                     ++num_rows;
 
-                if (params.max_block_size_bytes)
+                if (min_block_size_bytes || max_block_size_bytes)
                 {
                     for (const auto & column : columns)
                         total_bytes += column->byteSizeAt(column->size() - 1);

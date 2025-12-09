@@ -118,9 +118,24 @@ Chunk ValuesBlockInputFormat::read()
 
     size_t rows_in_block = 0;
     size_t bytes_in_block = 0;
-    const size_t max_block_size_bytes_param = params.max_block_size_bytes;
+    const size_t max_block_size_bytes = params.max_block_size_bytes;
+    const size_t max_block_size_rows = params.max_block_size_rows;
+    const size_t min_block_size_rows = params.min_block_size_rows;
+    const size_t min_block_size_bytes = params.min_block_size_bytes;
 
-    for (; rows_in_block < params.max_block_size && (!max_block_size_bytes_param || bytes_in_block < max_block_size_bytes_param); ++rows_in_block)
+    auto larger_min_threshold_exists = [&](size_t rows, size_t bytes)-> bool
+    {
+        return (!min_block_size_rows && !min_block_size_bytes) || rows < min_block_size_rows || bytes < min_block_size_bytes;
+    };
+
+    auto smaller_than_any_max_threshold = [&](size_t rows, size_t bytes)-> bool
+    {
+        return (!max_block_size_rows || rows < max_block_size_rows) && (!max_block_size_rows || bytes < max_block_size_bytes);
+    };
+    
+    for (; larger_min_threshold_exists(rows_in_block, bytes_in_block) &&
+            smaller_than_any_max_threshold(rows_in_block, bytes_in_block)
+         ; ++rows_in_block)
     {
         try
         {
@@ -133,7 +148,7 @@ Chunk ValuesBlockInputFormat::read()
             {
                 readRow(columns, rows_in_block);
 
-                if (max_block_size_bytes_param)
+                if (min_block_size_bytes || max_block_size_bytes)
                 {
                     bytes_in_block = 0;
                     for (const auto & column : columns)
