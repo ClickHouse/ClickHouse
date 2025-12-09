@@ -387,3 +387,6 @@
 [submodule "contrib/antlr4-cpp-runtime"]
 	path = contrib/antlr4-cpp-runtime
 	url = https://github.com/antlr/antlr4.git
+[submodule "contrib/heks"]
+	path = contrib/heks
+	url = https://github.com/jh0x/heks.git

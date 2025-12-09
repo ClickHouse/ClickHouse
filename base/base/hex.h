@@ -2,7 +2,11 @@
 
 #include <bit>
 #include <cstring>
+#include <iterator>
 #include "types.h"
+
+#define FAST_HEX_USE_NAMESPACE
+#include <fast_hex/fast_hex_inline.hpp>
 
 namespace CityHash_v1_0_2 { struct uint128; }
 
@@ -122,54 +126,82 @@ namespace impl
     {
         static const constexpr size_t num_hex_digits = sizeof(TUInt) * 2;
 
-        static void hex(TUInt uint_, char * out, std::string_view table)
+        template<typename Case>
+        static void hex(TUInt uint_, char * out, Case c)
         {
-            union
-            {
-                TUInt value;
-                UInt8 uint8[sizeof(TUInt)];
-            };
+            constexpr auto num_bytes = sizeof(TUInt);
+            auto * dst = reinterpret_cast<uint8_t *>(out);
 
-            value = uint_;
-
-            for (size_t i = 0; i < sizeof(TUInt); ++i)
+            if constexpr (num_bytes <= 4)
             {
+                heks::encode_integral_naive(dst, uint_, c);
+            }
+            else if constexpr (num_bytes == 8)
+            {
+                #if defined(__AVX__)
+                heks::encode_integral8(dst, uint_, c);
+                #elif defined(__aarch64__) && defined(__ARM_NEON)
                 if constexpr (std::endian::native == std::endian::little)
-                    memcpy(out + i * 2, &table[static_cast<size_t>(uint8[sizeof(TUInt) - 1 - i]) * 2], 2);
+                    heks::encode_integral8(dst, uint_, c);
                 else
-                    memcpy(out + i * 2, &table[static_cast<size_t>(uint8[i]) * 2], 2);
+                    heks::encode_integral_naive(dst, uint_, c);
+                #else
+                heks::encode_integral_naive(dst, uint_, c);
+                #endif
+            }
+            else if constexpr (num_bytes == 16)
+            {
+                #if defined (__AVX2__)
+                heks::encode_integral16(dst, uint_, c);
+                #else
+                heks::encode_integral_naive(dst, uint_, c);
+                #endif
+            }
+            else if constexpr (num_bytes == 32)
+            {
+                #if defined (__AVX2__)
+                const auto* src = reinterpret_cast<const uint8_t *>(&uint_);
+                heks::heks_detail::encodeHex16Fast<Case::value, heks::heks_detail::Reverse::Yes128>(dst, src + 16);
+                heks::heks_detail::encodeHex16Fast<Case::value, heks::heks_detail::Reverse::Yes128>(dst + 32, src);
+                #else
+                heks::encode_integral_naive(dst, uint_, c);
+                #endif
+            }
+            else
+            {
+                heks::encode_integral_naive(dst, uint_, c);
             }
         }
 
         static TUInt unhex(const char * data)
         {
+            constexpr auto num_bytes = sizeof(TUInt);
             TUInt res;
-            if constexpr (sizeof(TUInt) == 1)
+            auto * src = reinterpret_cast<const uint8_t *>(data);
+            if constexpr (num_bytes <= 4)
             {
-                res = unhexDigit(data[0]) * 0x10 + unhexDigit(data[1]);
+                res = heks::decode_integral_naive<TUInt>(src);
             }
-            else if constexpr (sizeof(TUInt) == 2)
+            else if constexpr (num_bytes == 8)
             {
-                res = static_cast<UInt16>(unhexDigit(data[0])) * 0x1000 + static_cast<UInt16>(unhexDigit(data[1])) * 0x100
-                    + static_cast<UInt16>(unhexDigit(data[2])) * 0x10 + static_cast<UInt16>(unhexDigit(data[3]));
+                #if defined(__AVX__)
+                res = heks::decode_integral8(src);
+                #else
+                res = heks::decode_integral_naive<TUInt>(src);
+                #endif
             }
-            else if constexpr ((sizeof(TUInt) <= 8) || ((sizeof(TUInt) % 8) != 0))
+            else if constexpr ((num_bytes % 8) == 0)
             {
                 res = 0;
-                for (size_t i = 0; i < sizeof(TUInt) * 2; ++i, ++data)
-                {
-                    res <<= 4;
-                    res += unhexDigit(*data);
-                }
-            }
-            else
-            {
-                res = 0;
-                for (size_t i = 0; i < sizeof(TUInt) / 8; ++i, data += 16)
+                for (size_t i = 0; i < num_bytes / 8; ++i, data += 16)
                 {
                     res <<= 64;
                     res += HexConversionUInt<UInt64>::unhex(data);
                 }
+            }
+            else
+            {
+                static_assert(false, "Unsupported sizeof(TUint) for unhex");
             }
             return res;
         }
@@ -192,10 +224,17 @@ namespace impl
     {
         static const constexpr size_t num_hex_digits = 32;
 
-        static void hex(const CityHashUInt128 & uint_, char * out, std::string_view table)
+        template<typename Case>
+        static void hex(const CityHashUInt128 & uint_, char * out, Case c [[maybe_unused]])
         {
-            HexConversion<UInt64>::hex(uint_.high64, out, table);
-            HexConversion<UInt64>::hex(uint_.low64, out + 16, table);
+            #if defined (__AVX2__)
+            auto* dst = reinterpret_cast<uint8_t *>(out);
+            const auto * input = reinterpret_cast<const uint8_t *>(&uint_);
+            heks::heks_detail::encodeHex16Fast<Case::value, heks::heks_detail::Reverse::Yes128>(dst, input);
+            #else
+            HexConversion<UInt64>::hex(uint_.high64, out, c);
+            HexConversion<UInt64>::hex(uint_.low64, out + 16, c);
+            #endif
         }
 
         static CityHashUInt128 unhex(const char * data)
@@ -215,13 +254,13 @@ namespace impl
 template <typename T>
 void writeHexUIntUppercase(const T & value, char * out)
 {
-    impl::HexConversion<T>::hex(value, out, impl::hex_byte_to_char_uppercase_table);
+    impl::HexConversion<T>::hex(value, out, heks::upper);
 }
 
 template <typename T>
 void writeHexUIntLowercase(const T & value, char * out)
 {
-    impl::HexConversion<T>::hex(value, out, impl::hex_byte_to_char_lowercase_table);
+    impl::HexConversion<T>::hex(value, out, heks::lower);
 }
 
 template <typename T>
@@ -295,9 +334,9 @@ inline void writeBinByte(UInt8 byte, void * out)
 /// Converts byte array to a hex string. Useful for debug logging.
 inline std::string hexString(const void * data, size_t size)
 {
-    const char * p = reinterpret_cast<const char *>(data);
+    const auto * p = reinterpret_cast<const uint8_t *>(data);
     std::string s(size * 2, '\0');
-    for (size_t i = 0; i < size; ++i)
-        writeHexByteLowercase(p[i], s.data() + i * 2);
+    auto * dst = reinterpret_cast<uint8_t *>(s.data());
+    heks::encode_auto(dst, p, heks::RawLength{size}, heks::lower);
     return s;
 }
