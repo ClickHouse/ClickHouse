@@ -816,9 +816,15 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
             bool node_exists = zk_client->tryGet(registry_path, registry_str, &stat);
             if (!node_exists)
             {
-                LOG_WARNING(log, "Cannot unregister: registry does not exist");
-                if (!is_retry)
+                if (is_retry)
+                {
+                    LOG_TRACE(log, "Table is unregistered after retry");
+                }
+                else
+                {
+                    LOG_WARNING(log, "Cannot unregister: registry does not exist");
                     chassert(false);
+                }
                 return;
             }
 
