@@ -91,18 +91,34 @@ def main():
                 Result.create_from(results=results, stopwatch=stop_watch).complete_job()
                 return
 
+    final_ch = "/usr/local/bin/clickhouse"
+    results.append(
+        Result.from_commands_run(
+            name="Install ClickHouse binary",
+            command=[
+                f"cp -f {ch_path} {final_ch}",
+                f"chmod +x {final_ch}",
+                f"{final_ch} --version",
+                f"ln -sf {final_ch} /usr/local/bin/clickhouse-client",
+            ],
+        )
+    )
+    if not results[-1].is_ok():
+        Result.create_from(results=results, stopwatch=stop_watch).complete_job()
+        return
+    ch_path = final_ch
+
     # Construct pytest command (Result.from_pytest_run adds 'pytest' itself)
     # - quiet output, show per-test durations, run the keeper stress suite
     cmd = f"-q tests/stress/keeper/tests --durations=0{dur_arg}"
 
     # Prepare env for pytest
     env = os.environ.copy()
-    env.setdefault("CLICKHOUSE_BINARY", ch_path)
-    env.setdefault("CLICKHOUSE_TESTS_CLIENT_BIN_PATH", ch_path)
-    env.setdefault("CLICKHOUSE_TESTS_SERVER_BIN_PATH", ch_path)
+    env["CLICKHOUSE_BINARY"] = ch_path
+    env["CLICKHOUSE_TESTS_CLIENT_BIN_PATH"] = ch_path
+    env["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = ch_path
     env.setdefault("CLICKHOUSE_TESTS_BASE_CONFIG_DIR", f"{repo_dir}/programs/server")
-    # Ensure PATH contains the downloaded binary directory so helpers.find_binary can locate it
-    env["PATH"] = f"{Path(ch_path).parent}:{env.get('PATH','')}"
+    env["PATH"] = f"/usr/local/bin:{env.get('PATH','')}"
 
     results.append(
         Result.from_pytest_run(
