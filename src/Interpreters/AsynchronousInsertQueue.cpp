@@ -790,7 +790,7 @@ try
     key.settings.set("input_format_parallel_parsing", false);
     /// It maybe insert into distributed table.
     /// We want the remote part to decide if the insert will be async or not.
-    key.settings->setDefaultValue("async_insert");
+    key.settings.setDefaultValue("async_insert");
 
     insert_context->makeQueryContext();
 
