@@ -1700,6 +1700,8 @@ void MergeTask::cancel() noexcept
 
     if (global_ctx->new_data_part)
         global_ctx->new_data_part->removeIfNeeded();
+
+    global_ctx->temporary_directory_lock.reset();
 }
 
 
