@@ -128,7 +128,7 @@ class FuzzerLogParser:
                 if start_idx != -1:
                     substring = line[start_idx + len("Format string: ") :]
                     # Remove quotes and trailing period
-                    substring = substring.strip().strip("'\"").rstrip(".")
+                    substring = substring.strip().rstrip(".").strip("'\"")
                     format_message = substring
                 break
         # keep all lines before next log line
@@ -147,8 +147,11 @@ class FuzzerLogParser:
             failed_query = self.get_failed_query()
             if failed_query:
                 reproduce_commands = self.get_reproduce_commands(failed_query)
-            if format_message:
-                # Replace {} placeholders with A, B, C, etc.
+            if format_message and "Inconsistent AST formatting" not in result_name:
+                # Replace {} placeholders with A, B, C, etc. to create a generic error pattern.
+                # This normalization groups similar errors together for better tracking.
+                # Exception: 'Inconsistent AST formatting' errors preserve original parameters
+                # as they identify the specific problematic AST node.
                 letters = string.ascii_uppercase
                 letter_index = 0
                 while "{}" in format_message and letter_index < len(letters):
