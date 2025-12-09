@@ -236,17 +236,24 @@ class CommandRequest:
         ]
         return "\n".join(lines)
 
+    def wait_and_read_output(self):
+        try:
+            self.process.wait(timeout=DEFAULT_QUERY_TIMEOUT)
+            self.stdout_file.seek(0)
+            self.stderr_file.seek(0)
+
+            stdout = self.stdout_file.read().decode("utf-8", errors="replace")
+            stderr = self.stderr_file.read().decode("utf-8", errors="replace")
+
+            return stdout, stderr
+
+        finally:
+            self.stdin_file.close()
+            self.stdout_file.close()
+            self.stderr_file.close()
+
     def get_answer(self):
-        self.process.wait(timeout=DEFAULT_QUERY_TIMEOUT)
-        self.stdout_file.seek(0)
-        self.stderr_file.seek(0)
-
-        stdout = self.stdout_file.read().decode("utf-8", errors="replace")
-        stderr = self.stderr_file.read().decode("utf-8", errors="replace")
-
-        self.stdin_file.close()
-        self.stdout_file.close()
-        self.stderr_file.close()
+        stdout, stderr = self.wait_and_read_output()
 
         if (
             self.timer is not None
@@ -279,16 +286,7 @@ class CommandRequest:
         return stdout
 
     def get_error(self):
-        self.process.wait(timeout=DEFAULT_QUERY_TIMEOUT)
-        self.stdout_file.seek(0)
-        self.stderr_file.seek(0)
-
-        stdout = self.stdout_file.read().decode("utf-8", errors="replace")
-        stderr = self.stderr_file.read().decode("utf-8", errors="replace")
-
-        self.stdin_file.close()
-        self.stdout_file.close()
-        self.stderr_file.close()
+        stdout, stderr = self.wait_and_read_output()
 
         if (
             self.timer is not None
@@ -307,16 +305,7 @@ class CommandRequest:
         return stderr
 
     def get_answer_and_error(self):
-        self.process.wait(timeout=DEFAULT_QUERY_TIMEOUT)
-        self.stdout_file.seek(0)
-        self.stderr_file.seek(0)
-
-        stdout = self.stdout_file.read().decode("utf-8", errors="replace")
-        stderr = self.stderr_file.read().decode("utf-8", errors="replace")
-
-        self.stdin_file.close()
-        self.stdout_file.close()
-        self.stderr_file.close()
+        stdout, stderr = self.wait_and_read_output()
 
         if (
             self.timer is not None
