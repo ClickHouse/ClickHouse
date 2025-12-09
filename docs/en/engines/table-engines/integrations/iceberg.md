@@ -42,7 +42,11 @@ CREATE TABLE iceberg_table_s3
 ENGINE = IcebergS3(path[, NOSIGN | aws_access_key_id, aws_secret_access_key, [session_token]], format[,compression])
 ```
 
+<br/>
+<details>
+<summary>See argument descriptions</summary>
 <S3Parameters/>
+</details>
 
 :::note
 `format` stands for the format of data files in the Iceberg table.
@@ -58,7 +62,10 @@ CREATE TABLE iceberg_table_azure
 ENGINE = IcebergAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
 ```
 
+<details>
+<summary>See argument descriptions</summary>
 <AzureBlobStorageParameters/>
+</details>
 
 :::note
 `format` stands for the format of data files in the Iceberg table.
@@ -73,7 +80,10 @@ CREATE TABLE iceberg_table_hdfs
 ENGINE = IcebergHDFS(URI[,format][,compression_method])
 ```
 
+<details>
+<summary>See argument descriptions</summary>
 <HDFSParameters/>
+</details>
 
 :::note
 `format` stands for the format of data files in the Iceberg table.
