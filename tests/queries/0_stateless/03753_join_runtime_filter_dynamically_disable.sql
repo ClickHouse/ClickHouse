@@ -25,7 +25,7 @@ WHERE
 SETTINGS join_runtime_filter_exact_values_limit = 100, max_block_size=10, max_threads=1, log_comment='Q1';
 
 -- Check that most of the blocks were skipped
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT
     log_comment,
     ProfileEvents['RuntimeFilterBlocksSkipped'] > 10 * ProfileEvents['RuntimeFilterBlocksProcessed'] AS Passed,
@@ -47,7 +47,7 @@ SETTINGS join_runtime_filter_exact_values_limit = 100, max_block_size=10, max_th
 
 
 -- Check that most of the blocks were skipped
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT
     log_comment,
     ProfileEvents['RuntimeFilterBlocksSkipped'] > 10 * ProfileEvents['RuntimeFilterBlocksProcessed'] AS Passed,
@@ -69,7 +69,7 @@ SETTINGS join_runtime_filter_exact_values_limit=1, max_block_size=10, max_thread
 
 
 -- Check that most of the blocks were skipped
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT
     log_comment,
     ProfileEvents['RuntimeFilterBlocksSkipped'] > 10 * ProfileEvents['RuntimeFilterBlocksProcessed'] AS Passed,
@@ -89,7 +89,7 @@ SETTINGS join_runtime_filter_exact_values_limit=1, join_runtime_bloom_filter_byt
 
 
 -- Check all blocks were skipped
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT
     log_comment,
     ProfileEvents['RuntimeFilterBlocksSkipped'] > 10 AND ProfileEvents['RuntimeFilterBlocksProcessed'] = 0 AS Passed,
@@ -109,7 +109,7 @@ SETTINGS join_runtime_filter_exact_values_limit = 100, max_block_size=10, max_th
 
 
 -- Check that most of the blocks were skipped
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT
     log_comment,
     ProfileEvents['RuntimeFilterBlocksSkipped'] > 10 * ProfileEvents['RuntimeFilterBlocksProcessed'] AS Passed,
@@ -129,7 +129,7 @@ SETTINGS join_runtime_filter_exact_values_limit = 100, max_block_size=10, max_th
 
 
 -- Check that most of the blocks were skipped
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT
     log_comment,
     ProfileEvents['RuntimeFilterBlocksSkipped'] > 10 * ProfileEvents['RuntimeFilterBlocksProcessed'] AS Passed,
@@ -140,4 +140,23 @@ WHERE
    AND current_database = currentDatabase() AND event_time > now() - INTERVAL 30 MINUTE;
 
 
+-- Change pass ratio to >1 to turn of auto-disabling
+SELECT count()
+FROM customer, nation
+WHERE
+    c_nationkey = n_nationkey
+    AND n_name = 'FRANCE'
+    AND c_nationkey_copy = 6
+SETTINGS join_runtime_filter_pass_ratio_threshold_for_disabling=3.14, max_block_size=10, max_threads=1, log_comment='Q7';
 
+
+-- Check than no blocks were skipped
+SYSTEM FLUSH LOGS query_log;
+SELECT
+    log_comment,
+    ProfileEvents['RuntimeFilterBlocksSkipped'] = 0 AND ProfileEvents['RuntimeFilterBlocksProcessed'] > 0 AS Passed,
+    if (Passed, 'Ok', query_id || ' : ' || ProfileEvents::String)
+FROM system.query_log
+WHERE
+   type = 'QueryFinish' AND log_comment='Q7'
+   AND current_database = currentDatabase() AND event_time > now() - INTERVAL 30 MINUTE;
