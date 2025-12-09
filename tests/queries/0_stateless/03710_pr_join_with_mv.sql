@@ -37,8 +37,9 @@ INSERT INTO n1 SELECT number as key, toString(key) FROM numbers(10);
 EXCEPT
 (SELECT * FROM mv2 JOIN n3 ON mv2.k = n3.key ORDER BY mv2.k, n3.key settings enable_parallel_replicas=0);
 
-DROP TABLE n3;
-DROP TABLE n2;
+DROP TABLE mv2;
+DROP TABLE mv;
+DROP TABLE n1_n2_join;
 DROP TABLE n1;
-DROP TABLE IF EXISTS n1_n2_join;
-DROP TABLE IF EXISTS mv;
+DROP TABLE n2;
+DROP TABLE n3;
