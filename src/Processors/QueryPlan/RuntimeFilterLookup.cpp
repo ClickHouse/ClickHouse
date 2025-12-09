@@ -7,6 +7,16 @@
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 
+namespace ProfileEvents
+{
+    extern const Event RuntimeFiltersCreated;
+    extern const Event RuntimeFilterBlocksProcessed;
+    extern const Event RuntimeFilterBlocksSkipped;
+    extern const Event RuntimeFilterRowsChecked;
+    extern const Event RuntimeFilterRowsPassed;
+    extern const Event RuntimeFilterRowsSkipped;
+}
+
 namespace DB
 {
 
@@ -22,6 +32,10 @@ void IRuntimeFilter::updateStats(UInt64 rows_checked, UInt64 rows_passed) const
     stats.rows_checked += rows_checked;
     stats.rows_passed += rows_passed;
 
+    ProfileEvents::increment(ProfileEvents::RuntimeFilterBlocksProcessed);
+    ProfileEvents::increment(ProfileEvents::RuntimeFilterRowsChecked, rows_checked);
+    ProfileEvents::increment(ProfileEvents::RuntimeFilterRowsPassed, rows_passed);
+
     /// Skip next 30 blocks if too few rows got filtered out
     if (rows_passed > pass_ratio_threshold_for_disabling * rows_checked)
         rows_to_skip = rows_checked * blocks_to_skip_before_reenabling;
@@ -33,6 +47,8 @@ bool IRuntimeFilter::shouldSkip(size_t next_block_rows) const
     {
         stats.rows_skipped += next_block_rows;
         stats.blocks_skipped++;
+        ProfileEvents::increment(ProfileEvents::RuntimeFilterRowsSkipped, next_block_rows);
+        ProfileEvents::increment(ProfileEvents::RuntimeFilterBlocksSkipped);
         return true;
     }
 
@@ -41,6 +57,8 @@ bool IRuntimeFilter::shouldSkip(size_t next_block_rows) const
     {
         stats.rows_skipped += next_block_rows;
         stats.blocks_skipped++;
+        ProfileEvents::increment(ProfileEvents::RuntimeFilterRowsSkipped, next_block_rows);
+        ProfileEvents::increment(ProfileEvents::RuntimeFilterBlocksSkipped);
         return true;
     }
 
@@ -281,6 +299,7 @@ public:
         auto & filter = filters_by_name[name];
         if (!filter)
         {
+            ProfileEvents::increment(ProfileEvents::RuntimeFiltersCreated);
             filter.reset(runtime_filter.release());   /// Save new filter
         }
         else
