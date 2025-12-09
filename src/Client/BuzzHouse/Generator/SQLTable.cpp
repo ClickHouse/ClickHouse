@@ -970,7 +970,7 @@ void StatementGenerator::randomEngineParams(RandomGenerator & rg, std::optional<
 }
 
 void StatementGenerator::generateMergeTreeEngineDetails(
-    RandomGenerator & rg, const SQLRelation & rel, const SQLBase & b, const bool add_pkey, TableEngine * te)
+    RandomGenerator & rg, const SQLRelation & rel, SQLBase & b, const bool add_pkey, TableEngine * te)
 {
     if (rg.nextSmallNumber() < 6)
     {
@@ -1067,14 +1067,50 @@ void StatementGenerator::generateMergeTreeEngineDetails(
         {
             /// Replicated table params must come first when set
             std::vector<TableEngineParam> temp_params;
+            const uint32_t nopt = rg.nextSmallNumber();
+            const std::function<bool(const SQLTable &)> replicated_tables = [](const SQLTable & t)
+            { return t.isAttached() && t.isReplicatedOrSharedMergeTree() && (t.shard_counter > 0 || t.replica_counter > 0); };
+            const bool has_tables = collectionHas<SQLTable>(replicated_tables);
+
+            if (has_tables && nopt < 7)
+            {
+                /// Add as a replica to another database
+                const uint32_t dname = rg.pickRandomly(filterCollection<SQLTable>(replicated_tables)).get().tname;
+                SQLTable & t = this->tables.at(dname);
+
+                b.shard_counter = rg.nextBool() ? t.shard_counter++ : t.shard_counter;
+                b.replica_counter = rg.nextBool() ? t.replica_counter++ : t.replica_counter;
+                b.replica_db = t.getDatabaseName();
+                b.replica_table = t.getTableName(false);
+                b.shard_name = "s" + std::to_string(b.shard_counter);
+                b.replica_name = "r" + std::to_string(b.replica_counter);
+            }
+            else if (nopt < 9)
+            {
+                /// Make this the first replica of all
+                b.shard_counter = b.replica_counter = 1;
+                b.replica_db = b.getDatabaseName();
+                b.replica_table = b.getTableName(false);
+                b.shard_name = "s0";
+                b.replica_name = "r0";
+            }
+            else
+            {
+                /// Use default as last case
+                b.shard_name = "{shard}";
+                b.replica_db = "{database}";
+                b.replica_table = "{table}";
+                b.replica_name = "{replica}";
+            }
+            b.keeper_path = fmt::format("/clickhouse/tables/{}/{}/{}", b.shard_name, b.replica_db, b.replica_table);
 
             for (const auto & item : te->params())
             {
                 temp_params.emplace_back(item);
             }
             te->clear_params();
-            te->add_params()->set_svalue("/clickhouse/tables/{shard}/{database}/{table}");
-            te->add_params()->set_svalue("{replica}");
+            te->add_params()->set_svalue(b.keeper_path);
+            te->add_params()->set_svalue(b.replica_name);
             for (const auto & item : temp_params)
             {
                 *te->add_params() = item;
@@ -2742,6 +2778,45 @@ DatabaseEngineValues StatementGenerator::getNextDatabaseEngine(RandomGenerator &
     return res;
 }
 
+void StatementGenerator::generateDatabaseEngineDetails(RandomGenerator & rg, SQLDatabase & d)
+{
+    if (d.isReplicatedDatabase())
+    {
+        const uint32_t nopt = rg.nextSmallNumber();
+        const std::function<bool(const std::shared_ptr<SQLDatabase> &)> replicated_databases = [](const std::shared_ptr<SQLDatabase> & db)
+        { return db->isAttached() && db->isReplicatedOrSharedDatabase() && (db->shard_counter > 0 || db->replica_counter > 0); };
+        const bool has_databases = collectionHas<std::shared_ptr<SQLDatabase>>(replicated_databases);
+
+        if (has_databases && nopt < 7)
+        {
+            /// Add as a replica to another database
+            const uint32_t dname = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(replicated_databases)).get()->dname;
+            std::shared_ptr<SQLDatabase> & db = this->databases.at(dname);
+
+            d.shard_counter = rg.nextBool() ? db->shard_counter++ : db->shard_counter;
+            d.replica_counter = rg.nextBool() ? db->replica_counter++ : db->replica_counter;
+            d.keeper_path = "/clickhouse/databases/" + db->getName();
+            d.shard_name = "s" + std::to_string(d.shard_counter);
+            d.replica_name = "d" + std::to_string(d.replica_counter);
+        }
+        else if (nopt < 9)
+        {
+            /// Make this the first replica of all
+            d.shard_counter = d.replica_counter = 1;
+            d.keeper_path = "/clickhouse/databases/" + d.getName();
+            d.shard_name = "s0";
+            d.replica_name = "d0";
+        }
+        else
+        {
+            /// Use default as last case
+            d.keeper_path = "/clickhouse/databases/" + d.getName();
+            d.shard_name = "{shard}";
+            d.replica_name = "{replica}";
+        }
+    }
+}
+
 void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, CreateDatabase * cd)
 {
     SQLDatabase next;
@@ -2770,7 +2845,8 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     }
     else
     {
-        next.finishDatabaseSpecification(deng, rg.nextBool());
+        generateDatabaseEngineDetails(rg, next);
+        next.finishDatabaseSpecification(deng);
     }
     next.setName(cd->mutable_database());
     if (rg.nextSmallNumber() < 3)
