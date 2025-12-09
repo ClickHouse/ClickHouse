@@ -213,7 +213,16 @@ public:
         const std::optional<FormatSettings> & /*format_settings*/) {}
     virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) {}
 
-    virtual void checkAlterIsPossible(const AlterCommands & /*commands*/) {}
+    virtual void checkAlterIsPossible(const AlterCommands & commands)
+    {
+        for (const auto & command : commands)
+        {
+            if (!command.isCommentAlter())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
+                    command.type, getEngineName());
+        }
+    }
+
     virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) {}
 
     virtual const DataLakeStorageSettings & getDataLakeSettings() const
