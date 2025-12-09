@@ -197,6 +197,9 @@ struct StatisticsFixedStringCopy
 
 struct StatisticsStringRef
 {
+    String str_min;
+    String str_max;
+
     parquet::ByteArray min;
     parquet::ByteArray max;
 
@@ -237,13 +240,19 @@ struct StatisticsStringRef
     void addMin(parquet::ByteArray x)
     {
         if (min.ptr == nullptr || compare(x, min) < 0)
-            min = x;
+        {
+            str_min.assign(reinterpret_cast<const char *>(x.ptr), x.len);
+            min = parquet::ByteArray(static_cast<UInt32>(str_min.size()), reinterpret_cast<const uint8_t *>(str_min.data()));
+        }
     }
 
     void addMax(parquet::ByteArray x)
     {
         if (max.ptr == nullptr || compare(x, max) > 0)
-            max = x;
+        {
+            str_max.assign(reinterpret_cast<const char *>(x.ptr), x.len);
+            max = parquet::ByteArray(static_cast<UInt32>(str_max.size()), reinterpret_cast<const uint8_t *>(str_max.data()));
+        }
     }
 
     static int compare(parquet::ByteArray a, parquet::ByteArray b)
@@ -473,7 +482,7 @@ struct ConverterJSON
 
             stash.emplace_back(std::move(wb.str()));
             const String & s = stash.back();
-
+            
             buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size()), reinterpret_cast<const uint8_t *>(s.data()));
         }
         return buf.data();
