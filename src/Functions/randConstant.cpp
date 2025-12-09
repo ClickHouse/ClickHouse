@@ -107,7 +107,7 @@ public:
 
         typename ColumnVector<ToType>::Container vec_to(1);
 
-        TargetSpecific::Default::RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), sizeof(ToType));
+        RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), sizeof(ToType));
         ToType value = vec_to[0];
 
         return std::make_unique<FunctionBaseRandomConstant<ToType, Name>>(value, argument_types, return_type);
