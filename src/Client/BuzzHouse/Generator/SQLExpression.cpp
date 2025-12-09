@@ -18,11 +18,11 @@ void StatementGenerator::addFieldAccess(RandomGenerator & rg, Expr * expr, const
         this->depth++;
         if (noption < 41)
         {
-            fa->set_array_index(rg.randomInt<uint32_t>(0, 4));
+            fa->set_array_index(rg.randomInt<int32_t>(-4, 4));
         }
         else if (noption < 71)
         {
-            fa->set_tuple_index(rg.randomInt<uint32_t>(0, 4));
+            fa->set_tuple_index(rg.randomInt<int32_t>(-4, 4));
         }
         else if (this->depth >= this->fc.max_depth || noption < 81)
         {

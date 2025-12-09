@@ -1928,7 +1928,7 @@ message FieldAccess {
         int32 array_index = 1;
         Expr array_expr = 2;
         Column array_key = 3;
-        uint32 tuple_index = 4;
+        int32 tuple_index = 4;
     }
 }
 
