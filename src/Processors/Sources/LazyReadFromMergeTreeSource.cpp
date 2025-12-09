@@ -59,6 +59,8 @@ LazyReadFromMergeTreeSource::~LazyReadFromMergeTreeSource() = default;
 
 RangesInDataParts LazyReadFromMergeTreeSource::splitRanges(RangesInDataParts parts_with_ranges, size_t total_marks) const
 {
+    /// Split ranges to read more concurrently.
+    /// We need to keep an order of parts and ranges, but we can read the same part from multiple readers.
     const size_t marks_per_stream = total_marks / std::max<size_t>(max_threads, 1) + 1;
 
     RangesInDataParts split_parts_and_ranges;
@@ -85,6 +87,8 @@ RangesInDataParts LazyReadFromMergeTreeSource::splitRanges(RangesInDataParts par
             while (added_marks < marks_per_stream && !part.ranges.empty())
             {
                 size_t range_marks = part.ranges.front().getNumberOfMarks();
+
+                /// It's not clear if we should respect min_marks_for_concurrent_read here.
 
                 bool split_range =
                     range_marks + added_marks > marks_per_stream  /// range overflows limit
@@ -157,7 +161,6 @@ IProcessor::Status LazyReadFromMergeTreeSource::prepare(const PortNumbers & upda
 
     while (next_input_to_process != inputs.end())
     {
-        // std::cerr << "LazyReadFromMergeTreeSource: " << std::distance(inputs.begin(), next_input_to_process) << " of " << inputs.size() << " inputs\n";
         auto & input = *next_input_to_process;
         auto & lst = chunks[next_ps];
 
@@ -179,7 +182,6 @@ IProcessor::Status LazyReadFromMergeTreeSource::prepare(const PortNumbers & upda
             return Status::NeedData;
 
         auto chunk = input.pull();
-        // std::cerr << "Pulled chunk with " << chunk.getNumRows() << " rows\n";
         lst.emplace_back(std::move(chunk));
         output.push(std::move(lst.front()));
         lst.pop_front();
@@ -211,19 +213,6 @@ Processors LazyReadFromMergeTreeSource::expandPipeline()
 
 Processors LazyReadFromMergeTreeSource::buildReaders()
 {
-    // std::cerr << "LazyReadFromMergeTreeSource parts: " << lazy_materializing_rows->ranges_in_data_parts.size() << " readers\n";
-    // std::cerr << lazy_materializing_rows->rows_in_parts.size() << " parts with rows\n";
-    // for (size_t i = 0; i < lazy_materializing_rows->rows_in_parts.size(); ++i)
-    // {
-    //     auto idx = lazy_materializing_rows->ranges_in_data_parts[i].part_index_in_query;
-    //     // std::cerr << "part index " << idx << "\n";
-    //     const auto & rows = lazy_materializing_rows->rows_in_parts[idx];
-    //     std::cerr << "rows " << rows.size() << "\n";
-    //     for (auto row : rows)
-    //         std::cerr << row << " ";
-    //     std::cerr << "\n";
-    // }
-
     const auto & ctx_settings = context->getSettingsRef();
     size_t sum_marks = lazy_materializing_rows->ranges_in_data_parts.getMarksCountAllParts();
     size_t sum_rows = lazy_materializing_rows->ranges_in_data_parts.getRowsCountAllParts();
@@ -287,10 +276,7 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
             /*index_build_context*/ nullptr,
             lazy_materializing_rows);
 
-        //processor->addPartLevelToChunk(isQueryWithFinal());
-
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), log_name);
-        // if (set_total_rows_approx)
         source->addTotalRowsApprox(total_rows);
 
         processors.emplace_back(std::move(source));

@@ -17,6 +17,10 @@ struct LazyMaterializingRows
 
     RowsInParts rows_in_parts;
     RangesInDataParts ranges_in_data_parts;
+
+    explicit LazyMaterializingRows(RangesInDataParts ranges_in_data_parts_);
+
+    void filterRangesAndFillRows(const PaddedPODArray<UInt64> & sorted_indexes);
 };
 
 using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
@@ -45,13 +49,6 @@ private:
 
     void prepareMainChunk();
     void prepareLazyChunk();
-
-    // enum class Stage
-    // {
-    //     ReadMain,
-    //     PrepareLazyInfo,
-    //     ReadLazy,
-    // };
 };
 
 }

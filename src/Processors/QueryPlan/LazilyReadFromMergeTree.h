@@ -10,7 +10,8 @@ namespace DB
 struct LazyMaterializingRows;
 using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 
-
+/// The second phase of lazy materialization optimization.
+/// Reads lazy columns from MergeTree in `_part_starting_offset + _part_offset` order.
 class LazilyReadFromMergeTree final : public ISourceStep
 {
 public:

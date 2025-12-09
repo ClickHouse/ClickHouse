@@ -11,6 +11,7 @@ namespace DB
 struct LazyMaterializingRows;
 using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 
+/// Dynamically created readers from MergeTree based on LazyMaterializingRows.
 class LazyReadFromMergeTreeSource final : public IProcessor
 {
 public:

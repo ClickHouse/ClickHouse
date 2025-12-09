@@ -7,6 +7,8 @@ namespace DB
 struct LazyMaterializingRows;
 using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 
+/// This is a step for lazy materialization optimization.
+/// Works like a JOIN by `_part_starting_offset + _part_offset` but more optimal.
 class JoinLazyColumnsStep final : public IQueryPlanStep
 {
 public:

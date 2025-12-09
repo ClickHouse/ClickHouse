@@ -2652,42 +2652,6 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         number_of_current_replica);
 }
 
-std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::cloneWithRequiredColumns(const NameSet & required_columns) const
-{
-    AnalysisResultPtr analysis_result_copy;
-    if (analyzed_result_ptr)
-        analysis_result_copy = std::make_shared<AnalysisResult>(*analyzed_result_ptr);
-
-    auto query_info_copy = query_info;
-    query_info_copy.prewhere_info = nullptr;
-    query_info_copy.row_level_filter = nullptr;
-
-    Names new_column_names;
-    for (const auto & column_name : all_column_names)
-    {
-        if (required_columns.contains(column_name))
-            new_column_names.push_back(column_name);
-    }
-
-    return std::make_unique<ReadFromMergeTree>(
-        prepared_parts,
-        mutations_snapshot,
-        new_column_names,
-        data,
-        query_info_copy,
-        storage_snapshot,
-        context,
-        block_size.max_block_size_rows,
-        requested_num_streams,
-        max_block_numbers_to_read,
-        log,
-        std::move(analysis_result_copy),
-        is_parallel_reading_from_replicas,
-        all_ranges_callback,
-        read_task_callback,
-        number_of_current_replica);
-}
-
 std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs)
 {
     if (output_header == nullptr)
@@ -2763,25 +2727,26 @@ std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColu
     return new_reading;
 }
 
-int ReadFromMergeTree::addStartingPartOffsetAndPartOffset()
+void ReadFromMergeTree::addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset)
 {
-    int res = 0;
+    added_part_starting_offset = true;
+    added_part_offset = true;
 
     for (const auto & col_name : all_column_names)
     {
         if (col_name == "_part_starting_offset")
-            res = res | 1;
+            added_part_starting_offset = false;
         if (col_name == "_part_offset")
-            res = res | 2;
+            added_part_offset = false;
     }
 
-    if (res == 3)
-        return res;
+    if (!added_part_starting_offset && !added_part_offset)
+        return;
 
     Names new_column_names;
-    if ((res & 1) == 0)
+    if (added_part_starting_offset)
         new_column_names.push_back("_part_starting_offset");
-    if ((res & 2) == 0)
+    if (added_part_offset)
         new_column_names.push_back("_part_offset");
 
     new_column_names.insert(new_column_names.end(), all_column_names.begin(), all_column_names.end());
@@ -2793,15 +2758,11 @@ int ReadFromMergeTree::addStartingPartOffsetAndPartOffset()
         query_info.row_level_filter,
         query_info.prewhere_info));
 
-    // std::cerr << "addStartingPartOffsetAndPartOffset " << res << output_header->dumpStructure() << std::endl;
-
     /// Update analysis result if it exists
     if (analyzed_result_ptr)
         analyzed_result_ptr->column_names_to_read = all_column_names;
 
     required_source_columns = all_column_names;
-
-    return res;
 }
 
 bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const

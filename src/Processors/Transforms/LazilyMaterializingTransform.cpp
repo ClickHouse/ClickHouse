@@ -107,74 +107,13 @@ void LazilyMaterializingTransform::work()
         prepareLazyChunk();
 }
 
-void LazilyMaterializingTransform::prepareMainChunk()
+LazyMaterializingRows::LazyMaterializingRows(RangesInDataParts ranges_in_data_parts_)
+    : ranges_in_data_parts(std::move(ranges_in_data_parts_))
 {
-    UInt64 total_ms;
-    UInt64 sort_ms;
-    UInt64 permute_ms;
-    UInt64 squash_ms;
-    Stopwatch main_chunk_watch;
+}
 
-    result_chunk = Squashing::squash(std::move(chunks));
-    chunks.clear();
-    squash_ms = main_chunk_watch.elapsedMilliseconds();
-
-    auto rows = result_chunk->getNumRows();
-    auto pos = getInputs().front().getHeader().getPositionByName("__global_row_index");
-    auto columns = result_chunk->detachColumns();
-    auto index_col = columns[pos];
-    columns.erase(columns.begin() + pos);
-    result_chunk = Chunk(std::move(columns), rows);
-
-    Block block({{index_col, std::make_shared<DataTypeUInt64>(), {}}});
-    SortDescription descr;
-    descr.emplace_back(std::string{});
-
-    {
-        Stopwatch permutation_watch;
-        stableGetPermutation(block, descr, permutation);
-        sort_ms = permutation_watch.elapsedMilliseconds();
-
-        auto sorted_indexes_ptr = IColumn::mutate(index_col->permute(permutation, rows));
-        sorted_indexes = std::move(assert_cast<ColumnUInt64 &>(*sorted_indexes_ptr).getData());
-        permute_ms = permutation_watch.elapsedMilliseconds() - sort_ms;
-    }
-
-    size_t prepare_offsets_ms;
-    {
-        Stopwatch prepare_offsets_watch;
-        offsets.clear();
-        offsets.reserve(rows);
-        for (size_t offset = 0; offset < rows;)
-        {
-            size_t idx = sorted_indexes[offset];
-            size_t count = 1;
-            while (offset + count < rows && sorted_indexes[offset + count] == idx)
-                ++count;
-
-            offset += count;
-            offsets.push_back(offset);
-        }
-
-        /// Deduplicate indexes.
-        if (offsets.size() != rows)
-        {
-            size_t prev_offset = 0;
-            for (size_t i = 0; i < offsets.size(); ++i)
-            {
-                sorted_indexes[prev_offset] = sorted_indexes[i];
-                prev_offset = offsets[i];
-            }
-            sorted_indexes.resize(prev_offset);
-        }
-        prepare_offsets_ms = prepare_offsets_watch.elapsedMilliseconds();
-    }
-
-    Stopwatch filter_intervals_watch;
-
-    auto & rows_in_parts = lazy_materializing_rows->rows_in_parts;
-    auto & ranges_in_data_parts = lazy_materializing_rows->ranges_in_data_parts;
-
+void LazyMaterializingRows::filterRangesAndFillRows(const PaddedPODArray<UInt64> & sorted_indexes)
+{
     rows_in_parts.clear();
 
     size_t next_index = 0;
@@ -266,37 +205,122 @@ void LazilyMaterializingTransform::prepareMainChunk()
 
     size_t total_ranges = 0;
     size_t total_marks = 0;
+
     for (auto & part : ranges_in_data_parts)
     {
         total_ranges += part.ranges.size();
         total_marks += part.getMarksCount();
     }
 
-    auto filter_intervals_ms = filter_intervals_watch.elapsedMilliseconds();
-    total_ms = main_chunk_watch.elapsedMilliseconds();
-
     LOG_TRACE(getLogger("LazilyMaterializingTransform"), "Lazily reading {} rows from {} parts, {} ranges, {} marks",
-        rows, ranges_in_data_parts.size(), total_ranges, total_marks);
+        sorted_indexes.size(), ranges_in_data_parts.size(), total_ranges, total_marks);
+}
 
-    LOG_TRACE(getLogger("LazilyMaterializingTransform"), "Preparing chunk {} ms, squashing {} ms, sorting {} ms, permute {} ms, prepare offsets {} ms, filter intervals {} ms",
-        total_ms, squash_ms, sort_ms, permute_ms, prepare_offsets_ms, filter_intervals_ms);
+void LazilyMaterializingTransform::prepareMainChunk()
+{
+    UInt64 squash_ms;
+    UInt64 sort_ms;
+    UInt64 permute_ms;
+    UInt64 prepare_offsets_ms;
+    UInt64 filter_intervals_ms;
 
-    // std::cerr << "Removed " << cnt << " empty ranges\n";
-    // std::cerr << rows_in_parts.size() << " parts with rows\n";
+    Stopwatch main_chunk_watch;
+
+    {
+        Stopwatch squashing_watch;
+
+        result_chunk = Squashing::squash(std::move(chunks));
+        chunks.clear();
+        squash_ms = squashing_watch.elapsedMilliseconds();
+    }
+
+    auto rows = result_chunk->getNumRows();
+    auto pos = getInputs().front().getHeader().getPositionByName("__global_row_index");
+    auto columns = result_chunk->detachColumns();
+    auto index_col = columns[pos];
+    columns.erase(columns.begin() + pos);
+    result_chunk = Chunk(std::move(columns), rows);
+
+    Block block({{index_col, std::make_shared<DataTypeUInt64>(), {}}});
+    SortDescription descr;
+    descr.emplace_back(std::string{});
+
+    {
+        Stopwatch permutation_watch;
+        stableGetPermutation(block, descr, permutation);
+        sort_ms = permutation_watch.elapsedMilliseconds();
+
+        auto sorted_indexes_ptr = IColumn::mutate(index_col->permute(permutation, rows));
+        sorted_indexes = std::move(assert_cast<ColumnUInt64 &>(*sorted_indexes_ptr).getData());
+        permute_ms = permutation_watch.elapsedMilliseconds() - sort_ms;
+    }
+
+    {
+        Stopwatch prepare_offsets_watch;
+
+        offsets.clear();
+        offsets.reserve(rows);
+        for (size_t offset = 0; offset < rows;)
+        {
+            size_t idx = sorted_indexes[offset];
+            size_t count = 1;
+            while (offset + count < rows && sorted_indexes[offset + count] == idx)
+                ++count;
+
+            offset += count;
+            offsets.push_back(offset);
+        }
+
+        /// Deduplicate indexes.
+        if (offsets.size() != rows)
+        {
+            size_t prev_offset = 0;
+            for (size_t i = 0; i < offsets.size(); ++i)
+            {
+                sorted_indexes[prev_offset] = sorted_indexes[i];
+                prev_offset = offsets[i];
+            }
+            sorted_indexes.resize(prev_offset);
+        }
+        prepare_offsets_ms = prepare_offsets_watch.elapsedMilliseconds();
+    }
+
+    {
+        Stopwatch filter_intervals_watch;
+        lazy_materializing_rows->filterRangesAndFillRows(sorted_indexes);
+
+        filter_intervals_ms = filter_intervals_watch.elapsedMilliseconds();
+    }
+
+    auto total_ms = main_chunk_watch.elapsedMilliseconds();
+
+    /// Do not spam too much in logs
+    if (total_ms >= 100)
+        LOG_TRACE(getLogger("LazilyMaterializingTransform"), "Preparing chunk {} ms, squashing {} ms, sorting {} ms, permute {} ms, prepare offsets {} ms, filter intervals {} ms",
+            total_ms, squash_ms, sort_ms, permute_ms, prepare_offsets_ms, filter_intervals_ms);
 }
 
 void LazilyMaterializingTransform::prepareLazyChunk()
 {
-    Stopwatch prepare_lazy_chunk_watch;
+    UInt64 squash_ms;
+    UInt64 reverse_permutation_ms = 0;
+    UInt64 permute_ms;
+
+    Stopwatch total_watch;
 
     // std::cerr << "LazilyMaterializingTransform::prepareLazyChunk " << chunks.size() << " chunks\n";
     // for (auto & chunk : chunks)
     //     std::cerr << "Chunk with " << chunk.getNumRows() << " rows\n";
 
-    auto chunk = Squashing::squash(std::move(chunks));
-    chunks.clear();
+    Chunk chunk;
+    {
+        Stopwatch squash_watch;
 
-    auto squash_ms = prepare_lazy_chunk_watch.elapsedMilliseconds();
+        chunk = Squashing::squash(std::move(chunks));
+        chunks.clear();
+
+        squash_ms = squash_watch.elapsedMilliseconds();
+    }
 
     if (chunk.getNumRows() != offsets.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -309,7 +333,6 @@ void LazilyMaterializingTransform::prepareLazyChunk()
     bool is_identity_permutation = isIdentityPermutation(permutation, rows);
     bool should_replicate = offsets.size() != rows;
 
-    size_t reverse_permutation_ms = 0;
     if (!is_identity_permutation)
     {
         Stopwatch make_reverse_permutation_watch;
@@ -321,7 +344,6 @@ void LazilyMaterializingTransform::prepareLazyChunk()
     }
 
     auto lazy_columns = chunk.detachColumns();
-    size_t permute_ms = 0;
 
     {
         Stopwatch permute_watch;
@@ -340,9 +362,10 @@ void LazilyMaterializingTransform::prepareLazyChunk()
     columns.insert(columns.end(), lazy_columns.begin(), lazy_columns.end());
     result_chunk = Chunk(std::move(columns), rows);
 
-    auto prepare_lazy_chunk_ms = prepare_lazy_chunk_watch.elapsedMilliseconds();
-    LOG_TRACE(getLogger("LazilyMaterializingTransform"),
-     "Preparing lazy chunk {} ms, squashing {} ms, reversing permutations {} ms, permuting {} ms", prepare_lazy_chunk_ms, squash_ms, reverse_permutation_ms, permute_ms);
+    auto total_ms = total_watch.elapsedMilliseconds();
+    if (total_ms >= 100)
+        LOG_TRACE(getLogger("LazilyMaterializingTransform"),
+        "Preparing lazy chunk {} ms, squashing {} ms, reversing permutations {} ms, permuting {} ms", total_ms, squash_ms, reverse_permutation_ms, permute_ms);
 }
 
 }

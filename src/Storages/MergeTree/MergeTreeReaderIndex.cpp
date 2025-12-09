@@ -58,14 +58,7 @@ size_t MergeTreeReaderIndex::readRows(
     size_t starting_row = current_row + rows_offset;
 
     if (!continue_reading && lazy_materializing_rows)
-    {
-        // std::cerr << "looking for " << starting_row << "\n";
         next_lazy_row_it = std::lower_bound(lazy_materializing_rows->begin(), lazy_materializing_rows->end(), starting_row);
-        // if (next_lazy_row_it != lazy_materializing_rows->end())
-        //     std::cerr << "found " << *next_lazy_row_it << "\n";
-        // else
-        //     std::cerr << "not found\n";
-    }
 
     /// Clamp max_rows_to_read.
     size_t total_rows = data_part_info_for_read->getIndexGranularity().getTotalRows();
@@ -123,15 +116,8 @@ size_t MergeTreeReaderIndex::readRows(
             auto mutable_filter_column = filter_column->assumeMutable();
             auto & filter_data = static_cast<ColumnUInt8 &>(*mutable_filter_column).getData();
             size_t old_size = filter_data.size();
-            //memset(filter_data.data() + old_size, 0, PODArrayDetails::byte_size(filter_data.capacity() - old_size, sizeof(UInt8)));
             filter_data.resize(old_size + max_rows_to_read);
             memset(filter_data.begin() + old_size, 0, max_rows_to_read);
-
-            const auto * it = std::lower_bound(lazy_materializing_rows->begin(), lazy_materializing_rows->end(), starting_row);
-            if (it != next_lazy_row_it)
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Lol {} {}", reinterpret_cast<const void*>(next_lazy_row_it), reinterpret_cast<const void*>(it));
-            }
 
             if (next_lazy_row_it != lazy_materializing_rows->end())
             {
