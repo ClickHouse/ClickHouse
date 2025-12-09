@@ -6,6 +6,7 @@
 
 #include <base/hex.h>
 #include "Common/OpenTelemetryTraceContext.h"
+#include "Common/OpenTelemetryTracingContext.h"
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
@@ -148,29 +149,29 @@ void KeeperDispatcher::requestThread()
     {
         const auto handle_opentelemetery_spans = [this](const Coordination::ZooKeeperRequestPtr & request)
         {
-            if (!request->client_tracing_context)
+            if (!request->keeper_spans)
                 return;
 
+            chassert(request->client_tracing_context);
             chassert(request->client_tracing_context->trace_flags & OpenTelemetry::TRACE_FLAG_SAMPLED);
+            chassert(request->client_tracing_context->trace_flags & OpenTelemetry::TRACE_FLAG_KEEPER_SPANS);
 
-            request->keeper_spans.receive_request.finish();
-            KeeperSpans::log(
-                *request->server_tracing_context,
-                request->keeper_spans.receive_request,
+            KeeperSpans::finalize(
+                request->keeper_spans->receive_request,
                 OpenTelemetry::SpanStatus::OK,
                 {},
                 {
                     {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
                     {"keeper.xid", std::to_string(request->xid)},
-                    {"keeper.role", getRoleString()},
+                    {"raft.role", getRoleString()},
                 });
 
-            request->keeper_spans.process_request.start();
+            KeeperSpans::initialize(*request->client_tracing_context, request->keeper_spans->process_request);
 
             request->server_tracing_context =
             {
                 .trace_id = request->client_tracing_context->trace_id,
-                .span_id = request->keeper_spans.process_request.span_id,
+                .span_id = request->keeper_spans->process_request.span_id,
                 .tracestate = request->client_tracing_context->tracestate,
                 .trace_flags = request->client_tracing_context->trace_flags,
             };
@@ -244,8 +245,8 @@ void KeeperDispatcher::requestThread()
                             if (!coordination_settings[CoordinationSetting::quorum_reads] && request.request->isReadRequest())
                             {
                                 const auto & last_request = current_batch.back();
-                                if (request.request->server_tracing_context)
-                                    request.request->keeper_spans.read_wait_for_write.start();
+                                if (request.request->keeper_spans)
+                                    KeeperSpans::initialize(*request.request->server_tracing_context, request.request->keeper_spans->read_wait_for_write);
                                 std::lock_guard lock(read_request_queue_mutex);
                                 read_request_queue[last_request.session_id][last_request.request->xid].push_back(request);
                             }
@@ -389,34 +390,32 @@ void KeeperDispatcher::responseThread()
             if (shutdown_called)
                 break;
 
-            if (auto request = response_for_session.request; request && request->server_tracing_context)
+            if (auto request = response_for_session.request; request && request->keeper_spans)
             {
-                const auto now = nowMicroseconds();
+                const auto now = KeeperSpans::now();
 
-                request->keeper_spans.dispatcher_responses_queue.finish_time_us = now;
-                KeeperSpans::log(
-                    *request->server_tracing_context,
-                    request->keeper_spans.dispatcher_responses_queue,
+                KeeperSpans::finalize(
+                    request->keeper_spans->dispatcher_responses_queue,
                     OpenTelemetry::SpanStatus::OK,
                     {},
                     {
                         {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
                         {"keeper.session_id", std::to_string(response_for_session.session_id)},
                         {"keeper.xid", std::to_string(request->xid)},
-                    });
+                    },
+                    now);
 
-                request->keeper_spans.process_request.finish_time_us = now;
-                KeeperSpans::log(
-                    *request->client_tracing_context,
-                    request->keeper_spans.process_request,
+                KeeperSpans::finalize(
+                    request->keeper_spans->process_request,
                     OpenTelemetry::SpanStatus::OK,
                     {},
                     {
                         {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
                         {"keeper.session_id", std::to_string(response_for_session.session_id)},
                         {"keeper.xid", std::to_string(request->xid)},
-                        {"keeper.role", getRoleString()},
-                    });
+                        {"raft.role", getRoleString()},
+                    },
+                    now);
             }
 
             try
@@ -569,12 +568,10 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
                                 continue;
                             }
 
-                            if (read_request.request->server_tracing_context)
+                            if (read_request.request->keeper_spans)
                             {
-                                read_request.request->keeper_spans.read_wait_for_write.finish();
-                                KeeperSpans::log(
-                                    *read_request.request->server_tracing_context,
-                                    read_request.request->keeper_spans.read_wait_for_write,
+                                KeeperSpans::finalize(
+                                    read_request.request->keeper_spans->read_wait_for_write,
                                     OpenTelemetry::SpanStatus::OK,
                                     {},
                                     {

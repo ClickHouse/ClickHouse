@@ -8,15 +8,6 @@
 #include <chrono>
 #include <functional>
 
-namespace DB
-{
-
-inline UInt64 nowMicroseconds(std::chrono::steady_clock::time_point ts = std::chrono::steady_clock::now())
-{
-    return std::chrono::duration_cast<std::chrono::microseconds>(ts.time_since_epoch()).count();
-}
-
-}
 
 namespace Coordination
 {

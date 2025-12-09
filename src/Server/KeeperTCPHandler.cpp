@@ -455,8 +455,8 @@ void KeeperTCPHandler::runImpl()
     auto response_callback = [my_responses = this->responses, my_poll_wrapper = this->poll_wrapper](
                                  const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)
     {
-        if (request && request->client_tracing_context)
-            request->keeper_spans.send_response.start();
+        if (request && request->keeper_spans)
+            KeeperSpans::initialize(*request->client_tracing_context, request->keeper_spans->send_response);
 
         if (!my_responses->push(RequestWithResponse{response, std::move(request)}))
             throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with xid {} and zxid {}", response->xid, response->zxid);
@@ -554,6 +554,22 @@ void KeeperTCPHandler::runImpl()
                 updateStats(response, request_with_response.request);
                 packageSent();
 
+                const auto maybe_finalize_opentelemetery_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
+                {
+                    if (!request || !request->keeper_spans)
+                        return;
+
+                    KeeperSpans::finalize(
+                        request->keeper_spans->send_response,
+                        status,
+                        error_message,
+                        {
+                            {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
+                            {"keeper.xid", std::to_string(request->xid)},
+                        });
+                }
+
+                try
                 {
                     Stopwatch watch;
 
@@ -564,22 +580,13 @@ void KeeperTCPHandler::runImpl()
 
                     HistogramMetrics::observe(HistogramMetrics::KeeperServerSendDuration, elapsed_ms);
                 }
-
-                if (request && request->client_tracing_context)
+                catch (...)
                 {
-                    chassert(request->client_tracing_context->trace_flags & OpenTelemetry::TRACE_FLAG_SAMPLED);
-
-                    request->keeper_spans.send_response.finish();
-                    KeeperSpans::log(
-                        *request->client_tracing_context,
-                        request->keeper_spans.send_response,
-                        OpenTelemetry::SpanStatus::OK,
-                        {},
-                        {
-                            {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
-                            {"keeper.xid", std::to_string(request->xid)},
-                        });
+                    maybe_finalize_opentelemetery_span(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
+                    throw;
                 }
+
+                maybe_finalize_opentelemetery_span(OpenTelemetry::SpanStatus::OK, "");
 
                 log_long_operation("Sending response");
                 if (response->error == Coordination::Error::ZSESSIONEXPIRED)
@@ -688,7 +695,7 @@ ReadBuffer & KeeperTCPHandler::getReadBuffer()
 
 std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveRequest()
 {
-    const UInt64 receive_start_time = nowMicroseconds();
+    const UInt64 receive_start_time = KeeperSpans::now();
 
     std::optional<LimitReadBuffer> limited_buffer_holder;
     /// Wrap regular read buffer with LimitReadBuffer to apply max_request_size
@@ -721,16 +728,6 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
 
     Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
     request->xid = xid;
-    request->keeper_spans.receive_request.start_time_us = receive_start_time;
-
-    // TODO(mstetsyuk): see if we can reuse ZooKeeperRequest::read here
-    bool has_tracing;
-    Coordination::read(has_tracing, read_buffer);
-    if (has_tracing)
-    {
-        request->client_tracing_context.emplace();
-        request->client_tracing_context->deserialize(read_buffer);
-    }
 
     auto request_validator = [&](const Coordination::ZooKeeperRequest & current_request)
     {
@@ -748,6 +745,17 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
         request_validator(*request);
     }
 
+    bool has_tracing;
+    Coordination::read(has_tracing, read_buffer);
+    if (has_tracing)
+    {
+        request->client_tracing_context.emplace();
+        request->client_tracing_context->deserialize(read_buffer);
+
+        request->keeper_spans.emplace();
+
+        KeeperSpans::initialize(*request->client_tracing_context, request->keeper_spans->receive_request, receive_start_time);
+    }
 
     if (!keeper_dispatcher->putRequest(request, session_id, use_xid_64))
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session {} already disconnected", session_id);

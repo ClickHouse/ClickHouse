@@ -1,6 +1,7 @@
 #include <atomic>
 #include <cerrno>
 #include <chrono>
+#include <exception>
 #include <shared_mutex>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperCommon.h>
@@ -18,6 +19,7 @@
 #include <base/errnoToString.h>
 #include <base/move_extend.h>
 #include <sys/mman.h>
+#include "Common/OpenTelemetryTraceContext.h"
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -230,7 +232,7 @@ union XidHelper
 template<typename Storage>
 nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::pre_commit(uint64_t log_idx, nuraft::buffer & data)
 {
-    const UInt64 start_time_us = nowMicroseconds();
+    const UInt64 start_time_us = KeeperSpans::now();
 
     double sleep_probability = keeper_context->getPrecommitSleepProbabilityForTesting();
     int64_t sleep_ms = keeper_context->getPrecommitSleepMillisecondsForTesting();
@@ -259,25 +261,41 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::pre_commit(uint64_t log
 
     request_for_session->log_idx = log_idx;
 
-    if (request_for_session->request->server_tracing_context)
-        request_for_session->request->keeper_spans.write_pre_commit.start_time_us = start_time_us;
-
-    preprocess(*request_for_session);
-
-    if (request_for_session->request->server_tracing_context)
+    const auto maybe_log_opentelemetery_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
     {
-        request_for_session->request->keeper_spans.write_pre_commit.finish();
-        KeeperSpans::log(
+        if (!request_for_session->request->keeper_spans)
+        {
+            return;
+        }
+
+        KeeperSpans::initialize(
             *request_for_session->request->server_tracing_context,
-            request_for_session->request->keeper_spans.write_pre_commit,
-            OpenTelemetry::SpanStatus::OK,
-            {},
+            request_for_session->request->keeper_spans->write_precommit,
+            start_time_us);
+
+        KeeperSpans::finalize(
+            request_for_session->request->keeper_spans->write_precommit,
+            status,
+            error_message,
             {
                 {"keeper.operation", Coordination::opNumToString(request_for_session->request->getOpNum())},
                 {"keeper.session_id", std::to_string(request_for_session->session_id)},
                 {"keeper.xid", std::to_string(request_for_session->request->xid)},
+                {"raft.log_idx", std::to_string(log_idx)},
             });
+    };
+
+    try
+    {
+        preprocess(*request_for_session);
     }
+    catch (...)
+    {
+        maybe_log_opentelemetery_span(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
+        throw;
+    }
+
+    maybe_log_opentelemetery_span(OpenTelemetry::SpanStatus::OK, "");
 
     return result;
 }
@@ -585,7 +603,7 @@ KeeperResponseForSession KeeperStateMachine<Storage>::processReconfiguration(
 template<typename Storage>
 nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t log_idx, nuraft::buffer & data)
 {
-    const UInt64 start_time_us = nowMicroseconds();
+    const UInt64 start_time_us = KeeperSpans::now();
 
     auto request_for_session = parseRequest(data, true);
     if (!request_for_session->zxid)
@@ -593,17 +611,14 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
 
     request_for_session->log_idx = log_idx;
 
-    if (request_for_session->request->server_tracing_context)
-        request_for_session->request->keeper_spans.write_commit.start_time_us = start_time_us;
-
     if (!keeper_context->localLogsPreprocessed() && !preprocess(*request_for_session))
         return nullptr;
 
     auto try_push = [&](KeeperResponseForSession & response)
     {
         response.response->enqueue_ts = std::chrono::steady_clock::now();
-        if (response.request && response.request->server_tracing_context)
-            response.request->keeper_spans.dispatcher_responses_queue.start();
+        if (response.request && response.request->keeper_spans)
+            KeeperSpans::initialize(*response.request->server_tracing_context, response.request->keeper_spans->dispatcher_responses_queue);
         if (!responses_queue.push(response))
         {
             ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
@@ -611,6 +626,30 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
                 "Failed to push response with session id {} to the queue, probably because of shutdown",
                 response.session_id);
         }
+    };
+
+    const auto maybe_log_opentelemetery_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
+    {
+        if (!request_for_session->request->keeper_spans)
+        {
+            return;
+        }
+
+        KeeperSpans::initialize(
+            *request_for_session->request->server_tracing_context,
+            request_for_session->request->keeper_spans->write_commit,
+            start_time_us);
+
+        KeeperSpans::finalize(
+            request_for_session->request->keeper_spans->write_commit,
+            status,
+            error_message,
+            {
+                {"keeper.operation", Coordination::opNumToString(request_for_session->request->getOpNum())},
+                {"keeper.session_id", std::to_string(request_for_session->session_id)},
+                {"keeper.xid", std::to_string(request_for_session->request->xid)},
+                {"raft.log_idx", std::to_string(log_idx)},
+            });
     };
 
     try
@@ -668,21 +707,6 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
 
         ProfileEvents::increment(ProfileEvents::KeeperCommits);
 
-        if (request_for_session->request->server_tracing_context)
-        {
-            request_for_session->request->keeper_spans.write_commit.finish();
-            KeeperSpans::log(
-                *request_for_session->request->server_tracing_context,
-                request_for_session->request->keeper_spans.write_commit,
-                OpenTelemetry::SpanStatus::OK,
-                {},
-                {
-                    {"keeper.operation", Coordination::opNumToString(request_for_session->request->getOpNum())},
-                    {"keeper.session_id", std::to_string(request_for_session->session_id)},
-                    {"keeper.xid", std::to_string(request_for_session->request->xid)},
-                });
-        }
-
         if (commit_callback)
             commit_callback(log_idx, *request_for_session);
 
@@ -690,9 +714,12 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
     }
     catch (...)
     {
+        maybe_log_opentelemetery_span(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
         tryLogCurrentException(log, fmt::format("Failed to commit stored log at index {}", log_idx));
         throw;
     }
+
+    maybe_log_opentelemetery_span(OpenTelemetry::SpanStatus::OK, "");
 
     return nullptr;
 }
@@ -1019,8 +1046,8 @@ void KeeperStateMachine<Storage>::processReadRequest(const KeeperRequestForSessi
             if (response_for_session.response->xid != Coordination::WATCH_XID)
                 response_for_session.request = request_for_session.request;
             response_for_session.response->enqueue_ts = std::chrono::steady_clock::now();
-            if (response_for_session.request && response_for_session.request->server_tracing_context)
-                response_for_session.request->keeper_spans.dispatcher_responses_queue.start();
+            if (response_for_session.request && response_for_session.request->keeper_spans)
+                KeeperSpans::initialize(*response_for_session.request->server_tracing_context, response_for_session.request->keeper_spans->dispatcher_responses_queue);
             if (!responses_queue.push(response_for_session))
                 LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", response_for_session.session_id);
         }

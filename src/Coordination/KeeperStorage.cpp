@@ -3334,6 +3334,7 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
     bool check_acl,
     bool is_local)
 {
+    const UInt64 start_time_us = KeeperSpans::now();
     Stopwatch watch;
     SCOPE_EXIT({
         watch.stop();
@@ -3356,24 +3357,6 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
             HistogramMetrics::KeeperServerProcessRequestDuration,
             {toOperationTypeMetricLabel(zk_request->getOpNum())},
             elapsed_ms);
-        
-        if (is_local && zk_request->server_tracing_context)
-        {
-            auto & span = zk_request->keeper_spans.read_process;
-
-            span.start_time_us = watch.getStartMicroseconds();
-            span.finish_time_us = watch.getEndMicroseconds();
-
-            KeeperSpans::log(
-                *zk_request->server_tracing_context,
-                span,
-                OpenTelemetry::SpanStatus::OK,
-                {},
-                {
-                    {"keeper.operation", Coordination::opNumToString(zk_request->getOpNum())},
-                    {"keeper.xid", std::to_string(zk_request->xid)},
-                });
-        }
     });
 
     if (!initialized)
@@ -3488,8 +3471,40 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
                 }
                 else
                 {
-                    std::shared_lock lock(storage_mutex);
-                    response = processLocal(concrete_zk_request, *this, deltas_range);
+                    const auto maybe_log_opentelemetery_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
+                    {
+                        if (!concrete_zk_request->keeper_spans)
+                        {
+                            return;
+                        }
+
+                        KeeperSpans::initialize(
+                            *concrete_zk_request->server_tracing_context,
+                            concrete_zk_request->keeper_spans->read_process,
+                            start_time_us);
+
+                        KeeperSpans::finalize(
+                            concrete_zk_request->keeper_spans->read_process,
+                            status,
+                            error_message,
+                            {
+                                {"keeper.operation", Coordination::opNumToString(concrete_zk_request->getOpNum())},
+                                {"keeper.xid", std::to_string(concrete_zk_request->xid)},
+                            });
+                    };
+
+                    try
+                    {
+                        std::shared_lock lock(storage_mutex);
+                        response = processLocal(concrete_zk_request, *this, deltas_range);
+                    }
+                    catch (...)
+                    {
+                        maybe_log_opentelemetery_span(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
+                        throw;
+                    }
+
+                    maybe_log_opentelemetery_span(OpenTelemetry::SpanStatus::OK, "");
                 }
             }
             else
