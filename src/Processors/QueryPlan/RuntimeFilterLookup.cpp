@@ -110,11 +110,15 @@ void ExactNotContainsRuntimeFilter::merge(const IRuntimeFilter * source)
 ApproximateRuntimeFilter::ApproximateRuntimeFilter(
     size_t filters_to_merge_,
     const DataTypePtr & filter_column_target_type_,
+    Float64 pass_ratio_threshold_for_disabling_,
+    UInt64 blocks_to_skip_before_reenabling_,
     UInt64 bytes_limit_,
     UInt64 exact_values_limit_,
-    UInt64 bloom_filter_hash_functions_)
-    : RuntimeFilterBase(filters_to_merge_, filter_column_target_type_, bytes_limit_, exact_values_limit_)
+    UInt64 bloom_filter_hash_functions_,
+    Float64 max_ratio_of_set_bits_in_bloom_filter_)
+    : RuntimeFilterBase(filters_to_merge_, filter_column_target_type_, pass_ratio_threshold_for_disabling_, blocks_to_skip_before_reenabling_, bytes_limit_, exact_values_limit_)
     , bloom_filter_hash_functions(bloom_filter_hash_functions_)
+    , max_ratio_of_set_bits_in_bloom_filter(max_ratio_of_set_bits_in_bloom_filter_)
     , bloom_filter(nullptr)
 {}
 

@@ -57,9 +57,16 @@ public:
 
 protected:
 
-    IRuntimeFilter(size_t filters_to_merge_, const DataTypePtr & filter_column_target_type_)
+    IRuntimeFilter(
+        size_t filters_to_merge_,
+        const DataTypePtr & filter_column_target_type_,
+        Float64 pass_ratio_threshold_for_disabling_,
+        UInt64 blocks_to_skip_before_reenabling_)
         : filters_to_merge(filters_to_merge_)
-        , filter_column_target_type(filter_column_target_type_) {}
+        , filter_column_target_type(filter_column_target_type_)
+        , pass_ratio_threshold_for_disabling(pass_ratio_threshold_for_disabling_)
+        , blocks_to_skip_before_reenabling(blocks_to_skip_before_reenabling_)
+    {}
 
     /// Checks if a block of rows should be skipped because this filter was disabled.
     bool shouldSkip(size_t next_block_rows) const;
@@ -90,10 +97,12 @@ public:
     RuntimeFilterBase(
         size_t filters_to_merge_,
         const DataTypePtr & filter_column_target_type_,
+        Float64 pass_ratio_threshold_for_disabling_,
+        UInt64 blocks_to_skip_before_reenabling_,
         UInt64 bytes_limit_,
         UInt64 exact_values_limit_
     )
-        : IRuntimeFilter(filters_to_merge_, filter_column_target_type_)
+        : IRuntimeFilter(filters_to_merge_, filter_column_target_type_, pass_ratio_threshold_for_disabling_, blocks_to_skip_before_reenabling_)
         , bytes_limit(bytes_limit_)
         , exact_values_limit(exact_values_limit_)
         , exact_values(std::make_shared<Set>(SizeLimits{}, -1, false))
@@ -185,10 +194,12 @@ public:
     ExactNotContainsRuntimeFilter(
         size_t filters_to_merge_,
         const DataTypePtr & filter_column_target_type_,
+        Float64 pass_ratio_threshold_for_disabling_,
+        UInt64 blocks_to_skip_before_reenabling_,
         UInt64 bytes_limit_,
         UInt64 exact_values_limit_
     )
-        : RuntimeFilterBase(filters_to_merge_, filter_column_target_type_, bytes_limit_, exact_values_limit_)
+        : RuntimeFilterBase(filters_to_merge_, filter_column_target_type_, pass_ratio_threshold_for_disabling_, blocks_to_skip_before_reenabling_, bytes_limit_, exact_values_limit_)
     {}
 
     void merge(const IRuntimeFilter * source) override;
@@ -203,9 +214,12 @@ public:
     ApproximateRuntimeFilter(
         size_t filters_to_merge_,
         const DataTypePtr & filter_column_target_type_,
+        Float64 pass_ratio_threshold_for_disabling_,
+        UInt64 blocks_to_skip_before_reenabling_,
         UInt64 bytes_limit_,
         UInt64 exact_values_limit_,
-        UInt64 bloom_filter_hash_functions_);
+        UInt64 bloom_filter_hash_functions_,
+        Float64 max_ratio_of_set_bits_in_bloom_filter_);
 
     void insert(ColumnPtr values) override;
 
