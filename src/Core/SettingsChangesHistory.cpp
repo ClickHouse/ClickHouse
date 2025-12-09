@@ -61,6 +61,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"serialize_string_in_memory_with_zero_byte", true, true, "New setting"},
             {"optimize_inverse_dictionary_lookup", false, true, "New setting"},
             {"type_json_skip_invalid_typed_paths", false, false, "Allow skipping typed paths that fail type coercion in JSON columns"},
+            {"join_runtime_filter_pass_ratio_threshold_for_disabling", 0.7, 0.7, "New setting"},
+            {"join_runtime_filter_blocks_to_skip_before_reenabling", 30, 30, "New setting"},
+            {"join_runtime_bloom_filter_max_ratio_of_set_bits", 0.7, 0.7, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
