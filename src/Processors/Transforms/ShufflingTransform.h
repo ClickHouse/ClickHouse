@@ -1,0 +1,108 @@
+#pragma once
+
+#include <Processors/IProcessor.h>
+#include <Core/ShuffleCursor.h>
+#include <Processors/ISource.h>
+
+
+namespace DB
+{
+
+/** Part of implementation. Merging array of ready (already read from somewhere) chunks.
+  * Returns result of merge as stream of chunks, not more than 'max_merged_block_size' rows in each.
+  */
+class MergeShuffler
+{
+public:
+    MergeShuffler(SharedHeader header, Chunks chunks_, size_t max_merged_block_size_, UInt64 limit_);
+
+    Chunk read();
+
+private:
+    Chunks chunks;
+    size_t max_merged_block_size;
+    UInt64 limit;
+    ShufflingQueue queue;
+    size_t total_merged_rows = 0;
+
+    ShuffleCursors cursors;
+
+    Chunk mergeImpl();
+};
+
+
+class MergeShufflerSource : public ISource
+{
+public:
+    MergeShufflerSource(SharedHeader header, Chunks chunks, size_t max_merged_block_size, UInt64 limit)
+        : ISource(header), merge_shuffler(header, std::move(chunks), max_merged_block_size, limit)
+    {
+    }
+
+    String getName() const override { return "MergeShufflerSource"; }
+
+protected:
+    Chunk generate() override { return merge_shuffler.read(); }
+
+private:
+    MergeShuffler merge_shuffler;
+};
+
+/** Base class for shuffling.
+ */
+class ShufflingTransform : public IProcessor
+{
+public:
+    /// limit - if not 0, allowed to return just first 'limit' rows in random order.
+    ShufflingTransform(SharedHeader header,
+        size_t max_merged_block_size_,
+        UInt64 limit_,
+        bool increase_sort_description_compile_attempts);
+
+    ~ShufflingTransform() override;
+
+protected:
+    Status prepare() final;
+    void work() final;
+
+    virtual void consume(Chunk chunk) = 0;
+    virtual void generate() = 0;
+    virtual void serialize();
+
+    size_t max_merged_block_size;
+    const UInt64 limit;
+
+    /// Before operation, will remove constant columns from blocks. And after, place constant columns back.
+    /// (to avoid excessive virtual function calls and because constants cannot be serialized in Native format for temporary files)
+    /// Save original block structure here.
+    Block header_without_constants;
+    /// Columns which were constant in header and we need to remove from chunks.
+    std::vector<bool> const_columns_to_remove;
+
+    void removeConstColumns(Chunk & chunk);
+    void enrichChunkWithConstants(Chunk & chunk);
+
+    enum class Stage : uint8_t
+    {
+        Consume = 0,
+        Generate,
+        Serialize,
+    };
+
+    Stage stage = Stage::Consume;
+
+    bool generated_prefix = false;
+    Chunk current_chunk;
+    Chunk generated_chunk;
+    Chunks chunks;
+
+    std::unique_ptr<MergeShuffler> merge_shuffler;
+    Processors processors;
+
+private:
+    Status prepareConsume();
+    Status prepareSerialize();
+    Status prepareGenerate();
+};
+
+}
