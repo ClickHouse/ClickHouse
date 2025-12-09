@@ -665,7 +665,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     /* allow_materialized */ false,
                     /* no_squash */ false,
                     /* no_destination */ false,
-                    /* async_isnert */ false);
+                    /* async_insert */ false);
                 auto io = insert.execute();
                 printPipeline(io.pipeline.getProcessors(), buf);
                 // we do not need it anymore, it would be executed
