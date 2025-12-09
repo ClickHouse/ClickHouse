@@ -9435,7 +9435,7 @@ bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_millisec
             target_entry_event.set();
     };
 
-    const auto handler = queue.addSubscriber(std::move(callback), wait_for_ids, sync_mode, source_replicas);
+    const auto handler = queue.addSubscriber(std::move(callback), wait_for_ids, sync_mode, std::move(source_replicas));
 
     if (!target_entry_event.tryWait(max_wait_milliseconds))
         return false;
