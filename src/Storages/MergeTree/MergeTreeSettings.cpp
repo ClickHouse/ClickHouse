@@ -730,6 +730,10 @@ namespace ErrorCodes
     By doing so number of concurrent merges will increase which can help with TOO_MANY_PARTS
     errors but at the same time this will increase the write amplification.
     )", EXPERIMENTAL) \
+    DECLARE(UInt64, merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent, 5, R"(
+    Controls the exponent value used in formulae building lowering curve. Lowering exponent will
+    lower merge widths which will trigger increase in write amplification. The reverse is also true.
+    )", EXPERIMENTAL) \
     DECLARE(Bool, merge_selector_enable_heuristic_to_remove_small_parts_at_right, true, R"(
     Enable heuristic for selecting parts for merge which removes parts from right
     side of range, if their size is less than specified ratio (0.01) of sum_size.
