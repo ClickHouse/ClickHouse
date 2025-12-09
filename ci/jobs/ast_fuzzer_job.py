@@ -73,11 +73,12 @@ def run_fuzz_job(check_name: str):
     dmesg_log = workspace_path / "dmesg.log"
     fatal_log = workspace_path / "fatal.log"
     server_log = workspace_path / "server.log"
+    stderr_log = workspace_path / "stderr.log"
     paths = [
         workspace_path / "core.zst",
         workspace_path / "dmesg.log",
         fatal_log,
-        workspace_path / "stderr.log",
+        stderr_log,
         server_log,
         fuzzer_log,
         dmesg_log,
@@ -168,8 +169,11 @@ def run_fuzz_job(check_name: str):
     if is_failed and status != Result.Status.ERROR:
         # died server - lets fetch failure from log
         fuzzer_log_parser = FuzzerLogParser(
-            str(server_log),
-            str(workspace_path / "fuzzerout.sql" if buzzhouse else fuzzer_log),
+            server_log=str(server_log),
+            stderr_log=str(stderr_log),
+            fuzzer_log=str(
+                workspace_path / "fuzzerout.sql" if buzzhouse else fuzzer_log
+            ),
         )
         parsed_name, parsed_info = fuzzer_log_parser.parse_failure()
 

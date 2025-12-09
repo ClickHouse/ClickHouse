@@ -26,6 +26,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeSelectorAlgorithm merge_selector_algorithm;
     extern const MergeTreeSettingsBool merge_selector_enable_heuristic_to_remove_small_parts_at_right;
     extern const MergeTreeSettingsBool merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once;
+    extern const MergeTreeSettingsUInt64 merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent;
     extern const MergeTreeSettingsFloat merge_selector_base;
     extern const MergeTreeSettingsUInt64 min_parts_to_merge_at_once;
     extern const MergeTreeSettingsBool apply_patches_on_merge;
@@ -112,6 +113,7 @@ SimpleMergeSelector::Settings fillSimpleSettings(const ChooseContext & ctx)
     simple_merge_settings.min_parts_to_merge_at_once = ctx.merge_tree_settings[MergeTreeSetting::min_parts_to_merge_at_once];
 
     simple_merge_settings.enable_heuristic_to_lower_max_parts_to_merge_at_once = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once];
+    simple_merge_settings.heuristic_to_lower_max_parts_to_merge_at_once_exponent = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent];
     simple_merge_settings.parts_to_throw_insert = ctx.merge_tree_settings[MergeTreeSetting::parts_to_throw_insert];
     simple_merge_settings.partitions_stats = &ctx.partitions_stats;
 

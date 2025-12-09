@@ -282,20 +282,17 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
             key_columns.insert(String(Nested::getColumnFromSubcolumn(name, storage_columns)));
     }
 
-    /// Force sign column for Collapsing mode
-    if (global_ctx->merging_params.mode == MergeTreeData::MergingParams::Collapsing)
+    /// Force sign column for Collapsing mode and VersionedCollapsing mode
+    if (!global_ctx->merging_params.sign_column.empty())
         key_columns.emplace(global_ctx->merging_params.sign_column);
 
-    /// Force version column for Replacing mode
-    if (global_ctx->merging_params.mode == MergeTreeData::MergingParams::Replacing)
-    {
+    /// Force is_deleted column for Replacing mode
+    if (!global_ctx->merging_params.is_deleted_column.empty())
         key_columns.emplace(global_ctx->merging_params.is_deleted_column);
-        key_columns.emplace(global_ctx->merging_params.version_column);
-    }
 
-    /// Force sign column for VersionedCollapsing mode. Version is already in primary key.
-    if (global_ctx->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
-        key_columns.emplace(global_ctx->merging_params.sign_column);
+    /// Force version column for Replacing mode and VersionedCollapsing mode
+    if (!global_ctx->merging_params.version_column.empty())
+        key_columns.emplace(global_ctx->merging_params.version_column);
 
     /// Force to merge at least one column in case of empty key
     if (key_columns.empty())
