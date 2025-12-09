@@ -1,4 +1,4 @@
--- Tags: long, zookeeper, no-shared-merge-tree, no-msan, no-asan, no-tsan
+-- Tags: long, zookeeper, no-shared-merge-tree, no-msan, no-asan, no-tsan, no-ubsan
 -- no-shared-merge-tree: no replication queue
 
 DROP TABLE IF EXISTS i20203_1 SYNC;
