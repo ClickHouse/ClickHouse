@@ -2795,7 +2795,8 @@ void StatementGenerator::generateDatabaseEngineDetails(RandomGenerator & rg, SQL
 
             d.shard_counter = rg.nextBool() ? db->shard_counter++ : db->shard_counter;
             d.replica_counter = rg.nextBool() ? db->replica_counter++ : db->replica_counter;
-            d.keeper_path = "/clickhouse/databases/" + db->getName();
+            /// At the moment, two replicas cannot share the same path
+            d.keeper_path = "/clickhouse/databases/" + d.getName();
             d.shard_name = "s" + std::to_string(d.shard_counter);
             d.replica_name = "d" + std::to_string(d.replica_counter);
         }
