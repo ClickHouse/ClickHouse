@@ -83,6 +83,9 @@ class Result(MetaClasses.Serializable):
         if isinstance(status, bool):
             status = Result.Status.SUCCESS if status else Result.Status.FAILED
         if not results and not status:
+            print(
+                "WARNING: No results and no status provided - setting status to error"
+            )
             status = Result.Status.ERROR
         if not name:
             name = _Environment.get().JOB_NAME

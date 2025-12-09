@@ -82,6 +82,7 @@ common_stress_job_config = Job.Config(
             "./tests/docker_scripts/",
             "./ci/docker/stress-test",
             "./ci/jobs/scripts/clickhouse_proc.py",
+            "./ci/jobs/scripts/log_parser.py",
         ],
     ),
     allow_merge_on_failure=True,
@@ -688,6 +689,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/stress/stress.py",
                 "./tests/docker_scripts/",
                 "./ci/docker/stress-test",
+                "./ci/jobs/scripts/log_parser.py",
             ]
         ),
         allow_merge_on_failure=True,
