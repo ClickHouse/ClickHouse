@@ -3038,9 +3038,8 @@ def test_writes(started_cluster):
     instance_disabled_kernel.query(
         f"CREATE TABLE {table_name} (id Int32, name String) ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
     )
-    instance.query(
-        f"INSERT INTO {table_name} SELECT number, toString(number) FROM numbers(10)"
-    )
+
+    instance.query(f"INSERT INTO TABLE FUNCTION deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', settings allow_experimental_delta_kernel_rs=1) SELECT number as name, toString(number) as id from numbers(10)")
 
     s3_objects = list(minio_client.list_objects(bucket, result_file, recursive=True))
     file_name = None
