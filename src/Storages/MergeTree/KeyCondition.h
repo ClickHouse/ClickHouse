@@ -105,13 +105,20 @@ public:
         const ColumnIndexToBloomFilter & column_index_to_column_bf = {},
         const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn = nullptr) const;
 
+    BoolMask checkInHyperrectangle(
+        const std::vector<int> & key_indices_map,
+        const Hyperrectangle & hyperrectangle,
+        const DataTypes & data_types,
+        const ColumnIndexToBloomFilter & column_index_to_column_bf = {},
+        const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn = nullptr) const;
+
     /// Whether the condition and its negation are (independently) feasible in the key range.
     /// left_key and right_key must contain all fields in the sort_descr in the appropriate order.
     /// data_types - the types of the key columns.
     /// Argument initial_mask is used for early exiting the implementation when we do not care about
     /// one of the resulting mask components (see BoolMask::consider_only_can_be_XXX).
     BoolMask checkInRange(
-        size_t used_key_size,
+        size_t keys_size,
         const FieldRef * left_keys,
         const FieldRef * right_keys,
         const DataTypes & data_types,
@@ -319,6 +326,8 @@ public:
 
     /// List key columns that are actually used in the condition. E.g. condition `x AND y` doesn't use column `z`.
     std::unordered_set<size_t> getUsedColumns() const;
+
+    std::vector<size_t> getUsedColumnsInOrder() const;
 
     /// Private constructor.
     KeyCondition(
