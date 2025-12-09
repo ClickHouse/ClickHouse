@@ -871,10 +871,8 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddt
         pool = std::make_unique<Arena>();
         IColumn::Offset current_added_rows = 0;
 
-        for (size_t selector_pos = 0; selector_pos < selector.size(); ++selector_pos)
+        for (auto ind : selector)
         {
-            size_t ind = selector[selector_pos];
-
             KnownRowsHolder<true> all_flag_known_rows;
             KnownRowsHolder<false> single_flag_know_rows;
             for (size_t join_clause_idx = 0; join_clause_idx < added_columns.join_on_keys.size(); ++join_clause_idx)
