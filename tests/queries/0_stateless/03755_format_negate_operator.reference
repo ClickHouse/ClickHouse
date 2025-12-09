@@ -1,0 +1,8 @@
+SELECT (-(2)).1
+FROM system.one
+SELECT (-(\'a\')).1
+FROM system.one
+SELECT 1
+FROM foo(bar[NOT (2 > 1)])
+SELECT (-(-foo))[bar]
+FROM system.one
