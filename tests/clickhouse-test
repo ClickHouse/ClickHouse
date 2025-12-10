@@ -1039,6 +1039,7 @@ def get_localzone():
 # Refer to `tests/integration/helpers/random_settings.py` for integration test random settings
 class SettingsRandomizer:
     settings = {
+        "compatibility": lambda: '23.12',
         "max_insert_threads": lambda: (
             12 if random.random() < 0.03 else random.randint(1, 3)
         ),
