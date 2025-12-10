@@ -8,8 +8,16 @@
 
 #if USE_AHO_CORASICK
 #    include <aho_corasick.h>
-#    include <mutex>
+#    include <array>
 #    include <memory>
+#    include <boost/container_hash/hash.hpp>
+#    include <Common/ProfileEvents.h>
+
+namespace ProfileEvents
+{
+    extern const Event AhoCorasickCacheHit;
+    extern const Event AhoCorasickCacheMiss;
+}
 #endif
 
 
@@ -110,33 +118,56 @@ private:
         AhoCorasickHandleWrapper & operator=(AhoCorasickHandleWrapper &&) = delete;
     };
 
-    /// Thread-local cache for compiled Aho-Corasick handle.
-    /// Reuses the handle across blocks within the same query on the same thread.
+    /// Thread-local hash table cache for compiled Aho-Corasick handles.
+    /// Follows the same pattern as LocalCacheTable in Regexps.h for re2 caching.
+    /// Fixed-size array with hash-based indexing; collisions replace existing entries.
     struct AhoCorasickCache
     {
-        std::shared_ptr<AhoCorasickHandleWrapper> cached_handle;
-        std::vector<String> cached_patterns;
-        bool cached_case_insensitive = false;
+        static constexpr size_t CACHE_SIZE = 1'000;
 
-        AhoCorasickHandle * getOrCreate(
-            const Array & needles_arr,
-            bool case_insensitive)
+        struct Bucket
         {
-            /// Check if cache matches
-            if (cached_handle && cached_case_insensitive == case_insensitive
-                && cached_patterns.size() == needles_arr.size())
+            std::vector<String> patterns;
+            bool case_insensitive = false;
+            std::shared_ptr<AhoCorasickHandleWrapper> handle;
+        };
+
+        std::array<Bucket, CACHE_SIZE> buckets;
+
+        static size_t computeBucketIndex(const Array & needles_arr, bool case_insensitive)
+        {
+            size_t hash = case_insensitive ? 1 : 0;
+            for (const auto & needle : needles_arr)
+                boost::hash_combine(hash, needle.safeGet<String>());
+            return hash % CACHE_SIZE;
+        }
+
+        static bool patternsMatch(const std::vector<String> & cached, const Array & needles_arr)
+        {
+            if (cached.size() != needles_arr.size())
+                return false;
+            for (size_t i = 0; i < cached.size(); ++i)
+                if (cached[i] != needles_arr[i].safeGet<String>())
+                    return false;
+            return true;
+        }
+
+        AhoCorasickHandle * getOrCreate(const Array & needles_arr, bool case_insensitive)
+        {
+            Bucket & bucket = buckets[computeBucketIndex(needles_arr, case_insensitive)];
+
+            /// Check if cached entry matches
+            if (bucket.handle
+                && bucket.case_insensitive == case_insensitive
+                && patternsMatch(bucket.patterns, needles_arr))
             {
-                bool match = true;
-                for (size_t i = 0; i < needles_arr.size() && match; ++i)
-                {
-                    if (cached_patterns[i] != needles_arr[i].safeGet<String>())
-                        match = false;
-                }
-                if (match)
-                    return cached_handle->handle;
+                ProfileEvents::increment(ProfileEvents::AhoCorasickCacheHit);
+                return bucket.handle->handle;
             }
 
-            /// Cache miss - build new handle
+            ProfileEvents::increment(ProfileEvents::AhoCorasickCacheMiss);
+
+            /// Cache miss or collision - build new handle
             std::vector<const uint8_t *> pattern_ptrs;
             std::vector<uint64_t> pattern_sizes;
             std::vector<String> pattern_storage;
@@ -167,10 +198,10 @@ private:
                     name, needles_arr.size());
             }
 
-            /// Update cache
-            cached_handle = std::make_shared<AhoCorasickHandleWrapper>(handle);
-            cached_patterns = std::move(pattern_storage);
-            cached_case_insensitive = case_insensitive;
+            /// Store in bucket (replaces any existing entry)
+            bucket.patterns = std::move(pattern_storage);
+            bucket.case_insensitive = case_insensitive;
+            bucket.handle = std::make_shared<AhoCorasickHandleWrapper>(handle);
 
             return handle;
         }
