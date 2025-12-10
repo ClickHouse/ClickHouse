@@ -41,7 +41,7 @@ t33
 t4
 t44
 rdb_default_4	1	1	s1	r1	1
-== Test drop database replica with auxiliary zookeeper (zookeeper2)=="
+== Test drop database replica with auxiliary zookeeper (zookeeper2)==
 t
 1
 2
@@ -83,4 +83,4 @@ t3
 t33
 t4
 t44
-rdb_default_4_zookeeper2	1	1	s1	r1	1
+rdb_default_zookeeper2_4_zookeeper2	1	1	s1	r1	1

@@ -49,6 +49,18 @@ DistributedQueryStatusSource::DistributedQueryStatusSource(
     timeout_seconds = context->getSettingsRef()[Setting::distributed_ddl_task_timeout];
 }
 
+DistributedQueryStatusSource::DistributedQueryStatusSource(
+    const String & zookeeper_name_,
+    const String & zk_node_path,
+    const String & zk_replicas_path,
+    SharedHeader block,
+    ContextPtr context_,
+    const Strings & hosts_to_wait,
+    const char * logger_name)
+    : DistributedQueryStatusSource(zk_node_path, zk_replicas_path, block, context_, hosts_to_wait, logger_name)
+{
+    zookeeper_name = zookeeper_name_;
+}
 
 IProcessor::Status DistributedQueryStatusSource::prepare()
 {
@@ -141,7 +153,7 @@ ExecutionStatus DistributedQueryStatusSource::getExecutionStatus(const fs::path 
     bool finished_exists = false;
 
     auto retries_ctl = ZooKeeperRetriesControl("executeDDLQueryOnCluster", getLogger("DDLQueryStatusSource"), getRetriesInfo());
-    retries_ctl.retryLoop([&]() { finished_exists = context->getZooKeeper()->tryGet(status_path, status_data); });
+    retries_ctl.retryLoop([&]() { finished_exists = context->getDefaultOrAuxiliaryZooKeeper(zookeeper_name)->tryGet(status_path, status_data); });
     if (finished_exists)
         status.tryDeserializeText(status_data);
 
@@ -215,7 +227,7 @@ Chunk DistributedQueryStatusSource::generate()
             retries_ctl.retryLoop(
                 [&]()
                 {
-                    auto zookeeper = context->getZooKeeper();
+                    auto zookeeper = context->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
                     Strings paths = getNodesToWait();
                     auto res = zookeeper->tryGetChildren(paths);
                     for (size_t i = 0; i < res.size(); ++i)

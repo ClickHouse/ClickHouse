@@ -219,7 +219,7 @@ private:
 
     void reinitializeDDLWorker();
 
-    static BlockIO
+    BlockIO
     getQueryStatus(const String & node_path, const String & replicas_path, ContextPtr context, const Strings & hosts_to_wait);
 
     const String zookeeper_name = "default";
