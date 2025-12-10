@@ -36,6 +36,7 @@
 #include <Poco/URI.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <IO/ReadBufferFromString.h>
+#include <Interpreters/ProcessList.h>
 
 #include <Common/config_version.h>
 #include <Common/scope_guard_safe.h>
@@ -1857,7 +1858,7 @@ arrow::Status ArrowFlightHandler::DoGet(
 arrow::Status ArrowFlightHandler::DoPut(
     const arrow::flight::ServerCallContext & context,
     std::unique_ptr<arrow::flight::FlightMessageReader> reader,
-    std::unique_ptr<arrow::flight::FlightMetadataWriter> /*writer*/)
+    std::unique_ptr<arrow::flight::FlightMetadataWriter> writer)
 {
     auto impl = [&]
     {
@@ -1923,6 +1924,12 @@ arrow::Status ArrowFlightHandler::DoPut(
                 CompletedPipelineExecutor executor(pipeline);
                 executor.execute();
             }
+
+            arrow::flight::protocol::sql::DoPutUpdateResult update_result;
+            update_result.set_record_count(query_context->getProcessListElement()->getInfo().total_rows);
+            std::string serialized_result;
+            update_result.SerializeToString(&serialized_result);
+            ARROW_RETURN_NOT_OK(writer->WriteMetadata(*arrow::Buffer::FromString(serialized_result)));
 
             LOG_INFO(log, "DoPut succeeded");
             block_io.onFinish();
