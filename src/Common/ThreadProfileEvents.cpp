@@ -563,11 +563,8 @@ void PerfEventsCounters::finalizeProfileEvents(ProfileEvents::Counters & profile
         // deltas from old values.
         const auto enabled = current_value.time_enabled - previous_value.time_enabled;
         const auto running = current_value.time_running - previous_value.time_running;
-        const auto difference_current_previous = static_cast<Float64>(current_value.value - previous_value.value);
-        const auto multiplexing_scale_factor = static_cast<Float64>(enabled) / std::max(1., static_cast<Float64>(running));
-        const auto scaled_value = difference_current_previous * multiplexing_scale_factor;
-        constexpr auto max_unsigned_integer_accurately_representable_in_double = std::numeric_limits<UInt64>::max() - 2047ul;
-        const UInt64 delta = static_cast<Float64>(max_unsigned_integer_accurately_representable_in_double) < scaled_value ? 0 : static_cast<UInt64>(scaled_value);
+        const auto scaled_value = static_cast<Float64>(current_value.value - previous_value.value) * static_cast<Float64>(enabled) / std::max(1., static_cast<Float64>(running));
+        const UInt64 delta = scaled_value < static_cast<Float64>(std::numeric_limits<UInt64>::max()) ? static_cast<UInt64>(scaled_value) : 0;
 
         if (min_enabled_time > enabled)
         {
