@@ -293,8 +293,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     /// Force version column for Replacing mode and VersionedCollapsing mode
     if (!global_ctx->merging_params.version_column.empty())
         key_columns.emplace(global_ctx->merging_params.version_column);
-  
-    /// Force all columns params of Graphite mode.
+
+    /// Force all columns params of Graphite mode
     if (global_ctx->merging_params.mode == MergeTreeData::MergingParams::Graphite)
     {
         key_columns.emplace(global_ctx->merging_params.graphite_params.path_column_name);
