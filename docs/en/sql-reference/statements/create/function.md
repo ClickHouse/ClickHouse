@@ -60,6 +60,27 @@ Result:
 └────────┴──────────────────────────────────────┘
 ```
 
+Replace an existing UDF:
+
+```sql
+CREATE FUNCTION exampleReplaceFunction AS frame -> frame;
+SELECT create_query FROM system.functions WHERE name = 'exampleReplaceFunction';
+CREATE OR REPLACE FUNCTION exampleReplaceFunction AS frame -> frame + 1;
+SELECT create_query FROM system.functions WHERE name = 'exampleReplaceFunction';
+```
+
+Result:
+
+```text
+┌─create_query─────────────────────────────────────────────┐
+│ CREATE FUNCTION exampleReplaceFunction AS frame -> frame │
+└──────────────────────────────────────────────────────────┘
+
+┌─create_query───────────────────────────────────────────────────┐
+│ CREATE FUNCTION exampleReplaceFunction AS frame -> (frame + 1) │
+└────────────────────────────────────────────────────────────────┘
+```
+
 ## Related Content {#related-content}
 
 ### [Executable UDFs](/sql-reference/functions/udf.md). {#executable-udfs}
