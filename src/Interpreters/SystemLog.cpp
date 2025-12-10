@@ -29,6 +29,7 @@
 #include <Interpreters/TransposedMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/BackgroundSchedulePoolLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryMetricLog.h>
@@ -421,6 +422,12 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         size_t collect_interval_milliseconds = config.getUInt64("aggregated_zookeeper_log.collect_interval_milliseconds",
                                                                 DEFAULT_AGGREGATED_ZOOKEEPER_LOG_COLLECT_INTERVAL_MILLISECONDS);
         aggregated_zookeeper_log->startCollect(ThreadName::AGGREGATED_ZOOKEEPER_LOG, collect_interval_milliseconds);
+    }
+
+    if (background_schedule_pool_log)
+    {
+        size_t duration_threshold_milliseconds = config.getUInt64("background_schedule_pool_log.duration_threshold_milliseconds", 0);
+        background_schedule_pool_log->setDurationMillisecondsThreshold(duration_threshold_milliseconds);
     }
 }
 

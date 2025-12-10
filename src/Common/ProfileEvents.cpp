@@ -20,6 +20,7 @@
     M(SelectQuery, "Same as Query, but only for SELECT queries.", ValueType::Number) \
     M(InsertQuery, "Same as Query, but only for INSERT queries.", ValueType::Number) \
     M(InitialQuery, "Same as Query, but only counts initial queries (see is_initial_query).", ValueType::Number) \
+    M(InitialSelectQuery, "Same as InitialQuery, but only for SELECT queries.", ValueType::Number) \
     M(QueriesWithSubqueries, "Count queries with all subqueries", ValueType::Number) \
     M(SelectQueriesWithSubqueries, "Count SELECT queries with all subqueries", ValueType::Number) \
     M(InsertQueriesWithSubqueries, "Count INSERT queries with all subqueries", ValueType::Number) \
@@ -31,6 +32,8 @@
     M(FailedInternalQuery, "Number of failed internal queries.", ValueType::Number) \
     M(FailedInternalSelectQuery, "Same as FailedInternalQuery, but only for SELECT queries.", ValueType::Number) \
     M(FailedInternalInsertQuery, "Same as FailedInternalQuery, but only for INSERT queries.", ValueType::Number) \
+    M(FailedInitialQuery, "Number of failed initial queries.", ValueType::Number) \
+    M(FailedInitialSelectQuery, "Same as FailedInitialQuery, but only for SELECT queries.", ValueType::Number) \
     M(FailedQuery, "Number of total failed queries, both internal and user queries.", ValueType::Number) \
     M(FailedSelectQuery, "Same as FailedQuery, but only for SELECT queries.", ValueType::Number) \
     M(FailedInsertQuery, "Same as FailedQuery, but only for INSERT queries.", ValueType::Number) \
@@ -1315,7 +1318,7 @@ Counters::Counters(Counters && src) noexcept
     : counters(std::exchange(src.counters, nullptr))
     , counters_holder(std::move(src.counters_holder))
     , parent(src.parent.exchange(nullptr))
-    , trace_profile_events(src.trace_profile_events)
+    , trace_profile_events(src.trace_profile_events.load(std::memory_order_relaxed))
     , level(src.level)
 {
 }
@@ -1464,7 +1467,7 @@ void Counters::increment(Event event, Count amount)
 
     do
     {
-        send_to_trace_log |= current->trace_profile_events;
+        send_to_trace_log |= current->trace_profile_events.load(std::memory_order_relaxed);
         current->counters[event].fetch_add(amount, std::memory_order_relaxed);
         current = current->parent;
     } while (current != nullptr);
