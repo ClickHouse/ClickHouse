@@ -93,9 +93,6 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
     if (auto * filter_step = typeid_cast<FilterStep *>(parent->step.get()))
     {
         const auto & expr = filter_step->getExpression();
-        if (expr.getNodes().empty())
-            return std::move(*properties);
-
         const ActionsDAG::Node * out_to_skip = nullptr;
         if (filter_step->removesFilterColumn())
         {

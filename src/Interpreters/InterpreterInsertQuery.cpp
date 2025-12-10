@@ -598,14 +598,15 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         if (settings[Setting::allow_experimental_analyzer])
         {
             InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, select_context, select_query_options);
-            pipeline = interpreter_select_analyzer.buildQueryPipeline();
 
             QueryPlanOptimizationSettings optimization_settings(select_context);
             optimization_settings.optimize_plan = false;
+            auto sorting_properties = QueryPlanOptimizations::applyOrder(optimization_settings, *interpreter_select_analyzer.getQueryPlan().getRootNode());
 
-            auto properties = QueryPlanOptimizations::applyOrder(optimization_settings, *interpreter_select_analyzer.getQueryPlan().getRootNode());
-            select_query_sorted = !properties.sort_description.empty()
-                && properties.sort_scope == QueryPlanOptimizations::SortingProperty::SortScope::Global
+            pipeline = interpreter_select_analyzer.buildQueryPipeline();
+
+            select_query_sorted = !sorting_properties.sort_description.empty()
+                && sorting_properties.sort_scope == QueryPlanOptimizations::SortingProperty::SortScope::Global
                 && pipeline.getNumStreams() == 1;
         }
         else
