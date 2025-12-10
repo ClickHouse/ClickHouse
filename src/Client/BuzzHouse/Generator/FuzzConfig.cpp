@@ -695,7 +695,7 @@ void FuzzConfig::validateClickHouseHealth()
             false,
             fmt::format(
                 "(SELECT count() FROM \"system\".\"detached_parts\" WHERE startsWith(\"name\", 'broken')) UNION ALL (SELECT "
-                "sum(\"lost_part_count\") FROM \"system\".\"replicas\") INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
+                "ifNull(sum(\"lost_part_count\"), 0) FROM \"system\".\"replicas\") INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
                 fuzz_server_out.generic_string())))
     {
         String buf;

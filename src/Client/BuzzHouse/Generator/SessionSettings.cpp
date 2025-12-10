@@ -415,16 +415,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
          {},
          false)},
     /// ClickHouse cloud setting
-    {"distributed_cache_pool_behaviour_on_limit",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &)
-         {
-             static const DB::Strings & choices = {"'wait'", "'allocate_bypassing_pool'"};
-             return rg.pickRandomly(choices);
-         },
-         {},
-         false)},
-    /// ClickHouse cloud setting
     {"distributed_cache_prefer_bigger_buffer_size", trueOrFalseSettingNoOracle},
     /// ClickHouse cloud setting
     {"distributed_cache_read_only_from_current_az", trueOrFalseSettingNoOracle},

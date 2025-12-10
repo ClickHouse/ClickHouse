@@ -356,21 +356,31 @@ void QueryOracle::dumpOracleIntermediateSteps(
             BackupRestore * res = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_backup_restore();
             SettingValues * bac_vals = nullptr;
             SettingValues * res_vals = nullptr;
+            BackupRestoreObject * baco = bac->mutable_backup_element()->mutable_bobject();
+            const String dname = t.getDatabaseName();
+            const String tname = t.getTableName();
+            const bool table_has_partitions = t.isMergeTreeFamily() && fc.tableHasPartitions(false, dname, tname);
 
             bac->set_command(BackupRestore_BackupCommand_BACKUP);
             res->set_command(BackupRestore_BackupCommand_RESTORE);
-            cluster = gen.backupOrRestoreObject(bac->mutable_backup_element()->mutable_bobject(), SQLObject::TABLE, t);
-            cluster = gen.backupOrRestoreObject(res->mutable_backup_element()->mutable_bobject(), SQLObject::TABLE, t);
+
+            t.setName(baco->mutable_object()->mutable_est(), false);
+            cluster = gen.backupOrRestoreObject(baco, SQLObject::TABLE, t);
             if (cluster.has_value())
             {
                 bac->mutable_cluster()->set_cluster(cluster.value());
                 res->mutable_cluster()->set_cluster(cluster.value());
+            }
+            if (table_has_partitions && rg.nextSmallNumber() < 4)
+            {
+                baco->add_partitions()->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname));
             }
 
             gen.setBackupDestination(rg, bac);
             res->set_backup_number(bac->backup_number());
             res->set_out(bac->out());
             res->mutable_params()->CopyFrom(bac->params());
+            res->mutable_backup_element()->mutable_bobject()->CopyFrom(bac->backup_element().bobject());
 
             bac->set_sync(BackupRestore_SyncOrAsync_SYNC);
             res->set_sync(BackupRestore_SyncOrAsync_SYNC);
