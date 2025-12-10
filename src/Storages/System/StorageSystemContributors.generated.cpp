@@ -1038,6 +1038,7 @@ const char * auto_contributors[] {
     "Reilee",
     "Reinaldy Rafli",
     "Reto Kromer",
+    "Revertionist",
     "Ri",
     "Rich Raposa",
     "RinChanNOWWW",
