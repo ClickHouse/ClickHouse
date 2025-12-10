@@ -6,7 +6,6 @@ keywords: ['JSONStringsEachRow']
 output_format: true
 slug: /interfaces/formats/JSONStringsEachRow
 title: 'JSONStringsEachRow'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

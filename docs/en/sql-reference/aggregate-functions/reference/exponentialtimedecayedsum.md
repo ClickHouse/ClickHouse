@@ -4,7 +4,6 @@ description: 'Returns the sum of exponentially smoothed moving average values of
 sidebar_position: 136
 slug: /sql-reference/aggregate-functions/reference/exponentialTimeDecayedSum
 title: 'exponentialTimeDecayedSum'
-doc_type: 'reference'
 ---
 
 ## exponentialTimeDecayedSum {#exponentialtimedecayedsum}
