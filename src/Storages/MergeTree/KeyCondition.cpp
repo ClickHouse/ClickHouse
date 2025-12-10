@@ -2664,31 +2664,32 @@ KeyCondition::Description KeyCondition::getDescription() const
   */
 template <typename F>
 static BoolMask forAnyHyperrectangle(
-    const std::vector<int> & key_indices,
-    const std::vector<FieldRef> & left_keys,
-    const std::vector<FieldRef> & right_keys,
-    const std::vector<bool> & segment_keys_all_equal,
+    size_t key_size,
+    const FieldRef * left_keys,
+    const FieldRef * right_keys,
+    const std::vector<size_t> & used_key_indices,
+    const std::vector<int> & index_to_used_key_pos,
     bool left_bounded,
     bool right_bounded,
-    Hyperrectangle & hyperrectangle, /// This argument is modified in-place for the callback
+    Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,
     size_t prefix_size,
     BoolMask initial_mask,
     F && callback)
 {
-    size_t key_size = left_keys.size();
     if (!left_bounded && !right_bounded)
         return callback(hyperrectangle);
 
     if (left_bounded && right_bounded)
     {
-        /// Let's go through the matching elements of the key.
         while (prefix_size < key_size)
         {
-            if (segment_keys_all_equal[prefix_size])
+            if (left_keys[prefix_size] == right_keys[prefix_size])
             {
-                /// Point ranges.
-                hyperrectangle[prefix_size] = Range(left_keys[prefix_size]);
+                int used_pos = index_to_used_key_pos[prefix_size];
+                if (used_pos >= 0)
+                    hyperrectangle[used_pos] = Range(left_keys[prefix_size]);
+
                 ++prefix_size;
             }
             else
@@ -2699,69 +2700,101 @@ static BoolMask forAnyHyperrectangle(
     if (prefix_size == key_size)
         return callback(hyperrectangle);
 
+    int used_pos = index_to_used_key_pos[prefix_size];
+
     if (prefix_size + 1 == key_size)
     {
-        if (left_bounded && right_bounded)
-            hyperrectangle[prefix_size] = Range(left_keys[prefix_size], true, right_keys[prefix_size], true);
-        else if (left_bounded)
-            hyperrectangle[prefix_size]
-                = Range::createLeftBounded(left_keys[prefix_size], true, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
-        else if (right_bounded)
-            hyperrectangle[prefix_size]
-                = Range::createRightBounded(right_keys[prefix_size], true, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
+        if (used_pos >= 0)
+        {
+            if (left_bounded && right_bounded)
+                hyperrectangle[used_pos] = Range(left_keys[prefix_size], true, right_keys[prefix_size], true);
+            else if (left_bounded)
+                hyperrectangle[used_pos]
+                    = Range::createLeftBounded(left_keys[prefix_size], true, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
+            else if (right_bounded)
+                hyperrectangle[used_pos]
+                    = Range::createRightBounded(right_keys[prefix_size], true, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
+        }
 
         return callback(hyperrectangle);
     }
 
     /// (x1 .. x2) × (-inf .. +inf)
-
-    if (left_bounded && right_bounded)
-        hyperrectangle[prefix_size] = Range(left_keys[prefix_size], false, right_keys[prefix_size], false);
-    else if (left_bounded)
-        hyperrectangle[prefix_size]
-            = Range::createLeftBounded(left_keys[prefix_size], false, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
-    else if (right_bounded)
-        hyperrectangle[prefix_size]
-            = Range::createRightBounded(right_keys[prefix_size], false, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
-
-    for (size_t i = prefix_size + 1; i < key_size; ++i)
+    if (used_pos >= 0)
     {
-        if (isNullableOrLowCardinalityNullable(data_types[i]))
-            hyperrectangle[i] = Range::createWholeUniverse();
+        if (left_bounded && right_bounded)
+            hyperrectangle[used_pos] = Range(left_keys[prefix_size], false, right_keys[prefix_size], false);
+        else if (left_bounded)
+            hyperrectangle[used_pos]
+                = Range::createLeftBounded(left_keys[prefix_size], false,isNullableOrLowCardinalityNullable(data_types[prefix_size]));
+        else if (right_bounded)
+            hyperrectangle[used_pos]
+                = Range::createRightBounded(right_keys[prefix_size], false,isNullableOrLowCardinalityNullable(data_types[prefix_size]));
+    }
+
+    /// Tail coordinates > prefix_size for used columns become whole universe
+    auto it = std::upper_bound(used_key_indices.begin(), used_key_indices.end(), prefix_size);
+    for (; it != used_key_indices.end(); ++it)
+    {
+        size_t key_index = *it;
+        int pos = index_to_used_key_pos[key_index]; /// >= 0 for entries in used_key_indices
+        if (isNullableOrLowCardinalityNullable(data_types[key_index]))
+            hyperrectangle[pos] = Range::createWholeUniverse();
         else
-            hyperrectangle[i] = Range::createWholeUniverseWithoutNull();
+            hyperrectangle[pos] = Range::createWholeUniverseWithoutNull();
     }
 
     auto result = BoolMask::combine(initial_mask, callback(hyperrectangle));
-
-    /// There are several early-exit conditions (like the one below) hereinafter.
-    /// They provide significant speedup, which may be observed on merge_tree_huge_pk performance test.
     if (result.isComplete())
         return result;
 
     /// [x1]       × [y1 .. +inf)
-
     if (left_bounded)
     {
-        hyperrectangle[prefix_size] = Range(left_keys[prefix_size]);
+        if (used_pos >= 0)
+            hyperrectangle[used_pos] = Range(left_keys[prefix_size]);
+
         result = BoolMask::combine(
             result,
             forAnyHyperrectangle(
-                key_indices, left_keys, right_keys, segment_keys_all_equal, true, false, hyperrectangle, data_types, prefix_size + 1, initial_mask, callback));
+                key_size,
+                left_keys,
+                right_keys,
+                used_key_indices,
+                index_to_used_key_pos,
+                true,
+                false,
+                hyperrectangle,
+                data_types,
+                prefix_size + 1,
+                initial_mask,
+                callback));
 
         if (result.isComplete())
             return result;
     }
 
     /// [x2]       × (-inf .. y2]
-
     if (right_bounded)
     {
-        hyperrectangle[prefix_size] = Range(right_keys[prefix_size]);
+        if (used_pos >= 0)
+            hyperrectangle[used_pos] = Range(right_keys[prefix_size]);
+
         result = BoolMask::combine(
             result,
             forAnyHyperrectangle(
-                key_indices, left_keys, right_keys, segment_keys_all_equal, false, true, hyperrectangle, data_types, prefix_size + 1, initial_mask, callback));
+                key_size,
+                left_keys,
+                right_keys,
+                used_key_indices,
+                index_to_used_key_pos,
+                false,
+                true,
+                hyperrectangle,
+                data_types,
+                prefix_size + 1,
+                initial_mask,
+                callback));
     }
 
     return result;
@@ -3118,62 +3151,45 @@ BoolMask KeyCondition::checkInRange(
     BoolMask initial_mask) const
 {
     std::vector<size_t> used_key_indices = getUsedColumnsInOrder();
+    if (used_key_indices.empty())
+        return BoolMask(true, true);
+
     size_t used_keys_size = used_key_indices.size();
-
-    std::vector<FieldRef> left_used_keys(used_keys_size);
-    std::vector<FieldRef> right_used_keys(used_keys_size);
-    std::vector<DataTypePtr> used_data_types(used_keys_size);
-
-    for (size_t pos = 0; pos < used_keys_size; ++pos)
-    {
-        size_t used_key_index = used_key_indices[pos];
-        left_used_keys[pos] = left_keys[used_key_index];
-        right_used_keys[pos] = right_keys[used_key_index];
-        used_data_types[pos] = data_types[used_key_index];
-    }
-
-    std::vector<UInt8> mismatch_prefix_sum(keys_size + 1, 0);
-
-    for (size_t i = 0; i < keys_size; ++i)
-    {
-        bool equal = (left_keys[i] == right_keys[i]);
-
-        mismatch_prefix_sum[i + 1] = mismatch_prefix_sum[i] + static_cast<UInt8>(!equal);
-    }
-
-    std::vector<bool> segment_keys_all_equal(used_keys_size, false);
-
-    for (size_t i = 0; i < used_keys_size; ++i)
-    {
-        size_t begin_index = (i == 0 ? 0 : used_key_indices[i - 1]);
-        size_t end_index = used_key_indices[i];
-
-        UInt64 mismatches = mismatch_prefix_sum[end_index + 1] - mismatch_prefix_sum[begin_index];
-        segment_keys_all_equal[i] = (mismatches == 0);
-    }
 
     Hyperrectangle key_ranges;
     key_ranges.reserve(used_keys_size);
-    for (size_t i = 0; i < used_keys_size; ++i)
+    for (size_t pos = 0; pos < used_keys_size; ++pos)
     {
-        if (isNullableOrLowCardinalityNullable(used_data_types[i]))
+        size_t key_index = used_key_indices[pos];
+        if (isNullableOrLowCardinalityNullable(data_types[key_index]))
             key_ranges.push_back(Range::createWholeUniverse());
         else
             key_ranges.push_back(Range::createWholeUniverseWithoutNull());
     }
 
+    /// Mapping: original key index -> position in key_ranges, or -1 if not used
     std::vector<int> index_to_used_key_pos(keys_size, -1);
     for (size_t pos = 0; pos < used_keys_size; ++pos)
-    {
         index_to_used_key_pos[used_key_indices[pos]] = static_cast<int>(pos);
-    }
 
-    return forAnyHyperrectangle(index_to_used_key_pos, left_used_keys, right_used_keys, segment_keys_all_equal, true, true, key_ranges, used_data_types, 0, initial_mask,
+    return forAnyHyperrectangle(
+        keys_size,
+        left_keys,
+        right_keys,
+        used_key_indices,
+        index_to_used_key_pos,
+        true,
+        true,
+        key_ranges,
+        data_types,
+        0,
+        initial_mask,
         [&] (const Hyperrectangle & key_ranges_hyperrectangle)
-    {
-        return checkInHyperrectangle(index_to_used_key_pos, key_ranges_hyperrectangle, data_types);
-    });
+        {
+            return checkInHyperrectangle(index_to_used_key_pos, key_ranges_hyperrectangle, data_types);
+        });
 }
+
 
 std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     Range key_range,
