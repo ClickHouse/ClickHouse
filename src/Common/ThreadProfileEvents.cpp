@@ -21,10 +21,8 @@
 #include <boost/algorithm/string/split.hpp>
 
 #include <base/errnoToString.h>
-#include <base/arithmeticOverflow.h>
 
 #include <Common/logger_useful.h>
-#include <Core/AccurateComparison.h>
 
 
 namespace ProfileEvents
@@ -564,7 +562,7 @@ void PerfEventsCounters::finalizeProfileEvents(ProfileEvents::Counters & profile
         const auto enabled = current_value.time_enabled - previous_value.time_enabled;
         const auto running = current_value.time_running - previous_value.time_running;
         const auto scaled_value = static_cast<Float64>(current_value.value - previous_value.value) * static_cast<Float64>(enabled) / std::max(1., static_cast<Float64>(running));
-        const UInt64 delta = scaled_value < static_cast<Float64>(std::numeric_limits<UInt64>::max()) ? static_cast<UInt64>(scaled_value) : 0;
+        const UInt64 delta = scaled_value < static_cast<Float64>(std::numeric_limits<UInt64>::max()) ? static_cast<UInt64>(scaled_value) : 0ul;
 
         if (min_enabled_time > enabled)
         {
