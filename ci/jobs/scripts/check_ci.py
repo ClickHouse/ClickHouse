@@ -878,8 +878,9 @@ def main():
         else:
             sys.exit(0)
 
-    if Shell.check(f"gh pr merge {pr_number} --auto"):
-        print(f"PR {pr_number} auto merge has been enabled")
+    if UserPrompt.confirm(f"Do you want to merge PR {pr_number}?"):
+        if Shell.check(f"gh pr merge {pr_number} --auto"):
+            print(f"PR {pr_number} auto merge has been enabled")
 
 
 if __name__ == "__main__":
