@@ -583,6 +583,23 @@ static void applyTrivialInsertSelectOptimization(ASTInsertQuery & query, bool pr
     }
 }
 
+bool allNonConstColumnsAreSorted(const Block & header, const SortDescription & sort_description)
+{
+    std::unordered_set<String> sorted_columns;
+    for (const auto & sort_column : sort_description)
+        sorted_columns.insert(sort_column.column_name);
+
+    for (const auto & column : header.getColumnsWithTypeAndName())
+    {
+        if (column.column->isConst())
+            continue;
+
+        if (sorted_columns.find(column.name) == sorted_columns.end())
+            return false;
+    }
+
+    return true;
+}
 
 QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table)
 {
@@ -600,12 +617,13 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
             InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, select_context, select_query_options);
 
             QueryPlanOptimizationSettings optimization_settings(select_context);
-            optimization_settings.optimize_plan = false;
-            auto sorting_properties = QueryPlanOptimizations::applyOrder(optimization_settings, *interpreter_select_analyzer.getQueryPlan().getRootNode());
+            auto & plan = interpreter_select_analyzer.getQueryPlan();
+            auto sorting_properties = QueryPlanOptimizations::applyOrder(optimization_settings, *plan.getRootNode());
+            LOG_DEBUG(logger, "sorting props, count: {}, scope {}", sorting_properties.sort_description.size(), sorting_properties.sort_scope);
 
             pipeline = interpreter_select_analyzer.buildQueryPipeline();
 
-            select_query_sorted = !sorting_properties.sort_description.empty()
+            select_query_sorted = allNonConstColumnsAreSorted(pipeline.getHeader(), sorting_properties.sort_description)
                 && sorting_properties.sort_scope == QueryPlanOptimizations::SortingProperty::SortScope::Global
                 && pipeline.getNumStreams() == 1;
         }
