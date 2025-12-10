@@ -1939,7 +1939,12 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataOnDisk(const String & table_nam
 }
 
 void DatabaseReplicated::dropReplica(
-    DatabaseReplicated * database, const String & database_zookeeper_path, const String & shard, const String & replica, bool throw_if_noop)
+    DatabaseReplicated * database,
+    const String & zookeeper_name,
+    const String & database_zookeeper_path,
+    const String & shard,
+    const String & replica,
+    bool throw_if_noop)
 {
     assert(!database || database_zookeeper_path == database->zookeeper_path);
 
@@ -1948,7 +1953,7 @@ void DatabaseReplicated::dropReplica(
     if (full_replica_name.contains('/'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid replica name, '/' is not allowed: {}", full_replica_name);
 
-    auto zookeeper = Context::getGlobalContextInstance()->getDefaultOrAuxiliaryZooKeeper(database->zookeeper_name);
+    auto zookeeper = Context::getGlobalContextInstance()->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
 
     String database_mark;
     bool db_path_exists = zookeeper->tryGet(database_zookeeper_path, database_mark);

@@ -144,9 +144,9 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             print_keyword(" FROM TABLE ");
             print_database_table();
         }
-        else if (!replica_zk_path.empty())
+        else if (!full_replica_zk_path.empty())
         {
-            print_keyword(" FROM ZKPATH ") << quoteString(replica_zk_path);
+            print_keyword(" FROM ZKPATH ") << quoteString(full_replica_zk_path);
         }
         else if (database)
         {
