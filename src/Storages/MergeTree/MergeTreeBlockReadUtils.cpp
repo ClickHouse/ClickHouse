@@ -129,6 +129,7 @@ NameSet injectRequiredColumns(
         alter_conversions = data_part_info_for_reader.getAlterConversions();
 
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
+        .withExtendedObjects()
         .withVirtuals()
         .withSubcolumns(with_subcolumns);
 
@@ -378,6 +379,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     injectRequiredColumns(data_part_info_for_reader, storage_snapshot, with_subcolumns, column_to_read_after_prewhere);
 
     auto options = GetColumnsOptions(GetColumnsOptions::All)
+        .withExtendedObjects()
         .withVirtuals()
         .withSubcolumns(with_subcolumns);
 

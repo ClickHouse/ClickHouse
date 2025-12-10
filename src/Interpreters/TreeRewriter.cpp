@@ -48,6 +48,7 @@
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/NestedUtils.h>
 
 #include <IO/WriteHelpers.h>
@@ -372,7 +373,7 @@ void renameDuplicatedColumns(const ASTSelectQuery * select_query)
                 continue;
 
             size_t i = 1;
-            while (all_column_names.contains(name + "_" + toString(i)))
+            while (all_column_names.end() != all_column_names.find(name + "_" + toString(i)))
                 ++i;
 
             name = name + "_" + toString(i);
@@ -1012,6 +1013,7 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
     if (storage)
     {
         auto options = GetColumnsOptions(add_special ? GetColumnsOptions::All : GetColumnsOptions::AllPhysical);
+        options.withExtendedObjects();
         options.withSubcolumns(storage->supportsSubcolumns());
 
         auto columns_from_storage = storage_snapshot->getColumns(options);
@@ -1022,6 +1024,11 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
             source_columns.insert(source_columns.end(), columns_from_storage.begin(), columns_from_storage.end());
 
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+        source_columns_ordinary = metadata_snapshot->getColumns().getOrdinary();
+    }
+    else
+    {
+        source_columns_ordinary = source_columns;
     }
 
     source_columns_set = removeDuplicateColumns(source_columns);
@@ -1188,32 +1195,53 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             = is_remote_storage && storage->isVirtualColumn("_shard_num", storage_snapshot->metadata) && virtuals->has("_shard_num");
     }
 
-    /// Check for subcolumns in unknown required columns.
-    if (!unknown_required_source_columns.empty() && (!storage || storage->supportsSubcolumns()))
+    /// Collect missed object subcolumns
+    if (!unknown_required_source_columns.empty())
     {
-        for (const NameAndTypePair & pair : required_source_columns)
+        for (const NameAndTypePair & pair : source_columns_ordinary)
         {
             for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
             {
-                bool found = false;
-                for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(*it))
+                size_t object_pos = it->find('.');
+                if (object_pos != std::string::npos)
                 {
-                    if (column_name == pair.name)
+                    String object_name = it->substr(0, object_pos);
+                    if (pair.name == object_name && pair.type->getTypeId() == TypeIndex::ObjectDeprecated)
                     {
-                        if (auto subcolumn_type = pair.type->tryGetSubcolumnType(subcolumn_name))
+                        const auto * object_type = typeid_cast<const DataTypeObjectDeprecated *>(pair.type.get());
+                        if (object_type->getSchemaFormat() == "json" && object_type->hasNullableSubcolumns())
                         {
-                            source_columns.emplace_back(*it, subcolumn_type);
+                            missed_subcolumns.insert(*it);
                             it = unknown_required_source_columns.erase(it);
-                            found = true;
-                            break;
+                            continue;
                         }
                     }
                 }
+                ++it;
+            }
+        }
+    }
 
-                if (found)
-                    continue;
-                else
-                    ++it;
+    /// Check for subcolumns in unknown required columns.
+    if (!unknown_required_source_columns.empty() && (!storage || storage->supportsSubcolumns()))
+    {
+        for (const NameAndTypePair & pair : source_columns_ordinary)
+        {
+            for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
+            {
+                auto [column_name, subcolumn_name] = Nested::splitName(*it);
+
+                if (column_name == pair.name)
+                {
+                    if (auto subcolumn_type = pair.type->tryGetSubcolumnType(subcolumn_name))
+                    {
+                        source_columns.emplace_back(*it, subcolumn_type);
+                        it = unknown_required_source_columns.erase(it);
+                        continue;
+                    }
+                }
+
+                ++it;
             }
         }
     }

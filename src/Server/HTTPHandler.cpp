@@ -6,6 +6,7 @@
 #include <Core/ExternalTable.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/NamesAndAliases.h>
 #include <Disks/StoragePolicy.h>
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/ConcatReadBuffer.h>
@@ -475,9 +476,9 @@ void HTTPHandler::processQuery(
 
     /// While still no data has been sent, we will report about query execution progress by sending HTTP headers.
     /// Note that we add it unconditionally so the progress is available for `X-ClickHouse-Summary`
-    append_callback([&used_output, &context](const Progress & progress)
+    append_callback([&used_output](const Progress & progress)
     {
-        used_output.out_holder->onProgress(progress, context);
+        used_output.out_holder->onProgress(progress);
     });
 
     if (settings[Setting::readonly] > 0 && settings[Setting::cancel_http_readonly_queries_on_client_close])
@@ -518,12 +519,6 @@ void HTTPHandler::processQuery(
 
         if (details.timezone)
             response.add("X-ClickHouse-Timezone", *details.timezone);
-
-        if (details.query_cache_entry_created_at)
-            response.add("Age", std::to_string(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - *details.query_cache_entry_created_at).count()));
-
-        if (details.query_cache_entry_expires_at)
-            response.add("Expires", std::format("{:%a, %d %b %Y %H:%M:%S} GMT", *details.query_cache_entry_expires_at));
 
         for (const auto & [name, value] : details.additional_headers)
             response.set(name, value);
@@ -608,6 +603,7 @@ void HTTPHandler::processQuery(
     executeQuery(
         std::move(in),
         *used_output.out_maybe_delayed_and_compressed,
+        /* allow_into_outfile = */ false,
         context,
         set_query_result,
         QueryFlags{},
@@ -679,7 +675,7 @@ catch (...)
 
 void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event)
 {
-    DB::setThreadName(ThreadName::HTTP_HANDLER);
+    setThreadName("HTTPHandler");
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP, request.isSecure());
     SCOPE_EXIT({ session.reset(); });
@@ -731,7 +727,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
 
         response.setContentType("text/plain; charset=UTF-8");
-        response.add("Access-Control-Expose-Headers", "X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone,X-ClickHouse-Exception-Code,X-ClickHouse-Exception-Tag");
+        response.add("Access-Control-Expose-Headers", "X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone,X-ClickHouse-Exception-Code");
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);
 
         if (!request.get("Origin", "").empty())

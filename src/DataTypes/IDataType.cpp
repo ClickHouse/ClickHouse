@@ -77,13 +77,6 @@ void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_valu
     }
 }
 
-
-MutableColumnPtr IDataType::createUninitializedColumnWithSize(size_t size) const
-{
-    auto column = createColumn();
-    return column->cloneResized(size);
-}
-
 MutableColumnPtr IDataType::createColumn(const ISerialization & serialization) const
 {
     auto kind_stack = serialization.getKindStack();
@@ -445,6 +438,7 @@ bool isArray(TYPE data_type) { return WhichDataType(data_type).isArray(); } \
 bool isTuple(TYPE data_type) { return WhichDataType(data_type).isTuple(); } \
 bool isMap(TYPE data_type) {return WhichDataType(data_type).isMap(); } \
 bool isInterval(TYPE data_type) {return WhichDataType(data_type).isInterval(); } \
+bool isObjectDeprecated(TYPE data_type) { return WhichDataType(data_type).isObjectDeprecated(); } \
 bool isVariant(TYPE data_type) { return WhichDataType(data_type).isVariant(); } \
 bool isDynamic(TYPE data_type) { return WhichDataType(data_type).isDynamic(); } \
 bool isObject(TYPE data_type) { return WhichDataType(data_type).isObject(); } \

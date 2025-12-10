@@ -20,7 +20,6 @@
     M(SelectQuery, "Same as Query, but only for SELECT queries.", ValueType::Number) \
     M(InsertQuery, "Same as Query, but only for INSERT queries.", ValueType::Number) \
     M(InitialQuery, "Same as Query, but only counts initial queries (see is_initial_query).", ValueType::Number) \
-    M(InitialSelectQuery, "Same as InitialQuery, but only for SELECT queries.", ValueType::Number) \
     M(QueriesWithSubqueries, "Count queries with all subqueries", ValueType::Number) \
     M(SelectQueriesWithSubqueries, "Count SELECT queries with all subqueries", ValueType::Number) \
     M(InsertQueriesWithSubqueries, "Count INSERT queries with all subqueries", ValueType::Number) \
@@ -32,8 +31,6 @@
     M(FailedInternalQuery, "Number of failed internal queries.", ValueType::Number) \
     M(FailedInternalSelectQuery, "Same as FailedInternalQuery, but only for SELECT queries.", ValueType::Number) \
     M(FailedInternalInsertQuery, "Same as FailedInternalQuery, but only for INSERT queries.", ValueType::Number) \
-    M(FailedInitialQuery, "Number of failed initial queries.", ValueType::Number) \
-    M(FailedInitialSelectQuery, "Same as FailedInitialQuery, but only for SELECT queries.", ValueType::Number) \
     M(FailedQuery, "Number of total failed queries, both internal and user queries.", ValueType::Number) \
     M(FailedSelectQuery, "Same as FailedQuery, but only for SELECT queries.", ValueType::Number) \
     M(FailedInsertQuery, "Same as FailedQuery, but only for INSERT queries.", ValueType::Number) \
@@ -100,13 +97,7 @@
     M(VectorSimilarityIndexCacheHits, "Number of times an index granule has been found in the vector index cache.", ValueType::Number) \
     M(VectorSimilarityIndexCacheMisses, "Number of times an index granule has not been found in the vector index cache and had to be read from disk.", ValueType::Number) \
     M(VectorSimilarityIndexCacheWeightLost, "Approximate number of bytes evicted from the vector index cache.", ValueType::Number) \
-    M(TextIndexReadDictionaryBlocks, "Number of times a text index dictionary block has been read from disk.", ValueType::Number) \
-    M(TextIndexDictionaryBlockCacheHits, "Number of times a text index dictionary block has been found in the cache.", ValueType::Number) \
-    M(TextIndexDictionaryBlockCacheMisses, "Number of times a text index dictionary block has not been found in the cache.", ValueType::Number) \
-    M(TextIndexHeaderCacheHits, "Number of times a header has been found in the cache.", ValueType::Number) \
-    M(TextIndexHeaderCacheMisses, "Number of times a header has not been found in the cache.", ValueType::Number) \
-    M(TextIndexPostingsCacheHits, "Number of times a text index posting list has been found in the cache.", ValueType::Number) \
-    M(TextIndexPostingsCacheMisses, "Number of times a a text index posting list has not been found in the cache.", ValueType::Number) \
+    M(TextIndexReadDictionaryBlocks, "Number of times a dictionary block has been read from the text index.", ValueType::Number) \
     M(TextIndexReadSparseIndexBlocks, "Number of times a sparse index block has been read from the text index.", ValueType::Number) \
     M(TextIndexReaderTotalMicroseconds, "Total time spent reading the text index.", ValueType::Microseconds) \
     M(TextIndexReadGranulesMicroseconds, "Total time spent reading and analyzing granules of the text index.", ValueType::Microseconds) \
@@ -115,17 +106,10 @@
     M(TextIndexBloomFilterFalsePositives, "Number of times a token has passed the bloom filter and has not been found in the dictionary.", ValueType::Number) \
     M(TextIndexReadPostings, "Number of times a posting list has been read from the text index.", ValueType::Number) \
     M(TextIndexUsedEmbeddedPostings, "Number of times a posting list embedded in the dictionary has been used.", ValueType::Number) \
-    M(TextIndexUseHint, "Number of index granules where a direct reading from the text index was added as hint and was used.", ValueType::Number) \
-    M(TextIndexDiscardHint, "Number of index granules where a direct reading from the text index was added as hint and was discarded due to low selectivity.", ValueType::Number) \
     M(QueryConditionCacheHits, "Number of times an entry has been found in the query condition cache (and reading of marks can be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
     M(QueryConditionCacheMisses, "Number of times an entry has not been found in the query condition cache (and reading of mark cannot be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
     M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
     M(QueryCacheMisses, "Number of times a query result has not been found in the query cache (and required query computation). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
-    M(QueryCacheAgeSeconds, "The sum of ages of found query cache entries in seconds. The value is set both for hits and misses.", ValueType::Number) \
-    M(QueryCacheReadRows, "The number of rows read from the query cache.", ValueType::Number) \
-    M(QueryCacheReadBytes, "The number of (uncompressed) bytes read from the query cache.", ValueType::Bytes) \
-    M(QueryCacheWrittenRows, "The number of rows saved into the query cache.", ValueType::Number) \
-    M(QueryCacheWrittenBytes, "The number of (uncompressed) bytes saved into the query cache", ValueType::Bytes) \
     M(CreatedReadBufferOrdinary, "Number of times ordinary read buffer was created for reading data (while choosing among other read methods).", ValueType::Number) \
     M(CreatedReadBufferDirectIO, "Number of times a read buffer with O_DIRECT was created for reading data (while choosing among other read methods).", ValueType::Number) \
     M(CreatedReadBufferDirectIOFailed, "Number of times a read buffer with O_DIRECT was attempted to be created for reading data (while choosing among other read methods), but the OS did not allow it (due to lack of filesystem support or other reasons) and we fallen back to the ordinary reading method.", ValueType::Number) \
@@ -152,21 +136,14 @@
     M(LocalThreadPoolBusyMicroseconds, "Total time threads have spent executing the actual work.", ValueType::Microseconds) \
     M(LocalThreadPoolJobWaitTimeMicroseconds, "Measures the elapsed time from when a job is scheduled in the thread pool to when it is picked up for execution by a worker thread. This metric helps identify delays in job processing, indicating the responsiveness of the thread pool to new tasks.", ValueType::Microseconds) \
     \
-    M(DiskS3GetRequestThrottlerCount, "Number of DiskS3 GET and SELECT requests passed through throttler: blocked and not blocked.", ValueType::Number) \
-    M(DiskS3GetRequestThrottlerBlocked, "Number of DiskS3 GET and SELECT requests blocked by throttler.", ValueType::Number) \
+    M(DiskS3GetRequestThrottlerCount, "Number of DiskS3 GET and SELECT requests passed through throttler.", ValueType::Number) \
     M(DiskS3GetRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform DiskS3 GET and SELECT request throttling.", ValueType::Microseconds) \
-    M(DiskS3PutRequestThrottlerCount, "Number of DiskS3 PUT, COPY, POST and LIST requests passed through throttler: blocked and not blocked.", ValueType::Number) \
-    M(DiskS3PutRequestThrottlerBlocked, "Number of DiskS3 PUT, COPY, POST and LIST requests blocked by throttler.", ValueType::Number) \
+    M(DiskS3PutRequestThrottlerCount, "Number of DiskS3 PUT, COPY, POST and LIST requests passed through throttler.", ValueType::Number) \
     M(DiskS3PutRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform DiskS3 PUT, COPY, POST and LIST request throttling.", ValueType::Microseconds) \
-    M(S3GetRequestThrottlerCount, "Number of S3 GET and SELECT requests passed through throttler: blocked and not blocked.", ValueType::Number) \
-    M(S3GetRequestThrottlerBlocked, "Number of S3 GET and SELECT requests blocked by throttler.", ValueType::Number) \
+    M(S3GetRequestThrottlerCount, "Number of S3 GET and SELECT requests passed through throttler.", ValueType::Number) \
     M(S3GetRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform S3 GET and SELECT request throttling.", ValueType::Microseconds) \
-    M(S3PutRequestThrottlerCount, "Number of S3 PUT, COPY, POST and LIST requests passed through throttler: blocked and not blocked.", ValueType::Number) \
-    M(S3PutRequestThrottlerBlocked, "Number of S3 PUT, COPY, POST and LIST requests blocked by throttler.", ValueType::Number) \
+    M(S3PutRequestThrottlerCount, "Number of S3 PUT, COPY, POST and LIST requests passed through throttler.", ValueType::Number) \
     M(S3PutRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform S3 PUT, COPY, POST and LIST request throttling.", ValueType::Microseconds) \
-    /* ACME profile events */ \
-    M(ACMEAPIRequests, "Number of ACME API requests issued.", ValueType::Number) \
-    M(ACMECertificateOrders, "Number of ACME certificate orders issued.", ValueType::Number) \
     /* Azure profile events */ \
     M(DiskAzureReadMicroseconds, "Total time spent waiting for Azure disk read requests.", ValueType::Microseconds) \
     M(DiskAzureReadRequestsCount, "Number of Azure disk read requests.", ValueType::Number) \
@@ -188,17 +165,13 @@
     M(AzureWriteRequestsErrors, "Number of Azure write request errors.", ValueType::Number) \
     M(AzureWriteRequestsThrottling, "Number of Azure write requests throttled.", ValueType::Number) \
     M(AzureWriteRequestsRedirects, "Number of Azure write request redirects.", ValueType::Number) \
-    M(AzureGetRequestThrottlerCount, "Number of Azure GET requests passed through throttler: blocked and not blocked.", ValueType::Number) \
-    M(AzureGetRequestThrottlerBlocked, "Number of Azure GET requests blocked by throttler.", ValueType::Number) \
+    M(AzureGetRequestThrottlerCount, "Number of Azure GET requests passed through throttler.", ValueType::Number) \
     M(AzureGetRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform Azure GET request throttling.", ValueType::Microseconds) \
-    M(DiskAzureGetRequestThrottlerCount, "Number of Azure disk GET requests passed through throttler: blocked and not blocked.", ValueType::Number) \
-    M(DiskAzureGetRequestThrottlerBlocked, "Number of Azure disk GET requests blocked by throttler.", ValueType::Number) \
+    M(DiskAzureGetRequestThrottlerCount, "Number of Azure disk GET requests passed through throttler.", ValueType::Number) \
     M(DiskAzureGetRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform Azure disk GET request throttling.", ValueType::Microseconds) \
-    M(AzurePutRequestThrottlerCount, "Number of Azure PUT requests passed through throttler: blocked and not blocked.", ValueType::Number) \
-    M(AzurePutRequestThrottlerBlocked, "Number of Azure PUT requests blocked by throttler.", ValueType::Number) \
+    M(AzurePutRequestThrottlerCount, "Number of Azure PUT requests passed through throttler.", ValueType::Number) \
     M(AzurePutRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform Azure PUT request throttling.", ValueType::Microseconds) \
-    M(DiskAzurePutRequestThrottlerCount, "Number of Azure disk PUT requests passed through throttler: blocked and not blocked.", ValueType::Number) \
-    M(DiskAzurePutRequestThrottlerBlocked, "Number of Azure disk PUT requests blocked by throttler.", ValueType::Number) \
+    M(DiskAzurePutRequestThrottlerCount, "Number of Azure disk PUT requests passed through throttler.", ValueType::Number) \
     M(DiskAzurePutRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform Azure disk PUT request throttling.", ValueType::Microseconds) \
     M(RemoteReadThrottlerBytes, "Bytes passed through 'max_remote_read_network_bandwidth_for_server'/'max_remote_read_network_bandwidth' throttler.", ValueType::Bytes) \
     M(RemoteReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_read_network_bandwidth_for_server'/'max_remote_read_network_bandwidth' throttling.", ValueType::Microseconds) \
@@ -524,9 +497,6 @@ The server successfully detected this situation and will download merged part fr
     M(PolygonsAddedToPool, "A polygon has been added to the cache (pool) for the 'pointInPolygon' function.", ValueType::Number) \
     M(PolygonsInPoolAllocatedBytes, "The number of bytes for polygons added to the cache (pool) for the 'pointInPolygon' function.", ValueType::Bytes) \
     \
-    M(NaiveBayesClassifierModelsLoaded, "Number of Naive Bayes Classifier models loaded.", ValueType::Number) \
-    M(NaiveBayesClassifierModelsAllocatedBytes, "Number of bytes allocated for Naive Bayes Classifier models.", ValueType::Bytes) \
-    \
     M(USearchAddCount, "Number of vectors added to usearch indexes.", ValueType::Number) \
     M(USearchAddVisitedMembers, "Number of nodes visited when adding vectors to usearch indexes.", ValueType::Number) \
     M(USearchAddComputedDistances, "Number of times distance was computed when adding vectors to usearch indexes.", ValueType::Number) \
@@ -541,10 +511,6 @@ The server successfully detected this situation and will download merged part fr
     M(DNSError, "Total count of errors in DNS resolution", ValueType::Number) \
     M(PartsLockHoldMicroseconds, "Total time spent holding data parts lock in MergeTree tables", ValueType::Microseconds) \
     M(PartsLockWaitMicroseconds, "Total time spent waiting for data parts lock in MergeTree tables", ValueType::Microseconds) \
-    M(PartsLocks, "Number of times data parts lock has been acquired for MergeTree tables", ValueType::Number) \
-    M(SharedPartsLockHoldMicroseconds, "Total time spent holding shared data parts lock in MergeTree tables", ValueType::Microseconds) \
-    M(SharedPartsLockWaitMicroseconds, "Total time spent waiting for shared data parts lock in MergeTree tables", ValueType::Microseconds) \
-    M(SharedPartsLocks, "Number of times shared data parts lock has been acquired for MergeTree tables", ValueType::Number) \
     \
     M(RealTimeMicroseconds, "Total (wall clock) time spent in processing (queries and other tasks) threads (note that this is a sum).", ValueType::Microseconds) \
     M(UserTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in user mode. This includes time CPU pipeline was stalled due to main memory access, cache misses, branch mispredictions, hyper-threading, etc.", ValueType::Microseconds) \
@@ -560,8 +526,8 @@ The server successfully detected this situation and will download merged part fr
     M(OSCPUVirtualTimeMicroseconds, "CPU time spent seen by OS. Does not include involuntary waits due to virtualization.", ValueType::Microseconds) \
     M(OSReadBytes, "Number of bytes read from disks or block devices. Doesn't include bytes read from page cache. May include excessive data due to block size, readahead, etc.", ValueType::Bytes) \
     M(OSWriteBytes, "Number of bytes written to disks or block devices. Doesn't include bytes that are in page cache dirty pages. May not include data that was written by OS asynchronously.", ValueType::Bytes) \
-    M(OSReadChars, "Number of bytes read from filesystem, including page cache, as well as network and other files.", ValueType::Bytes) \
-    M(OSWriteChars, "Number of bytes written to filesystem, including page cache, as well as network and other files.", ValueType::Bytes) \
+    M(OSReadChars, "Number of bytes read from filesystem, including page cache.", ValueType::Bytes) \
+    M(OSWriteChars, "Number of bytes written to filesystem, including page cache.", ValueType::Bytes) \
     \
     M(ParallelReplicasHandleRequestMicroseconds, "Time spent processing requests for marks from replicas", ValueType::Microseconds) \
     M(ParallelReplicasHandleAnnouncementMicroseconds, "Time spent processing replicas announcements", ValueType::Microseconds) \
@@ -657,7 +623,7 @@ The server successfully detected this situation and will download merged part fr
     M(S3CopyObject, "Number of S3 API CopyObject calls.", ValueType::Number) \
     M(S3ListObjects, "Number of S3 API ListObjects calls.", ValueType::Number) \
     M(S3HeadObject,  "Number of S3 API HeadObject calls.", ValueType::Number) \
-    M(S3GetObjectTagging, "Number of S3 API GetObjectTagging calls.", ValueType::Number) \
+    M(S3GetObjectAttributes, "Number of S3 API GetObjectAttributes calls.", ValueType::Number) \
     M(S3CreateMultipartUpload, "Number of S3 API CreateMultipartUpload calls.", ValueType::Number) \
     M(S3UploadPartCopy, "Number of S3 API UploadPartCopy calls.", ValueType::Number) \
     M(S3UploadPart, "Number of S3 API UploadPart calls.", ValueType::Number) \
@@ -670,7 +636,7 @@ The server successfully detected this situation and will download merged part fr
     M(DiskS3CopyObject, "Number of DiskS3 API CopyObject calls.", ValueType::Number) \
     M(DiskS3ListObjects, "Number of DiskS3 API ListObjects calls.", ValueType::Number) \
     M(DiskS3HeadObject,  "Number of DiskS3 API HeadObject calls.", ValueType::Number) \
-    M(DiskS3GetObjectTagging, "Number of DiskS3 API GetObjectTagging calls.", ValueType::Number) \
+    M(DiskS3GetObjectAttributes, "Number of DiskS3 API GetObjectAttributes calls.", ValueType::Number) \
     M(DiskS3CreateMultipartUpload, "Number of DiskS3 API CreateMultipartUpload calls.", ValueType::Number) \
     M(DiskS3UploadPartCopy, "Number of DiskS3 API UploadPartCopy calls.", ValueType::Number) \
     M(DiskS3UploadPart, "Number of DiskS3 API UploadPart calls.", ValueType::Number) \
@@ -940,9 +906,7 @@ The server successfully detected this situation and will download merged part fr
     M(ObjectStorageQueueReadBytes, "Number of read bytes (not equal to the number of actually inserted bytes)", ValueType::Number) \
     M(ObjectStorageQueueExceptionsDuringRead, "Number of exceptions during read in S3(Azure)Queue", ValueType::Number) \
     M(ObjectStorageQueueExceptionsDuringInsert, "Number of exceptions during insert in S3(Azure)Queue", ValueType::Number) \
-    M(ObjectStorageQueueMovedObjects, "Number of objects moved as part of after_processing = move", ValueType::Number) \
     M(ObjectStorageQueueRemovedObjects, "Number of objects removed as part of after_processing = delete", ValueType::Number) \
-    M(ObjectStorageQueueTaggedObjects, "Number of objects tagged as part of after_processing = tag", ValueType::Number) \
     M(ObjectStorageQueueInsertIterations, "Number of insert iterations", ValueType::Number) \
     M(ObjectStorageQueueCommitRequests, "Number of keeper requests to commit files as either failed or processed", ValueType::Number) \
     M(ObjectStorageQueueSuccessfulCommits, "Number of successful keeper commits", ValueType::Number) \
@@ -1250,11 +1214,6 @@ The server successfully detected this situation and will download merged part fr
     \
     M(JemallocFailedAllocationSampleTracking, "Total number of times tracking of jemalloc allocation sample failed", ValueType::Number) \
     M(JemallocFailedDeallocationSampleTracking, "Total number of times tracking of jemalloc deallocation sample failed", ValueType::Number) \
-    \
-    M(LoadedStatisticsMicroseconds, "Elapsed time of loading statistics from parts", ValueType::Microseconds) \
-    \
-    M(S3CachedCredentialsProvidersReused, "Total number of reused credentials provider from the cache", ValueType::Number) \
-    M(S3CachedCredentialsProvidersAdded, "Total number of newly added credentials providers to the cache", ValueType::Number) \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS

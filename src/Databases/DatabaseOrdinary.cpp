@@ -13,7 +13,7 @@
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/TablesLoader.h>
-#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -37,7 +37,6 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
-#include <Common/AsyncLoader.h>
 #include <Interpreters/TransactionLog.h>
 
 #include <boost/algorithm/string/replace.hpp>
@@ -89,7 +88,7 @@ DatabaseOrdinary::DatabaseOrdinary(
     : DatabaseOrdinary(
           name_,
           metadata_path_,
-          DatabaseCatalog::getDataDirPath(name_) / "",
+          std::filesystem::path("data") / escapeForFileName(name_) / "",
           "DatabaseOrdinary (" + name_ + ")",
           context_,
           database_metadata_disk_settings_)

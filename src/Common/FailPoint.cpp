@@ -1,5 +1,6 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/Config/ConfigHelper.h>
 
 #include <boost/core/noncopyable.hpp>
 #include <chrono>
@@ -65,7 +66,6 @@ static struct InitFiu
     ONCE(s3_read_buffer_throw_expired_token) \
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
     ONCE(object_storage_queue_fail_commit_once) \
-    ONCE(distributed_cache_fail_continue_request) \
     REGULAR(distributed_cache_fail_connect_non_retriable) \
     REGULAR(distributed_cache_fail_connect_retriable) \
     REGULAR(object_storage_queue_fail_commit) \
@@ -120,11 +120,7 @@ static struct InitFiu
     ONCE(smt_commit_exception_before_op) \
     ONCE(disk_object_storage_fail_commit_metadata_transaction) \
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
-    ONCE(database_replicated_drop_after_removing_keeper_failed) \
-    PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
-    PAUSEABLE_ONCE(rmt_mutate_task_pause_in_prepare) \
-    PAUSEABLE_ONCE(rmt_merge_selecting_task_pause_when_scheduled) \
-    ONCE(parallel_replicas_reading_response_timeout)
+    ONCE(database_replicated_drop_after_removing_keeper_failed)
 
 
 namespace FailPoints
@@ -251,6 +247,20 @@ void FailPointInjection::wait(const String & fail_point_name)
     lock.unlock();
     auto ptr = iter->second;
     ptr->wait();
+}
+
+void FailPointInjection::enableFromGlobalConfig(const Poco::Util::AbstractConfiguration & config)
+{
+    String root_key = "fail_points_active";
+
+    Poco::Util::AbstractConfiguration::Keys fail_point_names;
+    config.keys(root_key, fail_point_names);
+
+    for (const auto & fail_point_name : fail_point_names)
+    {
+        if (ConfigHelper::getBool(config, root_key + "." + fail_point_name))
+            FailPointInjection::enableFailPoint(fail_point_name);
+    }
 }
 
 #else // USE_LIBFIU

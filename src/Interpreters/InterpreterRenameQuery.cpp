@@ -37,7 +37,7 @@ BlockIO InterpreterRenameQuery::execute()
 {
     const auto & rename = query_ptr->as<const ASTRenameQuery &>();
 
-    if (!rename.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
+    if (!rename.cluster.empty())
     {
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(rename.database ? RenameType::RenameDatabase : RenameType::RenameTable);

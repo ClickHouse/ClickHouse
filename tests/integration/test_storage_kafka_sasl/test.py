@@ -5,11 +5,8 @@ from helpers.config_cluster import kafka_sasl_user, kafka_sasl_pass
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/sasl_settings.xml"],
-    with_kafka_sasl=True,
-    stay_alive=True,
+    with_kafka_sasl=True
 )
-
 
 def get_kafka_producer(port):
     errors = []
@@ -75,57 +72,3 @@ def test_kafka_sasl(kafka_cluster):
     producer.flush()
 
     assert_eq_with_retry(instance, "SELECT value FROM test.messages", "test123")
-
-
-def test_kafka_sasl_settings_precedence(kafka_cluster):
-    # Test that SASL related settings in create query override those in config
-    config_with_wrong_passwords = """
-    <clickhouse>
-    <kafka>
-        <security_protocol>plaintext</security_protocol>
-        <sasl_mechanism>SCRAM-SHA-256</sasl_mechanism>
-        <sasl_username>wrong_user</sasl_username>
-        <sasl_password>wrong_password</sasl_password>
-        <consumer>
-            <security_protocol>ssl</security_protocol>
-            <sasl_mechanism>SCRAM-SHA-512</sasl_mechanism>
-            <sasl_username>wrong_user_2</sasl_username>
-            <sasl_password>wrong_password_2</sasl_password>
-        </consumer>
-    </kafka>
-</clickhouse>
-"""
-    config_file_path = "/etc/clickhouse-server/config.d/sasl_settings.xml"
-
-    try:
-        with instance.with_replace_config(config_file_path, config_with_wrong_passwords):
-            instance.restart_clickhouse()
-            test_kafka_sasl(kafka_cluster)
-    finally:
-        instance.restart_clickhouse()
-
-
-# ClickHouse may crash when the table is created with an option to put
-# broken messages to a dead letter queue, while the table
-# system.dead_letter_queue is not configured.
-def test_dead_letter_segfault(kafka_cluster):
-    res = instance.query_and_get_error(
-        f"""
-        DROP DATABASE IF EXISTS segfault SYNC;
-        CREATE DATABASE segfault;
-
-        CREATE TABLE segfault.kafka_sasl (key int, value String)
-            ENGINE = Kafka
-            SETTINGS kafka_broker_list = 'kafka_sasl:19092',
-                     kafka_security_protocol = 'sasl_plaintext',
-                     kafka_sasl_mechanism = 'PLAIN',
-                     kafka_sasl_username = '{kafka_sasl_user}',
-                     kafka_sasl_password = '{kafka_sasl_pass}',
-                     kafka_topic_list = 'topic1',
-                     kafka_group_name = 'group1',
-                     kafka_format = 'JSONEachRow',
-                     kafka_handle_error_mode = 'dead_letter_queue';
-        """
-    )
-
-    assert "The table system.dead_letter_queue is not configured on the server" in res
