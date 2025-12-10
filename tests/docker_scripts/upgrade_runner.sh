@@ -382,10 +382,5 @@ rowNumberInAllBlocks()
 LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo -e "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
 
-# But OOMs in stress test are allowed
-if rg 'OOM in dmesg|Signal 9' /test_output/check_status.tsv
-then
-    sed -i 's/failure/success/' /test_output/check_status.tsv
-fi
 
 collect_core_dumps
