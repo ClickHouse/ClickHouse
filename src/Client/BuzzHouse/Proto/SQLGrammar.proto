@@ -3009,9 +3009,10 @@ message CreateDatabase {
 }
 
 message CreateFunction {
-    required Function function = 1;
-    optional Cluster cluster = 2;
-    required LambdaExpr lexpr = 3;
+    required CreateReplaceOption create_opt = 1;
+    required Function function = 2;
+    optional Cluster cluster = 3;
+    required LambdaExpr lexpr = 4;
 }
 
 message DecimalN {

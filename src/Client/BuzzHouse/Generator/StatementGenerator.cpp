@@ -382,10 +382,13 @@ void StatementGenerator::generateSettingList(RandomGenerator & rg, const std::un
 void StatementGenerator::generateNextCreateFunction(RandomGenerator & rg, CreateFunction * cf)
 {
     SQLFunction next;
-    const uint32_t fname = this->function_counter++;
+    const bool replace = !functions.empty() && rg.nextMediumNumber() < 16;
     const bool prev_enforce_final = this->enforce_final;
     const bool prev_allow_not_deterministic = this->allow_not_deterministic;
+    const uint32_t fname = replace ? rg.pickRandomly(this->functions) : this->function_counter++;
 
+    /// REPLACE FUNCTION syntax is not yet supported
+    cf->set_create_opt(replace ? CreateReplaceOption::CreateOrReplace : CreateReplaceOption::Create);
     next.fname = fname;
     next.nargs = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, fc.max_columns));
     next.is_deterministic = rg.nextBool();
@@ -5430,6 +5433,10 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
 
         if (!ssq.explain().is_explain() && success)
         {
+            if (query.create_function().create_opt() != CreateReplaceOption::Create)
+            {
+                this->functions.erase(fname);
+            }
             this->functions[fname] = std::move(this->staged_functions[fname]);
         }
         this->staged_functions.erase(fname);
