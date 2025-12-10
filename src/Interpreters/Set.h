@@ -199,6 +199,25 @@ using Sets = std::vector<SetPtr>;
 class IFunction;
 using FunctionPtr = std::shared_ptr<IFunction>;
 
+/** Class that represents single value with possible infinities.
+  * Single field is stored in column for more optimal inplace comparisons with other regular columns.
+  * Extracting fields from columns and further their comparison is suboptimal and requires extra copying.
+  */
+struct FieldValue
+{
+    explicit FieldValue(MutableColumnPtr && column_) : column(std::move(column_)) {}
+    void update(const Field & x);
+
+    bool isNormal() const { return !value.isPositiveInfinity() && !value.isNegativeInfinity(); }
+    bool isPositiveInfinity() const { return value.isPositiveInfinity(); }
+    bool isNegativeInfinity() const { return value.isNegativeInfinity(); }
+
+    Field value; // Null, -Inf, +Inf
+
+    // If value is Null, uses the actual value in column
+    MutableColumnPtr column;
+};
+
 
 /// Class for checkInRange function.
 class MergeTreeSetIndex
@@ -227,25 +246,6 @@ public:
     const std::vector<KeyTuplePositionMapping> & getIndexesMapping() const { return indexes_mapping; }
 
 private:
-    /** Class that represents single value with possible infinities.
-      * Single field is stored in column for more optimal inplace comparisons with other regular columns.
-      * Extracting fields from columns and further their comparison is suboptimal and requires extra copying.
-      */
-    struct FieldValue
-    {
-        explicit FieldValue(MutableColumnPtr && column_) : column(std::move(column_)) {}
-        void update(const Field & x);
-
-        bool isNormal() const { return !value.isPositiveInfinity() && !value.isNegativeInfinity(); }
-        bool isPositiveInfinity() const { return value.isPositiveInfinity(); }
-        bool isNegativeInfinity() const { return value.isNegativeInfinity(); }
-
-        Field value; // Null, -Inf, +Inf
-
-        // If value is Null, uses the actual value in column
-        MutableColumnPtr column;
-    };
-
     // If all arguments in tuple are key columns, we can optimize NOT IN when there is only one element.
     bool has_all_keys;
     Columns ordered_set;

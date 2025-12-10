@@ -6,7 +6,6 @@
 #include <Interpreters/Context.h>
 #include <Common/ErrorCodes.h>
 #include <Common/ProfileEventsScope.h>
-#include <Common/setThreadName.h>
 #include <Core/Settings.h>
 
 namespace DB
@@ -76,11 +75,6 @@ void MutatePlainMergeTreeTask::prepare()
             time(nullptr), task_context, merge_mutate_entry->txn, merge_mutate_entry->tagger->reserved_space, table_lock_holder);
 }
 
-void MutatePlainMergeTreeTask::finish()
-{
-    if (merge_mutate_entry)
-        merge_mutate_entry->finalize();
-}
 
 bool MutatePlainMergeTreeTask::executeStep()
 {
@@ -90,7 +84,7 @@ bool MutatePlainMergeTreeTask::executeStep()
     /// Make out memory tracker a parent of current thread memory tracker
     std::optional<ThreadGroupSwitcher> switcher;
     if (merge_list_entry)
-        switcher.emplace((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
+        switcher.emplace((*merge_list_entry)->thread_group, "", /*allow_existing_group*/ true);
 
     switch (state)
     {
@@ -143,7 +137,6 @@ bool MutatePlainMergeTreeTask::executeStep()
         case State::NEED_FINISH:
         {
             // Nothing to do
-            finish();
             state = State::SUCCESS;
             return false;
         }
@@ -163,9 +156,6 @@ void MutatePlainMergeTreeTask::cancel() noexcept
 
     if (new_part)
         new_part->removeIfNeeded();
-
-    if (merge_mutate_entry)
-        merge_mutate_entry->finalize();
 }
 
 

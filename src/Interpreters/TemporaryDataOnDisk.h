@@ -10,6 +10,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 
 #include <Disks/IVolume.h>
+#include <Disks/TemporaryFileOnDisk.h>
 
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
@@ -54,7 +55,7 @@ struct TemporaryDataOnDiskSettings
 };
 
 /// Creates temporary files located on specified resource (disk, fs_cache, etc.)
-using TemporaryFileProvider = std::function<std::unique_ptr<TemporaryFileHolder>(const TemporaryDataOnDiskSettings &, size_t)>;
+using TemporaryFileProvider = std::function<std::unique_ptr<TemporaryFileHolder>(size_t)>;
 TemporaryFileProvider createTemporaryFileProvider(VolumePtr volume);
 TemporaryFileProvider createTemporaryFileProvider(FileCache * file_cache);
 
@@ -94,7 +95,7 @@ public:
         , settings(std::move(settings_))
     {}
 
-    TemporaryDataOnDiskScopePtr childScope(CurrentMetrics::Metric current_metric, UInt64 buffer_size_ = 0);
+    TemporaryDataOnDiskScopePtr childScope(CurrentMetrics::Metric current_metric);
 
     const TemporaryDataOnDiskSettings & getSettings() const { return settings; }
 protected:
@@ -161,7 +162,7 @@ protected:
 class TemporaryFileHolder
 {
 public:
-    explicit TemporaryFileHolder(CurrentMetrics::Metric current_metric_ = CurrentMetrics::TemporaryFilesUnknown);
+    TemporaryFileHolder();
 
     virtual std::unique_ptr<WriteBuffer> write() = 0;
     virtual std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size) const = 0;
@@ -173,9 +174,6 @@ public:
     virtual String describeFilePath() const = 0;
 
     virtual ~TemporaryFileHolder() = default;
-
-private:
-    CurrentMetrics::Increment metric_increment;
 };
 
 /// Reads raw data from temporary file
