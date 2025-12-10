@@ -2441,13 +2441,18 @@ deltaLake(
             ).strip()
         )
 
-    def check_data(expected, version):
-        assert (
-            expected
-            == node.query(
-                f"SELECT * FROM {delta_function} ORDER BY all SETTINGS delta_lake_snapshot_version = {version}"
-            ).strip()
-        )
+    def check_data(expected, version, table=None):
+        if table is None:
+            table = delta_function
+        if version is not None:
+            assert (
+                expected
+                == node.query(
+                    f"SELECT * FROM {table} ORDER BY all SETTINGS delta_lake_snapshot_version = {version}"
+                ).strip()
+            )
+        else:
+            assert expected == node.query(f"SELECT * FROM {table} ORDER BY all").strip()
 
     def append_data(df):
         df.write.option("mergeSchema", "true").mode("append").format(
@@ -2500,6 +2505,31 @@ deltaLake(
             f"SELECT naam FROM {delta_function} WHERE age = 51",
             settings={"delta_lake_snapshot_version": 2},
         ).strip()
+    )
+    node.query(
+        f"""
+CREATE TABLE {table_name} (naam String, age Int32) ENGINE = DeltaLake(
+        'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
+        '{minio_access_key}',
+        '{minio_secret_key}')
+    """
+    )
+    df = spark.createDataFrame([("cap", 91), ("cip", 92), ("cop", 93)]).toDF(
+        "naam", "age"
+    )
+    append_data(df)
+    check_data(
+        "aelin\t51\nalice\t47\nanora\t23\nbill\t33\nbob\t12\nbober\t49\ncap\t91\ncip\t92\ncop\t93",
+        3,
+        table_name,
+    )
+    check_data(
+        "aelin\t51\nalice\t47\nanora\t23\nbill\t33\nbob\t12\nbober\t49", 2, table_name
+    )
+    check_data(
+        "aelin\t51\nalice\t47\nanora\t23\nbill\t33\nbob\t12\nbober\t49\ncap\t91\ncip\t92\ncop\t93",
+        None,
+        table_name,
     )
 
 
@@ -3038,9 +3068,8 @@ def test_writes(started_cluster):
     instance_disabled_kernel.query(
         f"CREATE TABLE {table_name} (id Int32, name String) ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
     )
-    instance.query(
-        f"INSERT INTO {table_name} SELECT number, toString(number) FROM numbers(10)"
-    )
+
+    instance.query(f"INSERT INTO TABLE FUNCTION deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', settings allow_experimental_delta_kernel_rs=1) SELECT number as name, toString(number) as id from numbers(10)")
 
     s3_objects = list(minio_client.list_objects(bucket, result_file, recursive=True))
     file_name = None
@@ -3817,3 +3846,44 @@ def test_system_table(started_cluster, use_delta_kernel):
         assert "commitInfo" in content
         assert ".parquet" in content
     instance.query("TRUNCATE TABLE system.delta_lake_metadata_log")
+
+
+def test_truncate(started_cluster):
+    instance = started_cluster.instances["node1"]
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    table_name = randomize_table_name("test_truncate")
+    result_file = f"{table_name}_data"
+
+    schema = pa.schema([("id", pa.int32(), False), ("name", pa.string(), False)])
+    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
+    write_deltalake(
+        f"s3://root/{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        storage_options=get_storage_options(started_cluster),
+        mode="overwrite",
+    )
+
+    instance.query(
+        f"CREATE TABLE {table_name} (id Int32, name String) ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+    )
+    instance.query(
+        f"INSERT INTO {table_name} SELECT number as name, toString(number) as id from numbers(10)"
+    )
+
+    assert 10 == int(instance.query(f"SELECT count() FROM {table_name}"))
+
+    s3_objects = list(minio_client.list_objects(bucket, result_file, recursive=True))
+
+    def count_files():
+        count = 0
+        for obj in s3_objects:
+            print(f"File: {obj.object_name}")
+            count = count + 1
+        return count
+
+    assert count_files() == 3
+    assert "not supported" in instance.query_and_get_error(
+        f"TRUNCATE TABLE {table_name}"
+    )
+    assert count_files() == 3
