@@ -464,7 +464,7 @@ def main():
     if not info.is_local_run:
         print("Dumping dmesg")
         Shell.check("dmesg -T > dmesg.log", verbose=True, strict=True)
-        failed_tests_files.append("dmesg.log")
+        files.append("./ci/tmp/dmesg.log")
         with open("dmesg.log", "rb") as dmesg:
             dmesg = dmesg.read()
             if (
