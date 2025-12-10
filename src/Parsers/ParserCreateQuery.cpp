@@ -286,24 +286,51 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ParserProjectionSelectQuery query_p;
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
+    ParserKeyword s_index(Keyword::INDEX);
+    ParserKeyword s_type(Keyword::TYPE);
+    ParserExpressionWithOptionalArguments type_p;
+    ParserExpression expression_p;
     ASTPtr name;
     ASTPtr query;
+    ASTPtr index;
+    ASTPtr type;
 
     if (!name_p.parse(pos, name, expected))
         return false;
 
-    if (!s_lparen.ignore(pos, expected))
-        return false;
+    if (s_lparen.ignore(pos, expected))
+    {
+        if (!query_p.parse(pos, query, expected))
+            return false;
 
-    if (!query_p.parse(pos, query, expected))
-        return false;
+        if (!s_rparen.ignore(pos, expected))
+            return false;
+    }
+    else if (s_index.ignore(pos, expected))
+    {
+        if (!expression_p.parse(pos, index, expected))
+            return false;
 
-    if (!s_rparen.ignore(pos, expected))
+        if (!s_type.ignore(pos, expected))
+            return false;
+
+        if (!type_p.parse(pos, type, expected))
+            return false;
+    }
+    else
+    {
         return false;
+    }
 
     auto projection = std::make_shared<ASTProjectionDeclaration>();
     projection->name = name->as<ASTIdentifier &>().name();
-    projection->set(projection->query, query);
+    if (query)
+        projection->set(projection->query, query);
+    if (index)
+        projection->set(projection->index, index);
+    if (type)
+        projection->set(projection->type, type);
+
     node = projection;
 
     return true;
