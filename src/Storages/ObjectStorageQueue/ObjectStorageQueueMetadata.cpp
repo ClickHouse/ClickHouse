@@ -672,10 +672,18 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
             bool registry_exists = zk_client->tryGet(registry_path, registry_str, &stat);
             if (registry_exists)
             {
-                created_new_metadata = false;
-
                 Strings registered;
                 splitInto<','>(registered, registry_str);
+
+                if (zk_retries.isRetry() && registered.size() == 1 && (Info::deserialize(registered[0]) == self))
+                {
+                    LOG_TRACE(log, "Table {} is already registered after retry", self.table_id);
+                    created_new_metadata = true;
+                    code = Coordination::Error::ZOK;
+                    return;
+                }
+
+                created_new_metadata = false;
 
                 for (const auto & elem : registered)
                 {
@@ -685,7 +693,7 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
                     auto info = Info::deserialize(elem);
                     if (info == self)
                     {
-                        LOG_TRACE(log, "Table {} is already registered", self.table_id);
+                        LOG_TRACE(log, "Table {} is already registered ({})", self.table_id, registered.size());
                         code = Coordination::Error::ZOK;
                         return;
                     }
@@ -808,9 +816,15 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
             bool node_exists = zk_client->tryGet(registry_path, registry_str, &stat);
             if (!node_exists)
             {
-                LOG_WARNING(log, "Cannot unregister: registry does not exist");
-                if (!is_retry)
+                if (is_retry)
+                {
+                    LOG_TRACE(log, "Table is unregistered after retry");
+                }
+                else
+                {
+                    LOG_WARNING(log, "Cannot unregister: registry does not exist");
                     chassert(false);
+                }
                 return;
             }
 
