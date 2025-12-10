@@ -172,7 +172,7 @@ DataTypePtr ColumnArray::getValueNameAndTypeImpl(WriteBufferFromOwnString & name
     return std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types));
 }
 
-std::string_view ColumnArray::getDataAt(size_t n) const
+StringRef ColumnArray::getDataAt(size_t n) const
 {
     assert(n < size());
 
@@ -186,12 +186,12 @@ std::string_view ColumnArray::getDataAt(size_t n) const
 
     size_t array_size = sizeAt(n);
     if (array_size == 0)
-        return {nullptr, 0};
+        return StringRef(nullptr, 0);
 
     size_t offset_of_first_elem = offsetAt(n);
-    auto first = getData().getDataAt(offset_of_first_elem);
+    StringRef first = getData().getDataAt(offset_of_first_elem);
 
-    return {first.data(), first.size() * array_size};
+    return StringRef(first.data, first.size * array_size);
 }
 
 
@@ -225,7 +225,7 @@ void ColumnArray::insertData(const char * pos, size_t length)
 }
 
 
-std::string_view
+StringRef
 ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
     size_t array_size = sizeAt(n);
@@ -234,12 +234,13 @@ ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, char const *& begi
     char * pos = arena.allocContinue(sizeof(array_size), begin);
     memcpy(pos, &array_size, sizeof(array_size));
 
-    std::string_view res(pos, sizeof(array_size));
+    StringRef res(pos, sizeof(array_size));
 
     for (size_t i = 0; i < array_size; ++i)
     {
         auto value_ref = getData().serializeValueIntoArena(offset + i, arena, begin, settings);
-        res = std::string_view{value_ref.data() - res.size(), res.size() + value_ref.size()};
+        res.data = value_ref.data - res.size;
+        res.size += value_ref.size;
     }
 
     return res;

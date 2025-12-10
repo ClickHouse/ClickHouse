@@ -189,8 +189,6 @@ DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOutputFormat, FormatSettings::DateTimeO
 
 DECLARE_SETTING_ENUM_WITH_RENAME(IntervalOutputFormat, FormatSettings::IntervalOutputFormat)
 
-DECLARE_SETTING_ENUM_WITH_RENAME(AggregateFunctionInputFormat, FormatSettings::AggregateFunctionInputFormat)
-
 DECLARE_SETTING_ENUM_WITH_RENAME(ParquetVersion, FormatSettings::ParquetVersion)
 
 DECLARE_SETTING_ENUM(LogsLevel)
@@ -349,16 +347,6 @@ enum class DeduplicateMergeProjectionMode : uint8_t
 
 DECLARE_SETTING_ENUM(DeduplicateMergeProjectionMode)
 
-enum class AlterColumnSecondaryIndexMode : uint8_t
-{
-    THROW,
-    DROP,
-    REBUILD,
-    COMPATIBILITY,
-};
-
-DECLARE_SETTING_ENUM(AlterColumnSecondaryIndexMode)
-
 DECLARE_SETTING_ENUM(ParallelReplicasMode)
 
 DECLARE_SETTING_ENUM(LocalFSReadMethod)
@@ -375,8 +363,6 @@ enum class ObjectStorageQueueAction : uint8_t
 {
     KEEP,
     DELETE,
-    MOVE,
-    TAG,
 };
 
 DECLARE_SETTING_ENUM(ObjectStorageQueueAction)
@@ -453,14 +439,6 @@ enum class MergeTreeStringSerializationVersion : uint8_t
 };
 
 DECLARE_SETTING_ENUM(MergeTreeStringSerializationVersion)
-
-enum class MergeTreeNullableSerializationVersion : uint8_t
-{
-    BASIC = 0,
-    ALLOW_SPARSE = 1,
-};
-
-DECLARE_SETTING_ENUM(MergeTreeNullableSerializationVersion)
 
 enum class MergeTreeObjectSerializationVersion : uint8_t
 {

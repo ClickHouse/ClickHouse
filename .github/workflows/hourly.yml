@@ -3,7 +3,7 @@
 name: Hourly
 on:
   schedule:
-    - cron: 0 */1 * * 1-5
+    - cron: 0 */3 * * 1-5
   workflow_dispatch:
 
 concurrency:

@@ -11,25 +11,6 @@
 namespace DB
 {
 
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-namespace
-{
-void checkHeaders(const QueryPlan::Node & node, const std::string_view context_description, const size_t check_depth)
-{
-    if (check_depth == 0)
-        return;
-
-    const auto & parent_headers = node.step->getInputHeaders();
-    for (auto child_id = 0U; child_id < node.children.size(); ++child_id)
-    {
-        const auto & child_node = *node.children[child_id];
-        assertBlocksHaveEqualStructure(*parent_headers[child_id], *child_node.step->getOutputHeader(), context_description);
-        checkHeaders(child_node, context_description, check_depth - 1);
-    }
-}
-}
-#endif
-
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
@@ -71,10 +52,6 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.vector_search_filter_strategy,
         optimization_settings.use_index_for_in_with_subqueries_max_values,
         optimization_settings.network_transfer_limits,
-        optimization_settings.use_skip_indexes_for_top_k,
-        optimization_settings.use_top_k_dynamic_filtering,
-        optimization_settings.max_limit_for_top_k_optimization,
-        optimization_settings.use_skip_indexes_on_data_read,
     };
 
     while (!stack.empty())
@@ -125,12 +102,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
             /// Try to apply optimization.
             auto update_depth = optimization.apply(frame.node, nodes, extra_settings);
             if (update_depth)
-            {
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-                checkHeaders(*frame.node, String("after optimization ") + optimization.name, update_depth);
-#endif
                 ++total_applied_optimizations;
-            }
             max_update_depth = std::max<size_t>(max_update_depth, update_depth);
         }
 
@@ -200,10 +172,6 @@ void optimizeTreeSecondPass(
         optimization_settings.vector_search_filter_strategy,
         optimization_settings.use_index_for_in_with_subqueries_max_values,
         optimization_settings.network_transfer_limits,
-        optimization_settings.use_skip_indexes_for_top_k,
-        optimization_settings.use_top_k_dynamic_filtering,
-        optimization_settings.max_limit_for_top_k_optimization,
-        optimization_settings.use_skip_indexes_on_data_read,
     };
 
     Stack stack;
@@ -293,10 +261,10 @@ void optimizeTreeSecondPass(
         [&](auto & frame_node)
         {
             if (optimization_settings.read_in_order)
-                optimizeReadInOrder(frame_node, nodes, optimization_settings);
+                optimizeReadInOrder(frame_node, nodes);
 
             if (optimization_settings.distinct_in_order)
-                optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
+                optimizeDistinctInOrder(frame_node, nodes);
         });
 
     stack.push_back({.node = &root});
@@ -325,7 +293,7 @@ void optimizeTreeSecondPass(
                 }
 
                 if (optimization_settings.aggregation_in_order)
-                    optimizeAggregationInOrder(*frame.node, nodes, optimization_settings);
+                    optimizeAggregationInOrder(*frame.node, nodes);
             }
 
             /// Traverse all children first.

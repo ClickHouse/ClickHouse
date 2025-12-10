@@ -6,7 +6,6 @@
 #include <Interpreters/TransposedMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
-#include <Interpreters/BackgroundSchedulePoolLog.h>
 #include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryThreadLog.h>

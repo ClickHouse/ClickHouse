@@ -423,10 +423,8 @@ clickhouse-client
 #### Configuration file {#ai-sql-generation-configuration-file}
 
 For more control over AI settings, configure them in your ClickHouse Client configuration file located at:
-- `$XDG_CONFIG_HOME/clickhouse/config.xml` (or `~/.config/clickhouse/config.xml` if `XDG_CONFIG_HOME` is not set) (XML format)
-- `$XDG_CONFIG_HOME/clickhouse/config.yaml` (or `~/.config/clickhouse/config.yaml` if `XDG_CONFIG_HOME` is not set) (YAML format)
-- `~/.clickhouse-client/config.xml` (XML format, legacy location)
-- `~/.clickhouse-client/config.yaml` (YAML format, legacy location)
+- `~/.clickhouse-client/config.xml` (XML format)
+- `~/.clickhouse-client/config.yaml` (YAML format)
 - Or specify a custom location with `--config-file`
 
 <Tabs>
@@ -774,7 +772,6 @@ ClickHouse Client uses the first existing file of the following:
 
 - A file that is defined with the `-c [ -C, --config, --config-file ]` parameter.
 - `./clickhouse-client.[xml|yaml|yml]`
-- `$XDG_CONFIG_HOME/clickhouse/config.[xml|yaml|yml]` (or `~/.config/clickhouse/config.[xml|yaml|yml]` if `XDG_CONFIG_HOME` is not set)
 - `~/.clickhouse-client/config.[xml|yaml|yml]`
 - `/etc/clickhouse-client/config.[xml|yaml|yml]`
 
@@ -837,7 +834,6 @@ All command-line options can be specified directly on the command line or as def
 | `-h [ --host ] <host>`           | The hostname of the ClickHouse server to connect to. Can either be a hostname or an IPv4 or IPv6 address. Multiple hosts can be passed via multiple arguments.                                                                                                                                                                    | `localhost`                                                                                                      |
 | `--jwt <value>`                  | Use JSON Web Token (JWT) for authentication. <br/><br/>Server JWT authorization is only available in ClickHouse Cloud.                                                                                                                                                                                                            | -                                                                                                                |
 | `--no-warnings`                  | Disable showing warnings from `system.warnings` when the client connects to the server.                                                                                                                                                                                                                                            | -                                                                                                                |
-| `--no-server-client-version-message`                  | Suppress server-client version mismatch message when the client connects to the server.                                                                                                                                                                                                                                            | -                                                                                                                |
 | `--password <password>`          | The password of the database user. You can also specify the password for a connection in the configuration file. If you do not specify the password, the client will ask for it.                                                                                                                                                   | -                                                                                                                |
 | `--port <port>`                  | The port the server is accepting connections on. The default ports are 9440 (TLS) and 9000 (no TLS). <br/><br/>Note: The client uses the native protocol and not HTTP(S).                                                                                                                                                         | `9440` if `--secure` is specified, `9000` otherwise. Always defaults to `9440` if the hostname ends in `.clickhouse.cloud`. |
 | `-s [ --secure ]`                | Whether to use TLS. <br/><br/>Enabled automatically when connecting to port 9440 (the default secure port) or ClickHouse Cloud. <br/><br/>You might need to configure your CA certificates in the [configuration file](#configuration_files). The available configuration settings are the same as for [server-side TLS configuration](../operations/server-configuration-parameters/settings.md#openssl). | Auto-enabled when connecting to port 9440 or ClickHouse Cloud                                                   |
