@@ -188,7 +188,7 @@ The following operations with [projections](/engines/table-engines/mergetree-fam
 
 ## ADD PROJECTION {#add-projection}
 
-`ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY] ) [OPTIONS ( option_name1 = option_value1, option_name2 = option_value2, ...)]` - Adds projection description to tables metadata.
+`ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]` - Adds projection description to tables metadata.
 
 ### `WITH SETTINGS` Clause {#with-settings}
 
