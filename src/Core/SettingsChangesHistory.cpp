@@ -65,6 +65,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_inverse_dictionary_lookup", false, true, "New setting"},
             {"type_json_skip_invalid_typed_paths", false, false, "Allow skipping typed paths that fail type coercion in JSON columns"},
             {"s3_path_filter_limit", 0, 1000, "New setting"},
+            {"format_capn_proto_max_message_size", 0, 1_GiB, "Prevent allocating large amount of memory"}
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
