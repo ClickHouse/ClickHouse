@@ -517,6 +517,7 @@ class ClickHouseCluster:
         enable_thread_fuzzer=False,
         thread_fuzzer_settings={},
         azurite_default_port=0,
+        server_binaries=[],
     ):
         for param in list(os.environ.keys()):
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
@@ -908,6 +909,8 @@ class ClickHouseCluster:
             )
 
         self.port_pool = PortPoolManager()
+        # For La Casa Del Dolor to run upgrades
+        self.server_binaries = server_binaries
 
     def compose_cmd(self, *args: str) -> List[str]:
         return ["docker", "compose", "--project-name", self.project_name, *args]
@@ -2006,7 +2009,7 @@ class ClickHouseCluster:
                 )
             with_remote_database_disk = False
 
-        if with_remote_database_disk is None:
+        if not with_dolor and with_remote_database_disk is None:
             with_remote_database_disk = int(os.getenv("CLICKHOUSE_USE_DATABASE_DISK"))
 
         if with_remote_database_disk:
@@ -3822,6 +3825,41 @@ class ClickHouseCluster:
             run_and_check(clickhouse_start_cmd)
             logging.debug("ClickHouse instance created")
 
+            # Copy binaries and start ClickHouse for dolor instances
+            for instance in self.instances.values():
+                if instance.with_dolor:
+                    i = 0
+                    for val in self.server_binaries:
+                        subprocess.run(
+                            [
+                                "docker",
+                                "cp",
+                                val,
+                                f"{instance.docker_id}:/usr/bin/clickhouse{i}",
+                            ],
+                            check=True,
+                        )
+                        if i == 0:
+                            # The first binary will be used first
+                            instance.exec_in_container(
+                                [
+                                    "ln",
+                                    "-sf",
+                                    f"/usr/bin/clickhouse{i}",
+                                    "/usr/bin/clickhouse",
+                                ],
+                                user="root",
+                            )
+                        i += 1
+                    self.exec_in_container(
+                        instance.docker_id, ["chmod", "+777", "/usr/bin/clickhouse"]
+                    )
+                    instance.exec_in_container(
+                        ["bash", "-c", instance.clickhouse_start_command],
+                        user=str(os.getuid()),
+                        detach=True,
+                    )
+
             start_timeout = 300.0  # seconds
             for instance in self.instances.values():
                 instance.docker_client = self.docker_client
@@ -4337,7 +4375,11 @@ class ClickHouseInstance:
             self.krb5_conf = ""
 
         # Use a common path for data lakes on the filesystem
-        self.lakehouses_path = "- /var/lib/clickhouse/user_files/lakehouses:/var/lib/clickhouse/user_files/lakehouses" if with_dolor else ""
+        self.lakehouses_path = (
+            "- /var/lib/clickhouse/user_files/lakehouses:/var/lib/clickhouse/user_files/lakehouses"
+            if with_dolor
+            else ""
+        )
 
         self.docker_client = None
         self.ip_address = None
@@ -5671,7 +5713,9 @@ class ClickHouseInstance:
                 net_aliases = "aliases:"
                 net_alias1 = "- " + self.hostname
 
-        if not self.with_installed_binary:
+        if self.with_dolor:
+            binary_volume = ""
+        elif not self.with_installed_binary:
             binary_volume = "- " + self.server_bin_path + ":/usr/bin/clickhouse"
         else:
             binary_volume = "- " + self.server_bin_path + ":/usr/share/clickhouse_fresh"

@@ -66,7 +66,7 @@ namespace ProfileEvents
         std::unique_ptr<Counter[]> counters_holder;
         /// Used to propagate increments
         std::atomic<Counters *> parent = {};
-        bool trace_profile_events = false;
+        std::atomic_bool trace_profile_events = false;
         Counter prev_cpu_wait_microseconds = 0;
         Counter prev_cpu_virtual_time_microseconds = 0;
 
@@ -136,7 +136,7 @@ namespace ProfileEvents
 
         void setTraceProfileEvents(bool value)
         {
-            trace_profile_events = value;
+            trace_profile_events.store(value, std::memory_order_relaxed);
         }
 
         /// Set all counters to zero
