@@ -172,7 +172,7 @@ SYSTEM SYNC REPLICA t_repl2;
 -- check projection part exists on both replicas
 SELECT table, name
 FROM system.projection_parts
-WHERE table IN ('t_repl', 't_repl2')
+WHERE database = currentDatabase() AND table IN ('t_repl', 't_repl2')
 ORDER BY ALL;
 
 DETACH TABLE t_repl2 SYNC;
