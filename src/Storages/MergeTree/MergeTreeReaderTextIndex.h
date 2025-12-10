@@ -4,8 +4,8 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/TextIndexCache.h>
-#include <roaring.hh>
 #include <absl/container/flat_hash_set.h>
+#include <roaring/roaring.hh>
 
 namespace DB
 {
