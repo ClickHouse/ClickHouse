@@ -1,6 +1,7 @@
 -- Tags: long, no-tsan, no-asan, no-msan, no-debug
 
 SET max_threads=0;
+SET max_insert_threads=0;
 SET max_rows_to_read = '50M';
 SET join_algorithm = 'partial_merge';
 SET query_plan_join_swap_table = 0;
