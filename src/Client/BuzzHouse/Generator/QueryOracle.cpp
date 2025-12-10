@@ -301,6 +301,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
             {
                 trunc->mutable_cluster()->set_cluster(cluster.value());
             }
+            trunc->set_sync(true);
             /// Import data again
             generateImportQuery(rg, gen, t2, next1, next3);
 
@@ -351,11 +352,12 @@ void QueryOracle::dumpOracleIntermediateSteps(
         case DumpOracleStrategy::BACKUP_RESTORE: {
             SQLQuery next1;
             SQLQuery next2;
+            SQLQuery next3;
             std::optional<String> cluster;
             BackupRestore * bac = next1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_backup_restore();
-            BackupRestore * res = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_backup_restore();
-            SettingValues * bac_vals = nullptr;
-            SettingValues * res_vals = nullptr;
+            BackupRestore * res = next3.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_backup_restore();
+            SettingValues * bsett = nullptr;
+            SettingValues * rsett = nullptr;
             BackupRestoreObject * baco = bac->mutable_backup_element()->mutable_bobject();
             const String dname = t.getDatabaseName();
             const String tname = t.getTableName();
@@ -386,26 +388,42 @@ void QueryOracle::dumpOracleIntermediateSteps(
             res->set_sync(BackupRestore_SyncOrAsync_SYNC);
             if (rg.nextSmallNumber() < 4)
             {
-                bac_vals = bac->mutable_setting_values();
-                gen.generateSettingValues(rg, backupSettings, bac_vals);
+                bsett = bac->mutable_setting_values();
+                gen.generateSettingValues(rg, backupSettings, bsett);
+                SetValue * sv = bsett->has_set_value() ? bsett->add_other_values() : bsett->mutable_set_value();
+
+                /// Make sure to dump everything
+                sv->set_property("structure_only");
+                sv->set_value("0");
             }
             if (rg.nextSmallNumber() < 4)
             {
-                bac_vals = bac_vals ? bac_vals : bac->mutable_setting_values();
-                gen.generateSettingValues(rg, formatSettings, bac_vals);
+                bsett = bsett ? bsett : bac->mutable_setting_values();
+                gen.generateSettingValues(rg, formatSettings, bsett);
             }
             if (rg.nextSmallNumber() < 4)
             {
-                res_vals = res->mutable_setting_values();
-                gen.generateSettingValues(rg, restoreSettings, res_vals);
+                rsett = res->mutable_setting_values();
+                gen.generateSettingValues(rg, restoreSettings, rsett);
             }
             if (rg.nextSmallNumber() < 4)
             {
-                res_vals = res_vals ? res_vals : res->mutable_setting_values();
-                gen.generateSettingValues(rg, formatSettings, res_vals);
+                rsett = rsett ? rsett : res->mutable_setting_values();
+                gen.generateSettingValues(rg, formatSettings, rsett);
             }
+
+            /// Truncate table, so it is restored into an empty one
+            Truncate * trunc = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_trunc();
+            t.setName(trunc->mutable_est(), false);
+            if (cluster.has_value())
+            {
+                trunc->mutable_cluster()->set_cluster(cluster.value());
+            }
+            trunc->set_sync(true);
+
             intermediate_queries.emplace_back(next1);
             intermediate_queries.emplace_back(next2);
+            intermediate_queries.emplace_back(next3);
         }
         break;
     }
