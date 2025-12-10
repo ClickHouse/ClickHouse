@@ -5,7 +5,7 @@
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 
-#include <roaring.hh>
+#include <roaring/roaring.hh>
 
 namespace DB
 {
