@@ -115,7 +115,6 @@ void registerAggregateFunctionCombinatorMap(AggregateFunctionCombinatorFactory &
 void registerAggregateFunctionCombinatorsArgMinArgMax(AggregateFunctionCombinatorFactory & factory);
 
 void registerWindowFunctions(AggregateFunctionFactory & factory);
-void registerPostingListFunctions(AggregateFunctionFactory & factory);
 
 void registerAggregateFunctions()
 {
@@ -213,7 +212,6 @@ void registerAggregateFunctions()
         registerAggregateFunctionTimeseriesGroupArray(factory);
 
         registerWindowFunctions(factory);
-        registerPostingListFunctions(factory);
     }
 
     {

@@ -4,7 +4,8 @@
 #include <Storages/MergeTree/IntegerCodecTrait.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
-#pragma clang optimize off
+#include <roaring.hh>
+
 namespace DB
 {
 
@@ -108,318 +109,21 @@ struct Codec
     }
 };
 
-/// MemorySource — Implementation of IBlockSource for in-memory postings.
-/// Reads compressed blocks directly from a contiguous memory buffer and
-/// lazily decodes them one by one.
-template<typename T>
-struct Source
-{
-    template<typename Input>
-    static bool decodeOneBlock(Input & in, std::vector<T> & decoded, size_t & current_block, size_t & total_blocks, std::string & raw)
-    {
-        if (in.eof())
-            return false;
-        if (current_block >= total_blocks)
-            return false;
-        uint16_t n = 0;
-        uint32_t bytes = 0;
-        uint32_t max_bits = 0;
-        Codec::readHeader(n, bytes, max_bits, in);
-        raw.resize(bytes);
-        in.readStrict(raw.data(), bytes);
-        auto p = reinterpret_cast<unsigned char*>(raw.data());
-        Codec::decodeBlock<T>(p, n, max_bits, decoded, bytes);
-        ++current_block;
-        return true;
-    }
-};
-template<typename T>
-struct MemorySourceImpl : Source<T>
-{
-    template<typename Input>
-    static bool decodeNext(Input & rb, std::vector<T> & decoded, size_t & current_block, size_t & total_blocks, const std::vector<T> & current, std::string & raw)
-    {
-        if (current_block < total_blocks)
-        {
-            if (Source<T>::decodeOneBlock(rb, decoded, current_block, total_blocks, raw))
-                return true;
-        }
-        if (current_block == total_blocks && !current.empty())
-        {
-            ++current_block;
-            decoded.assign(current.begin(), current.end());
-            return true;
-        }
-        return false;
-    }
-};
-
-template<typename T>
-struct StreamSourceImpl : Source<T>
-{
-    template<typename Input>
-    static bool decodeNext(Input & rb, std::vector<T> & decoded, size_t & current_block, size_t & total_blocks, const std::vector<T> &, std::string & raw)
-    {
-        if (current_block < total_blocks)
-        {
-            if (Source<T>::decodeOneBlock(rb, decoded, current_block, total_blocks, raw))
-                return true;
-        }
-        return false;
-    }
-};
-
-template<typename T> struct MemorySourceTraits;
-template<> struct MemorySourceTraits<uint32_t> : MemorySourceImpl<uint32_t> {};
-template<> struct MemorySourceTraits<uint64_t> : MemorySourceImpl<uint64_t> {};
-
-template<typename T> struct StreamSourceTraits;
-template<> struct StreamSourceTraits<uint32_t> : StreamSourceImpl<uint32_t> {};
-template<> struct StreamSourceTraits<uint64_t> : StreamSourceImpl<uint64_t> {};
-
-template<typename Out, typename IteratorLeft, typename IteratorRight>
-void mergePostingsTwo(Out & out, IteratorLeft left_begin, const IteratorLeft left_end, IteratorRight right_begin, const IteratorRight right_end)
-{
-    using ValueType = Out::ValueType;
-    bool has_left = (left_begin != left_end);
-    bool has_right = (right_begin != right_end);
-    ValueType left_val = 0;
-    ValueType right_val = 0;
-    if (has_left)
-        left_val = *left_begin;
-    if (has_right)
-        right_val = *right_begin;
-
-    while (has_left && has_right)
-    {
-        if (left_val < right_val)
-        {
-            out.add(left_val);
-            ++left_begin;
-            has_left = left_begin != left_end;
-            if (has_left)
-                left_val = *left_begin;
-        }
-        else if (right_val < left_val)
-        {
-            out.add(right_val);
-            ++right_begin;
-            has_right = right_begin != right_end;
-            if (has_right)
-                right_val = *right_begin;
-        }
-        else
-        {
-            out.add(left_val);
-            ++left_begin;
-            ++right_begin;
-            has_left = left_begin != left_end;
-            has_right = right_begin != right_end;
-            if (has_left)
-                left_val = *left_begin;
-            if (has_right)
-                right_val = *right_begin;
-        }
-    }
-
-    while (has_left)
-    {
-        out.add(left_val);
-        ++left_begin;
-        has_left = left_begin != left_end;
-        if (has_left)
-            left_val = *left_begin;
-    }
-
-    while (has_right)
-    {
-        out.add(right_val);
-        ++right_begin;
-        has_right = right_begin != right_end;
-        if (has_right)
-            right_val = *right_begin;
-    }
-}
-
-template <typename It>
-struct PostingRange
-{
-    using ValueType = It::ValueType;
-    It cur;
-    It end;
-    ValueType value = 0;
-    bool valid = false;
-
-    PostingRange() = default;
-
-    PostingRange(It b, It e) : cur(b), end(e)
-    {
-        if (cur != end)
-        {
-            value = static_cast<ValueType>(*cur);
-            valid = true;
-        }
-    }
-
-    bool next()
-    {
-        if (!valid)
-            return false;
-        ++cur;
-        if (cur == end)
-        {
-            valid = false;
-            return false;
-        }
-        value = static_cast<uint32_t>(*cur);
-        return true;
-    }
-};
-
-template<typename ValueType>
-struct PQItem
-{
-    ValueType value;
-    std::size_t idx;
-    [[maybe_unused]] bool operator<(const PQItem & other) const noexcept
-    {
-        return value > other.value;
-    }
-};
-
-template <typename Out, typename... Pairs>
-void mergePostingsVariadic(Out & out, Pairs&&... pairs)
-{
-    using ValueType = Out::ValueType;
-    auto ranges = std::make_tuple(PostingRange<typename std::decay_t<Pairs>::first_type> (std::forward<Pairs>(pairs).first, std::forward<Pairs>(pairs).second )...);
-    using TupleType = decltype(ranges);
-    constexpr std::size_t K = std::tuple_size<TupleType>::value;
-
-    std::priority_queue<PQItem<ValueType>> pq;
-    [&]<std::size_t... I>(std::index_sequence<I...>)
-    {
-        ((std::get<I>(ranges).valid ? pq.push(PQItem{std::get<I>(ranges).value, I}) : void()), ...);
-    } (std::make_index_sequence<K>{});
-
-    if (pq.empty())
-        return;
-
-    uint32_t last_written = 0;
-    bool has_last = false;
-
-    while (!pq.empty())
-    {
-        auto top = pq.top();
-        pq.pop();
-
-        const uint32_t v = top.value;
-        const std::size_t idx = top.idx;
-
-        if (!has_last || v != last_written)
-        {
-            out.add(v);
-            last_written = v;
-            has_last = true;
-        }
-
-        auto & rng = std::get<idx>(ranges);
-        if (rng.next())
-        {
-            pq.push(PQItem{rng.value, idx});
-        }
-    }
-}
-
-struct ContainerBase
-{
-/// Generic forward iterator that consumes data
-/// from an IBlockSource. Decodes one block at a time and exposes individual
-/// posting values in ascending order. Shared by memory and stream containers.
-template<typename Input, typename T, typename Traits, typename Data>
-class Iterator
-{
-public:
-    using ValueType = T;
-    explicit Iterator(std::shared_ptr<Data> data_, size_t total_blocks_)
-        : data(data_)
-        , total_blocks(total_blocks_)
-    {
-        if (data->empty())
-        {
-            is_end = true;
-            current_offset = std::numeric_limits<size_t>::max();
-        }
-        if (!is_end)
-            decodeNextBlock();
-    }
-    explicit Iterator()
-        : current_offset(std::numeric_limits<size_t>::max())
-        , is_end(true)
-    {
-    }
-
-    T operator*() const { return current_value; }
-    Iterator & operator++()
-    {
-        advance();
-        return *this;
-    }
-    bool operator==(const Iterator & rhs) const
-    {
-        return is_end == rhs.is_end && current_offset == rhs.current_offset;
-    }
-    bool operator!=(const Iterator & rhs) const { return !(*this == rhs); }
-
-private:
-    void advance()
-    {
-        if (is_end)
-            return;
-        ++current_index;
-        ++current_offset;
-        if (current_index >= decoded.size())
-            decodeNextBlock();
-        if (!is_end)
-            current_value = decoded[current_index];
-    }
-
-    void decodeNextBlock()
-    {
-        if (!Traits::decodeNext(data->rb, decoded, current_block, total_blocks, data->current, raw))
-        {
-            is_end = true;
-            current_offset = std::numeric_limits<size_t>::max();
-            return;
-        }
-        current_index = 0;
-        current_value = decoded[0];
-    }
-
-    std::string raw;
-    std::shared_ptr<Data> data {};
-    std::vector<T> decoded;
-    size_t current_index = 0;
-    T current_value = 0;
-
-    size_t current_offset = 0;
-
-    size_t total_blocks = 0;
-    size_t current_block = 0;
-    bool is_end = false;
-};
-};
-
 /// PostingsContainer — Writable postings container for in-memory build mode.
 /// Accepts monotonically increasing uint32_t values, compresses them in
 /// fixed-size blocks, and supports serialization and lazy iteration.
 /// Used during index building or in-memory caching.
 template<typename T>
-class PostingsContainerImpl : public ContainerBase
+class PostingsContainerImpl
 {
-    static_assert(std::is_same_v<T, uint32_t> || std::is_same_v<T, uint64_t>, "PostingsContainer only supports uint32_t / uint64_t");
+    static_assert(std::is_same_v<T, uint32_t>, "PostingsContainer only supports uint32_t");
     static constexpr UInt8  kBlockSizeShift = 7;
     static constexpr size_t kBlockSize = 1 << kBlockSizeShift;
     static constexpr size_t kBlockSizeMask = kBlockSize - 1;
+    template<typename In, typename OutContainer, typename U>
+    friend void deserializePostings(In & in, OutContainer & out);
+    template<typename Out, typename U>
+    friend size_t serializePostingsImpl(Out & out, const std::vector<U> & array);
 public:
     using ValueType = T;
     explicit PostingsContainerImpl() = default;
@@ -435,24 +139,6 @@ public:
         total++;
         if (current.size() == kBlockSize)
             compressCurrent();
-    }
-    void addMany(const std::vector<T> & many)
-    {
-        if (!std::is_sorted(many.begin(), many.end()))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The current value must be greater than the previous value.");
-        size_t i = 0;
-        size_t many_size = many.size();
-        while (i < many_size)
-        {
-            size_t write_pos = current.size();
-            size_t can_fill = std::min(kBlockSize - write_pos, many_size - i);
-            current.resize(write_pos + can_fill);
-            std::copy_n(many.data() + i, can_fill, current.data() + write_pos);
-            i += can_fill;
-            total += can_fill;
-            if (current.size() == kBlockSize)
-                compressCurrent();
-        }
     }
 
     size_t size() const { return total; }
@@ -500,22 +186,6 @@ public:
         in.readStrict(data.data(), bytes);
     }
 
-    /// Reads, decompresses and emits postings directly to an output sink (PostingsList).
-    /// Used for full decode in one pass, without exposing intermediate state.
-    template<typename In, typename Out>
-    void decodeTo(In & in, Out & out)
-    {
-        deserialize(in);
-        std::string temp_buffer;
-        std::vector<T> temp_compress_buffer;
-        temp_compress_buffer.reserve(kBlockSize);
-        ReadBufferFromMemory data_buffer(data);
-        for (size_t i = 0; i < block_count; ++i)
-            Codec::decompressCurrent<T>(data_buffer, temp_buffer, temp_compress_buffer, [&out] (std::vector<uint32_t> & temp) { out.addMany(temp.size(), temp.data()); });
-        if (!current.empty())
-            out.addMany(current.size(), current.data());
-    }
-
     /// Swaps content with another PostingsContainer (no copy).
     void swap(PostingsContainerImpl & o) noexcept
     {
@@ -531,12 +201,6 @@ public:
         lhs.swap(rhs);
     }
 
-    /// Returns an iterator over decompressed postings (lazy block decoding).
-    auto begin() const
-    {
-        return Iterator<InputType, ValueType, MemorySourceTraits<ValueType>, IteratorData>(std::make_shared<IteratorData>(data, current), block_count);
-    }
-    auto end() const { return Iterator<InputType, ValueType, MemorySourceTraits<ValueType>, IteratorData>(); }
 private:
     using InputType = ReadBufferFromString;
     struct IteratorData
@@ -570,93 +234,61 @@ private:
     size_t block_count = 0;
     size_t total = 0;
 };
-/// PostingsContainerStreamView — Read-only streaming view over serialized
-/// postings data stored in a ReadBuffer. Supports lazy, block-by-block
-/// decoding without loading the entire postings into memory.
-/// Typically used for on-disk postings iteration when merging parts.
-template<typename T>
-class PostingsContainerStreamViewImpl : public ContainerBase
-{
-public:
-    using ValueType = T;
-    /// Constructs a streaming postings view backed by the given ReadBuffer.
-    /// Reads the header (block_count, total, data_size) but does not decompress any postings.
-    explicit PostingsContainerStreamViewImpl(ReadBuffer & rb) : read_buffer(rb)
-    {
-        readVarUInt(block_count, read_buffer);
-        readVarUInt(total, read_buffer);
-        size_t bytes = 0;
-        readVarUInt(bytes, read_buffer);
-    }
-
-    /// Returns a forward iterator that lazily decodes postings
-    /// directly from the underlying ReadBuffer as needed.
-    /// The iterator consumes the buffer in a single forward pass.
-    auto begin() const
-    {
-        return Iterator<InputType, ValueType, StreamSourceTraits<ValueType>, IteratorData>(std::make_shared<IteratorData>(read_buffer), block_count);
-    }
-    auto end() const { return Iterator<InputType, ValueType, StreamSourceTraits<ValueType>, IteratorData>(); }
-    bool empty() const { return total == 0; }
-    size_t size() const { return total; }
-private:
-    using InputType = ReadBuffer;
-    struct IteratorData
-    {
-        InputType & rb;
-        std::vector<T> current;
-        explicit IteratorData(ReadBuffer & rb_) : rb(rb_) {}
-        bool empty() const { return rb.eof(); }
-    };
-    size_t block_count = 0;
-    size_t total = 0;
-    ReadBuffer & read_buffer;
-};
 
 using PostingsContainer32 = PostingsContainerImpl<uint32_t>;
-using PostingsContainer64 = PostingsContainerImpl<uint64_t>;
-using PostingsContainerStreamView32 = PostingsContainerStreamViewImpl<uint32_t>;
-using PostingsContainerStreamView64 = PostingsContainerStreamViewImpl<uint64_t>;
-
-/// Merges two or more postings containers (postings exposing begin()/end()
-/// that iterate over ascending uint32_t values) into a single output sink.
-///
-/// The function has two code paths:
-/// 1. When exactly two containers are provided, it uses a fast 2-way merge
-///    (mergePostingsTwo), similar to merging two sorted lists.
-/// 2. When more than two containers are provided, it falls back to a k-way
-///    merge (mergePostingsVariadic) using a priority queue to keep the output
-///    sorted and deduplicated.
-/// Example:
-/// ```cpp
-/// PostingsContainer p1;
-/// p1.add(1); p1.add(3); p1.add(7);
-///
-/// PostingsContainer p2;
-/// p2.add(2); p2.add(3); p2.add(10);
-///
-/// PostingsContainer p3;
-/// p3.add(4); p3.add(8);
-///
-/// PostingsContainer out;
-///
-/// // merge two
-/// mergePostingsContainers(out, p1, p2);
-/// // out now contains: 1,2,3,7,10 (3 appears once if mergePostingsTwo dedups)
-///
-/// // merge three
-/// PostingsContainer out3;
-/// mergePostingsContainers(out3, p1, p2, p3);
-/// // out3 now contains: 1,2,3,4,7,8,10
-/// ```
-///
-/// This is useful when merging inverted index postings from multiple parts into single one.
-template <typename Out, typename C1, typename C2, typename... Rest>
-static void mergePostingsContainers(Out & out, const C1 & c1, const C2 & c2, const Rest &... rest)
+using PostingList = roaring::Roaring;
+/// Reads, decompresses and emits postings directly to an output sink (PostingsList).
+/// Used for full decode in one pass, without exposing intermediate state.
+template<typename In, typename OutContainer, typename T>
+static void deserializePostings(In & in, OutContainer & out)
 {
-    if constexpr (sizeof...(rest) == 0)
-        mergePostingsTwo(out, c1.begin(), c1.end(), c2.begin(), c2.end());
-    else
-        mergePostingsVariadic(out, std::pair{ c1.begin(), c1.end() }, std::pair{ c2.begin(), c2.end() }, std::pair{ rest.begin(), rest.end() }...);
+    PostingsContainerImpl<T> self;
+    self.deserialize(in);
+    std::string temp_buffer;
+    std::vector<T> temp_compress_buffer;
+    temp_compress_buffer.reserve(PostingsContainerImpl<T>::kBlockSize);
+    ReadBufferFromMemory data_buffer(self.data);
+    for (size_t i = 0; i < self.block_count; ++i)
+        Codec::decompressCurrent<T>(data_buffer, temp_buffer, temp_compress_buffer, [&out] (std::vector<uint32_t> & temp) { out.addMany(temp.size(), temp.data()); });
+    if (!self.current.empty())
+        out.addMany(self.current.size(), self.current.data());
+}
+
+template<typename Out, typename T>
+size_t serializePostingsImpl(Out & out, const std::vector<T> & array)
+{
+    chassert(std::is_sorted(array.begin(), array.end()));
+    PostingsContainerImpl<T> self;
+    size_t i = 0;
+    size_t many_size = array.size();
+    while (i < many_size)
+    {
+        size_t write_pos = self.current.size();
+        size_t can_fill = std::min(PostingsContainerImpl<T>::kBlockSize - write_pos, many_size - i);
+        self.current.resize(write_pos + can_fill);
+        std::copy_n(array.data() + i, can_fill, self.current.data() + write_pos);
+        i += can_fill;
+        self.total += can_fill;
+        if (self.current.size() == PostingsContainerImpl<T>::kBlockSize)
+            self.compressCurrent();
+    }
+    return self.serialize(out);
+}
+
+template<typename Out>
+size_t serializePostings(Out & out, const PostingList & in)
+{
+    std::vector<uint32_t> postings_array;
+    postings_array.resize(in.cardinality());
+    in.toUint32Array(postings_array.data());
+    return serializePostingsImpl<Out, uint32_t>(out, postings_array);
+}
+
+template<typename Out, size_t N>
+size_t serializePostings(Out & out, const std::array<uint32_t, N> & small, size_t size)
+{
+    chassert(size <= N);
+    std::vector<uint32_t> postings_array(small.begin(), small.begin() + size);
+    return serializePostingsImpl<Out, uint32_t>(out, postings_array);
 }
 }

@@ -123,24 +123,4 @@ struct CodecTraits<uint32_t>
         return streamvbyte_delta_decode(p, out, n, 0);
     }
 };
-
-/// Specialization of CodecTraits for uint64_t.
-template <>
-struct CodecTraits<uint64_t>
-{
-    ALWAYS_INLINE static std::pair<size_t, size_t> evaluateSizeAndMaxBits(const std::vector<uint64_t> &)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CodecTraits<uint64_t>::bound");
-    }
-
-    ALWAYS_INLINE static uint64_t encode(uint64_t *, std::size_t, size_t, unsigned char *)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CodecTraits<uint64_t>::encode");
-    }
-
-    ALWAYS_INLINE static std::size_t decode(unsigned char *, std::size_t, size_t, uint64_t *)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CodecTraits<uint64_t>::decode");
-    }
-};
 }
