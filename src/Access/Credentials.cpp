@@ -17,7 +17,6 @@ namespace
 
 struct JWTClaims
 {
-    String issuer;
     String subject;
 };
 
@@ -49,7 +48,6 @@ bool jwtVerify(const String & jwt_str, const String & jwks_str, JWTClaims & out)
     if (!decoded_jwt.has_subject())
         throw std::runtime_error("no subject in JWT");
 
-    out.issuer = decoded_jwt.get_issuer();
     out.subject = decoded_jwt.get_subject();
 
     if (!jwk.has_key_type())
@@ -74,7 +72,7 @@ bool jwtVerify(const String & jwt_str, const String & jwks_str, JWTClaims & out)
         else
             throw std::runtime_error("no 'x5c' and missing 'n', 'e' claims in JWK for RSA");
 
-        auto verifier = jwt::verify().allow_algorithm(chooseRSA(decoded_jwt.get_algorithm(), public_key_pem)).with_issuer(out.issuer);
+        auto verifier = jwt::verify().allow_algorithm(chooseRSA(decoded_jwt.get_algorithm(), public_key_pem));
         verifier.verify(decoded_jwt);
     }
     else
