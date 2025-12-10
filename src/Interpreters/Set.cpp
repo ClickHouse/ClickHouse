@@ -665,12 +665,19 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
         ordered_set[i] = block_to_sort.getByPosition(i).column;
 }
 
+BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point) const
+{
+    std::vector<int> key_indices_map;
+    key_indices_map.resize(key_ranges.size());
+    std::iota(key_indices_map.begin(), key_indices_map.end(), 0);
+    return checkInRange(key_indices_map, key_ranges, data_types, single_point);
+}
 
 /** Return the BoolMask where:
   * 1: the intersection of the set and the range is non-empty
   * 2: the range contains elements not in the set
   */
-BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point) const
+BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_indices_map, const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point) const
 {
     size_t tuple_size = indexes_mapping.size();
 
@@ -689,7 +696,7 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
     for (size_t i = 0; i < tuple_size; ++i)
     {
         std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
-            key_ranges[indexes_mapping[i].key_index],
+            key_ranges[key_indices_map[indexes_mapping[i].key_index]],
             indexes_mapping[i].functions,
             data_types[indexes_mapping[i].key_index],
             single_point);

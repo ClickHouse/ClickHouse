@@ -220,6 +220,7 @@ public:
 
     bool hasMonotonicFunctionsChain() const;
 
+    BoolMask checkInRange(const std::vector<int> & key_indices_map, const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point = false) const;
     BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point = false) const;
 
     const Columns & getOrderedSet() const { return ordered_set; }

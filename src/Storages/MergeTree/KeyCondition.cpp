@@ -2833,15 +2833,13 @@ BoolMask KeyCondition::checkInHyperrectangle(
         else if (element.function == RPNElement::FUNCTION_IN_RANGE
                  || element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
         {
-            size_t key_column = key_indices_map[element.getKeyColumn()];
-            if (key_column >= hyperrectangle.size())
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "Hyperrectangle size is {}, but requested element at position {} ({})",
-                                hyperrectangle.size(), key_column, element.toString());
-            }
+            size_t key_column = element.getKeyColumn();
+            int pos = key_indices_map[key_column];
 
-            Range key_range = hyperrectangle[key_column];
+            if (pos < 0 || static_cast<size_t>(pos) >= hyperrectangle.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Key index {} is not present in compressed hyperrectangle", key_column);
+
+            Range key_range = hyperrectangle[pos];
 
             /// The case when the column is wrapped in a chain of possibly monotonic functions.
             if (!element.monotonic_functions_chain.empty())
@@ -2905,8 +2903,9 @@ BoolMask KeyCondition::checkInHyperrectangle(
               *  And we analyze the intersection of (2) and (3).
               */
 
-            size_t key_column = key_indices_map[element.getKeyColumn()];
-            Range key_range = hyperrectangle[key_column];
+            size_t key_column = element.getKeyColumn();
+            size_t key_col_pos_in_hyperrectangle = key_indices_map[key_column];
+            Range key_range = hyperrectangle[key_col_pos_in_hyperrectangle];
 
             /// The only possible result type of a space filling curve is UInt64.
             /// We also only check bounded ranges.
@@ -2996,10 +2995,10 @@ BoolMask KeyCondition::checkInHyperrectangle(
               * Algorithm:
               *   Check whether there is any intersection of the 2 polygons. If true return {true, true}, else return {false, true}.
               */
-            Float64 x_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[element.key_columns[0]].left);
-            Float64 x_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[element.key_columns[0]].right);
-            Float64 y_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[element.key_columns[1]].left);
-            Float64 y_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[element.key_columns[1]].right);
+            Float64 x_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_indices_map[element.key_columns[0]]].left);
+            Float64 x_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_indices_map[element.key_columns[0]]].right);
+            Float64 y_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_indices_map[element.key_columns[1]]].left);
+            Float64 y_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_indices_map[element.key_columns[1]]].right);
 
             if (unlikely(isNaN(x_min) || isNaN(x_max) || isNaN(y_min) || isNaN(y_max)))
             {
@@ -3026,7 +3025,9 @@ BoolMask KeyCondition::checkInHyperrectangle(
             element.function == RPNElement::FUNCTION_IS_NULL
             || element.function == RPNElement::FUNCTION_IS_NOT_NULL)
         {
-            const Range * key_range = &hyperrectangle[element.getKeyColumn()];
+            size_t key_column = element.getKeyColumn();
+            size_t key_col_pos_in_hyperrectangle = key_indices_map[key_column];
+            const Range * key_range = &hyperrectangle[key_col_pos_in_hyperrectangle];
 
             /// No need to apply monotonic functions as nulls are kept.
             bool intersects = element.range.intersectsRange(*key_range);
@@ -3084,7 +3085,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             /// E.g. (20, 300, 1500) satisfies the second condition but not the first,
             /// but  (20, 150, 3000) satisfies the first condition but not the second.
 
-            rpn_stack.emplace_back(element.set_index->checkInRange(hyperrectangle, data_types, single_point));
+            rpn_stack.emplace_back(element.set_index->checkInRange(key_indices_map, hyperrectangle, data_types, single_point));
 
             if (rpn_stack.back().can_be_true && element.bloom_filter_data)
             {
