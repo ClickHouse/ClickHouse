@@ -797,12 +797,20 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
     if (query.hasInlinedData() && !async_insert)
     {
-        auto format = getInputFormatFromASTInsertQuery(query_ptr, true, *query_sample_block, context, nullptr);
+        const auto & [format_header, replaced_aggregations] = transformAggregateColumnsToValues(context, *query_sample_block);
+        auto format = getInputFormatFromASTInsertQuery(query_ptr, true, format_header, context, nullptr);
 
         if (settings[Setting::enable_parsing_to_custom_serialization])
             format->setSerializationHints(table->getSerializationHints());
 
         auto pipe = getSourceFromInputFormat(query_ptr, std::move(format), context, nullptr);
+
+        if (replaced_aggregations)
+            pipe.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return createAggregationFromValuesProcessor(context, header, *query_sample_block);
+            });
+
         pipeline.complete(std::move(pipe));
     }
 

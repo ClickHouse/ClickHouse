@@ -67,6 +67,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -2044,8 +2045,14 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
         insert_format_max_block_size_from_config.has_value())
         insert_format_max_block_size = insert_format_max_block_size_from_config.value();
 
-    auto source = client_context->getInputFormat(current_format, buf, sample, insert_format_max_block_size);
+    const auto & [format_header, replaced_aggregations] = transformAggregateColumnsToValues(client_context, sample);
+    auto source = client_context->getInputFormat(current_format, buf, format_header, insert_format_max_block_size);
     Pipe pipe(source);
+    if (replaced_aggregations)
+        pipe.addSimpleTransform([&](const SharedHeader & header)
+        {
+            return createAggregationFromValuesProcessor(client_context, header, sample);
+        });
 
     if (columns_description.hasDefaults())
     {

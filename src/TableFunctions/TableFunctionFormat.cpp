@@ -13,6 +13,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -109,10 +110,16 @@ Block TableFunctionFormat::parseData(const ColumnsDescription & columns, const S
     for (const auto & name_and_type : columns.getAllPhysical())
         block.insert({name_and_type.type->createColumn(), name_and_type.type, name_and_type.name});
 
+    const auto & [format_header, replaced_aggregations] = transformAggregateColumnsToValues(context, block);
     auto read_buf = std::make_unique<ReadBufferFromString>(data);
-    auto input_format = context->getInputFormat(format_name, *read_buf, block, context->getSettingsRef()[Setting::max_block_size]);
+    auto input_format = context->getInputFormat(format_name, *read_buf, format_header, context->getSettingsRef()[Setting::max_block_size]);
     QueryPipelineBuilder builder;
     builder.init(Pipe(input_format));
+    if (replaced_aggregations)
+        builder.addSimpleTransform([&](const SharedHeader & header)
+        {
+            return createAggregationFromValuesProcessor(context, header, block);
+        });
     if (columns.hasDefaults())
     {
         builder.addSimpleTransform([&](const SharedHeader & header)
