@@ -125,7 +125,7 @@ DROP TABLE vectors;
 
 -- Others
 SELECT round(L2DistanceTransposed(CAST([0.0, 0.1], 'QBit(Float64, 2)'), [0.1, 0.2], 64), 5) AS distance;
-SELECT round(L2DistanceTransposed(CAST([0.0, 0.1], 'QBit(Float32, 2)'), [0.1, 0.2], 32), 5) AS distance; -- { serverError TYPE_MISMATCH }
+SELECT round(L2DistanceTransposed(CAST([0.0, 0.1], 'QBit(Float32, 2)'), [0.1, 0.2], 32), 5) AS distance;
 SELECT round(L2DistanceTransposed(CAST([0.0, 0.1], 'QBit(Float64, 4)'), [0.1, 0.2], 32), 5) AS distance; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
 SELECT round(L2DistanceTransposed(CAST([0.0, 0.1], 'QBit(Float64, 4)'), [0.1, 0.2, 0.1, 0.2], 32), 5) AS distance; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
 
