@@ -18,9 +18,7 @@ namespace BuzzHouse
 {
 
 const std::vector<std::vector<OutFormat>> QueryOracle::oracleFormats
-    = {{OutFormat::OUT_CSV},
-       {OutFormat::OUT_TabSeparated, OutFormat::OUT_TabSeparatedRaw},
-       {OutFormat::OUT_Values}};
+    = {{OutFormat::OUT_CSV}, {OutFormat::OUT_TabSeparated, OutFormat::OUT_TabSeparatedRaw}, {OutFormat::OUT_Values}};
 
 /// Correctness query oracle
 /// SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED>;

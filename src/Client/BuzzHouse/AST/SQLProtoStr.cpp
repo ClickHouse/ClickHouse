@@ -1311,9 +1311,14 @@ CONV_FN(ExprIn, ein)
         case InType::kSingleExpr:
             ExprToString(ret, ein.single_expr());
             break;
-        case InType::kExprs:
+        case InType::kArray:
+            ret += "[";
+            ExprListToString(ret, ein.array());
+            ret += "]";
+            break;
+        case InType::kTuple:
             ret += "(";
-            ExprListToString(ret, ein.exprs());
+            ExprListToString(ret, ein.tuple());
             ret += ")";
             break;
         case InType::kSel:

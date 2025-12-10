@@ -645,9 +645,9 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
             {
                 this->generateSubquery(rg, ein->mutable_sel());
             }
-            else if (nopt2 < 8)
+            else if (nopt2 < 9)
             {
-                ExprList * elist2 = ein->mutable_exprs();
+                ExprList * elist2 = rg.nextBool() ? ein->mutable_tuple() : ein->mutable_array();
                 const uint32_t nclauses2
                     = rg.nextSmallNumber() < 9 ? nclauses : std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 4));
 

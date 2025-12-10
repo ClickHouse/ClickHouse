@@ -2011,8 +2011,9 @@ message ExprIn {
     required bool not = 3;
     oneof in_oneof {
         Expr single_expr = 4;
-        ExprList exprs = 5;
-        ExplainQuery sel = 6;
+        ExprList array = 5;
+        ExprList tuple = 6;
+        ExplainQuery sel = 7;
     }
 }
 
