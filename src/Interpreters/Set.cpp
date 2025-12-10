@@ -667,8 +667,7 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
 
 BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point) const
 {
-    std::vector<int> key_indices_map;
-    key_indices_map.resize(key_ranges.size());
+    std::vector<int> key_indices_map(key_ranges.size());
     std::iota(key_indices_map.begin(), key_indices_map.end(), 0);
     return checkInRange(key_indices_map, key_ranges, data_types, single_point);
 }
