@@ -244,7 +244,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
         const SQLType * tp = randomTimeType(rg, std::numeric_limits<uint32_t>::max(), nullptr);
         const bool prev_allow_not_deterministic = this->allow_not_deterministic;
 
-        this->allow_not_deterministic = complex;
+        this->allow_not_deterministic &= complex;
         lv->set_no_quote_str(tp->appendRandomRawValue(rg, *this));
         this->allow_not_deterministic = prev_allow_not_deterministic;
         delete tp;
@@ -255,7 +255,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
         const bool prev_allow_not_deterministic = this->allow_not_deterministic;
         std::tie(tp, std::ignore) = randomDateType(rg, std::numeric_limits<uint32_t>::max());
 
-        this->allow_not_deterministic = complex;
+        this->allow_not_deterministic &= complex;
         lv->set_no_quote_str(tp->appendRandomRawValue(rg, *this));
         this->allow_not_deterministic = prev_allow_not_deterministic;
         delete tp;
@@ -265,7 +265,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
         const SQLType * tp = randomDateTimeType(rg, std::numeric_limits<uint32_t>::max(), nullptr);
         const bool prev_allow_not_deterministic = this->allow_not_deterministic;
 
-        this->allow_not_deterministic = complex;
+        this->allow_not_deterministic &= complex;
         lv->set_no_quote_str(tp->appendRandomRawValue(rg, *this));
         this->allow_not_deterministic = prev_allow_not_deterministic;
         delete tp;
