@@ -319,28 +319,6 @@ namespace
                 const auto & cmd = descriptor.cmd;
                 if (cmd.empty())
                     return arrow::Status::Invalid("Flight descriptor's command should specify a SQL query");
-
-                google::protobuf::Any any_msg;
-                if (!any_msg.ParseFromArray(cmd.data(), cmd.size()))
-                    return arrow::Status::Invalid("Failed to parse FlightDescriptor cmd as Any");
-
-                if (any_msg.Is<arrow::flight::protocol::sql::CommandGetCatalogs>())
-                {
-                    return "SELECT toString(number) as catalog_name FROM numbers(0)";
-                }
-                else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetDbSchemas>())
-                {
-                    arrow::flight::protocol::sql::CommandGetDbSchemas command;
-                    any_msg.UnpackTo(&command);
-                    std::vector<std::string> where;
-                    if (command.has_db_schema_filter_pattern())
-                        where.push_back("database LIKE '" + command.db_schema_filter_pattern() + "'");
-
-                    auto where_expression = where.size() ? " WHERE " + boost::algorithm::join(where, " AND ") : "";
-
-                    return "SELECT NULL::Nullable(String) as catalog_name, name as db_schema_name FROM system.databases" + where_expression;
-                }
-
                 return cmd;
             }
             default:
@@ -1348,7 +1326,7 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
                 }
                 else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetCrossReference>())
                 {
-                    return arrow::Status::NotImplemented("CommandGetCrossReference is not implemented");
+                    return arrow::Status::NotImplemented("CommandGetCrossReference is not supported");
                 }
                 else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetCatalogs>())
                 {
@@ -1369,11 +1347,11 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
                 }
                 else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetExportedKeys>())
                 {
-                    return arrow::Status::NotImplemented("CommandGetExportedKeys is not implemented");
+                    return arrow::Status::NotImplemented("CommandGetExportedKeys is not supported");
                 }
                 else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetImportedKeys>())
                 {
-                    return arrow::Status::NotImplemented("CommandGetImportedKeys is not implemented");
+                    return arrow::Status::NotImplemented("CommandGetImportedKeys is not supported");
                 }
                 else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetPrimaryKeys>())
                 {
@@ -1926,13 +1904,11 @@ arrow::Status ArrowFlightHandler::DoPut(
             }
 
             arrow::flight::protocol::sql::DoPutUpdateResult update_result;
-            update_result.set_record_count(query_context->getProcessListElement()->getInfo().total_rows);
-            std::string serialized_result;
-            update_result.SerializeToString(&serialized_result);
-            ARROW_RETURN_NOT_OK(writer->WriteMetadata(*arrow::Buffer::FromString(serialized_result)));
+            update_result.set_record_count(query_context->getProcessListElement()->getInfo().written_rows);
+            ARROW_RETURN_NOT_OK(writer->WriteMetadata(*arrow::Buffer::FromString(update_result.SerializeAsString())));
 
-            LOG_INFO(log, "DoPut succeeded");
             block_io.onFinish();
+            LOG_INFO(log, "DoPut succeeded");
         }
         catch (...)
         {
@@ -1966,11 +1942,24 @@ arrow::Status ArrowFlightHandler::tryRunAndLogIfError(std::string_view method_na
 
 
 arrow::Status ArrowFlightHandler::DoAction(
-    const arrow::flight::ServerCallContext & /*context*/,
-    const arrow::flight::Action & /*action*/,
+    const arrow::flight::ServerCallContext & context,
+    const arrow::flight::Action & action,
     std::unique_ptr<arrow::flight::ResultStream> * /*result*/)
 {
-    return arrow::Status::NotImplemented("NYI");
+    auto impl = [&]
+    {
+        LOG_INFO(log, "DoAction is called for action {} {}", action.type, action.ToString());
+
+        const auto & auth = AuthMiddleware::get(context);
+        auto session = authenticate(auth, server.context());
+
+        /// Close session (if any) after processing the request
+        bool close_session = auth.sessionClose() && server.config().getBool("enable_arrow_close_session", true);
+        SCOPE_EXIT_SAFE({ releaseOrCloseSession(session, auth.sessionId(), close_session); });
+
+        return arrow::Status::NotImplemented(action.type, " is not supported");
+    };
+    return tryRunAndLogIfError("DoAction", impl);
 }
 
 }
