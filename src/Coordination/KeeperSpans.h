@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <string>
 #include <chrono>
+#include <optional>
 
 namespace Coordination
 {
@@ -17,47 +18,26 @@ namespace Coordination
 namespace DB
 {
 
+struct MaybeSpan
+{
+    const char * operation_name;
+    const OpenTelemetry::SpanKind kind;
+    std::optional<OpenTelemetry::Span> span;
+
+    MaybeSpan(const char * name, OpenTelemetry::SpanKind k)
+        : operation_name(name), kind(k) {}
+};
+
 struct KeeperSpans
 {
-    OpenTelemetry::Span receive_request{
-        .operation_name = "keeper.receive_request",
-        .kind = OpenTelemetry::SpanKind::SERVER,
-    };
-
-    OpenTelemetry::Span process_request{
-        .operation_name = "keeper.process_request",
-        .kind = OpenTelemetry::SpanKind::SERVER,
-    };
-
-    OpenTelemetry::Span dispatcher_responses_queue{
-        .operation_name = "keeper.dispatcher.responses_queue",
-        .kind = OpenTelemetry::SpanKind::INTERNAL,
-    };
-
-    OpenTelemetry::Span send_response{
-        .operation_name = "keeper.send_response",
-        .kind = OpenTelemetry::SpanKind::SERVER,
-    };
-
-    OpenTelemetry::Span read_wait_for_write{
-        .operation_name = "keeper.read.wait_for_write",
-        .kind = OpenTelemetry::SpanKind::INTERNAL,
-    };
-
-    OpenTelemetry::Span read_process{
-        .operation_name = "keeper.read.process",
-        .kind = OpenTelemetry::SpanKind::INTERNAL,
-    };
-
-    OpenTelemetry::Span write_pre_commit{
-        .operation_name = "keeper.write.pre_commit",
-        .kind = OpenTelemetry::SpanKind::INTERNAL,
-    };
-
-    OpenTelemetry::Span write_commit{
-        .operation_name = "keeper.write.commit",
-        .kind = OpenTelemetry::SpanKind::INTERNAL,
-    };
+    MaybeSpan receive_request{"keeper.receive_request", OpenTelemetry::SpanKind::SERVER};
+    MaybeSpan process_request{"keeper.process_request", OpenTelemetry::SpanKind::SERVER};
+    MaybeSpan dispatcher_responses_queue{"keeper.dispatcher.responses_queue", OpenTelemetry::SpanKind::INTERNAL};
+    MaybeSpan send_response{"keeper.send_response", OpenTelemetry::SpanKind::SERVER};
+    MaybeSpan read_wait_for_write{"keeper.read.wait_for_write", OpenTelemetry::SpanKind::INTERNAL};
+    MaybeSpan read_process{"keeper.read.process", OpenTelemetry::SpanKind::INTERNAL};
+    MaybeSpan write_pre_commit{"keeper.write.pre_commit", OpenTelemetry::SpanKind::INTERNAL};
+    MaybeSpan write_commit{"keeper.write.commit", OpenTelemetry::SpanKind::INTERNAL};
 
     static UInt64 now()
     {
@@ -65,13 +45,13 @@ struct KeeperSpans
             std::chrono::system_clock::now().time_since_epoch()).count();
     }
 
-    static void initialize(
-        const OpenTelemetry::TracingContext & parent_context,
-        OpenTelemetry::Span & span,
+    static void maybeInitialize(
+        MaybeSpan & maybe_span,
+        const std::optional<OpenTelemetry::TracingContext> & parent_context,
         UInt64 start_time_us = now());
 
-    static void finalize(
-        OpenTelemetry::Span & span,
+    static void maybeFinalize(
+        MaybeSpan & maybe_span,
         OpenTelemetry::SpanStatus status = OpenTelemetry::SpanStatus::OK,
         const String & error_message = {},
         std::unordered_map<std::string, std::string> && extra_attributes = {},

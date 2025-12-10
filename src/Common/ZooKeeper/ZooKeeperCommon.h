@@ -68,7 +68,7 @@ struct ZooKeeperRequest : virtual Request
     std::optional<OpenTelemetry::TracingContext> client_tracing_context;
     std::optional<OpenTelemetry::TracingContext> server_tracing_context;
 
-    std::optional<DB::KeeperSpans> keeper_spans;
+    DB::KeeperSpans keeper_spans;
 
     ZooKeeperRequest() = default;
     ZooKeeperRequest(const ZooKeeperRequest &) = default;
