@@ -82,6 +82,15 @@ public:
     /// Tell Factory to not return connections with two level aggregation incompatibility.
     void skipReplicasWithTwoLevelAggregationIncompatibility() { skip_replicas_with_two_level_aggregation_incompatibility = true; }
 
+    ConnectionPoolPtr getPoolForIndex(size_t index) const
+    {
+        if (index < shuffled_pools.size())
+            return shuffled_pools[index].pool;
+        return nullptr;
+    }
+
+    size_t getShuffledPoolsSize() const { return shuffled_pools.size(); }
+
     ~HedgedConnectionsFactory();
 
 private:
