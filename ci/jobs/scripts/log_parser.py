@@ -1,4 +1,5 @@
 import re
+import string
 import sys
 
 sys.path.append(".")
@@ -6,6 +7,7 @@ from ci.praktika.utils import Shell
 
 
 class FuzzerLogParser:
+    UNKNOWN_ERROR = "Unknown error"
     MAX_INLINE_REPRODUCE_COMMANDS = 20
     SQL_COMMANDS = [
         "SELECT",
@@ -44,15 +46,18 @@ class FuzzerLogParser:
         "SET",
     ]
 
-    def __init__(self, server_log, fuzzer_log):
+    def __init__(self, server_log, fuzzer_log="", stderr_log="", stack_trace_str=None):
         self.server_log = server_log
         self.fuzzer_log = fuzzer_log
+        self.stderr_log = stderr_log
+        self.stack_trace_str = stack_trace_str
 
     def parse_failure(self):
         is_logical_error = False
         is_sanitizer_error = False
         is_killed_by_signal = False
         is_segfault = False
+        is_memory_limit_exceeded = False
         error_patterns = [
             (
                 "Sanitizer",
@@ -76,13 +81,33 @@ class FuzzerLogParser:
                 "is_killed_by_signal",
                 r"Received signal.*|.*Child process was terminated by signal 9.*",
             ),
+            (
+                "Memory limit exceeded",
+                "is_memory_limit_exceeded",
+                r".*\(total\) memory limit exceeded.*",
+            ),
         ]
 
         error_output = None
         for name, flag_name, pattern in error_patterns:
-            output = Shell.get_output(
-                f"rg --text -A 10 -o '{pattern}' {self.server_log} | head -n10"
-            )
+            output = ""
+            if self.stack_trace_str:
+                output = Shell.get_output(
+                    f"echo '{self.stack_trace_str}' | rg --text -A 10 -o '{pattern}' | head -n10",
+                    strict=True,
+                )
+            else:
+                if flag_name == "is_sanitizer_error":
+                    assert self.stderr_log
+                    file = self.stderr_log
+                else:
+                    assert self.server_log
+                    file = self.server_log
+                output = Shell.get_output(
+                    f"rg --text -A 10 -o '{pattern}' {file} | head -n10",
+                    strict=True,
+                )
+
             if output:
                 error_output = output
                 if flag_name == "is_sanitizer_error":
@@ -93,12 +118,27 @@ class FuzzerLogParser:
                     is_killed_by_signal = True
                 elif flag_name == "is_segfault":
                     is_segfault = True
+                elif flag_name == "is_memory_limit_exceeded":
+                    is_memory_limit_exceeded = True
                 break
 
         if not error_output:
-            return "Unknown error", "Lost connection to server. See the logs.\n"
+            return self.UNKNOWN_ERROR, "Lost connection to server. See the logs.\n"
 
         error_lines = error_output.splitlines()
+        result_name = error_lines[0].removesuffix(".")
+        format_message = ""
+        for i, line in enumerate(error_lines):
+            if "Format string: " in line:
+                # Extract the format string content between quotes
+                # Example: "... <Fatal> : Format string: 'Unknown numeric column of type: {}'."
+                start_idx = line.find("Format string: ")
+                if start_idx != -1:
+                    substring = line[start_idx + len("Format string: ") :]
+                    # Remove quotes and trailing period
+                    substring = substring.strip().rstrip(".").strip("'\"")
+                    format_message = substring
+                break
         # keep all lines before next log line
         for i, line in enumerate(error_lines):
             if "] {" in line and "} <" in line or line.startswith("    #"):
@@ -106,7 +146,6 @@ class FuzzerLogParser:
                 error_lines = error_lines[:i]
                 break
         error_output = "\n".join(error_lines)
-        result_name = error_lines[0].removesuffix(".")
         failed_query = ""
         reproduce_commands = []
         stack_trace = self.get_stack_trace()
@@ -116,13 +155,28 @@ class FuzzerLogParser:
             failed_query = self.get_failed_query()
             if failed_query:
                 reproduce_commands = self.get_reproduce_commands(failed_query)
+            if format_message and "Inconsistent AST formatting" not in result_name:
+                # Replace {} placeholders with A, B, C, etc. to create a generic error pattern.
+                # This normalization groups similar errors together for better tracking.
+                # Exception: 'Inconsistent AST formatting' errors preserve original parameters
+                # as they identify the specific problematic AST node.
+                letters = string.ascii_uppercase
+                letter_index = 0
+                while "{}" in format_message and letter_index < len(letters):
+                    format_message = format_message.replace(
+                        "{}", letters[letter_index], 1
+                    )
+                    letter_index += 1
+                result_name = f"Logical error: {format_message}"
         elif is_killed_by_signal or is_segfault:
             result_name += f" (STID: {stack_trace_id})"
+        elif is_memory_limit_exceeded:
+            result_name = "Server unresponsive: memory limit exceeded"
         elif is_sanitizer_error:
             stack_trace = self.get_sanitizer_stack_trace()
             if not stack_trace:
                 print("ERROR: Failed to parse sanitizer stack trace")
-            stack_trace_id = self.get_sanitizer_stack_trace_id(stack_trace)
+            stack_trace_id = self.get_stack_trace_id(stack_trace)
             error = ""
             if "AddressSanitizer" in error_output:
                 if "heap-use-after-free" in error_output:
@@ -195,7 +249,7 @@ class FuzzerLogParser:
             else:
                 result_name = f"Sanitizer (STID: {stack_trace_id})"
         else:
-            assert False, "TODO"
+            print(f"TODO: Unknown error {error_output}")
 
         info = f"Error:\n{error_output}\n"
         if failed_query:
@@ -222,69 +276,56 @@ class FuzzerLogParser:
 
     def get_sanitizer_stack_trace(self):
         # return all lines after Sanitizer error starting with "    #DIGITS "
-        lines = []
-        sanitizer_pattern = re.compile(r"(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:")
-        stack_frame_pattern = re.compile(r"^\s+#\d+\s+")
-        stack_frame_pattern_1st_line = re.compile(r"^\s+#0\s")
-        with open(self.server_log, "r", errors="replace") as file:
-            all_lines = file.readlines()
+        def _extract_sanitizer_trace(log_file):
+            lines = []
+            sanitizer_pattern = re.compile(
+                r"(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:"
+            )
+            stack_frame_pattern = re.compile(r"^\s+#\d+\s+")
+            stack_frame_pattern_1st_line = re.compile(r"^\s+#0\s")
+            # Pattern to remove ANSI escape codes (colors from tools like ripgrep)
+            ansi_escape = re.compile(r"\x1b\[[0-9;]*m")
 
-        in_sanitizer_trace = False
-        for line in all_lines:
-            if not in_sanitizer_trace:
-                if stack_frame_pattern_1st_line.search(line):
-                    in_sanitizer_trace = True
-                    lines.append(line.strip())
-            else:
-                if stack_frame_pattern.match(line):
-                    lines.append(line.strip())
-                elif in_sanitizer_trace:
-                    # End of stack trace
-                    break
+            with open(log_file, "r", errors="replace") as file:
+                all_lines = file.readlines()
+
+            in_sanitizer_trace = False
+            for line in all_lines:
+                # Strip ANSI color codes before pattern matching
+                clean_line = ansi_escape.sub("", line)
+
+                if not in_sanitizer_trace:
+                    if stack_frame_pattern_1st_line.search(clean_line):
+                        in_sanitizer_trace = True
+                        lines.append(clean_line.strip())
+                else:
+                    if stack_frame_pattern.match(clean_line):
+                        lines.append(clean_line.strip())
+                    elif in_sanitizer_trace:
+                        # End of stack trace
+                        break
+            return lines
+
+        lines = []
+
+        if self.stderr_log:
+            lines = _extract_sanitizer_trace(self.stderr_log)
+        else:
+            assert False, "No stderr log provided"
+
         return "\n".join(lines) if lines else None
 
-    def get_sanitizer_stack_trace_id(self, stack_trace):
-        if not stack_trace:
-            return None
-        lines = stack_trace.splitlines()
-        # keep substring starting from DB:: end all before first (. if DB:: not in the trace - ignore the line
-        functions = []
-        for line in lines:
-            if "DB::" in line:
-                # Extract substring starting from DB::
-                start_idx = line.find("DB::")
-                substring = line[start_idx:]
-                # End at first '(' if present
-                paren_idx = substring.find("(")
-                if paren_idx != -1:
-                    substring = substring[:paren_idx]
-                functions.append(substring)
-        if functions:
-            # Generate 4-digit base 10 number from first function name
-            func_hash = sum(ord(c) for c in functions[0]) % 10000
-            func_part = f"{func_hash:04d}"
-
-            # Generate 4-digit hex number (2 bytes = 4 hex chars)
-            # from functions array
-            func_str = "".join(functions)
-            st_hash = sum(ord(c) for c in func_str) % (16**4)
-            st_part = f"{st_hash:04x}"
-
-            stack_trace_id = f"{func_part}-{st_part}"
-        else:
-            stack_trace_id = None
-
-        return stack_trace_id
-
-    def get_stack_trace(self, max_lines=1000):
+    def get_stack_trace(self):
         lines = []
         stack_trace_pattern = re.compile(r"<Fatal> BaseDaemon: \d+(?:\.\d+)*\.\s*")
-        with open(self.server_log, "r", errors="replace") as file:
-            all_lines = file.readlines()
 
-        last_lines = all_lines[-max_lines:]
+        if self.stack_trace_str:
+            all_lines = self.stack_trace_str.splitlines()
+        else:
+            with open(self.server_log, "r", errors="replace") as file:
+                all_lines = file.readlines()
 
-        for line in reversed(last_lines):
+        for line in reversed(all_lines):
             if "<Fatal> BaseDaemon: Stack trace:" in line:
                 break
             match = stack_trace_pattern.search(line)
@@ -303,44 +344,80 @@ class FuzzerLogParser:
         return "\n".join(reversed(lines)) if lines else None
 
     def get_stack_trace_id(self, stack_trace):
+        """
+        Generate a stack trace ID (hash) to match and connect related stack traces.
+
+        Implementation aims to increase true-positive matches while minimizing false-positives by:
+        - Counting only ClickHouse functions in DB:: namespace
+        - Dropping templates and input arguments from function signatures
+        - Limiting depth to top ST_MAX_DEPTH functions for broader matching
+        - Excluding DB::Exception functions and everything above them (issue typically occurs before exception is thrown)
+
+        Returns: ID in format DDDD-XXXX where:
+            DDDD = 4-digit base-10 hash from first function name
+            XXXX = 4-digit hex hash from all functions
+        """
+        ST_MAX_DEPTH = 5
         if not stack_trace:
             return None
+
         lines = stack_trace.splitlines()
-        # keep substring starting from DB:: end all before first (. if DB:: not in the trace - ignore the line
         functions = []
+
         for line in lines:
-            if "DB::" in line:
-                # Extract substring starting from DB::
-                start_idx = line.find("DB::")
-                substring = line[start_idx:]
-                # End at first '(' if present
-                paren_idx = substring.find("(")
-                if paren_idx != -1:
-                    substring = substring[:paren_idx]
-                functions.append(substring.strip())
+            # Normalize multiple DB:: occurrences
+            line = line.replace(", DB::", "")
 
-        # Exception functions are not really interesting in identifying the problem - so drop these lines
-        for i, func in enumerate(reversed(functions)):
+            # Check if line contains DB:: namespace
+            if " DB::" in line:
+                start_idx = line.find(" DB::")
+                substring = line[start_idx + 1 :]  # Skip the leading space
+            elif line.startswith("DB::"):
+                substring = line
+            else:
+                continue
+
+            # Truncate at first '(' or '<' to keep only function name
+            paren_idx = substring.find("(")
+            angle_idx = substring.find("<")
+
+            if paren_idx != -1 and angle_idx != -1:
+                end_idx = min(paren_idx, angle_idx)
+            elif paren_idx != -1:
+                end_idx = paren_idx
+            elif angle_idx != -1:
+                end_idx = angle_idx
+            else:
+                end_idx = len(substring)
+
+            substring = substring[:end_idx]
+            functions.append(substring)
+
+        # Remove exception functions and everything above them
+        for i, func in enumerate(functions):
             if "DB::Exception" in func:
-                cutoff = len(functions) - i
-                functions = functions[:cutoff]
+                functions = functions[i + 1 :]
                 break
+        # Remove all remaining DB::Exception functions
+        functions = [f for f in functions if "DB::Exception" not in f]
 
-        if functions:
-            # Generate 4-digit base 10 number from first function name
-            func_hash = sum(ord(c) for c in functions[0]) % 10000
-            func_part = f"{func_hash:04d}"
+        # Limit to top ST_MAX_DEPTH functions for broader matching
+        functions = functions[:ST_MAX_DEPTH]
 
-            # Generate 4-digit hex number (2 bytes = 4 hex chars)
-            # from functions array
-            func_str = "".join(functions)
-            st_hash = sum(ord(c) for c in func_str) % (16**4)
-            st_part = f"{st_hash:04x}"
+        if not functions:
+            return None
 
-            stack_trace_id = f"{func_part}-{st_part}"
-        else:
-            stack_trace_id = None
+        # Generate 4-digit base-10 hash from first function name
+        func_hash = sum(ord(c) for c in functions[0]) % 10000
+        func_part = f"{func_hash:04d}"
 
+        # Generate 4-digit hex hash from all functions
+        func_str = "".join(functions)
+        st_hash = sum(ord(c) for c in func_str) % (16**4)
+        st_part = f"{st_hash:04x}"
+
+        stack_trace_id = f"{func_part}-{st_part}"
+        print(f"Stack trace functions: {functions}")
         return stack_trace_id
 
     def get_failed_query(self):
@@ -360,9 +437,10 @@ class FuzzerLogParser:
         assert failure_output, "No failure found in server log"
         failure_first_line = failure_output.splitlines()[0]
         assert failure_first_line, "No failure first line found in server log"
-        print(f"Failure first line: {failure_first_line}")
         query_id = failure_first_line.split(" ] {")[1].split("}")[0]
-        assert query_id, "No query id found in server log"
+        if not query_id:
+            print("ERROR: Query id not found")
+            return None
         print(f"Query id: {query_id}")
         query_command = Shell.get_output(
             f"grep -a '{query_id}' {self.server_log} | head -n1"
@@ -378,7 +456,8 @@ class FuzzerLogParser:
                 keyword_pos = query_command.find(keyword)
                 min_pos = min(min_pos, keyword_pos)
         if min_pos == len(query_command):
-            raise Exception("No SQL keyword found in query command")
+            print(f"No SQL keyword found in query command [{query_command}]")
+            return None
         query_command = query_command[min_pos:]
         return query_command
 
@@ -413,28 +492,35 @@ class FuzzerLogParser:
                 table_finctions.add(match)
             else:
                 tables.add(match)
-        assert (
-            tables or table_files or table_finctions
-        ), "No tables found in query command"
 
-        # get all write commands for found tables
+        if not (tables or table_files or table_finctions):
+            print("WARNING: No tables found in query command")
+            return [failed_query]
+
+        # Get all write commands for found tables
         commands_to_reproduce = []
         for table in list(tables) + list(table_files):
             for command in all_fuzzer_commands:
+                if command.endswith("FORMAT Values"):
+                    # meaningless empty INSERT: "INSERT INTO test FORMAT Values"
+                    continue
                 if any(
                     command.startswith(write_command)
                     for write_command in self.WRITE_SQL_COMMANDS
                 ) and (f" {table} " in command or f"'{table}'" in command):
                     commands_to_reproduce.append(command)
+
         commands_to_reproduce.append(failed_query)
 
-        # add table drop commands
-        for table in tables:
-            commands_to_reproduce.append(f"DROP TABLE IF EXISTS {table}")
+        if tables:
+            # Add table drop commands
+            for table in tables:
+                commands_to_reproduce.append(f"DROP TABLE IF EXISTS {table}")
 
         return commands_to_reproduce
 
     def _get_all_fuzzer_commands(self):
+        assert self.fuzzer_log, "Fuzzer log is not provided"
         error_logs = [
             "Fuzzing step",
             "Query succeeded",
@@ -474,9 +560,11 @@ class FuzzerLogParser:
 
 
 if __name__ == "__main__":
-    fuzzer_log = "././logical_error//fuzzer.log"
-    server_log = "././logical_error//server.log"
+    # Test:
+    fuzzer_log = "./asan_err/fuzzer.log"
+    server_log = "./no_stid/server.log"
     FTG = FuzzerLogParser(server_log, fuzzer_log)
+    # FTG2 = FuzzerLogParser("", "", stack_trace_str="...")
     result_name, info = FTG.parse_failure()
     print("Result name:", result_name)
     print("Info:\n", info)

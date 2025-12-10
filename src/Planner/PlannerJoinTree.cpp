@@ -2450,6 +2450,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     size_t joins_count = 0;
     bool is_full_join = false;
     bool is_global_join = false;
+    bool is_right_join_with_remote_table = false;
     int first_left_or_inner_join_pos = -1;
     int first_right_join_pos = -1;
     /// For each table, table function, query, union table expressions prepare before query plan build
@@ -2482,6 +2483,16 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             if (first_right_join_pos < 0 && join_node.getKind() == JoinKind::Right)
                 first_right_join_pos = i;
 
+            /// For RIGHT JOIN with a distributed table on the right side, disable parallel replicas.
+            /// The distributed table on the right side would be wrapped into a subquery,
+            /// causing parallel replicas to incorrectly choose the left table for parallel reading.
+            /// Each replica would then independently read the full distributed table, resulting in duplicate data.
+            if (join_node.getKind() == JoinKind::Right)
+            {
+                const auto & right_expression_data = planner_context->getTableExpressionDataOrThrow(join_node.getRightTableExpression());
+                is_right_join_with_remote_table = right_expression_data.isRemote();
+            }
+
             continue;
         }
 
@@ -2496,6 +2507,10 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
 
         /// for n-way join with FULL JOIN or GLOBAL JOINS
         if (joins_count > 1 && (is_full_join || is_global_join))
+            return true;
+
+        /// For RIGHT JOIN with distributed table on the right side
+        if (is_right_join_with_remote_table)
             return true;
 
         return false;

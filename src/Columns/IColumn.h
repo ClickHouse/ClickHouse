@@ -289,59 +289,58 @@ public:
       */
     virtual void popBack(size_t n) = 0;
 
+    struct SerializationSettings
+    {
+        bool serialize_string_with_zero_byte = false;
+
+        static SerializationSettings createForAggregationState()
+        {
+            /// Same aggregation state can be serialized/deserialized by servers with different versions.
+            /// Add zero byte to the end of the string in aggregation state to keep it compatible with old versions.
+            return SerializationSettings{.serialize_string_with_zero_byte = true};
+        }
+    };
+
     /** Serializes n-th element. Serialized element should be placed continuously inside Arena's memory.
       * Serialized value can be deserialized to reconstruct original object. Is used in aggregation.
       * The method is similar to getDataAt(), but can work when element's value cannot be mapped to existing continuous memory chunk,
       *  For example, to obtain unambiguous representation of Array of strings, strings data should be interleaved with their sizes.
       * Parameter begin should be used with Arena::allocContinue.
       */
-    virtual std::string_view serializeValueIntoArena(size_t /* n */, Arena & /* arena */, char const *& /* begin */) const;
-
-    /// The same as serializeValueIntoArena but is used to store values inside aggregation states.
-    /// It's used in generic implementation of some aggregate functions.
-    /// serializeValueIntoArena is used for in-memory value representations, so it's implementation can be changed.
-    /// This method must respect compatibility with older versions because aggregation states may be serialized/deserialized
-    /// by servers with different versions.
-    virtual std::string_view serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
-    {
-        return serializeValueIntoArena(n, arena, begin);
-    }
+    virtual std::string_view serializeValueIntoArena(size_t /* n */, Arena & /* arena */, char const *& /* begin */, const SerializationSettings * settings) const;
 
     /// Same as above but serialize into already allocated continuous memory.
     /// Return pointer to the end of the serialization data.
-    virtual char * serializeValueIntoMemory(size_t /* n */, char * /* memory */) const;
+    virtual char * serializeValueIntoMemory(size_t /* n */, char * /* memory */, const SerializationSettings * settings) const;
 
     /// Returns size in bytes required to serialize value into memory using the previous method.
     /// If size cannot be calculated in advance, return nullopt. In this case serializeValueIntoMemory
     /// cannot be used and serializeValueIntoArena should be used instead,
-    virtual std::optional<size_t> getSerializedValueSize(size_t n) const { return byteSizeAt(n); }
+    virtual std::optional<size_t> getSerializedValueSize(size_t n, const SerializationSettings *) const { return byteSizeAt(n); }
 
-    virtual void batchSerializeValueIntoMemory(std::vector<char *> & /* memories */) const;
+    virtual void batchSerializeValueIntoMemory(std::vector<char *> & /* memories */, const SerializationSettings * settings) const;
 
     /// Nullable variant to avoid calling virtualized method inside ColumnNullable.
-    virtual std::string_view
-    serializeValueIntoArenaWithNull(size_t /* n */, Arena & /* arena */, char const *& /* begin */, const UInt8 * /* is_null */) const;
+    virtual std::string_view serializeValueIntoArenaWithNull(
+        size_t /* n */,
+        Arena & /* arena */,
+        char const *& /* begin */,
+        const UInt8 * /* is_null */,
+        const SerializationSettings * settings) const;
 
-    virtual char * serializeValueIntoMemoryWithNull(size_t /* n */, char * /* memory */, const UInt8 * /* is_null */) const;
+    virtual char * serializeValueIntoMemoryWithNull(size_t /* n */, char * /* memory */, const UInt8 * /* is_null */, const SerializationSettings * settings) const;
 
-    virtual void batchSerializeValueIntoMemoryWithNull(std::vector<char *> & /* memories */, const UInt8 * /* is_null */) const;
+    virtual void batchSerializeValueIntoMemoryWithNull(std::vector<char *> & /* memories */, const UInt8 * /* is_null */, const SerializationSettings * settings) const;
 
     /// Calculate all the sizes of serialized data (as in the methods above) in the column and add to `sizes`.
     /// If `is_null` is not nullptr, also take null byte into account.
     /// This is currently used to facilitate the allocation of memory for an entire continuous row
     /// in a single step. For more details, refer to the HashMethodSerialized implementation.
-    virtual void collectSerializedValueSizes(PaddedPODArray<UInt64> & /* sizes */, const UInt8 * /* is_null */) const;
+    virtual void collectSerializedValueSizes(PaddedPODArray<UInt64> & /* sizes */, const UInt8 * /* is_null */, const SerializationSettings * settings) const;
 
     /// Deserializes a value that was serialized using IColumn::serializeValueIntoArena method.
     /// Note that it needs to deal with user input
-    virtual void deserializeAndInsertFromArena(ReadBuffer & in) = 0;
-
-    /// Deserializes a value that was serialized using IColumn::serializeAggregationStateValueIntoArena method.
-    /// Note that it needs to deal with user input
-    virtual void deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
-    {
-        deserializeAndInsertFromArena(in);
-    }
+    virtual void deserializeAndInsertFromArena(ReadBuffer & in, const SerializationSettings * settings) = 0;
 
     /// Skip previously serialized value that was serialized using IColumn::serializeValueIntoArena method.
     virtual void skipSerializedInArena(ReadBuffer & in) const = 0;
@@ -692,6 +691,8 @@ public:
     virtual void takeDynamicStructureFromSourceColumns(const std::vector<Ptr> & /*source_columns*/, std::optional<size_t> /*max_dynamic_subcolumns*/) {}
     /// For columns with dynamic subcolumns this method takes the exact dynamic structure from provided column.
     virtual void takeDynamicStructureFromColumn(const ColumnPtr & /*source_column*/) {}
+    /// For columns with dynamic subcolumns fix current dynamic structure so later inserts into this column won't change it.
+    virtual void fixDynamicStructure() {}
 
     /** Some columns can contain another columns inside.
       * So, we have a tree of columns. But not all combinations are possible.
@@ -906,7 +907,7 @@ private:
     void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override;
 
     /// Devirtualize byteSizeAt.
-    void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
+    void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
 
     /// Devirtualize insertFrom.
     ColumnPtr updateFrom(const IColumn::Patch & patch) const override;
@@ -922,14 +923,14 @@ private:
     void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, ColumnsWithRowNumbers columns_with_row_numbers) override;
 
     /// Move common implementations into the same translation unit to ensure they are properly inlined.
-    char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const override;
-    void batchSerializeValueIntoMemoryWithNull(std::vector<char *> & memories, const UInt8 * is_null) const override;
+    char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
+    void batchSerializeValueIntoMemoryWithNull(std::vector<char *> & memories, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
 
-    char * serializeValueIntoMemory(size_t n, char * memory) const override;
-    void batchSerializeValueIntoMemory(std::vector<char *> & memories) const override;
+    char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
+    void batchSerializeValueIntoMemory(std::vector<char *> & memories, const IColumn::SerializationSettings * settings) const override;
 
-    std::string_view serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null) const override;
-    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    std::string_view serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
+    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
 };
 
 }
