@@ -74,19 +74,6 @@ namespace DB::ServerSetting
     extern const ServerSettingsUInt64 s3_retry_attempts;
 }
 
-namespace DB::StorageObjectStorageSetting
-{
-    extern const StorageObjectStorageSettingsString iceberg_metadata_file_path;
-}
-
-namespace DB::DatabaseDataLakeSetting
-{
-    extern const DatabaseDataLakeSettingsString storage_endpoint;
-    extern const DatabaseDataLakeSettingsString aws_access_key_id;
-    extern const DatabaseDataLakeSettingsString aws_secret_access_key;
-    extern const DatabaseDataLakeSettingsString region;
-}
-
 namespace CurrentMetrics
 {
     extern const Metric MarkCacheBytes;
@@ -112,6 +99,8 @@ GlueCatalog::GlueCatalog(
 {
     DB::S3::CredentialsConfiguration creds_config;
     creds_config.use_environment_credentials = true;
+    creds_config.role_arn = settings.aws_role_arn;
+    creds_config.role_session_name = settings.aws_role_session_name;
 
     const auto & server_settings = getContext()->getGlobalContext()->getServerSettings();
     const DB::Settings & global_settings = getContext()->getGlobalContext()->getSettingsRef();
@@ -170,8 +159,19 @@ GlueCatalog::GlueCatalog(
     else
     {
         LOG_TRACE(log, "Creating AWS glue client with credentials empty {}, region '{}', endpoint '{}'", credentials.IsEmpty(), region, endpoint);
-        std::shared_ptr<DB::S3::S3CredentialsProviderChain> chain = std::make_shared<DB::S3::S3CredentialsProviderChain>(poco_config, credentials, creds_config);
-        glue_client = std::make_unique<Aws::Glue::GlueClient>(chain, endpoint_provider, client_configuration);
+        std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider
+            = std::make_shared<DB::S3::S3CredentialsProviderChain>(poco_config, credentials, creds_config);
+        if (!settings.aws_role_arn.empty())
+        {
+            credentials_provider = DB::S3::AwsAuthSTSAssumeRoleCredentialsProvider::create(
+                settings.aws_role_arn,
+                settings.aws_role_session_name,
+                creds_config.expiration_window_seconds,
+                std::move(credentials_provider),
+                poco_config,
+                creds_config.sts_endpoint_override);
+        }
+        glue_client = std::make_unique<Aws::Glue::GlueClient>(credentials_provider, endpoint_provider, client_configuration);
     }
 
 }
