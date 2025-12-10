@@ -15,6 +15,11 @@ workflow = Workflow.Config(
             name="Collect flaky tests",
             command="python3 ./ci/jobs/collect_gh_issues.py",
             runs_on=RunnerLabels.STYLE_CHECK_ARM,
+        ),
+        Job.Config(
+            name="Autoassign approvers",
+            command="python3 ./ci/jobs/autoassign_approvers.py",
+            runs_on=RunnerLabels.STYLE_CHECK_ARM,
         )
     ],
     secrets=SECRETS,
