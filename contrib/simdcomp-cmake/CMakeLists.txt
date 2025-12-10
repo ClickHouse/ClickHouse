@@ -1,6 +1,6 @@
-option (ENABLE_STREAMVBYTE "Enable simdcomp" ${ENABLE_LIBRARIES})
+option (ENABLE_SIMDCOMP "Enable simdcomp" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_STREAMVBYTE)
+if (NOT ENABLE_SIMDCOMP)
     message(STATUS "Not using simdcomp")
     return()
 endif()
