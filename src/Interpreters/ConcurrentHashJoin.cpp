@@ -460,9 +460,12 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
     }
 
     // If two-level maps are used, the probe stage uses only slot 0 (see joinBlock()),
-    // and on build finish we merged buckets into slot 0 and copied the shared map/flags to all instances.
-    // However, for better parallelism of non-joined row emission, we create multiple streams
-    // where each stream iterates over a subset of buckets (those that originally belonged to that slot).
+    // and on build finish we merged buckets into slot 0 and copied the shared map/flags to all instances
+    // but here we create multiple streams where each iterates over a subset of buckets (that originally belonged to that slot)
+    // so hashtable in slot 0 looks like this:
+    //┌─────────────────────────────────────────────────────┐
+    //│ bucket[0] │ bucket[1] │ bucket[2] │ ... │ bucket[n] │
+    //└─────────────────────────────────────────────────────┘
     if (hash_joins[0]->data->twoLevelMapIsUsed())
     {
         std::vector<IBlocksStreamPtr> streams;
@@ -470,8 +473,8 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
         for (size_t i = 0; i < slots; ++i)
         {
             // Each slot iterates over buckets {i, i+slots, i+2*slots, ...}
-            // This mirrors the bucket ownership during the parallel build phase.
-            // All slots share the same merged hash map (in slot 0), but each iterates different buckets.
+            // This mirrors the bucket ownership during the parallel build phase
+            // All slots share the same merged hash map (in slot 0), but each iterates different buckets
             std::lock_guard lock(hash_joins[0]->mutex);
             if (auto s = hash_joins[0]->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size, i, slots))
                 streams.push_back(std::move(s));

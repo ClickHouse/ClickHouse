@@ -1376,11 +1376,28 @@ struct AdderNonJoined
 /// Based on:
 ///   - map offsetInternal saved in used_flags for single disjuncts
 ///   - flags in BlockWithFlags for multiple disjuncts
+///
+/// For parallel iteration over two-level hash maps, bucket_idx and num_buckets
+/// can be specified to process only buckets where (bucket % num_buckets == bucket_idx)
 class NotJoinedHash final : public NotJoinedBlocks::RightColumnsFiller
 {
 public:
+    /// Constructor for iterating over all buckets
     NotJoinedHash(const HashJoin & parent_, UInt64 max_block_size_, bool flag_per_row_)
-        : parent(parent_), max_block_size(max_block_size_), flag_per_row(flag_per_row_), current_block_start(0)
+        : NotJoinedHash(parent_, max_block_size_, flag_per_row_, 0, 1)
+    {
+    }
+
+    /// Constructor for iterating over a subset of buckets (for parallel non-joined emission)
+    /// Processes buckets {bucket_idx, bucket_idx + num_buckets, bucket_idx + 2*num_buckets, ...}
+    NotJoinedHash(const HashJoin & parent_, UInt64 max_block_size_, bool flag_per_row_,
+                  size_t bucket_idx_, size_t num_buckets_)
+        : parent(parent_)
+        , max_block_size(max_block_size_)
+        , flag_per_row(flag_per_row_)
+        , bucket_idx(bucket_idx_)
+        , num_buckets(num_buckets_)
+        , current_block_start(0)
     {
         if (parent.data == nullptr)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
@@ -1417,12 +1434,20 @@ private:
     const HashJoin & parent;
     UInt64 max_block_size;
     bool flag_per_row;
+    size_t bucket_idx;      /// Which bucket subset this stream handles
+    size_t num_buckets;     /// Total number of parallel streams (1 = all buckets)
 
     size_t current_block_start;
 
     std::any position;
     std::optional<HashJoin::NullmapList::const_iterator> nulls_position;
     std::optional<HashJoin::ScatteredColumnsList::const_iterator> used_position;
+
+    /// Check if a bucket belongs to this stream's range
+    bool isBucketInRange(size_t bucket) const
+    {
+        return num_buckets == 1 || (bucket % num_buckets) == bucket_idx;
+    }
 
     size_t fillColumnsFromData(const HashJoin::ScatteredColumnsList & columns, MutableColumns & columns_right)
     {
@@ -1522,280 +1547,75 @@ private:
             using Mapped = typename Map::mapped_type;
             using Iterator = typename Map::const_iterator;
 
-
             if (!position.has_value())
                 position = std::make_any<Iterator>(map.begin());
 
             Iterator & it = std::any_cast<Iterator &>(position);
             auto end = map.end();
 
-            for (; it != end; ++it)
+            /// For two-level hash tables with parallel iteration, use efficient bucket skipping
+            if constexpr (requires { it.getBucket(); map.NUM_BUCKETS; })
             {
-                size_t offset = map.offsetInternal(it.getPtr());
-                if (parent.isUsed(offset))
-                    continue;
-
-                const Mapped & mapped = it->getMapped();
-                AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
-
-                if (rows_added >= max_block_size)
+                auto skipToNextValidBucket = [&]() -> bool
                 {
-                    ++it;
-                    break;
-                }
-            }
-        }
-
-        return rows_added;
-    }
-
-    void fillNullsFromBlocks(MutableColumns & columns_keys_and_right, size_t & rows_added)
-    {
-        if (!nulls_position.has_value())
-            nulls_position = parent.data->nullmaps.begin();
-
-        auto end = parent.data->nullmaps.end();
-
-        for (auto & it = *nulls_position; it != end && rows_added < max_block_size; ++it)
-        {
-            const auto * columns = it->columns;
-            ConstNullMapPtr nullmap = nullptr;
-            if (it->column)
-                nullmap = &assert_cast<const ColumnUInt8 &>(*it->column).getData();
-
-            size_t rows = columns->columns_info.columns.at(0)->size();
-            for (size_t row = 0; row < rows; ++row)
-            {
-                if (nullmap && (*nullmap)[row])
-                {
-                    for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
+                    while (it != end && !isBucketInRange(it.getBucket()))
                     {
-                        if (const auto * replicated_column = columns->columns_info.replicated_columns[col])
-                            columns_keys_and_right[col]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(row));
-                        else
-                            columns_keys_and_right[col]->insertFrom(*columns->columns_info.columns[col], row);
-                    }
-                    ++rows_added;
-                }
-            }
-        }
-    }
-};
-
-/// Variant of NotJoinedHash that iterates only over specific buckets of a two-level hash map.
-/// Used for parallel non-joined row emission in ConcurrentHashJoin.
-/// This class iterates over buckets {bucket_idx, bucket_idx + num_buckets, bucket_idx + 2*num_buckets, ...}
-class NotJoinedHashBucketRange final : public NotJoinedBlocks::RightColumnsFiller
-{
-public:
-    NotJoinedHashBucketRange(const HashJoin & parent_, UInt64 max_block_size_, bool flag_per_row_,
-                             size_t bucket_idx_, size_t num_buckets_)
-        : parent(parent_)
-        , max_block_size(max_block_size_)
-        , flag_per_row(flag_per_row_)
-        , bucket_idx(bucket_idx_)
-        , num_buckets(num_buckets_)
-        , current_block_start(0)
-    {
-        if (parent.data == nullptr)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
-    }
-
-    Block getEmptyBlock() override { return parent.savedBlockSample().cloneEmpty(); }
-
-    size_t fillColumns(MutableColumns & columns_right) override
-    {
-        size_t rows_added = 0;
-        if (unlikely(parent.data->type == HashJoin::Type::EMPTY))
-        {
-            // For EMPTY type, partition the columns list by index
-            rows_added = fillColumnsFromData(parent.data->columns, columns_right);
-        }
-        else
-        {
-            auto fill_callback = [&](auto, auto, auto & map) { rows_added = fillColumnsFromMap(map, columns_right); };
-
-            const bool prefer_use_maps_all = parent.preferUseMapsAll();
-            if (!joinDispatch(parent.kind, parent.strictness, parent.data->maps.front(), prefer_use_maps_all, fill_callback))
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Unknown JOIN strictness '{}' (must be on of: ANY, ALL, ASOF)", parent.strictness);
-        }
-
-        if (!flag_per_row)
-        {
-            fillNullsFromBlocks(columns_right, rows_added);
-        }
-
-        return rows_added;
-    }
-
-private:
-    const HashJoin & parent;
-    UInt64 max_block_size;
-    bool flag_per_row;
-    size_t bucket_idx;
-    size_t num_buckets;
-
-    size_t current_block_start;
-    size_t current_column_idx = 0;
-
-    std::any position;
-    std::optional<HashJoin::NullmapList::const_iterator> nulls_position;
-    std::optional<HashJoin::ScatteredColumnsList::const_iterator> used_position;
-
-    size_t fillColumnsFromData(const HashJoin::ScatteredColumnsList & columns, MutableColumns & columns_right)
-    {
-        // For EMPTY type, partition the columns list - each stream handles columns at indices {bucket_idx, bucket_idx+num_buckets, ...}
-        if (!position.has_value())
-        {
-            position = std::make_any<HashJoin::ScatteredColumnsList::const_iterator>(columns.begin());
-            // Advance to the first column this stream should handle
-            auto & it = std::any_cast<HashJoin::ScatteredColumnsList::const_iterator &>(position);
-            for (size_t i = 0; i < bucket_idx && it != columns.end(); ++i)
-                ++it;
-            current_column_idx = bucket_idx;
-        }
-
-        auto & block_it = std::any_cast<HashJoin::ScatteredColumnsList::const_iterator &>(position);
-        auto end = columns.end();
-
-        size_t rows_added = 0;
-        while (block_it != end)
-        {
-            size_t rows_from_block = std::min<size_t>(max_block_size - rows_added, block_it->columns_info.columns.at(0)->size() - current_block_start);
-            for (size_t j = 0; j < columns_right.size(); ++j)
-            {
-                if (const auto * replicated_column = block_it->columns_info.replicated_columns[j])
-                {
-                    size_t current_block_end = current_block_start + rows_from_block;
-                    for (size_t row = current_block_start; row < current_block_end; ++row)
-                        columns_right[j]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(row));
-                }
-                else
-                {
-                    const auto & col = block_it->columns_info.columns[j];
-                    columns_right[j]->insertRangeFrom(*col, current_block_start, rows_from_block);
-                }
-            }
-            rows_added += rows_from_block;
-
-            if (rows_added >= max_block_size)
-            {
-                current_block_start += rows_from_block;
-                if (block_it->columns_info.columns.at(0)->size() <= current_block_start)
-                {
-                    // Advance by num_buckets to skip to next column this stream handles
-                    for (size_t i = 0; i < num_buckets && block_it != end; ++i)
-                        ++block_it;
-                    current_block_start = 0;
-                }
-                break;
-            }
-            current_block_start = 0;
-            // Advance by num_buckets to skip to next column this stream handles
-            for (size_t i = 0; i < num_buckets && block_it != end; ++i)
-                ++block_it;
-        }
-        return rows_added;
-    }
-
-    template <typename Maps>
-    size_t fillColumnsFromMap(const Maps & maps, MutableColumns & columns_keys_and_right)
-    {
-        switch (parent.data->type)
-        {
-#define M(TYPE) \
-    case HashJoin::Type::TYPE: \
-        return fillColumns(*maps.TYPE, columns_keys_and_right);
-            APPLY_FOR_JOIN_VARIANTS(M)
-#undef M
-            default:
-                throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys (type: {})", parent.data->type);
-        }
-    }
-
-    /// Check if a bucket index belongs to this stream's range
-    bool isBucketInRange(size_t bucket) const
-    {
-        return (bucket % num_buckets) == bucket_idx;
-    }
-
-    template <typename Map>
-    size_t fillColumns(const Map & map, MutableColumns & columns_keys_and_right)
-    {
-        size_t rows_added = 0;
-
-        if (flag_per_row)
-        {
-            // For flag_per_row mode, partition the columns list
-            if (!used_position.has_value())
-            {
-                used_position = parent.data->columns.begin();
-                // Advance to the first column this stream should handle
-                auto & it = *used_position;
-                for (size_t i = 0; i < bucket_idx && it != parent.data->columns.end(); ++i)
-                    ++it;
-            }
-
-            auto end = parent.data->columns.end();
-
-            for (auto & it = *used_position; it != end && rows_added < max_block_size;)
-            {
-                const auto & mapped_block = *it;
-                size_t rows = mapped_block.columns_info.columns.at(0)->size();
-
-                for (size_t row = 0; row < rows; ++row)
-                {
-                    if (!parent.isUsed(&mapped_block.columns_info.columns, row))
-                    {
-                        for (size_t column = 0; column < columns_keys_and_right.size(); ++column)
+                        size_t current_bucket = it.getBucket();
+                        /// Calculate next bucket in our range: bucket_idx, bucket_idx + num_buckets, ...
+                        /// Formula: find the smallest bucket >= current_bucket that is ≡ bucket_idx (mod num_buckets)
+                        size_t next_bucket = current_bucket - (current_bucket % num_buckets) + bucket_idx;
+                        if (next_bucket <= current_bucket)
+                            next_bucket += num_buckets;
+                        if (next_bucket >= map.NUM_BUCKETS)
                         {
-                            if (const auto * replicated_column = mapped_block.columns_info.replicated_columns[column])
-                                columns_keys_and_right[column]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(row));
-                            else
-                                columns_keys_and_right[column]->insertFrom(*mapped_block.columns_info.columns[column], row);
+                            it = end;
+                            return false;
                         }
-                        ++rows_added;
+                        it = map.iteratorAt(next_bucket);
+                    }
+                    return it != end;
+                };
+
+                /// Skip to first bucket in our range
+                if (!skipToNextValidBucket())
+                    return rows_added;
+
+                while (it != end && rows_added < max_block_size)
+                {
+                    size_t offset = map.offsetInternal(it.getPtr());
+                    if (!parent.isUsed(offset))
+                    {
+                        const Mapped & mapped = it->getMapped();
+                        AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
+                    }
+
+                    ++it;
+
+                    /// After advancing, check if we need to skip to next valid bucket
+                    if (it != end && !isBucketInRange(it.getBucket()))
+                    {
+                        if (!skipToNextValidBucket())
+                            break;
                     }
                 }
-
-                // Advance by num_buckets to skip to next column this stream handles
-                for (size_t i = 0; i < num_buckets && it != end; ++i)
-                    ++it;
             }
-        }
-        else
-        {
-            using Mapped = typename Map::mapped_type;
-            using Iterator = typename Map::const_iterator;
-
-            if (!position.has_value())
-                position = std::make_any<Iterator>(map.begin());
-
-            Iterator & it = std::any_cast<Iterator &>(position);
-            auto end = map.end();
-
-            for (; it != end; ++it)
+            else
             {
-                // For two-level hash tables, check if current bucket belongs to this stream
-                // The iterator exposes the current bucket via getBucket() for TwoLevelHashTable
-                if constexpr (requires { it.getBucket(); })
+                /// Single-level hash table: iterate normally (bucket filtering not applicable)
+                for (; it != end; ++it)
                 {
-                    if (!isBucketInRange(it.getBucket()))
+                    size_t offset = map.offsetInternal(it.getPtr());
+                    if (parent.isUsed(offset))
                         continue;
-                }
 
-                size_t offset = map.offsetInternal(it.getPtr());
-                if (parent.isUsed(offset))
-                    continue;
+                    const Mapped & mapped = it->getMapped();
+                    AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
 
-                const Mapped & mapped = it->getMapped();
-                AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
-
-                if (rows_added >= max_block_size)
-                {
-                    ++it;
-                    break;
+                    if (rows_added >= max_block_size)
+                    {
+                        ++it;
+                        break;
+                    }
                 }
             }
         }
@@ -1805,7 +1625,8 @@ private:
 
     void fillNullsFromBlocks(MutableColumns & columns_keys_and_right, size_t & rows_added)
     {
-        // Only bucket_idx == 0 handles nullmaps to avoid duplicates
+        /// For parallel iteration, only the first bucket stream (bucket_idx == 0) handles nullmaps
+        /// to avoid duplicates across streams
         if (bucket_idx != 0)
             return;
 
@@ -1889,28 +1710,8 @@ HashJoin::getNonJoinedBlocks(const Block & left_sample_block, const Block & resu
         left_columns_count = table_join->getOutputColumns(JoinTableSide::Left).size();
 
     bool flag_per_row = needUsedFlagsForPerRightTableRow(table_join);
-    if (!flag_per_row)
-    {
-        size_t expected_columns_count = left_columns_count + required_right_keys.columns() + sample_block_with_columns_to_add.columns();
-        if (expected_columns_count != result_sample_block.columns())
-        {
-            Names left_block_names;
-            if (canRemoveColumnsFromLeftBlock())
-                std::ranges::copy(
-                    table_join->getOutputColumns(JoinTableSide::Left) | std::views::transform([](const auto & column) { return column.name; }),
-                    std::back_inserter(left_block_names));
-            else
-                left_block_names = left_sample_block.getNames();
 
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Unexpected number of columns in result sample block: {} expected {} ([{}] = [{}] + [{}] + [{}])",
-                            result_sample_block.columns(), expected_columns_count,
-                            result_sample_block.dumpNames(), fmt::join(left_block_names, ", "),
-                            required_right_keys.dumpNames(), sample_block_with_columns_to_add.dumpNames());
-        }
-    }
-
-    auto non_joined = std::make_unique<NotJoinedHashBucketRange>(*this, max_block_size, flag_per_row, bucket_idx, num_buckets);
+    auto non_joined = std::make_unique<NotJoinedHash>(*this, max_block_size, flag_per_row, bucket_idx, num_buckets);
     return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, *table_join);
 }
 

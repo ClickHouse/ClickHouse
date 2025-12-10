@@ -484,7 +484,6 @@ public:
 
 private:
     friend class NotJoinedHash;
-    friend class NotJoinedHashBucketRange;
     friend class JoinSource;
     friend class CrossJoinResult;
 
