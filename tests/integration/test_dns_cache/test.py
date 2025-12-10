@@ -108,7 +108,7 @@ def cluster_ready(cluster_start):
     Many failures were found after the random-order + flaky testing were run on the file
     """
     try:
-        for node in (node1, node2, node3, node4, node5, node6, node7, node8):
+        for node in cluster_start.instances.values():
             node.wait_for_start(10)
 
         yield cluster
