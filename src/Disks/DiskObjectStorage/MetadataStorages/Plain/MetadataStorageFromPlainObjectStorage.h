@@ -76,7 +76,6 @@ private:
     const String storage_path_full;
 
     mutable ObjectMetadataCachePtr object_metadata_cache;
-    const ObjectStorageKeyGeneratorPtr key_generator;
 };
 
 class MetadataStorageFromPlainObjectStorageTransaction : public IMetadataTransaction
