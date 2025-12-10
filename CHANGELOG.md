@@ -1,5 +1,5 @@
 ### Table of Contents
-**[ClickHouse release v25.11, 2025-11-25](#2511)**<br/>
+**[ClickHouse release v25.11, 2025-11-27](#2511)**<br/>
 **[ClickHouse release v25.10, 2025-10-30](#2510)**<br/>
 **[ClickHouse release v25.9, 2025-09-25](#259)**<br/>
 **[ClickHouse release v25.8 LTS, 2025-08-28](#258)**<br/>
@@ -21,7 +21,7 @@
 
 # 2025 Changelog
 
-### <a id="2511"></a> ClickHouse release 25.11, 2025-11-25
+### <a id="2511"></a> ClickHouse release 25.11, 2025-11-27
 
 #### Backward Incompatible Change
 * Remove deprecated `Object` type. [#85718](https://github.com/ClickHouse/ClickHouse/pull/85718) ([Pavel Kruglov](https://github.com/Avogar)).
@@ -58,7 +58,6 @@
 * Added `kafka_schema_registry_skip_bytes` setting to Kafka table engine to skip envelope header bytes (e.g., AWS Glue Schema Registry's 19-byte prefix) before parsing message payload. This enables ClickHouse to consume messages from schema registries that add metadata headers. [#89621](https://github.com/ClickHouse/ClickHouse/pull/89621) ([Taras Polishchuk](https://github.com/wake-up-neo)).
 * Add `h3PolygonToCells` function which can fill geometry with h3 hexagons. Resolves [#33991](https://github.com/ClickHouse/ClickHouse/issues/33991). [#66262](https://github.com/ClickHouse/ClickHouse/pull/66262) ([Zacharias Knudsen](https://github.com/zachasme)).
 * Add new virtual column `_tags` (`Map(String, String)`) with all the tags associated with the blob in S3 (Note, if blob does not have any tags no extra request will be done). Resolves [#72945](https://github.com/ClickHouse/ClickHouse/issues/72945). [#77773](https://github.com/ClickHouse/ClickHouse/pull/77773) ([Zicong Qu](https://github.com/zicongleoqu)).
-* TODO, @vdimir - explain the difference and move to another category. Add NULL-safe comparison operators `<=>` (alias `IS NOT DISTINCT FROM`) and `IS DISTINCT FROM` to allow equality checks that correctly handle `NULL` values. Resolves [#86763](https://github.com/ClickHouse/ClickHouse/issues/86763). [#87581](https://github.com/ClickHouse/ClickHouse/pull/87581) ([yanglongwei](https://github.com/ylw510)).
 
 #### Experimental Feature
 * Support TLS certificates retrieval from ACME providers, [RFC 8555](https://datatracker.ietf.org/doc/html/rfc8555), such as Let's Encrypt. This allows the autoconfiguration of TLS on distributed clusters. [#66315](https://github.com/ClickHouse/ClickHouse/pull/66315) ([Konstantin Bogdanov](https://github.com/thevar1able)).
@@ -99,6 +98,7 @@
 * UNION should unify types with `Variant` if needed when `use_variant_as_common_type` is set. Resolves [#82772](https://github.com/ClickHouse/ClickHouse/issues/82772). [#83246](https://github.com/ClickHouse/ClickHouse/pull/83246) ([Mithun p](https://github.com/mithunputhusseri)).
 * Roles defined in SQL can now be granted to users defined in `users.xml`. [#88139](https://github.com/ClickHouse/ClickHouse/pull/88139) ([c-end](https://github.com/c-end)).
 * Log internal queries (those executed internally by dictionaries, refreshable materialized views, etc) and add the new `is_internal` column to `system.query_log`. [#83277](https://github.com/ClickHouse/ClickHouse/pull/83277) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
+* Enhanced `IS NOT DISTINCT FROM` (`<=>`) operator: added support for inverse `IS DISTINCT FROM`, support compatible numeric operands of different types (e.g., `Nullable(UInt32)` and `Nullable(Int64)`). Resolves [#86763](https://github.com/ClickHouse/ClickHouse/issues/86763). [#87581](https://github.com/ClickHouse/ClickHouse/pull/87581) ([yanglongwei](https://github.com/ylw510)).
 * `clickhouse-client` and `clickhouse-local` in the interactive mode will highlight identifiers in the command line that have the same name as the current one under the cursor. [#89689](https://github.com/ClickHouse/ClickHouse/pull/89689) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * Output format-related settings now don't affect query caching. Also, the query caching will ignore the `http_response_headers` setting. This is needed to allow implementation of features such as downloading the result from the cache in the Web UI. [#89756](https://github.com/ClickHouse/ClickHouse/pull/89756) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * The HTTP interface will provide `Age` and `Expires` headers when the query result cache is used. The presence of the `Age` header tells whether the result is from the cache, while `Expires` is also set at the first write. Introduce new profile events: `QueryCacheAgeSeconds`, `QueryCacheReadRows`, `QueryCacheReadBytes`, `QueryCacheWrittenRows`, `QueryCacheWrittenBytes`. [#89759](https://github.com/ClickHouse/ClickHouse/pull/89759) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
