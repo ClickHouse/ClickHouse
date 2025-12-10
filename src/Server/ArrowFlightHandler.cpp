@@ -35,8 +35,10 @@
 #include <Poco/StreamCopier.h>
 #include <Poco/URI.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include <IO/ReadBufferFromString.h>
 
 #include <Common/config_version.h>
+#include <Common/scope_guard_safe.h>
 
 #include <boost/algorithm/string.hpp>
 
@@ -58,6 +60,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_EXCEPTION;
+    extern const int INVALID_SESSION_TIMEOUT;
 }
 
 namespace
@@ -68,10 +71,16 @@ namespace
     class AuthMiddleware : public arrow::flight::ServerMiddleware
     {
     public:
-        explicit AuthMiddleware(const std::string & token, const std::string & username, const std::string & password)
-            : token_(token)
+        explicit AuthMiddleware(const arrow::flight::ServerCallContext & context, const std::string & token, const std::string & username, const std::string & password,
+                                const std::string & session_id = "", bool session_check = false, unsigned session_timeout = 0, bool session_close = false)
+            : context_(context)
+            , token_(token)
             , username_(username)
             , password_(password)
+            , session_id_(session_id)
+            , session_check_(session_check)
+            , session_timeout_(session_timeout)
+            , session_close_(session_close)
         {
         }
 
@@ -92,11 +101,42 @@ namespace
 
         std::string name() const override { return AUTHORIZATION_MIDDLEWARE_NAME; }
 
+        const arrow::flight::ServerCallContext & context() const { return context_; }
+        const std::string & sessionId() const { return session_id_; }
+        bool sessionCheck() const { return session_check_; }
+        unsigned sessionTimeout() const { return session_timeout_; }
+        bool sessionClose() const { return session_close_; }
+
     private:
+        const arrow::flight::ServerCallContext & context_;
         const std::string token_;
         const std::string username_;
         const std::string password_;
+        const std::string session_id_;
+        const bool session_check_;
+        const unsigned session_timeout_;
+        const bool session_close_;
     };
+
+    std::chrono::steady_clock::duration parseSessionTimeout(
+        const Poco::Util::AbstractConfiguration & config,
+        unsigned query_session_timeout)
+    {
+        unsigned session_timeout = config.getInt("default_session_timeout", 60);
+
+        if (query_session_timeout)
+        {
+            session_timeout = query_session_timeout;
+            unsigned max_session_timeout = config.getUInt("max_session_timeout", 3600);
+
+            if (session_timeout > max_session_timeout)
+                throw Exception(ErrorCodes::INVALID_SESSION_TIMEOUT, "Session timeout '{}' is larger than max_session_timeout: {}. "
+                    "Maximum session timeout could be modified in configuration file.",
+                    session_timeout, max_session_timeout);
+        }
+
+        return std::chrono::seconds(session_timeout);
+    }
 
     class AuthMiddlewareFactory : public arrow::flight::ServerMiddlewareFactory
     {
@@ -135,7 +175,35 @@ namespace
             auto user = credentials.substr(0, pos);
             auto password = credentials.substr(pos + 1);
 
-            *middleware = std::make_unique<AuthMiddleware>(token, user, password);
+            std::string session_id;
+            auto session_it = headers.find("x-clickhouse-session-id");
+            if (session_it != headers.end())
+                session_id = std::string(session_it->second);
+
+            std::string session_check;
+            session_it = headers.find("x-clickhouse-session-check");
+            if (session_it != headers.end())
+                session_check = std::string(session_it->second);
+
+            std::string session_timeout_str;
+            session_it = headers.find("x-clickhouse-session-timeout");
+            if (session_it != headers.end())
+                session_timeout_str = std::string(session_it->second);
+
+            unsigned session_timeout = 0;
+            if (!session_timeout_str.empty())
+            {
+                ReadBufferFromString buf(session_timeout_str);
+                if (!tryReadIntText(session_timeout, buf) || !buf.eof())
+                    return arrow::Status::IOError("Invalid session timeout: " + session_timeout_str);
+            }
+
+            std::string session_close;
+            session_it = headers.find("x-clickhouse-session-close");
+            if (session_it != headers.end())
+                session_close = std::string(session_it->second);
+
+            *middleware = std::make_unique<AuthMiddleware>(context, token, user, password, session_id, session_check == "1", session_timeout, session_close == "1");
             return arrow::Status::OK();
         }
     };
@@ -198,6 +266,32 @@ namespace
         Poco::URI::decode(uri_encoded_peer, peer);
 
         return Poco::Net::SocketAddress{family, peer};
+    }
+
+    std::shared_ptr<Session> authenticate(const AuthMiddleware & auth, const ContextPtr & context)
+    {
+        auto session = std::make_shared<Session>(context, ClientInfo::Interface::ARROW_FLIGHT);
+        session->authenticate(auth.username(), auth.password(), getClientAddress(auth.context()));
+
+        /// The user could specify session identifier and session timeout.
+        /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
+        if (auth.sessionId().empty())
+            session->makeSessionContext();
+        else
+            session->makeSessionContext(auth.sessionId(), parseSessionTimeout(context->getConfigRef(), auth.sessionTimeout()), auth.sessionCheck());
+
+        return session;
+    }
+
+    void releaseOrCloseSession(std::shared_ptr<Session> session, const String & session_id, bool close_session)
+    {
+        if (!session_id.empty())
+        {
+            if (close_session)
+                session->closeSession(session_id);
+            else
+                session->releaseSessionID();
+        }
     }
 
     /// Extracts an SQL query from a flight descriptor.
@@ -982,14 +1076,14 @@ static ColumnsWithTypeAndName getHeader(const ColumnsWithTypeAndName & columns)
 }
 
 static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std::shared_ptr<arrow::Table>>>> executeSQLtoTables_impl(
-    const Session & session,
+    const std::shared_ptr<Session> & session,
     const std::string & sql,
     bool single_table,
     std::function<arrow::Result<std::shared_ptr<arrow::Schema>>(std::shared_ptr<arrow::Schema>)> schema_modifier = nullptr,
     std::function<void(Block &)> block_modifier = nullptr
 )
 {
-    auto query_context = session.makeQueryContext();
+    auto query_context = session->makeQueryContext();
     query_context->setCurrentQueryId(""); /// Empty string means the query id will be autogenerated.
     CurrentThread::QueryScope query_scope{query_context};
 
@@ -1045,7 +1139,7 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
 }
 
 static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std::shared_ptr<arrow::Table>>>> executeSQLtoTables(
-    const Session & session,
+    const std::shared_ptr<Session> & session,
     const std::string & sql,
     std::function<arrow::Result<std::shared_ptr<arrow::Schema>>(std::shared_ptr<arrow::Schema>)> schema_modifier = nullptr,
     std::function<void(Block &)> block_modifier = nullptr
@@ -1055,7 +1149,7 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
 }
 
 [[maybe_unused]] static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::shared_ptr<arrow::Table>>> executeSQLtoTable(
-    const Session & session,
+    const std::shared_ptr<Session> & session,
     const std::string & sql,
     std::function<arrow::Result<std::shared_ptr<arrow::Schema>>(std::shared_ptr<arrow::Schema>)> schema_modifier = nullptr,
     std::function<void(Block &)> block_modifier = nullptr
@@ -1395,10 +1489,12 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
             }
         }
 
-        Session session{server.context(), ClientInfo::Interface::ARROW_FLIGHT};
-
         const auto & auth = AuthMiddleware::get(context);
-        session.authenticate(auth.username(), auth.password(), getClientAddress(context));
+        auto session = authenticate(auth, server.context());
+
+        /// Close session (if any) after processing the request
+        bool close_session = auth.sessionClose() && server.config().getBool("enable_arrow_close_session", true);
+        SCOPE_EXIT_SAFE({ releaseOrCloseSession(session, auth.sessionId(), close_session); });
 
         // We generate a table for every chunk of data, which then produces ticket for every table
         // so clients can parallelize data retrieval.
@@ -1467,12 +1563,14 @@ arrow::Status ArrowFlightHandler::GetSchema(
             ARROW_RETURN_NOT_OK(sql_res);
             const String & sql = sql_res.ValueOrDie();
 
-            Session session{server.context(), ClientInfo::Interface::ARROW_FLIGHT};
-
             const auto & auth = AuthMiddleware::get(context);
-            session.authenticate(auth.username(), auth.password(), getClientAddress(context));
+            auto session = authenticate(auth, server.context());
 
-            auto query_context = session.makeQueryContext();
+            /// Close http session (if any) after processing the request
+            bool close_session = auth.sessionClose() && server.config().getBool("enable_arrow_close_session", true);
+            SCOPE_EXIT_SAFE({ releaseOrCloseSession(session, auth.sessionId(), close_session); });
+
+            auto query_context = session->makeQueryContext();
             query_context->setCurrentQueryId(""); /// Empty string means the query id will be autogenerated.
             CurrentThread::QueryScope query_scope{query_context};
 
@@ -1706,12 +1804,14 @@ arrow::Status ArrowFlightHandler::DoGet(
         {
             const String & sql = request.ticket;
 
-            Session session{server.context(), ClientInfo::Interface::ARROW_FLIGHT};
-
             const auto & auth = AuthMiddleware::get(context);
-            session.authenticate(auth.username(), auth.password(), getClientAddress(context));
+            auto session = authenticate(auth, server.context());
 
-            auto query_context = session.makeQueryContext();
+            /// Close session (if any) after processing the request
+            bool close_session = auth.sessionClose() && server.config().getBool("enable_arrow_close_session", true);
+            SCOPE_EXIT_SAFE({ releaseOrCloseSession(session, auth.sessionId(), close_session); });
+
+            auto query_context = session->makeQueryContext();
             query_context->setCurrentQueryId(""); /// Empty string means the query id will be autogenerated.
             CurrentThread::QueryScope query_scope{query_context};
 
@@ -1761,19 +1861,41 @@ arrow::Status ArrowFlightHandler::DoPut(
 {
     auto impl = [&]
     {
-        const auto & descriptor = reader->descriptor();
-        LOG_INFO(log, "DoPut is called for descriptor {}", descriptor.ToString());
+        const auto & request = reader->descriptor();
+        LOG_INFO(log, "DoPut is called for descriptor {}", request.ToString());
 
-        auto sql_res = convertPutDescriptorToSQL(descriptor);
-        ARROW_RETURN_NOT_OK(sql_res);
-        const String & sql = sql_res.ValueOrDie();
+        std::string sql;
 
-        Session session{server.context(), ClientInfo::Interface::ARROW_FLIGHT};
+        if (
+            google::protobuf::Any any_msg;
+                request.type == arrow::flight::FlightDescriptor::CMD
+                && !request.cmd.empty()
+                && any_msg.ParseFromArray(request.cmd.data(), request.cmd.size())
+        )
+        {
+            if (any_msg.Is<arrow::flight::protocol::sql::CommandStatementUpdate>())
+            {
+                arrow::flight::protocol::sql::CommandStatementUpdate command;
+                any_msg.UnpackTo(&command);
+                sql = command.query();
+            }
+        }
+
+        if (sql.empty())
+        {
+            auto sql_res = convertPutDescriptorToSQL(request);
+            ARROW_RETURN_NOT_OK(sql_res);
+            sql = sql_res.ValueOrDie();
+        }
 
         const auto & auth = AuthMiddleware::get(context);
-        session.authenticate(auth.username(), auth.password(), getClientAddress(context));
+        auto session = authenticate(auth, server.context());
 
-        auto query_context = session.makeQueryContext();
+        /// Close session (if any) after processing the request
+        bool close_session = auth.sessionClose() && server.config().getBool("enable_arrow_close_session", true);
+        SCOPE_EXIT_SAFE({ releaseOrCloseSession(session, auth.sessionId(), close_session); });
+
+        auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(""); /// Empty string means the query id will be autogenerated.
         CurrentThread::QueryScope query_scope{query_context};
 
@@ -1796,8 +1918,12 @@ arrow::Status ArrowFlightHandler::DoPut(
                 pipeline.complete(std::move(output));
             }
 
-            CompletedPipelineExecutor executor(pipeline);
-            executor.execute();
+            if (pipeline.completed())
+            {
+                CompletedPipelineExecutor executor(pipeline);
+                executor.execute();
+            }
+
             LOG_INFO(log, "DoPut succeeded");
             block_io.onFinish();
         }
