@@ -744,7 +744,7 @@ namespace
             }
             else if (element.function == KeyCondition::RPNElement::FUNCTION_NOT)
             {
-                if (rpn_stack.size() < 1)
+                if (rpn_stack.empty())
                     return PartitionRange{"", "", "invalid stack size for NOT"};
                 // match everything, ignore whatever is being negated
                 rpn_stack.pop_back();
