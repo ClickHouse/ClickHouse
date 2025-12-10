@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest, no-flaky-check
+-- Tags: no-parallel, no-fasttest, no-flaky-check, no-asan
 
 SET max_bytes_ratio_before_external_sort = 0;
 

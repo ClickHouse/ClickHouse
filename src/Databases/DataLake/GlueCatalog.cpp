@@ -477,7 +477,7 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
         DB::StoredObject metadata_stored_object(metadata_path);
         auto read_buf = object_storage->readObject(metadata_stored_object, read_settings);
         String metadata_file;
-        readString(metadata_file, *read_buf);
+        readStringUntilEOF(metadata_file, *read_buf);
 
         Poco::JSON::Parser parser;
         Poco::Dynamic::Var result = parser.parse(metadata_file);

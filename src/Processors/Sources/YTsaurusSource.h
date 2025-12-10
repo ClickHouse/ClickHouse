@@ -19,6 +19,7 @@ struct YTsaurusTableSourceOptions
     const String cypress_path;
     YTsaurusSettings settings;
     std::optional<Block> lookup_input_block = std::nullopt;
+    bool check_types_allow_nullable = false;
 };
 
 class YTsaurusTableSourceStaticTable final : public ISource
