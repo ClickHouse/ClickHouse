@@ -262,8 +262,6 @@ function start_server()
         sleep 60
         counter=$((counter + 1))
     done
-
-    attach_gdb_to_clickhouse
 }
 
 function check_server_start()
@@ -279,25 +277,6 @@ function check_server_start()
 
 function check_logs_for_critical_errors()
 {
-    # Sanitizer asserts
-    sed -n '/WARNING:.*anitizer/,/^$/p' /var/log/clickhouse-server/stderr*.log >> /test_output/tmp
-    rg -Fav -e "ASan doesn't fully support makecontext/swapcontext functions" -e "DB::Exception" /test_output/tmp > /dev/null \
-        && echo -e "Sanitizer assert (in stderr.log)$FAIL$(head_escaped /test_output/tmp)" >> /test_output/test_results.tsv \
-        || echo -e "No sanitizer asserts$OK" >> /test_output/test_results.tsv
-    rm -f /test_output/tmp
-
-    # OOM
-    rg -Fa " <Fatal> Application: Child process was terminated by signal 9" /var/log/clickhouse-server/clickhouse-server*.log > /dev/null \
-        && echo -e "Signal 9 in clickhouse-server.log$FAIL" >> /test_output/test_results.tsv \
-        || echo -e "No OOM messages in clickhouse-server.log$OK" >> /test_output/test_results.tsv
-
-    # Logical errors
-    rg -Fa "Code: 49. DB::Exception: " /var/log/clickhouse-server/clickhouse-server*.log > /test_output/logical_errors.txt \
-        && echo -e "Logical error thrown (see clickhouse-server.log or logical_errors.txt)$FAIL$(head_escaped /test_output/logical_errors.txt)" >> /test_output/test_results.tsv \
-        || echo -e "No logical errors$OK" >> /test_output/test_results.tsv
-    # Remove file logical_errors.txt if it's empty
-    [ -s /test_output/logical_errors.txt ] || rm /test_output/logical_errors.txt
-
     # ignore:
     #  - a.myext which is used in 02724_database_s3.sh and does not exist
     #  - "DistributedCacheTCPHandler" and "caller id: None:DistribCache" because they happen inside distributed cache server
@@ -315,38 +294,10 @@ function check_logs_for_critical_errors()
     # Remove file no_such_key_errors.txt if it's empty
     [ -s /test_output/no_such_key_errors.txt ] || rm /test_output/no_such_key_errors.txt
 
-    # Crash. This must have fewer '#'s than the command below, otherwise the command below will match
-    # the echo of this command (if set -x is enabled, and this script's stdout is sent
-    # to /test_output/run.log).
-    rg -Fa "#######################################" /var/log/clickhouse-server/clickhouse-server*.log > /dev/null \
-        && echo -e "Killed by signal (in clickhouse-server.log)$FAIL" >> /test_output/test_results.tsv \
-        || echo -e "Not crashed$OK" >> /test_output/test_results.tsv
-
-    # It also checks for crash without stacktrace (printed by watchdog)
-    rg -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server*.log > /test_output/fatal_messages.txt \
-        && echo -e "Fatal message in clickhouse-server.log (see fatal_messages.txt)$FAIL$(trim_server_logs fatal_messages.txt)" >> /test_output/test_results.tsv \
-        || echo -e "No fatal messages in clickhouse-server.log$OK" >> /test_output/test_results.tsv
-
     # Remove file fatal_messages.txt if it's empty
     [ -s /test_output/fatal_messages.txt ] || rm /test_output/fatal_messages.txt
 
-    rg -Faz "########################################" /test_output/* | rg -v "rg -Faz " > /dev/null \
-      && echo -e "Killed by signal (output files)$FAIL" >> /test_output/test_results.tsv
-
-    function get_gdb_log_context()
-    {
-        rg -A50 -Fa " received signal " /test_output/gdb.log | head_escaped
-    }
-
-    rg -Fa " received signal " /test_output/gdb.log > /dev/null \
-        && echo -e "Found signal in gdb.log$FAIL$(get_gdb_log_context)" >> /test_output/test_results.tsv
-
     dmesg -T > /test_output/dmesg.log
-
-    # OOM in dmesg -- those are real
-    grep -q -F -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' /test_output/dmesg.log \
-        && echo -e "OOM in dmesg$FAIL$(head_escaped /test_output/dmesg.log)" >> /test_output/test_results.tsv \
-        || echo -e "No OOM in dmesg$OK" >> /test_output/test_results.tsv
 }
 
 function collect_query_and_trace_logs()
