@@ -399,15 +399,13 @@ void StatementGenerator::generateNextCodecs(RandomGenerator & rg, CodecList * cl
             case COMP_ZSTD_QAT:
                 if (rg.nextBool())
                 {
-                    std::uniform_int_distribution<uint32_t> next_dist(1, 12);
-                    cp->add_params()->set_ival(next_dist(rg.generator));
+                    cp->add_params()->set_ival(rg.randomInt<uint32_t>(1, 12));
                 }
                 break;
             case COMP_ZSTD:
                 if (rg.nextBool())
                 {
-                    std::uniform_int_distribution<uint32_t> next_dist(1, 22);
-                    cp->add_params()->set_ival(next_dist(rg.generator));
+                    cp->add_params()->set_ival(rg.randomInt<uint32_t>(1, 22));
                 }
                 break;
             case COMP_Delta:
@@ -415,15 +413,13 @@ void StatementGenerator::generateNextCodecs(RandomGenerator & rg, CodecList * cl
             case COMP_Gorilla:
                 if (rg.nextBool())
                 {
-                    std::uniform_int_distribution<uint32_t> next_dist(0, 3);
-                    cp->add_params()->set_ival(UINT32_C(1) << next_dist(rg.generator));
+                    cp->add_params()->set_ival(UINT32_C(1) << rg.randomInt<uint32_t>(0, 3));
                 }
                 break;
             case COMP_FPC:
                 if (rg.nextBool())
                 {
-                    std::uniform_int_distribution<uint32_t> next_dist1(1, 28);
-                    cp->add_params()->set_ival(next_dist1(rg.generator));
+                    cp->add_params()->set_ival(rg.randomInt<uint32_t>(1, 28));
                     cp->add_params()->set_ival(rg.nextBool() ? 4 : 9);
                 }
                 break;
@@ -505,13 +501,12 @@ void StatementGenerator::generateTTLExpression(RandomGenerator & rg, const std::
         BinaryExpr * bexpr = ttl_expr->mutable_comp_expr()->mutable_binary_expr();
         IntervalExpr * ie = bexpr->mutable_rhs()->mutable_comp_expr()->mutable_interval();
         IntLiteral * il = ie->mutable_expr()->mutable_lit_val()->mutable_int_lit();
-        std::uniform_int_distribution<int64_t> next_dist(-3, 10);
         std::uniform_int_distribution<uint32_t> i_range(1, static_cast<uint32_t>(IntervalExpr_Interval_MINUTE));
 
         bexpr->set_op(rg.nextMediumNumber() < 76 ? BinaryOperator::BINOP_PLUS : BinaryOperator::BINOP_MINUS);
         columnPathRef(rg.pickRandomly(filtered_entries).get(), bexpr->mutable_lhs());
         ie->set_interval(static_cast<IntervalExpr_Interval>(i_range(rg.generator)));
-        il->set_int_lit(next_dist(rg.generator));
+        il->set_int_lit(rg.randomInt<int64_t>(-3, 10));
         filtered_entries.clear();
     }
     else
@@ -1788,8 +1783,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
 
             if (rg.nextSmallNumber() > 6)
             {
-                std::uniform_int_distribution<uint32_t> next_dist(1, 8192);
-                param = next_dist(rg.generator);
+                param = rg.randomInt<uint32_t>(1, 8192);
             }
             idef->add_params()->set_ival(param);
         }
@@ -1797,24 +1791,19 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
         case IndexType::IDX_bloom_filter:
             if (rg.nextBool())
             {
-                std::uniform_int_distribution<uint32_t> next_dist(1, 8192);
-                idef->add_params()->set_dval(static_cast<double>(next_dist(rg.generator)) / static_cast<double>(8192));
+                idef->add_params()->set_dval(static_cast<double>(rg.randomInt<uint32_t>(1, 8192)) / static_cast<double>(8192));
             }
             break;
         case IndexType::IDX_ngrambf_v1:
-        case IndexType::IDX_tokenbf_v1: {
-            std::uniform_int_distribution<uint32_t> next_dist1(1, 1000);
-            std::uniform_int_distribution<uint32_t> next_dist2(1, 5);
-
+        case IndexType::IDX_tokenbf_v1:
             if (itpe == IndexType::IDX_ngrambf_v1)
             {
-                idef->add_params()->set_ival(next_dist1(rg.generator));
+                idef->add_params()->set_ival(rg.randomInt<uint32_t>(1, 8));
             }
-            idef->add_params()->set_ival(next_dist1(rg.generator));
-            idef->add_params()->set_ival(next_dist2(rg.generator));
-            idef->add_params()->set_ival(next_dist1(rg.generator));
-        }
-        break;
+            idef->add_params()->set_ival(rg.randomInt<uint32_t>(1, 1000));
+            idef->add_params()->set_ival(rg.randomInt<uint32_t>(1, 5));
+            idef->add_params()->set_ival(rg.randomInt<uint32_t>(1, 1000));
+            break;
         case IndexType::IDX_text: {
             String buf;
             bool has_paren = rg.nextSmallNumber() < 8;
@@ -1825,9 +1814,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             buf += has_paren ? "(" : "";
             if (has_paren && next_tokenizer == "ngrams" && rg.nextBool())
             {
-                std::uniform_int_distribution<uint32_t> next_dist(2, 8);
-
-                buf += std::to_string(next_dist(rg.generator));
+                buf += std::to_string(rg.randomInt<uint32_t>(2, 8));
             }
             else if (has_paren && next_tokenizer == "splitByString" && rg.nextBool())
             {
@@ -1874,9 +1861,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             }
             if (rg.nextBool())
             {
-                std::uniform_int_distribution<uint32_t> next_dist(1, 512);
-
-                idef->add_params()->set_unescaped_sval("dictionary_block_size = " + std::to_string(next_dist(rg.generator)));
+                idef->add_params()->set_unescaped_sval("dictionary_block_size = " + std::to_string(rg.randomInt<uint32_t>(1, 512)));
             }
             if (rg.nextBool())
             {
@@ -1885,16 +1870,13 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             }
             if (rg.nextBool())
             {
-                std::uniform_int_distribution<uint32_t> next_dist(0, 8192);
-
                 idef->add_params()->set_unescaped_sval(
-                    "max_cardinality_for_embedded_postings = " + std::to_string(next_dist(rg.generator)));
+                    "max_cardinality_for_embedded_postings = " + std::to_string(rg.randomInt<uint32_t>(0, 8192)));
             }
             if (rg.nextBool())
             {
-                std::uniform_int_distribution<uint32_t> next_dist(1, 9);
-
-                idef->add_params()->set_unescaped_sval("bloom_filter_false_positive_rate = 0." + std::to_string(next_dist(rg.generator)));
+                idef->add_params()->set_unescaped_sval(
+                    "bloom_filter_false_positive_rate = 0." + std::to_string(rg.randomInt<uint32_t>(1, 9)));
             }
         }
         break;
@@ -1906,12 +1888,11 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             idef->add_params()->set_ival(rg.pickRandomly(dimensionVals));
             if (rg.nextBool())
             {
-                std::uniform_int_distribution<uint32_t> next_dist(0, 4194304);
                 static const DB::Strings & QuantitizationVals = {"f64", "f32", "f16", "bf16", "i8", "b1"};
 
                 idef->add_params()->set_sval(rg.pickRandomly(QuantitizationVals));
-                idef->add_params()->set_ival(next_dist(rg.generator));
-                idef->add_params()->set_ival(next_dist(rg.generator));
+                idef->add_params()->set_ival(rg.randomInt<uint32_t>(0, 4194304));
+                idef->add_params()->set_ival(rg.randomInt<uint32_t>(0, 4194304));
             }
         }
         break;
@@ -1926,8 +1907,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
 
         if (next_opt < 4)
         {
-            std::uniform_int_distribution<uint32_t> next_dist(1, 4194304);
-            granularity = next_dist(rg.generator);
+            granularity = rg.randomInt<uint32_t>(1, 4194304);
         }
         else if (next_opt < 8)
         {
