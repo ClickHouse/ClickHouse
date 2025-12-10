@@ -21,6 +21,7 @@
 #include <boost/algorithm/string/split.hpp>
 
 #include <base/errnoToString.h>
+#include <base/arithmeticOverflow.h>
 
 #include <Common/logger_useful.h>
 #include <Core/AccurateComparison.h>
@@ -564,12 +565,19 @@ void PerfEventsCounters::finalizeProfileEvents(ProfileEvents::Counters & profile
         const auto running = current_value.time_running - previous_value.time_running;
         const auto difference_current_previous = static_cast<Float64>(current_value.value - previous_value.value);
         const auto multiplexing_scale_factor = static_cast<Float64>(enabled) / std::max(1., static_cast<Float64>(running));
-        const auto scaled_time = multiplexing_scale_factor * difference_current_previous;
-
+        UInt64 multiplexing_scale_factor_unsigned;
         UInt64 delta;
-        if (!accurate::convertNumeric<Float64, UInt64, false>(scaled_time, delta))
+
+        if (accurate::convertNumeric<Float64, UInt64>(multiplexing_scale_factor, multiplexing_scale_factor_unsigned))
         {
-            delta = 0;
+            if (common::mulOverflow(static_cast<UInt64>(difference_current_previous), multiplexing_scale_factor_unsigned, delta))
+            {
+                delta = 0;
+            }
+        }
+        else
+        {
+            delta = static_cast<UInt64>(difference_current_previous * multiplexing_scale_factor);
         }
 
         if (min_enabled_time > enabled)
