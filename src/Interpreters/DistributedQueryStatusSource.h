@@ -22,6 +22,15 @@ public:
         const Strings & hosts_to_wait,
         const char * logger_name);
 
+    DistributedQueryStatusSource(
+        const String & zookeeper_name_,
+        const String & zk_node_path,
+        const String & zk_replicas_path,
+        SharedHeader block,
+        ContextPtr context_,
+        const Strings & hosts_to_wait,
+        const char * logger_name);
+
     Chunk generate() override;
     Status prepare() override;
 
@@ -55,6 +64,7 @@ protected:
         UNFINISHED = 3,
     };
 
+    String zookeeper_name = "default";
     String node_path;
     String replicas_path;
     ContextPtr context;
