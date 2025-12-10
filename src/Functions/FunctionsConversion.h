@@ -4912,7 +4912,7 @@ private:
             auto converted_array = ColumnArray::create(converted_nested, col_array.getOffsetsPtr());
             ColumnsWithTypeAndName converted_arguments{{std::move(converted_array), std::make_shared<DataTypeArray>(to_nested_type), ""}};
 
-            return convertArrayToQBit<T>(converted_arguments, result_type, nullptr, dimension, element_size);
+            return convertArrayToQBit<T>(converted_arguments, result_type, nullable_source, dimension, element_size);
         };
     }
 
