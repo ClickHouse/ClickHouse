@@ -758,8 +758,10 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
     LOG_TEST(logger, "InsertDependenciesBuilder created for table {} with query: {}, debugTree:\n{}",
         init_table_id.getFullTableName(), init_query->formatForLogging(), debugTree());
 
-    if (settings[Setting::parallel_view_processing] || !isViewsInvolved())
-        sink_stream_size = init_storage->supportsParallelInsert() ? max_insert_threads : 1;
+    auto all_sinks_support_parallel_insert = std::ranges::all_of(storages, [&] (auto storage)
+        { return isView(storage.first) || storage.second->supportsParallelInsert();});
+    if (all_sinks_support_parallel_insert && (settings[Setting::parallel_view_processing] || !isViewsInvolved()))
+        sink_stream_size = max_insert_threads;
 }
 
 namespace
