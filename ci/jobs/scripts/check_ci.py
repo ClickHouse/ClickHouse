@@ -276,11 +276,9 @@ Test output:
             if not re.match(r"^(\d{5}|test)_", self.test_name):
                 raise Exception(f"Unsupported test name format: {self.test_name}")
             if self.create_gh_issue_on_flaky_or_broken_test():
-                self.praktika_result.set_comment("ISSUE CREATED")
                 return True
         elif self.job_type in (JobTypes.BUZZ_FUZZER, JobTypes.AST_FUZZER):
             if self.create_gh_issue_on_fuzzer_or_stress_finding():
-                self.praktika_result.set_comment("ISSUE CREATED")
                 return True
         else:
             raise Exception(f"Unsupported job type: {self.job_type}")
@@ -333,21 +331,31 @@ Test output:
         else:
             raise Exception(f"Unsupported job type: {self.job_type}")
 
+        # Calculate hours since CI start (or default to 24 if not available)
+        global ci_start_time
+        if ci_start_time:
+            hours_since_start = int((time.time() - ci_start_time) / 3600) + 1
+        else:
+            hours_since_start = 24  # Default fallback
+
         issues = GH.find_issue(
             title=search_in_title,
             labels=labels,
             repo="ClickHouse/ClickHouse",
             verbose=True,
+            include_closed_hours=hours_since_start,
         )
 
         if issues and len(issues) > 1:
             print("WARNING: Multiple issues found - check for duplicates")
             for issue in issues:
-                print(f"  #{issue.number}: {issue.title}")
+                state_label = " [CLOSED]" if issue.is_closed else " [OPEN]"
+                print(f"  #{issue.number}{state_label}: {issue.title}")
 
         issue = issues[0] if issues else None
         if issue:
-            print(f"Found existing issue #{issue.number}: {issue.title}")
+            state_label = " [CLOSED]" if issue.is_closed else " [OPEN]"
+            print(f"Found existing issue #{issue.number}{state_label}: {issue.title}")
 
             # For flaky tests, verify the failure reason matches
             if check_failure_reason:
@@ -417,6 +425,8 @@ class JobResultProcessor:
 
         # Skip jobs with too many unknown failures to avoid overwhelming the user
         if len(job_failures.unknown_failures) > 7:
+            for f in job_failures.unknown_failures:
+                f.praktika_result.set_comment("IGNORED")
             print(
                 f"  Too many failures ({len(job_failures.unknown_failures)}), skipping"
             )
@@ -450,6 +460,7 @@ class JobResultProcessor:
                 if not UserPrompt.confirm(
                     "Check existing GitHub issue for this failure?"
                 ):
+                    failure.praktika_result.set_comment("IGNORED")
                     still_unknown.append(failure)
                     continue
 
@@ -457,6 +468,7 @@ class JobResultProcessor:
                 if failure.check_issue():
                     print(f"Linked to existing issue: {failure.issue_url}")
                     job_failures.known_failures.append(failure)
+                    failure.praktika_result.set_comment("ISSUE EXISTS")
                     # let user read resolution before moving to the next failure
                     time.sleep(3)
                     continue
@@ -467,6 +479,7 @@ class JobResultProcessor:
                 if UserPrompt.confirm("Create GitHub issue for this failure?"):
                     if failure.create_issue():
                         print(f"Issue created: {failure.issue_url}")
+                        failure.praktika_result.set_comment("ISSUE CREATED")
                         job_failures.known_failures.append(failure)
                         global issues_created
                         issues_created += 1
@@ -648,6 +661,7 @@ def get_commit_statuses(head_sha: str) -> dict:
 
 
 issues_created = 0
+ci_start_time = None
 
 
 def main():
@@ -722,6 +736,8 @@ def main():
         pr_number if not is_master_commit else 0, head_sha
     )
 
+    global ci_start_time
+    ci_start_time = workflow_result.start_time
     ci_failures = JobResultProcessor.collect_all_failures(workflow_result)
 
     not_finished_jobs = []
@@ -862,8 +878,9 @@ def main():
         else:
             sys.exit(0)
 
-    if Shell.check(f"gh pr merge {pr_number} --auto"):
-        print(f"PR {pr_number} auto merge has been enabled")
+    if UserPrompt.confirm(f"Do you want to merge PR {pr_number}?"):
+        if Shell.check(f"gh pr merge {pr_number} --auto"):
+            print(f"PR {pr_number} auto merge has been enabled")
 
 
 if __name__ == "__main__":
