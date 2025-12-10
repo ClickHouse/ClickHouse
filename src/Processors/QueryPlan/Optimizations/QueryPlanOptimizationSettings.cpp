@@ -84,6 +84,7 @@ namespace Setting
     extern const SettingsBool use_top_k_dynamic_filtering;
     extern const SettingsUInt64 query_plan_max_limit_for_top_k_optimization;
     extern const SettingsBool query_plan_read_in_order_through_join;
+    extern const SettingsJoinOrderAlgorithm query_plan_optimize_join_order_algorithm;
 }
 
 namespace ServerSetting
@@ -207,6 +208,10 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     join_runtime_filter_pass_ratio_threshold_for_disabling = from[Setting::join_runtime_filter_pass_ratio_threshold_for_disabling];
     join_runtime_filter_blocks_to_skip_before_reenabling = from[Setting::join_runtime_filter_blocks_to_skip_before_reenabling];
     join_runtime_bloom_filter_max_ratio_of_set_bits = from[Setting::join_runtime_bloom_filter_max_ratio_of_set_bits];
+
+    query_plan_optimize_join_order_algorithm = from[Setting::query_plan_optimize_join_order_algorithm];
+    if (query_plan_optimize_join_order_algorithm.empty())
+        query_plan_optimize_join_order_algorithm.push_back(JoinOrderAlgorithm::GREEDY); /// Use greedy by default
 
     max_threads = from[Setting::max_threads];
 }

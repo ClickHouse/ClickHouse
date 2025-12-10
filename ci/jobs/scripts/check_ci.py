@@ -296,6 +296,9 @@ Test output:
         if self.job_type in (JobTypes.FINISH_WORKFLOW):
             print("This issue should be fixed before merge - cannot handle it")
             return False
+        if "OOM" in self.test_name:
+            print("Cannot handle OOM errors - continue")
+            return False
         return True
 
     def check_issue(self):
