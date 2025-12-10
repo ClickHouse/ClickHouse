@@ -7,6 +7,9 @@
 namespace DB
 {
 
+using Names = std::vector<std::string>;
+using UsedColumns = std::optional<Names>;
+
 /** Query tree pass manager provide functionality to register and run passes
   * on query tree.
   */
@@ -47,6 +50,6 @@ private:
     std::vector<QueryTreePassPtr> passes;
 };
 
-void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze = false);
+void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze = false, UsedColumns used_column_names = {});
 
 }
