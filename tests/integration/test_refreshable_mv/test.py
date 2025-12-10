@@ -102,7 +102,7 @@ def test_refreshable_mv_in_replicated_db(started_cluster, cleanup):
         # Stop the clocks.
         for node in nodes:
             node.query(
-                f"system test view re.{name} set fake time '2040-01-01 00:00:01'"
+                f"system sync database replica re; system test view re.{name} set fake time '2040-01-01 00:00:01'"
             )
         # Wait for quiescence.
         for node in nodes:
