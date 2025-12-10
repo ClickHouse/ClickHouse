@@ -195,10 +195,7 @@ private:
         template <typename T>
         static size_t writeNumber2(char * p, T v)
         {
-            static_assert(std::is_integral_v<T>);
-            assert(v >= 0 && v <= 99);
-
-            memcpy(p, &digits100[v * 2], 2);  /// NOLINT(clang-analyzer-security.ArrayBound)
+            memcpy(p, &digits100[v * 2], 2);
             return 2;
         }
 
@@ -1136,8 +1133,8 @@ public:
         {
             if (!const_time_zone_column && arguments.size() > 2)
             {
-                if (!arguments[2].column.get()->getDataAt(i).empty())
-                    time_zone = &DateLUT::instance(arguments[2].column.get()->getDataAt(i));
+                if (!arguments[2].column.get()->getDataAt(i).toString().empty())
+                    time_zone = &DateLUT::instance(arguments[2].column.get()->getDataAt(i).toString());
                 else
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
             }
