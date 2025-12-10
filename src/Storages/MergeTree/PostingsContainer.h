@@ -5,7 +5,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
 #include <roaring.hh>
-#pragma clang optimize off
+
 namespace DB
 {
 
@@ -64,15 +64,12 @@ class PostingsContainerImpl
         uint32_t bytes;
     };
 public:
-    using ValueType = T;
     explicit PostingsContainerImpl() = default;
 
     size_t size() const { return total; }
     bool empty() const { return total == 0; }
 
-    // Serializes the container to a WriteBuffer-like output.
-    /// Writes VarUInt(block_count, total), VarUInt(data size), and raw bytes.
-    /// Any remaining uncompressed postings are flushed before serialization.
+    /// Serializes the container to a WriteBuffer-like output.
     template<typename Container, typename Out>
     size_t serialize(Container & in, Out & out)
     {
@@ -90,7 +87,6 @@ public:
     }
 
     /// Reads postings data back from an Input buffer (ReadBuffer).
-    /// This overwrites any existing data.
     template<typename In, typename Container>
     void deserialize(In & in, Container & out)
     {
