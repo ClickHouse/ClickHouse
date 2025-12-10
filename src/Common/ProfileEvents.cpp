@@ -1318,7 +1318,7 @@ Counters::Counters(Counters && src) noexcept
     : counters(std::exchange(src.counters, nullptr))
     , counters_holder(std::move(src.counters_holder))
     , parent(src.parent.exchange(nullptr))
-    , trace_profile_events(src.trace_profile_events)
+    , trace_profile_events(src.trace_profile_events.load(std::memory_order_relaxed))
     , level(src.level)
 {
 }
@@ -1467,7 +1467,7 @@ void Counters::increment(Event event, Count amount)
 
     do
     {
-        send_to_trace_log |= current->trace_profile_events;
+        send_to_trace_log |= current->trace_profile_events.load(std::memory_order_relaxed);
         current->counters[event].fetch_add(amount, std::memory_order_relaxed);
         current = current->parent;
     } while (current != nullptr);
