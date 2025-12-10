@@ -83,7 +83,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (!can_use_runtime_filter)
         return false;
 
-    /// Looks like sometime cross join can be represented by inner join without expressions
+    /// Sometimes cross join can be represented by inner join without expressions
     if (join_operator.expression.empty())
         return false;
 
