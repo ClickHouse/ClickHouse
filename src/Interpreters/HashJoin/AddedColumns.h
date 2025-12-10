@@ -265,14 +265,4 @@ private:
     }
 };
 
-/// Adapter class to pass into addFoundRowAll
-/// In joinRightColumnsWithAdditionalFilter we don't want to add rows directly into AddedColumns,
-/// because they need to be filtered by additional_filter_expression.
-class PreSelectedRows : public std::vector<const RowRef *>
-{
-public:
-    void appendFromBlock(const RowRef * row_ref, bool /* has_default */) { this->emplace_back(row_ref); }
-    static constexpr bool isLazy() { return false; }
-};
-
 }

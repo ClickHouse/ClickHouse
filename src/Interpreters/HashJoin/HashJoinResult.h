@@ -35,11 +35,15 @@ public:
 
     JoinResultBlock next() override;
 
+    void setNextBlock(ScatteredBlock && block);
+
 private:
     const LazyOutput lazy_output;
     const Properties properties;
 
     std::optional<ScatteredBlock> scattered_block;
+    /// Next unprocessed block
+    std::optional<ScatteredBlock> next_scattered_block;
 
     MutableColumns columns;
     const IColumn::Offsets offsets;
