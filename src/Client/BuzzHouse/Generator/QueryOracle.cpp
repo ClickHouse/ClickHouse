@@ -19,17 +19,6 @@ namespace BuzzHouse
 
 const std::vector<std::vector<OutFormat>> QueryOracle::oracleFormats
     = {{OutFormat::OUT_CSV},
-       {OutFormat::OUT_JSON,
-        OutFormat::OUT_JSONColumns,
-        OutFormat::OUT_JSONColumnsWithMetadata,
-        OutFormat::OUT_JSONCompact,
-        OutFormat::OUT_JSONCompactColumns,
-        OutFormat::OUT_JSONCompactEachRow,
-        OutFormat::OUT_JSONCompactStringsEachRow,
-        OutFormat::OUT_JSONEachRow,
-        OutFormat::OUT_JSONLines,
-        OutFormat::OUT_JSONObjectEachRow,
-        OutFormat::OUT_JSONStringsEachRow},
        {OutFormat::OUT_TabSeparated, OutFormat::OUT_TabSeparatedRaw},
        {OutFormat::OUT_Values}};
 
