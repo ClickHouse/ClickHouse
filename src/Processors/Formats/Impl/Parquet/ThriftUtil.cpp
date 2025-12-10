@@ -48,8 +48,7 @@ size_t deserializeThriftStruct(T & out, const char * buf, size_t limit)
 
         /// Set max message size to avoid 'apache::thrift::transport::TTransportException: MaxMessageSize reached' on big files
         /// Similar to https://github.com/ClickHouse/arrow/blob/5cfccd8ea65f33d4517e7409815d761c7650b45d/cpp/src/parquet/thrift_internal.h#L437
-        auto configuration = std::make_shared<apache::thrift::TConfiguration>();
-        configuration->setMaxMessageSize(std::numeric_limits<int>::max());
+        static auto configuration = std::make_shared<apache::thrift::TConfiguration>(/*maxMessageSize=*/ std::numeric_limits<int>::max());
 
         auto trans = std::make_shared<apache::thrift::transport::TMemoryBuffer>(cast_buf, uint32_t(limit), apache::thrift::transport::TMemoryBuffer::OBSERVE, configuration);
         apache::thrift::protocol::TCompactProtocolT<apache::thrift::transport::TMemoryBuffer> proto(trans);
