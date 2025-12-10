@@ -560,6 +560,16 @@ Possible values:
 + 0 — Disable.
 + 1 — Enable.
 )", 0) \
+    DECLARE(Bool, type_json_skip_invalid_typed_paths, false, R"(
+When enabled, fields with values that cannot be coerced to their declared type in JSON type columns with typed paths are skipped instead of throwing an error. Skipped fields are treated as missing and will use default/null values based on the typed path definition.
+
+This setting only applies to JSON type columns (e.g., JSON(a Int64, b String)) where specific paths have declared types. It does not apply to regular JSON input formats like JSONEachRow when inserting into regular typed columns.
+
+Possible values:
+
++ 0 — Disable (throw error on type mismatch).
++ 1 — Enable (skip field on type mismatch).
+)", 0) \
     DECLARE(Bool, input_format_try_infer_integers, true, R"(
 If enabled, ClickHouse will try to infer integers instead of floats in schema inference for text formats. If all numbers in the column from input data are integers, the result type will be `Int64`, if at least one number is float, the result type will be `Float64`.
 
