@@ -274,7 +274,7 @@ private:
                 }
                 case MoveType::Key:
                 {
-                    key = arguments[j + 1].column->getDataAt(row);
+                    key = arguments[j + 1].column->getDataAt(row).toView();
                     if constexpr (case_insensitive)
                     {
                         if (!moveToElementByKeyCaseInsensitive<JSONParser>(res_element, key))
@@ -1416,11 +1416,11 @@ SELECT JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') AS res;
         FunctionDocumentation::Description description = R"(
 Parses JSON and extracts a value with given ClickHouse data type.
         )";
-        FunctionDocumentation::Syntax syntax = "JSONExtract(json[, indices_or_keys, ...], return_type)";
+        FunctionDocumentation::Syntax syntax = "JSONExtract(json, return_type[, indices_or_keys, ...])";
         FunctionDocumentation::Arguments arguments = {
             {"json", "JSON string to parse.", {"String"}},
-            {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}},
-            {"return_type", "ClickHouse data type to return.", {"String"}}
+            {"return_type", "ClickHouse data type to return.", {"String"}},
+            {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a value of specified ClickHouse data type if possible, otherwise returns the default value for that type.", {}};
         FunctionDocumentation::Examples examples = {
@@ -1447,11 +1447,11 @@ SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(String, Arr
         FunctionDocumentation::Description description = R"(
 Parses key-value pairs from a JSON where the values are of the given ClickHouse data type.
         )";
-        FunctionDocumentation::Syntax syntax = "JSONExtractKeysAndValues(json[, indices_or_keys, ...], value_type)";
+        FunctionDocumentation::Syntax syntax = "JSONExtractKeysAndValues(json, value_type[, indices_or_keys, ...])";
         FunctionDocumentation::Arguments arguments = {
             {"json", "JSON string to parse.", {"String"}},
-            {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}},
-            {"value_type", "ClickHouse data type of the values.", {"String"}}
+            {"value_type", "ClickHouse data type of the values.", {"String"}},
+            {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of tuples with the parsed key-value pairs.", {"Array(Tuple(String, value_type))"}};
         FunctionDocumentation::Examples examples = {
@@ -1598,7 +1598,7 @@ REGISTER_FUNCTION(JSONExtractCaseInsensitive)
     /// JSONExtractIntCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
-Parses JSON and extracts a value of Int type using case-insensitive key matching. This function is similar to [`JSONExtractInt`](#JSONExtractInt).
+Parses JSON and extracts a value of Int type using case-insensitive key matching. This function is similar to [`JSONExtractInt`](#jsonextractint).
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractIntCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
@@ -1620,7 +1620,7 @@ Parses JSON and extracts a value of Int type using case-insensitive key matching
     /// JSONExtractUIntCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
-Parses JSON and extracts a value of UInt type using case-insensitive key matching. This function is similar to [`JSONExtractUInt`](#JSONExtractUInt).
+Parses JSON and extracts a value of UInt type using case-insensitive key matching. This function is similar to [`JSONExtractUInt`](#jsonextractuint).
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractUIntCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
@@ -1644,7 +1644,7 @@ Parses JSON and extracts a value of UInt type using case-insensitive key matchin
     /// JSONExtractFloatCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
-Parses JSON and extracts a value of Float type using case-insensitive key matching. This function is similar to [`JSONExtractFloat`](#JSONExtractFloat).
+Parses JSON and extracts a value of Float type using case-insensitive key matching. This function is similar to [`JSONExtractFloat`](#jsonextractfloat).
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractFloatCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
@@ -1668,7 +1668,7 @@ Parses JSON and extracts a value of Float type using case-insensitive key matchi
     /// JSONExtractBoolCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
-Parses JSON and extracts a boolean value using case-insensitive key matching. This function is similar to [`JSONExtractBool`](#JSONExtractBool).
+Parses JSON and extracts a boolean value using case-insensitive key matching. This function is similar to [`JSONExtractBool`](#jsonextractbool).
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractBoolCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
@@ -1692,7 +1692,7 @@ Parses JSON and extracts a boolean value using case-insensitive key matching. Th
     /// JSONExtractStringCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
-Parses JSON and extracts a string using case-insensitive key matching. This function is similar to [`JSONExtractString`](#JSONExtractString).
+Parses JSON and extracts a string using case-insensitive key matching. This function is similar to [`JSONExtractString`](#jsonextractstring).
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractStringCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
@@ -1717,7 +1717,7 @@ Parses JSON and extracts a string using case-insensitive key matching. This func
     /// JSONExtractCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
-Parses JSON and extracts a value of the given ClickHouse data type using case-insensitive key matching. This function is similar to [`JSONExtract`](#JSONExtract).
+Parses JSON and extracts a value of the given ClickHouse data type using case-insensitive key matching. This function is similar to [`JSONExtract`](#jsonextract).
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractCaseInsensitive(json [, indices_or_keys...], return_type)";
         FunctionDocumentation::Arguments arguments = {
@@ -1740,7 +1740,7 @@ Parses JSON and extracts a value of the given ClickHouse data type using case-in
     /// JSONExtractKeysAndValuesCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
-Parses key-value pairs from JSON using case-insensitive key matching. This function is similar to [`JSONExtractKeysAndValues`](#JSONExtractKeysAndValues).
+Parses key-value pairs from JSON using case-insensitive key matching. This function is similar to [`JSONExtractKeysAndValues`](#jsonextractkeysandvalues).
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractKeysAndValuesCaseInsensitive(json [, indices_or_keys...], value_type)";
         FunctionDocumentation::Arguments arguments = {
@@ -1762,7 +1762,7 @@ Parses key-value pairs from JSON using case-insensitive key matching. This funct
     /// JSONExtractRawCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
-Returns part of the JSON as an unparsed string using case-insensitive key matching. This function is similar to [`JSONExtractRaw`](#JSONExtractRaw).
+Returns part of the JSON as an unparsed string using case-insensitive key matching. This function is similar to [`JSONExtractRaw`](#jsonextractraw).
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractRawCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
@@ -1786,7 +1786,7 @@ Returns part of the JSON as an unparsed string using case-insensitive key matchi
     /// JSONExtractArrayRawCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
-Returns an array with elements of JSON array, each represented as unparsed string, using case-insensitive key matching. This function is similar to [`JSONExtractArrayRaw`](#JSONExtractArrayRaw).
+Returns an array with elements of JSON array, each represented as unparsed string, using case-insensitive key matching. This function is similar to [`JSONExtractArrayRaw`](#jsonextractarrayraw).
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractArrayRawCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
@@ -1810,7 +1810,7 @@ Returns an array with elements of JSON array, each represented as unparsed strin
     /// JSONExtractKeysAndValuesRawCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
-Extracts raw key-value pairs from JSON using case-insensitive key matching. This function is similar to [`JSONExtractKeysAndValuesRaw`](#JSONExtractKeysAndValuesRaw).
+Extracts raw key-value pairs from JSON using case-insensitive key matching. This function is similar to [`JSONExtractKeysAndValuesRaw`](#jsonextractkeysandvaluesraw).
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractKeysAndValuesRawCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
@@ -1834,7 +1834,7 @@ Extracts raw key-value pairs from JSON using case-insensitive key matching. This
     /// JSONExtractKeysCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
-Parses a JSON string and extracts the keys using case-insensitive key matching to navigate to nested objects. This function is similar to [`JSONExtractKeys`](#JSONExtractKeys).
+Parses a JSON string and extracts the keys using case-insensitive key matching to navigate to nested objects. This function is similar to [`JSONExtractKeys`](#jsonextractkeys).
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractKeysCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
