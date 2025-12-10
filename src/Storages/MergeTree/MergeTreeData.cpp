@@ -1975,9 +1975,16 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         if (!csn_order || !min_start_csn_order || !max_start_csn_order || !creation_csn_known)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} has invalid version metadata: {}", res.part->name, version.toString());
 
-        // Skip version update in case of ATTACH AS REPLICATED
-        if (supportsTransactions() && version_updated)
-            res.part->storeVersionMetadata(/* force */ true);
+        if (version_updated)
+        {
+            if (supportsTransactions())
+                res.part->storeVersionMetadata(/* force */ true);
+            else
+            {
+                LOG_INFO(log, "Remove version metadata of {} in case of ATTACH AS REPLICATED", res.part->name);
+                res.part->removeVersionMetadata();
+            }
+        }
 
         /// Deactivate part if creation was not committed or if removal was.
         if (version.creation_csn == Tx::RolledBackCSN || version.removal_csn)
