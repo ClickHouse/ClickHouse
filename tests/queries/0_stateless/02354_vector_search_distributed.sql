@@ -1,9 +1,8 @@
--- Tags: no-fasttest, no-ordinary-database, distributed
+-- Tags: no-fasttest, no-ordinary-database, shard
 
 -- Tests vector search with Distributed tables
 
 SET enable_analyzer = 1;
-SET prefer_localhost_replica = 1;
 
 -- Create local table with vector similarity index
 DROP TABLE IF EXISTS tab_local SYNC;
@@ -33,22 +32,50 @@ INSERT INTO tab_local VALUES
 
 
 SELECT '# Direct query on local table - expect index usage';
-EXPLAIN indexes = 1
-    SELECT id
-    FROM tab_local
-    ORDER BY L2Distance(vec, [1.0, 1.0])
-    LIMIT 3;
+SELECT
+    id
+FROM tab_local
+ORDER BY L2Distance(vec, [1.0, 1.0])
+LIMIT 3
+SETTINGS log_comment='direct-query-local-table'
+FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT 
+    ProfileEvents['SelectedRows'] as SelectedRows -- 1 vector similarity granule -> 2 merge tree granules -> 6 rows
+FROM system.query_log
+WHERE
+    current_database = currentDatabase() AND -- can use current_database, because there are no remote queries
+    log_comment = 'direct-query-local-table' AND
+    type = 2;
 
 SELECT '# Direct query on remote() - expect index usage';
-EXPLAIN indexes = 1
-    SELECT id
-    FROM remote('127.{1,2}', currentDatabase(), tab_local)
-    ORDER BY L2Distance(vec, [1.0, 1.0])
-    LIMIT 3;
+SELECT 
+    id 
+FROM remote('127.{1,2}', currentDatabase(), tab_local)
+ORDER BY L2Distance(vec, [1.0, 1.0])
+LIMIT 3
+SETTINGS log_comment='direct-query-on-remote'
+FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT
+    -- initiator must read the same amount of rows from the local table + data from remote
+    -- 12 rows on the initiator (local table -- 6 rows and remote -- 6 rows)
+    ProfileEvents['SelectedRows'] as SelectedRows -- 12 rows
+FROM system.query_log
+WHERE 
+    current_database = currentDatabase() AND
+    log_comment = 'direct-query-on-remote' AND
+    type = 2 AND
+    is_initial_query
+FORMAT CSV;
 
 SELECT '# Verify actual query results with remote()';
 WITH [1.0, 1.0] AS reference_vec
-SELECT id
+SELECT DISTINCT id
 FROM remote('127.{1,2}', currentDatabase(), tab_local)
 ORDER BY L2Distance(vec, reference_vec)
 LIMIT 5;
