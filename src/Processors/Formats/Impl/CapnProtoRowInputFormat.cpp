@@ -63,7 +63,7 @@ kj::Array<capnp::word> CapnProtoRowInputFormat::readMessage()
 
     if (expected_bytes > max_message_size)
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Message size {} exceeds maximum allowed size {}. Most likely, data is corrupted or format mismatch occurred",
+            "CapnProto message size {} exceeds maximum allowed size {}. Most likely, data is corrupted or format mismatch occurred",
             expected_bytes, max_message_size);
 
     const auto data_size = expected_bytes - prefix_size;
