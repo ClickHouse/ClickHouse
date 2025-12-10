@@ -2800,6 +2800,98 @@ static BoolMask forAnyHyperrectangle(
     return result;
 }
 
+BoolMask KeyCondition::checkInRange(
+    size_t keys_size,
+    const FieldRef * left_keys,
+    const FieldRef * right_keys,
+    const DataTypes & data_types,
+    BoolMask initial_mask) const
+{
+    std::vector<size_t> used_key_indices = getUsedColumnsInOrder();
+    if (used_key_indices.empty())
+        return BoolMask(true, true);
+
+    size_t used_keys_size = used_key_indices.size();
+
+    Hyperrectangle key_ranges;
+    key_ranges.reserve(used_keys_size);
+    for (size_t pos = 0; pos < used_keys_size; ++pos)
+    {
+        size_t key_index = used_key_indices[pos];
+        if (isNullableOrLowCardinalityNullable(data_types[key_index]))
+            key_ranges.push_back(Range::createWholeUniverse());
+        else
+            key_ranges.push_back(Range::createWholeUniverseWithoutNull());
+    }
+
+    /// Mapping: original key index -> position in key_ranges, or -1 if not used
+    std::vector<int> index_to_used_key_pos(keys_size, -1);
+    for (size_t pos = 0; pos < used_keys_size; ++pos)
+        index_to_used_key_pos[used_key_indices[pos]] = static_cast<int>(pos);
+
+    return forAnyHyperrectangle(
+        keys_size,
+        left_keys,
+        right_keys,
+        used_key_indices,
+        index_to_used_key_pos,
+        true,
+        true,
+        key_ranges,
+        data_types,
+        0,
+        initial_mask,
+        [&] (const Hyperrectangle & key_ranges_hyperrectangle)
+        {
+            return checkInHyperrectangle(index_to_used_key_pos, key_ranges_hyperrectangle, data_types);
+        });
+}
+
+
+std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
+    Range key_range,
+    const MonotonicFunctionsChain & functions,
+    DataTypePtr current_type,
+    bool single_point)
+{
+    for (const auto & func : functions)
+    {
+        /// We check the monotonicity of each function on a specific range.
+        /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
+        IFunction::Monotonicity monotonicity = single_point
+            ? IFunction::Monotonicity{true}
+            : func->getMonotonicityForRange(*current_type.get(), key_range.left, key_range.right);
+
+        if (!monotonicity.is_monotonic)
+        {
+            return {};
+        }
+
+        /// If we apply function to open interval, we can get empty intervals in result.
+        /// E.g. for ('2020-01-03', '2020-01-20') after applying 'toYYYYMM' we will get ('202001', '202001').
+        /// To avoid this we make range left and right included.
+        /// Any function that treats NULL specially is not monotonic.
+        /// Thus we can safely use isNull() as an -Inf/+Inf indicator here.
+        if (!key_range.left.isNull())
+        {
+            key_range.left = applyFunction(func, current_type, key_range.left);
+            key_range.left_included = true;
+        }
+
+        if (!key_range.right.isNull())
+        {
+            key_range.right = applyFunction(func, current_type, key_range.right);
+            key_range.right_included = true;
+        }
+
+        current_type = func->getResultType();
+
+        if (!monotonicity.is_positive)
+            key_range.invert();
+    }
+    return key_range;
+}
+
 BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,
@@ -3156,98 +3248,6 @@ BoolMask KeyCondition::checkInHyperrectangle(
     return rpn_stack[0];
 }
 
-
-BoolMask KeyCondition::checkInRange(
-    size_t keys_size,
-    const FieldRef * left_keys,
-    const FieldRef * right_keys,
-    const DataTypes & data_types,
-    BoolMask initial_mask) const
-{
-    std::vector<size_t> used_key_indices = getUsedColumnsInOrder();
-    if (used_key_indices.empty())
-        return BoolMask(true, true);
-
-    size_t used_keys_size = used_key_indices.size();
-
-    Hyperrectangle key_ranges;
-    key_ranges.reserve(used_keys_size);
-    for (size_t pos = 0; pos < used_keys_size; ++pos)
-    {
-        size_t key_index = used_key_indices[pos];
-        if (isNullableOrLowCardinalityNullable(data_types[key_index]))
-            key_ranges.push_back(Range::createWholeUniverse());
-        else
-            key_ranges.push_back(Range::createWholeUniverseWithoutNull());
-    }
-
-    /// Mapping: original key index -> position in key_ranges, or -1 if not used
-    std::vector<int> index_to_used_key_pos(keys_size, -1);
-    for (size_t pos = 0; pos < used_keys_size; ++pos)
-        index_to_used_key_pos[used_key_indices[pos]] = static_cast<int>(pos);
-
-    return forAnyHyperrectangle(
-        keys_size,
-        left_keys,
-        right_keys,
-        used_key_indices,
-        index_to_used_key_pos,
-        true,
-        true,
-        key_ranges,
-        data_types,
-        0,
-        initial_mask,
-        [&] (const Hyperrectangle & key_ranges_hyperrectangle)
-        {
-            return checkInHyperrectangle(index_to_used_key_pos, key_ranges_hyperrectangle, data_types);
-        });
-}
-
-
-std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
-    Range key_range,
-    const MonotonicFunctionsChain & functions,
-    DataTypePtr current_type,
-    bool single_point)
-{
-    for (const auto & func : functions)
-    {
-        /// We check the monotonicity of each function on a specific range.
-        /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
-        IFunction::Monotonicity monotonicity = single_point
-            ? IFunction::Monotonicity{true}
-            : func->getMonotonicityForRange(*current_type.get(), key_range.left, key_range.right);
-
-        if (!monotonicity.is_monotonic)
-        {
-            return {};
-        }
-
-        /// If we apply function to open interval, we can get empty intervals in result.
-        /// E.g. for ('2020-01-03', '2020-01-20') after applying 'toYYYYMM' we will get ('202001', '202001').
-        /// To avoid this we make range left and right included.
-        /// Any function that treats NULL specially is not monotonic.
-        /// Thus we can safely use isNull() as an -Inf/+Inf indicator here.
-        if (!key_range.left.isNull())
-        {
-            key_range.left = applyFunction(func, current_type, key_range.left);
-            key_range.left_included = true;
-        }
-
-        if (!key_range.right.isNull())
-        {
-            key_range.right = applyFunction(func, current_type, key_range.right);
-            key_range.right_included = true;
-        }
-
-        current_type = func->getResultType();
-
-        if (!monotonicity.is_positive)
-            key_range.invert();
-    }
-    return key_range;
-}
 
 // Returns whether the condition is one continuous range of the primary key,
 // where every field is matched by range or a single element set.
