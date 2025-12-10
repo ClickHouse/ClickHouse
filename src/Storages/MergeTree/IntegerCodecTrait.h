@@ -15,24 +15,6 @@
     #define USE_SIMDCOMP 1
 #endif
 
-#if defined(__x86_64__) || defined(_M_X64)
-    #if defined(__AVX512F__)
-        #define USE_SIMDCOMP_AVX512 1
-    #elif defined(__AVX2__)
-        #define USE_SIMDCOMP_AVX2 1
-    #elif defined(__SSE4_1__)
-        #define USE_SIMDCOMP_SSE41 1
-    #else
-        #define USE_STREAMVBYTE 1
-    #endif
-#else
-    #define USE_STREAMVBYTE 1
-#endif
-
-#if defined(USE_SIMDCOMP_AVX512) || defined(USE_SIMDCOMP_AVX2) || defined(USE_SIMDCOMP_SSE41)
-    #define USE_SIMDCOMP 1
-#endif
-
 extern "C"
 {
 #if defined(USE_SIMDCOMP)
