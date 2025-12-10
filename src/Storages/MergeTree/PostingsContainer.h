@@ -56,9 +56,7 @@ template<typename T>
 class PostingsContainerImpl
 {
     static_assert(std::is_same_v<T, uint32_t>, "PostingsContainer only supports uint32_t");
-    static constexpr UInt8  kBlockSizeShift = 7;
-    static constexpr size_t kBlockSize = 1 << kBlockSizeShift;
-    static constexpr size_t kBlockSizeMask = kBlockSize - 1;
+    static constexpr size_t kBlockSize = CodecTraits<T>::kBlockSize;
     struct BlockHeader
     {
         uint16_t count;

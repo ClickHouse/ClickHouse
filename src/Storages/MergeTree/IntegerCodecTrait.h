@@ -64,6 +64,21 @@ struct CodecTraits;
 template <>
 struct CodecTraits<uint32_t>
 {
+    /// simdcomp uses different fixed block sizes depending on the SIMD ISA:
+    /// - AVX-512 backend works on 512-element blocks
+    /// - AVX2 backend works on 256-element blocks
+    /// - SSE41 backend works on 128-element blocks
+    /// For the StreamVByte fallback we use a 128-element block size.
+    static constexpr size_t kBlockSize =  {
+#if defined(USE_SIMDCOMP_AVX512)
+        512
+#elif defined(USE_SIMDCOMP_AVX2)
+        256
+#else
+        128
+#endif
+    };
+
     ALWAYS_INLINE static std::pair<size_t, size_t> evaluateSizeAndMaxBits([[maybe_unused]] const uint32_t * data, size_t size)
     {
 #if defined(USE_SIMDCOMP)
