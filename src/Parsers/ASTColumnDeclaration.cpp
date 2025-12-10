@@ -113,7 +113,7 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
     {
         ostr << ' '  << "TTL"  << ' ';
         auto nested_frame = frame;
-        if (auto * /*ast_with_alias*/ _ = dynamic_cast<ASTWithAlias *>(ttl.get()))
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(ttl.get()); ast_alias && !ast_alias->tryGetAlias().empty())
             nested_frame.need_parens = true;
         ttl->format(ostr, format_settings, state, nested_frame);
     }
