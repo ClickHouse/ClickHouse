@@ -68,7 +68,6 @@ namespace DB
     namespace ErrorCodes
     {
         extern const int UNKNOWN_EXCEPTION;
-        extern const int UNKNOWN_TYPE;
         extern const int LOGICAL_ERROR;
         extern const int DECIMAL_OVERFLOW;
         extern const int ILLEGAL_COLUMN;
@@ -286,7 +285,7 @@ namespace DB
         const CHColumnToArrowColumn::Settings & settings,
         std::unordered_map<String, MutableColumnPtr> & dictionary_values)
     {
-        /// TODO: utilize slicing (start - end) - it reqires some non-trivial reindexation
+        /// TODO: utilize slicing (start - end) - it requires some non-trivial reindexation
         /// and maybe optimization of typed values arrays
         arrow::ArrayVector children;
 

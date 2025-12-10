@@ -1213,7 +1213,7 @@ arrow::Status ArrowFlightHandler::GetFlightInfo(
                         using SqlInfo = arrow::flight::protocol::sql::SqlInfo;
 
                         auto info_name_builder = std::make_shared<arrow::UInt32Builder>();
-                        
+
                         [[maybe_unused]] static const size_t SQL_INFO_STRING = 0;
                         [[maybe_unused]] static const size_t SQL_INFO_BOOLEAN = 1;
                         [[maybe_unused]] static const size_t SQL_INFO_INT64 = 2;
