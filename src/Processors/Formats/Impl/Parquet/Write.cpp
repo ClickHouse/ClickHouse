@@ -482,7 +482,7 @@ struct ConverterJSON
 
             stash.emplace_back(std::move(wb.str()));
             const String & s = stash.back();
-            
+
             buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size()), reinterpret_cast<const uint8_t *>(s.data()));
         }
         return buf.data();
