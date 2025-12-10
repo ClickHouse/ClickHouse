@@ -68,7 +68,12 @@ struct MergeTreeReaderSettings
     bool enable_analyzer = false;
 
     /// Note storage_settings used only in private, do not remove
-    static MergeTreeReaderSettings create(const ContextPtr & context, const MergeTreeSettings & storage_settings, const SelectQueryInfo & query_info);
+    static MergeTreeReaderSettings createForQuery(const ContextPtr & context, const MergeTreeSettings & storage_settings, const SelectQueryInfo & query_info);
+    static MergeTreeReaderSettings createForMergeMutation(ReadSettings read_settings);
+    static MergeTreeReaderSettings createFromSettings(ReadSettings read_settings = {});
+
+private:
+    MergeTreeReaderSettings() = default;
 };
 
 struct MergeTreeWriterSettings

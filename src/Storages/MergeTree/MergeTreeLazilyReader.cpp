@@ -262,12 +262,8 @@ void MergeTreeLazilyReader::transformLazyColumns(
     chassert(row_num_column->size() == part_num_column->size());
     const size_t rows_size = row_num_column->size();
 
-    ReadSettings read_settings;
-    MergeTreeReaderSettings reader_settings =
-    {
-        .read_settings = read_settings,
-        .save_marks_in_cache = true,
-    };
+    MergeTreeReaderSettings reader_settings = MergeTreeReaderSettings::createFromSettings();
+    reader_settings.save_marks_in_cache = true;
 
     MutableColumns lazily_read_columns;
     lazily_read_columns.resize(columns_size);
