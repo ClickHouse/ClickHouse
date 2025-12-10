@@ -25,7 +25,7 @@ if [[ $curl_status -ne 0 ]]; then
     exit 1
 fi
 
-# First line is the server-reported port; the line prefixed with PORT: is curl's own local port.
+# http_response contains the server port; writeout has curl's own local port prefixed with PORT:.
 server_port=$(head -n1 "$tmpdir/http_response")
 client_port=$(sed -n 's/^PORT://p' "$tmpdir/writeout" | head -n1)
 
