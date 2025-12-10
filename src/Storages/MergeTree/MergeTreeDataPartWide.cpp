@@ -404,10 +404,6 @@ bool MergeTreeDataPartWide::hasColumnFiles(const NameAndTypePair & column) const
     bool res = true;
     serialization->enumerateStreams([&](const auto & substream_path)
     {
-        /// Don't check streams for ephemeral subcolumns that don't store any real data.
-        if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
-            return;
-
         auto stream_name = getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, checksums, storage.getSettings());
         if (!stream_name || !checksums.files.contains(*stream_name + marks_file_extension))
             res = false;
