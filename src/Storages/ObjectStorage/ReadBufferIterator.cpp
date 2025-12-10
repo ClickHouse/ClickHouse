@@ -49,16 +49,12 @@ SchemaCache::Key ReadBufferIterator::getKeyForSchemaCache(const ObjectInfo & obj
     return DB::getKeyForSchemaCache(source, format_name, format_settings, getContext());
 }
 
-SchemaCache::Keys ReadBufferIterator::getKeysForSchemaCache() const
+SchemaCache::Key ReadBufferIterator::getFirstKeyForSchemaCache() const
 {
-    Strings sources;
-    sources.reserve(read_keys.size());
-    std::transform(
-        read_keys.begin(),
-        read_keys.end(),
-        std::back_inserter(sources),
-        [&](const auto & elem) { return StorageObjectStorageSource::getUniqueStoragePathIdentifier(*configuration, *elem); });
-    return DB::getKeysForSchemaCache(sources, *format, format_settings, getContext());
+    if (read_keys.empty())
+        return {};
+    String cache_key = StorageObjectStorageSource::getUniqueStoragePathIdentifier(*configuration, *read_keys[0]);
+    return DB::getKeyForSchemaCache(cache_key, *format, format_settings, getContext());
 }
 
 std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
@@ -131,7 +127,7 @@ void ReadBufferIterator::setResultingSchema(const ColumnsDescription & columns)
     if (query_settings.schema_inference_use_cache
         && query_settings.schema_inference_mode == SchemaInferenceMode::DEFAULT)
     {
-        schema_cache.addManyColumns(getKeysForSchemaCache(), columns);
+        schema_cache.addColumns(getFirstKeyForSchemaCache(), columns);
     }
 }
 
