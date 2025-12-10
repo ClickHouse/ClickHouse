@@ -29,6 +29,11 @@ struct MergeTreeIndexSubstream
     String suffix;
     /// Extension of the index substream's file with data. Encodes the serialization version (".idx", "idx2", etc.)
     String extension;
+
+    static bool isCompressed(Type type)
+    {
+        return type != Type::TextIndexPostings;
+    }
 };
 
 using MergeTreeIndexSubstreams = std::vector<MergeTreeIndexSubstream>;

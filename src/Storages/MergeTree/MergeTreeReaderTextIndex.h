@@ -46,7 +46,7 @@ private:
 
     PostingsMap readPostingsIfNeeded(size_t mark);
     std::vector<PostingListPtr> readPostingsForToken(std::string_view token, const TokenPostingsInfo & token_info, const RowsRange & range);
-    PostingListPtr readPostingsBlock(std::string_view token, size_t offset_in_file);
+    PostingListPtr readPostingsBlock(std::string_view token, const TokenPostingsInfo & token_info, size_t block_idx);
     void cleanupPostingsBlocks(const RowsRange & range);
 
     std::optional<RowsRange> getRowsRangeForMark(size_t mark) const;

@@ -69,7 +69,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
             data_part->getDataPartStoragePtr(),
             index.index->getFileName() + substream.suffix,
             substream.extension,
-            settings);
+            MergeTreeIndexReader::patchSettings(settings, substream.type));
     };
 
     main_stream = make_stream(substreams[0]);
@@ -187,7 +187,7 @@ void MergeTreeReaderTextIndex::initializePostingStreams()
             data_part->getDataPartStoragePtr(),
             index.index->getFileName() + substream.suffix,
             substream.extension,
-            settings);
+            MergeTreeIndexReader::patchSettings(settings, substream.type));
 
         stream->seekToStart();
         return stream;
@@ -459,6 +459,9 @@ PostingsMap MergeTreeReaderTextIndex::readPostingsIfNeeded(size_t mark)
 
 std::vector<PostingListPtr> MergeTreeReaderTextIndex::readPostingsForToken(std::string_view token, const TokenPostingsInfo & token_info, const RowsRange & range)
 {
+    if (token_info.embedded_postings)
+        return {token_info.embedded_postings};
+
     auto blocks_to_read = token_info.getBlocksToRead(range);
     std::vector<PostingListPtr> token_postings;
     token_postings.reserve(blocks_to_read.size());
@@ -468,7 +471,7 @@ std::vector<PostingListPtr> MergeTreeReaderTextIndex::readPostingsForToken(std::
         auto [it, inserted] = postings_blocks[token].try_emplace(block_idx);
 
         if (inserted)
-            it->second = readPostingsBlock(token, token_info.offsets[block_idx]);
+            it->second = readPostingsBlock(token, token_info, block_idx);
 
         token_postings.push_back(it->second);
     }
@@ -476,11 +479,10 @@ std::vector<PostingListPtr> MergeTreeReaderTextIndex::readPostingsForToken(std::
     return token_postings;
 }
 
-PostingListPtr MergeTreeReaderTextIndex::readPostingsBlock(std::string_view token, size_t offset_in_file)
+PostingListPtr MergeTreeReaderTextIndex::readPostingsBlock(std::string_view token, const TokenPostingsInfo & token_info, size_t block_idx)
 {
     auto * postings_stream = posting_streams.at(token);
     auto * data_buffer = postings_stream->getDataBuffer();
-    auto * compressed_buffer = postings_stream->getCompressedDataBuffer();
 
     const String & data_path = data_part_info_for_read->getDataPartStorage()->getFullPath();
     const String & index_name = index.index->getFileName();
@@ -489,11 +491,11 @@ PostingListPtr MergeTreeReaderTextIndex::readPostingsBlock(std::string_view toke
     const auto load_postings = [&]() -> PostingListPtr
     {
         ProfileEvents::increment(ProfileEvents::TextIndexReadPostings);
-        compressed_buffer->seek(offset_in_file, 0);
-        return PostingsSerialization::deserialize(*data_buffer);
+        postings_stream->seekToMark({token_info.offsets[block_idx], 0});
+        return PostingsSerialization::deserialize(*data_buffer, token_info.header, token_info.cardinality);
     };
 
-    auto hash = TextIndexPostingsCache::hash(data_path, index_name, offset_in_file);
+    auto hash = TextIndexPostingsCache::hash(data_path, index_name, token_info.offsets[block_idx]);
     return condition_text.postingsCache()->getOrSet(hash, load_postings);
 }
 

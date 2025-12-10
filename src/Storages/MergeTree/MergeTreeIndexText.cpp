@@ -48,9 +48,11 @@ namespace ErrorCodes
 }
 
 static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 16;
+static constexpr UInt64 MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = 6;
+
+static_assert(MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS must be less or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
 static_assert(PostingListBuilder::max_small_size <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "max_small_size must be less than or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
 
-static constexpr UInt64 DEFAULT_NGRAM_SIZE = 3;
 static constexpr UInt64 DEFAULT_DICTIONARY_BLOCK_SIZE = 512;
 static constexpr bool DEFAULT_DICTIONARY_BLOCK_USE_FRONTCODING = true;
 static constexpr UInt64 DEFAULT_POSTING_LIST_BLOCK_SIZE = 1024 * 1024;
@@ -100,12 +102,6 @@ DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInf
 
 void PostingsSerialization::serialize(const roaring::api::roaring_bitmap_t & bitmap, WriteBuffer & ostr)
 {
-    UInt64 header = 0;
-    writeVarUInt(header, ostr);
-
-    UInt32 cardinality = roaring::api::roaring_bitmap_get_cardinality(&bitmap);
-    writeVarUInt(cardinality, ostr);
-
     size_t num_bytes = roaring::api::roaring_bitmap_portable_size_in_bytes(&bitmap);
     writeVarUInt(num_bytes, ostr);
 
@@ -114,16 +110,10 @@ void PostingsSerialization::serialize(const roaring::api::roaring_bitmap_t & bit
     ostr.write(memory.data(), num_bytes);
 }
 
-void PostingsSerialization::serialize(PostingList && postings, WriteBuffer & ostr)
+void PostingsSerialization::serialize(PostingList & postings, UInt64 header, WriteBuffer & ostr)
 {
-    size_t cardinality = postings.cardinality();
-
-    if (cardinality < MAX_CARDINALITY_FOR_RAW_POSTINGS)
+    if (header & RawPostings)
     {
-        UInt64 header = Flags::RawPostings;
-        writeVarUInt(header, ostr);
-        writeVarUInt(cardinality, ostr);
-
         for (const auto row_id : postings)
             writeVarUInt(row_id, ostr);
     }
@@ -134,45 +124,25 @@ void PostingsSerialization::serialize(PostingList && postings, WriteBuffer & ost
     }
 }
 
-void PostingsSerialization::serialize(PostingListBuilder && postings, WriteBuffer & ostr)
+void PostingsSerialization::serialize(PostingListBuilder & postings, UInt64 header, WriteBuffer & ostr)
 {
-    size_t cardinality = postings.size();
-
-    if (cardinality < MAX_CARDINALITY_FOR_RAW_POSTINGS)
+    if (postings.isLarge())
     {
-        UInt64 header = Flags::RawPostings;
-        writeVarUInt(header, ostr);
-        writeVarUInt(cardinality, ostr);
-
-        if (postings.isSmall())
-        {
-            const auto & array = postings.getSmall();
-            for (size_t i = 0; i < cardinality; ++i)
-                writeVarUInt(array[i], ostr);
-        }
-        else
-        {
-            const auto & posting_list = postings.getLarge();
-            for (const auto row_id : posting_list)
-                writeVarUInt(row_id, ostr);
-        }
+        serialize(postings.getLarge(), header, ostr);
     }
     else
     {
-        chassert(postings.isLarge());
-        postings.getLarge().runOptimize();
-        serialize(postings.getLarge().roaring, ostr);
+        chassert(header & RawPostings);
+        size_t cardinality = postings.size();
+        const auto & array = postings.getSmall();
+
+        for (size_t i = 0; i < cardinality; ++i)
+            writeVarUInt(array[i], ostr);
     }
 }
 
-PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr)
+PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality)
 {
-    UInt64 header;
-    readVarUInt(header, istr);
-
-    size_t cardinality;
-    readVarUInt(cardinality, istr);
-
     if (header & Flags::RawPostings)
     {
         std::vector<UInt32> values(cardinality);
@@ -183,17 +153,19 @@ PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr)
         postings->addMany(cardinality, values.data());
         return postings;
     }
+    else
+    {
+        size_t num_bytes;
+        readVarUInt(num_bytes, istr);
 
-    size_t num_bytes;
-    readVarUInt(num_bytes, istr);
+        /// If the posting list is completely in the buffer, avoid copying.
+        if (istr.position() && istr.position() + num_bytes <= istr.buffer().end())
+            return std::make_shared<PostingList>(PostingList::read(istr.position()));
 
-    /// If the posting list is completely in the buffer, avoid copying.
-    if (istr.position() && istr.position() + num_bytes <= istr.buffer().end())
-        return std::make_shared<PostingList>(PostingList::read(istr.position()));
-
-    std::vector<char> buf(num_bytes);
-    istr.readStrict(buf.data(), num_bytes);
-    return std::make_shared<PostingList>(PostingList::read(buf.data()));
+        std::vector<char> buf(num_bytes);
+        istr.readStrict(buf.data(), num_bytes);
+        return std::make_shared<PostingList>(PostingList::read(buf.data()));
+    }
 }
 
 
@@ -361,29 +333,44 @@ DictionaryBlock MergeTreeIndexGranuleText::deserializeDictionaryBlock(ReadBuffer
 
     std::vector<TokenPostingsInfo> token_infos;
     token_infos.reserve(num_tokens);
+    using enum PostingsSerialization::Flags;
 
     for (size_t i = 0; i < num_tokens; ++i)
     {
-        size_t num_postings_blocks;
-        TokenPostingsInfo token_info;
+        TokenPostingsInfo info;
 
-        readVarUInt(token_info.cardinality, istr);
-        readVarUInt(num_postings_blocks, istr);
+        readVarUInt(info.header, istr);
+        readVarUInt(info.cardinality, istr);
 
-        for (size_t j = 0; j < num_postings_blocks; ++j)
+        if (info.header & EmbeddedPostings)
         {
-            UInt64 offset_in_file;
-            RowsRange mark_range;
+            auto postings = PostingsSerialization::deserialize(istr, info.header, info.cardinality);
+            info.offsets.emplace_back(0);
+            info.ranges.emplace_back(postings->minimum(), postings->maximum());
+            info.embedded_postings = std::move(postings);
+        }
+        else
+        {
+            UInt64 num_postings_blocks = 1;
 
-            readVarUInt(offset_in_file, istr);
-            readVarUInt(mark_range.begin, istr);
-            readVarUInt(mark_range.end, istr);
+            if (!(info.header & SingleBlock))
+                readVarUInt(num_postings_blocks, istr);
 
-            token_info.offsets.emplace_back(offset_in_file);
-            token_info.ranges.emplace_back(mark_range);
+            for (size_t j = 0; j < num_postings_blocks; ++j)
+            {
+                UInt64 offset_in_file;
+                RowsRange rows_range;
+
+                readVarUInt(offset_in_file, istr);
+                readVarUInt(rows_range.begin, istr);
+                readVarUInt(rows_range.end, istr);
+
+                info.offsets.emplace_back(offset_in_file);
+                info.ranges.emplace_back(std::move(rows_range));
+            }
         }
 
-        token_infos.emplace_back(std::move(token_info));
+        token_infos.emplace_back(std::move(info));
     }
 
     return DictionaryBlock{std::move(tokens_column), std::move(token_infos)};
@@ -407,7 +394,6 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
     }
 
     auto * data_buffer = stream.getDataBuffer();
-    auto * compressed_buffer = stream.getCompressedDataBuffer();
 
     /// Either retrieves a dictionary block from cache or from disk when cache is disabled.
     const auto get_dictionary_block = [&](size_t block_id)
@@ -415,7 +401,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
         const auto load_dictionary_block = [&] -> TextIndexDictionaryBlockCacheEntryPtr
         {
             UInt64 offset_in_file = sparse_index->getOffsetInFile(block_id);
-            compressed_buffer->seek(offset_in_file, 0);
+            stream.seekToMark({offset_in_file, 0});
             return std::make_shared<TextIndexDictionaryBlockCacheEntry>(deserializeDictionaryBlock(*data_buffer));
         };
 
@@ -661,18 +647,37 @@ size_t flushAndGetOffsetInFile(Stream & out)
 }
 
 TokenPostingsInfo TextIndexSerialization::serializePostings(
-    PostingListBuilder && postings,
+    PostingListBuilder & postings,
     MergeTreeIndexWriterStream & postings_stream,
     size_t posting_list_block_size)
 {
+    using enum PostingsSerialization::Flags;
     TokenPostingsInfo info;
+    info.header = 0;
     info.cardinality = postings.size();
 
-    if (info.cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS || info.cardinality <= posting_list_block_size)
+    if (info.cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
     {
-        info.offsets.emplace_back(flushAndGetOffsetInFile(postings_stream));
+        info.header |= RawPostings;
+        info.header |= EmbeddedPostings;
+        info.header |= SingleBlock;
+        return info;
+    }
+    else if (info.cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
+    {
+        info.header |= RawPostings;
+        info.header |= SingleBlock;
+    }
+    else if (info.cardinality <= posting_list_block_size)
+    {
+        info.header |= SingleBlock;
+    }
+
+    if (info.header & SingleBlock)
+    {
+        info.offsets.emplace_back(postings_stream.plain_hashing.count());
         info.ranges.emplace_back(postings.minimum(), postings.maximum());
-        PostingsSerialization::serialize(std::move(postings), postings_stream.compressed_hashing);
+        PostingsSerialization::serialize(postings, info.header, postings_stream.plain_hashing);
     }
     else
     {
@@ -685,9 +690,9 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
             if (roaring::api::roaring_bitmap_get_cardinality(&block) == 0)
                 continue;
 
-            info.offsets.emplace_back(flushAndGetOffsetInFile(postings_stream));
+            info.offsets.emplace_back(postings_stream.plain_hashing.count());
             info.ranges.emplace_back(roaring::api::roaring_bitmap_minimum(&block), roaring::api::roaring_bitmap_maximum(&block));
-            PostingsSerialization::serialize(block, postings_stream.compressed_hashing);
+            PostingsSerialization::serialize(block, postings_stream.plain_hashing);
         }
     }
 
@@ -706,9 +711,17 @@ void TextIndexSerialization::serializeTokens(const ColumnString & tokens, WriteB
 
 void TextIndexSerialization::serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info)
 {
-    writeVarUInt(token_info.cardinality, ostr);
-    writeVarUInt(token_info.offsets.size(), ostr);
+    using enum PostingsSerialization::Flags;
     chassert(token_info.offsets.size() == token_info.ranges.size());
+
+    writeVarUInt(token_info.header, ostr);
+    writeVarUInt(token_info.cardinality, ostr);
+
+    if (token_info.header & EmbeddedPostings)
+        return;
+
+    if (!(token_info.header & SingleBlock))
+        writeVarUInt(token_info.offsets.size(), ostr);
 
     for (size_t j = 0; j < token_info.offsets.size(); ++j)
     {
@@ -774,8 +787,11 @@ DictionarySparseIndex serializeTokensAndPostings(
         for (size_t i = block_begin; i < block_end; ++i)
         {
             auto & postings = *tokens_and_postings[i].second;
-            auto token_info = TextIndexSerialization::serializePostings(std::move(postings), postings_stream, params.posting_list_block_size);
+            auto token_info = TextIndexSerialization::serializePostings(postings, postings_stream, params.posting_list_block_size);
             TextIndexSerialization::serializeTokenInfo(dictionary_stream.compressed_hashing, token_info);
+
+            if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
+                PostingsSerialization::serialize(postings, token_info.header, dictionary_stream.compressed_hashing);
         }
     }
 

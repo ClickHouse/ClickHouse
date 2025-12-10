@@ -12,6 +12,7 @@
 
 #include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
+#include <base/types.h>
 
 #include <vector>
 
@@ -136,12 +137,14 @@ struct PostingsSerialization
         RawPostings = 1ULL << 0,
         /// If set, the posting list is embedded into the dictionary block to avoid additional random reads from disk.
         EmbeddedPostings = 1ULL << 1,
+        /// If set, the posting list is serialized as a single block.
+        SingleBlock = 1ULL << 2,
     };
 
-    static void serialize(PostingListBuilder && postings, WriteBuffer & ostr);
-    static void serialize(PostingList && postings, WriteBuffer & ostr);
+    static void serialize(PostingListBuilder & postings, UInt64 header, WriteBuffer & ostr);
+    static void serialize(PostingList & postings, UInt64 header, WriteBuffer & ostr);
     static void serialize(const roaring::api::roaring_bitmap_t & bitmap, WriteBuffer & ostr);
-    static PostingListPtr deserialize(ReadBuffer & istr);
+    static PostingListPtr deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality);
 };
 
 struct RowsRange
@@ -158,9 +161,11 @@ struct RowsRange
 /// Stores information about posting list for a token.
 struct TokenPostingsInfo
 {
+    UInt64 header = 0;
     UInt32 cardinality = 0;
     std::vector<UInt64> offsets;
     std::vector<RowsRange> ranges;
+    PostingListPtr embedded_postings;
 
     std::vector<size_t> getBlocksToRead(const RowsRange & range) const;
 };
@@ -207,7 +212,7 @@ struct TextIndexSerialization
     };
 
     static TokenPostingsInfo serializePostings(
-        PostingListBuilder && postings,
+        PostingListBuilder & postings,
         MergeTreeIndexWriterStream & postings_stream,
         size_t posting_list_block_size);
 

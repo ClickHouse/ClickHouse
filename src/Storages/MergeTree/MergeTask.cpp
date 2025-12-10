@@ -507,9 +507,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         !patch_parts.empty() ||
         global_ctx->cleanup ||
         global_ctx->deduplicate ||
-        global_ctx->merging_params.mode == MergeTreeData::MergingParams::Collapsing ||
-        global_ctx->merging_params.mode == MergeTreeData::MergingParams::Replacing ||
-        global_ctx->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing;
+        global_ctx->merging_params.mode != MergeTreeData::MergingParams::Ordinary;
 
     prepareProjectionsToMergeAndRebuild();
 
@@ -1222,7 +1220,7 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
             getLogger("VerticalMergeStage"));
 
         if (!global_ctx->merge_may_reduce_rows)
-            addBuildInvertedIndexStep(*plan_for_part, *global_ctx->future_part->parts[part_num], global_ctx);
+            addBuildInvertedIndexesStep(*plan_for_part, *global_ctx->future_part->parts[part_num], global_ctx);
 
         plans.emplace_back(std::move(plan_for_part));
         part_starting_offset += global_ctx->future_part->parts[part_num]->rows_count;
@@ -1276,15 +1274,17 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
             auto indices_expression_dag = indices_expression->getActionsDAG().clone();
             auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(*merge_column_query_plan.getCurrentHeader(), indices_expression_dag.getRequiredColumnsNames(), global_ctx->data->getContext());
             indices_expression_dag.addMaterializingOutputActions(/*materialize_sparse=*/ true); /// Const columns cannot be written without materialization.
+
             auto calculate_indices_expression_step = std::make_unique<ExpressionStep>(
                 merge_column_query_plan.getCurrentHeader(),
                 ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(indices_expression_dag)));
+
             merge_column_query_plan.addStep(std::move(calculate_indices_expression_step));
         }
     }
 
     if (global_ctx->merge_may_reduce_rows)
-        addBuildInvertedIndexStep(merge_column_query_plan, *global_ctx->new_data_part, global_ctx);
+        addBuildInvertedIndexesStep(merge_column_query_plan, *global_ctx->new_data_part, global_ctx);
 
     QueryPlanOptimizationSettings optimization_settings(global_ctx->context);
     auto pipeline_settings = BuildQueryPipelineSettings(global_ctx->context);
@@ -2107,7 +2107,7 @@ private:
     std::shared_ptr<BuildInvertedIndexTransform> transform;
 };
 
-void MergeTask::addBuildInvertedIndexStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx)
+void MergeTask::addBuildInvertedIndexesStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx)
 {
     const auto & header = plan.getCurrentHeader();
     auto read_column_names = header->getNamesAndTypesList().getNameSet();
@@ -2248,7 +2248,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             ctx->log);
 
         if (!global_ctx->merge_may_reduce_rows)
-            addBuildInvertedIndexStep(*plan_for_part, *part, global_ctx);
+            addBuildInvertedIndexesStep(*plan_for_part, *part, global_ctx);
 
         plans.emplace_back(std::move(plan_for_part));
         part_starting_offset += global_ctx->future_part->parts[i]->rows_count;
@@ -2393,7 +2393,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         addCreatingSetsStep(merge_parts_query_plan, std::move(subqueries), global_ctx->context);
 
     if (global_ctx->merge_may_reduce_rows)
-        addBuildInvertedIndexStep(merge_parts_query_plan, *global_ctx->new_data_part, global_ctx);
+        addBuildInvertedIndexesStep(merge_parts_query_plan, *global_ctx->new_data_part, global_ctx);
 
     {
         QueryPlanOptimizationSettings optimization_settings(global_ctx->context);

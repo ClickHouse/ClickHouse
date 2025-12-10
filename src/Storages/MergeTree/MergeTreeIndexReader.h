@@ -33,6 +33,7 @@ public:
     void adjustRightMark(size_t right_mark);
     void prefetchBeginOfRange(size_t from_mark, Priority priority);
     const StreamMap & getStreams() { return streams; }
+    static MergeTreeReaderSettings patchSettings(MergeTreeReaderSettings settings, MergeTreeIndexSubstream::Type substream);
 
 private:
     MergeTreeIndexPtr index;

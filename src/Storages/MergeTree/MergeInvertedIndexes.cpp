@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
+#include <Storages/MergeTree/MergeTreeIndexReader.h>
 
 namespace DB
 {
@@ -213,7 +214,7 @@ MergeInvertedIndexesTask::MergeInvertedIndexesTask(
                 segments[i].part_storage,
                 segments[i].index_file_name + substream.suffix,
                 substream.extension,
-                reader_settings_);
+                MergeTreeIndexReader::patchSettings(reader_settings_, substream.type));
 
             input_streams[i][substream.type] = stream.get();
             input_streams_holders.emplace_back(std::move(stream));
@@ -279,17 +280,20 @@ void MergeInvertedIndexesTask::readDictionaryBlock(size_t source_num)
 
 std::vector<PostingListPtr> MergeInvertedIndexesTask::readPostingLists(size_t source_num)
 {
+    const auto & token_info = inputs[source_num].token_infos[queue.current()->getRow()];
+
+    if (token_info.embedded_postings)
+        return {token_info.embedded_postings};
+
     auto * stream = input_streams[source_num].at(MergeTreeIndexSubstream::Type::TextIndexPostings);
     auto * data_buffer = stream->getDataBuffer();
-    auto * compressed_buffer = stream->getCompressedDataBuffer();
-
-    const auto & token_info = inputs[source_num].token_infos[queue.current()->getRow()];
     std::vector<PostingListPtr> postings;
+    postings.reserve(token_info.offsets.size());
 
     for (const auto offset_in_file : token_info.offsets)
     {
-        compressed_buffer->seek(offset_in_file, 0);
-        postings.emplace_back(PostingsSerialization::deserialize(*data_buffer));
+        stream->seekToMark({offset_in_file, 0});
+        postings.emplace_back(PostingsSerialization::deserialize(*data_buffer, token_info.header, token_info.cardinality));
     }
 
     return postings;
@@ -313,9 +317,12 @@ PostingListPtr MergeInvertedIndexesTask::adjustPartOffsets(size_t source_num, Po
 void MergeInvertedIndexesTask::flushPostingList()
 {
     auto * postings_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPostings);
-
     PostingListBuilder builder(&output_postings);
-    auto token_info = TextIndexSerialization::serializePostings(std::move(builder), *postings_stream, params.posting_list_block_size);
+    auto token_info = TextIndexSerialization::serializePostings(builder, *postings_stream, params.posting_list_block_size);
+
+    if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
+        token_info.embedded_postings = std::make_shared<PostingList>(output_postings);
+
     output_infos.push_back(token_info);
     output_postings.clear();
 }
@@ -348,7 +355,12 @@ void MergeInvertedIndexesTask::flushDictionaryBlock()
     TextIndexSerialization::serializeTokens(output_str, ostr, tokens_format);
 
     for (size_t i = 0; i < num_tokens; ++i)
+    {
         TextIndexSerialization::serializeTokenInfo(ostr, output_infos[i]);
+
+        if (output_infos[i].header & PostingsSerialization::Flags::EmbeddedPostings)
+            PostingsSerialization::serialize(*output_infos[i].embedded_postings, output_infos[i].header, ostr);
+    }
 
     output_tokens = ColumnString::create();
     output_postings.clear();
