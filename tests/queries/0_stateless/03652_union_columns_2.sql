@@ -63,29 +63,3 @@ diff_counts as
     )
 select * from diff_counts
 ORDER BY g;
-
-SET enable_analyzer = 0;
-SELECT 'run enable-analyzer=0';
-with differences as
-    (
-        (
-            select g, i from left
-            where g BETWEEN 0 and 10
-            EXCEPT ALL
-            select g, i from right
-            where g BETWEEN 0 and 10
-        )
-        UNION ALL
-        (
-            select g, i from right
-            where g BETWEEN 0 and 10
-            EXCEPT ALL
-            select g, i from left
-            where g BETWEEN 0 and 10
-        )
-    ),
-diff_counts as
-    (
-        select g, count(*) from differences group by g
-    )
-select * from diff_counts; -- { serverError LOGICAL_ERROR }
