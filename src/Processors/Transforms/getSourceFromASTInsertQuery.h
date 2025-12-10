@@ -42,4 +42,11 @@ class ReadBuffer;
 /// from ASTInsertQuert directly, and from tail buffer, if it exists.
 std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast);
 
+/// Replaces AggregateFunction column with its values or Array of values based on the aggregate_function_input_format
+/// The second element of the pair indicates that there are replcaed columns.
+std::pair<Block, bool> transformAggregateColumnsToValues(ContextPtr context, const Block & header);
+
+/// Create processor that creates AggregateFunction from value or array based aggregate_function_input_format.
+ProcessorPtr createAggregationFromValuesProcessor(ContextPtr context, const SharedHeader & format_header, const Block & header);
+
 }
