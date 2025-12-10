@@ -578,7 +578,7 @@ public:
 
     static bool tryParse(UUID & uuid, std::string_view data)
     {
-        ReadBufferFromMemory buf(data.data(), data.size());
+        ReadBufferFromMemory buf(data);
         return tryReadUUIDText(uuid, buf) && buf.eof();
     }
 };
@@ -609,7 +609,7 @@ public:
         }
 
         auto data = element.getString();
-        ReadBufferFromMemory buf(data.data(), data.size());
+        ReadBufferFromMemory buf(data);
         UUID uuid;
         if (!tryReadUUIDText(uuid, buf) || !buf.eof())
         {
@@ -648,7 +648,7 @@ public:
         }
 
         auto data = element.getString();
-        ReadBufferFromMemory buf(data.data(), data.size());
+        ReadBufferFromMemory buf(data);
         DateType date;
         if (!tryReadDateText(date, buf) || !buf.eof())
         {
@@ -705,7 +705,7 @@ public:
 
     bool tryParse(time_t & value, std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
     {
-        ReadBufferFromMemory buf(data.data(), data.size());
+        ReadBufferFromMemory buf(data);
         switch (date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
@@ -770,7 +770,7 @@ public:
 
     bool tryParse(time_t & value, std::string_view data, FormatSettings::DateTimeInputFormat /*time_input_format*/) const
     {
-        ReadBufferFromMemory buf(data.data(), data.size());
+        ReadBufferFromMemory buf(data);
         const auto & date_lut = DateLUT::instance();
 
         if (tryReadTimeText(value, buf, date_lut) && buf.eof())
@@ -913,7 +913,7 @@ public:
 
     bool tryParse(DateTime64 & value, std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
     {
-        ReadBufferFromMemory buf(data.data(), data.size());
+        ReadBufferFromMemory buf(data);
         switch (date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
@@ -995,7 +995,7 @@ public:
 
     bool tryParse(Time64 & value, std::string_view data, FormatSettings::DateTimeInputFormat /*time_input_format*/) const
     {
-        ReadBufferFromMemory buf(data.data(), data.size());
+        ReadBufferFromMemory buf(data);
         const auto & date_lut = DateLUT::instance();
 
         if (tryReadTime64Text(value, scale, buf, date_lut) && buf.eof())
@@ -1126,7 +1126,7 @@ public:
 
     static bool tryParse(IPv4 & value, std::string_view data)
     {
-        ReadBufferFromMemory buf(data.data(), data.size());
+        ReadBufferFromMemory buf(data);
         return tryReadIPv4Text(value, buf) && buf.eof();
     }
 };
@@ -1169,7 +1169,7 @@ public:
 
     static bool tryParse(IPv6 & value, std::string_view data)
     {
-        ReadBufferFromMemory buf(data.data(), data.size());
+        ReadBufferFromMemory buf(data);
         return tryReadIPv6Text(value, buf) && buf.eof();
     }
 };
@@ -1899,8 +1899,12 @@ private:
             }
             else if (!typed_path_nodes.at(current_path)->insertResultToColumn(*typed_it->second, element, insert_settings, format_settings, error))
             {
-                error += fmt::format(" (while reading path {})", current_path);
-                return false;
+                if (!insert_settings.skip_invalid_typed_paths)
+                {
+                    error += fmt::format(" (while reading path {})", current_path);
+                    return false;
+                }
+                /// Otherwise skip this field and continue
             }
         }
         /// Check if we have this path in dynamic paths.
@@ -1946,17 +1950,19 @@ private:
             /// creating it every time is very slow. And so we need to always infer
             /// new type for new value and don't reuse existing variants.
             insert_settings_for_shared_data.try_existing_variants_in_dynamic_first = false;
-            if (!dynamic_node->insertResultToColumn(*tmp_dynamic_column, element, insert_settings_for_shared_data, format_settings, error))
+            if (dynamic_node->insertResultToColumn(*tmp_dynamic_column, element, insert_settings_for_shared_data, format_settings, error))
+            {
+                paths_and_values_for_shared_data.emplace_back(current_path, "");
+                WriteBufferFromString buf(paths_and_values_for_shared_data.back().second);
+                /// Use default format settings for binary serialization. Non-default settings may change
+                /// the binary representation of the values and break the future deserialization.
+                dynamic_serialization->serializeBinary(*tmp_dynamic_column, tmp_dynamic_column->size() - 1, buf, getDefaultFormatSettings());
+            }
+            else
             {
                 error += fmt::format(" (while reading path {})", current_path);
                 return false;
             }
-
-            paths_and_values_for_shared_data.emplace_back(current_path, "");
-            WriteBufferFromString buf(paths_and_values_for_shared_data.back().second);
-            /// Use default format settings for binary serialization. Non-default settings may change
-            /// the binary representation of the values and break the future deserialization.
-            dynamic_serialization->serializeBinary(*tmp_dynamic_column, tmp_dynamic_column->size() - 1, buf, getDefaultFormatSettings());
         }
 
         return true;

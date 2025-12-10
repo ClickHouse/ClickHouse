@@ -2,9 +2,9 @@
 #include <Common/setThreadName.h>
 #include <Common/ThreadPoolTaskTracker.h>
 #include <Disks/IDisk.h>
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
-#include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
-#include <Disks/ObjectStorages/S3/diskSettings.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/diskSettings.h>
 #include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadSettings.h>

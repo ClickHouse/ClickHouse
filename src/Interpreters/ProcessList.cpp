@@ -50,7 +50,7 @@ namespace Setting
     extern const SettingsBool replace_running_query;
     extern const SettingsMilliseconds replace_running_query_max_wait_ms;
     extern const SettingsString temporary_files_codec;
-    extern const SettingsUInt64 temporary_files_buffer_size;
+    extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsBool trace_profile_events;
     extern const SettingsMilliseconds low_priority_query_wait_time_ms;

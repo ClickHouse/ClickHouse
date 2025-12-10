@@ -22,7 +22,6 @@
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/IStorage_fwd.h>
-#include <Storages/ColumnsDescription.h>
 #include <Backups/BackupsInMemoryHolder.h>
 
 #include <Poco/AutoPtr.h>
@@ -119,6 +118,7 @@ class QueryMetricLog;
 class QueryThreadLog;
 class QueryViewsLog;
 class PartLog;
+class BackgroundSchedulePoolLog;
 class TextLog;
 class TraceLog;
 class MetricLog;
@@ -172,7 +172,7 @@ class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 class DiskSelector;
 using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
-using DisksMap = std::map<String, DiskPtr>;
+using DisksMap = std::map<String, DiskPtr, std::less<>>;
 class IStoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
@@ -361,7 +361,6 @@ protected:
     {
         StorageID table = StorageID::createEmpty();
         std::optional<Names> column_names;
-        std::optional<ColumnsDescription> columns_description;
     };
 
     InsertionTableInfo insertion_table_info;  /// Saved information about insertion table in query context
@@ -1003,11 +1002,9 @@ public:
 
     bool hasInsertionTable() const { return !insertion_table_info.table.empty(); }
     bool hasInsertionTableColumnNames() const { return insertion_table_info.column_names.has_value(); }
-    bool hasInsertionTableColumnsDescription() const { return insertion_table_info.columns_description.has_value(); }
-    void setInsertionTable(StorageID db_and_table, std::optional<Names> column_names = std::nullopt, std::optional<ColumnsDescription> column_description = std::nullopt);
+    void setInsertionTable(StorageID db_and_table, std::optional<Names> column_names = std::nullopt) { insertion_table_info = {std::move(db_and_table), std::move(column_names)}; }
     const StorageID & getInsertionTable() const { return insertion_table_info.table; }
     const std::optional<Names> & getInsertionTableColumnNames() const{ return insertion_table_info.column_names; }
-    const std::optional<ColumnsDescription> & getInsertionTableColumnsDescription() const { return insertion_table_info.columns_description; }
 
     void setDistributed(bool is_distributed_) { is_distributed = is_distributed_; }
     bool isDistributed() const { return is_distributed; }
@@ -1225,6 +1222,8 @@ public:
     /// return Auxiliary Zookeeper map
     std::map<String, zkutil::ZooKeeperPtr> getAuxiliaryZooKeepers() const;
 
+    int64_t getZooKeeperLastZXIDSeen() const;
+
     /// Try to connect to Keeper using get(Auxiliary)ZooKeeper. Useful for
     /// internal Keeper start (check connection to some other node). Return true
     /// if connected successfully (without exception) or our zookeeper client
@@ -1438,6 +1437,8 @@ public:
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
     std::shared_ptr<PartLog> getPartLog(const String & part_database) const;
+
+    std::shared_ptr<BackgroundSchedulePoolLog> getBackgroundSchedulePoolLog() const;
 
     const MergeTreeSettings & getMergeTreeSettings() const;
     const MergeTreeSettings & getReplicatedMergeTreeSettings() const;
