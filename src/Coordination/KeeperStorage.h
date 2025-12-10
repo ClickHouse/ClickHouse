@@ -304,7 +304,7 @@ public:
     using Ephemerals = std::unordered_map<int64_t, std::unordered_set<std::string>>;
     struct WatchInfo
     {
-        std::string_view path;
+        String path;
         bool is_list_watch;
         bool is_persistent;
         bool trigger_on_exists;

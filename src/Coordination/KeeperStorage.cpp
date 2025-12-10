@@ -4194,7 +4194,7 @@ void KeeperStorageBase::clearDeadWatches(int64_t session_id)
     if (watches_it == sessions_and_watchers.end())
         return;
 
-    for (const auto [watch_path, is_list_watch, is_persistent, trigger_on_exists] : watches_it->second)
+    for (const auto & [watch_path, is_list_watch, is_persistent, trigger_on_exists] : watches_it->second)
     {
         if (is_persistent)
             continue;
@@ -4225,7 +4225,7 @@ void KeeperStorageBase::dumpWatches(WriteBufferFromOwnString & buf) const
     for (const auto & [session_id, watches_paths] : sessions_and_watchers)
     {
         buf << "0x" << getHexUIntLowercase(session_id) << "\n";
-        for (const auto [path, is_list_watch, _, trigger_on_exists] : watches_paths)
+        for (const auto & [path, is_list_watch, _, trigger_on_exists] : watches_paths)
             buf << "\t" << path << "\n";
     }
 }
