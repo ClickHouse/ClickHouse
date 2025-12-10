@@ -189,9 +189,12 @@ class ClusterBuilder:
                 + "</keeper_server>"
             )
             macros_block = f"<macros><replica>{name}</replica><shard>1</shard></macros>"
+            # Open SQL port for readiness checks (helpers wait on port 9000)
+            net_block = "<listen_host>::</listen_host><tcp_port>9000</tcp_port>"
             full_xml = (
                 "<clickhouse>"
                 + keeper_server
+                + net_block
                 + disks_block
                 + prom_block
                 + zk_block
