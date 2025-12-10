@@ -6340,7 +6340,7 @@ SELECT * FROM test_table
 └───┘
 ```
 )", 0) \
-    DECLARE(Bool, count_distinct_optimization, false, R"(
+    DECLARE(Bool, count_distinct_optimization, true, R"(
 Rewrite count distinct to subquery of group by
 )", 0) \
     DECLARE(Bool, optimize_inverse_dictionary_lookup, true, R"(
