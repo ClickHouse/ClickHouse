@@ -235,16 +235,27 @@ def run_stress_test(upgrade_check: bool = False) -> None:
 
     if server_died:
         server_err_log = server_log_path / "clickhouse-server.err.log"
-        stderr_log = server_log_path / "stderr.log"
-        log_parser = FuzzerLogParser(
-            server_log=server_err_log,
-            stderr_log=stderr_log if stderr_log.exists() else "",
-            fuzzer_log="",
-        )
-        name, description = log_parser.parse_failure()
-        test_results.append(
-            Result.create_from(name=name, info=description, status=Result.Status.FAILED)
-        )
+        stderr_log = result_path / "stderr.log"
+        if not (server_err_log.exists() and stderr_log.exists()):
+            test_results.append(
+                Result.create_from(
+                    name="Unknown error",
+                    info="no server logs found",
+                    status=Result.Status.FAILED,
+                )
+            )
+        else:
+            log_parser = FuzzerLogParser(
+                server_log=server_err_log,
+                stderr_log=stderr_log if stderr_log.exists() else "",
+                fuzzer_log="",
+            )
+            name, description = log_parser.parse_failure()
+            test_results.append(
+                Result.create_from(
+                    name=name, info=description, status=Result.Status.FAILED
+                )
+            )
 
     r = Result.create_from(
         results=test_results,
