@@ -2971,6 +2971,8 @@ static const char * indexTypeToString(ReadFromMergeTree::IndexType type)
             return "Skip";
         case ReadFromMergeTree::IndexType::PrimaryKeyExpand:
             return "PrimaryKeyExpand";
+        case ReadFromMergeTree::IndexType::PartitionPrefix:
+            return "PartitionPrefix";
     }
 }
 

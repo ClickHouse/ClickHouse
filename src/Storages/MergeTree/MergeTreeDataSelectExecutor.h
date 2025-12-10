@@ -149,7 +149,7 @@ private:
     /// Select the parts in which there can be data that satisfy `minmax_idx_condition` and that match the condition on `_part`,
     ///  as well as `max_block_number_to_read`.
     static RangesInDataParts selectPartsToRead(
-        const RangesInDataParts & parts,
+        const RangesInDataPartsSpan & parts,
         const std::optional<std::unordered_set<String>> & part_values,
         const std::optional<KeyCondition> & minmax_idx_condition,
         const DataTypes & minmax_columns_types,
@@ -160,7 +160,7 @@ private:
 
     /// Same as previous but also skip parts uuids if any to the query context, or skip parts which uuids marked as excluded.
     static RangesInDataParts selectPartsToReadWithUUIDFilter(
-        const RangesInDataParts & parts,
+        const RangesInDataPartsSpan & parts,
         const std::optional<std::unordered_set<String>> & part_values,
         MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
         const std::optional<KeyCondition> & minmax_idx_condition,

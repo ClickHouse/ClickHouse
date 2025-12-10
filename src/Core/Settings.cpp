@@ -7395,6 +7395,12 @@ Allow to create table with the Alias engine.
     DECLARE(Bool, use_paimon_partition_pruning, false, R"(
 Use Paimon partition pruning for Paimon table functions
     )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_partition_prefix_part_filter, false, R"(
+Allow pruning parts with a binary search on partition prefix
+    )", EXPERIMENTAL) \
+    DECLARE(Bool, enable_partition_prefix_part_filter_dry_run, false, R"(
+Enable dry-run mode for pruning parts with a binary search on partition prefix
+    )", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
