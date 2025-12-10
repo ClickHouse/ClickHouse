@@ -4459,12 +4459,12 @@ void KeeperStorageBase::removePersistentWatch(const String& path,
         case Coordination::RemoveWatchRequest::WatchType::DATA:
         {
             total_watches_count -= watches[path].erase(session_id);
-            if (watches[path].size() == 0)
+            if (watches[path].empty())
                 watches.erase(path);
             sessions_and_watchers[session_id].erase(WatchInfo{.path = path, .is_list_watch = false, .is_persistent = false, .trigger_on_exists = false});
 
             total_watches_count -= exist_watches[path].erase(session_id);
-            if (exist_watches[path].size() == 0)
+            if (exist_watches[path].empty())
                 exist_watches.erase(path);
             sessions_and_watchers[session_id].erase(WatchInfo{.path = path, .is_list_watch = false, .is_persistent = false, .trigger_on_exists = true});
 
@@ -4473,7 +4473,7 @@ void KeeperStorageBase::removePersistentWatch(const String& path,
         case Coordination::RemoveWatchRequest::WatchType::CHILDREN:
         {
             total_watches_count -= list_watches[path].erase(session_id);
-            if (list_watches[path].size() == 0)
+            if (list_watches[path].empty())
                 list_watches.erase(path);
             sessions_and_watchers[session_id].erase(WatchInfo{.path = path, .is_list_watch = true, .is_persistent = false, .trigger_on_exists = false});
 
@@ -4482,7 +4482,7 @@ void KeeperStorageBase::removePersistentWatch(const String& path,
         case Coordination::RemoveWatchRequest::WatchType::PERSISTENT:
         {
             total_watches_count -= persistent_watches[path].erase(session_id);
-            if (persistent_watches[path].size() == 0)
+            if (persistent_watches[path].empty())
                 persistent_watches.erase(path);
             sessions_and_watchers[session_id].erase(WatchInfo{.path = path, .is_list_watch = false, .is_persistent = true, .trigger_on_exists = false});
 
@@ -4491,7 +4491,7 @@ void KeeperStorageBase::removePersistentWatch(const String& path,
         case Coordination::RemoveWatchRequest::WatchType::PERSISTENTRECURSIVE:
         {
             total_watches_count -= persistent_recursive_watches[path].erase(session_id);
-            if (persistent_recursive_watches[path].size() == 0)
+            if (persistent_recursive_watches[path].empty())
                 persistent_recursive_watches.erase(path);
 
             sessions_and_watchers[session_id].erase(WatchInfo{.path = path, .is_list_watch = true, .is_persistent = true, .trigger_on_exists = false});
