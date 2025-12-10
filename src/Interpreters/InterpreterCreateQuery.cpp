@@ -177,7 +177,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_TABLES;
     extern const int TOO_MANY_DATABASES;
     extern const int THERE_IS_NO_COLUMN;
-    extern const int CANNOT_RESTORE_TABLE;
 }
 
 namespace fs = std::filesystem;
@@ -2571,22 +2570,6 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     }
     else if (!to_replicated)
        throw Exception(ErrorCodes::INCORRECT_QUERY, "Can not attach table as not replicated, table is already not replicated");
-
-    /// Check transaction metadata when converting to Replicated
-    if (to_replicated && !engine_name.starts_with("Replicated"))
-    {
-        String table_name = create.getTable();
-        String relative_data_path = database->getTableDataPath(create);
-        fs::path data_path = fs::path(getContext()->getPath()) / relative_data_path;
-
-        if (!MergeTreeData::checkTransactionMetadata(data_path))
-        {
-            throw Exception(
-                ErrorCodes::CANNOT_RESTORE_TABLE,
-                "Cannot ATTACH TABLE {} AS REPLICATED: there are data part(s) contain transaction metadata file, but ReplicatedMergeTree engine does not support transactions.",
-                backQuoteIfNeed(table_name));
-        }
-    }
 
     /// Set new engine
     DatabaseOrdinary::setMergeTreeEngine(create, getContext(), to_replicated);

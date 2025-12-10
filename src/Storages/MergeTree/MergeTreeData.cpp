@@ -96,7 +96,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 
-#include <base/defines.h>
 #include <boost/algorithm/string/join.hpp>
 
 #include <base/insertAtEnd.h>
@@ -1976,7 +1975,8 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         if (!csn_order || !min_start_csn_order || !max_start_csn_order || !creation_csn_known)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} has invalid version metadata: {}", res.part->name, version.toString());
 
-        if (version_updated)
+        // Skip version update in case of ATTACH AS REPLICATED
+        if (supportsTransactions() && version_updated)
             res.part->storeVersionMetadata(/* force */ true);
 
         /// Deactivate part if creation was not committed or if removal was.
@@ -7446,27 +7446,6 @@ DetachedPartsInfo MergeTreeData::getDetachedParts() const
         }
     }
     return res;
-}
-
-bool MergeTreeData::checkTransactionMetadata(const std::filesystem::path & data_path)
-{
-    std::vector<String> parts_with_txn;
-    std::error_code ec;
-
-    chassert(std::filesystem::exists(data_path, ec));
-
-    for (const auto & entry : std::filesystem::directory_iterator(data_path, ec))
-    {
-        if (!entry.is_directory(ec))
-            continue;
-
-        /// Check for transaction metadata file in the part directory
-        std::filesystem::path txn_file = entry.path() / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME;
-        if (std::filesystem::exists(txn_file, ec))
-            return false;
-    }
-
-    return true;
 }
 
 void MergeTreeData::validateDetachedPartName(const String & name)

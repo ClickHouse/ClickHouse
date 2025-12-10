@@ -761,9 +761,6 @@ public:
 
     static void validateDetachedPartName(const String & name);
 
-    /// Check if table data path contains parts with transaction metadata
-    static bool checkTransactionMetadata(const std::filesystem::path & data_path);
-
     void dropDetached(const ASTPtr & partition, bool part, ContextPtr context);
 
     MutableDataPartsVector tryLoadPartsToAttach(const ASTPtr & partition, bool attach_part,
