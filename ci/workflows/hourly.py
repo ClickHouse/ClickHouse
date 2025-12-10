@@ -20,7 +20,7 @@ workflow = Workflow.Config(
             name="Autoassign approvers",
             command="python3 ./ci/jobs/autoassign_approvers.py",
             runs_on=RunnerLabels.STYLE_CHECK_ARM,
-        )
+        ),
     ],
     secrets=SECRETS,
     enable_report=True,
