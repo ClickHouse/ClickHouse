@@ -18,7 +18,7 @@ namespace BuzzHouse
 {
 
 const std::vector<std::vector<OutFormat>> QueryOracle::oracleFormats
-    = {{OutFormat::OUT_CSV}, {OutFormat::OUT_TabSeparated, OutFormat::OUT_TabSeparatedRaw}, {OutFormat::OUT_Values}};
+    = {{OutFormat::OUT_CSV}, {OutFormat::OUT_TabSeparated}, {OutFormat::OUT_Values}};
 
 /// Correctness query oracle
 /// SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED>;
@@ -351,7 +351,6 @@ void QueryOracle::dumpOracleIntermediateSteps(
         break;
         case DumpOracleStrategy::BACKUP_RESTORE: {
             SQLQuery next1;
-            SQLQuery next2;
             SQLQuery next3;
             std::optional<String> cluster;
             BackupRestore * bac = next1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_backup_restore();
@@ -392,7 +391,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
                 gen.generateSettingValues(rg, backupSettings, bsett);
                 SetValue * sv = bsett->has_set_value() ? bsett->add_other_values() : bsett->mutable_set_value();
 
-                /// Make sure to dump everything
+                /// Make sure to backup everything
                 sv->set_property("structure_only");
                 sv->set_value("0");
             }
@@ -405,6 +404,11 @@ void QueryOracle::dumpOracleIntermediateSteps(
             {
                 rsett = res->mutable_setting_values();
                 gen.generateSettingValues(rg, restoreSettings, rsett);
+                SetValue * sv = rsett->has_set_value() ? rsett->add_other_values() : rsett->mutable_set_value();
+
+                /// Make sure to recover everything
+                sv->set_property("structure_only");
+                sv->set_value("0");
             }
             if (rg.nextSmallNumber() < 4)
             {
@@ -412,17 +416,21 @@ void QueryOracle::dumpOracleIntermediateSteps(
                 gen.generateSettingValues(rg, formatSettings, rsett);
             }
 
-            /// Truncate table, so it is restored into an empty one
-            Truncate * trunc = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_trunc();
-            t.setName(trunc->mutable_est(), false);
-            if (cluster.has_value())
-            {
-                trunc->mutable_cluster()->set_cluster(cluster.value());
-            }
-            trunc->set_sync(true);
-
             intermediate_queries.emplace_back(next1);
-            intermediate_queries.emplace_back(next2);
+            if (baco->partitions_size() == 0)
+            {
+                /// Truncate table, so it is restored into an empty one
+                SQLQuery next2;
+                Truncate * trunc = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_trunc();
+
+                t.setName(trunc->mutable_est(), false);
+                if (cluster.has_value())
+                {
+                    trunc->mutable_cluster()->set_cluster(cluster.value());
+                }
+                trunc->set_sync(true);
+                intermediate_queries.emplace_back(next2);
+            }
             intermediate_queries.emplace_back(next3);
         }
         break;
