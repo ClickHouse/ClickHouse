@@ -313,6 +313,7 @@ Doxygen
 Dresseler
 Durre
 ECMA
+EntryAndExit
 ETag
 EachRow
 Ecto
@@ -326,6 +327,7 @@ Encodings
 Enum
 Enums
 Eoan
+epilog
 EphemeralNode
 EscapingRule
 Ethereum
@@ -915,6 +917,7 @@ PeerDB
 PendingAsyncInsert
 Percona
 PerfEventInfo
+Perfetto
 PhpStorm
 PlantUML
 Poess
@@ -950,10 +953,12 @@ PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
 Prewhere
 PrivateKeyPassphraseHandler
+PrivateLink
 PrivatePreviewBadge
 ProfileEvents
 Profiler
 Proleptic
+prolog
 PromHouse
 PromQL
 Promql
@@ -1095,6 +1100,7 @@ SelfManaged
 Sematext
 SendExternalTables
 SendScalars
+Serverless
 ServerSettings
 SetOperationMode
 ShareAlike
@@ -1333,6 +1339,7 @@ Zabbix
 Zipkin
 ZooKeeper
 ZooKeeper's
+ZooKeeperClientLastZXIDSeen
 ZooKeeperRequest
 ZooKeeperSession
 ZooKeeperWatch
@@ -3545,6 +3552,8 @@ xeus
 xkcd
 xlarge
 xml
+XRay
+xray
 xxHash
 xz
 yaml
@@ -3560,3 +3569,4 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+zxid
