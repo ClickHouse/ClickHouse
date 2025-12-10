@@ -1,6 +1,5 @@
-#!/usr/bin/env python3
-
 import argparse
+import json
 import logging
 import os
 import sys
@@ -8,18 +7,14 @@ import time
 from pathlib import Path
 from typing import Any, List
 
-import boto3  # type: ignore
+import boto3
+from tests.ci.ssh import SSHKey
 
-from build_download_helper import read_build_urls
-from ci_config import CI
-from compress_files import compress_fast
-from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
-from get_robot_token import get_parameter_from_ssm
-from pr_info import PRInfo
-from report import FAILURE, SUCCESS, JobReport, TestResult, TestResults
-from ssh import SSHKey
-from stopwatch import Stopwatch
-from tee_popen import TeePopen
+from ci.defs.defs import JobNames
+from ci.praktika.info import Info
+from ci.praktika.result import Result
+from ci.praktika.secret import Secret
+from ci.praktika.utils import Shell, Utils
 
 JEPSEN_GROUP_NAME = "jepsen_group"
 
@@ -27,10 +22,10 @@ KEEPER_DESIRED_INSTANCE_COUNT = 3
 SERVER_DESIRED_INSTANCE_COUNT = 4
 
 KEEPER_IMAGE_NAME = "clickhouse/keeper-jepsen-test"
-KEEPER_CHECK_NAME = CI.JobNames.JEPSEN_KEEPER
+KEEPER_CHECK_NAME = JobNames.JEPSEN_KEEPER
 
 SERVER_IMAGE_NAME = "clickhouse/server-jepsen-test"
-SERVER_CHECK_NAME = CI.JobNames.JEPSEN_SERVER
+SERVER_CHECK_NAME = JobNames.JEPSEN_SERVER
 
 SUCCESSFUL_TESTS_ANCHOR = "# Successful tests"
 INTERMINATE_TESTS_ANCHOR = "# Indeterminate tests"
@@ -38,22 +33,30 @@ CRASHED_TESTS_ANCHOR = "# Crashed tests"
 FAILED_TESTS_ANCHOR = "# Failed tests"
 
 
-def _parse_jepsen_output(path: Path) -> TestResults:
-    test_results = []  # type: TestResults
+def read_build_urls(path, build_name: str):
+    artifact_report = path / f"artifact_report_build_{build_name}.json"
+    if artifact_report.is_file():
+        with open(artifact_report, "r", encoding="utf-8") as f:
+            return json.load(f)["build_urls"]
+    return []
+
+
+def _parse_jepsen_output(path: Path):
+    test_results = []
     current_type = ""
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
             if SUCCESSFUL_TESTS_ANCHOR in line:
-                current_type = "OK"
+                current_type = Result.StatusExtended.OK
             elif INTERMINATE_TESTS_ANCHOR in line or CRASHED_TESTS_ANCHOR in line:
-                current_type = "ERROR"
+                current_type = Result.StatusExtended.ERROR
             elif FAILED_TESTS_ANCHOR in line:
-                current_type = "FAIL"
+                current_type = Result.StatusExtended.FAIL
 
             if (
                 line.startswith("store/clickhouse") or line.startswith("clickhouse")
             ) and current_type:
-                test_results.append(TestResult(line.strip(), current_type))
+                test_results.append(Result(line.strip(), current_type))
 
     return test_results
 
@@ -138,7 +141,7 @@ def get_run_command(
 ):
     return (
         f"docker run --network=host -v '{ssh_sock_dir}:{ssh_sock_dir}' -e SSH_AUTH_SOCK={ssh_auth_sock} "
-        f"-e PR_TO_TEST={pr_info.number} -e SHA_TO_TEST={pr_info.sha} -v '{nodes_path}:/nodes.txt' -v {result_path}:/test_output "
+        f"-e PR_TO_TEST={pr_info.pr_number} -e SHA_TO_TEST={pr_info.sha} -v '{nodes_path}:/nodes.txt' -v {result_path}:/test_output "
         f"-e 'CLICKHOUSE_PACKAGE={build_url}' -v '{repo_path}:/ch' -e 'CLICKHOUSE_REPO_PATH=/ch' -e NODES_USERNAME=ubuntu {extra_args} {docker_image}"
     )
 
@@ -158,27 +161,24 @@ def main():
         logging.warning("Invalid argument '%s'", args.program)
         sys.exit(0)
 
-    stopwatch = Stopwatch()
-    temp_path = Path(TEMP_PATH)
+    stopwatch = Utils.Stopwatch()
+    temp_path = Path(Utils.cwd()) / "ci/tmp"
     temp_path.mkdir(parents=True, exist_ok=True)
 
-    pr_info = PRInfo()
+    info = Info()
 
     logging.info(
         "Start at PR number %s, commit sha %s labels %s",
-        pr_info.number,
-        pr_info.sha,
-        pr_info.labels,
+        info.pr_number,
+        info.sha,
+        info.pr_labels,
     )
 
-    if pr_info.number != 0 and "jepsen-test" not in pr_info.labels:
+    if info.pr_number != 0 and "jepsen-test" not in info.pr_labels:
         logging.info("Not jepsen test label in labels list, skipping")
         sys.exit(0)
 
-    check_name = KEEPER_CHECK_NAME if args.program == "keeper" else SERVER_CHECK_NAME
-
-    if not os.path.exists(TEMP_PATH):
-        os.makedirs(TEMP_PATH)
+    temp_path.mkdir(parents=True, exist_ok=True)
 
     result_path = temp_path / "result_path"
     result_path.mkdir(parents=True, exist_ok=True)
@@ -195,9 +195,8 @@ def main():
     # always use latest
     docker_image = KEEPER_IMAGE_NAME if args.program == "keeper" else SERVER_IMAGE_NAME
 
-    # binary_release assumed to be always ready on the master as it's part of the merge queue workflow
-    build_name = CI.get_required_build_name(check_name)
-    urls = read_build_urls(build_name, REPORT_PATH)
+    # build amd_binary assumed to be always ready on the master as it's part of the merge queue workflow
+    urls = read_build_urls(temp_path, "amd_binary")
     build_url = None
     for url in urls:
         if url.endswith("clickhouse"):
@@ -208,15 +207,18 @@ def main():
     if args.program == "server":
         extra_args = f"-e KEEPER_NODE={instances[-1]}"
 
-    with SSHKey(key_value=get_parameter_from_ssm("jepsen_ssh_key") + "\n"):
+    ssh_key_secret = Secret.Config(
+        name="jepsen_ssh_key", type=Secret.Type.AWS_SSM_PARAMETER
+    )
+    with SSHKey(key_value=ssh_key_secret.get_value() + "\n"):
         ssh_auth_sock = os.environ["SSH_AUTH_SOCK"]
         auth_sock_dir = os.path.dirname(ssh_auth_sock)
         cmd = get_run_command(
             ssh_auth_sock,
             auth_sock_dir,
-            pr_info,
+            info,
             nodes_path,
-            REPO_COPY,
+            Utils.cwd(),
             build_url,
             result_path,
             extra_args,
@@ -224,47 +226,38 @@ def main():
         )
         logging.info("Going to run jepsen: %s", cmd)
 
-        run_log_path = temp_path / "run.log"
+        if Shell.run(cmd) != 0:
+            logging.error("Jepsen run command failed")
 
-        with TeePopen(cmd, run_log_path) as process:
-            retcode = process.wait()
-            if retcode == 0:
-                logging.info("Run successfully")
-            else:
-                logging.info("Run failed")
+    clear_autoscaling_group()
 
-    status = SUCCESS
+    status = Result.Status.SUCCESS
     description = "No invalid analysis found ヽ(‘ー`)ノ"
     jepsen_log_path = result_path / "jepsen_run_all_tests.log"
     additional_data = []
     try:
         test_result = _parse_jepsen_output(jepsen_log_path)
         if len(test_result) == 0:
-            status = FAILURE
+            status = Result.Status.FAILED
             description = "No test results found"
         elif any(r.status == "FAIL" for r in test_result):
-            status = FAILURE
+            status = Result.Status.FAILED
             description = "Found invalid analysis (ﾉಥ益ಥ）ﾉ ┻━┻"
 
-        compress_fast(result_path / "store", result_path / "jepsen_store.tar.zst")
-        additional_data.append(result_path / "jepsen_store.tar.zst")
+        additional_data.append(Utils.compress_zst(result_path / "store"))
     except Exception as ex:
         print("Exception", ex)
-        status = FAILURE
+        status = Result.Status.FAILED
         description = "No Jepsen output log"
-        test_result = [TestResult("No Jepsen output log", "FAIL")]
+        test_result = [Result("No Jepsen output log", "FAIL")]
 
-    JobReport(
-        description=description,
-        test_results=test_result,
-        status=status,
-        start_time=stopwatch.start_time_str,
-        duration=stopwatch.duration_seconds,
-        additional_files=[run_log_path] + additional_data,
-        check_name=check_name,
-    ).dump()
-
-    clear_autoscaling_group()
+    Result.create_from(
+        results=test_result,
+        status=status if not test_result else "",
+        stopwatch=stopwatch,
+        files=additional_data,
+        info=description,
+    ).complete_job()
 
 
 if __name__ == "__main__":

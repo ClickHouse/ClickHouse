@@ -7,13 +7,11 @@ import sys
 from pathlib import Path
 from typing import List, Tuple
 
-from ci_utils import Shell
-from docker_images_helper import DockerImage, get_docker_image, pull_image
-from env_helper import REPO_COPY
-from get_robot_token import get_parameter_from_ssm
-from report import ERROR, JobReport, TestResults, read_test_results
-from stopwatch import Stopwatch
-from tee_popen import TeePopen
+from ci.jobs.scripts.docker_image import DockerImage
+from ci.jobs.scripts.log_parser import FuzzerLogParser
+from ci.praktika.info import Info
+from ci.praktika.result import Result
+from ci.praktika.utils import Shell, Utils
 
 
 class SensitiveFormatter(logging.Formatter):
@@ -28,10 +26,43 @@ class SensitiveFormatter(logging.Formatter):
         return self._filter(original)
 
 
-def get_additional_envs(check_name: str) -> List[str]:
+def read_test_results(results_path: Path, with_raw_logs: bool = True):
+    results = []
+    with open(results_path, "r", encoding="utf-8") as descriptor:
+        reader = csv.reader(descriptor, delimiter="\t")
+        for line in reader:
+            name = line[0]
+            status = line[1]
+            time = None
+            if len(line) >= 3 and line[2] and line[2] != "\\N":
+                # The value can be emtpy, but when it's not,
+                # it's the time spent on the test
+                try:
+                    time = float(line[2])
+                except ValueError:
+                    pass
+
+            result = Result(name, status, duration=time)
+            if len(line) == 4 and line[3]:
+                # The value can be emtpy, but when it's not,
+                # the 4th value is a pythonic list, e.g. ['file1', 'file2']
+                if with_raw_logs:
+                    # Python does not support TSV, so we unescape manually
+                    result.set_info(line[3].replace("\\t", "\t").replace("\\n", "\n"))
+                else:
+                    result.set_info(line[3])
+            results.append(result)
+    return results
+
+
+def get_additional_envs(info, check_name: str) -> List[str]:
     result = []
-    azure_connection_string = get_parameter_from_ssm("azure_connection_string")
-    result.append(f"AZURE_CONNECTION_STRING='{azure_connection_string}'")
+    if not info.is_local_run:
+        azure_connection_string = Shell.get_output(
+            f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
+            verbose=True,
+        )
+        result.append(f"AZURE_CONNECTION_STRING='{azure_connection_string}'")
     # some cloud-specific features require feature flags enabled
     # so we need this ENV to be able to disable the randomization
     # of feature flags
@@ -79,9 +110,9 @@ def get_run_command(
 
 
 def process_results(
-    result_directory: Path, server_log_path: Path, run_log_path: Path
-) -> Tuple[str, str, TestResults, List[Path]]:
-    test_results = []  # type: TestResults
+    result_directory: Path, server_log_path: Path
+) -> Tuple[str, str, List[Result], List[Path]]:
+    test_results = []
     additional_files = []
     # Just upload all files from result_folder.
     # If task provides processed results, then it's responsible for content
@@ -94,12 +125,10 @@ def process_results(
             p for p in server_log_path.iterdir() if p.is_file()
         ]
 
-    additional_files.append(run_log_path)
-
     status_path = result_directory / "check_status.tsv"
     if not status_path.exists():
         return (
-            "failure",
+            Result.Status.FAILED,
             "check_status.tsv doesn't exists",
             test_results,
             additional_files,
@@ -110,7 +139,12 @@ def process_results(
         status = list(csv.reader(status_file, delimiter="\t"))
 
     if len(status) != 1 or len(status[0]) != 2:
-        return ERROR, "Invalid check_status.tsv", test_results, additional_files
+        return (
+            Result.Status.ERROR,
+            "Invalid check_status.tsv",
+            test_results,
+            additional_files,
+        )
     state, description = status[0][0], status[0][1]
 
     try:
@@ -120,7 +154,7 @@ def process_results(
             raise ValueError("Empty results")
     except Exception as e:
         return (
-            ERROR,
+            Result.Status.ERROR,
             f"Cannot parse test_results.tsv ({e})",
             test_results,
             additional_files,
@@ -130,15 +164,15 @@ def process_results(
 
 
 def run_stress_test(upgrade_check: bool = False) -> None:
+    info = Info()
     logging.basicConfig(level=logging.INFO)
     for handler in logging.root.handlers:
         # pylint: disable=protected-access
         handler.setFormatter(SensitiveFormatter(handler.formatter._fmt))  # type: ignore
 
-    stopwatch = Stopwatch()
-    repo_path = Path(REPO_COPY)
-    temp_path = repo_path / "ci/tmp"
-    repo_tests_path = repo_path / "tests"
+    stopwatch = Utils.Stopwatch()
+    temp_path = Path(Utils.cwd()) / "ci/tmp"
+    repo_tests_path = Path(Utils.cwd()) / "tests"
 
     check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
     assert (
@@ -147,7 +181,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
 
     packages_path = temp_path
 
-    docker_image = pull_image(get_docker_image("clickhouse/stress-test"))
+    docker_image = DockerImage.get_docker_image("clickhouse/stress-test").pull_image()
 
     server_log_path = temp_path / "server_log"
     server_log_path.mkdir(parents=True, exist_ok=True)
@@ -155,9 +189,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     result_path = temp_path / "result_path"
     result_path.mkdir(parents=True, exist_ok=True)
 
-    run_log_path = temp_path / "run.log"
-
-    additional_envs = get_additional_envs(check_name)
+    additional_envs = get_additional_envs(info, check_name)
 
     run_command = get_run_command(
         packages_path,
@@ -170,31 +202,62 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     )
     logging.info("Going to run stress test: %s", run_command)
 
-    with TeePopen(run_command, run_log_path) as process:
-        retcode = process.wait()
-        if retcode == 0:
-            logging.info("Run successfully")
-        else:
-            logging.info("Run failed")
+    _ = Shell.run(run_command)
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
-    state, description, test_results, additional_logs = process_results(
-        result_path, server_log_path, run_log_path
+    is_oom = False
+
+    if Path(result_path / "dmesg.log").is_file():
+        is_oom = Shell.check(
+            "grep -q -F -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' "
+            f"{result_path}/dmesg.log"
+        )
+
+    # Check for OOM (signal 9) in server logs
+    if server_log_path.exists():
+        server_log_oom = Shell.check(
+            f"rg -Fqa ' <Fatal> Application: Child process was terminated by signal 9' "
+            f"{server_log_path}/clickhouse-server*.log"
+        )
+        is_oom = is_oom or server_log_oom
+
+    _state, _description, test_results, additional_logs = process_results(
+        result_path, server_log_path
     )
 
-    Shell.check("pwd", verbose=True)
-    JobReport(
-        description=description,
-        test_results=test_results,
-        status=state,
-        start_time=stopwatch.start_time_str,
-        duration=stopwatch.duration_seconds,
-        additional_files=additional_logs,
-    ).dump()
+    server_died = False
+    for test_result in test_results:
+        if test_result.name == "Server died":
+            # error from stress.py
+            server_died = True
+    test_results = [r for r in test_results if not r.is_ok()]
 
-    if state == "failure":
-        sys.exit(1)
+    if server_died:
+        server_err_log = server_log_path / "clickhouse-server.err.log"
+        stderr_log = server_log_path / "stderr.log"
+        log_parser = FuzzerLogParser(
+            server_log=server_err_log,
+            stderr_log=stderr_log if stderr_log.exists() else "",
+            fuzzer_log="",
+        )
+        name, description = log_parser.parse_failure()
+        test_results.append(
+            Result.create_from(name=name, info=description, status=Result.Status.FAILED)
+        )
+
+    r = Result.create_from(
+        results=test_results,
+        status=Result.Status.SUCCESS if not test_results else "",
+        stopwatch=stopwatch,
+    )
+    if not r.is_ok() and is_oom:
+        r.set_status(Result.Status.SUCCESS)
+        r.set_info("OOM error (allowed in stress tests)")
+
+    if not r.is_ok():
+        r.set_files(additional_logs)
+    r.complete_job()
 
 
 if __name__ == "__main__":
