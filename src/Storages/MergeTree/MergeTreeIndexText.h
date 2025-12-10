@@ -78,7 +78,7 @@ struct MergeTreeIndexTextParams
     size_t bloom_filter_bits_per_row = 0;
     size_t bloom_filter_num_hashes = 0;
     String preprocessor;
-    bool enable_compressed_postings = 0;
+    bool enable_compressed_postings = false;
 };
 
 using PostingList = roaring::Roaring;

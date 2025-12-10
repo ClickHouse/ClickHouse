@@ -5,7 +5,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
 #include <roaring.hh>
-
+#pragma clang optimize off
 namespace DB
 {
 
@@ -48,67 +48,6 @@ namespace ErrorCodes
 /// automatically flushed during serialization.
 
 
-/// Codec — Low-level encoding/decoding utility for postings blocks.
-/// Provides static helpers to write/read block headers and perform
-/// TurboPFor compression/decompression (p4nd1enc32 / p4nd1dec32).
-/// Used by both in-memory and streaming postings sources.
-struct Codec
-{
-    template<typename Out>
-    static void writeHeader(uint16_t n, uint32_t bytes, uint32_t max_bits, Out & out)
-    {
-        writeVarUInt(n, out);
-        writeVarUInt(bytes, out);
-        writeVarUInt(max_bits, out);
-    }
-
-    template<typename Input>
-    static void readHeader(uint16_t & n, uint32_t & bytes, uint32_t & max_bits, Input & in)
-    {
-        uint64_t v = 0;
-        readVarUInt(v, in);
-        n = static_cast<uint16_t>(v);
-
-        v = 0;
-        readVarUInt(v, in);
-        bytes = static_cast<uint32_t>(v);
-
-        v = 0;
-        readVarUInt(v, in);
-        max_bits = static_cast<uint32_t>(v);
-    }
-    template<typename T>
-    static void decodeBlock(unsigned char *src, uint16_t n, uint32_t max_bits, std::vector<T> & out, uint32_t bytes_expected)
-    {
-        out.resize(n);
-        size_t used = CodecTraits<T>::decode(src, n, max_bits, out.data());
-        if (used != bytes_expected)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "compressed/decompressed mismatch");
-    }
-    template<typename T, typename Input, typename Consumer>
-    static void decompressCurrent(Input & in, std::string & temp_buffer, std::vector<T> & temp, Consumer &&consumer)
-    {
-        /// Decode block header.
-        uint16_t n = 0;
-        uint32_t bytes = 0;
-        uint32_t max_bits = 0;
-        Codec::readHeader(n, bytes, max_bits, in);
-        temp.resize(n);
-        temp_buffer.resize(bytes);
-        in.readStrict(temp_buffer.data(), bytes);
-        /// Decode postings
-        unsigned char * p = reinterpret_cast<unsigned char *>(temp_buffer.data());
-        auto used = CodecTraits<T>::decode(p, n, max_bits, temp.data());
-        if (used != bytes)
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                            "Compressed and decompressed byte counts do not match. compressed = {}, decompressed = {}",
-                            bytes, used);
-        assert(n == temp.size());
-        /// Fill data to container.
-        consumer(temp);
-    }
-};
-
 /// PostingsContainer — Writable postings container for in-memory build mode.
 /// Accepts monotonically increasing uint32_t values, compresses them in
 /// fixed-size blocks, and supports serialization and lazy iteration.
@@ -120,175 +59,173 @@ class PostingsContainerImpl
     static constexpr UInt8  kBlockSizeShift = 7;
     static constexpr size_t kBlockSize = 1 << kBlockSizeShift;
     static constexpr size_t kBlockSizeMask = kBlockSize - 1;
-    template<typename In, typename OutContainer, typename U>
-    friend void deserializePostings(In & in, OutContainer & out);
-    template<typename Out, typename U>
-    friend size_t serializePostingsImpl(Out & out, const std::vector<U> & array);
+    struct BlockHeader
+    {
+        uint16_t count;
+        uint16_t max_bits;
+        uint32_t bytes;
+    };
 public:
     using ValueType = T;
     explicit PostingsContainerImpl() = default;
 
-    /// Adds a new posting (document ID / row offset).
-    /// The values must be strictly increasing. When the current block
-    /// reaches kBlockSize elements, it is compressed and appended to `data`.
-    void add(T v)
-    {
-        if (!current.empty() && v <= current.back())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The current value must be greater than the previous value. prev = {}, current = {}", current.back(), v);
-        current.emplace_back(v);
-        total++;
-        if (current.size() == kBlockSize)
-            compressCurrent();
-    }
-
     size_t size() const { return total; }
-
     bool empty() const { return total == 0; }
 
     // Serializes the container to a WriteBuffer-like output.
     /// Writes VarUInt(block_count, total), VarUInt(data size), and raw bytes.
     /// Any remaining uncompressed postings are flushed before serialization.
-    template<typename Output>
-    size_t serialize(Output & out) const
+    template<typename Container, typename Out>
+    size_t serialize(Container & in, Out & out)
     {
-        if (!current.empty())
-            const_cast<PostingsContainerImpl*>(this)->compressCurrent();
-        assert(current.empty());
-        auto offset = out.offset();
-        writeVarUInt(block_count, out);
-        writeVarUInt(total, out);
-        size_t data_size = data.size();
-        writeVarUInt(data.size(), out);
-        out.write(data.data(), data.size());
-        (void) data_size;
-        return out.offset() - offset;
-    }
-
-    void flush()
-    {
-        if (!current.empty())
+        chassert(std::is_sorted(in.begin(), in.end()));
+        std::span<const T> container(in.data(), in.size());
+        std::string temp_compression_data;
+        while (!container.empty())
         {
-            compressCurrent();
+            size_t segment_length = std::min<size_t>(container.size(), kBlockSize);
+            std::span<const T> segment = container.first(segment_length);
+            compressBlock(segment, temp_compression_data);
+            container = container.subspan(segment_length);
         }
+        return serializeTo(out);
     }
 
     /// Reads postings data back from an Input buffer (ReadBuffer).
     /// This overwrites any existing data.
-    template<typename  Input>
-    void deserialize(Input & in)
+    template<typename In, typename Container>
+    void deserialize(In & in, Container & out)
+    {
+        deserializeFrom(in);
+        std::string temp_buffer;
+        std::vector<T> temp_compress_buffer;
+        temp_compress_buffer.reserve(PostingsContainerImpl<T>::kBlockSize);
+        ReadBufferFromMemory data_buffer(compressed_buffer);
+        for (size_t i = 0; i < block_count; ++i)
+            decompressBlock(data_buffer, temp_buffer, temp_compress_buffer, [&out] (std::vector<uint32_t> & temp) { out.addMany(temp.size(), temp.data()); });
+    }
+
+private:
+    template<typename Out>
+    size_t serializeTo(Out & out) const
+    {
+        auto offset = out.offset();
+        writeVarUInt(block_count, out);
+        writeVarUInt(total, out);
+        writeVarUInt(compressed_buffer.size(), out);
+        out.write(compressed_buffer.data(), compressed_buffer.size());
+        return out.offset() - offset;
+    }
+
+    template<typename  In>
+    void deserializeFrom(In & in)
     {
         reset();
         readVarUInt(block_count, in);
         readVarUInt(total, in);
         size_t bytes = 0;
         readVarUInt(bytes, in);
-        data.resize(bytes);
-        in.readStrict(data.data(), bytes);
+        compressed_buffer.resize(bytes);
+        in.readStrict(compressed_buffer.data(), bytes);
     }
 
-    /// Swaps content with another PostingsContainer (no copy).
-    void swap(PostingsContainerImpl & o) noexcept
-    {
-        using std::swap;
-        swap(data, o.data);
-        swap(block_count, o.block_count);
-        swap(total, o.total);
-        swap(current, o.current);
-    }
-
-    friend void swap(PostingsContainerImpl & lhs, PostingsContainerImpl & rhs) noexcept
-    {
-        lhs.swap(rhs);
-    }
-
-private:
-    using InputType = ReadBufferFromString;
-    struct IteratorData
-    {
-        InputType rb;
-        const std::vector<T> & current;
-        explicit IteratorData(const std::string & data_, const std::vector<T> & current_) : rb(data_), current(current_) {}
-        bool empty() { return rb.eof() && current.empty(); }
-    };
     void reset()
     {
-        data.clear();
-        current.clear();
+        compressed_buffer.clear();
         block_count = 0;
         total = 0;
     }
-    void compressCurrent()
+    void compressBlock(std::span<const T> segment, std::string & temp_compression_data)
     {
-        auto [cap, bits] = CodecTraits<T>::evaluateSizeAndMaxBits(current);
+        auto [cap, bits] = CodecTraits<T>::evaluateSizeAndMaxBits(segment.data(), segment.size());
         temp_compression_data.resize(cap);
-        auto bytes = CodecTraits<T>::encode(current.data(), current.size(), bits, reinterpret_cast<unsigned char*>(temp_compression_data.data()));
-        WriteBufferFromString wb(data, AppendModeTag{});
-        Codec::writeHeader(current.size(), bytes, bits, wb);
+        auto bytes = CodecTraits<T>::encode(segment.data(), segment.size(), bits, reinterpret_cast<unsigned char*>(temp_compression_data.data()));
+        WriteBufferFromString wb(compressed_buffer, AppendModeTag{});
+        BlockHeader header { static_cast<uint16_t>(segment.size()), static_cast<uint16_t>(bits), static_cast<uint32_t>(bytes) };
+        writeHeader(header, wb);
         wb.write(temp_compression_data.data(), bytes);
         block_count++;
-        current.clear();
+        total += segment.size();
     }
-    std::string data;
-    std::vector<T> current;
-    std::string temp_compression_data;
+    template<typename Out>
+    static void writeHeader(BlockHeader header, Out & out)
+    {
+        writeVarUInt(header.count, out);
+        writeVarUInt(header.bytes, out);
+        writeVarUInt(header.max_bits, out);
+    }
+
+    template <typename F, typename In>
+    static void readOneField(F & out, In & in)
+    {
+        uint64_t v = 0;
+        readVarUInt(v, in);
+        out = static_cast<F>(v);
+    }
+
+    template<typename In>
+    static void readHeader(BlockHeader & header, In & in)
+    {
+        readOneField(header.count, in);
+        readOneField(header.bytes, in);
+        readOneField(header.max_bits, in);
+    }
+
+    static void decodeBlock(unsigned char *src, uint16_t n, uint32_t max_bits, std::vector<T> & out, uint32_t bytes_expected)
+    {
+        out.resize(n);
+        size_t used = CodecTraits<T>::decode(src, n, max_bits, out.data());
+        if (used != bytes_expected)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "compressed/decompressed mismatch");
+    }
+    template<typename In, typename Consumer>
+    void decompressBlock(In & in, std::string & temp_buffer, std::vector<T> & temp, Consumer &&consumer)
+    {
+        /// Decode block header.
+        BlockHeader header;
+        readHeader(header, in);
+        temp.resize(header.count);
+        temp_buffer.resize(header.bytes);
+        in.readStrict(temp_buffer.data(), header.bytes);
+        /// Decode postings
+        unsigned char * p = reinterpret_cast<unsigned char *>(temp_buffer.data());
+        auto used = CodecTraits<T>::decode(p, header.count, header.max_bits, temp.data());
+        if (used != header.bytes)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Compressed and decompressed byte counts do not match. compressed = {}, decompressed = {}", header.bytes, used);
+        chassert(header.count == temp.size());
+        consumer(temp);
+    }
+    std::string compressed_buffer;
     size_t block_count = 0;
     size_t total = 0;
 };
 
 using PostingsContainer32 = PostingsContainerImpl<uint32_t>;
 using PostingList = roaring::Roaring;
-/// Reads, decompresses and emits postings directly to an output sink (PostingsList).
-/// Used for full decode in one pass, without exposing intermediate state.
-template<typename In, typename OutContainer, typename T>
-static void deserializePostings(In & in, OutContainer & out)
-{
-    PostingsContainerImpl<T> self;
-    self.deserialize(in);
-    std::string temp_buffer;
-    std::vector<T> temp_compress_buffer;
-    temp_compress_buffer.reserve(PostingsContainerImpl<T>::kBlockSize);
-    ReadBufferFromMemory data_buffer(self.data);
-    for (size_t i = 0; i < self.block_count; ++i)
-        Codec::decompressCurrent<T>(data_buffer, temp_buffer, temp_compress_buffer, [&out] (std::vector<uint32_t> & temp) { out.addMany(temp.size(), temp.data()); });
-    if (!self.current.empty())
-        out.addMany(self.current.size(), self.current.data());
-}
 
-template<typename Out, typename T>
-size_t serializePostingsImpl(Out & out, const std::vector<T> & array)
+template<typename In>
+static void deserializePostings(In & in, PostingList & postings)
 {
-    chassert(std::is_sorted(array.begin(), array.end()));
-    PostingsContainerImpl<T> self;
-    size_t i = 0;
-    size_t many_size = array.size();
-    while (i < many_size)
-    {
-        size_t write_pos = self.current.size();
-        size_t can_fill = std::min(PostingsContainerImpl<T>::kBlockSize - write_pos, many_size - i);
-        self.current.resize(write_pos + can_fill);
-        std::copy_n(array.data() + i, can_fill, self.current.data() + write_pos);
-        i += can_fill;
-        self.total += can_fill;
-        if (self.current.size() == PostingsContainerImpl<T>::kBlockSize)
-            self.compressCurrent();
-    }
-    return self.serialize(out);
+    PostingsContainer32 pc;
+    pc.deserialize(in, postings);
 }
 
 template<typename Out>
 size_t serializePostings(Out & out, const PostingList & in)
 {
-    std::vector<uint32_t> postings_array;
-    postings_array.resize(in.cardinality());
-    in.toUint32Array(postings_array.data());
-    return serializePostingsImpl<Out, uint32_t>(out, postings_array);
+    std::vector<uint32_t> postings_data;
+    postings_data.resize(in.cardinality());
+    in.toUint32Array(postings_data.data());
+    PostingsContainer32 pc;
+    return pc.serialize(postings_data, out);
 }
 
 template<typename Out, size_t N>
 size_t serializePostings(Out & out, const std::array<uint32_t, N> & small, size_t size)
 {
     chassert(size <= N);
-    std::vector<uint32_t> postings_array(small.begin(), small.begin() + size);
-    return serializePostingsImpl<Out, uint32_t>(out, postings_array);
+    std::vector<uint32_t> postings_data(small.begin(), small.begin() + size);
+    PostingsContainer32 pc;
+    return pc.serialize(postings_data, out);
 }
 }

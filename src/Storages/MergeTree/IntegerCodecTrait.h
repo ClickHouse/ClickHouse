@@ -64,22 +64,22 @@ struct CodecTraits;
 template <>
 struct CodecTraits<uint32_t>
 {
-    ALWAYS_INLINE static std::pair<size_t, size_t> evaluateSizeAndMaxBits(const std::vector<uint32_t> & data)
+    ALWAYS_INLINE static std::pair<size_t, size_t> evaluateSizeAndMaxBits([[maybe_unused]] const uint32_t * data, size_t size)
     {
 #if defined(USE_SIMDCOMP)
         /// When using streamvbyte for compression, we don’t need to know how many bits
         /// are required to store the maximum value in the array. Therefore, the second
         /// return value is simply set to 0 here.
         {
-            auto bits = maxbits_length(data.data(), data.size());
-            auto bytes = simdpack_compressedbytes(data.size(), bits);
+            auto bits = maxbits_length(data, size);
+            auto bytes = simdpack_compressedbytes(size, bits);
             return { bytes, bits };
         }
 #endif
-        return { streamvbyte_max_compressedbytes(data.size()), 0 };
+        return { streamvbyte_max_compressedbytes(size), 0 };
     }
 
-    ALWAYS_INLINE static uint32_t encode(uint32_t * p, std::size_t n, [[maybe_unused]] uint32_t bits, unsigned char *out)
+    ALWAYS_INLINE static uint32_t encode(const uint32_t * p, std::size_t n, [[maybe_unused]] uint32_t bits, unsigned char *out)
     {
 #if defined(USE_SIMDCOMP_AVX512)
         auot * m512i_out = reinterpret_cast<__m512i*>(out);

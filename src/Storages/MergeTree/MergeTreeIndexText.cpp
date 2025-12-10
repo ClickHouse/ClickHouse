@@ -25,7 +25,7 @@
 
 #include <base/range.h>
 #include <fmt/ranges.h>
-#pragma clang optimize off
+
 namespace ProfileEvents
 {
     extern const Event TextIndexReadDictionaryBlocks;
@@ -124,7 +124,7 @@ static UInt64 serializeWithCompressedPostings(PostingListBuilder && postings_bui
     if (postings_builder.isSmall())
     {
         const auto & small = postings_builder.getSmall();
-        serializePostings<WriteBuffer, PostingListBuilder::max_small_size>(ostr, small, postings_builder.size());
+        return serializePostings<WriteBuffer, PostingListBuilder::max_small_size>(ostr, small, postings_builder.size());
     }
     const auto & postings = postings_builder.getLarge();
     return serializePostings(ostr, postings);
@@ -178,14 +178,19 @@ UInt64 PostingsSerialization::serialize(UInt64 header, PostingListBuilder && pos
     return written_bytes;
 }
 
+static PostingListPtr deserializeWithCompressedPostings(UInt64 header, UInt32 cardinality, ReadBuffer & istr)
+{
+    chassert(header & PostingsSerialization::CompressedPostings);
+    auto postings = std::make_shared<PostingList>();
+    deserializePostings(istr, *postings);
+    chassert(cardinality == postings->cardinality());
+    return postings;
+}
+
 PostingListPtr PostingsSerialization::deserialize(UInt64 header, UInt32 cardinality, ReadBuffer & istr)
 {
     if (header & Flags::CompressedPostings)
-    {
-        PostingsContainer32 container;
-        auto postings = std::make_shared<PostingList>();
-        deserializePostings<ReadBuffer, PostingList, uint32_t>(istr, *postings);
-    }
+        return deserializeWithCompressedPostings(header, cardinality, istr);
     if (header & Flags::RawPostings)
     {
         std::vector<UInt32> values(cardinality);
@@ -752,7 +757,6 @@ TextIndexHeader::DictionarySparseIndex serializeTokensAndPostings(
             if (embedded_postings)
             {
                 stats.posting_lists_size += PostingsSerialization::serialize(header, std::move(postings), dictionary_stream.compressed_hashing, settings);
-                LOG_DEBUG(&Poco::Logger::get("__test__"), "embedded postings serialized size {}", stats.posting_lists_size);
             }
             else
             {
@@ -765,7 +769,6 @@ TextIndexHeader::DictionarySparseIndex serializeTokensAndPostings(
                 writeVarUInt(offset_in_file, dictionary_stream.compressed_hashing);
                 stats.posting_lists_size += getLengthOfVarUInt(offset_in_file);
                 stats.posting_lists_size += PostingsSerialization::serialize(header, std::move(postings), postings_stream.compressed_hashing, settings);
-                LOG_DEBUG(&Poco::Logger::get("__test__"), "normal postings serialized size {}", stats.posting_lists_size);
             }
         }
     }
