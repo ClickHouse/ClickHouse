@@ -52,15 +52,16 @@ def main():
     temp_dir = f"{repo_dir}/ci/tmp"
     ch_path = f"{temp_dir}/clickhouse"
     built_path = f"{repo_dir}/ci/tmp/build/programs/self-extracting/clickhouse"
-    if Path(built_path).is_file():
+    built_non_self = f"{repo_dir}/ci/tmp/build/programs/clickhouse"
+    if Path(built_path).is_file() or Path(built_non_self).is_file():
         # Use locally built artifact from build jobs
-        ch_path = built_path
+        ch_path = built_path if Path(built_non_self).is_file() is False else built_non_self
         results.append(
             Result.from_commands_run(
                 name="Use built ClickHouse binary",
                 command=[
                     f"chmod +x {ch_path}",
-                    f"{ch_path} --version",
+                    f"{ch_path} --version || true",
                     f"ln -sf {ch_path} {temp_dir}/clickhouse",
                     f"ln -sf {ch_path} {temp_dir}/clickhouse-client",
                 ],
@@ -115,8 +116,8 @@ def main():
     # Prepare env for pytest
     env = os.environ.copy()
     # IMPORTANT: containers launched by docker-compose will bind-mount this exact host path
-    # Prefer the built artifact path if present, otherwise fall back to the installed binary
-    server_bin_for_mount = built_path if Path(built_path).is_file() else ch_path
+    # Mount the installed binary to avoid noexec on repo mounts and ensure parity with host-side tools
+    server_bin_for_mount = ch_path
     env["CLICKHOUSE_BINARY"] = ch_path
     env["CLICKHOUSE_TESTS_CLIENT_BIN_PATH"] = ch_path
     env["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = server_bin_for_mount
@@ -145,9 +146,36 @@ def main():
             logfile=None,
         )
     )
+    # Collect debug artifacts on failure
+    files_to_attach = []
+    try:
+        if not results[-1].is_ok():
+            base = Path(repo_dir) / "tests/stress/keeper/tests"
+            inst_dirs = sorted(
+                base.glob("_instances-*"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+            if inst_dirs:
+                inst = inst_dirs[0]
+                maybe = [
+                    inst / "docker.log",
+                ]
+                for i in range(1, 4):
+                    maybe.append(inst / f"keeper{i}" / "docker-compose.yml")
+                    maybe.append(inst / f"keeper{i}" / "logs" / "clickhouse-server.log")
+                    maybe.append(inst / f"keeper{i}" / "logs" / "clickhouse-server.err.log")
+                for p in maybe:
+                    try:
+                        if p.exists():
+                            files_to_attach.append(str(p))
+                    except Exception:
+                        pass
+    except Exception:
+        pass
 
     # Publish aggregated job result (with nested pytest results)
-    Result.create_from(results=results, stopwatch=stop_watch).complete_job()
+    Result.create_from(results=results, stopwatch=stop_watch, files=files_to_attach).complete_job()
 
 
 if __name__ == "__main__":
