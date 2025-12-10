@@ -2410,13 +2410,18 @@ deltaLake(
             ).strip()
         )
 
-    def check_data(expected, version):
-        assert (
-            expected
-            == node.query(
-                f"SELECT * FROM {delta_function} ORDER BY all SETTINGS delta_lake_snapshot_version = {version}"
-            ).strip()
-        )
+    def check_data(expected, version, table=None):
+        if table is None:
+            table = delta_function
+        if version is not None:
+            assert (
+                expected
+                == node.query(
+                    f"SELECT * FROM {table} ORDER BY all SETTINGS delta_lake_snapshot_version = {version}"
+                ).strip()
+            )
+        else:
+            assert expected == node.query(f"SELECT * FROM {table} ORDER BY all").strip()
 
     def append_data(df):
         df.write.option("mergeSchema", "true").mode("append").format(
@@ -2469,6 +2474,31 @@ deltaLake(
             f"SELECT naam FROM {delta_function} WHERE age = 51",
             settings={"delta_lake_snapshot_version": 2},
         ).strip()
+    )
+    node.query(
+        f"""
+CREATE TABLE {table_name} (naam String, age Int32) ENGINE = DeltaLake(
+        'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
+        '{minio_access_key}',
+        '{minio_secret_key}')
+    """
+    )
+    df = spark.createDataFrame([("cap", 91), ("cip", 92), ("cop", 93)]).toDF(
+        "naam", "age"
+    )
+    append_data(df)
+    check_data(
+        "aelin\t51\nalice\t47\nanora\t23\nbill\t33\nbob\t12\nbober\t49\ncap\t91\ncip\t92\ncop\t93",
+        3,
+        table_name,
+    )
+    check_data(
+        "aelin\t51\nalice\t47\nanora\t23\nbill\t33\nbob\t12\nbober\t49", 2, table_name
+    )
+    check_data(
+        "aelin\t51\nalice\t47\nanora\t23\nbill\t33\nbob\t12\nbober\t49\ncap\t91\ncip\t92\ncop\t93",
+        None,
+        table_name,
     )
 
 
