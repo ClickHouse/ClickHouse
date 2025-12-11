@@ -145,7 +145,7 @@ std::shared_ptr<SerializationInfo> SerializationInfo::createWithType(
     for (auto kind : kind_stack)
     {
         if (kind == ISerialization::Kind::SPARSE
-            && (!new_settings.supportsSparseSerialization(new_type) || !preserveDefaultsAfterConversion(old_type, new_type)))
+            && (!new_settings.canUseSparseSerialization(new_type) || !preserveDefaultsAfterConversion(old_type, new_type)))
             continue;
         new_kind_stack.push_back(kind);
     }
@@ -300,7 +300,7 @@ SerializationInfoByName::SerializationInfoByName(const NamesAndTypesList & colum
 
     for (const auto & column : columns)
     {
-        if (settings.supportsSparseSerialization(*column.type))
+        if (settings.canUseSparseSerialization(*column.type))
             emplace(column.name, column.type->createSerializationInfo(settings));
     }
 }

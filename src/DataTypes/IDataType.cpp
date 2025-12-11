@@ -328,7 +328,7 @@ SerializationPtr IDataType::getSerialization(
     auto serialization = getDefaultSerialization(override_default);
     for (auto kind : kind_stack)
     {
-        if (settings.supportsSparseSerialization(*this) && kind == ISerialization::Kind::SPARSE)
+        if (settings.canUseSparseSerialization(*this) && kind == ISerialization::Kind::SPARSE)
             serialization = std::make_shared<SerializationSparse>(serialization);
         if (kind == ISerialization::Kind::DETACHED)
             serialization = std::make_shared<SerializationDetached>(serialization);

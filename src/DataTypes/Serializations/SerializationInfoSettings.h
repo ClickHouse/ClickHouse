@@ -41,7 +41,7 @@ struct SerializationInfoSettings
 
     bool isAlwaysDefault() const { return ratio_of_defaults_for_sparse >= 1.0; }
 
-    bool supportsSparseSerialization(const IDataType & type) const;
+    bool canUseSparseSerialization(const IDataType & type) const;
 
     void allowNullableSparse() { nullable_serialization_version = MergeTreeNullableSerializationVersion::ALLOW_SPARSE; }
 };
