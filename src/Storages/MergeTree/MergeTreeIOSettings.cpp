@@ -120,6 +120,7 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createForMergeMutation(ReadSett
 {
     MergeTreeReaderSettings result;
     result.read_settings = std::move(read_settings);
+    result.read_settings.load_marks_asynchronously = false;
     result.save_marks_in_cache = false;
     result.can_read_part_without_marks = true;
     return result;
