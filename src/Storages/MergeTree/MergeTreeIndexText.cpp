@@ -117,12 +117,12 @@ DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInf
 {
 }
 
-size_t PostingListRoaringCodec::serialize(UInt64 header, WriteBuffer &ostr)
+size_t PostingListRoaringCodec::serialize(UInt64 header, WriteBuffer & ostr)
 {
     size_t written_bytes = 0;
     if (header & PostingsSerialization::Flags::RawPostings)
     {
-        if (isSmall())
+        if (small_size < max_small_size)
         {
             const auto & array = getSmall();
             for (size_t i = 0; i < small_size; ++i)
@@ -133,7 +133,7 @@ size_t PostingListRoaringCodec::serialize(UInt64 header, WriteBuffer &ostr)
         }
         else
         {
-            const auto & posting_list = getLarge();
+            const auto & posting_list = *large.first;
             for (const auto row_id : posting_list)
             {
                 writeVarUInt(row_id, ostr);
@@ -144,7 +144,7 @@ size_t PostingListRoaringCodec::serialize(UInt64 header, WriteBuffer &ostr)
     else
     {
         chassert(!isSmall());
-        auto & posting_list = getLarge();
+        auto & posting_list = *large.first;
 
         posting_list.runOptimize();
         size_t num_bytes = posting_list.getSizeInBytes();
@@ -159,13 +159,13 @@ size_t PostingListRoaringCodec::serialize(UInt64 header, WriteBuffer &ostr)
     return written_bytes;
 }
 
-size_t PostingListBlockCodec::serialize(UInt64 header, WriteBuffer &ostr)
+size_t PostingListBlockCodec::serialize(UInt64 header, WriteBuffer & ostr)
 {
     chassert(header & PostingsSerialization::Flags::CompressedPostings);
     return postings->serialize(ostr);
 }
 
-size_t PostingListBuilder::serialize(UInt64 header, WriteBuffer &ostr)
+size_t PostingListBuilder::serialize(UInt64 header, WriteBuffer & ostr)
 {
     if (std::holds_alternative<PostingListRoaringCodecPtr>(codec))
         return std::get<PostingListRoaringCodecPtr>(codec)->serialize(header, ostr);
@@ -876,8 +876,7 @@ void PostingListRoaringCodec::add(UInt32 value, PostingListCodecsHolder & postin
         {
             auto small_copy = std::move(small);
             auto & postings = postings_holder.emplace_back(std::in_place_type<PostingList>);
-            auto & postings_ref = std::get<PostingList>(postings);
-            large.first = & postings_ref;
+            large.first = &std::get<PostingList>(postings);
             large.second = roaring::BulkContext();
 
             for (size_t i = 0; i < max_small_size; ++i)
@@ -895,9 +894,8 @@ void PostingListBlockCodec::add(UInt32 value, PostingListCodecsHolder & postings
 {
     if (!postings)
     {
-        auto &postings_new = postings_holder.emplace_back(std::in_place_type<PostingsContainer32>);
-        auto &postings_ref = std::get<PostingsContainer32>(postings_new);
-        postings = &postings_ref;
+        auto & codec = postings_holder.emplace_back(std::in_place_type<PostingsContainer32>);
+        postings = &std::get<PostingsContainer32>(codec);
     }
     postings->add(value);
 }
@@ -926,7 +924,8 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
             tokens_map.emplace(key_holder, it, inserted);
 
             auto & posting_list_builder = it->getMapped();
-            posting_list_builder.initializeIfNeed(params.enable_compressed_postings);
+            if (inserted)
+                posting_list_builder.initialize(params.enable_compressed_postings);
             posting_list_builder.add(current_row, posting_lists);
             return false;
         });
