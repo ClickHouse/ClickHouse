@@ -244,7 +244,6 @@ KeeperResponsesForSessions processWatchesImplBase(
             {
                 if (should_delete)
                 {
-                    std::cerr << "path_to_check " << path_to_check << '\n';
                     [[maybe_unused]] auto erased = sessions_and_watchers[watcher_session].erase(
                         KeeperStorageBase::WatchInfo{.path = String(path_to_check), .is_list_watch = true, .is_persistent = !should_delete, .trigger_on_exists = false});
                     chassert(erased);
