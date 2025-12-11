@@ -560,9 +560,9 @@ void PerfEventsCounters::finalizeProfileEvents(ProfileEvents::Counters & profile
         // deltas from old values.
         const auto enabled = current_value.time_enabled - previous_value.time_enabled;
         const auto running = current_value.time_running - previous_value.time_running;
-        const UInt64 delta = static_cast<UInt64>(
-            (current_value.value - previous_value.value) * enabled / std::max(1.f, float(running)));
+        const auto scaled_value = (current_value.value - previous_value.value) * enabled / std::max(1.f, float(running));
 
+        const auto delta = static_cast<UInt64>(scaled_value);
         if (min_enabled_time > enabled)
         {
             min_enabled_time = enabled;
