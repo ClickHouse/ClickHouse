@@ -121,13 +121,7 @@ using TemporaryTablesMapping = std::map<String, TemporaryTableHolderPtr>;
 
 class BackgroundSchedulePoolTaskHolder;
 
-struct GetDatabasesOptions
-{
-    bool with_datalake_catalogs{false};
-};
-
-/// For some reason Context is required to get Storage from Database object.
-/// This must not hold the Database mutex.
+/// For some reason Context is required to get Storage from Database object
 class DatabaseCatalog : boost::noncopyable, WithMutableContext
 {
 public:
@@ -177,13 +171,7 @@ public:
     DatabasePtr getDatabase(const UUID & uuid) const;
     DatabasePtr tryGetDatabase(const UUID & uuid) const;
     bool isDatabaseExist(const String & database_name) const;
-    /// Datalake catalogs are implement at IDatabase level in ClickHouse.
-    /// In general case Datalake catalog is a some remote service which contains iceberg/delta tables.
-    /// Sometimes this service charges money for requests. With this flag we explicitly protect ourself
-    /// to not accidentally query external non-free service for some trivial things like
-    /// autocompletion hints or system.tables query. We have a setting which allow to show
-    /// these databases everywhere, but user must explicitly specify it.
-    Databases getDatabases(GetDatabasesOptions options) const;
+    Databases getDatabases() const;
 
     /// Same as getDatabase(const String & database_name), but if database_name is empty, current database of local_context is used
     DatabasePtr getDatabase(const String & database_name, ContextPtr local_context) const;
@@ -283,9 +271,7 @@ public:
     void startReplicatedDDLQueries();
     bool canPerformReplicatedDDLQueries() const;
 
-    void updateMetadataFile(const String & database_name, const ASTPtr & create_query);
-    bool hasDatalakeCatalogs() const;
-    bool isDatalakeCatalog(const String & database_name) const;
+    void updateMetadataFile(const DatabasePtr & database);
 
 private:
     // The global instance of database catalog. unique_ptr is to allow
@@ -333,7 +319,6 @@ private:
     mutable std::mutex databases_mutex;
 
     Databases databases TSA_GUARDED_BY(databases_mutex);
-    Databases databases_without_datalake_catalogs TSA_GUARDED_BY(databases_mutex);
     UUIDToStorageMap uuid_map;
 
     /// Referential dependencies between tables: table "A" depends on table "B"

@@ -7,7 +7,6 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
-#include <Common/StackTrace.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
@@ -55,10 +54,14 @@ ReadSettings LocalObjectStorage::patchSettings(const ReadSettings & read_setting
 std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t> read_hint) const
+    std::optional<size_t> read_hint,
+    std::optional<size_t> file_size) const
 {
+    if (!file_size)
+        file_size = tryGetSizeFromFilePath(object.remote_path);
+
     LOG_TEST(log, "Read object: {}", object.remote_path);
-    return createReadBufferFromFileBase(object.remote_path, patchSettings(read_settings), read_hint);
+    return createReadBufferFromFileBase(object.remote_path, patchSettings(read_settings), read_hint, file_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NOLINT
@@ -134,7 +137,7 @@ void LocalObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
         removeObjectIfExists(object);
 }
 
-ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path, bool) const
+ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path) const
 {
     ObjectMetadata object_metadata;
     LOG_TEST(log, "Getting metadata for path: {}", path);
@@ -142,29 +145,6 @@ ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path, b
     auto time = fs::last_write_time(path);
 
     object_metadata.size_bytes = fs::file_size(path);
-    object_metadata.etag = std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(time.time_since_epoch()).count());
-    object_metadata.last_modified = Poco::Timestamp::fromEpochTime(
-        std::chrono::duration_cast<std::chrono::seconds>(time.time_since_epoch()).count());
-    return object_metadata;
-}
-
-std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
-{
-    ObjectMetadata object_metadata;
-    LOG_TEST(log, "Getting metadata for path: {}", path);
-
-    std::error_code error;
-    auto time = fs::last_write_time(path, error);
-    if (error)
-    {
-        if (error == std::errc::no_such_file_or_directory)
-            return {};
-        throw fs::filesystem_error("Got unexpected error while getting last write time", path, error);
-    }
-
-    /// no_such_file_or_directory is ignored only for last_write_time for consistency
-    object_metadata.size_bytes = fs::file_size(path);
-
     object_metadata.etag = std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(time.time_since_epoch()).count());
     object_metadata.last_modified = Poco::Timestamp::fromEpochTime(
         std::chrono::duration_cast<std::chrono::seconds>(time.time_since_epoch()).count());
@@ -184,7 +164,7 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
             continue;
         }
 
-        children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry.path(), getObjectMetadata(entry.path(), false)));
+        children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry.path(), getObjectMetadata(entry.path())));
     }
 }
 

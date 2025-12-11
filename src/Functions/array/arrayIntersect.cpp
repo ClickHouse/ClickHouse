@@ -24,6 +24,7 @@
 #include <base/range.h>
 #include <base/TypeLists.h>
 #include <Interpreters/castColumn.h>
+#include <IO/ReadBufferFromString.h>
 
 
 namespace DB
@@ -613,7 +614,7 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
                     else
                     {
                         const char * data = nullptr;
-                        value = &map[columns[arg_num]->serializeValueIntoArena(i, arena, data)];
+                        value = &map[columns[arg_num]->serializeValueIntoArena(i, arena, data, nullptr)];
                     }
 
                     /// Here we count the number of element appearances, but no more than once per array.
@@ -711,7 +712,7 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
                 else
                 {
                     const char * data = nullptr;
-                    pair = map.find(columns[0]->serializeValueIntoArena(i, arena, data));
+                    pair = map.find(columns[0]->serializeValueIntoArena(i, arena, data, nullptr));
                 }
 
                 if (!current_has_nullable)
@@ -753,7 +754,8 @@ void FunctionArrayIntersect<Mode>::insertElement(typename Map::LookupResult & pa
     }
     else
     {
-        std::ignore = result_data.deserializeAndInsertFromArena(pair->getKey().data);
+        ReadBufferFromString in({pair->getKey().data, pair->getKey().size});
+        result_data.deserializeAndInsertFromArena(in, /*settings=*/nullptr);
     }
     if (use_null_map)
         null_map.push_back(0);

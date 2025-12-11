@@ -634,8 +634,6 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
             return feature_flags.isEnabled(KeeperFeatureFlag::CHECK_NOT_EXISTS);
         case Coordination::OpNum::RemoveRecursive:
             return feature_flags.isEnabled(KeeperFeatureFlag::REMOVE_RECURSIVE);
-        case Coordination::OpNum::CheckStat:
-            return feature_flags.isEnabled(KeeperFeatureFlag::CHECK_STAT);
         case Coordination::OpNum::Close:
         case Coordination::OpNum::Error:
         case Coordination::OpNum::Create:

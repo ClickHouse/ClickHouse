@@ -29,7 +29,6 @@ CollapsingSortedAlgorithm::CollapsingSortedAlgorithm(
     bool only_positive_sign_,
     size_t max_block_size_rows_,
     size_t max_block_size_bytes_,
-    std::optional<size_t> max_dynamic_subcolumns_,
     LoggerPtr log_,
     WriteBuffer * out_row_sources_buf_,
     bool use_average_block_sizes,
@@ -40,7 +39,7 @@ CollapsingSortedAlgorithm::CollapsingSortedAlgorithm(
         std::move(description_),
         out_row_sources_buf_,
         max_row_refs,
-        std::make_unique<MergedData>(use_average_block_sizes, max_block_size_rows_, max_block_size_bytes_, max_dynamic_subcolumns_))
+        std::make_unique<MergedData>(use_average_block_sizes, max_block_size_rows_, max_block_size_bytes_))
     , sign_column_number(header_->getPositionByName(sign_column))
     , only_positive_sign(only_positive_sign_)
     , throw_if_invalid_sign(throw_if_invalid_sign_)

@@ -4,7 +4,6 @@ description: 'Returns the maximum of the computed exponentially smoothed moving 
 sidebar_position: 135
 slug: /sql-reference/aggregate-functions/reference/exponentialTimeDecayedMax
 title: 'exponentialTimeDecayedMax'
-doc_type: 'reference'
 ---
 
 ## exponentialTimeDecayedMax {#exponentialtimedecayedmax}

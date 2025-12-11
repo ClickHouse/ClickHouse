@@ -76,10 +76,11 @@ void IDisk::copyFile( /// NOLINT
 std::unique_ptr<ReadBufferFromFileBase> IDisk::readFileIfExists( /// NOLINT
     const String & path,
     const ReadSettings & settings,
-    std::optional<size_t> read_hint) const
+    std::optional<size_t> read_hint,
+    std::optional<size_t> file_size) const
 {
     if (existsFile(path))
-        return readFile(path, settings, read_hint);
+        return readFile(path, settings, read_hint, file_size);
     else
         return {};
 }
@@ -162,7 +163,7 @@ void IDisk::copyThroughBuffers(
     WriteSettings write_settings,
     const std::function<void()> & cancellation_hook)
 {
-    ThreadPoolCallbackRunnerLocal<void> runner(*copying_thread_pool, ThreadName::ASYNC_COPY);
+    ThreadPoolCallbackRunnerLocal<void> runner(*copying_thread_pool, "AsyncCopy");
 
     /// Disable parallel write. We already copy in parallel.
     /// Avoid high memory usage. See test_s3_zero_copy_ttl/test.py::test_move_and_s3_memory_usage
@@ -189,6 +190,11 @@ void IDisk::copyDirectoryContent(
 void IDisk::truncateFile(const String &, size_t)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate operation is not implemented for disk of type {}", getDataSourceDescription().type);
+}
+
+bool IDisk::supportsPartitionCommand(const PartitionCommand & /*command*/) const
+{
+    return true;
 }
 
 SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
@@ -228,12 +234,10 @@ try
 {
     const std::string_view payload("test", 4);
     const auto read_settings = getReadSettings();
-    auto write_settings = getWriteSettings();
-    write_settings.is_initial_access_check = true;
 
     /// write
     {
-        auto file = writeFile(path, std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, payload.size()), WriteMode::Rewrite, write_settings);
+        auto file = writeFile(path, std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, payload.size()), WriteMode::Rewrite);
         try
         {
             file->write(payload.data(), payload.size());

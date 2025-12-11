@@ -3,7 +3,6 @@ description: 'Documentation for Type Conversion Functions'
 sidebar_label: 'Type conversion'
 slug: /sql-reference/functions/type-conversion-functions
 title: 'Type Conversion Functions'
-doc_type: 'reference'
 ---
 
 # Type conversion functions
@@ -50,65 +49,6 @@ SETTINGS cast_keep_nullable = 1
 │ Nullable(String) │ Nullable(String)    │ Nullable(String) │
 └──────────────────┴─────────────────────┴──────────────────┘
 ```
-
-## Notes on `toString` functions {#to-string-functions}
-
-The `toString` family of functions allows for converting between numbers, strings (but not fixed strings), dates, and dates with times.
-All of these functions accept one argument.
-
-- When converting to or from a string, the value is formatted or parsed using the same rules as for the TabSeparated format (and almost all other text formats). If the string can't be parsed, an exception is thrown and the request is canceled.
-- When converting dates to numbers or vice versa, the date corresponds to the number of days since the beginning of the Unix epoch.
-- When converting dates with times to numbers or vice versa, the date with time corresponds to the number of seconds since the beginning of the Unix epoch.
-- The `toString` function of the `DateTime` argument can take a second String argument containing the name of the time zone, for example: `Europe/Amsterdam`. In this case, the time is formatted according to the specified time zone.
-
-## Notes on `toDate`/`toDateTime` functions {#to-date-and-date-time-functions}
-
-The date and date-with-time formats for the `toDate`/`toDateTime` functions are defined as follows:
-
-```response
-YYYY-MM-DD
-YYYY-MM-DD hh:mm:ss
-```
-
-As an exception, if converting from UInt32, Int32, UInt64, or Int64 numeric types to Date, and if the number is greater than or equal to 65536, the number is interpreted as a Unix timestamp (and not as the number of days) and is rounded to the date.
-This allows support for the common occurrence of writing `toDate(unix_timestamp)`, which otherwise would be an error and would require writing the more cumbersome `toDate(toDateTime(unix_timestamp))`.
-
-Conversion between a date and a date with time is performed the natural way: by adding a null time or dropping the time.
-
-Conversion between numeric types uses the same rules as assignments between different numeric types in C++.
-
-**Example**
-
-Query:
-
-```sql
-SELECT
-    now() AS ts,
-    time_zone,
-    toString(ts, time_zone) AS str_tz_datetime
-FROM system.time_zones
-WHERE time_zone LIKE 'Europe%'
-LIMIT 10
-```
-
-Result:
-
-```response
-┌──────────────────ts─┬─time_zone─────────┬─str_tz_datetime─────┐
-│ 2023-09-08 19:14:59 │ Europe/Amsterdam  │ 2023-09-08 21:14:59 │
-│ 2023-09-08 19:14:59 │ Europe/Andorra    │ 2023-09-08 21:14:59 │
-│ 2023-09-08 19:14:59 │ Europe/Astrakhan  │ 2023-09-08 23:14:59 │
-│ 2023-09-08 19:14:59 │ Europe/Athens     │ 2023-09-08 22:14:59 │
-│ 2023-09-08 19:14:59 │ Europe/Belfast    │ 2023-09-08 20:14:59 │
-│ 2023-09-08 19:14:59 │ Europe/Belgrade   │ 2023-09-08 21:14:59 │
-│ 2023-09-08 19:14:59 │ Europe/Berlin     │ 2023-09-08 21:14:59 │
-│ 2023-09-08 19:14:59 │ Europe/Bratislava │ 2023-09-08 21:14:59 │
-│ 2023-09-08 19:14:59 │ Europe/Brussels   │ 2023-09-08 21:14:59 │
-│ 2023-09-08 19:14:59 │ Europe/Bucharest  │ 2023-09-08 22:14:59 │
-└─────────────────────┴───────────────────┴─────────────────────┘
-```
-
-Also see the [`toUnixTimestamp`](#toUnixTimestamp) function.
 
 ## toBool {#tobool}
 
@@ -5378,45 +5318,61 @@ toTypeName(b): Decimal(76, 0)
 
 ## toString {#tostring}
 
-Converts values to their string representation.
-For DateTime arguments, the function can take a second String argument containing the name of the time zone.
+Functions for converting between numbers, strings (but not fixed strings), dates, and dates with times.
+All these functions accept one argument.
 
-**Syntax**
+When converting to or from a string, the value is formatted or parsed using the same rules as for the TabSeparated format (and almost all other text formats). If the string can't be parsed, an exception is thrown and the request is canceled.
 
-```sql
-toString(value[, timezone])
+When converting dates to numbers or vice versa, the date corresponds to the number of days since the beginning of the Unix epoch.
+When converting dates with times to numbers or vice versa, the date with time corresponds to the number of seconds since the beginning of the Unix epoch.
+
+The date and date-with-time formats for the toDate/toDateTime functions are defined as follows:
+
+```response
+YYYY-MM-DD
+YYYY-MM-DD hh:mm:ss
 ```
 
-**Arguments**
-- `value`: Value to convert to string. [`Any`](/sql-reference/data-types).
-- `timezone`: Optional. Timezone name for `DateTime` conversion. [`String`](/sql-reference/data-types/string).
+As an exception, if converting from UInt32, Int32, UInt64, or Int64 numeric types to Date, and if the number is greater than or equal to 65536, the number is interpreted as a Unix timestamp (and not as the number of days) and is rounded to the date. This allows support for the common occurrence of writing `toDate(unix_timestamp)`, which otherwise would be an error and would require writing the more cumbersome `toDate(toDateTime(unix_timestamp))`.
 
-**Returned value**
-- Returns a string representation of the input value. [`String`](/sql-reference/data-types/string).
+Conversion between a date and a date with time is performed the natural way: by adding a null time or dropping the time.
 
-**Examples**
+Conversion between numeric types uses the same rules as assignments between different numeric types in C++.
 
-**Usage example**
+Additionally, the toString function of the DateTime argument can take a second String argument containing the name of the time zone. Example: `Asia/Yekaterinburg` In this case, the time is formatted according to the specified time zone.
 
-```sql title="Query"
+**Example**
+
+Query:
+
+```sql
 SELECT
     now() AS ts,
     time_zone,
     toString(ts, time_zone) AS str_tz_datetime
 FROM system.time_zones
 WHERE time_zone LIKE 'Europe%'
-LIMIT 10;
+LIMIT 10
 ```
 
-```response title="Response"
+Result:
+
+```response
 ┌──────────────────ts─┬─time_zone─────────┬─str_tz_datetime─────┐
 │ 2023-09-08 19:14:59 │ Europe/Amsterdam  │ 2023-09-08 21:14:59 │
 │ 2023-09-08 19:14:59 │ Europe/Andorra    │ 2023-09-08 21:14:59 │
 │ 2023-09-08 19:14:59 │ Europe/Astrakhan  │ 2023-09-08 23:14:59 │
 │ 2023-09-08 19:14:59 │ Europe/Athens     │ 2023-09-08 22:14:59 │
 │ 2023-09-08 19:14:59 │ Europe/Belfast    │ 2023-09-08 20:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Belgrade   │ 2023-09-08 21:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Berlin     │ 2023-09-08 21:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Bratislava │ 2023-09-08 21:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Brussels   │ 2023-09-08 21:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Bucharest  │ 2023-09-08 22:14:59 │
 └─────────────────────┴───────────────────┴─────────────────────┘
 ```
+
+Also see the `toUnixTimestamp` function.
 
 ## toFixedString {#tofixedstring}
 
@@ -7436,53 +7392,6 @@ Result:
 └───────────────────────┘
 ```
 
-## toUnixTimestamp {#toUnixTimestamp}
-
-Converts a `String`, `Date`, or `DateTime` to a Unix timestamp (seconds since `1970-01-01 00:00:00 UTC`) as `UInt32`.
-
-**Syntax**
-
-```sql
-toUnixTimestamp(date, [timezone])
-```
-
-**Arguments**
-
-- `date`: Value to convert. [`Date`](/sql-reference/data-types/date) or [`Date32`](/sql-reference/data-types/date32) or [`DateTime`](/sql-reference/data-types/datetime) or [`DateTime64`](/sql-reference/data-types/datetime64) or [`String`](/sql-reference/data-types/string).
-- `timezone`: Optional. Timezone to use for conversion. If not specified, the server's timezone is used. [`String`](/sql-reference/data-types/string)
-
-**Returned value**
-
-Returns the Unix timestamp. [`UInt32`](/sql-reference/data-types/int-uint)
-
-**Examples**
-
-**Usage example**
-
-```sql title="Query"
-SELECT
-'2017-11-05 08:07:47' AS dt_str,
-toUnixTimestamp(dt_str) AS from_str,
-toUnixTimestamp(dt_str, 'Asia/Tokyo') AS from_str_tokyo,
-toUnixTimestamp(toDateTime(dt_str)) AS from_datetime,
-toUnixTimestamp(toDateTime64(dt_str, 0)) AS from_datetime64,
-toUnixTimestamp(toDate(dt_str)) AS from_date,
-toUnixTimestamp(toDate32(dt_str)) AS from_date32
-FORMAT Vertical;
-```
-
-```response title="Response"
-Row 1:
-──────
-dt_str:          2017-11-05 08:07:47
-from_str:        1509869267
-from_str_tokyo:  1509836867
-from_datetime:   1509869267
-from_datetime64: 1509869267
-from_date:       1509840000
-from_date32:     1509840000
-```
-
 ## toUnixTimestamp64Second {#tounixtimestamp64second}
 
 Converts a `DateTime64` to a `Int64` value with fixed second precision. The input value is scaled up or down appropriately depending on its precision.
@@ -7819,7 +7728,7 @@ formatRow(format, x, y, ...)
 
 **Arguments**
 
-- `format` — Text format. For example, [CSV](/interfaces/formats/CSV), [TabSeparated (TSV)](/interfaces/formats/TabSeparated).
+- `format` — Text format. For example, [CSV](/interfaces/formats.md/#csv), [TSV](/interfaces/formats.md/#tabseparated).
 - `x`,`y`, ... — Expressions.
 
 **Returned value**
@@ -7890,7 +7799,7 @@ formatRowNoNewline(format, x, y, ...)
 
 **Arguments**
 
-- `format` — Text format. For example, [CSV](/interfaces/formats/CSV), [TabSeparated (TSV)](/interfaces/formats/TabSeparated).
+- `format` — Text format. For example, [CSV](/interfaces/formats.md/#csv), [TSV](/interfaces/formats.md/#tabseparated).
 - `x`,`y`, ... — Expressions.
 
 **Returned value**

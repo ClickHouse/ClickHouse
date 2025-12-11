@@ -57,7 +57,7 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
 
-    bool supportsTransactions() const override { return support_transaction; }
+    bool supportsTransactions() const override { return true; }
 
     void read(
         QueryPlan & query_plan,
@@ -106,6 +106,8 @@ public:
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
     void alter(const AlterCommands & commands, ContextPtr context, AlterLockHolder & table_lock_holder) override;
+
+    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
 
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
@@ -175,8 +177,6 @@ private:
     std::mutex mutation_prepared_sets_cache_mutex;
     std::map<Int64, PreparedSetsCachePtr::weak_type> mutation_prepared_sets_cache;
     PlainLightweightUpdatesSync lightweight_updates_sync;
-
-    const bool support_transaction;
 
     void loadMutations();
 

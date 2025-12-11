@@ -222,7 +222,7 @@ private:
 
     void cleanThread()
     {
-        DB::setThreadName(ThreadName::SESSION_CLEANUP);
+        setThreadName("SessionCleaner");
         std::unique_lock lock{mutex};
         while (!quit)
         {
@@ -403,7 +403,6 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     }
 
     prepared_client_info->current_user = credentials_.getUserName();
-    prepared_client_info->authenticated_user = credentials_.getUserName();
     prepared_client_info->current_address = std::make_shared<Poco::Net::SocketAddress>(address);
 }
 

@@ -5,7 +5,6 @@ sidebar_label: 'List of tools and utilities'
 sidebar_position: 56
 slug: /operations/utilities/
 title: 'List of tools and utilities'
-doc_type: 'landing-page'
 ---
 
 | Tool/Utility | Description |

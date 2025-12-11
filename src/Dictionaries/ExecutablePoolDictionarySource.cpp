@@ -77,34 +77,30 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(const ExecutableP
 {
 }
 
-BlockIO ExecutablePoolDictionarySource::loadAll()
+QueryPipeline ExecutablePoolDictionarySource::loadAll()
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource does not support loadAll method");
 }
 
-BlockIO ExecutablePoolDictionarySource::loadUpdatedAll()
+QueryPipeline ExecutablePoolDictionarySource::loadUpdatedAll()
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource does not support loadUpdatedAll method");
 }
 
-BlockIO ExecutablePoolDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline ExecutablePoolDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
     auto block = blockForIds(dict_struct, ids);
-    BlockIO io;
-    io.pipeline = getStreamForBlock(block);
-    return io;
+    return getStreamForBlock(block);
 }
 
-BlockIO ExecutablePoolDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+QueryPipeline ExecutablePoolDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);
-    BlockIO io;
-    io.pipeline = getStreamForBlock(block);
-    return io;
+    return getStreamForBlock(block);
 }
 
 QueryPipeline ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)

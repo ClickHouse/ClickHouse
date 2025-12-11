@@ -138,7 +138,7 @@ class CacheRunnerHooks:
             # SPECIAL handling
             return path_prefixes
         env = _Environment.get()
-        runtime_config = RunConfig.from_workflow_data()
+        runtime_config = RunConfig.from_fs(_workflow.name)
         required_artifacts = []
         if _required_artifacts:
             required_artifacts = _required_artifacts
@@ -165,7 +165,7 @@ class CacheRunnerHooks:
             return
         if job.digest_config:
             # cache is enabled, and it's a job that supposed to be cached (has defined digest config)
-            workflow_runtime = RunConfig.from_workflow_data()
+            workflow_runtime = RunConfig.from_fs(workflow.name)
             job_digest = workflow_runtime.digest_jobs[job.name]
             # if_not_exist=workflow.is_event_pull_request() - to not overwrite record from "push" workflow, as it can reuse only from push, "pull_request" - from both
             Cache.push_success_record(

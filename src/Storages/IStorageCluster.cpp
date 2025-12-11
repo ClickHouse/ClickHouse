@@ -122,8 +122,7 @@ void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate)
         predicate,
         filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get(),
         context,
-        cluster,
-        getStorageSnapshot()->metadata);
+        cluster);
 }
 
 /// The code executes on initiator

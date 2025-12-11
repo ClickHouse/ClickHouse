@@ -29,8 +29,6 @@ public:
         const std::string & description_ = "none",
         StatePtr state_ = nullptr);
 
-    Type getType() const override { return Type::LRU; }
-
     size_t getSize(const CachePriorityGuard::Lock &) const override { return state->current_size; }
 
     size_t getElementsCount(const CachePriorityGuard::Lock &) const override { return state->current_elements_num; }

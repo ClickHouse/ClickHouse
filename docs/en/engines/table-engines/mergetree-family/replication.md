@@ -1,13 +1,12 @@
 ---
-description: 'Overview of data replication with the Replicated* family of table engines in ClickHouse'
-sidebar_label: 'Replicated*'
+description: 'Overview of Data Replication in ClickHouse'
+sidebar_label: 'Data Replication'
 sidebar_position: 20
 slug: /engines/table-engines/mergetree-family/replication
-title: 'Replicated* table engines'
-doc_type: 'reference'
+title: 'Data Replication'
 ---
 
-# Replicated* table engines
+# Data replication
 
 :::note
 In ClickHouse Cloud replication is managed for you. Please create your tables without adding arguments.  For example, in the text below you would replace:

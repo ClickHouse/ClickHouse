@@ -7,7 +7,6 @@
 #include <base/find_symbols.h>
 #include <base/sort.h>
 #include <Common/SipHash.h>
-#include <Common/StringUtils.h>
 
 #include <string_view>
 #include <vector>

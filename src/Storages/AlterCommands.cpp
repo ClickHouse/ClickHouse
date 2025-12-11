@@ -15,6 +15,7 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/RenameColumnVisitor.h>
+#include <Interpreters/GinFilter.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -66,6 +67,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int DUPLICATE_COLUMN;
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 }
 
@@ -380,16 +382,11 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     {
         AlterCommand command;
         command.ast = command_ast->clone();
+        command.statistics_decl = command_ast->statistics_decl->clone();
         command.type = AlterCommand::DROP_STATISTICS;
+        const auto & ast_stat_decl = command_ast->statistics_decl->as<ASTStatisticsDeclaration &>();
 
-        if (command_ast->statistics_decl)
-        {
-            command.statistics_decl = command_ast->statistics_decl->clone();
-
-            const auto & ast_stat_decl = command_ast->statistics_decl->as<ASTStatisticsDeclaration &>();
-            command.statistics_columns = ast_stat_decl.getColumnNames();
-        }
-
+        command.statistics_columns = ast_stat_decl.getColumnNames();
         command.if_exists = command_ast->if_exists;
         command.clear = command_ast->clear_statistics;
 
@@ -499,11 +496,6 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
 void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
-    /// Helper function for column existence check with IF EXISTS
-    auto should_skip_column_operation = [&]() -> bool {
-        return if_exists && !metadata.columns.has(column_name);
-    };
-
     if (type == ADD_COLUMN)
     {
         ColumnDescription column(column_name, data_type);
@@ -594,16 +586,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
         /// Otherwise just clear data on disk
         if (!clear && !partition)
-        {
-            if (should_skip_column_operation())
-                return;
             metadata.columns.remove(column_name);
-        }
     }
     else if (type == MODIFY_COLUMN)
     {
-        if (should_skip_column_operation())
-            return;
         metadata.columns.modify(column_name, after_column, first, [&](ColumnDescription & column)
         {
             if (to_remove == RemoveProperty::DEFAULT
@@ -694,7 +680,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == COMMENT_COLUMN)
     {
-        if (should_skip_column_operation())
+        // If column doesn't exist and IF EXISTS is used, skip silently
+        if (!metadata.columns.has(column_name) && if_exists)
             return;
 
         metadata.columns.modify(column_name,
@@ -961,8 +948,6 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == RENAME_COLUMN)
     {
-        if (should_skip_column_operation())
-            return;
         metadata.columns.rename(column_name, rename_to);
         RenameColumnData rename_data{column_name, rename_to};
         RenameColumnVisitor rename_visitor(rename_data);
@@ -1305,8 +1290,9 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
             auto minmax_columns = metadata_copy.getColumnsRequiredForPartitionKey();
             auto partition_key = metadata_copy.partition_key.expression_list_ast->clone();
             FunctionNameNormalizer::visit(partition_key.get());
+            auto primary_key_asts = metadata_copy.primary_key.expression_list_ast->children;
             metadata_copy.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-                metadata_copy.columns, partition_key, minmax_columns, metadata_copy.primary_key, context));
+                metadata_copy.columns, partition_key, minmax_columns, primary_key_asts, context));
         }
     }
 
@@ -1464,6 +1450,13 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             validateDataType(command.data_type, DataTypeValidationSettings(context->getSettingsRef()));
             checkAllTypesAreAllowedInTable(NamesAndTypesList{{command.column_name, command.data_type}});
 
+            /// FIXME: Adding a new column of type Object(JSON) is broken.
+            /// Looks like there is something around default expression for this column (method `getDefault` is not implemented for the data type Object).
+            /// But after ALTER TABLE ADD COLUMN we need to fill existing rows with something (exactly the default value).
+            /// So we don't allow to do it for now.
+            if (command.data_type->hasDynamicSubcolumnsDeprecated())
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Adding a new column of a type which has dynamic subcolumns to an existing table is not allowed. It has known bugs");
+
             if (virtuals->tryGet(column_name, VirtualsKind::Persistent))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Cannot add column {}: this column name is reserved for persistent virtual column", backQuote(column_name));
@@ -1547,6 +1540,14 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
                 const GetColumnsOptions options(GetColumnsOptions::All);
                 const auto old_data_type = all_columns.getColumn(options, column_name).type;
+
+                bool new_type_has_deprecated_object = command.data_type->hasDynamicSubcolumnsDeprecated();
+
+                if (new_type_has_deprecated_object)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The change of data type {} of column {} to {} is not allowed. It has known bugs",
+                        old_data_type->getName(), backQuote(column_name), command.data_type->getName());
             }
 
             if (command.isRemovingProperty())
@@ -1696,6 +1697,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             {
                 if (from_nested_table_name != to_nested_table_name)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column from one nested name to another");
+                all_columns.rename(command.column_name, command.rename_to);
             }
             else if (!from_nested && !to_nested)
             {

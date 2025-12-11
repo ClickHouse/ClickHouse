@@ -47,8 +47,6 @@ public:
         explicit Settings(const QueryPlanSerializationSettings & settings);
 
         void updatePlanSettings(QueryPlanSerializationSettings & settings) const;
-
-        bool operator==(const Settings & other) const = default;
     };
 
     /// Full

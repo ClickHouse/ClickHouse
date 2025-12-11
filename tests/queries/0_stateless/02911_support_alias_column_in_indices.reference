@@ -14,7 +14,7 @@ Expression ((Projection + Before ORDER BY))
         Description: minmax GRANULARITY 1
         Parts: 1/1
         Granules: 1/1
-      Ranges: 1
+        Ranges: 1
 Expression ((Project names + Projection))
   Filter ((WHERE + (Change column names to column identifiers + Compute alias columns)))
     ReadFromMergeTree (02911_support_alias_column_in_indices.test1)
@@ -31,7 +31,7 @@ Expression ((Project names + Projection))
         Description: minmax GRANULARITY 1
         Parts: 1/1
         Granules: 1/1
-      Ranges: 1
+        Ranges: 1
 Expression ((Projection + Before ORDER BY))
   Filter (WHERE)
     ReadFromMergeTree (02911_support_alias_column_in_indices.test2)
@@ -48,7 +48,7 @@ Expression ((Projection + Before ORDER BY))
         Description: minmax GRANULARITY 1
         Parts: 1/1
         Granules: 1/1
-      Ranges: 1
+        Ranges: 1
 Expression ((Project names + Projection))
   Filter ((WHERE + (Change column names to column identifiers + Compute alias columns)))
     ReadFromMergeTree (02911_support_alias_column_in_indices.test2)
@@ -65,4 +65,4 @@ Expression ((Project names + Projection))
         Description: minmax GRANULARITY 1
         Parts: 1/1
         Granules: 1/1
-      Ranges: 1
+        Ranges: 1

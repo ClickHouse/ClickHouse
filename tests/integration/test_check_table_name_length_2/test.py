@@ -4,20 +4,8 @@ from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance(
-    "node1",
-    with_zookeeper=True,
-    main_configs=["configs/remote_servers.xml"],
-    # table name is too long, exceeds S3 object name maximum
-    with_remote_database_disk=False,
-)
-node2 = cluster.add_instance(
-    "node2",
-    with_zookeeper=True,
-    main_configs=["configs/remote_servers.xml"],
-    # table name is too long, exceeds S3 object name maximum
-    with_remote_database_disk=False,
-)
+node1 = cluster.add_instance("node1", with_zookeeper=True, main_configs=["configs/remote_servers.xml"])
+node2 = cluster.add_instance("node2", with_zookeeper=True, main_configs=["configs/remote_servers.xml"])
 nodes = [node1, node2]
 
 @pytest.fixture(scope="module")
@@ -29,10 +17,6 @@ def started_cluster():
         cluster.shutdown()
 
 def test_check_table_name_length_2(started_cluster):
-    for node in nodes:
-        node.query("drop database if exists atomic")
-        node.query("drop database if exists replic")
-
     for (i, node) in enumerate(nodes):
         node.query("create database atomic engine Atomic;"
                    f"create database replic engine Replicated('/replic' , 's0', 'r{i}');")

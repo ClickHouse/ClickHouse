@@ -4,7 +4,6 @@ sidebar_label: 'Building and Benchmarking DEFLATE_QPL'
 sidebar_position: 73
 slug: /development/building_and_benchmarking_deflate_qpl
 title: 'Build Clickhouse with DEFLATE_QPL'
-doc_type: 'guide'
 ---
 
 # Build Clickhouse with DEFLATE_QPL

@@ -319,7 +319,7 @@ def test_types(started_cluster):
             ["a", "Nullable(Int32)"],
             ["b", "Nullable(String)"],
             ["c", "Nullable(Date32)"],
-            ["d", "Array(String)"],
+            ["d", "Array(Nullable(String))"],
             ["e", "Nullable(Bool)"],
         ]
     )

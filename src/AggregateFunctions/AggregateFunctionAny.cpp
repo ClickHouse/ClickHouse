@@ -1,6 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/SingleValueData.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <base/defines.h>
@@ -27,26 +26,8 @@ private:
 public:
     explicit AggregateFunctionAny(const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionAny<Data>>(argument_types_, {}, argument_types_[0])
+        , serialization(this->result_type->getDefaultSerialization())
     {
-        if constexpr (!std::is_same_v<Data, SingleValueReference>)
-            serialization = this->result_type->getDefaultSerialization();
-    }
-
-    using IAggregateFunction::argument_types;
-
-    AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
-    {
-        /// For types that are potentially large, we use SingleValueReference to avoid unnecessary memory allocations during merging final
-        /// Large types are: String, FixedString (N > 20), Array, Map, Object, Variant, Dynamic
-        const auto which = WhichDataType(argument_types[0]);
-        auto * type_fixed_string = typeid_cast<const DataTypeFixedString *>(argument_types[0].get());
-        if (which.isString() || which.isArray() || which.isMap() || which.isObject() || which.isVariant()
-            || which.isDynamic() || (type_fixed_string && type_fixed_string->getN() > 20))
-        {
-            return std::make_shared<AggregateFunctionAny<SingleValueReference>>(argument_types);
-        }
-
-        return IAggregateFunction::getAggregateFunctionForMergingFinal();
     }
 
     String getName() const override { return "any"; }
@@ -213,26 +194,8 @@ private:
 public:
     explicit AggregateFunctionAnyLast(const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionAnyLast<Data>>(argument_types_, {}, argument_types_[0])
+        , serialization(this->result_type->getDefaultSerialization())
     {
-        if constexpr (!std::is_same_v<Data, SingleValueReference>)
-            serialization = this->result_type->getDefaultSerialization();
-    }
-
-    using IAggregateFunction::argument_types;
-
-    AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
-    {
-        /// For types that are potentially large, we use SingleValueReference to avoid unnecessary memory allocations during merging final
-        /// Large types are: String, FixedString (N >= 20), Array, Map, Object, Variant, Dynamic
-        const auto which = WhichDataType(argument_types[0]);
-        auto * type_fixed_string = typeid_cast<const DataTypeFixedString *>(argument_types[0].get());
-        if (which.isString() || which.isArray() || which.isMap() || which.isObject() || which.isVariant()
-            || which.isDynamic() || (type_fixed_string && type_fixed_string->getN() >= 20))
-        {
-            return std::make_shared<AggregateFunctionAnyLast<SingleValueReference>>(argument_types);
-        }
-
-        return IAggregateFunction::getAggregateFunctionForMergingFinal();
     }
 
     String getName() const override { return "anyLast"; }

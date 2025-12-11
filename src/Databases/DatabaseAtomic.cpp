@@ -15,7 +15,6 @@
 #include <Common/PoolId.h>
 #include <Common/atomicRename.h>
 #include <Common/logger_useful.h>
-#include <Common/AsyncLoader.h>
 
 
 namespace fs = std::filesystem;
@@ -116,10 +115,7 @@ String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 void DatabaseAtomic::drop(ContextPtr)
 {
     waitDatabaseStarted();
-    {
-        std::lock_guard lock(mutex);
-        assert(tables.empty());
-    }
+    assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
 
     auto db_disk = getDisk();
     try
@@ -706,12 +702,12 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     /// CREATE, ATTACH, DROP, DETACH and RENAME DATABASE must hold DDLGuard
     createDirectories();
     waitDatabaseStarted();
-    std::lock_guard lock(mutex);
 
     bool check_ref_deps = query_context->getSettingsRef()[Setting::check_referential_table_dependencies];
     bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef()[Setting::check_table_dependencies];
     if (check_ref_deps || check_loading_deps)
     {
+        std::lock_guard lock(mutex);
         for (auto & table : tables)
         {
             checkTableNameLengthUnlocked(new_name, table.first, getContext());
@@ -733,7 +729,7 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     }
 
     auto new_name_escaped = escapeForFileName(new_name);
-    auto old_database_metadata_path = fs::path("metadata") / (escapeForFileName(database_name) + ".sql");
+    auto old_database_metadata_path = fs::path("metadata") / (escapeForFileName(getDatabaseName()) + ".sql");
     auto new_database_metadata_path = fs::path("metadata") / (new_name_escaped + ".sql");
     auto default_db_disk = getContext()->getDatabaseDisk();
     default_db_disk->moveFile(old_database_metadata_path, new_database_metadata_path);
@@ -741,6 +737,7 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     String old_path_to_table_symlinks;
 
     {
+        std::lock_guard lock(mutex);
         {
             Strings table_names;
             table_names.reserve(tables.size());

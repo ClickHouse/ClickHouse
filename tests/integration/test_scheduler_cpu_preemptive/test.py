@@ -390,9 +390,6 @@ class DynamicQueryPool:
     indirect=True,
 )
 def test_downscaling(with_custom_config):
-    if node.is_built_with_address_sanitizer():
-        pytest.skip("doesn't fit in timeouts due to heavy workload")
-
     node.query(
         f"""
         create resource cpu (master thread, worker thread);

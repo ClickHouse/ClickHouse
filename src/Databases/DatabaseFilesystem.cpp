@@ -186,19 +186,19 @@ bool DatabaseFilesystem::empty() const
     return loaded_tables.empty();
 }
 
-ASTPtr DatabaseFilesystem::getCreateDatabaseQueryImpl() const
+ASTPtr DatabaseFilesystem::getCreateDatabaseQuery() const
 {
     const auto & settings = getContext()->getSettingsRef();
-    const String query = fmt::format("CREATE DATABASE {} ENGINE = Filesystem('{}')", backQuoteIfNeed(database_name), path);
+    const String query = fmt::format("CREATE DATABASE {} ENGINE = Filesystem('{}')", backQuoteIfNeed(getDatabaseName()), path);
 
     ParserCreateQuery parser;
     ASTPtr ast
         = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
-    if (!comment.empty())
+    if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(comment));
+        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(database_comment));
     }
 
     return ast;

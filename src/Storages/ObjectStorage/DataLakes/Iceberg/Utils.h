@@ -28,23 +28,8 @@ void writeMessageToFile(
     const String & filename,
     DB::ObjectStoragePtr object_storage,
     DB::ContextPtr context,
-    const std::string & write_if_none_match,
-    const std::string & write_if_match = "",
+    std::function<void()> cleanup,
     DB::CompressionMethod compression_method = DB::CompressionMethod::None);
-
-/// Tries to write metadata file and version hint file. Uses If-None-Match header to avoid overwriting existing files.
-/// Maybe return false if failed to write metadata.json
-/// Will try to write hint multiple times, but will not report failure to write hint.
-bool writeMetadataFileAndVersionHint(
-    const std::string & metadata_file_path,
-    const std::string & metadata_file_content,
-    const std::string & version_hint_path,
-    std::string version_hint_content,
-    DB::ObjectStoragePtr object_storage,
-    DB::ContextPtr context,
-    DB::CompressionMethod compression_method,
-    bool try_write_version_hint
-);
 
 std::string getProperFilePathFromMetadataInfo(std::string_view data_path, std::string_view common_path, std::string_view table_location);
 
@@ -73,7 +58,6 @@ struct MetadataFileWithInfo
 };
 
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter);
-Poco::Dynamic::Var getAvroType(DataTypePtr type);
 
 /// Spec: https://iceberg.apache.org/spec/?h=metadata.json#table-metadata-fields
 std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
@@ -88,6 +72,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     IcebergMetadataFilesCachePtr cache_ptr,
     const ContextPtr & local_context,
     Poco::Logger * log);
+
 }
 
 #endif

@@ -289,13 +289,4 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
     return res;
 }
 
-bool hasDynamicType(const DataTypePtr & type)
-{
-    bool result = false;
-    auto check = [&](const IDataType & t) { result |= isDynamic(t); };
-    check(*type);
-    type->forEachChild(check);
-    return result;
-}
-
 }

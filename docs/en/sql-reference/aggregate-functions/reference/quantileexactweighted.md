@@ -4,7 +4,6 @@ description: 'Exactly computes the quantile of a numeric data sequence, taking i
 sidebar_position: 174
 slug: /sql-reference/aggregate-functions/reference/quantileexactweighted
 title: 'quantileExactWeighted'
-doc_type: 'reference'
 ---
 
 # quantileExactWeighted

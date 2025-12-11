@@ -61,14 +61,9 @@ struct MergeTreeReaderSettings
     bool query_condition_cache_store_conditions_as_plaintext = false;
     bool use_deserialization_prefixes_cache = false;
     bool use_prefixes_deserialization_thread_pool = false;
-    bool secondary_indices_enable_bulk_filtering = true;
-    UInt64 merge_tree_min_bytes_for_seek = 0;
-    UInt64 merge_tree_min_rows_for_seek = 0;
     size_t filesystem_prefetches_limit = 0;
-    bool enable_analyzer = false;
 
-    /// Note storage_settings used only in private, do not remove
-    static MergeTreeReaderSettings create(const ContextPtr & context, const MergeTreeSettings & storage_settings, const SelectQueryInfo & query_info);
+    static MergeTreeReaderSettings create(const ContextPtr & context, const SelectQueryInfo & query_info);
 };
 
 struct MergeTreeWriterSettings

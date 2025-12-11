@@ -22,7 +22,7 @@
         Description: minmax GRANULARITY 1
         Parts: 0/0
         Granules: 0/0
-      Ranges: 0
+        Ranges: 0
     ReadFromMergeTree (default.data_02771)
     Indexes:
       PrimaryKey
@@ -39,7 +39,7 @@
         Description: minmax GRANULARITY 1
         Parts: 0/0
         Granules: 0/0
-      Ranges: 0
+        Ranges: 0
     ReadFromMergeTree (default.data_02771)
     Indexes:
       PrimaryKey
@@ -61,7 +61,7 @@
         Description: minmax GRANULARITY 1
         Parts: 0/0
         Granules: 0/0
-      Ranges: 0
+        Ranges: 0
     ReadFromMergeTree (default.data_02771)
     Indexes:
       PrimaryKey
@@ -78,4 +78,4 @@
         Description: minmax GRANULARITY 1
         Parts: 0/0
         Granules: 0/0
-      Ranges: 0
+        Ranges: 0

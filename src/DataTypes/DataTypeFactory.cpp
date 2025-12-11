@@ -267,7 +267,6 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeEnum(*this);
     registerDataTypeArray(*this);
     registerDataTypeTuple(*this);
-    registerDataTypeQBit(*this);
     registerDataTypeNullable(*this);
     registerDataTypeNothing(*this);
     registerDataTypeUUID(*this);
@@ -280,6 +279,7 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeDomainSimpleAggregateFunction(*this);
     registerDataTypeDomainGeo(*this);
     registerDataTypeMap(*this);
+    registerDataTypeObjectDeprecated(*this);
     registerDataTypeVariant(*this);
     registerDataTypeDynamic(*this);
     registerDataTypeJSON(*this);

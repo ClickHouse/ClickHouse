@@ -945,7 +945,10 @@ def test_merge_canceled_by_s3_errors_when_move(cluster, broken_s3, node_name):
 
     node.query("OPTIMIZE TABLE merge_canceled_by_s3_errors_when_move FINAL")
 
-    node.wait_for_log_line("ExpectedError Message: mock s3 injected unretryable error")
+    node.wait_for_log_line(
+        "ExpectedError Message: mock s3 injected unretryable error",
+        look_behind_lines=1000,
+    )
 
     count = node.query("SELECT count() FROM merge_canceled_by_s3_errors_when_move")
     assert int(count) == 2000, count

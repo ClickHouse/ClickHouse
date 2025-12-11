@@ -214,7 +214,7 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
             break;
     }
 
-    if (!line.empty() && line != prev_line && !line.starts_with(" "))
+    if (!line.empty() && line != prev_line)
     {
         addToHistory(line);
         prev_line = line;
