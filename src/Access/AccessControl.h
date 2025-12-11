@@ -93,6 +93,8 @@ public:
     /// Adds LDAPAccessStorage which allows querying remote LDAP server for user info.
     void addLDAPStorage(const String & storage_name_, const Poco::Util::AbstractConfiguration & config_, const String & prefix_);
 
+    void addTokenStorage(const String & storage_name_, const Poco::Util::AbstractConfiguration & config_, const String & prefix_);
+
     void addReplicatedStorage(const String & storage_name,
                               const String & zookeeper_path,
                               const zkutil::GetZooKeeper & get_zookeeper_function,

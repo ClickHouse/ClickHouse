@@ -1,0 +1,23 @@
+<clickhouse>
+    <token_processors>
+
+        <single_key_processor>
+            <type>jwt</type>
+            <algo>HS256</algo>
+            <static_key>my_secret</static_key>
+            <static_key_in_base64>false</static_key_in_base64>
+        </single_key_processor>
+
+        <another_single_key_processor>
+            <type>jwt</type>
+            <algo>hs256</algo>
+            <static_key>other_secret</static_key>
+            <static_key_in_base64>false</static_key_in_base64>
+        </another_single_key_processor>
+
+        <remote_jwks_processor>
+            <type>jwt</type>
+            <jwks_uri>http://resolver:8080/.well-known/jwks.json</jwks_uri>
+        </remote_jwks_processor>
+    </token_processors>
+</clickhouse>
