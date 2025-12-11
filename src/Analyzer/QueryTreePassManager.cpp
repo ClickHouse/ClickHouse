@@ -258,7 +258,7 @@ void QueryTreePassManager::dump(WriteBuffer & buffer, size_t up_to_pass_index)
     }
 }
 
-void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze, bool skip_optimize_redundant_functions_in_order_by)
+void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
 {
     manager.addPass(std::make_unique<QueryAnalysisPass>(only_analyze));
     manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
@@ -303,8 +303,7 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze, bool 
 
     manager.addPass(std::make_unique<ComparisonTupleEliminationPass>());
 
-    if (!skip_optimize_redundant_functions_in_order_by)
-        manager.addPass(std::make_unique<OptimizeRedundantFunctionsInOrderByPass>());
+    manager.addPass(std::make_unique<OptimizeRedundantFunctionsInOrderByPass>());
 
     manager.addPass(std::make_unique<OrderByTupleEliminationPass>());
     manager.addPass(std::make_unique<OrderByLimitByDuplicateEliminationPass>());

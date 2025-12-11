@@ -13,9 +13,6 @@
 #include <Processors/QueryPlan/CustomMetricLogViewStep.h>
 
 #include <Functions/IFunction.h>
-#include <Common/Logger.h>
-#include <Common/logger_useful.h>
-#include <Core/SortDescription.h>
 
 namespace DB
 {
@@ -28,14 +25,21 @@ namespace ErrorCodes
 namespace QueryPlanOptimizations
 {
 
+struct SortingProperty
+{
+    /// Sorting scope.
+    enum class SortScope : uint8_t
+    {
+        Stream = 0, /// Each data steam is sorted
+        Global = 1, /// Data is globally sorted
+    };
+
+    SortDescription sort_description = {};
+    SortScope sort_scope = SortScope::Stream;
+};
+
 SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * properties, const QueryPlanOptimizationSettings & optimization_settings)
 {
-    LOG_DEBUG(getLogger("applyOrder"),
-        "Applying order optimization for node: {} {} soring props {} {}",
-         parent->step->getName(), parent->step->getStepDescription(),
-         properties ? properties->sort_description.size() : 0,
-         properties ? (properties->sort_scope == SortingProperty::SortScope::Global ? "Global" : "Stream") : "N/A");
-
     if (const auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(parent->step.get()))
         return {read_from_merge_tree->getSortDescription(), SortingProperty::SortScope::Stream};
 
@@ -95,15 +99,6 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
 
     if (auto * expression_step = typeid_cast<ExpressionStep *>(parent->step.get()))
     {
-        auto & dag = expression_step->getExpression();
-        LOG_DEBUG(getLogger("applyOrder"),
-            "Before applying ExpressionStep to sort description: {}, gag: inputs {}, outputs {}, nodes {} dump {}",
-            dumpSortDescription(properties->sort_description),
-            dag.getInputs().size(),
-            dag.getOutputs().size(),
-            dag.getNodes().size(),
-            dag.dumpDAG());
-
         applyActionsToSortDescription(properties->sort_description, expression_step->getExpression());
         return std::move(*properties);
     }
@@ -171,7 +166,7 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
     return {};
 }
 
-SortingProperty applyOrder(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root)
+void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root)
 {
     Stack stack;
     stack.push_back({.node = &root});
@@ -197,20 +192,9 @@ SortingProperty applyOrder(const QueryPlanOptimizationSettings & optimization_se
 
         auto it = properties.begin() + (properties.size() - node->children.size());
         auto property = applyOrder(node, (it == properties.end()) ? nullptr : &*it, optimization_settings);
-        LOG_DEBUG(getLogger("applyOrder"), "Resulting sorting property: {}, scope: {}",
-            property.sort_description.size(),
-            property.sort_scope == SortingProperty::SortScope::Global ? "Global" : "Stream");
-
         properties.erase(it, properties.end());
         properties.push_back(std::move(property));
     }
-
-    if (properties.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "After applying order optimization, properties size is {}, expected 1",
-            properties.size());
-
-    return properties[0];
 }
 
 }

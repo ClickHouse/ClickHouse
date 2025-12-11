@@ -4,7 +4,6 @@
 #include <Functions/IFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Core/SortDescription.h>
-#include <Common/logger_useful.h>
 
 #include <stack>
 
@@ -417,43 +416,25 @@ void applyActionsToSortDescription(
         sort_column.is_strict = chain.is_strict;
     }
 
-    for (const auto & sort_column : sort_columns)
-        LOG_DEBUG(getLogger("applyActionsToSortDescription"),
-            "sort_column info: input {}, output {}, is_monotonic_chain {}, is_strict {}, changes_order {}",
-            sort_column.input ? sort_column.input->result_name : "<null>",
-            sort_column.output ? sort_column.output->result_name : "<null>",
-            sort_column.is_monotonic_chain,
-            sort_column.is_strict,
-            sort_column.changes_order);
-
     size_t prefix_size = 0;
     while (prefix_size < descr_size)
     {
-        const auto & sort_column = sort_columns[prefix_size];
-
-        LOG_DEBUG(getLogger("applyActionsToSortDescription"),
-            "sort_column info: pref_size {} input {}, output {}, is_monotonic_chain {}, is_strict {}, changes_order {}",
-            prefix_size,
-            sort_column.input ? sort_column.input->result_name : "<null>",
-            sort_column.output ? sort_column.output->result_name : "<null>",
-            sort_column.is_monotonic_chain,
-            sort_column.is_strict,
-            sort_column.changes_order);
+        const auto & sort_colunm = sort_columns[prefix_size];
 
         /// No input is allowed : it means DAG did not use the column.
-        if (sort_column.input && !sort_column.output)
+        if (sort_colunm.input && !sort_colunm.output)
             break;
 
         auto & descr = description[prefix_size];
         ++prefix_size;
 
-        if (sort_column.output)
-            descr.column_name = sort_column.output->result_name;
+        if (sort_colunm.output)
+            descr.column_name = sort_colunm.output->result_name;
 
-        if (sort_column.changes_order)
+        if (sort_colunm.changes_order)
             descr.direction *= -1;
 
-        if (!sort_column.is_strict)
+        if (!sort_colunm.is_strict)
             break;
     }
 

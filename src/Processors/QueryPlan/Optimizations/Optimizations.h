@@ -1,7 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Core/SortDescription.h>
 #include <array>
 
 class SipHash;
@@ -195,21 +194,8 @@ bool convertLogicalJoinToPhysical(
 
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 
-struct SortingProperty
-{
-    /// Sorting scope.
-    enum class SortScope : uint8_t
-    {
-        Stream = 0, /// Each data steam is sorted
-        Global = 1, /// Data is globally sorted
-    };
-
-    SortDescription sort_description = {};
-    SortScope sort_scope = SortScope::Stream;
-};
-
 /// A separate tree traverse to apply sorting properties after *InOrder optimizations.
-SortingProperty applyOrder(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
+void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
 
 /// Returns the name of used projection or nullopt if no projection is used.
 std::optional<String> optimizeUseAggregateProjections(

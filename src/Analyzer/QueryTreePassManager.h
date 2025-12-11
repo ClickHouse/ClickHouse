@@ -47,6 +47,6 @@ private:
     std::vector<QueryTreePassPtr> passes;
 };
 
-void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze = false, bool skip_optimize_redundant_functions_in_order_by = false);
+void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze = false);
 
 }
