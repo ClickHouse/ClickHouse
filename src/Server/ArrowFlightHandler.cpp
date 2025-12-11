@@ -1403,11 +1403,11 @@ commandSelector(const google::protobuf::Any & any_msg, bool schema_only = false)
                     auto end = arr.getOffsets()[i];
                     for (size_t j = 0; j < end - start; ++j)
                     {
-                        const auto name = name_col.getDataAt(start + j).toString();
-                        const auto type = type_col.getDataAt(start + j).toString();
+                        const auto name = name_col.getDataAt(start + j);
+                        const auto type = type_col.getDataAt(start + j);
 
-                        auto data_type = DataTypeFactory::instance().get(type);
-                        table_columns.emplace_back(nullptr, data_type, name);
+                        auto data_type = DataTypeFactory::instance().get(String(type));
+                        table_columns.emplace_back(nullptr, data_type, String(name));
                     }
                     auto table_schema = CHColumnToArrowColumn::calculateArrowSchema(table_columns, "Arrow", nullptr, {.output_string_as_string = true});
                     auto serialized_buffer = arrow::ipc::SerializeSchema(*table_schema, arrow::default_memory_pool()).ValueOrDie();

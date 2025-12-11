@@ -127,7 +127,7 @@ namespace DB
             if (null_bytemap && (*null_bytemap)[value_i])
                 status = builder.AppendNull();
             else
-                status = builder.Append(write_column->getDataAt(value_i).toView());
+                status = builder.Append(write_column->getDataAt(value_i));
             checkStatus(status, write_column->getName(), format_name);
         }
     }
