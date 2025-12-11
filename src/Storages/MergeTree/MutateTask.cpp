@@ -267,10 +267,13 @@ static void splitAndModifyMutationCommands(
                     {
                         for (const auto & col_name : it->expression->getRequiredColumns())
                         {
-                            for_interpreter.emplace_back(
-                                MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = col_name});
+                            if (!part_columns.has(col_name))
+                            {
+                                for_interpreter.emplace_back(
+                                    MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = col_name});
 
-                            mutated_columns.emplace(col_name);
+                                mutated_columns.emplace(col_name);
+                            }
                         }
                     }
                 }
