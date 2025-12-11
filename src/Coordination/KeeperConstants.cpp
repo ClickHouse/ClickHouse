@@ -269,7 +269,7 @@
     M(KeeperGetRequest) \
     M(KeeperListRequest) \
     M(KeeperExistsRequest) \
-    M(KeeperSetWatchRequest) \
+    M(KeeperSetWatchesRequest) \
     M(KeeperCheckWatchRequest) \
     M(KeeperAddWatchRequest) \
     M(KeeperRemoveWatchRequest) \

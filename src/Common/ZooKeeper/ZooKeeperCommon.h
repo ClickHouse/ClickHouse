@@ -639,7 +639,7 @@ struct ZooKeeperAddWatchResponse : AddWatchResponse, ZooKeeperResponse
     size_t bytesSize() const override { return AddWatchResponse::bytesSize(); }
 };
 
-struct ZooKeeperSetWatchRequest : SetWatchRequest, ZooKeeperRequest
+struct ZooKeeperSetWatchesRequest : SetWatchesRequest, ZooKeeperRequest
 {
     OpNum getOpNum() const override { return OpNum::SetWatch; }
     void writeImpl(WriteBuffer & out) const override;
@@ -649,7 +649,7 @@ struct ZooKeeperSetWatchRequest : SetWatchRequest, ZooKeeperRequest
     ZooKeeperResponsePtr makeResponse() const override;
     bool isReadRequest() const override { return true; }
 
-    size_t bytesSize() const override { return SetWatchRequest::bytesSize(); }
+    size_t bytesSize() const override { return SetWatchesRequest::bytesSize(); }
 };
 
 struct ZooKeeperSetWatchResponse : SetWatchesResponse, ZooKeeperResponse
@@ -662,7 +662,7 @@ struct ZooKeeperSetWatchResponse : SetWatchesResponse, ZooKeeperResponse
     size_t bytesSize() const override { return SetWatchesResponse::bytesSize(); }
 };
 
-struct ZooKeeperSetWatch2Request : SetWatch2Request, ZooKeeperRequest
+struct ZooKeeperSetWatches2Request : SetWatches2Request, ZooKeeperRequest
 {
     OpNum getOpNum() const override { return OpNum::SetWatch2; }
     void writeImpl(WriteBuffer & out) const override;
@@ -672,7 +672,7 @@ struct ZooKeeperSetWatch2Request : SetWatch2Request, ZooKeeperRequest
     ZooKeeperResponsePtr makeResponse() const override;
     bool isReadRequest() const override { return true; }
 
-    size_t bytesSize() const override { return SetWatch2Request::bytesSize(); }
+    size_t bytesSize() const override { return SetWatches2Request::bytesSize(); }
 };
 
 struct ZooKeeperSetWatch2Response : SetWatches2Response, ZooKeeperResponse

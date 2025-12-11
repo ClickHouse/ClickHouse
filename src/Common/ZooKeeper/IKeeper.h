@@ -337,7 +337,7 @@ struct AddWatchResponse : virtual Response
 {
 };
 
-struct SetWatchRequest : virtual Request
+struct SetWatchesRequest : virtual Request
 {
     int64_t zxid;
     std::vector<String> child_watches;
@@ -371,7 +371,7 @@ struct SetWatchesResponse : virtual Response
 };
 
 
-struct SetWatch2Request : virtual SetWatchRequest
+struct SetWatches2Request : virtual SetWatchesRequest
 {
     std::vector<String> persistent_watches;
     std::vector<String> persistent_recursive_watches;
@@ -380,7 +380,7 @@ struct SetWatch2Request : virtual SetWatchRequest
     void addRootPath(const String &) override {}
     size_t bytesSize() const override
     {
-        size_t result = SetWatchRequest::bytesSize();
+        size_t result = SetWatchesRequest::bytesSize();
         result += pathesSize(persistent_watches);
         result += pathesSize(persistent_recursive_watches);
         return result;

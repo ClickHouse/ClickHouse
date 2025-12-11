@@ -46,7 +46,7 @@ namespace ProfileEvents
     extern const Event KeeperExistsRequest;
     extern const Event KeeperPreprocessElapsedMicroseconds;
     extern const Event KeeperProcessElapsedMicroseconds;
-    extern const Event KeeperSetWatchRequest;
+    extern const Event KeeperSetWatchesRequest;
     extern const Event KeeperCheckWatchRequest;
     extern const Event KeeperRemoveWatchRequest;
     extern const Event KeeperAddWatchRequest;
@@ -70,6 +70,7 @@ namespace CoordinationSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace FailPoints
@@ -1534,9 +1535,9 @@ auto callOnConcreteRequestType(const Coordination::ZooKeeperRequest & zk_request
         case Coordination::OpNum::AddWatch:
             return function(static_cast<const Coordination::ZooKeeperAddWatchRequest &>(zk_request));
         case Coordination::OpNum::SetWatch:
-            return function(static_cast<const Coordination::ZooKeeperSetWatchRequest &>(zk_request));
+            return function(static_cast<const Coordination::ZooKeeperSetWatchesRequest &>(zk_request));
         case Coordination::OpNum::SetWatch2:
-            return function(static_cast<const Coordination::ZooKeeperSetWatch2Request &>(zk_request));
+            return function(static_cast<const Coordination::ZooKeeperSetWatches2Request &>(zk_request));
         case Coordination::OpNum::CheckWatch:
             return function(static_cast<const Coordination::ZooKeeperCheckWatchRequest &>(zk_request));
         case Coordination::OpNum::RemoveWatch:
@@ -2601,7 +2602,7 @@ template <typename Storage>
 Coordination::ZooKeeperResponsePtr
 processLocal(const Coordination::ZooKeeperCheckWatchRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t session_id)
 {
-    ProfileEvents::increment(ProfileEvents::KeeperSetWatchRequest);
+    ProfileEvents::increment(ProfileEvents::KeeperSetWatchesRequest);
     return processImpl<true>(zk_request, storage, std::move(deltas), session_id);
 }
 
@@ -2646,7 +2647,20 @@ processImpl(const Coordination::ZooKeeperRemoveWatchRequest & zk_request, Storag
         }
     }
 
-    storage.removePersistentWatch(zk_request.path, zk_request.type, session_id);
+    try
+    {
+        storage.removePersistentWatch(zk_request.path, zk_request.type, session_id);
+    }
+    catch (const Exception & ex)
+    {
+        if (ex.code() == ErrorCodes::BAD_ARGUMENTS)
+        {
+            response->error = Coordination::Error::ZBADARGUMENTS;
+            return response;
+        }
+        else
+            throw;
+    }
 
     return response;
 }
@@ -2661,7 +2675,7 @@ template <typename Storage>
 Coordination::ZooKeeperResponsePtr
 processLocal(const Coordination::ZooKeeperRemoveWatchRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t session_id)
 {
-    ProfileEvents::increment(ProfileEvents::KeeperSetWatchRequest);
+    ProfileEvents::increment(ProfileEvents::KeeperSetWatchesRequest);
     return processImpl<true>(zk_request, storage, std::move(deltas), session_id);
 }
 
@@ -2706,7 +2720,20 @@ processImpl(const Coordination::ZooKeeperAddWatchRequest & zk_request, Storage &
         }
     }
 
-    storage.addPersistentWatch(zk_request.path, zk_request.mode, session_id);
+    try
+    {
+        storage.addPersistentWatch(zk_request.path, zk_request.mode, session_id);
+    }
+    catch (const Exception & ex)
+    {
+        if (ex.code() == ErrorCodes::BAD_ARGUMENTS)
+        {
+            response->error = Coordination::Error::ZBADARGUMENTS;
+            return response;
+        }
+        else
+            throw;
+    }
     return response;
 }
 
@@ -2720,7 +2747,7 @@ template <typename Storage>
 Coordination::ZooKeeperResponsePtr
 processLocal(const Coordination::ZooKeeperAddWatchRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t session_id)
 {
-    ProfileEvents::increment(ProfileEvents::KeeperSetWatchRequest);
+    ProfileEvents::increment(ProfileEvents::KeeperSetWatchesRequest);
     return processImpl<true>(zk_request, storage, std::move(deltas), session_id);
 }
 
@@ -2729,7 +2756,7 @@ processLocal(const Coordination::ZooKeeperAddWatchRequest & zk_request, Storage 
 
 /// SET WATCHES Request ///
 template <typename Storage>
-bool checkAuth(const Coordination::ZooKeeperSetWatchRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
+bool checkAuth(const Coordination::ZooKeeperSetWatchesRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
 {
     return storage.checkACL(zk_request.getPath(), Coordination::ACL::Write, session_id, is_local);
 }
@@ -2737,7 +2764,7 @@ bool checkAuth(const Coordination::ZooKeeperSetWatchRequest & zk_request, Storag
 
 template <typename Storage>
 std::list<KeeperStorageBase::Delta> preprocess(
-    const Coordination::ZooKeeperSetWatchRequest & zk_request,
+    const Coordination::ZooKeeperSetWatchesRequest & zk_request,
     Storage & storage,
     int64_t zxid,
     int64_t /* session_id */,
@@ -2745,7 +2772,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     uint64_t * /* digest */,
     const KeeperContext & /*keeper_context*/)
 {
-    ProfileEvents::increment(ProfileEvents::KeeperSetWatchRequest);
+    ProfileEvents::increment(ProfileEvents::KeeperSetWatchesRequest);
 
     for (const auto & path : zk_request.data_watches)
     {
@@ -2770,7 +2797,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
 
 template <bool local, typename Storage>
 Coordination::ZooKeeperResponsePtr
-processImpl(const Coordination::ZooKeeperSetWatchRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t session_id)
+processImpl(const Coordination::ZooKeeperSetWatchesRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t session_id)
 {
     auto response = std::make_shared<Coordination::ZooKeeperSetWatchResponse>();
     if constexpr (!local)
@@ -2795,16 +2822,16 @@ processImpl(const Coordination::ZooKeeperSetWatchRequest & zk_request, Storage &
 }
 
 template <typename Storage>
-Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperSetWatchRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t session_id)
+Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperSetWatchesRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t session_id)
 {
     return processImpl<false>(zk_request, storage, std::move(deltas), session_id);
 }
 
 template <typename Storage>
 Coordination::ZooKeeperResponsePtr
-processLocal(const Coordination::ZooKeeperSetWatchRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t session_id)
+processLocal(const Coordination::ZooKeeperSetWatchesRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t session_id)
 {
-    ProfileEvents::increment(ProfileEvents::KeeperSetWatchRequest);
+    ProfileEvents::increment(ProfileEvents::KeeperSetWatchesRequest);
     return processImpl<true>(zk_request, storage, std::move(deltas), session_id);
 }
 
@@ -2812,7 +2839,7 @@ processLocal(const Coordination::ZooKeeperSetWatchRequest & zk_request, Storage 
 
 /// SET WATCHES 2 Request ///
 template <typename Storage>
-bool checkAuth(const Coordination::ZooKeeperSetWatch2Request & /*zk_request*/, Storage & /*storage*/, int64_t /*session_id*/, bool /*is_local*/)
+bool checkAuth(const Coordination::ZooKeeperSetWatches2Request & /*zk_request*/, Storage & /*storage*/, int64_t /*session_id*/, bool /*is_local*/)
 {
     return /*storage.checkACL(zk_request.getPath(), Coordination::ACL::Write, session_id, is_local)*/ true;
 }
@@ -2820,7 +2847,7 @@ bool checkAuth(const Coordination::ZooKeeperSetWatch2Request & /*zk_request*/, S
 
 template <typename Storage>
 std::list<KeeperStorageBase::Delta> preprocess(
-    const Coordination::ZooKeeperSetWatch2Request & zk_request,
+    const Coordination::ZooKeeperSetWatches2Request & zk_request,
     Storage & storage,
     int64_t zxid,
     int64_t /* session_id */,
@@ -2828,7 +2855,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     uint64_t * /* digest */,
     const KeeperContext & /*keeper_context*/)
 {
-    ProfileEvents::increment(ProfileEvents::KeeperSetWatchRequest);
+    ProfileEvents::increment(ProfileEvents::KeeperSetWatchesRequest);
 
     for (const auto & path : zk_request.data_watches)
     {
@@ -2866,7 +2893,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
 
 template <bool local, typename Storage>
 Coordination::ZooKeeperResponsePtr
-processImpl(const Coordination::ZooKeeperSetWatch2Request & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t session_id)
+processImpl(const Coordination::ZooKeeperSetWatches2Request & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t session_id)
 {
     auto response = zk_request.makeResponse();
     if constexpr (!local)
@@ -2890,16 +2917,16 @@ processImpl(const Coordination::ZooKeeperSetWatch2Request & zk_request, Storage 
 }
 
 template <typename Storage>
-Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperSetWatch2Request & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t session_id)
+Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperSetWatches2Request & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t session_id)
 {
     return processImpl<false>(zk_request, storage, std::move(deltas), session_id);
 }
 
 template <typename Storage>
 Coordination::ZooKeeperResponsePtr
-processLocal(const Coordination::ZooKeeperSetWatch2Request & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t session_id)
+processLocal(const Coordination::ZooKeeperSetWatches2Request & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t session_id)
 {
-    ProfileEvents::increment(ProfileEvents::KeeperSetWatchRequest);
+    ProfileEvents::increment(ProfileEvents::KeeperSetWatchesRequest);
     return processImpl<true>(zk_request, storage, std::move(deltas), session_id);
 }
 
@@ -4384,6 +4411,8 @@ void KeeperStorageBase::addPersistentWatch(const String & path, Coordination::Ad
     {
         case Coordination::AddWatchRequest::AddWatchMode::PERSISTENT:
         {
+            if (persistent_watches[path].contains(session_id))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Session {} already contains persistent watch with path {}", session_id, path);
             persistent_watches[path].insert(session_id);
             ++total_watches_count;
             sessions_and_watchers[session_id].emplace(WatchInfo{.path = path, .is_list_watch = false, .is_persistent = true, .trigger_on_exists = false});
@@ -4391,6 +4420,8 @@ void KeeperStorageBase::addPersistentWatch(const String & path, Coordination::Ad
         }
         case Coordination::AddWatchRequest::AddWatchMode::PERSISTENT_RECURSIVE:
         {
+            if (persistent_recursive_watches[path].contains(session_id))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Session {} already contains persistent recursive watch with path {}", session_id, path);
             persistent_recursive_watches[path].insert(session_id);
             ++total_watches_count;
             sessions_and_watchers[session_id].emplace(WatchInfo{.path = path, .is_list_watch = true, .is_persistent = true, .trigger_on_exists = false});
@@ -4408,6 +4439,9 @@ void KeeperStorageBase::setWatches(const std::vector<String> & watches_paths,
 {
     for (const auto & path : watches_paths)
     {
+        if (watches[path].contains(session_id))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Session {} already contains watch with path {}", session_id, path);
+
         watches[path].insert(session_id);
         sessions_and_watchers[session_id].emplace(WatchInfo{.path = path, .is_list_watch = false, .is_persistent = false, .trigger_on_exists = false});
         ++total_watches_count;
@@ -4415,6 +4449,9 @@ void KeeperStorageBase::setWatches(const std::vector<String> & watches_paths,
 
     for (const auto & path : list_watches_paths)
     {
+        if (list_watches[path].contains(session_id))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Session {} already contains list watch with path {}", session_id, path);
+
         list_watches[path].insert(session_id);
         sessions_and_watchers[session_id].emplace(WatchInfo{.path = path, .is_list_watch = true, .is_persistent = false, .trigger_on_exists = false});
         ++total_watches_count;
@@ -4422,6 +4459,9 @@ void KeeperStorageBase::setWatches(const std::vector<String> & watches_paths,
 
     for (const auto & path : exist_watches_paths)
     {
+        if (exist_watches[path].contains(session_id))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Session {} already contains exist watch with path {}", session_id, path);
+
         exist_watches[path].insert(session_id);
         sessions_and_watchers[session_id].emplace(WatchInfo{.path = path, .is_list_watch = false, .is_persistent = false, .trigger_on_exists = true});
         ++total_watches_count;
@@ -4429,6 +4469,9 @@ void KeeperStorageBase::setWatches(const std::vector<String> & watches_paths,
 
     for (const auto & path : persistent_watches_paths)
     {
+        if (persistent_watches[path].contains(session_id))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Session {} already contains persistent watch with path {}", session_id, path);
+
         persistent_watches[path].insert(session_id);
         sessions_and_watchers[session_id].emplace(WatchInfo{.path = path, .is_list_watch = false, .is_persistent = true, .trigger_on_exists = false});
         ++total_watches_count;
@@ -4436,6 +4479,9 @@ void KeeperStorageBase::setWatches(const std::vector<String> & watches_paths,
 
     for (const auto & path : persistent_recursive_watches_paths)
     {
+        if (persistent_recursive_watches[path].contains(session_id))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Session {} already contains persistent recursive watch with path {}", session_id, path);
+
         persistent_recursive_watches[path].insert(session_id);
         sessions_and_watchers[session_id].emplace(WatchInfo{.path = path, .is_list_watch = true, .is_persistent = true, .trigger_on_exists = false});
         ++total_watches_count;
