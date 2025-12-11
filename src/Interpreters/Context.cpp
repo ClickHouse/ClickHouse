@@ -2601,12 +2601,9 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         uint64_t use_structure_from_insertion_table_in_table_functions
             = getSettingsRef()[Setting::use_structure_from_insertion_table_in_table_functions];
         if (select_query_hint && use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint()
-            && hasInsertionTable())
+            && hasInsertionTableColumnsDescription())
         {
-            const auto & insert_columns = DatabaseCatalog::instance()
-                                              .getTable(getInsertionTable(), shared_from_this())
-                                              ->getInMemoryMetadataPtr()
-                                              ->getColumns();
+            const auto & insert_columns = *getInsertionTableColumnsDescription();
 
             const auto & insert_column_names = hasInsertionTableColumnNames() ? *getInsertionTableColumnNames() : insert_columns.getOrdinary().getNames();
             DB::ColumnsDescription structure_hint;
@@ -3140,6 +3137,14 @@ bool Context::isCurrentQueryKilled() const
     return false;
 }
 
+void Context::setInsertionTable(StorageID db_and_table, std::optional<Names> column_names, std::optional<ColumnsDescription> column_description)
+{
+    insertion_table_info = {
+        .table = std::move(db_and_table),
+        .column_names = std::move(column_names),
+        .columns_description = std::move(column_description),
+    };
+}
 
 String Context::getDefaultFormat() const
 {
