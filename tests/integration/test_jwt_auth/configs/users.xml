@@ -1,0 +1,15 @@
+<clickhouse>
+    <profiles>
+        <default>
+        </default>
+    </profiles>
+    <users>
+        <jwt_user>
+            <jwt>
+<!--                <claims>{"resource_access": "view-profile"}</claims>-->
+            </jwt>
+            <profile>default</profile>
+            <quota>default</quota>
+        </jwt_user>
+    </users>
+</clickhouse>
