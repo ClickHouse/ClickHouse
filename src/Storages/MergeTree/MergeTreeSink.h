@@ -1,12 +1,11 @@
 #pragma once
 
-#include "Common/HashTable/HashMap.h"
-#include "Processors/Transforms/DeduplicationTokenTransforms.h"
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/ProfileEvents.h>
 
-#include "MergeTreeDataWriter.h"
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
 
 
 namespace DB

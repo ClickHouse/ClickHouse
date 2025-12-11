@@ -1,14 +1,14 @@
 #include <exception>
 
-#include "Common/FieldVisitorHash.h"
+#include <Core/Settings.h>
+#include <DataTypes/ObjectUtils.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/PartLog.h>
+#include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/StorageMergeTree.h>
-#include <Interpreters/PartLog.h>
-#include <Interpreters/Context.h>
-#include <Processors/Transforms/DeduplicationTokenTransforms.h>
-#include <DataTypes/ObjectUtils.h>
+#include <Common/FieldVisitorHash.h>
 #include <Common/ProfileEventsScope.h>
-#include <Core/Settings.h>
 
 
 namespace ProfileEvents
@@ -27,7 +27,6 @@ namespace Setting
 {
     extern const SettingsBool insert_deduplicate;
     extern const SettingsUInt64 max_insert_delayed_streams_for_parallel_write;
-    extern const SettingsBool insert_parts_buffered;
     extern const SettingsUInt64 max_insert_parts_buffer_rows;
     extern const SettingsUInt64 max_insert_parts_buffer_bytes;
 }
@@ -303,7 +302,9 @@ void MergeTreeSink::flushPartsBuffer(bool just_one_bucket)
         parts_buffer_bytes -= data.bytes;
         parts_buffer.erase(key);
         parts_heap.erase(heap_iter);
-    } else {
+    }
+    else
+    {
         for (auto & partition : parts_buffer)
             flushOnePartition(partition);
 

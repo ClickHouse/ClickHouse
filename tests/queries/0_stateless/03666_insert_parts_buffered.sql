@@ -1,3 +1,7 @@
+-- Tags: no-fasttest, no-parallel
+-- no-fasttest: using SYSTEM STOP MERGES
+-- no-replicated-database: using SYSTEM STOP MERGES
+
 SYSTEM STOP MERGES;
 
 
@@ -51,7 +55,7 @@ FROM table_src;
 
 SELECT COUNT(*) -- >=240
 FROM system.parts
-WHERE table = 'table_dst';
+WHERE database = currentDatabase() AND table = 'table_dst';
 
 
 -- Collect garbage
@@ -62,7 +66,7 @@ SELECT sleep(3) FORMAT Null; -- Wait for old_parts_lifetime to pass
 
 SELECT COUNT(*) -- <5
 FROM system.parts
-WHERE table = 'table_dst';
+WHERE database = currentDatabase() AND table = 'table_dst';
 
 
 -- Check that unnecessary parts are not created with the setting
@@ -74,7 +78,7 @@ FROM table_src;
 
 SELECT COUNT(*) FROM table_dst; -- =2000000
 SELECT COUNT(*) FROM system.parts -- <200
-WHERE table = 'table_dst';
+WHERE database = currentDatabase() AND table = 'table_dst';
 
 
 -- Collect garbage
@@ -85,7 +89,7 @@ SELECT sleep(3) FORMAT Null; -- Wait for old_parts_lifetime to pass
 
 SELECT COUNT(*) -- <5
 FROM system.parts
-WHERE table = 'table_dst';
+WHERE database = currentDatabase() AND table = 'table_dst';
 
 
 -- Check that some additional parts are created when the buffer is small
@@ -97,10 +101,10 @@ FROM table_src;
 
 SELECT COUNT(*) FROM table_dst; -- =2000000
 SELECT COUNT(*) FROM system.parts -- >200
-WHERE table = 'table_dst';
+WHERE database = currentDatabase() AND table = 'table_dst';
 
 OPTIMIZE TABLE table_dst FINAL;
 SELECT sleep(3) FORMAT Null;
 
 SELECT COUNT(*) FROM system.parts -- =120
-WHERE table = 'table_dst';
+WHERE database = currentDatabase() AND table = 'table_dst';
