@@ -69,12 +69,6 @@ std::future<Result> scheduleFromThreadPoolUnsafe(T && task, ThreadPool & pool, T
 template <typename Result, typename PoolT = ThreadPool, typename Callback = std::function<Result()>>
 class ThreadPoolCallbackRunnerLocal final
 {
-    static_assert(!std::is_same_v<PoolT, GlobalThreadPool>, "Scheduling tasks directly on GlobalThreadPool is not allowed because it doesn't set up CurrentThread. Create a new ThreadPool (local or in SharedThreadPools.h) or use ThreadFromGlobalPool.");
-
-    PoolT & pool;
-    ThreadName thread_name;
-
-public:
     enum TaskState
     {
         SCHEDULED = 0,
@@ -83,6 +77,7 @@ public:
         CANCELLED = 3,
     };
 
+public:
     struct Task
     {
         std::future<Result> future;
@@ -90,6 +85,14 @@ public:
     };
 
 private:
+    static_assert(
+        !std::is_same_v<PoolT, GlobalThreadPool>,
+        "Scheduling tasks directly on GlobalThreadPool is not allowed because it doesn't set up CurrentThread. Create a new ThreadPool "
+        "(local or in SharedThreadPools.h) or use ThreadFromGlobalPool.");
+
+    PoolT & pool;
+    ThreadName thread_name;
+
     /// NOTE It will leak for a global object with long lifetime
     std::vector<std::shared_ptr<Task>> tasks;
 
@@ -212,7 +215,7 @@ public:
         tasks.emplace_back(enqueueAndGiveOwnership(std::move(callback), priority, wait_microseconds));
     }
 
-    void waitForAllToFinish()
+    static void waitForAllToFinish(std::vector<std::shared_ptr<Task>> & tasks)
     {
         for (const auto & task : tasks)
         {
@@ -225,9 +228,11 @@ public:
         }
     }
 
-    void waitForAllToFinishAndRethrowFirstError()
+    void waitForAllToFinish() { waitForAllToFinish(tasks); }
+
+    static void waitForAllToFinishAndRethrowFirstError(std::vector<std::shared_ptr<Task>> & tasks)
     {
-        waitForAllToFinish();
+        waitForAllToFinish(tasks);
 
         for (auto & task : tasks)
         {
@@ -239,6 +244,8 @@ public:
 
         tasks.clear();
     }
+
+    void waitForAllToFinishAndRethrowFirstError() { waitForAllToFinishAndRethrowFirstError(tasks); }
 };
 
 /// Has a task queue and a set of threads from ThreadPool.
