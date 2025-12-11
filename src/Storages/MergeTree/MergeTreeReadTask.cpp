@@ -80,7 +80,7 @@ MergeTreeReadTask::MergeTreeReadTask(
 }
 
 /// Returns pointer to the index if all columns in the read step belongs to the read step for that index.
-static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & index_read_tasks, const NamesAndTypesList & columns_to_read)
+static const MergeTreeIndexWithCondition * getIndexForReadStep(const IndexReadTasks & index_read_tasks, const NamesAndTypesList & columns_to_read)
 {
     if (index_read_tasks.empty())
         return nullptr;
@@ -117,7 +117,7 @@ static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & 
     if (!index_for_step.empty() && !non_index_column.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Found non-index column {} in read step for index {}", non_index_column, index_for_step);
 
-    return index_for_step.empty() ? nullptr : &index_read_tasks.at(index_for_step);
+    return index_for_step.empty() ? nullptr : &index_read_tasks.at(index_for_step).index;
 }
 
 MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
@@ -136,7 +136,6 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             part_info,
             columns_to_read,
             extras.storage_snapshot,
-            read_info->data_part->storage.getSettings(),
             ranges,
             read_info->const_virtual_fields,
             extras.uncompressed_cache,
@@ -147,23 +146,6 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             extras.profile_callback);
     };
 
-    auto can_skip_mark = [&](const DataPartPtr & data_part)
-    {
-        switch (data_part->storage.merging_params.mode)
-        {
-            case MergeTreeData::MergingParams::Replacing:
-            case MergeTreeData::MergingParams::Coalescing:
-                /**
-                 * When a text index created on a table with the ReplacingMergeTree or CoalescingMergeTree engine, marks cannot
-                 * be directly skipped due to search terms might exist only on the old parts but does not exist in new parts.
-                 * Replacing and Coalescing merge strategies would handle such cases but it still needs the range marks to operate.
-                 */
-                return false;
-            default:
-                return true;
-        }
-    };
-
     new_readers.main = create_reader(read_info->task_columns.columns, false);
 
     bool is_vector_search = read_info->read_hints.vector_search_results.has_value();
@@ -172,12 +154,8 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 
     for (const auto & pre_columns_per_step : read_info->task_columns.pre_columns)
     {
-        if (const auto * index_read_task = getIndexReadTaskForReadStep(read_info->index_read_tasks, pre_columns_per_step))
-            new_readers.prewhere.push_back(createMergeTreeReaderIndex(
-                new_readers.main.get(),
-                index_read_task->index,
-                pre_columns_per_step,
-                index_read_task->is_final && can_skip_mark(read_info->data_part) /* this condition only applies to a FINAL query. */));
+        if (const auto * index = getIndexForReadStep(read_info->index_read_tasks, pre_columns_per_step))
+            new_readers.prewhere.push_back(createMergeTreeReaderIndex(new_readers.main.get(), *index, pre_columns_per_step));
         else
             new_readers.prewhere.push_back(create_reader(pre_columns_per_step, true));
 
@@ -191,7 +169,6 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             read_info->patch_parts[part_idx].part,
             read_info->task_columns.patch_columns[part_idx],
             extras.storage_snapshot,
-            read_info->data_part->storage.getSettings(),
             patches_ranges[part_idx],
             read_info->const_virtual_fields,
             extras.uncompressed_cache,
@@ -216,7 +193,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
     const Readers & task_readers,
     const PrewhereExprInfo & prewhere_actions,
-    const ReadStepsPerformanceCounters & read_steps_performance_counters)
+    ReadStepsPerformanceCounters & read_steps_performance_counters)
 {
     if (prewhere_actions.steps.size() != task_readers.prewhere.size())
     {
@@ -268,7 +245,7 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
 void MergeTreeReadTask::initializeReadersChain(
     const PrewhereExprInfo & prewhere_actions,
     MergeTreeIndexBuildContextPtr index_build_context,
-    const ReadStepsPerformanceCounters & read_steps_performance_counters)
+    ReadStepsPerformanceCounters & read_steps_performance_counters)
 {
     if (readers_chain.isInitialized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Range readers chain is already initialized");
