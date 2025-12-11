@@ -1315,7 +1315,7 @@ commandSelector(const google::protobuf::Any & any_msg, bool schema_only = false)
         if (command.has_db_schema_filter_pattern())
             where.push_back("database LIKE '" + command.db_schema_filter_pattern() + "'");
 
-        auto where_expression = where.size() ? " WHERE " + boost::algorithm::join(where, " AND ") : "";
+        auto where_expression = where.empty() ? "" : " WHERE " + boost::algorithm::join(where, " AND ");
 
         sql = "SELECT NULL::Nullable(String) AS catalog_name, name AS db_schema_name FROM system.databases" + where_expression;
     }
@@ -1335,7 +1335,7 @@ commandSelector(const google::protobuf::Any & any_msg, bool schema_only = false)
         std::vector<std::string> where;
         where.push_back("database = '" + (command.has_db_schema() ? command.db_schema() : "default") + "'");
         where.push_back("name = '" + command.table() + "'");
-        auto where_expression = where.size() ? " WHERE " + boost::algorithm::join(where, " AND ") : "";
+        auto where_expression = where.empty() ? "" : " WHERE " + boost::algorithm::join(where, " AND ");
 
         sql =
             "SELECT "
@@ -1358,7 +1358,7 @@ commandSelector(const google::protobuf::Any & any_msg, bool schema_only = false)
             where.push_back("database LIKE '" + command.db_schema_filter_pattern() + "'");
         if (command.has_table_name_filter_pattern())
             where.push_back("table LIKE '" + command.table_name_filter_pattern() + "'");
-        auto where_expression = where.size() ? " WHERE " + boost::algorithm::join(where, " AND ") : "";
+        auto where_expression = where.empty() ? "" : " WHERE " + boost::algorithm::join(where, " AND ");
 
         if (command.include_schema())
         {
