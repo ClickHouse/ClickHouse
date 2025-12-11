@@ -197,9 +197,6 @@ struct StatisticsFixedStringCopy
 
 struct StatisticsStringRef
 {
-    String str_min;
-    String str_max;
-
     parquet::ByteArray min;
     parquet::ByteArray max;
 
@@ -240,19 +237,13 @@ struct StatisticsStringRef
     void addMin(parquet::ByteArray x)
     {
         if (min.ptr == nullptr || compare(x, min) < 0)
-        {
-            str_min.assign(reinterpret_cast<const char *>(x.ptr), x.len);
-            min = parquet::ByteArray(static_cast<UInt32>(str_min.size()), reinterpret_cast<const uint8_t *>(str_min.data()));
-        }
+            min = x;
     }
 
     void addMax(parquet::ByteArray x)
     {
         if (max.ptr == nullptr || compare(x, max) > 0)
-        {
-            str_max.assign(reinterpret_cast<const char *>(x.ptr), x.len);
-            max = parquet::ByteArray(static_cast<UInt32>(str_max.size()), reinterpret_cast<const uint8_t *>(str_max.data()));
-        }
+            max = x;
     }
 
     static int compare(parquet::ByteArray a, parquet::ByteArray b)
@@ -261,6 +252,82 @@ struct StatisticsStringRef
         if (t != 0)
             return t;
         return a.len - b.len;
+    }
+};
+
+struct StatisticsStringCopy
+{
+    String min;
+    String max;
+
+    void add(parquet::ByteArray x)
+    {
+        addMin(x);
+        addMax(x);
+    }
+
+    void merge(const StatisticsStringCopy & s)
+    {
+        if (s.min.empty())
+            return;
+        addMin(s.min);
+        addMax(s.max);
+    }
+
+    void clear() { *this = {}; }
+
+    parq::Statistics get(const WriteOptions & options) const
+    {
+        parq::Statistics s;
+        if (min.empty())
+            return s;
+        if (min.size() <= options.max_statistics_size)
+        {
+            s.__set_min_value(std::string(min.data(), min.size()));
+            s.__set_is_min_value_exact(true);
+        }
+        if (max.size() <= options.max_statistics_size)
+        {
+            s.__set_max_value(std::string(max.data(), max.size()));
+            s.__set_is_max_value_exact(true);
+        }
+        return s;
+    }
+
+    void addMin(const String & x)
+    {
+        addMin(parquet::ByteArray(static_cast<UInt32>(x.size()), reinterpret_cast<const uint8_t *>(x.data())));
+    }
+
+    void addMin(parquet::ByteArray x)
+    {
+        if (min.empty() || compare(x, min) < 0)
+        {
+            // assign to String to make a copy only when we update min
+            min.assign(reinterpret_cast<const char *>(x.ptr), x.len);
+        }
+    }
+
+    void addMax(const String & x)
+    {
+        addMax(parquet::ByteArray(static_cast<UInt32>(x.size()), reinterpret_cast<const uint8_t *>(x.data())));
+    }
+
+    void addMax(parquet::ByteArray x)
+    {
+        if (max.empty() || compare(x, max) > 0)
+        {
+            // assign to String to make a copy only when we update max
+            max.assign(reinterpret_cast<const char *>(x.ptr), x.len);
+        }
+    }
+
+    static int compare(parquet::ByteArray a, const String & b)
+    {
+        int t = memcmp(a.ptr, b.data(), std::min(a.len, static_cast<UInt32>(b.size())));
+        if (t != 0)
+            return t;
+        return a.len - static_cast<UInt32>(b.size());
     }
 };
 
@@ -452,7 +519,7 @@ struct ConverterNumberAsFixedString
 
 struct ConverterJSON
 {
-    using Statistics = StatisticsStringRef;
+    using Statistics = StatisticsStringCopy;
 
     const ColumnObject & column;
     DataTypePtr data_type;
