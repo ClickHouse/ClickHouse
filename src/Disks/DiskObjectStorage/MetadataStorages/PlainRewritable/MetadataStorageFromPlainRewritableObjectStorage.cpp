@@ -149,7 +149,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                 }
             }
 
-            runner([remote_path, object_path = file->getPath(), metadata = file->metadata, &log, &settings, this, &remote_layout, &remote_layout_mutex]
+            runner.enqueueAndKeepTrack([remote_path, object_path = file->getPath(), metadata = file->metadata, &log, &settings, this, &remote_layout, &remote_layout_mutex]
             {
                 DB::setThreadName(ThreadName::PLAIN_REWRITABLE_META_LOAD);
 

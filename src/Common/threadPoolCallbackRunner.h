@@ -158,10 +158,13 @@ public:
         waitForAllToFinish();
     }
 
-    void operator() (Callback && callback, Priority priority = {}, std::optional<uint64_t> wait_microseconds = {})
+    /// Adds a new task to the pool and returns it
+    /// You are responsible for handling it from now on, checking its status and so on. You must implement your own waitForAllToFinish* equivalent
+    /// You must ensure the task outlives this TheadPool object
+    [[nodiscard]] std::shared_ptr<Task> enqueueAndGiveOwnership(Callback && callback, Priority priority = {}, std::optional<uint64_t> wait_microseconds = {})
     {
         auto promise = std::make_shared<std::promise<Result>>();
-        auto & task = tasks.emplace_back(std::make_shared<Task>());
+        auto task = std::make_shared<Task>();
         task->future = promise->get_future();
 
         auto task_func = [this, task, thread_group = CurrentThread::getGroup(), my_callback = std::move(callback), promise]() mutable -> void
@@ -198,6 +201,13 @@ public:
             promise->set_exception(std::current_exception());
             throw;
         }
+
+        return task;
+    }
+
+    void enqueueAndKeepTrack(Callback && callback, Priority priority = {}, std::optional<uint64_t> wait_microseconds = {})
+    {
+        tasks.emplace_back(enqueueAndGiveOwnership(std::move(callback), priority, wait_microseconds));
     }
 
     void waitForAllToFinish()
