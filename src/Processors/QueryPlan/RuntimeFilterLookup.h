@@ -25,6 +25,12 @@ using UniqueRuntimeFilterPtr = std::unique_ptr<IRuntimeFilter>;
 using SharedRuntimeFilterPtr = std::shared_ptr<IRuntimeFilter>;
 using RuntimeFilterConstPtr = std::shared_ptr<const IRuntimeFilter>;
 
+struct RuntimeFilterStats
+{
+    std::atomic<Int64> rows_checked = 0;
+    std::atomic<Int64> rows_passed = 0;
+};
+
 class IRuntimeFilter
 {
 public:
@@ -41,6 +47,9 @@ public:
     /// Add all keys from one filter to the other so that destination filter contains the union of both filters.
     virtual void merge(const IRuntimeFilter * source) = 0;
 
+    /// Usage statistics
+    const RuntimeFilterStats & getStats() const { return stats; }
+
 protected:
 
     IRuntimeFilter(size_t filters_to_merge_, const DataTypePtr & filter_column_target_type_)
@@ -51,6 +60,8 @@ protected:
     const DataTypePtr filter_column_target_type;
 
     std::atomic<bool> inserts_are_finished = false;
+
+    mutable RuntimeFilterStats stats;
 };
 
 template <bool negate>
@@ -113,30 +124,7 @@ public:
         values_count = ValuesCount::MANY;
     }
 
-    ColumnPtr find(const ColumnWithTypeAndName & values) const override
-    {
-        switch (values_count)
-        {
-            case ValuesCount::UNKNOWN:
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Run time filter set is not ready for lookups");
-            case ValuesCount::ZERO:
-                return std::make_shared<DataTypeUInt8>()->createColumnConst(values.column->size(), negate);
-            case ValuesCount::ONE:
-            {
-                /// If only 1 element in the set then use "value == const" instead of set lookup
-                auto const_column = filter_column_target_type->createColumnConst(values.column->size(), *single_element_in_set);
-                ColumnsWithTypeAndName arguments = {
-                    values,
-                    ColumnWithTypeAndName(const_column, filter_column_target_type, String())
-                };
-                auto single_element_equals_function = FunctionFactory::instance().get(negate ? "notEquals" : "equals", nullptr)->build(arguments);
-                return single_element_equals_function->execute(arguments, single_element_equals_function->getResultType(), values.column->size(), /* dry_run = */ false);
-            }
-            case ValuesCount::MANY:
-                return exact_values->execute({values}, negate);
-        }
-        UNREACHABLE();
-    }
+    ColumnPtr find(const ColumnWithTypeAndName & values) const override;
 
 protected:
 
@@ -232,6 +220,9 @@ struct IRuntimeFilterLookup : boost::noncopyable
 
     /// Get filter by name
     virtual RuntimeFilterConstPtr find(const String & name) const = 0;
+
+    /// Log various RuntimeFilter usage statistics such as number of filtered rows
+    virtual void logStats() const {}
 };
 
 using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;

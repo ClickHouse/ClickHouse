@@ -16,6 +16,7 @@
     M(CrashLogElement) \
     M(OpenTelemetrySpanLogElement) \
     M(PartLogElement) \
+    M(BackgroundSchedulePoolLogElement) \
     M(QueryLogElement) \
     M(QueryThreadLogElement) \
     M(QueryViewsLogElement) \

@@ -83,6 +83,10 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (!can_use_runtime_filter)
         return false;
 
+    /// Sometimes cross join can be represented by inner join without expressions
+    if (join_operator.expression.empty())
+        return false;
+
     /// In the case of LEFT ANTI JOIN we need to add a filter that filters out rows
     /// that would have matches in the right table. This means we need to add something like NOT IN filter.
     const bool check_left_does_not_contain = (join_operator.kind == JoinKind::Left && join_operator.strictness == JoinStrictness::Anti);
@@ -156,6 +160,9 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             {
                 common_type = join_key_build_side.type;
             }
+
+            LOG_TRACE(getLogger("joinRuntimeFilter"), "Runtime filter '{}' will be built from `{}` and applied to `{}`",
+                filter_name, join_key_build_side.name, join_key_probe_side.name);
 
             /// Add filter lookup to the probe subtree
             all_filter_conditions.push_back(&createRuntimeFilterCondition(filter_dag, filter_name, join_key_probe_side, common_type));
