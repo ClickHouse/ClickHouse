@@ -226,6 +226,82 @@ Normally shuts down ClickHouse (like `service clickhouse-server stop` / `kill {$
 
 Aborts ClickHouse process (like `kill -9 {$ pid_clickhouse-server}`)
 
+## SYSTEM INSTRUMENT {#instrument}
+
+Manages instrumentation points using LLVM's XRay feature which is available when ClickHouse is built using `ENABLE_XRAY=1`.
+This enables to debug and profile in production without modifying the source code and with minimal overhead.
+When no instrumentation point is added, the performance penalty is negligible because it only adds an extra jump to a nearby
+address at the prolog and epilog of those functions that are longer than 200 instructions.
+
+### SYSTEM INSTRUMENT ADD {#instrument-add}
+
+Adds a new instrumentation point. Functions instrumented can be inspected in the [`system.instrumentation`](../../operations/system-tables/instrumentation.md) system table. More than one handler can be added for the same function, and they will be executed in the same order the instrumentation is added.
+The functions to be instrumented can be collected from [`system.symbols`](../../operations/system-tables/symbols.md) system table.
+
+There are three different kind of handlers to add to functions:
+
+**Syntax**
+```sql
+SYSTEM INSTRUMENT ADD FUNCTION HANDLER [PARAMETERS]
+```
+
+where `FUNCTION` is any function or substring of a function such as `QueryMetricLog::startQuery`, and the handler one of the following
+
+#### LOG {#instrument-add-log}
+
+Prints the text provided as an argument and the stack trace either on `ENTRY` or `EXIT` of the function.
+
+```sql
+SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` LOG ENTRY 'this is a log printed at entry'
+SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` LOG EXIT 'this is a log printed at exit'
+```
+
+#### SLEEP {#instrument-add-sleep}
+
+Sleeps for a number of fix amount of seconds either on `ENTRY` or `EXIT`:
+
+```sql
+SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` SLEEP ENTRY 0.5
+```
+
+or for a uniformly distributed random amount of seconds providing min and max separated by a whitespace:
+
+```sql
+SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` SLEEP ENTRY 0 1
+```
+
+#### PROFILE {#instrument-add-profile}
+
+Measures the time spent between `ENTRY` and `EXIT` of a function.
+The result of the profiling is stored in [`system.trace_log`](../../operations/system-tables/trace_log.md) and can be converted
+to [Chrome Event Trace Format](../../operations/system-tables/trace_log.md#chrome-event-trace-format).
+
+```sql
+SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` PROFILE
+```
+
+### SYSTEM INSTRUMENT REMOVE {#instrument-remove}
+
+Removes either a single instrumentation point with:
+
+```sql
+SYSTEM INSTRUMENT REMOVE ID
+```
+
+all of them using the `ALL` parameter:
+
+```sql
+SYSTEM INSTRUMENT REMOVE ALL
+```
+
+or a set of IDs from a subquery:
+
+```sql
+SYSTEM INSTRUMENT REMOVE (SELECT id FROM system.instrumentation WHERE handler = 'log')
+```
+
+The instrumentation point ID can be collected from [`system.instrumentation`](../../operations/system-tables/instrumentation.md) system table.
+
 ## Managing Distributed Tables {#managing-distributed-tables}
 
 ClickHouse can manage [distributed](../../engines/table-engines/special/distributed.md) tables. When a user inserts data into these tables, ClickHouse first creates a queue of the data that should be sent to cluster nodes, then asynchronously sends it. You can manage queue processing with the [`STOP DISTRIBUTED SENDS`](#stop-distributed-sends), [FLUSH DISTRIBUTED](#flush-distributed), and [`START DISTRIBUTED SENDS`](#start-distributed-sends) queries. You can also synchronously insert distributed data with the [`distributed_foreground_insert`](../../operations/settings/settings.md#distributed_foreground_insert) setting.

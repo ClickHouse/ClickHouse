@@ -2358,6 +2358,41 @@ struct ConvertImpl
                             }
                         }
                     }
+#if defined(__aarch64__)
+                    else if constexpr (std::is_same_v<FromFieldType, UInt64> && std::is_same_v<ToFieldType, BFloat16>)
+                    {
+                        const UInt64* __restrict s = &vec_from[i];
+                        BFloat16* __restrict d = &vec_to[i];
+
+                        size_t remaining = input_rows_count - i;
+
+                        _Pragma("clang loop vectorize_width(4) interleave_count(2)")
+                        for (size_t j = 0; j < remaining; ++j)
+                        {
+                            double tmp = static_cast<double>(s[j]);
+                            float f = static_cast<float>(tmp);
+                            d[j] = BFloat16(f);
+                        }
+
+                        i += remaining - 1;
+                    }
+                    else if constexpr (std::is_same_v<FromFieldType, UInt64> && std::is_same_v<ToFieldType, Float32>)
+                    {
+                        const UInt64* __restrict s = &vec_from[i];
+                        Float32* __restrict d = &vec_to[i];
+
+                        size_t remaining = input_rows_count - i;
+
+                        _Pragma("clang loop vectorize_width(4) interleave_count(2)")
+                        for (size_t j = 0; j < remaining; ++j)
+                        {
+                            double tmp = static_cast<double>(s[j]);
+                            d[j] = Float32(tmp);
+                        }
+
+                        i += remaining - 1;
+                    }
+#endif
                     else
                     {
                         vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
@@ -2410,8 +2445,8 @@ struct ConvertImplGenericFromString
                 continue;
             }
 
-            const auto & val = column_from.getDataAt(i);
-            ReadBufferFromMemory read_buffer(val.data(), val.size());
+            const auto val = column_from.getDataAt(i);
+            ReadBufferFromMemory read_buffer(val);
             try
             {
                 serialization_from.deserializeWholeText(column_to, read_buffer, format_settings);
@@ -2506,7 +2541,7 @@ struct ConvertImplFromDynamicToColumn
                 if (local_discriminators[i] == shared_variant_local_discr)
                 {
                     auto value = shared_variant.getDataAt(offsets[i]);
-                    ReadBufferFromMemory buf(value.data(), value.size());
+                    ReadBufferFromMemory buf(value);
                     auto type = decodeDataType(buf);
                     auto type_name = type->getName();
                     auto it = shared_variant_to_index.find(type_name);

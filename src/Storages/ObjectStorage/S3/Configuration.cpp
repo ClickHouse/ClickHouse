@@ -44,6 +44,7 @@ namespace Setting
     extern const SettingsBool s3_validate_request_settings;
     extern const SettingsSchemaInferenceMode schema_inference_mode;
     extern const SettingsBool schema_inference_use_cache_for_s3;
+    extern const SettingsBool compatibility_s3_presigned_url_query_in_path;
 }
 
 namespace S3AuthSetting
@@ -163,33 +164,38 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
     }
 
     auto client = getClient(url, *s3_settings, context, /* for_disk_s3 */false);
-    auto key_generator = createObjectStorageKeyGeneratorAsIsWithPrefix(url.key);
-
     return std::make_shared<S3ObjectStorage>(
         std::move(client),
         std::make_unique<S3Settings>(*s3_settings),
         url,
         *s3_capabilities,
-        key_generator,
+        /*key_generator=*/nullptr,
         "StorageS3",
         false);
 }
 
-void StorageS3Configuration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
+void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
 
     auto filename = collection.getOrDefault<String>("filename", "");
     if (!filename.empty())
-        url = S3::URI(std::filesystem::path(collection.get<String>("url")) / filename, settings[Setting::allow_archive_path_syntax]);
+        url = S3::URI(
+            std::filesystem::path(collection.get<String>("url")) / filename,
+            settings[Setting::allow_archive_path_syntax],
+            /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path]);
     else
-        url = S3::URI(collection.get<String>("url"), settings[Setting::allow_archive_path_syntax]);
+        url = S3::URI(
+            collection.get<String>("url"),
+            settings[Setting::allow_archive_path_syntax],
+            /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path]);
 
     const auto & config = context->getConfigRef();
 
     s3_settings = std::make_unique<S3Settings>();
-    s3_settings->loadFromConfigForObjectStorage(config, "s3", context->getSettingsRef(), url.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
+    s3_settings->loadFromConfigForObjectStorage(
+        config, "s3", context->getSettingsRef(), url.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
     {
@@ -199,9 +205,11 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
 
     s3_settings->auth_settings[S3AuthSetting::access_key_id] = collection.getOrDefault<String>("access_key_id", "");
     s3_settings->auth_settings[S3AuthSetting::secret_access_key] = collection.getOrDefault<String>("secret_access_key", "");
-    s3_settings->auth_settings[S3AuthSetting::use_environment_credentials] = collection.getOrDefault<UInt64>("use_environment_credentials", 1);
+    s3_settings->auth_settings[S3AuthSetting::use_environment_credentials]
+        = collection.getOrDefault<UInt64>("use_environment_credentials", 1);
     s3_settings->auth_settings[S3AuthSetting::no_sign_request] = collection.getOrDefault<bool>("no_sign_request", false);
-    s3_settings->auth_settings[S3AuthSetting::expiration_window_seconds] = collection.getOrDefault<UInt64>("expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS);
+    s3_settings->auth_settings[S3AuthSetting::expiration_window_seconds]
+        = collection.getOrDefault<UInt64>("expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS);
     s3_settings->auth_settings[S3AuthSetting::session_token] = collection.getOrDefault<String>("session_token", "");
 
     if (collection.has("partition_strategy"))
@@ -217,7 +225,8 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
         partition_strategy_type = partition_strategy_type_opt.value();
     }
 
-    partition_columns_in_data_file = collection.getOrDefault<bool>("partition_columns_in_data_file", partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE);
+    partition_columns_in_data_file = collection.getOrDefault<bool>(
+        "partition_columns_in_data_file", partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE);
     s3_settings->auth_settings[S3AuthSetting::role_arn] = collection.getOrDefault<String>("role_arn", "");
     s3_settings->auth_settings[S3AuthSetting::role_session_name] = collection.getOrDefault<String>("role_session_name", "");
 
@@ -230,17 +239,12 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
     compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
     structure = collection.getOrDefault<String>("structure", "auto");
 
-    s3_settings->request_settings = S3::S3RequestSettings(collection, settings, /* validate_settings */true);
-
-    static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty() || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
+    s3_settings->request_settings = S3::S3RequestSettings(collection, settings, /* validate_settings */ true);
 
     s3_capabilities = std::make_unique<S3Capabilities>(getCapabilitiesFromConfig(config, "s3"));
-
-    keys = {url.key};
-
 }
 
-ASTPtr StorageS3Configuration::extractExtraCredentials(ASTs & args)
+static ASTPtr extractExtraCredentials(ASTs & args)
 {
     for (size_t i = 0; i != args.size(); ++i)
     {
@@ -256,6 +260,11 @@ ASTPtr StorageS3Configuration::extractExtraCredentials(ASTs & args)
 }
 
 bool StorageS3Configuration::collectCredentials(ASTPtr maybe_credentials, S3::S3AuthSettings & auth_settings_, ContextPtr local_context)
+{
+    return S3StorageParsedArguments::collectCredentials(maybe_credentials, auth_settings_, local_context);
+}
+
+bool S3StorageParsedArguments::collectCredentials(ASTPtr maybe_credentials, S3::S3AuthSettings & auth_settings_, ContextPtr local_context)
 {
     if (!maybe_credentials)
         return false;
@@ -302,9 +311,8 @@ bool StorageS3Configuration::collectCredentials(ASTPtr maybe_credentials, S3::S3
     return true;
 }
 
-void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
+void S3StorageParsedArguments::fromDisk(const DiskPtr & disk, ASTs & args, ContextPtr context, bool with_structure)
 {
-    auto disk = context->getDisk(disk_name);
     auto object_storage = disk->getObjectStorage();
     const auto & s3_object_storage = assert_cast<const S3ObjectStorage &>(*object_storage);
     s3_settings = std::make_unique<S3Settings>();
@@ -317,24 +325,16 @@ void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, Con
         fs::path suffix = parsing_result.path_suffix;
         url = S3::URI(String(root / suffix));
     }
-
-    if (auto object_storage_disk = std::static_pointer_cast<DiskObjectStorage>(disk); object_storage_disk)
-    {
-        String path = object_storage_disk->getObjectsKeyPrefix();
-        fs::path root = path;
-        fs::path suffix = parsing_result.path_suffix;
-        setPathForRead(String(root / suffix));
-        setPaths({String(root / suffix)});
-    }
     if (parsing_result.format.has_value())
         format = *parsing_result.format;
     if (parsing_result.compression_method.has_value())
         compression_method = *parsing_result.compression_method;
     if (parsing_result.structure.has_value())
         structure = *parsing_result.structure;
+    path_suffix = parsing_result.path_suffix;
 }
 
-void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
+void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
     auto extra_credentials = extractExtraCredentials(args);
 
@@ -348,11 +348,12 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
         count -= key_value_asts.size();
     }
 
-    if (count == 0 || count > getMaxNumberOfArguments(with_structure))
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+    if (count == 0 || count > S3StorageParsedArguments::getMaxNumberOfArguments(with_structure))
+        throw Exception(
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Storage S3 requires 1 to {} arguments. All supported signatures:\n{}",
-            getMaxNumberOfArguments(with_structure),
-            getSignatures(with_structure));
+            S3StorageParsedArguments::getMaxNumberOfArguments(with_structure),
+            S3StorageParsedArguments::getSignatures(with_structure));
 
     auto key_value_args = parseKeyValueArguments(key_value_asts, context);
     if (key_value_args.contains("structure"))
@@ -583,12 +584,16 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     }
 
     /// This argument is always the first
-    url = S3::URI(checkAndGetLiteralArgument<String>(args[0], "url"), context->getSettingsRef()[Setting::allow_archive_path_syntax]);
+    url = S3::URI(
+        checkAndGetLiteralArgument<String>(args[0], "url"),
+        context->getSettingsRef()[Setting::allow_archive_path_syntax],
+        /*keep_presigned_query_parameters*/ !context->getSettingsRef()[Setting::compatibility_s3_presigned_url_query_in_path]);
 
     s3_settings = std::make_unique<S3Settings>();
-    s3_settings->loadFromConfigForObjectStorage(config, "s3", context->getSettingsRef(), url.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
+    s3_settings->loadFromConfigForObjectStorage(
+        config, "s3", context->getSettingsRef(), url.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
-    collectCredentials(extra_credentials, s3_settings->auth_settings, context);
+    S3StorageParsedArguments::collectCredentials(extra_credentials, s3_settings->auth_settings, context);
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
     {
@@ -600,10 +605,6 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
         format_value.has_value())
     {
         format = format_value.value();
-        /// Set format to configuration only of it's not 'auto',
-        /// because we can have default format set in configuration.
-        if (format != "auto")
-            format = format;
     }
 
     if (auto structure_value = getFromPositionOrKeyValue<String>("structure", args, engine_args_to_idx, key_value_args);
@@ -674,19 +675,15 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
         s3_settings->request_settings[S3RequestSetting::storage_class_name] = storage_class_name.value();
     }
 
-    static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty() || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
-
     if (extra_credentials)
         args.push_back(extra_credentials);
 
      if (context->getSettingsRef()[Setting::s3_validate_request_settings])
-        s3_settings->request_settings.validateUploadSettings();
-
-    keys = {url.key};
+         s3_settings->request_settings.validateUploadSettings();
 }
 
-void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
-    ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
+static void addStructureAndFormatToArgsIfNeededS3(
+    ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure, size_t max_number_of_arguments)
 {
     if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
     {
@@ -724,12 +721,10 @@ void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
         if (!count)
             return;
 
-        if (count > getMaxNumberOfArguments())
+        if (count > max_number_of_arguments)
         {
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Expected 1 to {} arguments in table function s3, got {}",
-                getMaxNumberOfArguments(), count);
+                ErrorCodes::LOGICAL_ERROR, "Expected 1 to {} arguments in table function s3, got {}", max_number_of_arguments, count);
         }
 
         auto format_literal = std::make_shared<ASTLiteral>(format_);
@@ -749,9 +744,7 @@ void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
             if (children.size() != 2)
             {
                 throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Key value argument is incorrect: expected 2 arguments, got {}",
-                    children.size());
+                    ErrorCodes::BAD_ARGUMENTS, "Key value argument is incorrect: expected 2 arguments, got {}", children.size());
             }
 
             auto literal = evaluateConstantExpressionOrIdentifierAsLiteral(children[0], context);
@@ -961,6 +954,59 @@ void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
     }
 }
 
+void StorageS3Configuration::initializeFromParsedArguments(S3StorageParsedArguments && parsed_arguments)
+{
+    StorageObjectStorageConfiguration::initializeFromParsedArguments(parsed_arguments);
+    url = std::move(parsed_arguments.url);
+    s3_settings = std::move(parsed_arguments.s3_settings);
+    s3_capabilities = std::move(parsed_arguments.s3_capabilities);
+    headers_from_ast = std::move(parsed_arguments.headers_from_ast);
+}
+
+
+void StorageS3Configuration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
+{
+    S3StorageParsedArguments parsed_arguments;
+    parsed_arguments.fromNamedCollection(collection, context);
+    initializeFromParsedArguments(std::move(parsed_arguments));
+    keys = {url.key};
+    static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()
+        || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
+}
+
+void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
+{
+    S3StorageParsedArguments parsed_arguments;
+    auto disk = context->getDisk(disk_name);
+    parsed_arguments.fromDisk(disk, args, context, with_structure);
+    fs::path suffix = parsed_arguments.path_suffix;
+    initializeFromParsedArguments(std::move(parsed_arguments));
+    if (auto object_storage_disk = std::static_pointer_cast<DiskObjectStorage>(disk); object_storage_disk)
+    {
+        String path = object_storage_disk->getObjectsKeyPrefix();
+        fs::path root = path;
+        setPathForRead(String(root / suffix));
+        keys = {String(root / suffix)};
+    }
+}
+
+void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
+{
+    S3StorageParsedArguments parsed_arguments;
+    parsed_arguments.fromAST(args, context, with_structure);
+    initializeFromParsedArguments(std::move(parsed_arguments));
+    keys = {url.key};
+    assert(s3_settings != nullptr);
+    static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()
+        || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
+}
+
+void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
+    ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
+{
+    addStructureAndFormatToArgsIfNeededS3(
+        args, structure_, format_, context, with_structure, S3StorageParsedArguments::getMaxNumberOfArguments(with_structure));
+}
 }
 
 #endif

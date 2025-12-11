@@ -98,7 +98,7 @@ public:
     virtual KeeperDigest getNodesDigest() const = 0;
 
     /// Introspection functions for 4lw commands
-    virtual uint64_t getLastProcessedZxid() const = 0;
+    virtual int64_t getLastProcessedZxid() const = 0;
 
     virtual const KeeperStorageStats & getStorageStats() const = 0;
 
@@ -236,7 +236,7 @@ public:
     KeeperDigest getNodesDigest() const override;
 
     /// Introspection functions for 4lw commands
-    uint64_t getLastProcessedZxid() const override;
+    int64_t getLastProcessedZxid() const override;
 
     const KeeperStorageStats & getStorageStats() const override;
 
