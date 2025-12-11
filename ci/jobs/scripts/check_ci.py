@@ -294,6 +294,12 @@ Test output:
         return False
 
     def can_process(self):
+        if self.job_type in (JobTypes.STATELESS, JobTypes.INTEGRATION):
+            if not re.match(r"^(\d{5}|test)_", self.test_name):
+                print(
+                    f"Only regular test failures can be handled, not [{self.test_name}] - skip"
+                )
+                return False
         if self.job_type in (JobTypes.DOCKER_TEST_IMAGES):
             print("It's likely infrastructure problem - cannot handle it")
             return False
@@ -325,8 +331,6 @@ Test output:
             search_in_title = self.job_name
             labels = ["build"]
         elif self.job_type in (JobTypes.STATELESS, JobTypes.INTEGRATION):
-            if not re.match(r"^(\d{5}|test)_", self.test_name):
-                raise Exception(f"Unexpected test name format: {self.test_name}")
             search_in_title = self.test_name
             if "[" in self.test_name:
                 search_in_title = self.test_name.split("[")[0]
@@ -335,9 +339,6 @@ Test output:
         elif self.job_type in (JobTypes.BUZZ_FUZZER, JobTypes.AST_FUZZER):
             search_in_title = self.test_name
             labels = ["fuzz"]
-        elif self.job_type == JobTypes.PERFORMANCE:
-            print("      --> Performance tests - not yet supported")
-            return False
         else:
             raise Exception(f"Unsupported job type: {self.job_type}")
 
