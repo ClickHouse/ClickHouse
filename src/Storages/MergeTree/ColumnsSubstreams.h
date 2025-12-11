@@ -3,10 +3,12 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 
 namespace DB
 {
+
+struct MergeTreeSettings;
+using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
 /// Class that stores the list of substreams of columns in order of their serialization/deserialization.
 /// For example:
