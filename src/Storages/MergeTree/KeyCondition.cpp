@@ -2702,6 +2702,7 @@ static BoolMask forAnyHyperrectangle(
     chassert(sparse_data_types.size() == sparse_key_indices.size());
     chassert(prefix_size <= key_size);
 
+#ifndef NDEBUG
     for (size_t i = 1; i < sparse_keys_size; ++i)
         chassert(sparse_key_indices[i - 1] < sparse_key_indices[i]);
     for (size_t i = 0; i < sparse_keys_size; ++i)
@@ -2709,6 +2710,7 @@ static BoolMask forAnyHyperrectangle(
 
     for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
         chassert(key_col_to_sparse_pos[sparse_key_indices[sparse_pos]] == static_cast<int>(sparse_pos));
+#endif
 
     if (!left_bounded && !right_bounded)
         return callback(sparse_hyperrectangle);
