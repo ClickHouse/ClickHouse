@@ -1916,16 +1916,15 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateDirectoryFromVirtualNode)
         tx->commit();
 
         tx = metadata->createTransaction();
-        auto size_bytes = writeObject(object_storage, tx->generateObjectKeyForPath("/A/B/file").serialize(), "non-existing");
-        tx->createMetadataFile("/A/B/file", {StoredObject("/A/B/file", "file", size_bytes)});
-        EXPECT_ANY_THROW(tx->commit());
+        EXPECT_ANY_THROW(tx->generateObjectKeyForPath("/A/B/file"));
+        tx->commit();
 
         tx = metadata->createTransaction();
         tx->createDirectoryRecursive("/A/B");
         tx->commit();
 
         tx = metadata->createTransaction();
-        size_bytes = writeObject(object_storage, tx->generateObjectKeyForPath("/A/B/file").serialize(), "I'm real");
+        auto size_bytes = writeObject(object_storage, tx->generateObjectKeyForPath("/A/B/file").serialize(), "I'm real");
         tx->createMetadataFile("/A/B/file", {StoredObject("/A/B/file", "file", size_bytes)});
         tx->commit();
     }
