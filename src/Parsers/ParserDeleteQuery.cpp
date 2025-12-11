@@ -18,7 +18,7 @@ bool ParserDeleteQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_from(Keyword::FROM);
     ParserKeyword s_in_partition(Keyword::IN_PARTITION);
     ParserKeyword s_where(Keyword::WHERE);
-    ParserExpressionWithOptionalAlias parser_exp_elem(/*allow_alias_without_as_keyword_=*/false);
+    ParserExpression parser_exp_elem;
     ParserKeyword s_settings(Keyword::SETTINGS);
     ParserKeyword s_on{Keyword::ON};
 
