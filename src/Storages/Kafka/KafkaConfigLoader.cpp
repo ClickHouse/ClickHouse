@@ -163,6 +163,15 @@ namespace
 
 void setKafkaConfigValue(cppkafka::Configuration & kafka_config, const String & key, const String & value)
 {
+    /// Skip ClickHouse internal settings that are read directly in code and should not be passed to librdkafka
+    static const std::unordered_set<String> clickhouse_internal_settings = {
+        "use_environment_credentials",  // AWS MSK IAM: controls credential source (env vs instance profile)
+        // Add future internal settings here
+    };
+
+    if (clickhouse_internal_settings.contains(key))
+        return;
+
     /// "log_level" has valid underscore, the remaining librdkafka setting use dot.separated.format which isn't acceptable for XML.
     /// See https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
     const String setting_name_in_kafka_config = (key == "log_level") ? key : boost::replace_all_copy(key, "_", ".");
