@@ -5204,8 +5204,9 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                         t.staged_cols.erase(cname);
                     }
                 }
-                else if (ati.has_drop_column() && success)
+                else if (ati.has_drop_column() && success && t.cols.size() > 1)
                 {
+                    /// If this is the last column in the table and the statement succeeded, don't drop it
                     const ColumnPath & path = ati.drop_column();
                     const uint32_t cname = getIdentifierFromString(path.col().column());
 
@@ -5219,7 +5220,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                         NestedType * ntp;
 
                         chassert(path.sub_cols_size() == 1);
-                        if ((ntp = dynamic_cast<NestedType *>(col.tp)))
+                        if ((ntp = dynamic_cast<NestedType *>(col.tp)) && ntp->subtypes.size() > 1)
                         {
                             const uint32_t ncname = getIdentifierFromString(path.sub_cols(0).column());
 
