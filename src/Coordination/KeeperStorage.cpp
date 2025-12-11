@@ -3476,7 +3476,7 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
 
                         ZooKeeperOpentelemetrySpans::maybeInitialize(
                             concrete_zk_request.spans.read_process,
-                            concrete_zk_request.server_tracing_context,
+                            concrete_zk_request.tracing_context,
                             start_time_us);
 
                         ZooKeeperOpentelemetrySpans::maybeFinalize(

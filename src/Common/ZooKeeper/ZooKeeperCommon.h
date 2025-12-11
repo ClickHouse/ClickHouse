@@ -65,8 +65,7 @@ struct ZooKeeperRequest : virtual Request
     std::chrono::steady_clock::time_point enqueue_ts = {};
     std::chrono::steady_clock::time_point send_ts = {};
 
-    std::optional<OpenTelemetry::TracingContext> client_tracing_context;
-    std::optional<OpenTelemetry::TracingContext> server_tracing_context;
+    std::optional<OpenTelemetry::TracingContext> tracing_context;
 
     DB::ZooKeeperOpentelemetrySpans spans;
 

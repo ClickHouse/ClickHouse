@@ -1362,13 +1362,13 @@ void ZooKeeper::pushRequest(RequestInfo && info)
         {
             if (isFeatureEnabled(KeeperFeatureFlag::PASS_TRACING_CONTEXT))
             {
-                info.request->client_tracing_context = current_trace_context;
+                info.request->tracing_context = current_trace_context;
             }
         }
 
         info.request->enqueue_ts = clock::now();
 
-        ZooKeeperOpentelemetrySpans::maybeInitialize(info.request->spans.client_requests_queue, info.request->client_tracing_context);
+        ZooKeeperOpentelemetrySpans::maybeInitialize(info.request->spans.client_requests_queue, info.request->tracing_context);
 
         if (!requests_queue.tryPush(std::move(info), args.operation_timeout_ms))
         {

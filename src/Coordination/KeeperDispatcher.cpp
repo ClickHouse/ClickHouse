@@ -150,15 +150,7 @@ void KeeperDispatcher::requestThread()
         const auto handle_opentelemetery_spans = [](const Coordination::ZooKeeperRequestPtr & request)
         {
 
-            ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.process_request, request->client_tracing_context);
-
-            request->server_tracing_context =
-            {
-                .trace_id = request->client_tracing_context->trace_id,
-                .span_id = request->spans.process_request.span->span_id,
-                .tracestate = request->client_tracing_context->tracestate,
-                .trace_flags = request->client_tracing_context->trace_flags,
-            };
+            ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.process_request, request->tracing_context);
         };
 
         KeeperRequestForSession request;
@@ -229,7 +221,7 @@ void KeeperDispatcher::requestThread()
                             if (!coordination_settings[CoordinationSetting::quorum_reads] && request.request->isReadRequest())
                             {
                                 const auto & last_request = current_batch.back();
-                                ZooKeeperOpentelemetrySpans::maybeInitialize(request.request->spans.read_wait_for_write, request.request->server_tracing_context);
+                                ZooKeeperOpentelemetrySpans::maybeInitialize(request.request->spans.read_wait_for_write, request.request->tracing_context);
                                 std::lock_guard lock(read_request_queue_mutex);
                                 read_request_queue[last_request.session_id][last_request.request->xid].push_back(request);
                             }

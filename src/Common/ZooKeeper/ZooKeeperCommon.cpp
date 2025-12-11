@@ -60,10 +60,10 @@ void ZooKeeperRequest::write(WriteBuffer & out) const
     Coordination::write(getOpNum(), out);
     writeImpl(out);
 
-    bool has_tracing = client_tracing_context.has_value();
+    bool has_tracing = tracing_context.has_value();
     Coordination::write(has_tracing, out);
     if (has_tracing)
-        client_tracing_context->serialize(out);
+        tracing_context->serialize(out);
 }
 
 void ZooKeeperSyncRequest::writeImpl(WriteBuffer & out) const
@@ -1212,8 +1212,8 @@ std::shared_ptr<ZooKeeperRequest> ZooKeeperRequest::read(ReadBuffer & in)
     Coordination::read(has_tracing, in);
     if (has_tracing)
     {
-        request->client_tracing_context.emplace();
-        request->client_tracing_context->deserialize(in);
+        request->tracing_context.emplace();
+        request->tracing_context->deserialize(in);
     }
 
     return request;
