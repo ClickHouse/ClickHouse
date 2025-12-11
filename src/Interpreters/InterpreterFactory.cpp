@@ -54,6 +54,7 @@
 #include <Parsers/Access/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/Access/ASTShowGrantsQuery.h>
 #include <Parsers/Access/ASTShowPrivilegesQuery.h>
+#include <Parsers/Access/ASTExecuteAsQuery.h>
 #include <Parsers/ASTDescribeCacheQuery.h>
 
 #include <Interpreters/InterpreterFactory.h>
@@ -68,13 +69,13 @@
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
-#include <Storages/StorageAlias.h>
 
 
 namespace ProfileEvents
 {
     extern const Event Query;
     extern const Event InitialQuery;
+    extern const Event InitialSelectQuery;
     extern const Event QueriesWithSubqueries;
     extern const Event SelectQuery;
     extern const Event InsertQuery;
@@ -111,7 +112,11 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
 {
     ProfileEvents::increment(ProfileEvents::Query);
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    {
         ProfileEvents::increment(ProfileEvents::InitialQuery);
+         if (!query || query->as<ASTSelectQuery>() || query->as<ASTSelectWithUnionQuery>())
+            ProfileEvents::increment(ProfileEvents::InitialSelectQuery);
+    }
     /// SELECT and INSERT query will handle QueriesWithSubqueries on their own.
     if (!(query->as<ASTSelectQuery>() ||
         query->as<ASTSelectWithUnionQuery>() ||
@@ -130,7 +135,6 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
 
     String interpreter_name;
 
-    StorageAlias::modifyContextByQueryAST(query, context);
     if (query->as<ASTSelectQuery>())
     {
         if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
@@ -384,6 +388,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTParallelWithQuery>())
     {
         interpreter_name = "InterpreterParallelWithQuery";
+    }
+    else if (query->as<ASTExecuteAsQuery>())
+    {
+        interpreter_name = "InterpreterExecuteAsQuery";
     }
 
     if (!interpreters.contains(interpreter_name))

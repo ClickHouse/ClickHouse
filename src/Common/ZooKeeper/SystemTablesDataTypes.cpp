@@ -69,6 +69,7 @@ DB::DataTypePtr SystemTablesDataTypes::operationEnum()
             {"CheckNotExists",      static_cast<Int16>(OpNum::CheckNotExists)},
             {"CreateIfNotExists",   static_cast<Int16>(OpNum::CreateIfNotExists)},
             {"RemoveRecursive",     static_cast<Int16>(OpNum::RemoveRecursive)},
+            {"CheckStat",           static_cast<Int16>(OpNum::CheckStat)},
         });
     return result;
 }

@@ -1,4 +1,3 @@
--- Tags: no-fasttest, long, no-debug, no-tsan, no-asan, no-msan, no-ubsan
 
 SET enable_json_type = 1;
 set allow_experimental_variant_type = 1;

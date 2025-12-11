@@ -150,7 +150,7 @@ REGISTER_FUNCTION(Now64)
 Returns the current date and time with sub-second precision at the moment of query analysis. The function is a constant expression.
     )";
     FunctionDocumentation::Syntax syntax = R"(
-now64([scale], [timezone])
+now64([scale[, timezone]])
     )";
     FunctionDocumentation::Arguments arguments = {
         {"scale", "Optional. Tick size (precision): 10^-precision seconds. Valid range: [0 : 9]. Typically, are used - 3 (default) (milliseconds), 6 (microseconds), 9 (nanoseconds).", {"UInt8"}},

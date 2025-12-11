@@ -4,6 +4,7 @@ sidebar_label: 'meanZTest'
 sidebar_position: 166
 slug: /sql-reference/aggregate-functions/reference/meanztest
 title: 'meanZTest'
+doc_type: 'reference'
 ---
 
 # meanZTest

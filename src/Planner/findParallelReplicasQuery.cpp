@@ -522,7 +522,11 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     auto converting = ActionsDAG::makeConvertingActions(
         header->getColumnsWithTypeAndName(),
         initial_header->getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Position);
+        ActionsDAG::MatchColumnsMode::Position,
+        context,
+        false /*ignore_constant_values*/,
+        false /*add_cast_columns*/,
+        nullptr /*new_names*/);
 
     /// initial_header is a header expected by initial query.
     /// header is a header which is returned by the follower.

@@ -5,7 +5,7 @@
 #if USE_AVRO
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
+#include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Core/Field.h>
@@ -61,12 +61,13 @@ struct ManifestFileEntry
     String file_path_key;
     // It's a processed file path to be used by Object Storage
     String file_path;
+    Int64 row_number;
 
     ManifestEntryStatus status;
     Int64 added_sequence_number;
 
     Int64 snapshot_id;
-    Int64 schema_id;
+    Int32 schema_id;
 
     DB::Row partition_key_value;
     PartitionSpecification common_partition_specification;
@@ -75,6 +76,9 @@ struct ManifestFileEntry
     String file_format;
     std::optional<String> reference_data_file_path; // For position delete files only.
     std::optional<std::vector<Int32>> equality_ids;
+
+    /// Data file is sorted with this sort_order_id (can be read from metadata.json)
+    std::optional<Int32> sort_order_id;
 };
 
 /**
@@ -134,6 +138,8 @@ public:
     bool hasBoundsInfoInManifests() const;
     const std::set<Int32> & getColumnsIDsWithBounds() const;
     const String & getPathToManifestFile() const { return path_to_manifest_file; }
+
+    bool areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const;
 
     ManifestFileContent(ManifestFileContent &&) = delete;
     ManifestFileContent & operator=(ManifestFileContent &&) = delete;

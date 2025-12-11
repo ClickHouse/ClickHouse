@@ -1,25 +1,25 @@
--- Tags: no-fasttest, no-random-settings
+-- Tags: no-fasttest, no-random-settings, no-parallel
 
 set max_insert_threads=1;
+set schema_inference_make_columns_nullable=0;
+set engine_file_truncate_on_insert=1;
 
-DROP TABLE IF EXISTS test_parquet;
-CREATE TABLE test_parquet (col1 String, col2 String, col3 String, col4 String, col5 String, col6 String, col7 String) ENGINE=File(Parquet);
-INSERT INTO test_parquet SELECT rand(),rand(),rand(),rand(),rand(),rand(),rand() FROM numbers(100000);
-SELECT max(blockSize()) FROM test_parquet;
+-- Average string lengths, approximately: 2, 200, 200, 200
+INSERT INTO FUNCTION file('03164_adapting_parquet_reader_output_size.parquet', Parquet, 'short String, long1 String, long2 String, long_low_cardinality String') SELECT number%100, range(cityHash64(number), cityHash64(number)+10), repeat(cityHash64(number)::String, 6+number%10), repeat((number%10)::String, 200+number%10) FROM numbers(25000);
 
-DROP TABLE IF EXISTS test_parquet;
-CREATE TABLE test_parquet (col1 String, col2 String, col3 String, col4 String, col5 String, col6 String, col7 String) ENGINE=File(Parquet) settings input_format_parquet_max_block_size=16;
-INSERT INTO test_parquet SELECT rand(),rand(),rand(),rand(),rand(),rand(),rand() FROM numbers(100000);
-SELECT max(blockSize()) FROM test_parquet;
+-- Default limits are high, everything goes in one block.
+SELECT max(blockSize())+sum(ignore(short, long2)) FROM file('03164_adapting_parquet_reader_output_size.parquet');
+-- Small column doesn't take a lot of bytes, everything goes in one block.
+SELECT max(blockSize())+sum(ignore(short)) FROM file('03164_adapting_parquet_reader_output_size.parquet') settings input_format_parquet_prefer_block_bytes=100000;
+-- Specific number of rows requested.
+SELECT max(blockSize())+sum(ignore(short, long2)) FROM file('03164_adapting_parquet_reader_output_size.parquet') settings input_format_parquet_max_block_size=64;
+-- Tiny byte limit, reader bumps block size to 128 rows instead of 1 row.
+SELECT max(blockSize())+sum(ignore(short, long2)) FROM file('03164_adapting_parquet_reader_output_size.parquet') settings input_format_parquet_prefer_block_bytes=30;
 
-DROP TABLE IF EXISTS test_parquet;
-CREATE TABLE test_parquet (col1 String, col2 String, col3 String, col4 String, col5 String, col6 String, col7 String) ENGINE=File(Parquet) settings input_format_parquet_prefer_block_bytes=30;
-INSERT INTO test_parquet SELECT rand(),rand(),rand(),rand(),rand(),rand(),rand() FROM numbers(100000);
-SELECT max(blockSize()) FROM test_parquet;
+-- Intermediate byte limit. The two parquet reader implementations estimate row byte sizes slightly
+-- differently it slightly differently and don't match exactly, so we round the result.
+SELECT roundToExp2(max(blockSize())+sum(ignore(short, long2))) FROM file('03164_adapting_parquet_reader_output_size.parquet') settings input_format_parquet_prefer_block_bytes=700000;
+SELECT roundToExp2(max(blockSize())+sum(ignore(short, long1, long2))) FROM file('03164_adapting_parquet_reader_output_size.parquet') settings input_format_parquet_prefer_block_bytes=700000;
 
-DROP TABLE IF EXISTS test_parquet;
-CREATE TABLE test_parquet (col1 String, col2 String, col3 String, col4 String, col5 String, col6 String, col7 String) ENGINE=File(Parquet) settings input_format_parquet_prefer_block_bytes=30720;
-INSERT INTO test_parquet SELECT rand(),rand(),rand(),rand(),rand(),rand(),rand() FROM numbers(100000);
-SELECT max(blockSize()) FROM test_parquet;
-
-DROP TABLE IF EXISTS test_parquet;
+-- Only the new parquet reader uses correct length estimate for dictionary-encoded strings.
+SELECT roundToExp2(max(blockSize())+sum(ignore(short, long_low_cardinality))) FROM file('03164_adapting_parquet_reader_output_size.parquet') settings input_format_parquet_prefer_block_bytes=700000, input_format_parquet_use_native_reader_v3=1;

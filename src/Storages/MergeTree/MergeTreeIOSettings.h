@@ -59,13 +59,13 @@ struct MergeTreeReaderSettings
     /// If we should write/read to/from the query condition cache.
     bool use_query_condition_cache = false;
     bool query_condition_cache_store_conditions_as_plaintext = false;
-    double  query_condition_cache_selectivity_threshold = 1.0;
     bool use_deserialization_prefixes_cache = false;
     bool use_prefixes_deserialization_thread_pool = false;
     bool secondary_indices_enable_bulk_filtering = true;
     UInt64 merge_tree_min_bytes_for_seek = 0;
     UInt64 merge_tree_min_rows_for_seek = 0;
     size_t filesystem_prefetches_limit = 0;
+    bool enable_analyzer = false;
 
     /// Note storage_settings used only in private, do not remove
     static MergeTreeReaderSettings create(const ContextPtr & context, const MergeTreeSettings & storage_settings, const SelectQueryInfo & query_info);

@@ -5,6 +5,7 @@ description: 'It is an alias for any but it was introduced for compatibility wit
 sidebar_position: 137
 slug: /sql-reference/aggregate-functions/reference/first_value
 title: 'first_value'
+doc_type: 'reference'
 ---
 
 # first_value

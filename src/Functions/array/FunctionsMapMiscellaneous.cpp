@@ -471,145 +471,446 @@ using FunctionMapPartialReverseSort = FunctionMapToArrayAdapter<FunctionArrayPar
 
 REGISTER_FUNCTION(MapMiscellaneous)
 {
-    constexpr auto category_map = FunctionDocumentation::Category::Map;
+    /// mapConcat documentation
+    FunctionDocumentation::Description description_mapConcat = R"(
+Concatenates multiple maps based on the equality of their keys.
+If elements with the same key exist in more than one input map, all elements are added to the result map, but only the first one is accessible via operator [].
+)";
+    FunctionDocumentation::Syntax syntax_mapConcat = "mapConcat(maps)";
+    FunctionDocumentation::Arguments arguments_mapConcat = {
+        {"maps", "Arbitrarily many maps.", {"Map"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapConcat = {"Returns a map with concatenated maps passed as arguments.", {"Map"}};
+    FunctionDocumentation::Examples examples_mapConcat = {
+    {
+        "Usage example",
+        "SELECT mapConcat(map('k1', 'v1'), map('k2', 'v2'))",
+        "{'k1':'v1','k2':'v2'}"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapConcat = {23, 4};
+    FunctionDocumentation::Category category_mapConcat = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapConcat = {description_mapConcat, syntax_mapConcat, arguments_mapConcat, returned_value_mapConcat, examples_mapConcat, introduced_in_mapConcat, category_mapConcat};
+    factory.registerFunction<FunctionMapConcat>(documentation_mapConcat);
 
-    factory.registerFunction<FunctionMapConcat>(
-        FunctionDocumentation{
-            .description="The same as arrayConcat.",
-            .examples{{"mapConcat", "SELECT mapConcat(map('k1', 'v1'), map('k2', 'v2'))", ""}},
-            .introduced_in = {23, 4},
-            .category = category_map,
-        });
+    /// mapKeys documentation
+    FunctionDocumentation::Description description_mapKeys = R"(
+Returns the keys of a given map.
+This function can be optimized by enabling setting [`optimize_functions_to_subcolumns`](/operations/settings/settings#optimize_functions_to_subcolumns).
+With the setting enabled, the function only reads the `keys` subcolumn instead of the entire map.
+The query `SELECT mapKeys(m) FROM table` is transformed to `SELECT m.keys FROM table`.
+)";
+    FunctionDocumentation::Syntax syntax_mapKeys = "mapKeys(map)";
+    FunctionDocumentation::Arguments arguments_mapKeys = {
+        {"map", "Map to extract keys from.", {"Map(K, V)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapKeys = {"Returns array containing all keys from the map.", {"Array(T)"}};
+    FunctionDocumentation::Examples examples_mapKeys = {
+    {
+        "Usage example",
+        "SELECT mapKeys(map('k1', 'v1', 'k2', 'v2'))",
+        "['k1','k2']"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapKeys = {21, 2};
+    FunctionDocumentation::Category category_mapKeys = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapKeys = {description_mapKeys, syntax_mapKeys, arguments_mapKeys, returned_value_mapKeys, examples_mapKeys, introduced_in_mapKeys, category_mapKeys};
+    factory.registerFunction<FunctionMapKeys>(documentation_mapKeys);
 
-    factory.registerFunction<FunctionMapKeys>(
-        FunctionDocumentation{
-            .description="Returns an array with the keys of map.",
-            .examples{{"mapKeys", "SELECT mapKeys(map('k1', 'v1', 'k2', 'v2'))", ""}},
-            .introduced_in = {21, 2},
-            .category = category_map,
-        });
+    /// mapValues documentation
+    FunctionDocumentation::Description description_mapValues = R"(
+Returns the values of a given map.
+This function can be optimized by enabling setting [`optimize_functions_to_subcolumns`](/operations/settings/settings#optimize_functions_to_subcolumns).
+With the setting enabled, the function only reads the `values` subcolumn instead of the entire map.
+The query `SELECT mapValues(m) FROM table` is transformed to `SELECT m.values FROM table`.
+)";
+    FunctionDocumentation::Syntax syntax_mapValues = "mapValues(map)";
+    FunctionDocumentation::Arguments arguments_mapValues = {
+        {"map", "Map to extract values from.", {"Map(K, V)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapValues = {"Returns an array containing all the values from the map.", {"Array(T)"}};
+    FunctionDocumentation::Examples examples_mapValues = {
+    {
+        "Usage example",
+        "SELECT mapValues(map('k1', 'v1', 'k2', 'v2'))",
+        "['v1','v2']"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapValues = {21, 2};
+    FunctionDocumentation::Category category_mapValues = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapValues = {description_mapValues, syntax_mapValues, arguments_mapValues, returned_value_mapValues, examples_mapValues, introduced_in_mapValues, category_mapValues};
+    factory.registerFunction<FunctionMapValues>(documentation_mapValues);
 
-    factory.registerFunction<FunctionMapValues>(
-        FunctionDocumentation{
-            .description="Returns an array with the values of map.",
-            .examples{{"mapValues", "SELECT mapValues(map('k1', 'v1', 'k2', 'v2'))", ""}},
-            .introduced_in = {21, 2},
-            .category = category_map,
-        });
-
-    factory.registerFunction<FunctionMapContainsKey>(
-        FunctionDocumentation{
-            .description="Checks whether the map has the specified key.",
-            .examples{{"mapContainsKey", "SELECT mapContainsKey(map('k1', 'v1', 'k2', 'v2'), 'k1')", ""}},
-            .introduced_in = {25, 5},
-            .category = category_map,
-        });
+    /// mapContainsKey documentation
+    FunctionDocumentation::Description description_mapContainsKey = R"(
+Determines if a key is contained in a map.
+)";
+    FunctionDocumentation::Syntax syntax_mapContainsKey = "mapContains(map, key)";
+    FunctionDocumentation::Arguments arguments_mapContainsKey = {
+        {"map", "Map to search in.", {"Map(K, V)"}},
+        {"key", "Key to search for. Type must match the key type of the map.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapContainsKey = {"Returns 1 if map contains key, 0 if not.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_mapContainsKey = {
+    {
+        "Usage example",
+        "SELECT mapContainsKey(map('k1', 'v1', 'k2', 'v2'), 'k1')",
+        "1"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapContainsKey = {21, 2};
+    FunctionDocumentation::Category category_mapContainsKey = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapContainsKey = {description_mapContainsKey, syntax_mapContainsKey, arguments_mapContainsKey, returned_value_mapContainsKey, examples_mapContainsKey, introduced_in_mapContainsKey, category_mapContainsKey};
+    factory.registerFunction<FunctionMapContainsKey>(documentation_mapContainsKey);
 
     factory.registerAlias("mapContains", "mapContainsKey", FunctionFactory::Case::Sensitive);
 
-    factory.registerFunction<FunctionMapContainsValue>(
-        FunctionDocumentation{
-            .description="Checks whether the map has the specified value.",
-            .examples{{"mapContainsValue", "SELECT mapContainsValue(map('k1', 'v1', 'k2', 'v2'), 'v1')", ""}},
-            .introduced_in = {25, 5},
-            .category = category_map,
-        });
+    /// mapContainsValue documentation
+    FunctionDocumentation::Description description_mapContainsValue = R"(
+Determines if a value is contained in a map.
+)";
+    FunctionDocumentation::Syntax syntax_mapContainsValue = "mapContainsValue(map, value)";
+    FunctionDocumentation::Arguments arguments_mapContainsValue = {
+        {"map", "Map to search in.", {"Map(K, V)"}},
+        {"value", "Value to search for. Type must match the value type of map.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapContainsValue = {"Returns `1` if the map contains the value, `0` if not.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_mapContainsValue = {
+    {
+        "Usage example",
+        "SELECT mapContainsValue(map('k1', 'v1', 'k2', 'v2'), 'v1')",
+        "1"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapContainsValue = {25, 6};
+    FunctionDocumentation::Category category_mapContainsValue = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapContainsValue = {description_mapContainsValue, syntax_mapContainsValue, arguments_mapContainsValue, returned_value_mapContainsValue, examples_mapContainsValue, introduced_in_mapContainsValue, category_mapContainsValue};
+    factory.registerFunction<FunctionMapContainsValue>(documentation_mapContainsValue);
 
-    factory.registerFunction<FunctionMapFilter>(
-        FunctionDocumentation{
-            .description="The same as arrayFilter.",
-            .examples{{"mapFilter", "SELECT mapFilter((k, v) -> v > 1, map('k1', 1, 'k2', 2))", ""}},
-            .introduced_in = {22, 3},
-            .category = category_map,
-        });
+    /// mapFilter documentation
+    FunctionDocumentation::Description description_mapFilter = R"(
+Filters a map by applying a function to each map element.
+)";
+    FunctionDocumentation::Syntax syntax_mapFilter = "mapFilter(func, map)";
+    FunctionDocumentation::Arguments arguments_mapFilter = {
+        {"func", "Lambda function.", {"Lambda function"}},
+        {"map", "Map to filter.", {"Map(K, V)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapFilter = {"Returns a map containing only the elements in the map for which `func` returns something other than `0`.", {"Map(K, V)"}};
+    FunctionDocumentation::Examples examples_mapFilter = {
+    {
+        "Usage example",
+        "SELECT mapFilter((k, v) -> v > 1, map('k1', 1, 'k2', 2))",
+        "{'k2':2}"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapFilter = {22, 3};
+    FunctionDocumentation::Category category_mapFilter = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapFilter = {description_mapFilter, syntax_mapFilter, arguments_mapFilter, returned_value_mapFilter, examples_mapFilter, introduced_in_mapFilter, category_mapFilter};
+    factory.registerFunction<FunctionMapFilter>(documentation_mapFilter);
 
-    factory.registerFunction<FunctionMapApply>(
-        FunctionDocumentation{
-            .description="The same as arrayMap.",
-            .examples{{"mapApply", "SELECT mapApply((k, v) -> (k, v * 2), map('k1', 1, 'k2', 2))", ""}},
-            .introduced_in = {22, 3},
-            .category = category_map,
-        });
+    /// mapApply documentation
+    FunctionDocumentation::Description description_mapApply = R"(
+Applies a function to each element of a map.
+)";
+    FunctionDocumentation::Syntax syntax_mapApply = "mapApply(func, map)";
+    FunctionDocumentation::Arguments arguments_mapApply = {
+        {"func", "Lambda function.", {"Lambda function"}},
+        {"map", "Map to apply function to.", {"Map(K, V)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapApply = {"Returns a new map obtained from the original map by application of `func` for each element.", {"Map(K, V)"}};
+    FunctionDocumentation::Examples examples_mapApply = {
+    {
+        "Usage example",
+        "SELECT mapApply((k, v) -> (k, v * 2), map('k1', 1, 'k2', 2))",
+        "{'k1':2,'k2':4}"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapApply = {22, 3};
+    FunctionDocumentation::Category category_mapApply = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapApply = {description_mapApply, syntax_mapApply, arguments_mapApply, returned_value_mapApply, examples_mapApply, introduced_in_mapApply, category_mapApply};
+    factory.registerFunction<FunctionMapApply>(documentation_mapApply);
 
-    factory.registerFunction<FunctionMapExists>(
-        FunctionDocumentation{
-            .description="The same as arrayExists.",
-            .examples{{"mapExists", "SELECT mapExists((k, v) -> v = 1, map('k1', 1, 'k2', 2))", ""}},
-            .introduced_in = {23, 4},
-            .category = category_map,
-        });
+    /// mapExists documentation
+    FunctionDocumentation::Description description_mapExists = R"(
+Tests whether a condition holds for at least one key-value pair in a map.
+`mapExists` is a higher-order function.
+You can pass a lambda function to it as the first argument.
+)";
+    FunctionDocumentation::Syntax syntax_mapExists = "mapExists([func,] map)";
+    FunctionDocumentation::Arguments arguments_mapExists = {
+        {"func", "Optional. Lambda function.", {"Lambda function"}},
+        {"map", "Map to check.", {"Map(K, V)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapExists = {"Returns `1` if at least one key-value pair satisfies the condition, `0` otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_mapExists = {
+    {
+        "Usage example",
+        "SELECT mapExists((k, v) -> v = 1, map('k1', 1, 'k2', 2))",
+        "1"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapExists = {23, 4};
+    FunctionDocumentation::Category category_mapExists = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapExists = {description_mapExists, syntax_mapExists, arguments_mapExists, returned_value_mapExists, examples_mapExists, introduced_in_mapExists, category_mapExists};
+    factory.registerFunction<FunctionMapExists>(documentation_mapExists);
 
-    factory.registerFunction<FunctionMapAll>(
-        FunctionDocumentation{
-            .description="The same as arrayAll.",
-            .examples{{"mapAll", "SELECT mapAll((k, v) -> v = 1, map('k1', 1, 'k2', 2))", ""}},
-            .introduced_in = {23, 4},
-            .category = category_map,
-        });
+    /// mapAll documentation
+    FunctionDocumentation::Description description_mapAll = R"(
+Tests whether a condition holds for all key-value pairs in a map.
+`mapAll` is a higher-order function.
+You can pass a lambda function to it as the first argument.
+)";
+    FunctionDocumentation::Syntax syntax_mapAll = "mapAll([func,] map)";
+    FunctionDocumentation::Arguments arguments_mapAll = {
+        {"func", "Lambda function.", {"Lambda function"}},
+        {"map", "Map to check.", {"Map(K, V)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapAll = {"Returns `1` if all key-value pairs satisfy the condition, `0` otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_mapAll = {
+    {
+        "Usage example",
+        "SELECT mapAll((k, v) -> v = 1, map('k1', 1, 'k2', 2))",
+        "0"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapAll = {23, 4};
+    FunctionDocumentation::Category category_mapAll = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapAll = {description_mapAll, syntax_mapAll, arguments_mapAll, returned_value_mapAll, examples_mapAll, introduced_in_mapAll, category_mapAll};
+    factory.registerFunction<FunctionMapAll>(documentation_mapAll);
 
-    factory.registerFunction<FunctionMapSort>(
-        FunctionDocumentation{
-            .description="The same as arraySort.",
-            .examples{{"mapSort", "SELECT mapSort((k, v) -> v, map('k1', 3, 'k2', 1, 'k3', 2))", ""}},
-            .introduced_in = {23, 4},
-            .category = category_map,
-        });
+    /// mapSort documentation
+    FunctionDocumentation::Description description_mapSort = R"(
+Sorts the elements of a map in ascending order.
+If the func function is specified, the sorting order is determined by the result of the func function applied to the keys and values of the map.
+)";
+    FunctionDocumentation::Syntax syntax_mapSort = "mapSort([func,] map)";
+    FunctionDocumentation::Arguments arguments_mapSort = {
+        {"func", "Optional. Lambda function.", {"Lambda function"}},
+        {"map", "Map to sort.", {"Map(K, V)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapSort = {"Returns a map sorted in ascending order.", {"Map(K, V)"}};
+    FunctionDocumentation::Examples examples_mapSort = {
+    {
+        "Usage example",
+        "SELECT mapSort((k, v) -> v, map('k1', 3, 'k2', 1, 'k3', 2))",
+        "{'k2':1,'k3':2,'k1':3}"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapSort = {23, 4};
+    FunctionDocumentation::Category category_mapSort = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapSort = {description_mapSort, syntax_mapSort, arguments_mapSort, returned_value_mapSort, examples_mapSort, introduced_in_mapSort, category_mapSort};
+    factory.registerFunction<FunctionMapSort>(documentation_mapSort);
 
-    factory.registerFunction<FunctionMapReverseSort>(
-        FunctionDocumentation{
-            .description="The same as arrayReverseSort.",
-            .examples{{"mapReverseSort", "SELECT mapReverseSort((k, v) -> v, map('k1', 3, 'k2', 1, 'k3', 2))", ""}},
-            .introduced_in = {23, 4},
-            .category = category_map,
-        });
+    /// mapReverseSort documentation
+    FunctionDocumentation::Description description_mapReverseSort = R"(
+Sorts the elements of a map in descending order.
+If the func function is specified, the sorting order is determined by the result of the func function applied to the keys and values of the map.
+)";
+    FunctionDocumentation::Syntax syntax_mapReverseSort = "mapReverseSort([func,] map)";
+    FunctionDocumentation::Arguments arguments_mapReverseSort = {
+        {"func", "Optional. Lambda function.", {"Lambda function"}},
+        {"map", "Map to sort.", {"Map(K, V)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapReverseSort = {"Returns a map sorted in descending order.", {"Map(K, V)"}};
+    FunctionDocumentation::Examples examples_mapReverseSort = {
+    {
+        "Usage example",
+        "SELECT mapReverseSort((k, v) -> v, map('k1', 3, 'k2', 1, 'k3', 2))",
+        "{'k1':3,'k3':2,'k2':1}"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapReverseSort = {23, 4};
+    FunctionDocumentation::Category category_mapReverseSort = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapReverseSort = {description_mapReverseSort, syntax_mapReverseSort, arguments_mapReverseSort, returned_value_mapReverseSort, examples_mapReverseSort, introduced_in_mapReverseSort, category_mapReverseSort};
+    factory.registerFunction<FunctionMapReverseSort>(documentation_mapReverseSort);
 
-    factory.registerFunction<FunctionMapPartialSort>(
-        FunctionDocumentation{
-            .description="The same as arrayReverseSort.",
-            .examples{{"mapPartialSort", "SELECT mapPartialSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2))", ""}},
-            .introduced_in = {23, 4},
-            .category = category_map,
-        });
+    /// mapPartialSort documentation
+    FunctionDocumentation::Description description_mapPartialSort = R"(
+Sorts the elements of a map in ascending order with additional limit argument allowing partial sorting.
+If the func function is specified, the sorting order is determined by the result of the func function applied to the keys and values of the map.
+)";
+    FunctionDocumentation::Syntax syntax_mapPartialSort = "mapPartialSort([func,] limit, map)";
+    FunctionDocumentation::Arguments arguments_mapPartialSort = {
+        {"func", "Optional. Lambda function.", {"Lambda function"}},
+        {"limit", "Elements in the range `[1..limit]` are sorted.", {"(U)Int*"}},
+        {"map", "Map to sort.", {"Map(K, V)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapPartialSort = {"Returns a partially sorted map.", {"Map(K, V)"}};
+    FunctionDocumentation::Examples examples_mapPartialSort = {
+    {
+        "Usage example",
+        "SELECT mapPartialSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2))",
+        "{'k2':1,'k3':2,'k1':3}"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapPartialSort = {23, 4};
+    FunctionDocumentation::Category category_mapPartialSort = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapPartialSort = {description_mapPartialSort, syntax_mapPartialSort, arguments_mapPartialSort, returned_value_mapPartialSort, examples_mapPartialSort, introduced_in_mapPartialSort, category_mapPartialSort};
+    factory.registerFunction<FunctionMapPartialSort>(documentation_mapPartialSort);
 
-    factory.registerFunction<FunctionMapPartialReverseSort>(
-        FunctionDocumentation{
-            .description="The same as arrayPartialReverseSort.",
-            .examples{{"mapPartialReverseSort", "SELECT mapPartialReverseSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2))", ""}},
-            .introduced_in = {23, 4},
-            .category = category_map,
-        });
+    /// mapPartialReverseSort documentation
+    FunctionDocumentation::Description description_mapPartialReverseSort = R"(
+Sorts the elements of a map in descending order with additional limit argument allowing partial sorting.
+If the func function is specified, the sorting order is determined by the result of the func function applied to the keys and values of the map.
+)";
+    FunctionDocumentation::Syntax syntax_mapPartialReverseSort = "mapPartialReverseSort([func,] limit, map)";
+    FunctionDocumentation::Arguments arguments_mapPartialReverseSort = {
+        {"func", "Optional. Lambda function.", {"Lambda function"}},
+        {"limit", "Elements in the range `[1..limit]` are sorted.", {"(U)Int*"}},
+        {"map", "Map to sort.", {"Map(K, V)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapPartialReverseSort = {"Returns a partially sorted map in descending order.", {"Map(K, V)"}};
+    FunctionDocumentation::Examples examples_mapPartialReverseSort = {
+    {
+        "Usage example",
+        "SELECT mapPartialReverseSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2))",
+        "{'k1':3,'k3':2,'k2':1}"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapPartialReverseSort = {23, 4};
+    FunctionDocumentation::Category category_mapPartialReverseSort = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapPartialReverseSort = {description_mapPartialReverseSort, syntax_mapPartialReverseSort, arguments_mapPartialReverseSort, returned_value_mapPartialReverseSort, examples_mapPartialReverseSort, introduced_in_mapPartialReverseSort, category_mapPartialReverseSort};
+    factory.registerFunction<FunctionMapPartialReverseSort>(documentation_mapPartialReverseSort);
 
-    factory.registerFunction<FunctionMapContainsKeyLike>(
-        FunctionDocumentation{
-            .description="Checks whether map contains key LIKE specified pattern.",
-            .examples{{"mapContainsKeyLike", "SELECT mapContainsKeyLike(map('k1-1', 1, 'k2-1', 2), 'k1%')", ""}},
-            .introduced_in = {23, 4},
-            .category = category_map,
-        });
+    /// mapContainsKeyLike documentation
+    FunctionDocumentation::Description description_mapContainsKeyLike = R"(
+Checks whether map contains key `LIKE` specified pattern.
+)";
+    FunctionDocumentation::Syntax syntax_mapContainsKeyLike = "mapContainsKeyLike(map, pattern)";
+    FunctionDocumentation::Arguments arguments_mapContainsKeyLike = {
+        {"map", "Map to search in.", {"Map(K, V)"}},
+        {"pattern", "Pattern to match keys against.", {"const String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapContainsKeyLike = {"Returns `1` if `map` contains a key matching `pattern`, `0` otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_mapContainsKeyLike = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE tab (a Map(String, String))
+ENGINE = MergeTree
+ORDER BY tuple();
 
-    factory.registerFunction<FunctionMapContainsValueLike>(
-        FunctionDocumentation{
-            .description="Checks whether map contains value LIKE specified pattern.",
-            .examples{{"mapContainsValueLike", "SELECT mapContainsValueLike(map(1, 'v1-1', '2, 'v2-2'), 'v1%')", ""}},
-            .introduced_in = {25, 5},
-            .category = category_map,
-        });
+INSERT INTO tab VALUES ({'abc':'abc','def':'def'}), ({'hij':'hij','klm':'klm'});
 
-    factory.registerFunction<FunctionMapExtractKeyLike>(
-        FunctionDocumentation{
-            .description="Returns a map with elements which key matches the specified pattern.",
-            .examples{{"mapExtractKeyLike", "SELECT mapExtractKeyLike(map('k1-1', 1, 'k2-1', 2), 'k1%')", ""}},
-            .introduced_in = {23, 4},
-            .category = category_map,
-        });
+SELECT mapContainsKeyLike(a, 'a%') FROM tab;
+        )",
+        R"(
+┌─mapContainsKeyLike(a, 'a%')─┐
+│                           1 │
+│                           0 │
+└─────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapContainsKeyLike = {23, 4};
+    FunctionDocumentation::Category category_mapContainsKeyLike = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapContainsKeyLike = {description_mapContainsKeyLike, syntax_mapContainsKeyLike, arguments_mapContainsKeyLike, returned_value_mapContainsKeyLike, examples_mapContainsKeyLike, introduced_in_mapContainsKeyLike, category_mapContainsKeyLike};
+    factory.registerFunction<FunctionMapContainsKeyLike>(documentation_mapContainsKeyLike);
 
-    factory.registerFunction<FunctionMapExtractValueLike>(
-        FunctionDocumentation{
-            .description="Returns a map with elements which value matches the specified pattern.",
-            .examples{{"mapExtractValueLike", "SELECT mapExtractValueLike(map('k1-1', 'v1-1', 'k2-1', 'v2-1'), 'v1%')", ""}},
-            .introduced_in = {25, 5},
-            .category = category_map,
-        });
+    /// mapContainsValueLike documentation
+    FunctionDocumentation::Description description_mapContainsValueLike = R"(
+Checks whether a map contains a value `LIKE` the specified pattern.
+)";
+    FunctionDocumentation::Syntax syntax_mapContainsValueLike = "mapContainsValueLike(map, pattern)";
+    FunctionDocumentation::Arguments arguments_mapContainsValueLike = {
+        {"map", "Map to search in.", {"Map(K, V)"}},
+        {"pattern", "Pattern to match values against.", {"const String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapContainsValueLike = {"Returns `1` if `map` contains a value matching `pattern`, `0` otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_mapContainsValueLike = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE tab (a Map(String, String))
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO tab VALUES ({'abc':'abc','def':'def'}), ({'hij':'hij','klm':'klm'});
+
+SELECT mapContainsValueLike(a, 'a%') FROM tab;
+        )",
+        R"(
+┌─mapContainsV⋯ke(a, 'a%')─┐
+│                        1 │
+│                        0 │
+└──────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapContainsValueLike = {25, 5};
+    FunctionDocumentation::Category category_mapContainsValueLike = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapContainsValueLike = {description_mapContainsValueLike, syntax_mapContainsValueLike, arguments_mapContainsValueLike, returned_value_mapContainsValueLike, examples_mapContainsValueLike, introduced_in_mapContainsValueLike, category_mapContainsValueLike};
+    factory.registerFunction<FunctionMapContainsValueLike>(documentation_mapContainsValueLike);
+
+    /// mapExtractKeyLike documentation
+    FunctionDocumentation::Description description_mapExtractKeyLike = R"(
+Give a map with string keys and a `LIKE` pattern, this function returns a map with elements where the key matches the pattern.
+)";
+    FunctionDocumentation::Syntax syntax_mapExtractKeyLike = "mapExtractKeyLike(map, pattern)";
+    FunctionDocumentation::Arguments arguments_mapExtractKeyLike = {
+        {"map", "Map to extract from.", {"Map(K, V)"}},
+        {"pattern", "Pattern to match keys against.", {"const String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapExtractKeyLike = {"Returns a map containing elements the key matching the specified pattern. If no elements match the pattern, an empty map is returned.", {"Map(K, V)"}};
+    FunctionDocumentation::Examples examples_mapExtractKeyLike = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE tab (a Map(String, String))
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO tab VALUES ({'abc':'abc','def':'def'}), ({'hij':'hij','klm':'klm'});
+
+SELECT mapExtractKeyLike(a, 'a%') FROM tab;
+        )",
+        R"(
+┌─mapExtractKeyLike(a, 'a%')─┐
+│ {'abc':'abc'}              │
+│ {}                         │
+└────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapExtractKeyLike = {23, 4};
+    FunctionDocumentation::Category category_mapExtractKeyLike = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapExtractKeyLike = {description_mapExtractKeyLike, syntax_mapExtractKeyLike, arguments_mapExtractKeyLike, returned_value_mapExtractKeyLike, examples_mapExtractKeyLike, introduced_in_mapExtractKeyLike, category_mapExtractKeyLike};
+    factory.registerFunction<FunctionMapExtractKeyLike>(documentation_mapExtractKeyLike);
+
+    /// mapExtractValueLike documentation
+    FunctionDocumentation::Description description_mapExtractValueLike = R"(
+Given a map with string values and a `LIKE` pattern, this function returns a map with elements where the value matches the pattern.
+)";
+    FunctionDocumentation::Syntax syntax_mapExtractValueLike = "mapExtractValueLike(map, pattern)";
+    FunctionDocumentation::Arguments arguments_mapExtractValueLike = {
+        {"map", "Map to extract from.", {"Map(K, V)"}},
+        {"pattern", "Pattern to match values against.", {"const String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapExtractValueLike = {"Returns a map containing elements the value matching the specified pattern. If no elements match the pattern, an empty map is returned.", {"Map(K, V)"}};
+    FunctionDocumentation::Examples examples_mapExtractValueLike = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE tab (a Map(String, String))
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO tab VALUES ({'abc':'abc','def':'def'}), ({'hij':'hij','klm':'klm'});
+
+SELECT mapExtractValueLike(a, 'a%') FROM tab;
+        )",
+        R"(
+┌─mapExtractValueLike(a, 'a%')─┐
+│ {'abc':'abc'}                │
+│ {}                           │
+└──────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapExtractValueLike = {25, 5};
+    FunctionDocumentation::Category category_mapExtractValueLike = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapExtractValueLike = {description_mapExtractValueLike, syntax_mapExtractValueLike, arguments_mapExtractValueLike, returned_value_mapExtractValueLike, examples_mapExtractValueLike, introduced_in_mapExtractValueLike, category_mapExtractValueLike};
+    factory.registerFunction<FunctionMapExtractValueLike>(documentation_mapExtractValueLike);
 }
 
 }

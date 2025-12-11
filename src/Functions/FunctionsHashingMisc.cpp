@@ -470,7 +470,7 @@ Calculates a "HiveHash" from a string.
 This is just [`JavaHash`](#javaHash) with zeroed out sign bits.
 This function is used in [Apache Hive](https://en.wikipedia.org/wiki/Apache_Hive) for versions before 3.0.
 
-::caution
+:::caution
 This hash function is unperformant.
 Use it only when this algorithm is already used in another system and you need to calculate the same result.
 :::

@@ -163,7 +163,7 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
             return;
         add_rows(it, kafka_table);
     };
-    auto databases = DatabaseCatalog::instance().getDatabases();
+    auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
     for (const auto & db : databases)
     {
         for (auto it = db.second->getTablesIterator(context); it->isValid(); it->next())

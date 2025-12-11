@@ -1653,7 +1653,7 @@ struct MatcherString
     {
         auto data_ref = data.getDataAt(row_data);
         auto index_ref = index.getDataAt(row_index);
-        return memequalSmallAllowOverflow15(index_ref.data, index_ref.size, data_ref.data, data_ref.size);
+        return memequalSmallAllowOverflow15(index_ref.data(), index_ref.size(), data_ref.data(), data_ref.size());
     }
 };
 
@@ -1666,7 +1666,7 @@ struct MatcherStringConst
     bool match(size_t row_data, size_t /* row_index */) const
     {
         auto data_ref = data.getDataAt(row_data);
-        return index.size() == data_ref.size && memcmp(index.data(), data_ref.data, data_ref.size) == 0;
+        return index.size() == data_ref.size() && memcmp(index.data(), data_ref.data(), data_ref.size()) == 0;
     }
 };
 

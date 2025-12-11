@@ -33,7 +33,7 @@ public:
 private:
     void nextImpl() override;
 
-    void finalizeBefore() override;
+    void finalFlushBefore() override;
 
     FileEncryption::Header header;
     bool flush_header = false;

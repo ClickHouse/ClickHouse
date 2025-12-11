@@ -6,6 +6,7 @@ description: 'Returns an array of the approximately most frequent values in the 
 sidebar_position: 203
 slug: /sql-reference/aggregate-functions/reference/topkweighted
 title: 'topKWeighted'
+doc_type: 'reference'
 ---
 
 # topKWeighted

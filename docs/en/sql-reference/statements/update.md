@@ -5,6 +5,7 @@ sidebar_label: 'UPDATE'
 sidebar_position: 39
 slug: /sql-reference/statements/update
 title: 'The Lightweight UPDATE Statement'
+doc_type: 'reference'
 ---
 
 import BetaBadge from '@theme/badges/BetaBadge';

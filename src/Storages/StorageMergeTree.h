@@ -57,7 +57,7 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
 
-    bool supportsTransactions() const override { return true; }
+    bool supportsTransactions() const override { return support_transaction; }
 
     void read(
         QueryPlan & query_plan,
@@ -151,6 +151,9 @@ private:
     /// This set have to be used with `currently_processing_in_background_mutex`.
     DataParts currently_merging_mutating_parts;
 
+    /// currently mutating parts with future version
+    std::map<DataPartPtr, Int64> currently_mutating_part_future_versions;
+
     std::map<UInt64, MergeTreeMutationEntry> current_mutations_by_version;
 
     /// Unfinished mutations that are required for AlterConversions.
@@ -175,6 +178,8 @@ private:
     std::mutex mutation_prepared_sets_cache_mutex;
     std::map<Int64, PreparedSetsCachePtr::weak_type> mutation_prepared_sets_cache;
     PlainLightweightUpdatesSync lightweight_updates_sync;
+
+    const bool support_transaction;
 
     void loadMutations();
 

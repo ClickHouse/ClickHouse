@@ -16,6 +16,7 @@
     M(CrashLogElement) \
     M(OpenTelemetrySpanLogElement) \
     M(PartLogElement) \
+    M(BackgroundSchedulePoolLogElement) \
     M(QueryLogElement) \
     M(QueryThreadLogElement) \
     M(QueryViewsLogElement) \
@@ -35,6 +36,7 @@
     M(DeadLetterQueueElement) \
     M(ZooKeeperConnectionLogElement) \
     M(IcebergMetadataLogElement) \
+    M(DeltaMetadataLogElement) \
 
 #define SYSTEM_LOG_ELEMENTS_CLOUD(M) \
     M(DistributedCacheLogElement) \
@@ -170,7 +172,7 @@ private:
     // Flushed log up to this index, exclusive
     Index flushed_index = 0;
 
-    // The same logic for the prepare tables: if requested_prepar_tables > prepared_tables we need to do prepare
+    // The same logic for the prepare tables: if requested_prepare_tables > prepared_tables we need to do prepare
     // except that initial prepared_tables is -1
     // it is due to the difference: when no logs have been written and we call flush logs
     // it becomes in the state: requested_flush_index = 0 and flushed_index = 0 -- we do not want to do anything

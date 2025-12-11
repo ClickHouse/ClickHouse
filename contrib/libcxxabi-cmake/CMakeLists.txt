@@ -12,7 +12,6 @@ set(SRCS
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_exception_storage.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_guard.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_handlers.cpp"
-# "${LIBCXXABI_SOURCE_DIR}/src/cxa_noexception.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_personality.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_thread_atexit.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_vector.cpp"
@@ -37,7 +36,10 @@ target_include_directories(cxxabi SYSTEM BEFORE
     PRIVATE $<BUILD_INTERFACE:${LIBCXXABI_SOURCE_DIR}/../libcxx/src>
 )
 target_compile_definitions(cxxabi PRIVATE -D_LIBCPP_BUILDING_LIBRARY -DHAS_THREAD_LOCAL)
-target_compile_options(cxxabi PRIVATE -nostdinc++ -fno-sanitize=undefined -Wno-macro-redefined) # If we don't disable UBSan, infinite recursion happens in dynamic_cast.
+# If we don't disable UBSan, infinite recursion happens in dynamic_cast.
+target_compile_options(cxxabi PRIVATE -nostdinc++ -fno-sanitize=undefined -Wno-macro-redefined)
+# Demangling is very slow under MSan due to frame-pointers, it is OK to omit them for cxxabi anyway
+target_compile_options(cxxabi PRIVATE -fomit-frame-pointer -momit-leaf-frame-pointer)
 target_link_libraries(cxxabi PUBLIC unwind)
 
 # Enable capturing stack traces for all exceptions.

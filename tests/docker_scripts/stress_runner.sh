@@ -125,7 +125,19 @@ if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
 elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
     TEMP_POLICY="azure_cache"
 else
-    TEMP_POLICY="default"
+    random=$((RANDOM % 3))
+    if [[ $random -eq 0 ]]; then
+        TEMP_POLICY="default"
+        echo "Using local storage policy"
+    elif [[ $random -eq 1 ]]; then
+        TEMP_POLICY="s3_cache"
+        export USE_S3_STORAGE_FOR_MERGE_TREE=1
+        echo "Using s3 storage policy"
+    elif [[ $random -eq 2 ]]; then
+        TEMP_POLICY="azure_cache"
+        export USE_AZURE_STORAGE_FOR_MERGE_TREE=1
+        echo "Using azure storage policy"
+    fi
 fi
 
 
@@ -294,7 +306,7 @@ if [ $? -ne 0 ]; then
 fi
 
 cd /repo/tests/ || exit 1  # clickhouse-test can find queries dir from there
-python3 /repo/tests/ci/stress.py --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit 1200 --encrypted-storage "$USE_ENCRYPTED_STORAGE" \
+python3 /repo/ci/jobs/scripts/stress/stress.py --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit 1200 --encrypted-storage "$USE_ENCRYPTED_STORAGE" \
     && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
     || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
 

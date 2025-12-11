@@ -37,6 +37,7 @@ public:
 
     String getName() const override { return name; }
     bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return (mode == ErrorHandlingMode::Default) ? 2 : 1 ; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
@@ -66,7 +67,7 @@ private:
                             "The argument of function {} should be a constant string with the name of a setting",
                             String{name});
 
-        std::string_view setting_name{column->getDataAt(0).toView()};
+        std::string_view setting_name{column->getDataAt(0)};
         Field setting_value;
         if constexpr (mode == ErrorHandlingMode::Exception)
             setting_value = getContext()->getSettingsRef().get(setting_name);

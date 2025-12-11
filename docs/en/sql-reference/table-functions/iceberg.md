@@ -5,6 +5,7 @@ sidebar_label: 'iceberg'
 sidebar_position: 90
 slug: /sql-reference/table-functions/iceberg
 title: 'iceberg'
+doc_type: 'reference'
 ---
 
 # iceberg Table Function {#iceberg-table-function}
@@ -67,6 +68,48 @@ Here is an example of configuring a named collection for storing the URL and cre
 ```sql
 SELECT * FROM icebergS3(iceberg_conf, filename = 'test_table')
 DESCRIBE icebergS3(iceberg_conf, filename = 'test_table')
+```
+
+## Using a data catalog {#iceberg-writes-catalogs}
+
+Iceberg tables can also be used with various data catalogs, such as the [REST Catalog](https://iceberg.apache.org/rest-catalog-spec/), [AWS Glue Data Catalog](https://docs.aws.amazon.com/prescriptive-guidance/latest/serverless-etl-aws-glue/aws-glue-data-catalog.html) and [Unity Catalog](https://www.unitycatalog.io/).
+
+:::important
+When using a catalog, most users will want to use the `DataLakeCatalog` database engine, which connects ClickHouse to your catalog to discover your tables. You can use this database engine instead of manually creating individual tables with `IcebergS3` table engine.
+:::
+
+To use them, create a table with the `IcebergS3` engine and provide the necessary settings.
+
+For example, using REST Catalog with MinIO storage:
+```sql
+CREATE TABLE `database_name.table_name`
+ENGINE = IcebergS3(
+  'http://minio:9000/warehouse-rest/table_name/',
+  'minio_access_key',
+  'minio_secret_key'
+)
+SETTINGS 
+  storage_catalog_type="rest",
+  storage_warehouse="demo",
+  object_storage_endpoint="http://minio:9000/warehouse-rest",
+  storage_region="us-east-1",
+  storage_catalog_url="http://rest:8181/v1"
+```
+
+Or, using AWS Glue Data Catalog with S3:
+```sql
+CREATE TABLE `my_database.my_table`  
+ENGINE = IcebergS3(
+  's3://my-data-bucket/warehouse/my_database/my_table/',
+  'aws_access_key',
+  'aws_secret_key'
+)
+SETTINGS 
+  storage_catalog_type = 'glue',
+  storage_warehouse = 'my_database',
+  object_storage_endpoint = 's3://my-data-bucket/',
+  storage_region = 'us-east-1',
+  storage_catalog_url = 'https://glue.us-east-1.amazonaws.com/iceberg/v1'
 ```
 
 ## Schema Evolution {#schema-evolution}
@@ -158,8 +201,6 @@ Consider this sequence of operations:
 +------------+------------+
 |           1|        Mars|
 +------------+------------+
-
-
   SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
 
 +------------+------------+
@@ -216,8 +257,6 @@ A time travel query at a current moment might show a different schema than the c
 
 -- Query the table at a current moment
   SELECT * FROM spark_catalog.db.time_travel_example_2;
-
-
     +------------+------------+-----+
     |order_number|product_code|price|
     +------------+------------+-----+
@@ -315,6 +354,7 @@ SET allow_experimental_insert_into_iceberg = 1;
 ### Creating table {#create-iceberg-table}
 
 To create your own empty Iceberg table, use the same commands as for reading, but specify the schema explicitly.
+Writes supports all data formats from iceberg specification, such as Parquet, Avro, ORC.
 
 ### Example {#example-iceberg-writes-create}
 
@@ -460,16 +500,6 @@ Row 1:
 ──────
 x: Ivanov
 y: 993
-```
-
-## Table with catalogs {#iceberg-writes-catalogs}
-
-All the write features described above are also available with REST and Glue catalogs.
-To use them, create a table with the `IcebergS3` engine and provide the necessary settings:
-
-```sql
-CREATE TABLE `database_name.table_name`  ENGINE = IcebergS3('http://minio:9000/warehouse-rest/table_name/', 'minio_access_key', 'minio_secret_key')
-SETTINGS storage_catalog_type="rest", storage_warehouse="demo", object_storage_endpoint="http://minio:9000/warehouse-rest", storage_region="us-east-1", storage_catalog_url="http://rest:8181/v1",
 ```
 
 ## See Also {#see-also}
