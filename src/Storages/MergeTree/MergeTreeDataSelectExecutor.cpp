@@ -1679,12 +1679,6 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     /// for intermediate columns we never create `Range`, `FieldRef`, or `Field` in `KeyCondition`.
     std::vector<UInt8> equal_boundaries_mask(num_key_columns);
 
-    if (sparse_keys_size == 0)
-    {
-        /// KeyCondition uses no indexable PK columns: PK index is effectively unused.
-        key_condition_useful = false;
-    }
-
     /// For _part_offset and _part virtual columns
     DataTypes part_offset_types
         = {std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())};
@@ -1696,6 +1690,10 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         auto check_key_condition = [&]() -> BoolMask
         {
             if (!key_condition_useful)
+                return BoolMask(true, true);
+
+            /// Nothing can be inferred from empty ranges
+            if (sparse_keys_size == 0)
                 return BoolMask(true, true);
 
             if (range.end == marks_count)
