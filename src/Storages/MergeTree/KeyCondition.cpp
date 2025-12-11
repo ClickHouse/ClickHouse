@@ -2672,7 +2672,7 @@ KeyCondition::Description KeyCondition::getDescription() const
   * This enumeration over prefix of PK columns is convenient and extremely fast because no `Range` object is being created for the
   * intermediate columns that are not useful in KeyCondition. Maybe it is also possible to enumerate sparsely but that would require
   * other information about intermediate columns and different approach. It is not possible to guarantee correctness by only using
-  * sparse key column informations.
+  * sparse key column information.
   */
 
 /** For the range between tuples, determined by sparse_left_keys, left_bounded, sparse_right_keys, right_bounded,
