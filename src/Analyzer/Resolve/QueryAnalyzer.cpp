@@ -858,7 +858,6 @@ void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed, const Se
     }
 
     query_tree_node_typed.getOrderByNode() = list_node;
-    query_tree_node_typed.setIsOrderByAll(false);
 }
 
 void QueryAnalyzer::expandLimitByAll(QueryNode & query_tree_node_typed)

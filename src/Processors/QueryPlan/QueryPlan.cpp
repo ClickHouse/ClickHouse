@@ -172,7 +172,7 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
         isInitialized() ? 1 : 0);
 }
 
-    QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
+QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     const QueryPlanOptimizationSettings & optimization_settings,
     const BuildQueryPipelineSettings & build_pipeline_settings,
     bool do_optimize)

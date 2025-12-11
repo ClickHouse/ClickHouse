@@ -5,6 +5,7 @@
 #include <Access/EnabledQuota.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/QueryNode.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
@@ -110,6 +111,7 @@ namespace ErrorCodes
     extern const int QUERY_IS_PROHIBITED;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
+    extern const int LOGICAL_ERROR;
 }
 
 InterpreterInsertQuery::InterpreterInsertQuery(
@@ -584,24 +586,6 @@ static void applyTrivialInsertSelectOptimization(ASTInsertQuery & query, bool pr
     }
 }
 
-bool allNonConstColumnsAreSorted(const Block & header, const SortDescription & sort_description)
-{
-    std::unordered_set<String> sorted_columns;
-    for (const auto & sort_column : sort_description)
-        sorted_columns.insert(sort_column.column_name);
-
-    for (const auto & column : header.getColumnsWithTypeAndName())
-    {
-        if (column.column->isConst())
-            continue;
-
-        if (sorted_columns.find(column.name) == sorted_columns.end())
-            return false;
-    }
-
-    return true;
-}
-
 QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table)
 {
     ContextPtr select_context = getContext();
@@ -618,22 +602,14 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
             InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, select_context, select_query_options);
             pipeline = interpreter_select_analyzer.buildQueryPipeline();
 
-            {
-                // do not evaluate scalars for sorting analysis
-                select_query_options.only_analyze = true;
-                select_query_options.skip_optimize_redundant_functions_in_order_by = true;
+            const auto * node = interpreter_select_analyzer.getQueryTree()->as<QueryNode>();
+            select_query_sorted = node && node->isOrderByAll();
 
-                InterpreterSelectQueryAnalyzer interpreter_sorting(query.select, select_context, select_query_options);
-
-                QueryPlanOptimizationSettings optimization_settings(select_context);
-                auto & plan = interpreter_sorting.getQueryPlan();
-                auto sorting_properties = QueryPlanOptimizations::applyOrder(optimization_settings, *plan.getRootNode());
-                LOG_DEBUG(logger, "sorting props, count: {}, scope {}", sorting_properties.sort_description.size(), sorting_properties.sort_scope);
-
-                select_query_sorted = allNonConstColumnsAreSorted(pipeline.getHeader(), sorting_properties.sort_description)
-                    && sorting_properties.sort_scope == QueryPlanOptimizations::SortingProperty::SortScope::Global
-                    && pipeline.getNumStreams() == 1;
-            }
+            if (select_query_sorted && pipeline.getNumStreams() > 1)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "INSERT SELECT expecting single stream for fully sorted SELECT query,"
+                    " but got {} streams",
+                    pipeline.getNumStreams());
         }
         else
         {
