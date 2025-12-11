@@ -259,6 +259,21 @@ static void splitAndModifyMutationCommands(
                             ignored_columns.emplace(col.name);
                     }
                 }
+                if (command.type == MutationCommand::Type::MATERIALIZE_INDEX)
+                {
+                    const auto & indices = metadata_snapshot->getSecondaryIndices();
+                    auto it = std::find_if(indices.begin(), indices.end(), [command] (const auto & index) {return index.name == command.index_name;});
+                    if (it != indices.end())
+                    {
+                        for (const auto & col_name : it->expression->getRequiredColumns())
+                        {
+                            for_interpreter.emplace_back(
+                                MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = col_name});
+
+                            mutated_columns.emplace(col_name);
+                        }
+                    }
+                }
             }
             else if (command.type == MutationCommand::Type::DROP_INDEX
                      || command.type == MutationCommand::Type::DROP_PROJECTION
