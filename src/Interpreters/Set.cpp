@@ -704,8 +704,22 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
         size_t key_column = indexes_mapping[i].key_index;
         auto [is_key_col_present, sparse_pos] = get_sparse_info(key_column);
 
+        ranges.emplace_back(*ordered_set[i]);
+
         if (!is_key_col_present)
-            return {true, true};
+        {
+            /// We have no range information for this key column.
+            /// Most likely earlier columns were high cardinality, so this column and later column marks were not loaded into memory
+            /// Treat it as completely unconstrained; since we do not have the type information,
+            /// we do not know whether to createWholeUniverse() or createWholeUniverseWithoutNull().
+            /// So, we choose the more relaxed option:
+            /// [-inf, +inf] instead of ( -inf, +inf ).
+            ranges.back().left.update(NEGATIVE_INFINITY);
+            ranges.back().right.update(POSITIVE_INFINITY);
+            ranges.back().left_included = true;
+            ranges.back().right_included = true;
+            continue;
+        }
 
         std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
             sparse_key_ranges[sparse_pos],
@@ -716,7 +730,6 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
         if (!new_range)
             return {true, true};
 
-        ranges.emplace_back(*ordered_set[i]);
         ranges.back().left.update(new_range->left);
         ranges.back().right.update(new_range->right);
         ranges.back().left_included = new_range->left_included;
