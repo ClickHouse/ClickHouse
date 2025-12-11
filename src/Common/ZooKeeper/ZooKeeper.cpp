@@ -1121,7 +1121,10 @@ ZooKeeperPtr ZooKeeper::startNewSession() const
     if (reconnect_task)
         (*reconnect_task)->deactivate();
 
-    auto res = std::shared_ptr<ZooKeeper>(new ZooKeeper(args, zk_log, aggregated_zookeeper_log, availability_zones, std::move(optimal_impl)));
+    auto args_copy = args;
+    args_copy.last_zxid_seen = impl->getLastZXIDSeen();
+
+    auto res = std::shared_ptr<ZooKeeper>(new ZooKeeper(args_copy, zk_log, aggregated_zookeeper_log, availability_zones, std::move(optimal_impl)));
     res->initSession();
     return res;
 }

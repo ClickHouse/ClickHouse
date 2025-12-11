@@ -32,7 +32,7 @@ void ReadFromStreamLikeEngine::initializePipeline(QueryPipelineBuilder & pipelin
 {
     if (!getContext()->getSettingsRef()[Setting::stream_like_engine_allow_direct_select])
         throw Exception(
-            ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
+            ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`, but be aware that usually the read data is removed from the queue.");
 
     auto pipe = makePipe();
 

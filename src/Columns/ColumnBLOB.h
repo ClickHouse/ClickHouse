@@ -159,9 +159,9 @@ public:
     void insertData(const char *, size_t) override { throwInapplicable(); }
     void insertDefault() override { throwInapplicable(); }
     void popBack(size_t) override { throwInapplicable(); }
-    std::string_view serializeValueIntoArena(size_t, Arena &, char const *&) const override { throwInapplicable(); }
-    char * serializeValueIntoMemory(size_t, char *) const override { throwInapplicable(); }
-    void deserializeAndInsertFromArena(ReadBuffer &) override { throwInapplicable(); }
+    std::string_view serializeValueIntoArena(size_t, Arena &, char const *&, const IColumn::SerializationSettings *) const override { throwInapplicable(); }
+    char * serializeValueIntoMemory(size_t, char *, const IColumn::SerializationSettings *) const override { throwInapplicable(); }
+    void deserializeAndInsertFromArena(ReadBuffer &, const IColumn::SerializationSettings *) override { throwInapplicable(); }
     void skipSerializedInArena(ReadBuffer &) const override { throwInapplicable(); }
     void updateHashWithValue(size_t, SipHash &) const override { throwInapplicable(); }
     WeakHash32 getWeakHash32() const override { throwInapplicable(); }

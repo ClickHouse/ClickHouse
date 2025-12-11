@@ -547,6 +547,21 @@ TEST(AccessRights, Filter)
     ASSERT_EQ(res.size(), 0);
 }
 
+TEST(AccessRights, RevokeWithParameters)
+{
+    AccessRights root;
+    root.grantWithGrantOption(AccessType::SELECT);
+    root.grantWithGrantOption(AccessType::CREATE_USER);
+    root.revokeWildcard(AccessType::SELECT, "default", "zoo");
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON *.* WITH GRANT OPTION, GRANT CREATE USER ON * WITH GRANT OPTION, REVOKE SELECT ON default.zoo*");
+
+    root = {};
+    root.grantWithGrantOption(AccessType::SELECT);
+    root.grantWithGrantOption(AccessType::CREATE_USER);
+    root.revokeWildcard(AccessType::SELECT, "default", "foo", "bar");
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON *.* WITH GRANT OPTION, GRANT CREATE USER ON * WITH GRANT OPTION, REVOKE SELECT(bar*) ON default.foo");
+}
+
 TEST(AccessRights, ParialRevokeWithGrantOption)
 {
     AccessRights root;

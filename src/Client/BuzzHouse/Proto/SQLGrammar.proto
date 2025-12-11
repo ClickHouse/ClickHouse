@@ -1651,54 +1651,60 @@ enum SQLFunc {
 }
 
 enum SQLTableFunc {
-    TFazureBlobStorage = 1;
-    TFazureBlobStorageCluster = 2;
-    TFcluster = 3;
-    TFclusterAllReplicas = 4;
-    TFdeltaLake = 5;
-    TFdeltaLakeCluster = 6;
-    TFdictionary = 7;
-    TFexecutable = 8;
-    TFfile = 9;
-    TFfileCluster = 10;
-    TFformat = 11;
-    TFgcs = 12;
+    TFarrowFlight = 1;
+    TFazureBlobStorage = 2;
+    TFazureBlobStorageCluster = 3;
+    TFcluster = 4;
+    TFclusterAllReplicas = 5;
+    TFdeltaLake = 6;
+    TFdeltaLakeCluster = 7;
+    TFdictionary = 8;
+    TFexecutable = 9;
+    TFfile = 10;
+    TFfileCluster = 11;
+    TFformat = 12;
     TFfuzzJSON = 13;
     TFfuzzQuery = 14;
-    TFgenerateRandom = 15;
-    TFmergeTreeIndex = 16;
-    TFmergeTreeProjection = 18;
-    TFhdfs = 19;
-    TFhdfsCluster = 20;
-    TFhudi = 21;
-    TFhudiCluster = 22;
-    TFiceberg = 23;
-    TFicebergCluster = 24;
-    TFinput = 25;
-    TFjdbc = 26;
+    TFgcs = 15;
+    TFgenerateSeries = 16;
+    TFgenerateRandom = 17;
+    TFhdfs = 18;
+    TFhdfsCluster = 19;
+    TFhudi = 20;
+    TFhudiCluster = 21;
+    TFiceberg = 22;
+    TFicebergCluster = 23;
+    TFinput = 24;
+    TFjdbc = 25;
+    TFloop = 26;
     TFmerge = 27;
-    TFmongodb = 28;
-    TFmysql = 29;
-    TFnull = 30;
-    TFnumbers = 31;
-    TFtimeSeriesData = 32;
-    TFtimeSeriesMetrics = 33;
-    TFtimeSeriesTags = 34;
-    TFzeros = 35;
-    TFgenerateSeries = 36;
-    TFodbc = 37;
-    TFpostgresql = 38;
-    TFredis = 39;
-    TFremote = 40;
-    TFremoteSecure = 41;
-    TFS3 = 42;
-    TFS3Cluster = 43;
-    TFsqlite = 44;
-    TFurl = 45;
-    TFurlCluster = 46;
-    TFvalues = 47;
-    TFview = 48;
-    TFloop = 49;
+    TFmergeTreeIndex = 28;
+    TFmergeTreeProjection = 29;
+    TFmongodb = 30;
+    TFmysql = 31;
+    TFnull = 32;
+    TFnumbers = 33;
+    TFodbc = 34;
+    TFpaimon = 35;
+    TFpaimonCluster = 36;
+    TFpostgresql = 37;
+    TFprometheusQuery = 38;
+    TFprometheusQueryRange = 39;
+    TFredis = 40;
+    TFremote = 41;
+    TFremoteSecure = 42;
+    TFs3 = 43;
+    TFs3Cluster = 44;
+    TFsqlite = 45;
+    TFtimeSeriesData = 46;
+    TFtimeSeriesMetrics = 47;
+    TFtimeSeriesSelector = 48;
+    TFtimeSeriesTags = 49;
+    TFurl = 50;
+    TFurlCluster = 51;
+    TFvalues = 52;
+    TFview = 53;
+    TFytsaurus = 54;
 }
 
 message Database {
@@ -2774,22 +2780,22 @@ message TableFunction {
         PostgreSQLFunc postgresql = 6;
         SQLiteFunc sqite = 7;
         S3Func s3 = 8;
-        SQLTableFuncCall func = 9;
-        MergeFunc merge = 10;
-        ClusterFunc cluster = 11;
-        MergeTreeIndexFunc mtindex = 12;
-        TableOrFunction loop = 13;
-        GenerateRandomFunc grandom = 14;
-        ValuesStatement values = 15;
-        ExprSchemaTable dictionary = 16;
-        AzureBlobStorageFunc azure = 17;
-        LocalFunc local = 18;
-        URLFunc url = 19;
-        RedisFunc redis = 20;
-        MongoDBFunc mongodb = 21;
-        MergeTreeProjectionFunc mtproj = 22;
-        Expr nullf = 23;
-        ArrowFlightFunc flight = 24;
+        MergeFunc merge = 9;
+        ClusterFunc cluster = 10;
+        MergeTreeIndexFunc mtindex = 11;
+        TableOrFunction loop = 12;
+        GenerateRandomFunc grandom = 13;
+        ValuesStatement values = 14;
+        ExprSchemaTable dictionary = 15;
+        AzureBlobStorageFunc azure = 16;
+        LocalFunc local = 17;
+        URLFunc url = 18;
+        RedisFunc redis = 19;
+        MongoDBFunc mongodb = 20;
+        MergeTreeProjectionFunc mtproj = 21;
+        Expr nullf = 22;
+        ArrowFlightFunc flight = 23;
+        SQLTableFuncCall func = 24;
     }
 }
 
@@ -2866,10 +2872,15 @@ message GroupByStatement {
     optional WhereStatement having_expr = 3;
 }
 
-message LimitStatement {
+enum RowsKeyword {
+    OFF_ROW = 1;
+    OFF_ROWS = 2;
+}
+
+message LimitByStatement {
     required Expr limit = 1;
-    optional Expr offset = 2;
-    optional bool with_ties = 3;
+    optional bool comma = 2;
+    optional Expr offset = 3;
     oneof limit_by_oneof {
         Expr by_expr = 4;
         bool lall = 5;
@@ -2879,14 +2890,15 @@ message LimitStatement {
 message FetchStatement {
     required bool first = 1;
     required Expr row_count = 2;
-    required bool rows = 3;
+    required RowsKeyword rows = 3;
     required bool only = 4;
 }
 
 message OffsetStatement {
-    required Expr row_count = 1;
-    required bool rows = 2;
-    optional FetchStatement fetch = 3;
+    optional bool comma = 1;
+    required Expr row_count = 2;
+    optional RowsKeyword rows = 3;
+    optional FetchStatement fetch = 4;
 }
 
 enum AllOrDistinct {
@@ -2905,10 +2917,9 @@ message SelectStatementCore {
     optional OrderByStatement orderby = 8;
     repeated WindowDef window_defs = 9;
     optional WhereStatement qualify_expr = 10;
-    oneof limit_oneof {
-        LimitStatement limit = 11;
-        OffsetStatement offset = 12;
-    }
+    optional LimitByStatement limit_by = 11;
+    optional Expr limit = 12;
+    optional OffsetStatement offset = 13;
 }
 
 message SetQuery {

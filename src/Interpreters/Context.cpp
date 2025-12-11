@@ -249,6 +249,7 @@ namespace CurrentMetrics
     extern const Metric IndexUncompressedCacheBytes;
     extern const Metric IndexUncompressedCacheCells;
     extern const Metric ZooKeeperSessionExpired;
+    extern const Metric ZooKeeperConnectionLossStartedTimestampSeconds;
 }
 
 
@@ -4516,6 +4517,23 @@ DDLWorker & Context::getDDLWorker() const
     throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "DDL background thread is not initialized");
 }
 
+namespace
+{
+
+void recordZooKeeperConnectionLoss()
+{
+    /// Use CAS to make sure we only set the timestamp for the first connection loss.
+    CurrentMetrics::cas(
+        CurrentMetrics::ZooKeeperConnectionLossStartedTimestampSeconds,
+        0,
+        std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()
+        ).count()
+    );
+}
+
+}
+
 zkutil::ZooKeeperPtr Context::getZooKeeper() const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
@@ -4527,7 +4545,20 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
         zkutil::ZooKeeperArgs args(config, zkutil::getZooKeeperConfigName(config));
         args.send_receive_os_threads_nice_value = getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive];
 
-        shared->zookeeper = zkutil::ZooKeeper::create(std::move(args), getZooKeeperLog(), getAggregatedZooKeeperLog());
+        try
+        {
+            shared->zookeeper = zkutil::ZooKeeper::create(std::move(args), getZooKeeperLog(), getAggregatedZooKeeperLog());
+            CurrentMetrics::set(CurrentMetrics::ZooKeeperConnectionLossStartedTimestampSeconds, 0);
+        }
+        catch (const Coordination::Exception & e)
+        {
+            if (e.code == Coordination::Error::ZCONNECTIONLOSS)
+            {
+                recordZooKeeperConnectionLoss();
+            }
+            throw;
+        }
+
         if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
             zookeeper_connection_log->addConnected(
                 ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, ZooKeeperConnectionLog::keeper_init_reason);
@@ -4542,7 +4573,19 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 
         auto old_zookeeper = shared->zookeeper;
 
-        shared->zookeeper = shared->zookeeper->startNewSession();
+        try
+        {
+            shared->zookeeper = shared->zookeeper->startNewSession();
+            CurrentMetrics::set(CurrentMetrics::ZooKeeperConnectionLossStartedTimestampSeconds, 0);
+        }
+        catch (const Coordination::Exception & e)
+        {
+            if (e.code == Coordination::Error::ZCONNECTIONLOSS)
+            {
+                recordZooKeeperConnectionLoss();
+            }
+            throw;
+        }
 
         if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
         {
@@ -4558,6 +4601,12 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     }
 
     return shared->zookeeper;
+}
+
+int64_t Context::getZooKeeperLastZXIDSeen() const
+{
+    std::lock_guard lock(shared->zookeeper_mutex);
+    return shared->zookeeper ? shared->zookeeper->getLastZXIDSeen() : 0;
 }
 
 namespace
@@ -5377,7 +5426,6 @@ std::shared_ptr<TraceLog> Context::getTraceLog() const
 
     return shared->system_logs->trace_log;
 }
-
 
 std::shared_ptr<TextLog> Context::getTextLog() const
 {
