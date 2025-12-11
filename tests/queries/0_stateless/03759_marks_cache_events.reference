@@ -1,5 +1,5 @@
 "query_kind","load_marks_asynchronously","hits","misses"
-"Insert","",0,0
+"Insert","0",0,0
 "Select","0",0,1
 "Select","0",1,0
 "Select","1",0,1
