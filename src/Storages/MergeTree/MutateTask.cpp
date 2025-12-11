@@ -1565,7 +1565,8 @@ private:
             }
         }
 
-        bool is_full_part_storage = isFullPartStorage(ctx->new_data_part->getDataPartStorage());
+        bool is_full_part_storage = isFullPartStorage(ctx->source_part->getDataPartStorage());
+        bool is_full_wide_part = is_full_part_storage && isWidePart(ctx->new_data_part);
         const auto & indices = ctx->metadata_snapshot->getSecondaryIndices();
 
         MergeTreeIndices skip_indices;
@@ -1577,9 +1578,12 @@ private:
             if (ctx->indices_to_drop_names.contains(idx.name))
                 continue;
 
+            /// For packed part we need to recalculate all indices because they are stored inside packed parts format
+            /// For compact parts we need to recalculate indices because rewrite of compact part may produce a little bit different data part
+            /// with different number of marks.
             bool need_recalculate =
                 ctx->materialized_indices.contains(idx.name)
-                || (!is_full_part_storage && ctx->source_part->hasSecondaryIndex(idx.name));
+                || (!is_full_wide_part && ctx->source_part->hasSecondaryIndex(idx.name));
 
             if (need_recalculate)
             {
