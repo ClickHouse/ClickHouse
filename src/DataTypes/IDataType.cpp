@@ -318,14 +318,15 @@ SerializationPtr IDataType::getDefaultSerialization(SerializationPtr override_de
     return doGetDefaultSerialization();
 }
 
-SerializationPtr IDataType::getSerialization(ISerialization::KindStack kind_stack, SerializationPtr override_default) const
+SerializationPtr IDataType::getSerialization(
+    ISerialization::KindStack kind_stack, const SerializationInfoSettings & settings, SerializationPtr override_default) const
 {
     auto serialization = getDefaultSerialization(override_default);
     for (auto kind : kind_stack)
     {
-        if (supportsSparseSerialization() && kind == ISerialization::Kind::SPARSE)
+        if (settings.supportsSparseSerialization(*this) && kind == ISerialization::Kind::SPARSE)
             serialization = std::make_shared<SerializationSparse>(serialization);
-        else if (kind == ISerialization::Kind::DETACHED)
+        if (kind == ISerialization::Kind::DETACHED)
             serialization = std::make_shared<SerializationDetached>(serialization);
         else if (kind == ISerialization::Kind::REPLICATED)
             serialization = std::make_shared<SerializationReplicated>(serialization);
@@ -336,7 +337,7 @@ SerializationPtr IDataType::getSerialization(ISerialization::KindStack kind_stac
 
 SerializationPtr IDataType::getSerialization(const SerializationInfo & info) const
 {
-    return getSerialization(info.getKindStack());
+    return getSerialization(info.getKindStack(), info.getSettings());
 }
 
 SerializationPtr IDataType::getSerialization(const SerializationInfoSettings & settings) const

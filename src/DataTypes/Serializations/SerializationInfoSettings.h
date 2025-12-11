@@ -5,6 +5,8 @@
 namespace DB
 {
 
+class IDataType;
+
 struct SerializationInfoSettings
 {
     double ratio_of_defaults_for_sparse = 1.0;
@@ -38,6 +40,8 @@ struct SerializationInfoSettings
     }
 
     bool isAlwaysDefault() const { return ratio_of_defaults_for_sparse >= 1.0; }
+
+    bool supportsSparseSerialization(const IDataType & type) const;
 };
 
 }
