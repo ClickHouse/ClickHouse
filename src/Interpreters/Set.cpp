@@ -676,8 +676,15 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
   * 1: the intersection of the set and the range is non-empty
   * 2: the range contains elements not in the set
   */
-BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_indices_map, const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point) const
+BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_sparse_pos, const std::vector<Range> & sparse_key_ranges, const DataTypes & sparse_data_types, bool single_point) const
 {
+    auto get_sparse_info = [&](size_t key_column) -> std::pair<bool, size_t>
+    {
+        bool is_key_col_present = (key_column < key_col_to_sparse_pos.size() && key_col_to_sparse_pos[key_column] != -1);
+        const size_t sparse_pos = is_key_col_present ? static_cast<size_t>(key_col_to_sparse_pos[key_column]) : 0;
+        return {is_key_col_present, sparse_pos};
+    };
+
     size_t tuple_size = indexes_mapping.size();
 
     struct FieldValueRange
@@ -694,10 +701,16 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_indices_ma
     ranges.reserve(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
     {
+        size_t key_column = indexes_mapping[i].key_index;
+        auto [is_key_col_present, sparse_pos] = get_sparse_info(key_column);
+
+        if (!is_key_col_present)
+            return {true, true};
+
         std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
-            key_ranges[key_indices_map[indexes_mapping[i].key_index]],
+            sparse_key_ranges[sparse_pos],
             indexes_mapping[i].functions,
-            data_types[indexes_mapping[i].key_index],
+            sparse_data_types[sparse_pos],
             single_point);
 
         if (!new_range)

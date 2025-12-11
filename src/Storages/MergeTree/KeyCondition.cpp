@@ -2656,116 +2656,170 @@ KeyCondition::Description KeyCondition::getDescription() const
   * This is important because it is easy for us to check the feasibility of the condition over the hyperrectangle,
   *  and therefore, feasibility of condition on the range of tuples will be checked by feasibility of condition
   *  over at least one hyperrectangle from which this range consists.
+  *
+  * In the implementation, notice that we will need to create `Range` objects many many times, especially for suffix of the
+  * hyperrectangle. However, this is a problem if PK is very long but filter only uses few key columns only because creating
+  * and doing operations with `Range` object is very slow.
+  * That's why we use sparse reprensentation of hyperrectangle by only storing and processing
+  * information about key columns that are used by some RPNElement (and whose marks were also loaded in memory).
+  *
+  * It is important to note that even if we only have sparse representation of hyperrectangle, we actually enumerate
+  * over all possible hyperrectangles by iterating using `prefix_size`. `prefix_size` goes from 0 till `equal_boundaries_mask.size() - 1`.
+  * `equal_boundaries_mask` is not sparse, rather it covers contiguous prefix of PK. Why `equal_boundaries_mask` does not cover
+  * the entire PK? Because if filter uses only first three columns of the PK, then there is no need to even consider columns after
+  * the third column. This truncation happens in `MergeTreeDataSelectExecutor::markRangesFromPKRange()`.
+  *
+  * This enumeration over prefix of PK columns is convenient and extremely fast because no `Range` object is being created for the
+  * intermediate columns that are not useful in KeyCondition. Maybe it is also possible to enumerate sparsely but that would require
+  * other information about intermediate columns and different approach. It is not possible to guarantee correctness by only using
+  * sparse key column informations.
   */
 
-/** For the range between tuples, determined by left_keys, left_bounded, right_keys, right_bounded,
+/** For the range between tuples, determined by sparse_left_keys, left_bounded, sparse_right_keys, right_bounded,
   * invoke the callback on every hyperrectangle composing this range (see the description above),
   * and returns the OR of the callback results (meaning if callback returned true on any part of the range).
   */
 template <typename F>
 static BoolMask forAnyHyperrectangle(
-    size_t key_size,
-    const FieldRef * left_keys,
-    const FieldRef * right_keys,
-    const std::vector<size_t> & used_key_indices,
-    const std::vector<int> & index_to_used_key_pos,
+    const std::vector<size_t> & sparse_key_indices,
+    const std::vector<int> & key_col_to_sparse_pos,
+    const FieldRef * sparse_left_keys,
+    const FieldRef * sparse_right_keys,
+    const std::vector<UInt8> & equal_boundaries_mask,
     bool left_bounded,
     bool right_bounded,
-    Hyperrectangle & hyperrectangle,
-    const DataTypes & data_types,
+    Hyperrectangle & sparse_hyperrectangle,
+    const DataTypes & sparse_data_types,
     size_t prefix_size,
     BoolMask initial_mask,
     F && callback)
 {
-    if (!left_bounded && !right_bounded)
-        return callback(hyperrectangle);
+    const size_t key_size = equal_boundaries_mask.size();
 
+    [[maybe_unused]] const size_t sparse_keys_size = sparse_key_indices.size();
+
+    chassert(key_size == key_col_to_sparse_pos.size());
+    chassert(sparse_data_types.size() == sparse_key_indices.size());
+    chassert(prefix_size <= key_size);
+
+    for (size_t i = 1; i < sparse_keys_size; ++i)
+        chassert(sparse_key_indices[i - 1] < sparse_key_indices[i]);
+    for (size_t i = 0; i < sparse_keys_size; ++i)
+        chassert(sparse_key_indices[i] < key_size);
+
+    for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
+        chassert(key_col_to_sparse_pos[sparse_key_indices[sparse_pos]] == static_cast<int>(sparse_pos));
+
+    if (!left_bounded && !right_bounded)
+        return callback(sparse_hyperrectangle);
+
+    /// Extend common prefix in full key space (not sparse)
     if (left_bounded && right_bounded)
     {
-        while (prefix_size < key_size)
+        while (prefix_size < key_size && equal_boundaries_mask[prefix_size])
         {
-            if (left_keys[prefix_size] == right_keys[prefix_size])
-            {
-                int used_pos = index_to_used_key_pos[prefix_size];
-                if (used_pos >= 0)
-                    hyperrectangle[used_pos] = Range(left_keys[prefix_size]);
+            bool is_key_col_used = (key_col_to_sparse_pos[prefix_size] != -1);
+            size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[prefix_size]);
+            if (is_key_col_used)
+                sparse_hyperrectangle[sparse_pos] = Range(sparse_left_keys[sparse_pos]); /// point range
 
-                ++prefix_size;
-            }
-            else
-                break;
+            ++prefix_size;
         }
     }
 
     if (prefix_size == key_size)
-        return callback(hyperrectangle);
+        return callback(sparse_hyperrectangle);
 
-    int used_pos = index_to_used_key_pos[prefix_size];
+    const bool is_key_col_used = (key_col_to_sparse_pos[prefix_size] != -1);
 
+    /// Only one key component left
     if (prefix_size + 1 == key_size)
     {
-        if (used_pos >= 0)
+        if (is_key_col_used)
         {
+            const size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[prefix_size]);
             if (left_bounded && right_bounded)
-                hyperrectangle[used_pos] = Range(left_keys[prefix_size], true, right_keys[prefix_size], true);
+            {
+                sparse_hyperrectangle[sparse_pos] = Range(sparse_left_keys[sparse_pos], true, sparse_right_keys[sparse_pos], true);
+            }
             else if (left_bounded)
-                hyperrectangle[used_pos]
-                    = Range::createLeftBounded(left_keys[prefix_size], true, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
+            {
+                sparse_hyperrectangle[sparse_pos] = Range::createLeftBounded(
+                    sparse_left_keys[sparse_pos], true, isNullableOrLowCardinalityNullable(sparse_data_types[sparse_pos]));
+            }
             else if (right_bounded)
-                hyperrectangle[used_pos]
-                    = Range::createRightBounded(right_keys[prefix_size], true, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
+            {
+                sparse_hyperrectangle[sparse_pos] = Range::createRightBounded(
+                    sparse_right_keys[sparse_pos], true, isNullableOrLowCardinalityNullable(sparse_data_types[sparse_pos]));
+            }
         }
 
-        return callback(hyperrectangle);
+        return callback(sparse_hyperrectangle);
     }
 
-    /// (x1 .. x2) × (-inf .. +inf)
-    if (used_pos >= 0)
+    /// General case:
+    /// (x1 .. x2) × (-inf .. +inf) × ...
+    if (is_key_col_used)
     {
+        const size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[prefix_size]);
         if (left_bounded && right_bounded)
-            hyperrectangle[used_pos] = Range(left_keys[prefix_size], false, right_keys[prefix_size], false);
+        {
+            sparse_hyperrectangle[sparse_pos] = Range(sparse_left_keys[sparse_pos], false, sparse_right_keys[sparse_pos], false);
+        }
         else if (left_bounded)
-            hyperrectangle[used_pos]
-                = Range::createLeftBounded(left_keys[prefix_size], false,isNullableOrLowCardinalityNullable(data_types[prefix_size]));
+        {
+            sparse_hyperrectangle[sparse_pos] = Range::createLeftBounded(
+                sparse_left_keys[sparse_pos], false, isNullableOrLowCardinalityNullable(sparse_data_types[sparse_pos]));
+        }
         else if (right_bounded)
-            hyperrectangle[used_pos]
-                = Range::createRightBounded(right_keys[prefix_size], false,isNullableOrLowCardinalityNullable(data_types[prefix_size]));
+        {
+            sparse_hyperrectangle[sparse_pos] = Range::createRightBounded(
+                sparse_right_keys[sparse_pos], false, isNullableOrLowCardinalityNullable(sparse_data_types[sparse_pos]));
+        }
     }
 
-    /// Tail coordinates > prefix_size for used columns become whole universe
-    auto it = std::upper_bound(used_key_indices.begin(), used_key_indices.end(), prefix_size);
-    for (; it != used_key_indices.end(); ++it)
+    /// Tail coordinates > prefix_size for sparse columns become whole universe
+    auto it = std::upper_bound(sparse_key_indices.begin(), sparse_key_indices.end(), prefix_size);
+    for (; it != sparse_key_indices.end(); ++it)
     {
         size_t key_index = *it;
-        int pos = index_to_used_key_pos[key_index]; /// >= 0 for entries in used_key_indices
-        if (isNullableOrLowCardinalityNullable(data_types[key_index]))
-            hyperrectangle[pos] = Range::createWholeUniverse();
+        chassert(key_col_to_sparse_pos[key_index] >= 0);
+        size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[key_index]);
+
+        if (isNullableOrLowCardinalityNullable(sparse_data_types[sparse_pos]))
+            sparse_hyperrectangle[sparse_pos] = Range::createWholeUniverse();
         else
-            hyperrectangle[pos] = Range::createWholeUniverseWithoutNull();
+            sparse_hyperrectangle[sparse_pos] = Range::createWholeUniverseWithoutNull();
     }
 
-    auto result = BoolMask::combine(initial_mask, callback(hyperrectangle));
+    auto result = BoolMask::combine(initial_mask, callback(sparse_hyperrectangle));
+
+    /// isComplete() means that both `can_be_true` = true and ``can_be_false` = true. No `result = BoolMask::combine(result, ...)`
+    /// can change `result` anymore. So, there is no need to continue.
     if (result.isComplete())
         return result;
 
     /// [x1]       × [y1 .. +inf)
     if (left_bounded)
     {
-        if (used_pos >= 0)
-            hyperrectangle[used_pos] = Range(left_keys[prefix_size]);
+        if (is_key_col_used)
+        {
+            const size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[prefix_size]);
+            sparse_hyperrectangle[sparse_pos] = Range(sparse_left_keys[sparse_pos]);
+        }
 
         result = BoolMask::combine(
             result,
             forAnyHyperrectangle(
-                key_size,
-                left_keys,
-                right_keys,
-                used_key_indices,
-                index_to_used_key_pos,
+                sparse_key_indices,
+                key_col_to_sparse_pos,
+                sparse_left_keys,
+                sparse_right_keys,
+                equal_boundaries_mask,
                 true,
                 false,
-                hyperrectangle,
-                data_types,
+                sparse_hyperrectangle,
+                sparse_data_types,
                 prefix_size + 1,
                 initial_mask,
                 callback));
@@ -2777,21 +2831,24 @@ static BoolMask forAnyHyperrectangle(
     /// [x2]       × (-inf .. y2]
     if (right_bounded)
     {
-        if (used_pos >= 0)
-            hyperrectangle[used_pos] = Range(right_keys[prefix_size]);
+        if (is_key_col_used)
+        {
+            const size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[prefix_size]);
+            sparse_hyperrectangle[sparse_pos] = Range(sparse_right_keys[sparse_pos]);
+        }
 
         result = BoolMask::combine(
             result,
             forAnyHyperrectangle(
-                key_size,
-                left_keys,
-                right_keys,
-                used_key_indices,
-                index_to_used_key_pos,
+                sparse_key_indices,
+                key_col_to_sparse_pos,
+                sparse_left_keys,
+                sparse_right_keys,
+                equal_boundaries_mask,
                 false,
                 true,
-                hyperrectangle,
-                data_types,
+                sparse_hyperrectangle,
+                sparse_data_types,
                 prefix_size + 1,
                 initial_mask,
                 callback));
@@ -2800,53 +2857,94 @@ static BoolMask forAnyHyperrectangle(
     return result;
 }
 
+/// Compatibility overload. Assume all key columns are used, no sparse columns
 BoolMask KeyCondition::checkInRange(
-    size_t keys_size,
+    size_t key_size,
     const FieldRef * left_keys,
     const FieldRef * right_keys,
     const DataTypes & data_types,
     BoolMask initial_mask) const
 {
-    std::vector<size_t> used_key_indices = getUsedColumnsInOrder();
-    if (used_key_indices.empty())
-        return BoolMask(true, true);
+    chassert(key_size <= data_types.size());
+    std::vector<size_t> identity_index_map(key_size);
+    std::iota(identity_index_map.begin(), identity_index_map.end(), 0);
 
-    size_t used_keys_size = used_key_indices.size();
+    std::vector<UInt8> equal_boundaries_mask(key_size);
+    for (size_t i = 0; i < key_size; ++i)
+        equal_boundaries_mask[i] = (left_keys[i] == right_keys[i]);
 
-    Hyperrectangle key_ranges;
-    key_ranges.reserve(used_keys_size);
-    for (size_t pos = 0; pos < used_keys_size; ++pos)
-    {
-        size_t key_index = used_key_indices[pos];
-        if (isNullableOrLowCardinalityNullable(data_types[key_index]))
-            key_ranges.push_back(Range::createWholeUniverse());
-        else
-            key_ranges.push_back(Range::createWholeUniverseWithoutNull());
-    }
-
-    /// Mapping: original key index -> position in key_ranges, or -1 if not used
-    std::vector<int> index_to_used_key_pos(keys_size, -1);
-    for (size_t pos = 0; pos < used_keys_size; ++pos)
-        index_to_used_key_pos[used_key_indices[pos]] = static_cast<int>(pos);
-
-    return forAnyHyperrectangle(
-        keys_size,
+    return checkInRange(
+        identity_index_map,
         left_keys,
         right_keys,
-        used_key_indices,
-        index_to_used_key_pos,
-        true,
-        true,
-        key_ranges,
         data_types,
-        0,
-        initial_mask,
-        [&] (const Hyperrectangle & key_ranges_hyperrectangle)
-        {
-            return checkInHyperrectangle(index_to_used_key_pos, key_ranges_hyperrectangle, data_types);
-        });
+        equal_boundaries_mask,
+        initial_mask);
 }
 
+/// Optimized overload for sparse key columns
+BoolMask KeyCondition::checkInRange(
+    const std::vector<size_t> & sparse_key_indices,
+    const FieldRef * sparse_left_keys,
+    const FieldRef * sparse_right_keys,
+    const DataTypes & sparse_data_types,
+    const std::vector<UInt8> & equal_boundaries_mask,
+    BoolMask initial_mask) const
+{
+    const size_t sparse_keys_size = sparse_key_indices.size();
+
+    if (sparse_keys_size == 0)
+        return BoolMask(true, true);
+
+    chassert(sparse_keys_size <= sparse_data_types.size());
+    chassert(equal_boundaries_mask.size() > *std::max_element(sparse_key_indices.begin(), sparse_key_indices.end()));
+
+#ifndef NDEBUG
+    for (size_t i = 1; i < sparse_keys_size; ++i)
+        chassert(sparse_key_indices[i - 1] < sparse_key_indices[i]);
+#endif
+
+    Hyperrectangle sparse_key_ranges;
+    sparse_key_ranges.reserve(sparse_keys_size);
+    for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
+    {
+        chassert(sparse_pos < sparse_data_types.size());
+        if (isNullableOrLowCardinalityNullable(sparse_data_types[sparse_pos]))
+            sparse_key_ranges.emplace_back(Range::createWholeUniverse());
+        else
+            sparse_key_ranges.emplace_back(Range::createWholeUniverseWithoutNull());
+    }
+
+    const size_t key_size = equal_boundaries_mask.size();
+
+    /// Mapping: full key index -> position in sparse hyperrectangle, or -1 if not tracked.
+    std::vector<int> key_col_to_sparse_pos(key_size, -1);
+    for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
+    {
+        size_t key_index = sparse_key_indices[sparse_pos];
+        chassert(key_index < key_size);
+        chassert(key_col_to_sparse_pos[key_index] == -1 && "sparse_key_indices contains duplicate entries");
+
+        key_col_to_sparse_pos[key_index] = static_cast<int>(sparse_pos);
+    }
+
+    return forAnyHyperrectangle(
+        sparse_key_indices,
+        key_col_to_sparse_pos,
+        sparse_left_keys,
+        sparse_right_keys,
+        equal_boundaries_mask,
+        /*left_bounded*/ true,
+        /*right_bounded*/ true,
+        sparse_key_ranges,
+        sparse_data_types,
+        /*prefix_size*/ 0,
+        initial_mask,
+        [&](const Hyperrectangle & key_ranges_hyperrectangle)
+        {
+            return checkInHyperrectangle(key_col_to_sparse_pos, key_ranges_hyperrectangle, sparse_data_types);
+        });
+}
 
 std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     Range key_range,
@@ -2892,27 +2990,43 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     return key_range;
 }
 
+/// Compatibility overload. Assume all key columns are used, no sparse columns
 BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,
     const ColumnIndexToBloomFilter & column_index_to_column_bf,
     const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
 {
-    std::vector<int> key_indices_map(hyperrectangle.size());
-    std::iota(key_indices_map.begin(), key_indices_map.end(), 0);
+    const size_t key_size = hyperrectangle.size();
+    chassert(data_types.size() >= key_size);
+
+    /// Identity mapping: full key index -> sparse key index
+    std::vector<int> identity_index_map(key_size);
+    std::iota(identity_index_map.begin(), identity_index_map.end(), 0);
 
     return checkInHyperrectangle(
-        key_indices_map, hyperrectangle, data_types, column_index_to_column_bf, update_partial_disjunction_result_fn);
+        identity_index_map,
+        hyperrectangle,
+        data_types,
+        column_index_to_column_bf,
+        update_partial_disjunction_result_fn);
 }
 
 BoolMask KeyCondition::checkInHyperrectangle(
-    const std::vector<int> & key_indices_map,
-    const Hyperrectangle & hyperrectangle,
-    const DataTypes & data_types,
+    const std::vector<int> & key_col_to_sparse_pos,
+    const Hyperrectangle & sparse_hyperrectangle,
+    const DataTypes & sparse_data_types,
     const ColumnIndexToBloomFilter & column_index_to_column_bf,
     const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
 {
     std::vector<BoolMask> rpn_stack;
+
+    auto get_sparse_info = [&](size_t key_column) -> std::pair<bool, size_t>
+    {
+        bool is_key_col_present = (key_column < key_col_to_sparse_pos.size() && key_col_to_sparse_pos[key_column] != -1);
+        const size_t sparse_pos = is_key_col_present ? static_cast<size_t>(key_col_to_sparse_pos[key_column]) : 0;
+        return {is_key_col_present, sparse_pos};
+    };
 
     auto curve_type = [&](size_t key_column_pos)
     {
@@ -2936,43 +3050,56 @@ BoolMask KeyCondition::checkInHyperrectangle(
             rpn_stack.emplace_back(true, true);
         }
         else if (element.function == RPNElement::FUNCTION_IN_RANGE
-                 || element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
+              || element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
         {
             size_t key_column = element.getKeyColumn();
-            int pos = key_indices_map[key_column];
+            auto [is_key_col_present, sparse_pos] = get_sparse_info(key_column);
 
-            if (pos < 0 || static_cast<size_t>(pos) >= hyperrectangle.size())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Key index {} is not present in compressed hyperrectangle", key_column);
-
-            Range key_range = hyperrectangle[pos];
-
-            /// The case when the column is wrapped in a chain of possibly monotonic functions.
-            if (!element.monotonic_functions_chain.empty())
+            if (!is_key_col_present)
             {
-                std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
-                    key_range,
-                    element.monotonic_functions_chain,
-                    data_types[key_column],
-                    single_point
-                );
-
-                if (!new_range)
-                {
-                    rpn_stack.emplace_back(true, true);
-                    continue;
-                }
-                key_range = *new_range;
+                /// Column not represented – treat as unknown for index pruning.
+                rpn_stack.emplace_back(true, true);
             }
-
-            bool intersects = element.range.intersectsRange(key_range);
-            bool contains = element.range.containsRange(key_range);
-
-            rpn_stack.emplace_back(intersects, !contains);
-
-            // we don't create bloom_filter_data if monotonic_functions_chain is present
-            if (rpn_stack.back().can_be_true && element.bloom_filter_data && element.monotonic_functions_chain.empty())
+            else
             {
-                rpn_stack.back().can_be_true = mayExistOnBloomFilter(*element.bloom_filter_data, column_index_to_column_bf);
+                Range key_range = sparse_hyperrectangle[sparse_pos];
+
+                /// The case when the column is wrapped in a chain of possibly monotonic functions.
+                if (!element.monotonic_functions_chain.empty())
+                {
+                    std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
+                        key_range,
+                        element.monotonic_functions_chain,
+                        sparse_data_types[sparse_pos],
+                        single_point);
+
+                    if (!new_range)
+                    {
+                        /// Cannot determine monotonicity on this range – unknown.
+                        rpn_stack.emplace_back(true, true);
+                    }
+                    else
+                    {
+                        key_range = *new_range;
+
+                        bool intersects = element.range.intersectsRange(key_range);
+                        bool contains   = element.range.containsRange(key_range);
+
+                        rpn_stack.emplace_back(intersects, !contains);
+                        /// we don't create bloom_filter_data if monotonic_functions_chain is present
+                    }
+                }
+                else
+                {
+                    bool intersects = element.range.intersectsRange(key_range);
+                    bool contains = element.range.containsRange(key_range);
+
+                    rpn_stack.emplace_back(intersects, !contains);
+
+                    if (rpn_stack.back().can_be_true && element.bloom_filter_data)
+                        rpn_stack.back().can_be_true =
+                            mayExistOnBloomFilter(*element.bloom_filter_data, column_index_to_column_bf);
+                }
             }
 
             if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
@@ -3009,70 +3136,82 @@ BoolMask KeyCondition::checkInHyperrectangle(
               */
 
             size_t key_column = element.getKeyColumn();
-            size_t key_col_pos_in_hyperrectangle = key_indices_map[key_column];
-            Range key_range = hyperrectangle[key_col_pos_in_hyperrectangle];
+            auto [is_key_col_present, sparse_pos] = get_sparse_info(key_column);
 
-            /// The only possible result type of a space filling curve is UInt64.
-            /// We also only check bounded ranges.
-            if (key_range.left.getType() == Field::Types::UInt64
-                && key_range.right.getType() == Field::Types::UInt64)
+            if (!is_key_col_present)
             {
-                key_range.shrinkToIncludedIfPossible();
-
-                size_t num_dimensions = element.space_filling_curve_args_hyperrectangle.size();
-
-                /// Let's support only the case of 2d, because I'm not confident in other cases.
-                if (num_dimensions == 2)
-                {
-                    UInt64 left = key_range.left.safeGet<UInt64>();
-                    UInt64 right = key_range.right.safeGet<UInt64>();
-
-                    BoolMask mask(false, true);
-                    auto hyperrectangle_intersection_callback = [&](std::array<std::pair<UInt64, UInt64>, 2> curve_hyperrectangle)
-                    {
-                        BoolMask current_intersection(true, false);
-                        for (size_t dim = 0; dim < num_dimensions; ++dim)
-                        {
-                            const Range & condition_arg_range = element.space_filling_curve_args_hyperrectangle[dim];
-
-                            const Range curve_arg_range(
-                                curve_hyperrectangle[dim].first, true,
-                                curve_hyperrectangle[dim].second, true);
-
-                            bool intersects = condition_arg_range.intersectsRange(curve_arg_range);
-                            bool contains = condition_arg_range.containsRange(curve_arg_range);
-
-                            current_intersection = current_intersection & BoolMask(intersects, !contains);
-                        }
-
-                        mask = mask | current_intersection;
-                    };
-
-                    switch (curve_type(key_column))
-                    {
-                        case SpaceFillingCurveType::Hilbert:
-                        {
-                            hilbertIntervalToHyperrectangles2D(left, right, hyperrectangle_intersection_callback);
-                            break;
-                        }
-                        case SpaceFillingCurveType::Morton:
-                        {
-                            mortonIntervalToHyperrectangles<2>(left, right, hyperrectangle_intersection_callback);
-                            break;
-                        }
-                        case SpaceFillingCurveType::Unknown:
-                        {
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "curve_type is `Unknown`. It is a bug.");
-                        }
-                    }
-
-                    rpn_stack.emplace_back(mask);
-                }
-                else
-                    rpn_stack.emplace_back(true, true);
+                rpn_stack.emplace_back(true, true);
             }
             else
-                rpn_stack.emplace_back(true, true);
+            {
+                Range key_range = sparse_hyperrectangle[sparse_pos];
+
+                /// The only possible result type of a space filling curve is UInt64.
+                /// We also only check bounded ranges.
+                if (key_range.left.getType() == Field::Types::UInt64
+                    && key_range.right.getType() == Field::Types::UInt64)
+                {
+                    key_range.shrinkToIncludedIfPossible();
+
+                    size_t num_dimensions = element.space_filling_curve_args_hyperrectangle.size();
+
+                    /// Let's support only the case of 2d, because I'm not confident in other cases.
+                    if (num_dimensions == 2)
+                    {
+                        UInt64 left = key_range.left.safeGet<UInt64>();
+                        UInt64 right = key_range.right.safeGet<UInt64>();
+
+                        BoolMask mask(false, true);
+                        auto hyperrectangle_intersection_callback = [&](std::array<std::pair<UInt64, UInt64>, 2> curve_hyperrectangle)
+                        {
+                            BoolMask current_intersection(true, false);
+                            for (size_t dim = 0; dim < num_dimensions; ++dim)
+                            {
+                                const Range & condition_arg_range = element.space_filling_curve_args_hyperrectangle[dim];
+
+                                const Range curve_arg_range(
+                                    curve_hyperrectangle[dim].first, true,
+                                    curve_hyperrectangle[dim].second, true);
+
+                                bool intersects = condition_arg_range.intersectsRange(curve_arg_range);
+                                bool contains = condition_arg_range.containsRange(curve_arg_range);
+
+                                current_intersection = current_intersection & BoolMask(intersects, !contains);
+                            }
+
+                            mask = mask | current_intersection;
+                        };
+
+                        switch (curve_type(key_column))
+                        {
+                            case SpaceFillingCurveType::Hilbert:
+                            {
+                                hilbertIntervalToHyperrectangles2D(left, right, hyperrectangle_intersection_callback);
+                                break;
+                            }
+                            case SpaceFillingCurveType::Morton:
+                            {
+                                mortonIntervalToHyperrectangles<2>(left, right, hyperrectangle_intersection_callback);
+                                break;
+                            }
+                            case SpaceFillingCurveType::Unknown:
+                            {
+                                throw Exception(ErrorCodes::LOGICAL_ERROR, "curve_type is `Unknown`. It is a bug.");
+                            }
+                        }
+
+                        rpn_stack.emplace_back(mask);
+                    }
+                    else
+                    {
+                        rpn_stack.emplace_back(true, true);
+                    }
+                }
+                else
+                {
+                    rpn_stack.emplace_back(true, true);
+                }
+            }
 
             /** Note: we can consider implementing a simpler solution, based on "hidden keys".
               * It means, when we have a table's key like (a, b, mortonCurve(x, y))
@@ -3100,10 +3239,26 @@ BoolMask KeyCondition::checkInHyperrectangle(
               * Algorithm:
               *   Check whether there is any intersection of the 2 polygons. If true return {true, true}, else return {false, true}.
               */
-            Float64 x_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_indices_map[element.key_columns[0]]].left);
-            Float64 x_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_indices_map[element.key_columns[0]]].right);
-            Float64 y_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_indices_map[element.key_columns[1]]].left);
-            Float64 y_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_indices_map[element.key_columns[1]]].right);
+
+            if (element.key_columns.size() != 2)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Point-in-polygon requires 2 key columns.");
+
+            size_t x_key_column = element.key_columns[0];
+            size_t y_key_column = element.key_columns[1];
+
+            auto [is_x_key_col_present, x_sparse_pos] = get_sparse_info(x_key_column);
+            auto [is_y_key_col_present, y_sparse_pos] = get_sparse_info(y_key_column);
+
+            if (!is_x_key_col_present || !is_y_key_col_present)
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
+            Float64 x_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), sparse_hyperrectangle[x_sparse_pos].left);
+            Float64 x_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), sparse_hyperrectangle[x_sparse_pos].right);
+            Float64 y_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), sparse_hyperrectangle[y_sparse_pos].left);
+            Float64 y_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), sparse_hyperrectangle[y_sparse_pos].right);
 
             if (unlikely(isNaN(x_min) || isNaN(x_max) || isNaN(y_min) || isNaN(y_max)))
             {
@@ -3126,25 +3281,31 @@ BoolMask KeyCondition::checkInHyperrectangle(
             rpn_stack.emplace_back(
                 boost::geometry::intersects(polygon_by_minmax_index, element.polygon->data), true);
         }
-        else if (
-            element.function == RPNElement::FUNCTION_IS_NULL
-            || element.function == RPNElement::FUNCTION_IS_NOT_NULL)
+        else if (element.function == RPNElement::FUNCTION_IS_NULL
+              || element.function == RPNElement::FUNCTION_IS_NOT_NULL)
         {
             size_t key_column = element.getKeyColumn();
-            size_t key_col_pos_in_hyperrectangle = key_indices_map[key_column];
-            const Range * key_range = &hyperrectangle[key_col_pos_in_hyperrectangle];
+            auto [is_key_col_present, sparse_pos] = get_sparse_info(key_column);
 
-            /// No need to apply monotonic functions as nulls are kept.
-            bool intersects = element.range.intersectsRange(*key_range);
-            bool contains = element.range.containsRange(*key_range);
+            if (!is_key_col_present)
+            {
+                rpn_stack.emplace_back(true, true);
+            }
+            else
+            {
+                const Range * key_range = &sparse_hyperrectangle[sparse_pos];
 
-            rpn_stack.emplace_back(intersects, !contains);
-            if (element.function == RPNElement::FUNCTION_IS_NULL)
-                rpn_stack.back() = !rpn_stack.back();
+                /// No need to apply monotonic functions as nulls are kept.
+                bool intersects = element.range.intersectsRange(*key_range);
+                bool contains   = element.range.containsRange(*key_range);
+
+                rpn_stack.emplace_back(intersects, !contains);
+                if (element.function == RPNElement::FUNCTION_IS_NULL)
+                    rpn_stack.back() = !rpn_stack.back();
+            }
         }
-        else if (
-            element.function == RPNElement::FUNCTION_IN_SET
-            || element.function == RPNElement::FUNCTION_NOT_IN_SET)
+        else if (element.function == RPNElement::FUNCTION_IN_SET
+              || element.function == RPNElement::FUNCTION_NOT_IN_SET)
         {
             if (!element.set_index)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Set for IN is not created yet");
@@ -3190,20 +3351,17 @@ BoolMask KeyCondition::checkInHyperrectangle(
             /// E.g. (20, 300, 1500) satisfies the second condition but not the first,
             /// but  (20, 150, 3000) satisfies the first condition but not the second.
 
-            rpn_stack.emplace_back(element.set_index->checkInRange(key_indices_map, hyperrectangle, data_types, single_point));
+            rpn_stack.emplace_back(element.set_index->checkInRange(key_col_to_sparse_pos, sparse_hyperrectangle, sparse_data_types, single_point));
 
             if (rpn_stack.back().can_be_true && element.bloom_filter_data)
-            {
                 rpn_stack.back().can_be_true = mayExistOnBloomFilter(*element.bloom_filter_data, column_index_to_column_bf);
-            }
 
             if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
                 rpn_stack.back() = !rpn_stack.back();
         }
         else if (element.function == RPNElement::FUNCTION_NOT)
         {
-            assert(!rpn_stack.empty());
-
+            chassert(!rpn_stack.empty());
             rpn_stack.back() = !rpn_stack.back();
         }
         else if (element.function == RPNElement::FUNCTION_AND)
@@ -3212,15 +3370,18 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
             auto arg1 = rpn_stack.back();
             rpn_stack.pop_back();
+
+            chassert(!rpn_stack.empty());
             auto arg2 = rpn_stack.back();
             rpn_stack.back() = arg1 & arg2;
         }
         else if (element.function == RPNElement::FUNCTION_OR)
         {
-            assert(!rpn_stack.empty());
-
+            chassert(!rpn_stack.empty());
             auto arg1 = rpn_stack.back();
             rpn_stack.pop_back();
+
+            chassert(!rpn_stack.empty());
             auto arg2 = rpn_stack.back();
             rpn_stack.back() = arg1 | arg2;
         }
@@ -3233,11 +3394,16 @@ BoolMask KeyCondition::checkInHyperrectangle(
             rpn_stack.emplace_back(true, false);
         }
         else
+        {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
+        }
 
         if (update_partial_disjunction_result_fn)
         {
-            update_partial_disjunction_result_fn(element_idx, rpn_stack.back().can_be_true, (element.function == RPNElement::FUNCTION_UNKNOWN));
+            update_partial_disjunction_result_fn(
+                element_idx,
+                rpn_stack.back().can_be_true,
+                (element.function == RPNElement::FUNCTION_UNKNOWN));
             ++element_idx;
         }
     }
@@ -4093,6 +4259,15 @@ std::unordered_set<size_t> KeyCondition::getUsedColumns() const
     std::unordered_set<size_t> res;
     for (const RPNElement & element : rpn)
         res.insert(element.key_columns.begin(), element.key_columns.end());
+    return res;
+}
+
+size_t KeyCondition::getUsedKeyPrefixSize() const
+{
+    size_t res = 0;
+    for (const RPNElement & element : rpn)
+        for (size_t key_column : element.key_columns)
+            res = std::max(res, key_column + 1);
     return res;
 }
 

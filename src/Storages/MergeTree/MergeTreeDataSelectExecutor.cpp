@@ -1600,27 +1600,25 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const auto & sorting_key = metadata_snapshot->getSortingKey();
     auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
     std::vector<bool> reverse_flags;
-    size_t num_key_columns = key_condition.getNumKeyColumns();
-    DataTypes key_types;
-    if (num_key_columns > 0)
+
+    /// If until index 4 of PK key columns is used in the filter, then used_key_prefix_size would be 5.
+    /// There is no need to process later key columns
+    const size_t used_key_prefix_size = key_condition.getUsedKeyPrefixSize();
+
+    /// If earlier columns have high cardinality, then later columns may not be loaded
+    const size_t num_index_columns_loaded = part->getIndex()->size();
+
+    /// Do not process more columns than needed
+    const size_t num_key_columns = std::min(used_key_prefix_size, num_index_columns_loaded);
+
+    const auto index = part->getIndex();
+
+    for (size_t i = 0; i < num_key_columns; ++i)
     {
-        const auto index = part->getIndex();
-
-        for (size_t i = 0; i < num_key_columns; ++i)
-        {
-            if (i < index->size())
-            {
-                index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
-                reverse_flags.push_back(!sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[i]);
-            }
-            else
-            {
-                index_columns->emplace_back(); /// The column of the primary key was not loaded in memory - we'll skip it.
-                reverse_flags.push_back(false);
-            }
-
-            key_types.emplace_back(primary_key.data_types[i]);
-        }
+        chassert(i < index->size());
+        chassert(index->at(i));
+        index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
+        reverse_flags.push_back(!sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[i]);
     }
 
     /// If there are no monotonic functions, there is no need to save block reference.
@@ -1630,6 +1628,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     {
         create_field_ref = [index_columns](size_t row, size_t column, FieldRef & field)
         {
+            chassert((*index_columns)[column].column);
             field = {index_columns.get(), row, column};
             // NULL_LAST
             if (field.isNull())
@@ -1640,6 +1639,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     {
         create_field_ref = [index_columns](size_t row, size_t column, FieldRef & field)
         {
+            chassert((*index_columns)[column].column);
             (*index_columns)[column].column->get(row, field);
             // NULL_LAST
             if (field.isNull())
@@ -1647,10 +1647,43 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         };
     }
 
-    /// NOTE Creating temporary Field objects to pass to KeyCondition.
-    size_t used_key_size = num_key_columns;
-    std::vector<FieldRef> index_left(used_key_size);
-    std::vector<FieldRef> index_right(used_key_size);
+    //// Get PK columns potentially used in `KeyCondition` Filter
+    std::vector<size_t> used_key_indices = key_condition.getUsedColumnsInOrder();
+
+    /// Remove used_key_indices entries whose marks not loaded into memory
+    used_key_indices.erase(
+        std::remove_if(used_key_indices.begin(), used_key_indices.end(), [&](size_t idx) { return idx >= num_key_columns; }),
+        used_key_indices.end());
+
+    /// Now we create sparse arrays for efficient processing in `KeyCondition`. The goal is to only send the information
+    /// that is needed and avoid creation of `FieldRef`, `Range` both of which under the hood uses Field which are very slow.
+    /// In the event of long PK, this can become extremely slow.
+    /// So in the sparse form, we only have keys which are used in `KeyCondition` by some RPN element and marks are loaded into memory
+    const size_t sparse_keys_size = used_key_indices.size();
+
+    std::vector<FieldRef> sparse_key_left(sparse_keys_size);
+    std::vector<FieldRef> sparse_key_right(sparse_keys_size);
+
+
+    /// Datatypes are always same regardless of `MarkRange`, so we construct it only once.
+    DataTypes sparse_key_types;
+    for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
+    {
+        size_t key_col = used_key_indices[sparse_pos];
+        sparse_key_types.emplace_back(primary_key.data_types[key_col]);
+    }
+
+    /// Equality bitmap for all key columns (not only sparse): `equal_boundaries_mask[i] = (left_key_i == right_key_i)`
+    /// For intermediate key columns that are not used by KeyCondition, we still need to know if their left and right
+    /// marks are the same or not to properly construct all hyperrectangles. However, this is extremely fast because
+    /// for intermediate columns we never create `Range`, `FieldRef`, or `Field` in `KeyCondition`.
+    std::vector<UInt8> equal_boundaries_mask(num_key_columns);
+
+    if (sparse_keys_size == 0)
+    {
+        /// KeyCondition uses no indexable PK columns: PK index is effectively unused.
+        key_condition_useful = false;
+    }
 
     /// For _part_offset and _part virtual columns
     DataTypes part_offset_types
@@ -1660,42 +1693,60 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
     auto check_in_range = [&](const MarkRange & range, BoolMask initial_mask = {})
     {
-        auto check_key_condition = [&]()
+        auto check_key_condition = [&]() -> BoolMask
         {
+            if (!key_condition_useful)
+                return BoolMask(true, true);
+
             if (range.end == marks_count)
             {
-                for (size_t i = 0; i < used_key_size; ++i)
+                /// Last mark: everything to +inf on the right, so boundaries are never equal.
+                std::fill(equal_boundaries_mask.begin(), equal_boundaries_mask.end(), 0);
+
+                for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
                 {
-                    auto & left = reverse_flags[i] ? index_right[i] : index_left[i];
-                    auto & right = reverse_flags[i] ? index_left[i] : index_right[i];
-                    if ((*index_columns)[i].column)
-                        create_field_ref(range.begin, i, left);
-                    else
-                        left = NEGATIVE_INFINITY;
+                    const size_t key_col = used_key_indices[sparse_pos];
+
+                    auto & left  = reverse_flags[key_col] ? sparse_key_right[sparse_pos] : sparse_key_left[sparse_pos];
+                    auto & right = reverse_flags[key_col] ? sparse_key_left[sparse_pos]  : sparse_key_right[sparse_pos];
+
+                    create_field_ref(range.begin, key_col, left);
 
                     right = POSITIVE_INFINITY;
                 }
             }
             else
             {
-                for (size_t i = 0; i < used_key_size; ++i)
+                /// Non-final mark: compare PK index values at range.begin and range.end for all key columns.
+                for (size_t i = 0; i < num_key_columns; ++i)
                 {
-                    auto & left = reverse_flags[i] ? index_right[i] : index_left[i];
-                    auto & right = reverse_flags[i] ? index_left[i] : index_right[i];
-                    if ((*index_columns)[i].column)
-                    {
-                        create_field_ref(range.begin, i, left);
-                        create_field_ref(range.end, i, right);
-                    }
-                    else
-                    {
-                        /// If the PK column was not loaded in memory - exclude it from the analysis.
-                        left = NEGATIVE_INFINITY;
-                        right = POSITIVE_INFINITY;
-                    }
+                    const auto & col = (*index_columns)[i].column;
+
+                    chassert(col);
+
+                    equal_boundaries_mask[i] = (col->compareAt(range.begin, range.end, *col, 1) == 0);
+                }
+
+                /// Build left/right boundaries only for used key columns.
+                for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
+                {
+                    const size_t key_col = used_key_indices[sparse_pos];
+
+                    auto & left  = reverse_flags[key_col] ? sparse_key_right[sparse_pos] : sparse_key_left[sparse_pos];
+                    auto & right = reverse_flags[key_col] ? sparse_key_left[sparse_pos]  : sparse_key_right[sparse_pos];
+
+                    create_field_ref(range.begin, key_col, left);
+                    create_field_ref(range.end, key_col, right);
                 }
             }
-            return key_condition.checkInRange(used_key_size, index_left.data(), index_right.data(), key_types, initial_mask);
+
+            return key_condition.checkInRange(
+                used_key_indices,
+                sparse_key_left.data(),
+                sparse_key_right.data(),
+                sparse_key_types,
+                equal_boundaries_mask,
+                initial_mask);
         };
 
         auto check_part_offset_condition = [&]()
