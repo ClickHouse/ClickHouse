@@ -567,7 +567,7 @@ void KeeperTCPHandler::runImpl()
                         },
                         status,
                         error_message);
-                }
+                };
 
                 try
                 {
@@ -749,6 +749,9 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
     Coordination::read(has_tracing, read_buffer);
     if (has_tracing)
     {
+        /// If the client sends the tracing header, it should use 64-bit XIDs.
+        chassert(use_xid_64);
+
         request->client_tracing_context.emplace();
         request->client_tracing_context->deserialize(read_buffer);
 

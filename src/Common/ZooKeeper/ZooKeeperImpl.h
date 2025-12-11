@@ -259,9 +259,8 @@ private:
     std::optional<CompressedWriteBuffer> compressed_out;
 
     bool use_compression = false;
-    bool use_xid_64 = false;
 
-    int64_t close_xid = CLOSE_XID;
+    int64_t close_xid = CLOSE_XID_64;
 
     int64_t session_id = 0;
 

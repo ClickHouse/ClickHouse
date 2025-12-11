@@ -79,54 +79,33 @@ TYPED_TEST(CoordinationTest, BufferSerde)
     request->xid = 3;
     dynamic_cast<Coordination::ZooKeeperGetRequest &>(*request).path = "/path/value";
 
-    const auto test_serde = [&](bool use_xid_64)
-    {
-        size_t xid_size = use_xid_64 ? sizeof(int64_t) : sizeof(int32_t);
-        DB::WriteBufferFromNuraftBuffer wbuf;
-        request->write(wbuf, use_xid_64);
-        auto nuraft_buffer = wbuf.getBuffer();
-        EXPECT_EQ(nuraft_buffer->size(), 24 + xid_size);
+    size_t xid_size = sizeof(int64_t);
+    DB::WriteBufferFromNuraftBuffer wbuf;
+    request->write(wbuf);
+    auto nuraft_buffer = wbuf.getBuffer();
+    EXPECT_EQ(nuraft_buffer->size(), 24 + xid_size);
 
-        DB::ReadBufferFromNuraftBuffer rbuf(nuraft_buffer);
+    DB::ReadBufferFromNuraftBuffer rbuf(nuraft_buffer);
 
-        int32_t length;
-        Coordination::read(length, rbuf);
-        EXPECT_EQ(length + sizeof(length), nuraft_buffer->size());
+    int32_t length;
+    Coordination::read(length, rbuf);
+    EXPECT_EQ(length + sizeof(length), nuraft_buffer->size());
 
-        int64_t xid = 0;
-        if (use_xid_64)
-        {
-            Coordination::read(xid, rbuf);
-        }
-        else
-        {
-            int32_t xid_32 = 0;
-            Coordination::read(xid_32, rbuf);
-            xid = xid_32;
-        }
+    int64_t xid = 0;
+    Coordination::read(xid, rbuf);
 
-        EXPECT_EQ(xid, request->xid);
+    EXPECT_EQ(xid, request->xid);
 
-        Coordination::OpNum opnum;
-        Coordination::read(opnum, rbuf);
+    Coordination::OpNum opnum;
+    Coordination::read(opnum, rbuf);
 
-        Coordination::ZooKeeperRequestPtr request_read = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
-        request_read->xid = xid;
-        request_read->readImpl(rbuf);
+    Coordination::ZooKeeperRequestPtr request_read = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
+    request_read->xid = xid;
+    request_read->readImpl(rbuf);
 
-        EXPECT_EQ(request_read->getOpNum(), Coordination::OpNum::Get);
-        EXPECT_EQ(request_read->xid, 3);
-        EXPECT_EQ(dynamic_cast<Coordination::ZooKeeperGetRequest &>(*request_read).path, "/path/value");
-    };
-
-    {
-        SCOPED_TRACE("32bit XID");
-        test_serde(/*use_xid_64=*/false);
-    }
-    {
-        SCOPED_TRACE("64bit XID");
-        test_serde(/*use_xid_64=*/true);
-    }
+    EXPECT_EQ(request_read->getOpNum(), Coordination::OpNum::Get);
+    EXPECT_EQ(request_read->xid, 3);
+    EXPECT_EQ(dynamic_cast<Coordination::ZooKeeperGetRequest &>(*request_read).path, "/path/value");
 }
 
 template <typename StateMachine>
