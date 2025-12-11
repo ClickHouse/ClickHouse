@@ -191,9 +191,9 @@ KeeperResponsesForSessions processWatchesImplBase(
             watches.erase(watch_it);
     }
 
-    auto parent_path = String(Coordination::parentNodePath(path));
+    auto parent_path = Coordination::parentNodePath(path);
 
-    std::vector<String> paths_to_check_for_list_watches;
+    std::vector<std::string_view> paths_to_check_for_list_watches;
     if (should_delete)
     {
         if (event_type == Coordination::Event::CREATED)
@@ -208,7 +208,7 @@ KeeperResponsesForSessions processWatchesImplBase(
     }
     else
     {
-        auto current_path = path;
+        std::string_view current_path = path;
         while (current_path.size() > 1)
         {
             paths_to_check_for_list_watches.push_back(current_path);
@@ -244,8 +244,9 @@ KeeperResponsesForSessions processWatchesImplBase(
             {
                 if (should_delete)
                 {
+                    std::cerr << "path_to_check " << path_to_check << '\n';
                     [[maybe_unused]] auto erased = sessions_and_watchers[watcher_session].erase(
-                        KeeperStorageBase::WatchInfo{.path = path_to_check, .is_list_watch = true, .is_persistent = !should_delete, .trigger_on_exists = false});
+                        KeeperStorageBase::WatchInfo{.path = String(path_to_check), .is_list_watch = true, .is_persistent = !should_delete, .trigger_on_exists = false});
                     chassert(erased);
                 }
                 result.push_back(KeeperResponseForSession{watcher_session, watch_list_response});
