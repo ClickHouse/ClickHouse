@@ -744,6 +744,7 @@ For Values format: if the field could not be parsed by streaming parser, run SQL
 For Values format: when parsing and interpreting expressions using template, check actual type of literal to avoid possible overflow and precision issues.
 )", 0) \
     DECLARE(Bool, input_format_avro_allow_missing_fields, false, R"(
+For Avro/AvroConfluent format: when field is not found in schema use default value instead of error
 )", 0) \
     /** This setting is obsolete and do nothing, left for compatibility reasons. */ \
     DECLARE(Bool, input_format_avro_null_as_default, false, R"(
