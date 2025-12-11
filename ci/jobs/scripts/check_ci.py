@@ -301,7 +301,10 @@ Test output:
             print("This issue should be fixed before merge - cannot handle it")
             return False
         if "OOM" in self.test_name:
-            print("Cannot handle OOM errors - continue")
+            print("Cannot handle OOM errors - skip")
+            return False
+        if self.job_status == Result.Status.ERROR:
+            print("Cannot handle jobs with status error - skip")
             return False
         return True
 
