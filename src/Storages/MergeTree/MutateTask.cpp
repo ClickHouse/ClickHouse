@@ -316,7 +316,7 @@ static void splitAndModifyMutationCommands(
 
         /// If it's compact part, then we don't need to actually remove files
         /// from disk we just don't read dropped columns
-        for (const auto & column : table_columns)
+        for (const auto & column : part_columns)
         {
             if (!mutated_columns.contains(column.name))
             {
