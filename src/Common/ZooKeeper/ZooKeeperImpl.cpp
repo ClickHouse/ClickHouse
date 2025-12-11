@@ -1,6 +1,5 @@
 #include <chrono>
-#include <random>
-#include "Common/OpenTelemetryTracingContext.h"
+#include <Common/OpenTelemetryTracingContext.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/Stopwatch.h>
@@ -41,6 +40,7 @@
 
 #include <Coordination/KeeperConstants.h>
 #include <Interpreters/AggregatedZooKeeperLog.h>
+#include <Coordination/KeeperSpans.h>
 #include "config.h"
 
 #if USE_SSL
@@ -806,6 +806,12 @@ void ZooKeeper::sendThread()
 
                     auto dequeue_ts = clock::now();
 
+                    ZooKeeperOpentelemetrySpans::maybeFinalize(
+                        info.request->spans.client_requests_queue,
+                        {
+                            {"zookeeper_client.requests_queue.size", std::to_string(requests_queue.size())},
+                        });
+
                     chassert(info.request->enqueue_ts != std::chrono::steady_clock::time_point{});
                     HistogramMetrics::observe(
                         HistogramMetrics::KeeperClientQueueDuration,
@@ -1401,6 +1407,8 @@ void ZooKeeper::pushRequest(RequestInfo && info)
         }
 
         info.request->enqueue_ts = clock::now();
+
+        ZooKeeperOpentelemetrySpans::maybeInitialize(info.request->spans.client_requests_queue, info.request->client_tracing_context);
 
         if (!requests_queue.tryPush(std::move(info), args.operation_timeout_ms))
         {

@@ -28,16 +28,20 @@ struct MaybeSpan
         : operation_name(name), kind(k) {}
 };
 
-struct KeeperSpans
+struct ZooKeeperOpentelemetrySpans
 {
+    // Keeper client spans
+    MaybeSpan client_requests_queue{"zookeeper.client.requests_queue", OpenTelemetry::SpanKind::INTERNAL};
+
+    // Keeper server spans
     MaybeSpan receive_request{"keeper.receive_request", OpenTelemetry::SpanKind::SERVER};
     MaybeSpan process_request{"keeper.process_request", OpenTelemetry::SpanKind::SERVER};
     MaybeSpan dispatcher_responses_queue{"keeper.dispatcher.responses_queue", OpenTelemetry::SpanKind::INTERNAL};
     MaybeSpan send_response{"keeper.send_response", OpenTelemetry::SpanKind::SERVER};
     MaybeSpan read_wait_for_write{"keeper.read.wait_for_write", OpenTelemetry::SpanKind::INTERNAL};
     MaybeSpan read_process{"keeper.read.process", OpenTelemetry::SpanKind::INTERNAL};
-    MaybeSpan write_pre_commit{"keeper.write.pre_commit", OpenTelemetry::SpanKind::INTERNAL};
-    MaybeSpan write_commit{"keeper.write.commit", OpenTelemetry::SpanKind::INTERNAL};
+    MaybeSpan pre_commit{"keeper.write.pre_commit", OpenTelemetry::SpanKind::INTERNAL};
+    MaybeSpan commit{"keeper.write.commit", OpenTelemetry::SpanKind::INTERNAL};
 
     static UInt64 now()
     {
@@ -52,9 +56,9 @@ struct KeeperSpans
 
     static void maybeFinalize(
         MaybeSpan & maybe_span,
+        std::unordered_map<std::string, std::string> && extra_attributes = {},
         OpenTelemetry::SpanStatus status = OpenTelemetry::SpanStatus::OK,
         const String & error_message = {},
-        std::unordered_map<std::string, std::string> && extra_attributes = {},
         UInt64 finish_time_us = now());
 };
 

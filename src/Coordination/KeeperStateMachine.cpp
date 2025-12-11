@@ -19,14 +19,14 @@
 #include <base/errnoToString.h>
 #include <base/move_extend.h>
 #include <sys/mman.h>
-#include "Common/OpenTelemetryTraceContext.h"
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/logger_useful.h>
-#include "Interpreters/Context.h"
+#include <Interpreters/Context.h>
 
 
 namespace ProfileEvents
@@ -232,7 +232,7 @@ union XidHelper
 template<typename Storage>
 nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::pre_commit(uint64_t log_idx, nuraft::buffer & data)
 {
-    const UInt64 start_time_us = KeeperSpans::now();
+    const UInt64 start_time_us = ZooKeeperOpentelemetrySpans::now();
 
     double sleep_probability = keeper_context->getPrecommitSleepProbabilityForTesting();
     int64_t sleep_ms = keeper_context->getPrecommitSleepMillisecondsForTesting();
@@ -263,26 +263,21 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::pre_commit(uint64_t log
 
     const auto maybe_log_opentelemetery_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
     {
-        if (!request_for_session->request->keeper_spans)
-        {
-            return;
-        }
-
-        KeeperSpans::initialize(
-            *request_for_session->request->server_tracing_context,
-            request_for_session->request->keeper_spans->write_precommit,
+        ZooKeeperOpentelemetrySpans::maybeInitialize(
+            request_for_session->request->spans.pre_commit,
+            request_for_session->request->server_tracing_context,
             start_time_us);
 
-        KeeperSpans::finalize(
-            request_for_session->request->keeper_spans->write_precommit,
-            status,
-            error_message,
+        ZooKeeperOpentelemetrySpans::maybeFinalize(
+            request_for_session->request->spans.pre_commit,
             {
                 {"keeper.operation", Coordination::opNumToString(request_for_session->request->getOpNum())},
                 {"keeper.session_id", std::to_string(request_for_session->session_id)},
                 {"keeper.xid", std::to_string(request_for_session->request->xid)},
                 {"raft.log_idx", std::to_string(log_idx)},
-            });
+            },
+            status,
+            error_message);
     };
 
     try
@@ -603,7 +598,7 @@ KeeperResponseForSession KeeperStateMachine<Storage>::processReconfiguration(
 template<typename Storage>
 nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t log_idx, nuraft::buffer & data)
 {
-    const UInt64 start_time_us = KeeperSpans::now();
+    const UInt64 start_time_us = ZooKeeperOpentelemetrySpans::now();
 
     auto request_for_session = parseRequest(data, true);
     if (!request_for_session->zxid)
@@ -617,8 +612,8 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
     auto try_push = [&](KeeperResponseForSession & response)
     {
         response.response->enqueue_ts = std::chrono::steady_clock::now();
-        if (response.request && response.request->keeper_spans)
-            KeeperSpans::initialize(*response.request->server_tracing_context, response.request->keeper_spans->dispatcher_responses_queue);
+        if (response.request)
+            ZooKeeperOpentelemetrySpans::maybeInitialize(response.request->spans.dispatcher_responses_queue, response.request->server_tracing_context);
         if (!responses_queue.push(response))
         {
             ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
@@ -630,26 +625,21 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
 
     const auto maybe_log_opentelemetery_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
     {
-        if (!request_for_session->request->keeper_spans)
-        {
-            return;
-        }
-
-        KeeperSpans::initialize(
-            *request_for_session->request->server_tracing_context,
-            request_for_session->request->keeper_spans->write_commit,
+        ZooKeeperOpentelemetrySpans::maybeInitialize(
+            request_for_session->request->spans.commit,
+            request_for_session->request->server_tracing_context,
             start_time_us);
 
-        KeeperSpans::finalize(
-            request_for_session->request->keeper_spans->write_commit,
-            status,
-            error_message,
+        ZooKeeperOpentelemetrySpans::maybeFinalize(
+            request_for_session->request->spans.commit,
             {
                 {"keeper.operation", Coordination::opNumToString(request_for_session->request->getOpNum())},
                 {"keeper.session_id", std::to_string(request_for_session->session_id)},
                 {"keeper.xid", std::to_string(request_for_session->request->xid)},
                 {"raft.log_idx", std::to_string(log_idx)},
-            });
+            },
+            status,
+            error_message);
     };
 
     try
@@ -1046,8 +1036,8 @@ void KeeperStateMachine<Storage>::processReadRequest(const KeeperRequestForSessi
             if (response_for_session.response->xid != Coordination::WATCH_XID)
                 response_for_session.request = request_for_session.request;
             response_for_session.response->enqueue_ts = std::chrono::steady_clock::now();
-            if (response_for_session.request && response_for_session.request->keeper_spans)
-                KeeperSpans::initialize(*response_for_session.request->server_tracing_context, response_for_session.request->keeper_spans->dispatcher_responses_queue);
+            if (response_for_session.request)
+                ZooKeeperOpentelemetrySpans::maybeInitialize(response_for_session.request->spans.dispatcher_responses_queue, response_for_session.request->server_tracing_context);
             if (!responses_queue.push(response_for_session))
                 LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", response_for_session.session_id);
         }

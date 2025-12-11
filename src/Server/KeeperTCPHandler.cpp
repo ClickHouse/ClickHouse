@@ -1,7 +1,4 @@
 #include <Server/KeeperTCPHandler.h>
-#include "Common/OpenTelemetryTracingContext.h"
-#include "Coordination/KeeperCommon.h"
-#include "Coordination/KeeperSpans.h"
 
 #if USE_NURAFT
 
@@ -28,6 +25,9 @@
 #    include <Common/logger_useful.h>
 #    include <Common/setThreadName.h>
 #    include <Common/HistogramMetrics.h>
+#    include <Common/OpenTelemetryTracingContext.h>
+#    include <Coordination/KeeperCommon.h>
+#    include <Coordination/KeeperSpans.h>
 
 #    include <Compression/CompressionFactory.h>
 
@@ -455,8 +455,8 @@ void KeeperTCPHandler::runImpl()
     auto response_callback = [my_responses = this->responses, my_poll_wrapper = this->poll_wrapper](
                                  const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)
     {
-        if (request && request->keeper_spans)
-            KeeperSpans::initialize(*request->client_tracing_context, request->keeper_spans->send_response);
+        if (request)
+            ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.send_response, request->client_tracing_context);
 
         if (!my_responses->push(RequestWithResponse{response, std::move(request)}))
             throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with xid {} and zxid {}", response->xid, response->zxid);
@@ -556,17 +556,17 @@ void KeeperTCPHandler::runImpl()
 
                 const auto maybe_finalize_opentelemetery_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
                 {
-                    if (!request || !request->keeper_spans)
+                    if (!request)
                         return;
 
-                    KeeperSpans::finalize(
-                        request->keeper_spans->send_response,
-                        status,
-                        error_message,
+                    ZooKeeperOpentelemetrySpans::maybeFinalize(
+                        request->spans.send_response,
                         {
                             {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
                             {"keeper.xid", std::to_string(request->xid)},
-                        });
+                        },
+                        status,
+                        error_message);
                 }
 
                 try
@@ -695,7 +695,7 @@ ReadBuffer & KeeperTCPHandler::getReadBuffer()
 
 std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveRequest()
 {
-    const UInt64 receive_start_time = KeeperSpans::now();
+    const UInt64 receive_start_time = ZooKeeperOpentelemetrySpans::now();
 
     std::optional<LimitReadBuffer> limited_buffer_holder;
     /// Wrap regular read buffer with LimitReadBuffer to apply max_request_size
@@ -752,9 +752,7 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
         request->client_tracing_context.emplace();
         request->client_tracing_context->deserialize(read_buffer);
 
-        request->keeper_spans.emplace();
-
-        KeeperSpans::initialize(*request->client_tracing_context, request->keeper_spans->receive_request, receive_start_time);
+        ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.receive_request, request->client_tracing_context, receive_start_time);
     }
 
     if (!keeper_dispatcher->putRequest(request, session_id, use_xid_64))

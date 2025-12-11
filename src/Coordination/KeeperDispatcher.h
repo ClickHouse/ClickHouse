@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Interpreters/OpenTelemetrySpanLog.h"
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include "config.h"
 
 #if USE_NURAFT
@@ -13,7 +13,6 @@
 #include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperConnectionStats.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>
-#include <Coordination/WithSpanLog.h>
 #include <Common/MultiVersion.h>
 #include <Common/Macros.h>
 
@@ -23,7 +22,7 @@ using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeep
 
 /// Highlevel wrapper for ClickHouse Keeper.
 /// Process user requests via consensus and return responses.
-class KeeperDispatcher : WithSpanLog
+class KeeperDispatcher
 {
 private:
     using RequestsQueue = ConcurrentBoundedQueue<KeeperRequestForSession>;

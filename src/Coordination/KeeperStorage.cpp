@@ -1412,46 +1412,46 @@ bool KeeperStorage<Container>::removeNode(const std::string & path, int32_t vers
 }
 
 template <typename F>
-auto callOnConcreteRequestType(const Coordination::ZooKeeperRequest & zk_request, F function)
+auto callOnConcreteRequestType(Coordination::ZooKeeperRequest & zk_request, F function)
 {
     switch (zk_request.getOpNum())
     {
         case Coordination::OpNum::Heartbeat:
-            return function(static_cast<const Coordination::ZooKeeperHeartbeatRequest &>(zk_request));
+            return function(static_cast<Coordination::ZooKeeperHeartbeatRequest &>(zk_request));
         case Coordination::OpNum::Sync:
-            return function(static_cast<const Coordination::ZooKeeperSyncRequest &>(zk_request));
+            return function(static_cast<Coordination::ZooKeeperSyncRequest &>(zk_request));
         case Coordination::OpNum::Get:
-            return function(static_cast<const Coordination::ZooKeeperGetRequest &>(zk_request));
+            return function(static_cast<Coordination::ZooKeeperGetRequest &>(zk_request));
         case Coordination::OpNum::Create:
         case Coordination::OpNum::CreateIfNotExists:
-            return function(static_cast<const Coordination::ZooKeeperCreateRequest &>(zk_request));
+            return function(static_cast<Coordination::ZooKeeperCreateRequest &>(zk_request));
         case Coordination::OpNum::Remove:
-            return function(static_cast<const Coordination::ZooKeeperRemoveRequest &>(zk_request));
+            return function(static_cast<Coordination::ZooKeeperRemoveRequest &>(zk_request));
         case Coordination::OpNum::RemoveRecursive:
-            return function(static_cast<const Coordination::ZooKeeperRemoveRecursiveRequest &>(zk_request));
+            return function(static_cast<Coordination::ZooKeeperRemoveRecursiveRequest &>(zk_request));
         case Coordination::OpNum::Exists:
-            return function(static_cast<const Coordination::ZooKeeperExistsRequest &>(zk_request));
+            return function(static_cast<Coordination::ZooKeeperExistsRequest &>(zk_request));
         case Coordination::OpNum::Set:
-            return function(static_cast<const Coordination::ZooKeeperSetRequest &>(zk_request));
+            return function(static_cast<Coordination::ZooKeeperSetRequest &>(zk_request));
         case Coordination::OpNum::List:
         case Coordination::OpNum::FilteredList:
         case Coordination::OpNum::SimpleList:
-            return function(static_cast<const Coordination::ZooKeeperListRequest &>(zk_request));
+            return function(static_cast<Coordination::ZooKeeperListRequest &>(zk_request));
         case Coordination::OpNum::Check:
         case Coordination::OpNum::CheckNotExists:
         case Coordination::OpNum::CheckStat:
-            return function(static_cast<const Coordination::ZooKeeperCheckRequest &>(zk_request));
+            return function(static_cast<Coordination::ZooKeeperCheckRequest &>(zk_request));
         case Coordination::OpNum::Multi:
         case Coordination::OpNum::MultiRead:
-            return function(static_cast<const Coordination::ZooKeeperMultiRequest &>(zk_request));
+            return function(static_cast<Coordination::ZooKeeperMultiRequest &>(zk_request));
         case Coordination::OpNum::Auth:
-            return function(static_cast<const Coordination::ZooKeeperAuthRequest &>(zk_request));
+            return function(static_cast<Coordination::ZooKeeperAuthRequest &>(zk_request));
         case Coordination::OpNum::Close:
-            return function(static_cast<const Coordination::ZooKeeperCloseRequest &>(zk_request));
+            return function(static_cast<Coordination::ZooKeeperCloseRequest &>(zk_request));
         case Coordination::OpNum::SetACL:
-            return function(static_cast<const Coordination::ZooKeeperSetACLRequest &>(zk_request));
+            return function(static_cast<Coordination::ZooKeeperSetACLRequest &>(zk_request));
         case Coordination::OpNum::GetACL:
-            return function(static_cast<const Coordination::ZooKeeperGetACLRequest &>(zk_request));
+            return function(static_cast<Coordination::ZooKeeperGetACLRequest &>(zk_request));
         default:
             throw Exception{DB::ErrorCodes::LOGICAL_ERROR, "Unexpected request type: {}", zk_request.getOpNum()};
     }
@@ -3334,7 +3334,7 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
     bool check_acl,
     bool is_local)
 {
-    const UInt64 start_time_us = KeeperSpans::now();
+    const UInt64 start_time_us = ZooKeeperOpentelemetrySpans::now();
     Stopwatch watch;
     SCOPE_EXIT({
         watch.stop();
@@ -3456,7 +3456,7 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
     }
     else /// normal requests proccession
     {
-        const auto process_request = [&]<std::derived_from<Coordination::ZooKeeperRequest> T>(const T & concrete_zk_request)
+        const auto process_request = [&]<std::derived_from<Coordination::ZooKeeperRequest> T>(T & concrete_zk_request)
         {
             Coordination::ZooKeeperResponsePtr response;
 
@@ -3473,24 +3473,20 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
                 {
                     const auto maybe_log_opentelemetery_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
                     {
-                        if (!concrete_zk_request->keeper_spans)
-                        {
-                            return;
-                        }
 
-                        KeeperSpans::initialize(
-                            *concrete_zk_request->server_tracing_context,
-                            concrete_zk_request->keeper_spans->read_process,
+                        ZooKeeperOpentelemetrySpans::maybeInitialize(
+                            concrete_zk_request.spans.read_process,
+                            concrete_zk_request.server_tracing_context,
                             start_time_us);
 
-                        KeeperSpans::finalize(
-                            concrete_zk_request->keeper_spans->read_process,
-                            status,
-                            error_message,
+                        ZooKeeperOpentelemetrySpans::maybeFinalize(
+                            concrete_zk_request.spans.read_process,
                             {
-                                {"keeper.operation", Coordination::opNumToString(concrete_zk_request->getOpNum())},
-                                {"keeper.xid", std::to_string(concrete_zk_request->xid)},
-                            });
+                                {"keeper.operation", Coordination::opNumToString(concrete_zk_request.getOpNum())},
+                                {"keeper.xid", std::to_string(concrete_zk_request.xid)},
+                            },
+                            status,
+                            error_message);
                     };
 
                     try

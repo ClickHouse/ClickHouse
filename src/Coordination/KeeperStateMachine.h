@@ -3,7 +3,6 @@
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Coordination/KeeperContext.h>
-#include <Coordination/WithSpanLog.h>
 #include <Common/SharedMutex.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 
@@ -183,7 +182,7 @@ protected:
 /// ClickHouse Keeper state machine. Wrapper for KeeperStorage.
 /// Responsible for entries commit, snapshots creation and so on.
 template<typename Storage>
-class KeeperStateMachine : public IKeeperStateMachine, WithSpanLog
+class KeeperStateMachine : public IKeeperStateMachine
 {
 public:
     KeeperStateMachine(

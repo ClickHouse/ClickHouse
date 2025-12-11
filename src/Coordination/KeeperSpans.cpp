@@ -1,6 +1,5 @@
 #include <Coordination/KeeperSpans.h>
 #include <Interpreters/Context.h>
-#include <mutex>
 #include <optional>
 
 namespace DB
@@ -30,7 +29,7 @@ namespace
     }
 }
 
-void KeeperSpans::maybeInitialize(
+void ZooKeeperOpentelemetrySpans::maybeInitialize(
     MaybeSpan & maybe_span,
     const std::optional<OpenTelemetry::TracingContext> & parent_context,
     UInt64 start_time_us)
@@ -50,11 +49,11 @@ void KeeperSpans::maybeInitialize(
     });
 }
 
-void KeeperSpans::maybeFinalize(
+void ZooKeeperOpentelemetrySpans::maybeFinalize(
     MaybeSpan & maybe_span,
+    std::unordered_map<std::string, std::string> && extra_attributes,
     OpenTelemetry::SpanStatus status,
     const String & error_message,
-    std::unordered_map<std::string, std::string> && extra_attributes,
     UInt64 finish_time_us)
 {
     if (!maybe_span.span)
