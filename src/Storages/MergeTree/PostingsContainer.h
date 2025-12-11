@@ -5,7 +5,6 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <roaring.hh>
 
-#pragma clang optimize off
 namespace DB
 {
 

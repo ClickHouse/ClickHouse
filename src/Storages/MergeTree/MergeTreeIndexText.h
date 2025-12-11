@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/MergeTree/PostingsContainer.h>
 #include <Columns/IColumn.h>
 #include <Common/Logger.h>
 #include <Common/HashTable/StringHashMap.h>
@@ -14,8 +15,6 @@
 #include <vector>
 
 #include <roaring.hh>
-
-#include "PostingsContainer.h"
 
 namespace DB
 {
@@ -91,6 +90,13 @@ using PostingListPtr = std::shared_ptr<PostingList>;
 using PostingListCodec = std::variant<PostingList, PostingsContainer32>;
 using PostingListCodecsHolder = std::list<PostingListCodec>;
 
+/// Decouple posting list encoding/decoding logic from PostingListBuilder,
+/// so that PostingListBuilder can support multiple encoding schemes for posting lists,
+/// including a SIMD-accelerated delta PFor codec implemented based on simdcomp.
+
+/// PostingListRoaringCodec stores the posting list in a Roaring bitmap
+/// and ultimately serializes it to a WriteBuffer using Roaring’s built-in serialization support.
+/// Deserialization is also implemented by leveraging Roaring bitmap’s APIs.
 struct PostingListRoaringCodec
 {
     /// sizeof(PostingListWithContext) == 24 bytes.
@@ -112,7 +118,17 @@ struct PostingListRoaringCodec
     PostingList & getLarge() const { return *large.first; }
     size_t serialize(UInt64 header, WriteBuffer &ostr);
 };
+
 using PostingListRoaringCodecPtr = std::shared_ptr<PostingListRoaringCodec>;
+
+/// PostingListBlockCodec uses SIMD instructions to compress
+/// and decompress monotonically increasing integer posting lists.
+/// Document IDs are appended one by one into a PostingsContainer,
+/// and once they accumulate to kBlockSize (typically 128,
+/// depending on the instruction set supported by the machine),
+/// the block is compressed and written to the buffer.
+/// Decompression mirrors this process by decoding these
+/// fixed-size SIMD-compressed blocks back into the original sequence of document IDs.
 struct PostingListBlockCodec
 {
     PostingsContainer32 * postings;

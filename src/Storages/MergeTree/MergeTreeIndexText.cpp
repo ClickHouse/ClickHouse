@@ -21,11 +21,9 @@
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
-#include <Storages/MergeTree/PostingsContainer.h>
 
 #include <base/range.h>
 #include <fmt/ranges.h>
-#pragma clang optimize off
 namespace ProfileEvents
 {
     extern const Event TextIndexReadDictionaryBlocks;
