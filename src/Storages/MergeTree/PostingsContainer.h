@@ -3,9 +3,9 @@
 #include <IO/ReadHelpers.h>
 #include <Storages/MergeTree/IntegerCodecTrait.h>
 #include <IO/ReadBufferFromMemory.h>
-#include <IO/ReadBufferFromString.h>
 #include <roaring.hh>
 
+#pragma clang optimize off
 namespace DB
 {
 
@@ -69,18 +69,35 @@ public:
     size_t size() const { return total; }
     bool empty() const { return total == 0; }
 
+    void add(T value)
+    {
+        if (current.size() == kBlockSize)
+        {
+            std::span<const T> segment(current.begin(), current.end());
+            compressBlock(segment, temp_compression_data_buffer);
+            current.reserve(kBlockSize);
+            current.clear();
+        }
+        current.emplace_back(value);
+    }
+    template<typename Out>
+    size_t serialize(Out & out)
+    {
+        if (!current.empty())
+            compressBlock(std::span<const T> (current.begin(), current.end()), temp_compression_data_buffer);
+        return serializeTo(out);
+    }
     /// Serializes the container to a WriteBuffer-like output.
     template<typename Container, typename Out>
     size_t serialize(Container & in, Out & out)
     {
         chassert(std::is_sorted(in.begin(), in.end()));
         std::span<const T> container(in.data(), in.size());
-        std::string temp_compression_data;
         while (!container.empty())
         {
             size_t segment_length = std::min<size_t>(container.size(), kBlockSize);
             std::span<const T> segment = container.first(segment_length);
-            compressBlock(segment, temp_compression_data);
+            compressBlock(segment, temp_compression_data_buffer);
             container = container.subspan(segment_length);
         }
         return serializeTo(out);
@@ -99,6 +116,7 @@ public:
             decompressBlock(data_buffer, temp_buffer, temp_compress_buffer, [&out] (std::vector<uint32_t> & temp) { out.addMany(temp.size(), temp.data()); });
     }
 
+    size_t getSizeInBytes() const { return compressed_buffer.size(); }
 private:
     template<typename Out>
     size_t serializeTo(Out & out) const
@@ -190,6 +208,8 @@ private:
         consumer(temp);
     }
     std::string compressed_buffer;
+    std::string temp_compression_data_buffer;
+    std::vector<T> current;
     size_t block_count = 0;
     size_t total = 0;
 };

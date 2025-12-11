@@ -15,6 +15,7 @@
     #define USE_SIMDCOMP 1
 #endif
 
+#pragma clang optimize off
 extern "C"
 {
 #if defined(USE_SIMDCOMP)
