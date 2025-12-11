@@ -1387,14 +1387,18 @@ namespace DB
         for (size_t column_i = 0; column_i < *columns_num; ++column_i)
         {
             const ColumnWithTypeAndName & header_column = header_columns[column_i];
+            auto column_type = header_column.type;
             auto column = chunk ? chunk->getColumns()[column_i] : header_column.column;
 
             if (column && !settings.low_cardinality_as_dictionary)
+            {
                 column = recursiveRemoveLowCardinality(column);
+                column_type = recursiveRemoveLowCardinality(column_type);
+            }
 
             bool is_column_nullable = false;
             auto arrow_type = getArrowType(
-                header_column.type,
+                column_type,
                 column,
                 header_column.name,
                 format_name,
@@ -1438,10 +1442,14 @@ namespace DB
             for (size_t column_i = 0; column_i < columns_num; ++column_i)
             {
                 const ColumnWithTypeAndName & header_column = header_columns[column_i];
+                auto column_type = header_column.type;
                 auto column = chunk.getColumns()[column_i];
 
                 if (!settings.low_cardinality_as_dictionary)
+                {
                     column = recursiveRemoveLowCardinality(column);
+                    column_type = recursiveRemoveLowCardinality(column_type);
+                }
 
                 std::unique_ptr<arrow::ArrayBuilder> array_builder;
                 arrow::Status status = MakeBuilder(arrow::default_memory_pool(), schema->field(column_i)->type(), &array_builder);
@@ -1450,7 +1458,7 @@ namespace DB
                 std::shared_ptr<arrow::Array> arrow_array = fillArrowArray(
                     header_column.name,
                     column,
-                    header_column.type,
+                    column_type,
                     nullptr,
                     array_builder.get(),
                     format_name,
