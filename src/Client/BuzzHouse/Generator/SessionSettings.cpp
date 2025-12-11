@@ -1454,6 +1454,31 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              {"timeout_overflow_mode_leaf", overflowSetting},
              {"transfer_overflow_mode", overflowSetting}});
     }
+    if (fc.enable_compatibility_settings)
+    {
+        serverSettings.insert(
+            {{"compatibility",
+              CHSetting(
+                  [&](RandomGenerator & rg, FuzzConfig &)
+                  {
+                      /// The first release with the new analyzer enabled
+                      const uint32_t minYear = 24;
+                      const uint32_t minMonth = 3;
+                      const std::chrono::year_month_day ymd{std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now())};
+                      const uint32_t currentYear
+                          = std::max<uint32_t>(minYear, static_cast<uint32_t>(static_cast<int>(ymd.year()) % 100)); /// YY
+                      const uint32_t currentMonth = static_cast<uint32_t>(ymd.month()); /// 1–12
+
+                      /// Map (year, month) to a linear month index
+                      const uint32_t startIndex = minYear * 12 + (minMonth - 1); /// 23.1
+                      const uint32_t total = (currentYear * 12 + (currentMonth - 1)) - startIndex + 1;
+                      const uint32_t randomIndex = startIndex + rg.randomInt<uint32_t>(0, total - 1);
+                      /// Convert back from linear month index to (year, month)
+                      return fmt::format("'{}.{}'", randomIndex / 12, (randomIndex % 12) + 1);
+                  },
+                  {},
+                  false)}});
+    }
 
     /// Set hot settings
     for (const auto & entry : fc.hot_settings)
