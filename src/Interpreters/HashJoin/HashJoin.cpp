@@ -1516,6 +1516,12 @@ private:
 
         if (flag_per_row)
         {
+            /// For parallel iteration with flag_per_row mode, only stream 0 processes the columns data.
+            /// The data in parent.data->columns is not partitioned by hash buckets, so we can't
+            /// efficiently distribute it across streams. Having only stream 0 handle it avoids duplicates.
+            if (bucket_idx != 0)
+                return rows_added;
+
             if (!used_position.has_value())
                 used_position = parent.data->columns.begin();
 
