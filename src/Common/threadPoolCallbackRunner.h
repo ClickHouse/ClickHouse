@@ -74,6 +74,7 @@ class ThreadPoolCallbackRunnerLocal final
     PoolT & pool;
     ThreadName thread_name;
 
+public:
     enum TaskState
     {
         SCHEDULED = 0,
@@ -88,6 +89,7 @@ class ThreadPoolCallbackRunnerLocal final
         std::atomic<TaskState> state = SCHEDULED;
     };
 
+private:
     /// NOTE It will leak for a global object with long lifetime
     std::vector<std::shared_ptr<Task>> tasks;
 
