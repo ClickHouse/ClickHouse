@@ -304,11 +304,10 @@ SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column) con
     if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
         return getSerializationInfo(column_const->getDataColumn());
 
-    /// Enable nullable-sparse support when deriving serialization info from an existing column. The column represents
-    /// the actual in-memory state, so serialization info must accept all variants that the column may contain.
-    SerializationInfo::Settings settings;
-    settings.allowNullableSparse();
-    return std::make_shared<SerializationInfo>(ISerialization::getKindStack(column), settings);
+    /// Enable all supported serialization features when deriving info from an existing column. Since the column
+    /// reflects the actual in-memory state, the serialization info must accept any variant that the column may contain.
+    return std::make_shared<SerializationInfo>(
+        ISerialization::getKindStack(column), SerializationInfoSettings::enableAllSupportedSerializations());
 }
 
 SerializationPtr IDataType::getDefaultSerialization(SerializationPtr override_default) const

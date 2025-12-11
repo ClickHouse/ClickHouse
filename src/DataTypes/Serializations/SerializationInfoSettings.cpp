@@ -16,4 +16,11 @@ bool SerializationInfoSettings::canUseSparseSerialization(const IDataType & type
     return type.supportsSparseSerialization();
 }
 
+SerializationInfoSettings SerializationInfoSettings::enableAllSupportedSerializations()
+{
+    SerializationInfoSettings settings;
+    settings.nullable_serialization_version = MergeTreeNullableSerializationVersion::ALLOW_SPARSE;
+    return settings;
+}
+
 }

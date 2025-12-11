@@ -43,7 +43,10 @@ struct SerializationInfoSettings
 
     bool canUseSparseSerialization(const IDataType & type) const;
 
-    void allowNullableSparse() { nullable_serialization_version = MergeTreeNullableSerializationVersion::ALLOW_SPARSE; }
+    /// Build a settings object that enables the broadest set of serialization capabilities. This is intended for
+    /// readers that operate on in-memory state (e.g. NativeReader), which must handle all serialization variants.
+    /// Additional serialization versions can be added here in the future.
+    static SerializationInfoSettings enableAllSupportedSerializations();
 };
 
 }
