@@ -1980,10 +1980,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
             if (supportsTransactions())
                 res.part->storeVersionMetadata(/* force */ true);
             else
-            {
-                LOG_INFO(log, "Remove version metadata of {} in case of ATTACH AS REPLICATED", res.part->name);
-                res.part->removeVersionMetadata();
-            }
+                LOG_INFO(log, "Skip version metadata update of {} in case of ATTACH AS REPLICATED", res.part->name);
         }
 
         /// Deactivate part if creation was not committed or if removal was.
