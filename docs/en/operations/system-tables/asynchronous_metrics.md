@@ -524,6 +524,40 @@ Sum queue size (in the number of operations like get, merge) across Replicated t
 
 Number of threads in the server of the TCP protocol (without TLS).
 
+### TCPSecureThreads {#tcpsecurethreads}
+Number of threads in the server of the TCP protocol (with TLS).
+
+### HTTPThreads {#httpthreads}
+Number of threads in the server of the HTTP interface (without TLS).
+
+### HTTPSecureThreads {#httpsecurethreads}
+Number of threads in the server of the HTTPS interface.
+
+### InterserverThreads {#interserverthreads}
+Number of threads in the server of the replicas communication protocol (without TLS).
+
+### InterserverSecureThreads {#interserversecurethreads}
+Number of threads in the server of the replicas communication protocol (with TLS).
+
+### MySQLThreads {#mysqlthreads}
+Number of threads in the server of the MySQL compatibility protocol.
+
+### PostgreSQLThreads {#postgresqlthreads}
+Number of threads in the server of the PostgreSQL compatibility protocol.
+
+### GRPCThreads {#grpcthreads}
+Number of threads in the server of the GRPC protocol.
+
+### PrometheusThreads {#prometheusthreads}
+Number of threads in the server of the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports.
+
+### KeeperTCPThreads {#keepertcpthreads}
+Number of threads in the server of the Keeper TCP protocol (without TLS).
+
+### KeeperTCPSecureThreads {#keepertcpsecurethreads}
+Number of threads in the server of the Keeper TCP protocol (with TLS).
+
+
 ### Temperature_*N* {#temperature_n}
 
 The temperature of the corresponding device in ℃. A sensor can return an unrealistic value. Source: `/sys/class/thermal`
