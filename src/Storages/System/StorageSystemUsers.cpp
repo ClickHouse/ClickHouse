@@ -147,6 +147,10 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
             {
                 auth_params_json.set("realm", auth_data.getKerberosRealm());
             }
+            else if (auth_data.getType() == AuthenticationType::JWKS)
+            {
+                auth_params_json.set("named_collection", auth_data.getNamedCollection());
+            }
 #if USE_SSL
             else if (auth_data.getType() == AuthenticationType::SSL_CERTIFICATE)
             {
