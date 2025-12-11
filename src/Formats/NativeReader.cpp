@@ -232,7 +232,11 @@ Block NativeReader::read()
         }
         else if (server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
         {
-            auto info = column.type->createSerializationInfo({});
+            /// NativeReader must enable nullable sparse support here. Since it operates on in-memory state, it should
+            /// be able to handle all possible serialization variants.
+            SerializationInfoSettings settings;
+            settings.allowNullableSparse();
+            auto info = column.type->createSerializationInfo(settings);
 
             UInt8 has_custom;
             readBinary(has_custom, istr);
