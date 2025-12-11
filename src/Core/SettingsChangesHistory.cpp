@@ -45,6 +45,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_remove_unused_columns", false, true, "New setting. Add optimization to remove unused columns in query plan."},
             {"query_plan_optimize_join_order_limit", 1, 10, "Allow JOIN reordering with more tables by default"},
             {"iceberg_insert_max_partitions", 100, 100, "New setting."},
+            {"check_query_single_value_result", true, false, "Changed setting to make CHECK TABLE more useful"},
             {"use_paimon_partition_pruning", false, false, "New setting."},
             {"use_skip_indexes_for_disjunctions", false, true, "New setting"},
             {"allow_statistics_optimize", false, true, "Enable this optimization by default."},
@@ -54,6 +55,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"text_index_hint_max_selectivity", 0.2, 0.2, "New setting"},
             {"allow_experimental_time_time64_type", false, true, "Enable Time and Time64 type by default"},
             {"enable_time_time64_type", false, true, "Enable Time and Time64 type by default"},
+            {"use_skip_indexes_for_top_k", false, false, "New setting."},
+            {"use_top_k_dynamic_filtering", false, false, "New setting."},
+            {"query_plan_max_limit_for_top_k_optimization", 0, 1000, "New setting."},
             {"aggregate_function_input_format", "state", "state", "New setting to control AggregateFunction input format during INSERT operations. Setting Value set to state by default"},
             {"delta_lake_snapshot_start_version", -1, -1, "New setting."},
             {"delta_lake_snapshot_end_version", -1, -1, "New setting."},
@@ -63,6 +67,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"automatic_parallel_replicas_mode", 0, 0, "New setting"},
             {"automatic_parallel_replicas_min_bytes_per_replica", 0, 0, "New setting"},
             {"type_json_skip_invalid_typed_paths", false, false, "Allow skipping typed paths that fail type coercion in JSON columns"},
+            {"query_plan_optimize_join_order_algorithm", "greedy", "greedy", "New experimental setting."},
+            {"s3_path_filter_limit", 0, 1000, "New setting"},
+            {"distributed_cache_use_clients_cache_for_read", true, true, "New setting"},
+            {"distributed_cache_use_clients_cache_for_write", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
@@ -971,6 +979,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "25.12",
         {
             {"alter_column_secondary_index_mode", "compatibility", "rebuild", "Change the behaviour to allow ALTER `column` when they have dependent secondary indices"},
+            {"merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once", false, false, "New setting"},
+            {"merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent", 5, 5, "New setting"},
             {"nullable_serialization_version", "basic", "basic", "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.11",
