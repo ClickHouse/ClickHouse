@@ -601,17 +601,6 @@ namespace
             StorageFile::getSchemaCache(getContext()).addColumns(cache_key, columns);
         }
 
-        void setResultingSchema(const ColumnsDescription & columns) override
-        {
-            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_file]
-                || getContext()->getSettingsRef()[Setting::schema_inference_mode] != SchemaInferenceMode::DEFAULT)
-                return;
-
-            /// For default mode we cache resulting schema for all paths.
-            auto cache_keys = getKeysForSchemaCache(paths, *format, format_settings, getContext());
-            StorageFile::getSchemaCache(getContext()).addManyColumns(cache_keys, columns);
-        }
-
         String getLastFilePath() const override
         {
             if (current_index != 0)
@@ -866,22 +855,6 @@ namespace
             auto & schema_cache = StorageFile::getSchemaCache(getContext());
             auto cache_key = getKeyForSchemaCache(last_read_file_path, *format, format_settings, getContext());
             schema_cache.addColumns(cache_key, columns);
-        }
-
-        void setResultingSchema(const ColumnsDescription & columns) override
-        {
-            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_file]
-                || getContext()->getSettingsRef()[Setting::schema_inference_mode] != SchemaInferenceMode::DEFAULT)
-                return;
-
-            /// For default mode we cache resulting schema for all paths.
-            /// Also add schema for initial paths (maybe with globes) in cache,
-            /// so next time we won't iterate through files (that can be expensive).
-            for (const auto & archive : archive_info.paths_to_archives)
-                paths_for_schema_cache.emplace_back(fmt::format("{}::{}", archive, archive_info.path_in_archive));
-            auto & schema_cache = StorageFile::getSchemaCache(getContext());
-            auto cache_keys = getKeysForSchemaCache(paths_for_schema_cache, *format, format_settings, getContext());
-            schema_cache.addManyColumns(cache_keys, columns);
         }
 
         void setFormatName(const String & format_name) override

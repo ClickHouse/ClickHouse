@@ -126,15 +126,6 @@ void ReadBufferIterator::setSchemaToLastFile(const ColumnsDescription & columns)
     }
 }
 
-void ReadBufferIterator::setResultingSchema(const ColumnsDescription & columns)
-{
-    if (query_settings.schema_inference_use_cache
-        && query_settings.schema_inference_mode == SchemaInferenceMode::DEFAULT)
-    {
-        schema_cache.addManyColumns(getKeysForSchemaCache(), columns);
-    }
-}
-
 void ReadBufferIterator::setFormatName(const String & format_name)
 {
     format = format_name;

@@ -941,19 +941,6 @@ namespace
             StorageURL::getSchemaCache(getContext()).addColumns(key, columns);
         }
 
-        void setResultingSchema(const ColumnsDescription & columns) override
-        {
-            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_url]
-                || getContext()->getSettingsRef()[Setting::schema_inference_mode] != SchemaInferenceMode::DEFAULT)
-                return;
-
-            for (const auto & options : url_options_to_check)
-            {
-                auto keys = getKeysForSchemaCache(options, *format, format_settings, getContext());
-                StorageURL::getSchemaCache(getContext()).addManyColumns(keys, columns);
-            }
-        }
-
         void setFormatName(const String & format_name) override
         {
             format = format_name;
