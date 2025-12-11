@@ -26,6 +26,7 @@ namespace Setting
     extern const SettingsUInt64 max_streams_for_merge_tree_reading;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool load_marks_asynchronously;
     extern const SettingsBool query_condition_cache_store_conditions_as_plaintext;
     extern const SettingsBool merge_tree_use_deserialization_prefixes_cache;
     extern const SettingsBool merge_tree_use_prefixes_deserialization_thread_pool;
@@ -113,6 +114,7 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createForQuery(const ContextPtr
     result.merge_tree_min_rows_for_seek = settings[Setting::merge_tree_min_rows_for_seek];
     result.filesystem_prefetches_limit = settings[Setting::filesystem_prefetches_limit];
     result.enable_analyzer = settings[Setting::allow_experimental_analyzer];
+    result.load_marks_asynchronously = settings[Setting::load_marks_asynchronously];
     return result;
 }
 
@@ -120,7 +122,7 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createForMergeMutation(ReadSett
 {
     MergeTreeReaderSettings result;
     result.read_settings = std::move(read_settings);
-    result.read_settings.load_marks_asynchronously = false;
+    result.load_marks_asynchronously = false;
     result.save_marks_in_cache = false;
     result.can_read_part_without_marks = true;
     return result;
@@ -130,6 +132,7 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromSettings(ReadSettings
 {
     MergeTreeReaderSettings result;
     result.read_settings = std::move(read_settings);
+    result.load_marks_asynchronously = false;
     return result;
 }
 

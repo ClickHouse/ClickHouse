@@ -66,6 +66,7 @@ struct MergeTreeReaderSettings
     UInt64 merge_tree_min_rows_for_seek = 0;
     size_t filesystem_prefetches_limit = 0;
     bool enable_analyzer = false;
+    bool load_marks_asynchronously = false;
 
     /// Note storage_settings used only in private, do not remove
     static MergeTreeReaderSettings createForQuery(const ContextPtr & context, const MergeTreeSettings & storage_settings, const SelectQueryInfo & query_info);
