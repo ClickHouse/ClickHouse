@@ -58,11 +58,6 @@ namespace zkutil
 
 namespace
 {
-    constexpr double SMALL_REQUEST_SAMPLE_RATE = 1.0 / 10000;
-    constexpr double MEDIUM_REQUEST_SAMPLE_RATE = 1.0 / 1000;
-    constexpr double LARGE_REQUEST_SAMPLE_RATE = 1.0 / 100;
-    constexpr double XLARGE_REQUEST_SAMPLE_RATE = 1.0 / 10;
-
     bool shouldCreateOpenTelemetrySpans(size_t num_requests = 1)
     {
         const auto & context = DB::OpenTelemetry::CurrentContext();
@@ -74,13 +69,13 @@ namespace
 
         const double sample_probability = [&]
         {
-            if (num_requests > 1000)
-                return XLARGE_REQUEST_SAMPLE_RATE;
             if (num_requests > 100)
-                return LARGE_REQUEST_SAMPLE_RATE;
-            if (num_requests > 50)
-                return MEDIUM_REQUEST_SAMPLE_RATE;
-            return SMALL_REQUEST_SAMPLE_RATE;
+                return 1.0 / 10;
+            if (num_requests > 10)
+                return 1.0 / 100;
+            if (num_requests > 1)
+                return 1.0 / 1000;
+            return 1.0 / 10000;
         }();
         std::bernoulli_distribution should_sample(sample_probability);
         return should_sample(thread_local_rng);
