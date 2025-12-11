@@ -8,7 +8,10 @@ namespace DB
 bool SerializationInfoSettings::canUseSparseSerialization(const IDataType & type) const
 {
     if (type.isNullable())
-        return nullable_serialization_version == MergeTreeNullableSerializationVersion::ALLOW_SPARSE;
+    {
+        if (nullable_serialization_version == MergeTreeNullableSerializationVersion::BASIC)
+            return false;
+    }
 
     return type.supportsSparseSerialization();
 }
