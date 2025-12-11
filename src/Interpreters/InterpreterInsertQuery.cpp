@@ -4,6 +4,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/EnabledQuota.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Analyzer/QueryTreeBuilder.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
@@ -615,17 +616,24 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         if (settings[Setting::allow_experimental_analyzer])
         {
             InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, select_context, select_query_options);
-
-            QueryPlanOptimizationSettings optimization_settings(select_context);
-            auto & plan = interpreter_select_analyzer.getQueryPlan();
-            auto sorting_properties = QueryPlanOptimizations::applyOrder(optimization_settings, *plan.getRootNode());
-            LOG_DEBUG(logger, "sorting props, count: {}, scope {}", sorting_properties.sort_description.size(), sorting_properties.sort_scope);
-
             pipeline = interpreter_select_analyzer.buildQueryPipeline();
 
-            select_query_sorted = allNonConstColumnsAreSorted(pipeline.getHeader(), sorting_properties.sort_description)
-                && sorting_properties.sort_scope == QueryPlanOptimizations::SortingProperty::SortScope::Global
-                && pipeline.getNumStreams() == 1;
+            {
+                // do not evaluate scalars for sorting analysis
+                select_query_options.only_analyze = true;
+                select_query_options.skip_optimize_redundant_functions_in_order_by = true;
+
+                InterpreterSelectQueryAnalyzer interpreter_sorting(query.select, select_context, select_query_options);
+
+                QueryPlanOptimizationSettings optimization_settings(select_context);
+                auto & plan = interpreter_sorting.getQueryPlan();
+                auto sorting_properties = QueryPlanOptimizations::applyOrder(optimization_settings, *plan.getRootNode());
+                LOG_DEBUG(logger, "sorting props, count: {}, scope {}", sorting_properties.sort_description.size(), sorting_properties.sort_scope);
+
+                select_query_sorted = allNonConstColumnsAreSorted(pipeline.getHeader(), sorting_properties.sort_description)
+                    && sorting_properties.sort_scope == QueryPlanOptimizations::SortingProperty::SortScope::Global
+                    && pipeline.getNumStreams() == 1;
+            }
         }
         else
         {
