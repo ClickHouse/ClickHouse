@@ -858,6 +858,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (!parser_exp_elem.parse(pos, command_predicate, expected))
                     return false;
 
+                /// Aliases are not allowed in the predicate.
+                if (!command_predicate->tryGetAlias().empty())
+                    return false;
+
                 command->type = ASTAlterCommand::DELETE;
             }
             else if (s_update.ignore(pos, expected))
@@ -875,6 +879,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     return false;
 
                 if (!parser_exp_elem.parse(pos, command_predicate, expected))
+                    return false;
+
+                /// Aliases are not allowed in the predicate.
+                if (!command_predicate->tryGetAlias().empty())
                     return false;
 
                 command->type = ASTAlterCommand::UPDATE;
