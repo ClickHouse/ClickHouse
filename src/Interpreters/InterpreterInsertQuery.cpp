@@ -586,13 +586,29 @@ static void applyTrivialInsertSelectOptimization(ASTInsertQuery & query, bool pr
     }
 }
 
+bool queryHasOrderByAll(const ASTPtr & select)
+{
+    if (auto * select_query = select->as<ASTSelectQuery>())
+    {
+        return select_query->order_by_all;
+    }
+    else if (auto * union_query = select->as<ASTSelectWithUnionQuery>())
+    {
+        if (union_query->list_of_selects->children.size() != 1)
+            return false;
+
+        if (auto * first_select_query = union_query->list_of_selects->children.front()->as<ASTSelectQuery>())
+            return first_select_query->order_by_all;
+    }
+    return false;
+}
+
 QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table)
 {
     ContextPtr select_context = getContext();
     applyTrivialInsertSelectOptimization(query, table->prefersLargeBlocks(), select_context);
 
-    QueryPipelineBuilder pipeline;
-
+    QueryPipelineBuilder pipeline = [&]()
     {
         auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
 
@@ -600,24 +616,22 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         if (settings[Setting::allow_experimental_analyzer])
         {
             InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, select_context, select_query_options);
-            pipeline = interpreter_select_analyzer.buildQueryPipeline();
-
-            const auto * node = interpreter_select_analyzer.getQueryTree()->as<QueryNode>();
-            select_query_sorted = node && node->isOrderByAll();
-
-            if (select_query_sorted && pipeline.getNumStreams() > 1)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "INSERT SELECT expecting single stream for fully sorted SELECT query,"
-                    " but got {} streams",
-                    pipeline.getNumStreams());
+            return interpreter_select_analyzer.buildQueryPipeline();
         }
         else
         {
             InterpreterSelectWithUnionQuery interpreter_select(query.select, select_context, select_query_options);
-            pipeline = interpreter_select.buildQueryPipeline();
-            select_query_sorted = pipeline.getNumStreams() == 1;
+            return interpreter_select.buildQueryPipeline();
         }
-    }
+    }();
+
+    select_query_sorted = queryHasOrderByAll(query.select);
+
+    if (select_query_sorted && pipeline.getNumStreams() > 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "INSERT SELECT expecting single stream for fully sorted SELECT query,"
+                " but got {} streams",
+                pipeline.getNumStreams());
 
     return addInsertToSelectPipeline(query, table, pipeline);
 }
