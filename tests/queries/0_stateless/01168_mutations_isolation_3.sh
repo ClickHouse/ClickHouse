@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasmtest, no-replicated-database, no-ordinary-database, no-encrypted-storage
+# Tags: no-fasttest, no-parallel, no-replicated-database, no-ordinary-database, no-encrypted-storage
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -128,6 +128,7 @@ done
 tx 10                                            "alter table mt update n=n+20 where 1" | grep -Eo "Deadlock detected" | uniq
 $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT storage_shared_merge_tree_mutate_pause_before_wait;"
 $CLICKHOUSE_CLIENT -q "SYSTEM START MERGES mt;"
+tx_wait 9
 tx 9 "commit"
 tx 10                                            "commit" | grep -Eo "INVALID_TRANSACTION" | uniq
 tx 10                                            "rollback"
