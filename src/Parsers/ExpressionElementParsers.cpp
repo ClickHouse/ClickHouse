@@ -1,6 +1,7 @@
 #include <cerrno>
 #include <cstdlib>
 #include <Poco/String.h>
+#include <cmath>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
@@ -1061,7 +1062,8 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         errno = 0;    /// Functions strto* don't clear errno.
         /// The usage of strtod is needed, because we parse hex floating point literals as well.
         Float64 float_value = std::strtod(buf.c_str(), &str_end);
-        if (str_end == buf.c_str() + buf.size() && errno != ERANGE)
+        bool overflow = (errno == ERANGE && !std::isfinite(float_value));
+        if (str_end == buf.c_str() + buf.size() && !overflow)
         {
             if (float_value < 0)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,

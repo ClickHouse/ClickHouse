@@ -79,12 +79,10 @@ public:
         if (!canBeNativeType(*result_type))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "LLVMExecutableFunction unexpected result type in: {}", result_type->getName());
 
-        auto result_column = result_type->createColumn();
+        auto result_column = result_type->createUninitializedColumnWithSize(input_rows_count);
 
         if (input_rows_count)
         {
-            result_column = result_column->cloneResized(input_rows_count);
-
             std::vector<ColumnData> columns(arguments.size() + 1);
             std::vector<ColumnPtr> columns_backup;
 

@@ -533,10 +533,11 @@ SinkToStoragePtr StorageObjectStorage::write(
     return std::make_shared<StorageObjectStorageSink>(
         paths.back().path,
         object_storage,
-        configuration,
         format_settings,
         sample_block,
-        local_context);
+        local_context,
+        configuration->format,
+        configuration->compression_method);
 }
 
 bool StorageObjectStorage::optimize(
@@ -565,6 +566,12 @@ void StorageObjectStorage::truncate(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Path '{}' contains archive. Table cannot be truncated",
                         path.path);
+    }
+
+    if (configuration->isDataLakeConfiguration())
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Truncate is not supported for data lake engine");
     }
 
     if (path.hasGlobs())

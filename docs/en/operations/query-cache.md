@@ -185,7 +185,7 @@ result blocks. While this behavior is a good default, it can be suppressed using
 [query_cache_squash_partial_results](/operations/settings/settings#query_cache_squash_partial_results).
 
 Also, results of queries with non-deterministic functions are not cached by default. Such functions include
-- functions for accessing dictionaries: [`dictGet()`](/sql-reference/functions/ext-dict-functions#dictget-dictgetordefault-dictgetornull) etc.
+- functions for accessing dictionaries: [`dictGet()`](/sql-reference/functions/ext-dict-functions) etc.
 - [user-defined functions](../sql-reference/statements/create/function.md) without tag `<deterministic>true</deterministic>` in their XML
   definition,
 - functions which return the current date or time: [`now()`](../sql-reference/functions/date-time-functions.md#now),

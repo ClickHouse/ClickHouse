@@ -68,8 +68,8 @@ def test_writes_create_table_order_by(started_cluster_iceberg_with_spark, format
 
     TABLE_NAME = "test_writes_create_table_" + storage_type + "_" + get_uuid_str()
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x UInt32, y String)", order_by="(icebergTruncate(16, x))", format_version=format_version)
-    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (1, 'abc'), (4, 'bc'), (2, 'd');", settings={"allow_experimental_insert_into_iceberg": 1})
-    assert instance.query(f"SELECT x FROM {TABLE_NAME}") == '1\n4\n2\n'
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (1, 'abc'), (48, 'bc'), (32, 'd');", settings={"allow_experimental_insert_into_iceberg": 1})
+    assert instance.query(f"SELECT x FROM {TABLE_NAME}") == '1\n32\n48\n'
 
     TABLE_NAME = "test_writes_create_table_" + storage_type + "_" + get_uuid_str()
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x UInt32, y String)", order_by="(x DESC)", format_version=format_version)

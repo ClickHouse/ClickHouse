@@ -297,17 +297,16 @@ void StatementGenerator::generateHotTableSettingsValues(RandomGenerator & rg, co
 
     for (size_t i = 0; i < nsets; i++)
     {
+        /// During table creating enable settings if so
         const String & next = fc.hot_table_settings[this->ids[i]];
         SetValue * sv = vals->has_set_value() ? vals->add_other_values() : vals->mutable_set_value();
+        const auto & sett = allTableSettings.at(MergeTree).at(next);
+        const auto & ov = sett.oracle_values;
 
         sv->set_property(next);
         sv->set_value(
-            ((create
-              && (startsWith(next, "add_") || startsWith(next, "allow_") || startsWith(next, "index_") || startsWith(next, "enable_")
-                  || startsWith(next, "ttl_")))
-             || rg.nextBool())
-                ? "1"
-                : "0");
+            (create && ov.contains("0")) ? "1"
+                                         : ((ov.empty() || rg.nextSmallNumber() < 4) ? sett.random_func(rg, fc) : rg.pickRandomly(ov)));
     }
     this->ids.clear();
 }
@@ -636,7 +635,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
             next.cols.insert(i);
         }
     }
-    if (rg.nextSmallNumber() < 2)
+    if (!next.isShared() && (!next.db || !next.db->isSharedDatabase()) && (next.db || !supports_cloud_features) && rg.nextSmallNumber() < 2)
     {
         cv->set_uuid(rg.nextUUID());
     }
@@ -808,7 +807,9 @@ void StatementGenerator::generateNextOptimizeTableInternal(RandomGenerator & rg,
     {
         ot->mutable_cluster()->set_cluster(cluster.value());
     }
-    ot->set_final((t.supportsFinal() || t.isMergeTreeFamily() || rg.nextMediumNumber() < 21) && (strict || rg.nextSmallNumber() < 4));
+    ot->set_final(
+        t.can_run_merges && (t.supportsFinal() || t.isMergeTreeFamily() || rg.nextMediumNumber() < 21)
+        && (strict || rg.nextSmallNumber() < 4));
     ot->set_use_force(rg.nextBool());
     if (rg.nextSmallNumber() < 3)
     {
@@ -904,7 +905,8 @@ bool StatementGenerator::tableOrFunctionRef(RandomGenerator & rg, const SQLTable
     }
 
     /// Only schema, table declarations are allowed inside cluster and remote functions
-    const uint32_t engine_func = 10 * static_cast<uint32_t>(t.isEngineReplaceable() && !cluster_or_remote);
+    const uint32_t engine_func
+        = (10 + (70 * static_cast<uint32_t>(t.isAnyQueueEngine()))) * static_cast<uint32_t>(t.isEngineReplaceable() && !cluster_or_remote);
     const uint32_t url_func = 5 * static_cast<uint32_t>(!cluster_or_remote);
     const uint32_t simple_est = 85;
     const uint32_t prob_space2 = engine_func + url_func + simple_est;
@@ -1194,7 +1196,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
             grf->set_random_seed(rg.nextInFullRange());
             grf->set_max_string_length(string_length_dist(rg.generator));
             grf->set_max_array_length(nested_rows_dist(rg.generator));
-            ssc->mutable_limit()->mutable_limit()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rows_dist(rg.generator));
+            ssc->mutable_limit()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rows_dist(rg.generator));
         }
         else if (number_func && nopt < (hardcoded_insert + random_values + generate_random + number_func + 1))
         {
@@ -1367,7 +1369,7 @@ void StatementGenerator::generateNextDelete(RandomGenerator & rg, const SQLTable
 template <typename T>
 void StatementGenerator::generateNextUpdateOrDelete(RandomGenerator & rg, T * st)
 {
-    const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
+    const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(has_mergeable_tables));
     const std::optional<String> & cluster = t.getCluster();
 
     t.setName(st->mutable_est(), false);
@@ -1620,34 +1622,35 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
         for (uint32_t i = 0; i < nalters; i++)
         {
             const uint32_t alter_order_by = 3;
-            const uint32_t heavy_delete = 30;
-            const uint32_t heavy_update = 40;
+            const uint32_t heavy_delete = 30 * static_cast<uint32_t>(t.can_run_merges);
+            const uint32_t heavy_update = 40 * static_cast<uint32_t>(t.can_run_merges);
             const uint32_t add_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer() && t.cols.size() < fc.max_columns);
-            const uint32_t materialize_column = 2;
-            const uint32_t drop_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer() && t.cols.size() > 1);
-            const uint32_t rename_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer());
-            const uint32_t clear_column = 2;
-            const uint32_t modify_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer());
+            const uint32_t materialize_column = 2 * static_cast<uint32_t>(t.can_run_merges);
+            const uint32_t drop_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer() && !t.cols.empty() && t.can_run_merges);
+            const uint32_t rename_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer() && t.can_run_merges);
+            const uint32_t clear_column = 2 * static_cast<uint32_t>(t.can_run_merges);
+            const uint32_t modify_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer() && t.can_run_merges);
             const uint32_t comment_column = 2;
             const uint32_t add_stats = 3;
-            const uint32_t mod_stats = 3;
-            const uint32_t drop_stats = 3;
-            const uint32_t clear_stats = 3;
-            const uint32_t mat_stats = 3;
-            const uint32_t delete_mask = 8;
+            const uint32_t mod_stats = 3 * static_cast<uint32_t>(t.can_run_merges);
+            const uint32_t drop_stats = 3 * static_cast<uint32_t>(t.can_run_merges);
+            const uint32_t clear_stats = 3 * static_cast<uint32_t>(t.can_run_merges);
+            const uint32_t mat_stats = 3 * static_cast<uint32_t>(t.can_run_merges);
+            const uint32_t delete_mask = 8 * static_cast<uint32_t>(t.can_run_merges);
             const uint32_t add_idx = 2 * static_cast<uint32_t>(t.idxs.size() < 3);
-            const uint32_t materialize_idx = 2 * static_cast<uint32_t>(!t.idxs.empty());
-            const uint32_t clear_idx = 2 * static_cast<uint32_t>(!t.idxs.empty());
-            const uint32_t drop_idx = 2 * static_cast<uint32_t>(!t.idxs.empty());
+            const uint32_t materialize_idx = 2 * static_cast<uint32_t>(t.can_run_merges && !t.idxs.empty());
+            const uint32_t clear_idx = 2 * static_cast<uint32_t>(!t.idxs.empty() && t.can_run_merges);
+            const uint32_t drop_idx = 2 * static_cast<uint32_t>(!t.idxs.empty() && t.can_run_merges);
             const uint32_t column_remove_property = 2;
             const uint32_t column_modify_setting = 2 * static_cast<uint32_t>(!allColumnSettings.at(t.teng).empty());
             const uint32_t column_remove_setting = 2 * static_cast<uint32_t>(!allColumnSettings.at(t.teng).empty());
             const uint32_t table_modify_setting = 2;
             const uint32_t table_remove_setting = 2;
             const uint32_t add_projection = 2 * static_cast<uint32_t>(t.isMergeTreeFamily());
-            const uint32_t remove_projection = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.projs.empty());
-            const uint32_t materialize_projection = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.projs.empty());
-            const uint32_t clear_projection = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.projs.empty());
+            const uint32_t remove_projection = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.projs.empty() && t.can_run_merges);
+            const uint32_t materialize_projection
+                = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && t.can_run_merges && !t.projs.empty());
+            const uint32_t clear_projection = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.projs.empty() && t.can_run_merges);
             const uint32_t add_constraint = 2 * static_cast<uint32_t>(t.constrs.size() < 4);
             const uint32_t remove_constraint = 2 * static_cast<uint32_t>(!t.constrs.empty());
             const uint32_t detach_partition = 5 * static_cast<uint32_t>(t.isMergeTreeFamily());
@@ -2681,6 +2684,12 @@ void StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
 
 static const auto has_merge_tree_func = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily(); };
 
+static const auto has_mergeable_mt_func
+    = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily() && t.can_run_merges && !t.hasDatabasePeer(); };
+
+static const auto has_non_mergeable_mt_func
+    = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily() && !t.can_run_merges; };
+
 static const auto has_distributed_table_func = [](const SQLTable & t) { return t.isAttached() && t.isDistributedEngine(); };
 
 static const auto has_refreshable_view_func = [](const SQLView & v) { return v.isAttached() && v.is_refreshable; };
@@ -2688,6 +2697,9 @@ static const auto has_refreshable_view_func = [](const SQLView & v) { return v.i
 void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const bool allow_table_statements, SystemCommand * sc)
 {
     const uint32_t has_merge_tree = static_cast<uint32_t>(allow_table_statements && collectionHas<SQLTable>(has_merge_tree_func));
+    const uint32_t has_mergeable_mt = static_cast<uint32_t>(allow_table_statements && collectionHas<SQLTable>(has_mergeable_mt_func));
+    const uint32_t has_non_mergeable_mt
+        = static_cast<uint32_t>(allow_table_statements && collectionHas<SQLTable>(has_non_mergeable_mt_func));
     const uint32_t has_refreshable_view
         = static_cast<uint32_t>(allow_table_statements && collectionHas<SQLView>(has_refreshable_view_func));
     const uint32_t has_distributed_table
@@ -2696,7 +2708,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
 
     const uint32_t reload_embedded_dictionaries = 1;
     const uint32_t reload_dictionaries = 3;
-    const uint32_t reload_models = 3;
+    const uint32_t reload_models = 0;
     const uint32_t reload_functions = 3;
     const uint32_t reload_function = 0 * static_cast<uint32_t>(!functions.empty());
     const uint32_t reload_asynchronous_metrics = 3;
@@ -2710,10 +2722,10 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
     const uint32_t reload_config = 3;
     const uint32_t reload_users = 3;
     /// For merge trees
-    const uint32_t stop_merges = 20 * has_merge_tree;
-    const uint32_t start_merges = 20 * has_merge_tree;
-    const uint32_t stop_ttl_merges = 20 * has_merge_tree;
-    const uint32_t start_ttl_merges = 20 * has_merge_tree;
+    const uint32_t stop_merges = 15 * has_mergeable_mt;
+    const uint32_t start_merges = 20 * has_non_mergeable_mt;
+    const uint32_t stop_ttl_merges = 15 * has_merge_tree;
+    const uint32_t start_ttl_merges = 15 * has_merge_tree;
     const uint32_t stop_moves = 8 * has_merge_tree;
     const uint32_t start_moves = 8 * has_merge_tree;
     const uint32_t wait_loading_parts = 8 * has_merge_tree;
@@ -2907,7 +2919,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
                + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + 1))
     {
-        cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_merges());
+        cluster = setTableSystemStatement<SQLTable>(rg, has_mergeable_mt_func, sc->mutable_stop_merges());
     }
     else if (
         start_merges
@@ -2916,7 +2928,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
                + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges + 1))
     {
-        cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_merges());
+        cluster = setTableSystemStatement<SQLTable>(rg, has_non_mergeable_mt_func, sc->mutable_start_merges());
     }
     else if (
         stop_ttl_merges
@@ -4490,6 +4502,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
 {
     const bool has_databases = collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases);
     const bool has_tables = collectionHas<SQLTable>(attached_tables);
+    const bool has_mergeable_mt = collectionHas<SQLTable>(has_mergeable_tables);
     const bool has_views = collectionHas<SQLView>(attached_views);
     const bool has_dictionaries = collectionHas<SQLDictionary>(attached_dictionaries);
 
@@ -4501,8 +4514,8 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
                               && (collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
                                   || collectionCount<SQLDictionary>(attached_dictionaries) > 3
                                   || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3 || functions.size() > 3));
-    const uint32_t insert = 220 * static_cast<uint32_t>(has_tables);
-    const uint32_t light_delete = 6 * static_cast<uint32_t>(has_tables);
+    const uint32_t insert = 60 * static_cast<uint32_t>(has_tables);
+    const uint32_t light_delete = 6 * static_cast<uint32_t>(has_mergeable_mt);
     const uint32_t truncate = 2 * static_cast<uint32_t>(has_databases || has_tables);
     const uint32_t optimize_table = 2 * static_cast<uint32_t>(has_tables);
     const uint32_t check_table = 2 * static_cast<uint32_t>(has_tables);
@@ -4525,14 +4538,14 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
                                     || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3));
     const uint32_t create_database = 2 * static_cast<uint32_t>(static_cast<uint32_t>(databases.size()) < this->fc.max_databases);
     const uint32_t create_function = 5 * static_cast<uint32_t>(static_cast<uint32_t>(functions.size()) < this->fc.max_functions);
-    const uint32_t system_stmt = 1;
+    const uint32_t system_stmt = 8;
     const uint32_t backup_or_restore = 1;
     const uint32_t create_dictionary = 10 * static_cast<uint32_t>(static_cast<uint32_t>(dictionaries.size()) < this->fc.max_dictionaries);
     const uint32_t rename = 1
         * static_cast<uint32_t>(!in_parallel
                                 && (collectionHas<SQLTable>(exchange_table_lambda) || has_views || has_dictionaries || has_databases));
-    const uint32_t light_update = 6 * static_cast<uint32_t>(has_tables);
-    const uint32_t select_query = 1800 * static_cast<uint32_t>(!in_parallel);
+    const uint32_t light_update = 6 * static_cast<uint32_t>(has_mergeable_mt);
+    const uint32_t select_query = 1000 * static_cast<uint32_t>(!in_parallel);
     const uint32_t kill = 2;
     const uint32_t show_stmt = 1;
     const uint32_t prob_space = create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table
@@ -5041,40 +5054,38 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
     else if (ssq.has_explain() && !ssq.explain().is_explain() && query.has_drop() && success)
     {
         const Drop & drp = query.drop();
-        const bool istable = drp.object().has_est() && drp.object().est().table().table()[0] == 't';
-        const bool isview = drp.object().has_est() && drp.object().est().table().table()[0] == 'v';
-        const bool isdictionary = drp.object().has_est() && drp.object().est().table().table()[0] == 'd';
-        const bool isdatabase = drp.object().has_database();
-        const bool isfunction = drp.object().has_function();
 
-        if (istable)
+        if (drp.sobject() == SQLObject::TABLE)
         {
             dropTable(false, true, getIdentifierFromString(drp.object().est().table().table()));
         }
-        else if (isview)
+        else if (drp.sobject() == SQLObject::VIEW)
         {
             this->views.erase(getIdentifierFromString(drp.object().est().table().table()));
         }
-        else if (isdictionary)
+        else if (drp.sobject() == SQLObject::DICTIONARY)
         {
             this->dictionaries.erase(getIdentifierFromString(drp.object().est().table().table()));
         }
-        else if (isdatabase)
+        else if (drp.sobject() == SQLObject::DATABASE)
         {
             dropDatabase(getIdentifierFromString(drp.object().database().database()), true);
         }
-        else if (isfunction)
+        else if (drp.sobject() == SQLObject::FUNCTION)
         {
             this->functions.erase(getIdentifierFromString(drp.object().function().function()));
+        }
+        else
+        {
+            UNREACHABLE();
         }
     }
     else if (ssq.has_explain() && !ssq.explain().is_explain() && query.has_exchange() && success)
     {
         const Exchange & ex = query.exchange();
         const SQLObjectName & obj1 = ex.object1();
-        const bool istable = obj1.has_est() && obj1.est().table().table()[0] == 't';
-        const bool isview = obj1.has_est() && obj1.est().table().table()[0] == 'v';
-        const bool isdictionary = obj1.has_est() && obj1.est().table().table()[0] == 'd';
+        const bool istable = ex.sobject() == SQLObject::TABLE && obj1.est().table().table()[0] == 't';
+        const bool isview = ex.sobject() == SQLObject::TABLE && obj1.est().table().table()[0] == 'v';
         const uint32_t tname1 = getIdentifierFromString(obj1.est().table().table());
         const uint32_t tname2 = getIdentifierFromString(query.exchange().object2().est().table().table());
 
@@ -5086,9 +5097,13 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
         {
             this->exchangeObjects<SQLView>(tname1, tname2);
         }
-        else if (isdictionary)
+        else if (ex.sobject() == SQLObject::DICTIONARY)
         {
             this->exchangeObjects<SQLDictionary>(tname1, tname2);
+        }
+        else
+        {
+            UNREACHABLE();
         }
     }
     else if (ssq.has_explain() && !ssq.explain().is_explain() && query.has_rename() && success)
@@ -5096,10 +5111,9 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
         const Rename & ren = query.rename();
         const SQLObjectName & oobj = ren.old_object();
         const SQLObjectName & nobj = ren.new_object();
-        const bool istable = oobj.has_est() && oobj.est().table().table()[0] == 't';
-        const bool isview = oobj.has_est() && oobj.est().table().table()[0] == 'v';
-        const bool isdictionary = oobj.has_est() && oobj.est().table().table()[0] == 'd';
-        const bool isdatabase = oobj.has_database();
+        const bool istable = ren.sobject() == SQLObject::TABLE && oobj.est().table().table()[0] == 't';
+        const bool isview = ren.sobject() == SQLObject::TABLE && oobj.est().table().table()[0] == 'v';
+        const bool isdatabase = ren.sobject() == SQLObject::DATABASE;
         const uint32_t old_tname = getIdentifierFromString(isdatabase ? oobj.database().database() : oobj.est().table().table());
         const uint32_t new_tname = getIdentifierFromString(isdatabase ? nobj.database().database() : nobj.est().table().table());
         std::optional<uint32_t> new_db;
@@ -5116,13 +5130,17 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
         {
             this->renameObjects<SQLView>(old_tname, new_tname, new_db);
         }
-        else if (isdictionary)
+        else if (ren.sobject() == SQLObject::DICTIONARY)
         {
             this->renameObjects<SQLDictionary>(old_tname, new_tname, new_db);
         }
         else if (isdatabase)
         {
             this->renameObjects<std::shared_ptr<SQLDatabase>>(old_tname, new_tname, new_db);
+        }
+        else
+        {
+            UNREACHABLE();
         }
     }
     else if (ssq.has_explain() && !ssq.explain().is_explain() && query.has_alter())
@@ -5367,31 +5385,33 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
     }
     else if (ssq.has_explain() && !ssq.explain().is_explain() && (query.has_attach() || query.has_detach()) && success)
     {
+        const SQLObject & ob = query.has_attach() ? query.attach().sobject() : query.detach().sobject();
         const SQLObjectName & oobj = query.has_attach() ? query.attach().object() : query.detach().object();
-        const bool istable = oobj.has_est() && oobj.est().table().table()[0] == 't';
-        const bool isview = oobj.has_est() && oobj.est().table().table()[0] == 'v';
-        const bool isdictionary = oobj.has_est() && oobj.est().table().table()[0] == 'd';
-        const bool isdatabase = oobj.has_database();
-        const uint32_t tname = getIdentifierFromString(isdatabase ? oobj.database().database() : oobj.est().table().table());
+        const bool istable = ob == SQLObject::TABLE && oobj.est().table().table()[0] == 't';
+        const bool isview = ob == SQLObject::TABLE && oobj.est().table().table()[0] == 'v';
         const DetachStatus status = query.has_attach()
             ? DetachStatus::ATTACHED
             : (query.detach().permanently() ? DetachStatus::PERM_DETACHED : DetachStatus::DETACHED);
 
         if (istable)
         {
-            this->attachOrDetachObject<SQLTable>(tname, status);
+            this->attachOrDetachObject<SQLTable>(getIdentifierFromString(oobj.est().table().table()), status);
         }
         else if (isview)
         {
-            this->attachOrDetachObject<SQLView>(tname, status);
+            this->attachOrDetachObject<SQLView>(getIdentifierFromString(oobj.est().table().table()), status);
         }
-        else if (isdictionary)
+        else if (ob == SQLObject::DICTIONARY)
         {
-            this->attachOrDetachObject<SQLDictionary>(tname, status);
+            this->attachOrDetachObject<SQLDictionary>(getIdentifierFromString(oobj.est().table().table()), status);
         }
-        else if (isdatabase)
+        else if (ob == SQLObject::DATABASE)
         {
-            this->attachOrDetachObject<std::shared_ptr<SQLDatabase>>(tname, status);
+            this->attachOrDetachObject<std::shared_ptr<SQLDatabase>>(getIdentifierFromString(oobj.database().database()), status);
+        }
+        else
+        {
+            UNREACHABLE();
         }
     }
     else if (ssq.has_explain() && query.has_create_database())
@@ -5417,6 +5437,21 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
     else if (ssq.has_explain() && !ssq.explain().is_explain() && query.has_trunc() && query.trunc().has_database())
     {
         dropDatabase(getIdentifierFromString(query.trunc().database().database()), false);
+    }
+    else if (ssq.has_explain() && !ssq.explain().is_explain() && success && query.has_system_cmd())
+    {
+        const SystemCommand & scmd = query.system_cmd();
+
+        if (scmd.has_start_merges() || scmd.has_stop_merges())
+        {
+            const ExprSchemaTable & est = scmd.has_start_merges() ? scmd.start_merges() : scmd.stop_merges();
+            const uint32_t tname = getIdentifierFromString(est.table().table());
+
+            if (this->tables.contains(tname))
+            {
+                this->tables[tname].can_run_merges = scmd.has_start_merges();
+            }
+        }
     }
     else if (ssq.has_explain() && query.has_backup_restore() && !ssq.explain().is_explain() && success)
     {
@@ -5453,10 +5488,13 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                 {
                     const uint32_t tname = getIdentifierFromString(est.table().table());
 
-                    newb.tables[tname] = this->tables[tname];
-                    if (bro.partitions_size())
+                    if (this->tables.contains(tname))
                     {
-                        newb.partition_id = bro.partitions(0).partition_id();
+                        newb.tables[tname] = this->tables[tname];
+                        if (bro.partitions_size())
+                        {
+                            newb.partition_id = bro.partitions(0).partition_id();
+                        }
                     }
                 }
                 else
@@ -5469,44 +5507,60 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
             {
                 const uint32_t vname = getIdentifierFromString(bre.bobject().object().est().table().table());
 
-                newb.views[vname] = this->views[vname];
+                if (this->views.contains(vname))
+                {
+                    newb.views[vname] = this->views[vname];
+                }
             }
             else if (bre.has_bobject() && bre.bobject().sobject() == SQLObject::DICTIONARY)
             {
                 const uint32_t dname = getIdentifierFromString(bre.bobject().object().est().table().table());
 
-                newb.dictionaries[dname] = this->dictionaries[dname];
+                if (this->dictionaries.contains(dname))
+                {
+                    newb.dictionaries[dname] = this->dictionaries[dname];
+                }
             }
             else if (bre.has_bobject() && bre.bobject().sobject() == SQLObject::DATABASE)
             {
                 const uint32_t dname = getIdentifierFromString(bre.bobject().object().database().database());
 
-                for (const auto & [key, val] : this->tables)
+                if (this->databases.contains(dname))
                 {
-                    if (val.db && val.db->dname == dname)
+                    for (const auto & [key, val] : this->tables)
                     {
-                        newb.tables[key] = val;
+                        if (val.db && val.db->dname == dname)
+                        {
+                            newb.tables[key] = val;
+                        }
                     }
-                }
-                for (const auto & [key, val] : this->views)
-                {
-                    if (val.db && val.db->dname == dname)
+                    for (const auto & [key, val] : this->views)
                     {
-                        newb.views[key] = val;
+                        if (val.db && val.db->dname == dname)
+                        {
+                            newb.views[key] = val;
+                        }
                     }
-                }
-                for (const auto & [key, val] : this->dictionaries)
-                {
-                    if (val.db && val.db->dname == dname)
+                    for (const auto & [key, val] : this->dictionaries)
                     {
-                        newb.dictionaries[key] = val;
+                        if (val.db && val.db->dname == dname)
+                        {
+                            newb.dictionaries[key] = val;
+                        }
                     }
+                    newb.databases[dname] = this->databases[dname];
                 }
-                newb.databases[dname] = this->databases[dname];
             }
-            this->backups[br.backup_number()] = std::move(newb);
+            else
+            {
+                UNREACHABLE();
+            }
+            if (!newb.databases.empty() || !newb.tables.empty() || !newb.views.empty() || !newb.dictionaries.empty())
+            {
+                this->backups[br.backup_number()] = std::move(newb);
+            }
         }
-        else
+        else if (backups.contains(br.backup_number()))
         {
             const CatalogBackup & backup = backups.at(br.backup_number());
 

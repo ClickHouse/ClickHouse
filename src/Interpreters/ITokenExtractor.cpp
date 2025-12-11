@@ -1,3 +1,4 @@
+#include <IO/Operators.h>
 #include <Interpreters/ITokenExtractor.h>
 
 #include <boost/algorithm/string.hpp>
@@ -12,13 +13,223 @@
 #  endif
 #endif
 
+namespace DB
+{
+
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_QUERY;
     extern const int NOT_IMPLEMENTED;
 }
 
-namespace DB
+static constexpr UInt64 MIN_NGRAM_SIZE = 1;
+static constexpr UInt64 MAX_NGRAM_SIZE = 8;
+static constexpr UInt64 DEFAULT_NGRAM_SIZE = 3;
+static constexpr UInt64 DEFAULT_SPARSE_GRAMS_MIN_LENGTH = 3;
+static constexpr UInt64 DEFAULT_SPARSE_GRAMS_MAX_LENGTH = 100;
+
+namespace
 {
+
+void assertParamsCount(size_t params_count, size_t max_count, std::string_view tokenizer)
+{
+    if (params_count > max_count)
+    {
+        throw Exception(
+            ErrorCodes::INCORRECT_QUERY,
+            "'{}' tokenizer accepts at most {} parameters, but got {}",
+            tokenizer, max_count, params_count);
+    }
+}
+
+template <typename Type>
+std::optional<Type> tryCastAs(const Field & field)
+{
+    auto expected_type = Field::TypeToEnum<Type>::value;
+    return expected_type == field.getType() ? std::make_optional(field.safeGet<Type>()) : std::nullopt;
+}
+
+template <typename Type>
+Type castAs(const Field & field, std::string_view argument_name)
+{
+    auto result = tryCastAs<Type>(field);
+
+    if (!result.has_value())
+    {
+        throw Exception(
+            ErrorCodes::INCORRECT_QUERY,
+            "Tokenizer argument '{}' expected to be of type {}, but got type: {}",
+            argument_name, fieldTypeToString(Field::TypeToEnum<Type>::value), field.getTypeName());
+    }
+
+    return result.value();
+}
+
+}
+
+UInt64 TokenizerFactory::extractNgramParam(std::span<const Field> params)
+{
+    assertParamsCount(params.size(), 1, NgramsTokenExtractor::getExternalName());
+
+    auto ngram_size = params.empty() ? DEFAULT_NGRAM_SIZE : castAs<UInt64>(params[0], "ngram_size");
+    if (ngram_size < 1 || ngram_size > 8)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Incorrect param of tokenizer '{}': ngram length must be between {} and {}, but got {}",
+            NgramsTokenExtractor::getExternalName(),
+            MIN_NGRAM_SIZE,
+            MAX_NGRAM_SIZE,
+            ngram_size);
+
+    return ngram_size;
+}
+
+std::vector<String> TokenizerFactory::extractSplitByStringParam(std::span<const Field> params)
+{
+    assertParamsCount(params.size(), 1, SplitByStringTokenExtractor::getExternalName());
+    if (params.empty())
+        return std::vector<String>{" "};
+
+    std::vector<String> values;
+    auto array = castAs<Array>(params[0], "separators");
+
+    for (const auto & value : array)
+        values.emplace_back(castAs<String>(value, "separator"));
+
+    if (values.empty())
+    {
+        throw Exception(
+            ErrorCodes::INCORRECT_QUERY,
+            "Incorrect params of tokenizer '{}': separators cannot be empty",
+            SplitByStringTokenExtractor::getExternalName());
+    }
+
+    return values;
+}
+
+std::tuple<UInt64, UInt64, std::optional<UInt64>> TokenizerFactory::extractSparseGramsParams(std::span<const Field> params)
+{
+    const auto * tokenizer_name = SparseGramsTokenExtractor::getExternalName();
+    assertParamsCount(params.size(), 3, tokenizer_name);
+
+    UInt64 min_length = DEFAULT_SPARSE_GRAMS_MIN_LENGTH;
+    UInt64 max_length = DEFAULT_SPARSE_GRAMS_MAX_LENGTH;
+    std::optional<UInt64> min_cutoff_length;
+
+    if (!params.empty())
+        min_length = castAs<UInt64>(params[0], "min_length");
+
+    if (params.size() > 1)
+        max_length = castAs<UInt64>(params[1], "max_length");
+
+    if (params.size() > 2)
+        min_cutoff_length = castAs<UInt64>(params[2], "min_cutoff_length");
+
+    if (min_length < 3)
+    {
+        throw Exception(
+            ErrorCodes::INCORRECT_QUERY,
+            "Unexpected parameter of tokenizer '{}': minimal length must be at least {}, but got {}",
+            tokenizer_name,
+            DEFAULT_SPARSE_GRAMS_MIN_LENGTH,
+            min_length);
+    }
+    if (max_length > 100)
+    {
+        throw Exception(
+            ErrorCodes::INCORRECT_QUERY,
+            "Unexpected parameter of tokenizer '{}': maximal length must be at most {}, but got {}",
+            tokenizer_name,
+            DEFAULT_SPARSE_GRAMS_MAX_LENGTH,
+            max_length);
+    }
+    if (min_length > max_length)
+    {
+        throw Exception(
+            ErrorCodes::INCORRECT_QUERY,
+            "Unexpected parameter of tokenizer '{}': minimal length {} cannot be larger than maximal length {}",
+            tokenizer_name,
+            min_length,
+            max_length);
+    }
+    if (min_cutoff_length.has_value() && min_cutoff_length.value() < min_length)
+    {
+        throw Exception(
+            ErrorCodes::INCORRECT_QUERY,
+            "Unexpected parameter of tokenizer '{}': minimal cutoff length {} cannot be smaller than minimal length {}",
+            tokenizer_name,
+            min_cutoff_length.value(),
+            min_length);
+    }
+    if (min_cutoff_length.has_value() && min_cutoff_length.value() > max_length)
+    {
+        throw Exception(
+            ErrorCodes::INCORRECT_QUERY,
+            "Unexpected parameter of tokenizer '{}': minimal cutoff length {} cannot be larger than maximal length {}",
+            tokenizer_name,
+            min_cutoff_length.value(),
+            max_length);
+    }
+
+    return {min_length, max_length, min_cutoff_length};
+}
+
+void TokenizerFactory::isAllowedTokenizer(std::string_view tokenizer, const std::vector<String> & allowed_tokenizers, std::string_view caller_name)
+{
+    if (std::ranges::find(allowed_tokenizers, tokenizer) == allowed_tokenizers.end())
+    {
+        WriteBufferFromOwnString buf;
+        for (size_t i = 0; i < allowed_tokenizers.size(); ++i)
+        {
+            if (i < allowed_tokenizers.size() - 1)
+                buf << "'" << allowed_tokenizers[0] << "', "; /// asserted not empty in constructor
+            else
+                buf << "and '" << allowed_tokenizers[i] << "'";
+        }
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function or index '{}' supports only tokenizers {}, received '{}'", caller_name, buf.str(), tokenizer);
+    }
+}
+
+std::unique_ptr<ITokenExtractor> TokenizerFactory::createTokenizer(
+        std::string_view tokenizer,
+        std::span<const Field> params,
+        const std::vector<String> & allowed_tokenizers,
+        std::string_view caller_name,
+        bool only_validate)
+{
+    isAllowedTokenizer(tokenizer, allowed_tokenizers, caller_name);
+
+    if (tokenizer == NgramsTokenExtractor::getName() || tokenizer == NgramsTokenExtractor::getExternalName())
+    {
+        auto ngram_size = extractNgramParam(params);
+        return only_validate ? nullptr : std::make_unique<NgramsTokenExtractor>(ngram_size);
+    }
+    if (tokenizer == SplitByNonAlphaTokenExtractor::getName() || tokenizer == SplitByNonAlphaTokenExtractor::getExternalName())
+    {
+        assertParamsCount(params.size(), 0, tokenizer);
+        return only_validate ? nullptr : std::make_unique<SplitByNonAlphaTokenExtractor>();
+    }
+    if (tokenizer == SplitByStringTokenExtractor::getName() || tokenizer == SplitByStringTokenExtractor::getExternalName())
+    {
+        auto separators = extractSplitByStringParam(params);
+        return only_validate ? nullptr : std::make_unique<SplitByStringTokenExtractor>(separators);
+    }
+    if (tokenizer == SparseGramsTokenExtractor::getName() || tokenizer == SparseGramsTokenExtractor::getExternalName()
+        || tokenizer == SparseGramsTokenExtractor::getBloomFilterIndexName())
+    {
+        auto [min_ngram_length, max_ngram_length, min_cutoff_length] = extractSparseGramsParams(params);
+        return only_validate ? nullptr : std::make_unique<SparseGramsTokenExtractor>(min_ngram_length, max_ngram_length, min_cutoff_length);
+    }
+    if (tokenizer == ArrayTokenExtractor::getName() || tokenizer == ArrayTokenExtractor::getExternalName())
+    {
+        assertParamsCount(params.size(), 0, tokenizer);
+        return only_validate ? nullptr : std::make_unique<ArrayTokenExtractor>();
+    }
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown tokenizer: '{}' for function or index '{}'", tokenizer, caller_name);
+}
 
 bool NgramsTokenExtractor::nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
 {

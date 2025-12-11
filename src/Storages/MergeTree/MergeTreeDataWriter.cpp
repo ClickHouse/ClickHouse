@@ -86,6 +86,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
+    extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
 }
 
 namespace ErrorCodes
@@ -852,6 +853,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         true,
         (*data_settings)[MergeTreeSetting::serialization_info_version],
         (*data_settings)[MergeTreeSetting::string_serialization_version],
+        (*data_settings)[MergeTreeSetting::nullable_serialization_version],
     };
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
@@ -1009,6 +1011,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         true,
         (*data.getSettings())[MergeTreeSetting::serialization_info_version],
         (*data.getSettings())[MergeTreeSetting::string_serialization_version],
+        (*data.getSettings())[MergeTreeSetting::nullable_serialization_version],
     };
     SerializationInfoByName infos(columns, settings);
     infos.add(block);

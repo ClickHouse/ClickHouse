@@ -81,6 +81,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
+    extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
 }
 
 namespace FailPoints
@@ -532,6 +533,7 @@ getColumnsForNewDataPart(
         false,
         (*source_part->storage.getSettings())[MergeTreeSetting::serialization_info_version],
         (*source_part->storage.getSettings())[MergeTreeSetting::string_serialization_version],
+        (*source_part->storage.getSettings())[MergeTreeSetting::nullable_serialization_version],
     };
 
     SerializationInfoByName new_serialization_infos(settings);
@@ -556,7 +558,9 @@ getColumnsForNewDataPart(
         auto old_type = part_columns.getPhysical(name).type;
         auto new_type = updated_header.getByName(new_name).type;
 
-        if (!new_type->supportsSparseSerialization() || settings.isAlwaysDefault())
+        if (!new_type->supportsSparseSerialization()
+            || (new_type->isNullable() && settings.nullable_serialization_version == MergeTreeNullableSerializationVersion::BASIC)
+            || settings.isAlwaysDefault())
             continue;
 
         auto new_info = new_type->createSerializationInfo(settings);

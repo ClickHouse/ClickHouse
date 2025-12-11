@@ -4,7 +4,6 @@ import os
 import re
 import sys
 from pathlib import Path
-from random import sample
 
 sys.path.append("./")
 
@@ -223,7 +222,7 @@ class Targeting:
         """
         1. Makes a best effort to get changed symbols by reading the PR diff and the ClickHouse binary DWARF.
         2. Gets a list of tests that cover each found symbol from the coverage database.
-        3. Selects up to 'max_tests_per_symbol' random tests per symbol when there are more.
+        3. Skips symbols with more than 'max_tests_per_symbol' tests (too common code).
         4. Returns the unique tests and a Result with info about the findings.
         """
 
@@ -254,9 +253,9 @@ class Targeting:
             for (file_, line), (symbol, tests) in resolved_file_lines.items():
                 info += f"  {file_}:{line} -> symbol: {symbol[:70]}...\n"
                 if len(tests) > max_tests_per_symbol:
-                    info += f" select {max_tests_per_symbol} random tests out of {len(tests)}\n"
-                    tests = sample(tests, max_tests_per_symbol)
-            selected_tests.update(tests)
+                    info += f"    skipping {len(tests)} tests (too common code)\n"
+                else:
+                    selected_tests.update(tests)
             for test in tests[:10]:
                 info += f"  - {test}\n"
             if len(tests) > 10:

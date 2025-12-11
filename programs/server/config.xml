@@ -1243,6 +1243,26 @@
         <flush_on_crash>false</flush_on_crash>
     </part_log>
 
+    <!-- Contains information about all background tasks that are executed via various background pools.
+         See also:
+         - background_schedule_pool_size
+         - background_buffer_flush_schedule_pool_size
+         - background_message_broker_schedule_pool_size
+         - background_distributed_schedule_pool_size
+    -->
+    <background_schedule_pool_log>
+        <database>system</database>
+        <table>background_schedule_pool_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+        <!-- Only tasks longer then duration_threshold_milliseconds will be logged. Zero means log everything -->
+        <duration_threshold_milliseconds>0</duration_threshold_milliseconds>
+    </background_schedule_pool_log>
+
     <!-- Text log contains all information from usual server log but stores it in structured and efficient way.
          The level of the messages that goes to the table can be limited (<level>), if not specified all messages will go to the table.
     -->
@@ -1280,6 +1300,18 @@
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
         <flush_on_crash>false</flush_on_crash>
     </error_log>
+
+    <!-- Instrumentation trace log contains rows with profile information of functions produced using XRay that we can export to Chrome trace format. -->
+    <instrumentation_trace_log>
+        <database>system</database>
+        <table>instrumentation_trace_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <flush_on_crash>false</flush_on_crash>
+    </instrumentation_trace_log>
 
     <!-- Query metric log contains history of memory and metric values from table system.events for individual queries, periodically flushed to disk
     every "collect_interval_milliseconds" interval-->

@@ -649,26 +649,28 @@ bool StatementGenerator::joinedTableOrFunction(
     const bool has_dictionary = collectionHas<SQLDictionary>(has_dictionary_lambda);
     const bool can_recurse = this->depth < this->fc.max_depth && this->width < this->fc.max_width;
 
-    const uint32_t derived_table = 30 * static_cast<uint32_t>(can_recurse);
-    const uint32_t cte = 10 * static_cast<uint32_t>(!under_remote && !this->ctes.empty());
-    const uint32_t table = (40 * static_cast<uint32_t>(has_table)) + (20 * static_cast<uint32_t>(this->peer_query != PeerQuery::None));
-    const uint32_t view = 20 * static_cast<uint32_t>(this->peer_query != PeerQuery::ClickHouseOnly && has_view);
-    const uint32_t remote_udf = 5 * static_cast<uint32_t>(this->allow_engine_udf && can_recurse);
-    const uint32_t generate_series_udf = 10;
+    const uint32_t derived_table = 40 * static_cast<uint32_t>(can_recurse);
+    const uint32_t cte = 20 * static_cast<uint32_t>(!under_remote && !this->ctes.empty());
+    const uint32_t table = (50 * static_cast<uint32_t>(has_table)) + (20 * static_cast<uint32_t>(this->peer_query != PeerQuery::None));
+    const uint32_t view = 30 * static_cast<uint32_t>(this->peer_query != PeerQuery::ClickHouseOnly && has_view);
+    const uint32_t remote_udf = 8 * static_cast<uint32_t>(this->allow_engine_udf && can_recurse);
+    const uint32_t generate_series_udf = 12;
     const uint32_t system_table = 3 * static_cast<uint32_t>(this->allow_not_deterministic && !systemTables.empty());
-    const uint32_t merge_udf = 2 * static_cast<uint32_t>(this->allow_engine_udf);
-    const uint32_t cluster_udf = 5 * static_cast<uint32_t>(this->allow_engine_udf && !fc.clusters.empty() && can_recurse);
+    const uint32_t merge_udf = 3 * static_cast<uint32_t>(this->allow_engine_udf);
+    const uint32_t cluster_udf = 8 * static_cast<uint32_t>(this->allow_engine_udf && !fc.clusters.empty() && can_recurse);
     const uint32_t merge_index_udf = 3 * static_cast<uint32_t>(has_mergetree_table && this->allow_engine_udf);
     const uint32_t loop_udf = 3 * static_cast<uint32_t>(fc.allow_infinite_tables && this->allow_engine_udf && can_recurse);
     const uint32_t values_udf = 3 * static_cast<uint32_t>(can_recurse);
     const uint32_t random_data_udf = 3 * static_cast<uint32_t>(this->allow_engine_udf);
-    const uint32_t dictionary = 15 * static_cast<uint32_t>(this->peer_query != PeerQuery::ClickHouseOnly && has_dictionary);
-    const uint32_t url_encoded_table = 2 * static_cast<uint32_t>(this->allow_engine_udf && has_table);
+    const uint32_t dictionary = 25 * static_cast<uint32_t>(this->peer_query != PeerQuery::ClickHouseOnly && has_dictionary);
+    const uint32_t url_encoded_table = 3 * static_cast<uint32_t>(this->allow_engine_udf && has_table);
     const uint32_t table_engine_udf = 10 * static_cast<uint32_t>(has_replaceable_table && this->allow_engine_udf);
     const uint32_t merge_projection_udf = 4 * static_cast<uint32_t>(has_projection_table && this->allow_engine_udf);
+    const uint32_t random_table_func = 3 * static_cast<uint32_t>(this->allow_not_deterministic && this->allow_engine_udf);
 
     const uint32_t prob_space = derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf
-        + cluster_udf + merge_index_udf + loop_udf + values_udf + random_data_udf + dictionary + url_encoded_table + table_engine_udf;
+        + cluster_udf + merge_index_udf + loop_udf + values_udf + random_data_udf + dictionary + url_encoded_table + table_engine_udf
+        + merge_projection_udf + random_table_func;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -1122,6 +1124,24 @@ bool StatementGenerator::joinedTableOrFunction(
             parents.emplace_back(SQLRelationCol(rel_name, npath));
         }
         rel.cols.insert(rel.cols.end(), parents.begin(), parents.end());
+    }
+    else if (
+        random_table_func
+        && nopt
+            < (derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf + cluster_udf
+               + merge_index_udf + loop_udf + values_udf + random_data_udf + dictionary + url_encoded_table + table_engine_udf
+               + merge_projection_udf + random_table_func + 1))
+    {
+        /// Use a completely random table function call
+        SQLRelation rel(rel_name);
+        const uint32_t ncols = rg.randomInt<uint32_t>(1, 5);
+
+        generateTableFuncCall(rg, tof->mutable_tfunc()->mutable_func());
+        for (uint32_t i = 0; i < ncols; i++)
+        {
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"c" + std::to_string(i + 1)}));
+        }
+        this->levels[this->current_level].rels.emplace_back(rel);
     }
     else
     {
@@ -1946,7 +1966,7 @@ void StatementGenerator::generateLimitExpr(RandomGenerator & rg, Expr * expr)
         }
         else
         {
-            std::uniform_int_distribution<uint32_t> frange(1, 999);
+            std::uniform_int_distribution<uint32_t> frange(1, 9999);
 
             buf += fmt::format("0.{}", frange(rg.generator));
         }
@@ -1960,50 +1980,47 @@ void StatementGenerator::generateLimitExpr(RandomGenerator & rg, Expr * expr)
     }
 }
 
-void StatementGenerator::generateLimit(RandomGenerator & rg, const bool has_order_by, LimitStatement * ls)
+void StatementGenerator::generateLimitBy(RandomGenerator & rg, LimitByStatement * ls)
 {
     generateLimitExpr(rg, ls->mutable_limit());
     if (rg.nextBool())
     {
+        ls->set_comma(rg.nextBool());
         generateLimitExpr(rg, ls->mutable_offset());
     }
-    ls->set_with_ties(has_order_by && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7));
-    if (!ls->with_ties() && rg.nextSmallNumber() < 4)
+    if (rg.nextSmallNumber() < 8)
     {
-        if (rg.nextSmallNumber() < 8)
+        Expr * expr = ls->mutable_by_expr();
+
+        if (this->depth >= this->fc.max_depth || rg.nextSmallNumber() < 8)
         {
-            Expr * expr = ls->mutable_by_expr();
+            LiteralValue * lv = expr->mutable_lit_val();
 
-            if (this->depth >= this->fc.max_depth || rg.nextSmallNumber() < 8)
-            {
-                LiteralValue * lv = expr->mutable_lit_val();
-
-                lv->mutable_int_lit()->set_uint_lit(rg.randomInt<uint32_t>(0, 6));
-            }
-            else
-            {
-                this->depth++;
-                generateExpression(rg, expr);
-                this->depth--;
-            }
+            lv->mutable_int_lit()->set_uint_lit(rg.randomInt<uint32_t>(0, 6));
         }
         else
         {
-            ls->set_lall(true);
+            this->depth++;
+            generateExpression(rg, expr);
+            this->depth--;
         }
+    }
+    else
+    {
+        ls->set_lall(true);
     }
 }
 
 void StatementGenerator::generateOffset(RandomGenerator & rg, const bool has_order_by, OffsetStatement * off)
 {
+    off->set_comma(rg.nextBool());
     generateLimitExpr(rg, off->mutable_row_count());
-    off->set_rows(rg.nextBool());
     if (has_order_by && (!this->allow_not_deterministic || rg.nextBool()))
     {
         FetchStatement * fst = off->mutable_fetch();
 
         generateLimitExpr(rg, fst->mutable_row_count());
-        fst->set_rows(rg.nextBool());
+        fst->set_rows(rg.nextBool() ? RowsKeyword::OFF_ROW : RowsKeyword::OFF_ROWS);
         fst->set_first(rg.nextBool());
         fst->set_only(this->allow_not_deterministic && rg.nextBool());
     }
@@ -2262,16 +2279,18 @@ void StatementGenerator::generateSelect(
             generateOrderBy(rg, ncols, (allowed_clauses & allow_orderby_settings), false, ssc->mutable_orderby());
             this->depth--;
         }
-        if ((allowed_clauses & allow_limit) && (ssc->has_orderby() || this->allow_not_deterministic) && rg.nextSmallNumber() < 4)
+        const bool order_safe = ssc->has_orderby() || this->levels[this->current_level].global_aggregate || this->allow_not_deterministic;
+        if ((allowed_clauses & allow_limitby) && order_safe && rg.nextMediumNumber() < 23)
         {
-            if (rg.nextBool())
-            {
-                generateLimit(rg, ssc->has_orderby(), ssc->mutable_limit());
-            }
-            else
-            {
-                generateOffset(rg, ssc->has_orderby(), ssc->mutable_offset());
-            }
+            generateLimitBy(rg, ssc->mutable_limit_by());
+        }
+        if ((allowed_clauses & allow_limit) && order_safe && rg.nextMediumNumber() < 23)
+        {
+            generateLimitExpr(rg, ssc->mutable_limit());
+        }
+        if ((allowed_clauses & allow_offset) && order_safe && rg.nextMediumNumber() < 23)
+        {
+            generateOffset(rg, ssc->has_orderby(), ssc->mutable_offset());
         }
     }
     /// This doesn't work: SELECT 1 FROM ((SELECT 1) UNION (SELECT 1) SETTINGS page_cache_inject_eviction = 1) x;

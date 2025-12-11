@@ -222,7 +222,9 @@ if __name__ == "__main__":
         # Print sample of active issues
         if catalog.active_test_issues:
             print("\n--- Sample Active Test Issues ---")
-            for issue in catalog.active_test_issues[:5]:
+            for issue in catalog.active_test_issues[
+                :: len(catalog.active_test_issues) // 5
+            ]:
                 print(f"  Issue #{issue.issue}: {issue.test_name} - {issue.title}")
 
         # Print sample of resolved issues

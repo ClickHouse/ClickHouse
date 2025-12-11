@@ -60,8 +60,8 @@ IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
 {
 }
 
-ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_, const String & column_name_)
-    : stats_desc(stats_desc_), column_name(column_name_)
+ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_, const String & column_name_, DataTypePtr data_type_)
+    : stats_desc(stats_desc_), column_name(column_name_), data_type(data_type_)
 {
 }
 
@@ -259,6 +259,25 @@ void ColumnStatistics::deserialize(ReadBuffer &buf)
 
     readIntBinary(rows, buf);
 
+    for (UInt8 i = 0; i < static_cast<UInt8>(StatisticsType::Max); i++)
+    {
+        if (stat_types_mask & 1LL << i)
+        {
+            StatisticsType cur_type = static_cast<StatisticsType>(i);
+            auto it = stats.find(cur_type);
+            if (it == stats.end())
+            {
+                /// we found a statistics dropped already, but we still need to read it to skip it
+                auto mock_stats = MergeTreeStatisticsFactory::instance().getSingleStats(SingleStatisticsDescription(cur_type, nullptr, false), data_type);
+                mock_stats->deserialize(buf);
+            }
+            else
+            {
+                it->second->deserialize(buf);
+            }
+        }
+    }
+
     for (auto it = stats.begin(); it != stats.end();)
     {
         if (!(stat_types_mask & 1LL << UInt8(it->first)))
@@ -266,10 +285,7 @@ void ColumnStatistics::deserialize(ReadBuffer &buf)
             stats.erase(it++);
         }
         else
-        {
-            it->second->deserialize(buf);
-            ++it;
-        }
+            it++;
     }
 }
 
@@ -368,7 +384,7 @@ ColumnStatisticsDescription MergeTreeStatisticsFactory::cloneWithSupportedStatis
 
 ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnDescription & column_desc) const
 {
-    ColumnStatisticsPtr column_stat = std::make_shared<ColumnStatistics>(column_desc.statistics, column_desc.name);
+    ColumnStatisticsPtr column_stat = std::make_shared<ColumnStatistics>(column_desc.statistics, column_desc.name, column_desc.type);
     for (const auto & [type, desc] : column_desc.statistics.types_to_desc)
     {
         auto it = creators.find(type);
@@ -387,6 +403,14 @@ ColumnsStatistics MergeTreeStatisticsFactory::getMany(const ColumnsDescription &
         if (!col.statistics.empty())
             result.push_back(get(col));
     return result;
+}
+
+StatisticsPtr MergeTreeStatisticsFactory::getSingleStats(const SingleStatisticsDescription & desc, DataTypePtr data_type) const
+{
+    auto it = creators.find(desc.type);
+    if (it == creators.end())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'countmin', 'minmax', 'tdigest' and 'uniq'", desc.type);
+    return (it->second)(desc, data_type);
 }
 
 static ColumnStatisticsDescription::StatisticsTypeDescMap parseColumnStatisticsFromString(const String & str)

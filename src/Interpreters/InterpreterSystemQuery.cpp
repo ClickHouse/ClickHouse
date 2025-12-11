@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <csignal>
 #include <filesystem>
+#include <variant>
 #include <unistd.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AllowedClientHosts.h>
@@ -50,12 +51,14 @@
 #include <Interpreters/DeltaMetadataLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/InstrumentationManager.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/Freeze.h>
@@ -943,7 +946,24 @@ BlockIO InterpreterSystemQuery::execute()
             unloadPrimaryKeys();
             break;
         }
-
+#if USE_XRAY
+        case Type::INSTRUMENT_ADD:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_INSTRUMENT_ADD);
+            instrumentWithXRay(true, query);
+            break;
+        }
+        case Type::INSTRUMENT_REMOVE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_INSTRUMENT_REMOVE);
+            instrumentWithXRay(false, query);
+            break;
+        }
+#else
+        case Type::INSTRUMENT_ADD:
+        case Type::INSTRUMENT_REMOVE:
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without XRay support");
+#endif
 #if USE_JEMALLOC
         case Type::JEMALLOC_PURGE:
         {
@@ -1745,6 +1765,80 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
     }
 }
 
+#if USE_XRAY
+void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query)
+{
+    /// query.handler_name -- handler to be set for the function
+    /// query.function_name -- name of the function to be patched - rename in query to function name
+    /// query.entry_type -- entry type: None, Entry or Exit
+    /// query.parameters -- parameters for the handler. should be one of the following: string, int, float
+    try
+    {
+        if (add)
+        {
+            InstrumentationManager::instance().patchFunction(getContext(), query.instrumentation_function_name, query.instrumentation_handler_name, query.instrumentation_entry_type, query.instrumentation_parameters);
+        }
+        else
+        {
+            if (!query.instrumentation_subquery.empty())
+            {
+                auto subquery_context = Context::createCopy(getContext());
+                subquery_context->makeQueryContext();
+                subquery_context->setCurrentQueryId({});
+                auto [_, block_io] = executeQuery(query.instrumentation_subquery, subquery_context, QueryFlags{ .internal = true });
+
+                if (!block_io.pipeline.initialized())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to execute subquery");
+
+                PullingPipelineExecutor executor(block_io.pipeline);
+                Block block;
+
+                while (executor.pull(block))
+                {
+                    if (block.columns() != 1)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected only one column as result of the subquery, but {} were found", block.columns());
+
+                    const auto & column_with_type = block.getByPosition(0);
+                    const auto & column = column_with_type.column;
+                    if (!isUInt(column_with_type.type))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected non-UInt column as result of the subquery: {}", column_with_type.type);
+
+                    for (size_t i = 0; i < column->size(); ++i)
+                    {
+                        UInt64 id = column->getUInt(i);
+                        InstrumentationManager::instance().unpatchFunction(id);
+                    }
+                }
+            }
+            else
+            {
+                InstrumentationManager::instance().unpatchFunction(query.instrumentation_point_id.value());
+            }
+        }
+    }
+    catch (const DB::Exception & e)
+    {
+        String id;
+        if (query.instrumentation_point_id.has_value())
+        {
+            if (std::holds_alternative<bool>(query.instrumentation_point_id.value()))
+                id = " and ALL ids";
+            else
+                id = fmt::format(" and id '{}'", std::get<UInt64>(query.instrumentation_point_id.value()));
+        }
+
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Failed to instrument function '{}' with handler '{}', entry type '{}'{}: {}",
+            query.instrumentation_function_name,
+            query.instrumentation_handler_name,
+            Instrumentation::entryTypeToString(query.instrumentation_entry_type),
+            id,
+            e.what());
+    }
+}
+#endif
+
 void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 {
     const auto database_name = query.getDatabase();
@@ -2188,6 +2282,16 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::UNLOCK_SNAPSHOT:
         {
             required_access.emplace_back(AccessType::BACKUP);
+            break;
+        }
+        case Type::INSTRUMENT_ADD:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_INSTRUMENT_ADD);
+            break;
+        }
+        case Type::INSTRUMENT_REMOVE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_INSTRUMENT_REMOVE);
             break;
         }
         case Type::STOP_THREAD_FUZZER:

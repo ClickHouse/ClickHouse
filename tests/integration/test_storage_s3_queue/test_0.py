@@ -63,6 +63,7 @@ def started_cluster():
             user_configs=[
                 "configs/users.xml",
                 "configs/enable_keeper_fault_injection.xml",
+                "configs/keeper_retries.xml",
             ],
             with_minio=True,
             with_azurite=True,
@@ -508,6 +509,14 @@ def test_direct_select_file(started_cluster, mode):
         for l in node.query(f"SELECT * FROM {table_name}_1").splitlines()
     ] == values
 
+    for i in range(3):
+        node.query(f"ALTER TABLE {table_name}_{i + 1} MODIFY SETTING commit_on_select=true")
+
+    assert [
+        list(map(int, l.split()))
+        for l in node.query(f"SELECT * FROM {table_name}_1").splitlines()
+    ] == values
+
     assert [
         list(map(int, l.split()))
         for l in node.query(f"SELECT * FROM {table_name}_2").splitlines()
@@ -528,6 +537,7 @@ def test_direct_select_file(started_cluster, mode):
         additional_settings={
             "keeper_path": keeper_path,
             "s3queue_processing_threads_num": 1,
+            "commit_on_select": 1
         },
     )
 
@@ -547,6 +557,7 @@ def test_direct_select_file(started_cluster, mode):
         additional_settings={
             "keeper_path": keeper_path,
             "s3queue_processing_threads_num": 1,
+            "commit_on_select": 1
         },
     )
 
@@ -593,7 +604,7 @@ def test_direct_select_multiple_files(started_cluster, mode):
         table_name,
         mode,
         files_path,
-        additional_settings={"keeper_path": keeper_path, "processing_threads_num": 3},
+        additional_settings={"keeper_path": keeper_path, "processing_threads_num": 3, "commit_on_select": 1},
     )
     for i in range(5):
         rand_values = [[random.randint(0, 50) for _ in range(3)] for _ in range(10)]

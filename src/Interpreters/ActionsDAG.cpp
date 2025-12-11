@@ -289,7 +289,7 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column)
     return addNode(std::move(node));
 }
 
-const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column)
+const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column, bool is_deterministic_constant)
 {
     if (!column.column)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add column {} because it is nullptr", column.name);
@@ -299,6 +299,7 @@ const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column)
     node.result_type = std::move(column.type);
     node.result_name = std::move(column.name);
     node.column = std::move(column.column);
+    node.is_deterministic_constant = is_deterministic_constant;
 
     return addNode(std::move(node));
 }
@@ -1000,7 +1001,6 @@ Block ActionsDAG::updateHeader(const Block & header) const
 
         throw;
     }
-
 
     Block res;
     res.reserve(result_columns.size());
@@ -3030,14 +3030,6 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
             node.result_type = predicate->result_type;
             node.column = node.result_type->createColumnConst(0, 1);
 
-            const auto should_materialize = !predicate->column || !isColumnConst(*predicate->column);
-            if (should_materialize)
-            {
-                const auto & const_node = addNode(std::move(node));
-                const auto & materialized_node = materializeNodeWithoutRename(const_node, false);
-                node = createAlias(materialized_node, predicate->result_name);
-            }
-
             if (predicate->type != ActionType::INPUT)
                 *predicate = std::move(node);
             else
@@ -3294,7 +3286,7 @@ std::optional<ActionsDAG> ActionsDAG::buildFilterActionsDAG(
             }
             case ActionsDAG::ActionType::COLUMN:
             {
-                result_node = &result_dag.addColumn({node->column, node->result_type, node->result_name});
+                result_node = &result_dag.addColumn({node->column, node->result_type, node->result_name}, node->is_deterministic_constant);
                 break;
             }
             case ActionsDAG::ActionType::ALIAS:

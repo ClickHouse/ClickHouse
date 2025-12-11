@@ -238,7 +238,7 @@ static inline void deserializeAndInsertIntoColumns( /// NOLINT
         const auto & column = columns[column_index];
 
         if (fetch_request.shouldFillResultColumnWithIndex(column_index))
-            column->deserializeAndInsertFromArena(in);
+            column->deserializeAndInsertFromArena(in, nullptr);
         else
             column->skipSerializedInArena(in);
     }
@@ -478,7 +478,7 @@ public:
 
             for (const auto & column : key_columns)
             {
-                std::string_view serialized_data = column->serializeValueIntoArena(current_key_index, *complex_key_arena, block_start);
+                std::string_view serialized_data = column->serializeValueIntoArena(current_key_index, *complex_key_arena, block_start, nullptr);
                 allocated_size_for_columns += serialized_data.size();
             }
 

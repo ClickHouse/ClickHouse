@@ -254,6 +254,33 @@ TEST(S3UriTest, GcsV4PresignedQueryNotFolded)
     ASSERT_FALSE(uri.is_virtual_hosted_style);
 }
 
+TEST(S3UriTest, AwsV4PresignedQueryNotFolded)
+{
+    using namespace DB;
+    S3::URI uri("https://bucketname.s3.amazonaws.com/path/to/object.txt?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=x%2F20250101%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20250101T000000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Signature=x");
+
+    ASSERT_EQ("https://s3.amazonaws.com", uri.endpoint);
+    ASSERT_EQ("bucketname", uri.bucket);
+    ASSERT_EQ("path/to/object.txt", uri.key);
+    ASSERT_EQ("", uri.version_id);
+    ASSERT_TRUE(uri.is_virtual_hosted_style);
+}
+
+TEST(S3UriTest, AwsV4PresignedQueryFoldedInCompatibilityMode)
+{
+    using namespace DB;
+    S3::URI uri(
+        "https://bucketname.s3.amazonaws.com/data?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=x&X-Amz-Date=20250101T000000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Signature=x",
+        /*allow_archive_path_syntax*/ false,
+        /*keep_presigned_query_parameters*/ false);
+
+    ASSERT_EQ("https://s3.amazonaws.com", uri.endpoint);
+    ASSERT_EQ("bucketname", uri.bucket);
+    ASSERT_EQ("data?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=x&X-Amz-Date=20250101T000000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Signature=x", uri.key);
+    ASSERT_EQ("", uri.version_id);
+    ASSERT_TRUE(uri.is_virtual_hosted_style);
+}
+
 TEST(S3UriTest, versionIdChecks)
 {
     for (const auto& test_case : TestCases)

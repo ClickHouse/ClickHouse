@@ -1065,7 +1065,7 @@ IJoinResult::JoinResultBlock CrossJoinResult::next()
 
     bool is_last = left_row >= rows_total;
     res = res.cloneWithColumns(std::move(dst_columns));
-    return {res, is_last};
+    return {res, nullptr, is_last};
 }
 
 JoinResultPtr HashJoin::joinBlockImplCross(Block block) const

@@ -1085,7 +1085,7 @@ void QueryOracle::replaceQueryWithTablePeers(
         Insert * ins = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
         SelectStatementCore * sel = ins->mutable_select()->mutable_select()->mutable_select_core();
 
-        if (t.isMergeTreeFamily())
+        if (t.isMergeTreeFamily() && t.can_run_merges)
         {
             /// Apply delete mask
             SQLQuery next;
@@ -1162,8 +1162,7 @@ void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalInte
     if (other_steps_sucess && can_test_oracle_result)
     {
         if (((first_errcode && !errcode) || (!first_errcode && errcode))
-            && (fc.oracle_ignore_error_codes.find(static_cast<uint32_t>(first_errcode ? first_errcode : errcode))
-                == fc.oracle_ignore_error_codes.end()))
+            && !fc.oracle_ignore_error_codes.contains(static_cast<uint32_t>(first_errcode ? first_errcode : errcode)))
         {
             throw DB::Exception(
                 DB::ErrorCodes::BUZZHOUSE,
