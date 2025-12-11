@@ -1,6 +1,6 @@
 #include <filesystem>
 #include <Disks/IDisk.h>
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/WriteMode.h>
 #include <Disks/supportWritingWithAppend.h>
 #include <IO/ReadBufferFromFileBase.h>

@@ -37,7 +37,12 @@ class YTsaurusCLI:
         return table_table + "_r1"
 
     def _generate_table_attributes_str(
-        self, dynamic, schema=None, sorted_columns=None, upstream_replica=None
+        self,
+        dynamic,
+        schema=None,
+        sorted_columns=None,
+        upstream_replica=None,
+        strict_schema=True,
     ):
         if not schema:
             return ""
@@ -47,7 +52,7 @@ class YTsaurusCLI:
             + (f'upstream_replica_id="{upstream_replica}";' if upstream_replica else "")
             + "schema= ["
             + ";".join(
-                f"{{required = true; name = {name}; type = {type}; {'sort_order=ascending' if name in sorted_columns else ''}}}"
+                f"{{required = {'true' if strict_schema else 'false'}; name = {name}; type = {type}; {'sort_order=ascending' if name in sorted_columns else ''}}}"
                 for name, type in schema.items()
             )
             + "]}'"
@@ -62,12 +67,15 @@ class YTsaurusCLI:
         sorted_columns=set(),
         retry_count=100,
         time_to_sleep=0.5,
+        strict_schema=True,
     ):
         replica_path = self._generate_replica_name(table_path)
 
         create_replicated_table_cmd = (
             f"yt create replicated_table {table_path} "
-            + self._generate_table_attributes_str(True, schema, sorted_columns)
+            + self._generate_table_attributes_str(
+                True, schema, sorted_columns, strict_schema=strict_schema
+            )
         )
         self.exec(create_replicated_table_cmd, retry_count, time_to_sleep)
 
@@ -108,9 +116,14 @@ class YTsaurusCLI:
         retry_count=100,
         time_to_sleep=0.5,
         upstream_replica=None,
+        strict_schema=True,
     ):
         schema_arribute = self._generate_table_attributes_str(
-            dynamic, schema, sorted_columns, upstream_replica
+            dynamic,
+            schema,
+            sorted_columns,
+            upstream_replica,
+            strict_schema=strict_schema,
         )
 
         create_table_cmd = "yt create table {} {}".format(table_path, schema_arribute)

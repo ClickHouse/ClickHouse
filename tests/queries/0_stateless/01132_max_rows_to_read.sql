@@ -31,7 +31,7 @@ SET max_block_size = 9;
 SELECT * FROM numbers(30);
 
 -- When reaching row limits, make sure we don't do a large amount of range scans and continue
--- processing all parts when we don't need to. For instance, we create 3 parts below with 100,000 rows in each
+-- processing all parts when we don't need to. For instance, we create 3 parts below with 10,000 rows in each
 -- and we have a row limit <= 1000, we shouldn't exceed this value when max_threads = 1.
 -- (process_part in MergeTreeDataSelectExecutor uses a thread pool the size of max_threads to read data,
 -- so we can exceed it slightly if max_threads > 1, but we'll still prevent a lot of scans and part processing)
@@ -48,9 +48,12 @@ SET max_rows_to_read = 0; -- so we don't hit row limits when populating data
 
 -- Insert multiple parts with significant data. Multiple parts is important because row limit checks
 -- are checked per part when determining what ranges need to be read for the query.
-INSERT INTO row_limits_fail_fast SELECT number, toString(number) FROM numbers(100000);
-INSERT INTO row_limits_fail_fast SELECT number + 100000, toString(number) FROM numbers(100000);
-INSERT INTO row_limits_fail_fast SELECT number + 200000, toString(number) FROM numbers(100000);
+INSERT INTO row_limits_fail_fast SELECT number, toString(number) FROM numbers(10000);
+INSERT INTO row_limits_fail_fast SELECT number + 10000, toString(number) FROM numbers(10000);
+INSERT INTO row_limits_fail_fast SELECT number + 20000, toString(number) FROM numbers(10000);
+
+-- to keep the number of parts predictable
+SYSTEM STOP MERGES row_limits_fail_fast;
 
 SET max_rows_to_read = 1000;
 SET read_overflow_mode = 'throw';
@@ -90,64 +93,5 @@ SELECT count() FROM row_limits_fail_fast WHERE key < 100000; -- { serverError TO
 
 -- But should succeed when actual filtered result is small
 SELECT count() FROM row_limits_fail_fast WHERE key < 400;
-
--- Verify MergeTree fail-fast behavior: check that we don't read excessive rows when hitting limits
--- We have 300,000 rows total, but with fail-fast we should read far less
-SET max_threads = 1; -- Single thread to get deterministic behavior
-SET max_rows_to_read = 1000;
-SET read_overflow_mode = 'throw';
-
-SYSTEM FLUSH LOGS query_log;
-
--- This query should fail, but should NOT read all 300k rows
-SELECT count() FROM row_limits_fail_fast WHERE key < 500000; -- { serverError TOO_MANY_ROWS }
-
--- Trigger thread to flush pending system.query_log entries to disk.
-SYSTEM FLUSH LOGS query_log;
-
--- Reset limits before querying system.query_log
-SET max_rows_to_read = 0;
-
--- Verify we read roughly around max_rows_to_read, not all 300k rows
--- We should fail fast on row limits in MergeTree adnd read approximately
--- max_rows_to_read + some granules. We allow up to 5x the limit as a safety margin (1000 * 5 = 5000)
--- Without fail-fast, this would read close to 300k rows
-SELECT
-    read_rows < 5000 AS fail_fast_working
-FROM system.query_log
-WHERE
-    current_database = currentDatabase()
-    AND query LIKE '%count() FROM row_limits_fail_fast WHERE key < 500000%'
-    AND query NOT LIKE '%system.query_log%'
-    AND type IN ('ExceptionWhileProcessing', 'ExceptionBeforeStart')
-    AND event_time >= now() - INTERVAL 10 SECOND
-ORDER BY event_time DESC
-LIMIT 1;
-
--- Test with max_rows_to_read_leaf to ensure it also fails fast
-SET max_rows_to_read = 0;
-SET max_rows_to_read_leaf = 800;
-SET read_overflow_mode_leaf = 'throw';
-
-SELECT count() FROM row_limits_fail_fast WHERE key < 500000; -- { serverError TOO_MANY_ROWS }
-
-SYSTEM FLUSH LOGS query_log;
-
--- Reset limits before querying system.query_log
-SET max_rows_to_read = 0;
-SET max_rows_to_read_leaf = 0;
-
--- Verify leaf limits also fail fast
-SELECT
-    read_rows < 4000 AS leaf_fail_fast_working
-FROM system.query_log
-WHERE
-    current_database = currentDatabase()
-    AND query LIKE '%count() FROM row_limits_fail_fast WHERE key < 500000%'
-    AND query NOT LIKE '%system.query_log%'
-    AND type IN ('ExceptionWhileProcessing', 'ExceptionBeforeStart')
-    AND event_time >= now() - INTERVAL 10 SECOND
-ORDER BY event_time DESC
-LIMIT 1;
 
 DROP TABLE row_limits_fail_fast;

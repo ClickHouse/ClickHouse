@@ -138,14 +138,14 @@ struct AggregateFunctionGroupUniqArrayGenericData
 {
     static constexpr size_t INITIAL_SIZE_DEGREE = 3; /// adjustable
 
-    using Set = HashSetWithSavedHashWithStackMemory<StringRef, StringRefHash,
+    using Set = HashSetWithSavedHashWithStackMemory<std::string_view, StringViewHash,
         INITIAL_SIZE_DEGREE>;
 
     Set value;
 };
 
 template <bool is_plain_column>
-static void deserializeAndInsertImpl(StringRef str, IColumn & data_to);
+static void deserializeAndInsertImpl(std::string_view str, IColumn & data_to);
 
 /** Template parameter with true value should be used for columns that store their elements in memory continuously.
  *  For such columns groupUniqArray() can be implemented more efficiently (especially for small numeric arrays).

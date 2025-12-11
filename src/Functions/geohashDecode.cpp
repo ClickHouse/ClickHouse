@@ -65,7 +65,7 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            std::string_view encoded_string = encoded->getDataAt(i).toView();
+            std::string_view encoded_string = encoded->getDataAt(i);
             geohashDecode(encoded_string.data(), encoded_string.size(), &lon_data[i], &lat_data[i]);
         }
 

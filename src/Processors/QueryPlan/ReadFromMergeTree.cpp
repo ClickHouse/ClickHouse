@@ -178,11 +178,14 @@ namespace Setting
     extern const SettingsBool split_intersecting_parts_ranges_into_layers_final;
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_if_final;
+    extern const SettingsBool use_skip_indexes_for_disjunctions;
     extern const SettingsBool use_uncompressed_cache;
     extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool read_in_order_use_virtual_row;
     extern const SettingsBool use_skip_indexes_if_final_exact_mode;
     extern const SettingsBool use_skip_indexes_on_data_read;
+    extern const SettingsBool use_skip_indexes_for_top_k;
+    extern const SettingsBool use_top_k_dynamic_filtering;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
@@ -1754,6 +1757,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         getParts(),
         mutations_snapshot,
         vector_search_parameters,
+        top_k_filter_info,
         storage_snapshot->metadata,
         query_info,
         context,
@@ -1775,6 +1779,7 @@ static void buildIndexes(
     const MergeTreeData & data,
     const RangesInDataParts & parts,
     [[maybe_unused]] const std::optional<VectorSearchParameters> & vector_search_parameters,
+    [[maybe_unused]] const std::optional<TopKFilterInfo> top_k_filter_info,
     const ContextPtr & context,
     const SelectQueryInfo & query_info,
     const StorageMetadataPtr & metadata_snapshot)
@@ -1791,6 +1796,9 @@ static void buildIndexes(
 
     indexes.emplace(
         ReadFromMergeTree::Indexes{KeyCondition{filter_dag, context, primary_key_column_names, primary_key.expression}});
+
+    NamesAndTypesList dummy_names_and_types;
+    indexes->key_condition_rpn_template = KeyCondition{filter_dag, context, {}, std::make_shared<ExpressionActions>(ActionsDAG(dummy_names_and_types))};
 
     if (metadata_snapshot->hasPartitionKey())
     {
@@ -1869,16 +1877,33 @@ static void buildIndexes(
         }
         else
         {
-            if (!filter_dag.predicate)
-                continue;
-
-            condition = index_helper->createIndexCondition(filter_dag.predicate, context);
+            if (filter_dag.predicate)
+                condition = index_helper->createIndexCondition(filter_dag.predicate, context);
         }
 
-        if (!condition->alwaysUnknownOrTrue())
+        if (condition && !condition->alwaysUnknownOrTrue())
             skip_indexes.useful_indices.emplace_back(index_helper, condition);
+
+        auto can_skip_index_be_used_for_top_k_filtering = [top_k_filter_info](const MergeTreeIndexPtr & skip_index)
+        {
+                return top_k_filter_info && skip_index->index.isSimpleSingleColumnIndex() &&
+                       skip_index->index.type == "minmax" && skip_index->index.granularity == 1 &&
+                       top_k_filter_info->column_name == skip_index->index.column_names[0];
+        };
+
+        if (settings[Setting::use_skip_indexes_for_top_k] && can_skip_index_be_used_for_top_k_filtering(index_helper))
+        {
+            skip_indexes.skip_index_for_top_k_filtering = index_helper;
+            LOG_TRACE(getLogger("MergeTreeSkipIndexReader"), "Selected index {} on column {} for top-K optimization, k = {}",
+                        index_helper->index.name, top_k_filter_info->column_name, top_k_filter_info->limit_n);
+            if (settings[Setting::use_skip_indexes_on_data_read])
+                skip_indexes.threshold_tracker = top_k_filter_info->threshold_tracker;
+        }
     }
 
+    indexes->use_skip_indexes_for_disjunctions = settings[Setting::use_skip_indexes_for_disjunctions]
+                                                    && skip_indexes.useful_indices.size() > 1
+                                                    && !indexes->key_condition_rpn_template->hasOnlyConjunctions();
     {
         std::vector<size_t> index_sizes;
         index_sizes.reserve(skip_indexes.useful_indices.size());
@@ -1958,6 +1983,7 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
             data,
             getParts(),
             vector_search_parameters,
+            top_k_filter_info,
             context,
             query_info,
             storage_snapshot->metadata);
@@ -1968,6 +1994,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     const RangesInDataParts & parts,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const std::optional<VectorSearchParameters> & vector_search_parameters,
+    const std::optional<TopKFilterInfo> & top_k_filter_info,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info_,
     ContextPtr context_,
@@ -2006,6 +2033,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             data,
             parts,
             vector_search_parameters,
+            top_k_filter_info,
             context_,
             query_info_,
             metadata_snapshot);
@@ -2083,12 +2111,15 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             indexes->key_condition,
             indexes->part_offset_condition,
             indexes->total_offset_condition,
+            indexes->key_condition_rpn_template,
             indexes->skip_indexes,
+            top_k_filter_info,
             reader_settings,
             log,
             num_streams,
             result.index_stats,
             indexes->use_skip_indexes,
+            indexes->use_skip_indexes_for_disjunctions,
             find_exact_ranges,
             query_info_.isFinal(),
             is_parallel_reading_from_replicas_,
@@ -2273,7 +2304,7 @@ bool ReadFromMergeTree::isParallelReplicasLocalPlanForInitiator() const
         && context->canUseParallelReplicasOnInitiator();
 }
 
-bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, std::optional<ActionsDAG> virtual_row_conversion_)
+bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit)
 {
     /// if dirction is not set, use current one
     if (!direction)
@@ -2296,14 +2327,26 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     /// Let prefer in-order optimization over vertical FINAL for now
     enable_vertical_final = false;
 
-    /// Disable virtual row for FINAL.
-    if (virtual_row_conversion_ && !isQueryWithFinal() && context->getSettingsRef()[Setting::read_in_order_use_virtual_row])
-        virtual_row_conversion = std::make_shared<ExpressionActions>(std::move(*virtual_row_conversion_));
-
     updateSortDescription();
+
+    /// Re-calculate analysis result to have correct read_type
+    /// For some reason for projection it breaks aggregation in order, so skip it
+    if (analyzed_result_ptr && !analyzed_result_ptr->readFromProjection())
+        selectRangesToRead();
 
     return true;
 }
+
+bool ReadFromMergeTree::setVirtualRowConversions(ActionsDAG virtual_row_conversion_)
+{
+    /// Disable virtual row for FINAL.
+    if (isQueryWithFinal() || !context->getSettingsRef()[Setting::read_in_order_use_virtual_row])
+        return false;
+
+    virtual_row_conversion = std::make_shared<ExpressionActions>(std::move(virtual_row_conversion_));
+    return true;
+}
+
 
 bool ReadFromMergeTree::readsInOrder() const
 {
@@ -2748,6 +2791,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         {
             skip_index_reader = std::make_shared<MergeTreeSkipIndexReader>(
                 applicable_skip_indexes,
+                indexes->key_condition_rpn_template,
+                indexes->use_skip_indexes_for_disjunctions,
                 context->getIndexMarkCache(),
                 context->getIndexUncompressedCache(),
                 context->getVectorSimilarityIndexCache(),
@@ -3280,7 +3325,7 @@ std::shared_ptr<ParallelReadingExtension> ReadFromMergeTree::getParallelReadingE
         context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount());
 }
 
-void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns)
+void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final)
 {
     index_read_tasks.clear();
 
@@ -3334,7 +3379,7 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
             /// Create tasks for text indexes which don't read virtual columns.
             /// It's required to always read text indexes on separate step on data read.
             if (!index_read_tasks.contains(index.index->index.name))
-                index_read_tasks.emplace(index.index->index.name, IndexReadTask{.columns = {}, .index = index});
+                index_read_tasks.emplace(index.index->index.name, IndexReadTask{.columns = {}, .index = index, .is_final = is_final});
         }
     }
 
@@ -3359,6 +3404,27 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
     }
 
     required_source_columns = all_column_names;
+}
+
+void ReadFromMergeTree::setTopKColumn(const TopKFilterInfo & top_k_filter_info_)
+{
+    top_k_filter_info = top_k_filter_info_;
+    reader_settings.use_query_condition_cache = false;
+}
+
+bool ReadFromMergeTree::isSkipIndexAvailableForTopK(const String & sort_column) const
+{
+    const auto & all_indexes = storage_snapshot->metadata->getSecondaryIndices();
+
+    if (all_indexes.empty())
+        return false;
+
+    for (const auto & index : all_indexes)
+    {
+        if (index.isSimpleSingleColumnIndex() && index.type == "minmax" && index.column_names[0] == sort_column)
+            return true;
+    }
+    return false;
 }
 
 ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator() const

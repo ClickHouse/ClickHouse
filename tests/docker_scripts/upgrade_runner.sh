@@ -9,7 +9,7 @@ dmesg --clear
 set -x
 
 # we mount tests folder from repo to /usr/share
-ln -s /repo/tests/ci/stress.py /usr/bin/stress
+ln -s /repo/ci/jobs/scripts/stress/stress.py /usr/bin/stress
 ln -s /repo/tests/clickhouse-test /usr/bin/clickhouse-test
 ln -s /repo/tests/ci/download_release_packages.py /usr/bin/download_release_packages
 ln -s /repo/tests/ci/get_previous_release_tag.py /usr/bin/get_previous_release_tag
@@ -382,10 +382,5 @@ rowNumberInAllBlocks()
 LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo -e "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
 
-# But OOMs in stress test are allowed
-if rg 'OOM in dmesg|Signal 9' /test_output/check_status.tsv
-then
-    sed -i 's/failure/success/' /test_output/check_status.tsv
-fi
 
 collect_core_dumps
