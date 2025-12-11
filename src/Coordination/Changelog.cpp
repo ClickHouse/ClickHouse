@@ -1911,11 +1911,13 @@ try
             }
             else if (changelog_description.from_log_index > last_read_index && (changelog_description.from_log_index - last_read_index) > 1)
             {
+                /// If the gap is before the last committed log index, we can remove the logs before the gap
+                /// because they are already present in the existing snapshot
                 if (changelog_description.from_log_index <= last_commited_log_index)
                 {
                     LOG_INFO(
                         log,
-                        "Found gap in changelogs from {} to {}, but these entries are already committed (last committed: {}). "
+                        "Found gap in changelogs from {} to {}, but these entries are already present in the existing snapshot (last committed: {}). "
                         "Removing logs before index {}.",
                         last_read_index,
                         changelog_description.from_log_index,

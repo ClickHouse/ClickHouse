@@ -128,18 +128,22 @@ def test_keeper_log_gap_before_committed(started_cluster):
         # Reconnect and verify data is still intact
         node1_conn = get_fake_zk()
 
-        children = node1_conn.get_children("/test_log_gap")
-        assert len(children) == 20, f"Expected 20 children but got {len(children)}"
+        def verify_data():
+            children = node1_conn.get_children("/test_log_gap")
+            assert len(children) == 20, f"Expected 20 children but got {len(children)}"
 
-        for child in children:
-            data = node1_conn.get(f"/test_log_gap/{child}")[0]
-            assert data == b"somedata", f"Data mismatch for {child}: {data}"
+            for child in children:
+                data = node1_conn.get(f"/test_log_gap/{child}")[0]
+                assert data == b"somedata", f"Data mismatch for {child}: {data}"
 
-        # Verify we can still write new data
-        node1_conn.create("/test_log_gap_after_recovery", b"newdata")
-        assert (
-            node1_conn.get("/test_log_gap_after_recovery")[0] == b"newdata"
-        ), "Failed to write data after recovery"
+            # Verify we can still write new data
+            created_node = node1_conn.create("/test_log_gap_after_recovery", b"newdata", sequence=True)
+            logging.info(f"Created node: {created_node}")
+            assert (
+                node1_conn.get(created_node)[0] == b"newdata"
+            ), "Failed to write data after recovery"
+
+        verify_data()
 
         log_files = (
             node1.exec_in_container(["ls", "/var/lib/clickhouse/coordination/log"])
@@ -154,6 +158,10 @@ def test_keeper_log_gap_before_committed(started_cluster):
             if log_file.startswith("changelog_"):
                 from_index, to_index = get_from_to_index(log_file)
                 assert from_index > deleted_changelog_to_index, f"Changelog {log_file} was expected to be deleted"
+
+        node1.restart_clickhouse()
+        keeper_utils.wait_until_connected(cluster, node1)
+        verify_data()
 
     finally:
         try:
