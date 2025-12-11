@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.12",
         {
+            {"max_streams_for_files_processing_in_cluster_functions", 0, 0, "Add a new setting that allows to limit number of streams for files processing in *Cluster table functions"},
             {"max_reverse_dictionary_lookup_cache_size_bytes", 100 * 1024 * 1024, 100 * 1024 * 1024, "New setting. Maximum size in bytes of the per-query reverse dictionary lookup cache used by the function `dictGetKeys`. The cache stores serialized key tuples per attribute value to avoid re-scanning the dictionary within the same query."},
             {"query_plan_remove_unused_columns", false, true, "New setting. Add optimization to remove unused columns in query plan."},
             {"query_plan_optimize_join_order_limit", 1, 10, "Allow JOIN reordering with more tables by default"},
@@ -67,6 +68,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"type_json_skip_invalid_typed_paths", false, false, "Allow skipping typed paths that fail type coercion in JSON columns"},
             {"query_plan_optimize_join_order_algorithm", "greedy", "greedy", "New experimental setting."},
             {"s3_path_filter_limit", 0, 1000, "New setting"},
+            {"distributed_cache_use_clients_cache_for_read", true, true, "New setting"},
+            {"distributed_cache_use_clients_cache_for_write", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {

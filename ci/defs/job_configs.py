@@ -253,8 +253,7 @@ class JobConfigs:
                 ArtifactNames.RPM_AMD_RELEASE,
                 ArtifactNames.TGZ_AMD_RELEASE,
             ],
-            # Release needs same architecture (for now) to handle `clickhouse hash-binary` to setup binary hash
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.ARM_LARGE,
             timeout=3 * 3600,
         ),
         Job.ParamSet(
@@ -265,7 +264,6 @@ class JobConfigs:
                 ArtifactNames.RPM_ARM_RELEASE,
                 ArtifactNames.TGZ_ARM_RELEASE,
             ],
-            # Release needs same architecture (for now) to handle `clickhouse hash-binary` to setup binary hash
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
