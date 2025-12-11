@@ -49,7 +49,7 @@ def test_s3_storage_class(started_cluster):
 
     assert node.query("SELECT b FROM {}".format(table_function_def)).strip() == "2"
 
-    with pytest.raises(Exception):
+    with pytest.raises(Exception, match="INVALID_SETTING_VALUE"):
         node.query(
             f"""
         CREATE TABLE {table_name}_invalid (a Int32, b Int32, c String) ENGINE = S3('{url}', access_key_id = 'minio', secret_access_key='ClickHouse_Minio_P@ssw0rd', format = 'Parquet', storage_class_name='INVALID')
@@ -76,6 +76,17 @@ def test_s3_storage_class_with_name_collection(started_cluster):
     node.query(f"INSERT INTO {table_name} VALUES (1, 2, '3')")
 
     assert node.query("SELECT b FROM {}".format(table_name)).strip() == "2"
+
+    node.query(
+        f"ALTER NAMED COLLECTION {collection_name} SET storage_class_name = 'INVALID';"
+    )
+
+    with pytest.raises(Exception, match="INVALID_SETTING_VALUE"):
+        node.query(
+            f"""
+            CREATE TABLE {table_name}_invalid (a Int32, b Int32, c String) ENGINE = S3({collection_name});
+        """
+        )
 
     node.query(
         f"""
