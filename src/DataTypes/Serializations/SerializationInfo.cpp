@@ -278,18 +278,9 @@ ISerialization::KindStack SerializationInfo::chooseKindStack(const Data & data, 
 SerializationInfoByName::SerializationInfoByName(const SerializationInfo::Settings & settings_)
     : settings(settings_)
 {
-    /// Downgrade to BASIC version if `string_serialization_version` is SINGLE_STREAM.
-    ///
-    /// Rationale:
-    /// - `BASIC` means old serialization format (no per-type specialization).
-    /// - `WITH_TYPES` means new format that supports per-type serialization versions,
-    ///   where `string_serialization_version` is currently the only one specialization.
-    ///
-    /// If `string_serialization_version` is SINGLE_STREAM, there is no effective type specialization
-    /// in use, so writing `WITH_TYPES` would add no benefit but reduce compatibility.
-    /// Falling back to `BASIC` keeps the output fully compatible with older servers.
-    if (settings.string_serialization_version == MergeTreeStringSerializationVersion::SINGLE_STREAM)
-        settings.version = MergeTreeSerializationInfoVersion::BASIC;
+    /// If all type-specific versions remain at their defaults, downgrade to BASIC to avoid emitting a WITH_TYPES format
+    /// unnecessarily. This prevents an avoidable version bump and preserves maximum compatibility with older servers.
+    settings.tryDowngradeToBasic();
 }
 
 SerializationInfoByName::SerializationInfoByName(const NamesAndTypesList & columns, const SerializationInfo::Settings & settings_)
