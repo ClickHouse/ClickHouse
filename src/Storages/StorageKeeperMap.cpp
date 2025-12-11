@@ -896,6 +896,9 @@ void StorageKeeperMap::dropTableFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, St
     if (!zookeeper->exists(zk_dropped_path_to_remove))
         ops.emplace_back(zkutil::makeCreateRequest(zk_dropped_path_to_remove, "", zkutil::CreateMode::Persistent));
 
+    if (!zookeeper->exists(zk_dropped_lock_version_path))
+        ops.emplace_back(zkutil::makeCreateRequest(zk_dropped_lock_version_path, "", zkutil::CreateMode::Persistent));
+
     ops.emplace_back(zkutil::makeCreateRequest(zk_dropped_lock_path_to_remove, "", zkutil::CreateMode::Ephemeral));
     auto code = zookeeper->tryMulti(ops, responses);
 
@@ -1012,7 +1015,12 @@ void StorageKeeperMap::drop()
     ops.emplace_back(zkutil::makeRemoveRequest(zk_tables_path, -1));
     ops.emplace_back(zkutil::makeCreateRequest(zk_dropped_path, "", zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(zk_dropped_lock_path, "", zkutil::CreateMode::Ephemeral));
-    ops.emplace_back(zkutil::makeSetRequest(zk_dropped_lock_version_path, table_unique_id, -1));
+
+    /// 'zk_dropped_lock_version_path' node was added in 25.1, so we need to check if it exists
+    if (client->exists(zk_dropped_lock_version_path))
+        ops.emplace_back(zkutil::makeSetRequest(zk_dropped_lock_version_path, table_unique_id, -1));
+    else
+        ops.emplace_back(zkutil::makeCreateRequest(zk_dropped_lock_version_path, table_unique_id, zkutil::CreateMode::Persistent));
 
     auto code = client->tryMulti(ops, responses);
 

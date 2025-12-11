@@ -24,11 +24,12 @@ struct PrewhereExprStep
 {
     enum Type
     {
+        None,
         Filter,
         Expression,
     };
 
-    Type type = Type::Filter;
+    Type type = Type::None;
     ExpressionActionsPtr actions;
     String filter_column_name;
 

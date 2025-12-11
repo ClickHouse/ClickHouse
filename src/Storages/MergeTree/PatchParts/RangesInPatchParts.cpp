@@ -298,12 +298,12 @@ MaybeMinMaxStats getPatchMinMaxStats(const DataPartPtr & patch_part, const MarkR
         if (ranges[i].begin == last_mark)
             continue;
 
-        reader.read(ranges[i].begin, granule);
+        reader.read(ranges[i].begin, nullptr, granule);
         std::tie(stats.min, stats.max) = getMinMaxValues(*granule);
 
         for (size_t j = ranges[i].begin + 1; j < last_mark; ++j)
         {
-            reader.read(j, granule);
+            reader.read(j, nullptr, granule);
             auto [min, max] = getMinMaxValues(*granule);
 
             stats.min = std::min(stats.min, min);

@@ -144,6 +144,10 @@ protected:
         {
             findYTsaurusStorageTableEngineSecretArguments();
         }
+        else if (function->name() == "arrowflight")
+        {
+            findArrowFlightSecretArguments();
+        }
     }
 
     void findMySQLFunctionSecretArguments()
@@ -209,6 +213,20 @@ protected:
             // Redis('host:port', 'db_index', 'password', 'pool_size')
             markSecretArgument(2, false);
             return;
+        }
+    }
+
+    void findArrowFlightSecretArguments()
+    {
+        if (isNamedCollectionName(0))
+        {
+            /// ArrowFlight(named_collection, ..., password = 'password')
+            findSecretNamedArgument("password", 1);
+        }
+        else
+        {
+            /// ArrowFlight('host:port', 'dataset', 'username', 'password')
+            markSecretArgument(3);
         }
     }
 
@@ -535,6 +553,10 @@ protected:
         else if (engine_name == "YTsaurus")
         {
             findYTsaurusStorageTableEngineSecretArguments();
+        }
+        else if (engine_name == "ArrowFlight")
+        {
+            findArrowFlightSecretArguments();
         }
     }
 

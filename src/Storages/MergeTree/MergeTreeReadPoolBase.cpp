@@ -28,6 +28,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     RangesInDataParts && parts_,
     MutationsSnapshotPtr mutations_snapshot_,
     VirtualFields shared_virtual_fields_,
+    const IndexReadTasks & index_read_tasks_,
     const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
     const ExpressionActionsSettings & actions_settings_,
@@ -40,6 +41,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , parts_ranges(std::move(parts_))
     , mutations_snapshot(std::move(mutations_snapshot_))
     , shared_virtual_fields(std::move(shared_virtual_fields_))
+    , index_read_tasks(index_read_tasks_)
     , storage_snapshot(storage_snapshot_)
     , prewhere_info(prewhere_info_)
     , actions_settings(actions_settings_)
@@ -190,6 +192,7 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
             column_names,
             prewhere_info,
             read_task_info.mutation_steps,
+            index_read_tasks,
             actions_settings,
             reader_settings,
             /*with_subcolumns=*/ true);
@@ -211,6 +214,7 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
             ranges_in_patch_parts.addPart(part_with_ranges.data_part, read_task_info.patch_parts, part_with_ranges.ranges);
         }
 
+        read_task_info.index_read_tasks = index_read_tasks;
         read_task_info.const_virtual_fields = shared_virtual_fields;
         read_task_info.const_virtual_fields.emplace("_part_index", read_task_info.part_index_in_query);
         read_task_info.const_virtual_fields.emplace("_part_starting_offset", read_task_info.part_starting_offset_in_query);
@@ -322,6 +326,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
     else
     {
         task_readers = previous_task->releaseReaders();
+        task_readers.updateAllMarkRanges(ranges);
     }
 
     return createTask(read_info, std::move(task_readers), std::move(ranges), std::move(patches_ranges));

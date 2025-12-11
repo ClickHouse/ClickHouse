@@ -191,12 +191,17 @@ bool BackgroundSchedulePoolTaskInfo::scheduleImpl(std::lock_guard<std::mutex> & 
     return true;
 }
 
-Coordination::WatchCallback BackgroundSchedulePoolTaskInfo::getWatchCallback()
+Coordination::WatchCallbackPtr BackgroundSchedulePoolTaskInfo::getWatchCallback()
 {
-     return [task = shared_from_this()](const Coordination::WatchResponse &)
-     {
-        task->schedule();
-     };
+    /// We cannot initialize it inside ctor, since weak_from_this() will return empty ptr, that will never become valid (shared_from_this() will throw)
+    callOnce(watch_callback_initialized, [&] {
+        watch_callback = std::make_shared<Coordination::WatchCallback>([task_weak = weak_from_this()](const Coordination::WatchResponse &)
+        {
+            if (auto task = task_weak.lock())
+                task->schedule();
+        });
+    });
+    return watch_callback;
 }
 
 

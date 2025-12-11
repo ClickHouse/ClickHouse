@@ -36,3 +36,5 @@ Request	0	Get	/test/01158/default/rmt/blocks/all_6308706741995381342_24957917704
 Response	0	Get	/test/01158/default/rmt/blocks/all_6308706741995381342_2495791770474910886	0	0	\N	0	0	ZOK	\N	\N		0	0	9	0
 duration_microseconds
 1
+aggregated_zookeeper_log
+1	1

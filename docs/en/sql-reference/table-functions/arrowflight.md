@@ -13,13 +13,17 @@ Allows to perform queries on data exposed via an [Apache Arrow Flight](../../int
 **Syntax**
 
 ```sql
-arrowFlight('host:port', 'dataset_name')
+arrowFlight('host:port', 'dataset_name' [, 'username', 'password'])
 ```
 
 **Arguments**
 
 * `host:port` — Address of the Arrow Flight server. [String](../../sql-reference/data-types/string.md).
 * `dataset_name` — Name of the dataset or descriptor available on the Arrow Flight server. [String](../../sql-reference/data-types/string.md).
+* `username` - Username to use with basic HTTP style authentication.
+* `password` - Password to use with basic HTTP style authentication.
+If `username` and `password` are not specified, it means that authentication is not used
+(that will work only if the Arrow Flight server allows it).
 
 **Returned value**
 

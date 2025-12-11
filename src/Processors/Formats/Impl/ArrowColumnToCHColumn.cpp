@@ -78,6 +78,7 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_COLUMN;
     extern const int UNKNOWN_EXCEPTION;
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 /// Inserts numeric data right into internal column data to reduce an overhead
@@ -1121,7 +1122,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
 
             auto nested_column = readColumnFromArrowColumn(arrow_nested_column,
                 column_name,
-                Nested::concatenateName(full_column_name, "list.element"),
+                full_column_name,
                 dictionary_infos,
                 nested_type_hint,
                 is_nested_nullable_column,
@@ -1211,12 +1212,9 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 {
                     chassert(clickhouse_columns_to_parquet);
 
-                    auto column_to_search = full_column_name;
-                    if (column_to_search.ends_with("list.element"))
-                        column_to_search = column_to_search.substr(0, column_to_search.size() - 13);
                     /// Full name of the parquet column.
                     /// For example, if the column name is "a" and the field name in the structure is "b", the full name will be "a.b".
-                    auto full_name = clickhouse_columns_to_parquet->at(column_to_search);
+                    auto full_name = clickhouse_columns_to_parquet->at(full_column_name);
                     full_name += "." + field_name;
                     if (auto it = parquet_columns_to_clickhouse->find(full_name); it != parquet_columns_to_clickhouse->end())
                     {
@@ -1559,7 +1557,18 @@ Chunk ArrowColumnToCHColumn::arrowTableToCHChunk(
         auto arrow_field = table->schema()->GetFieldByName(column_name);
 
         if (parquet_columns_to_clickhouse)
-            column_name = parquet_columns_to_clickhouse->at(column_name);
+        {
+            auto column_name_it = parquet_columns_to_clickhouse->find(column_name);
+            if (column_name_it == parquet_columns_to_clickhouse->end())
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Column '{}' is not presented in input data. Column name mapping is: {}",
+                    column_name,
+                    parquet_columns_to_clickhouse->size());
+            }
+            column_name = column_name_it->second;
+        }
 
         if (case_insensitive_matching)
             boost::to_lower(column_name);

@@ -8,9 +8,10 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 COPY flight_server.py /app/
+COPY run.sh /app/
 
 RUN pip install --no-cache-dir pyarrow
 
-EXPOSE 5005
+EXPOSE 5005 5006
 
-CMD ["python", "flight_server.py"]
+CMD ["/bin/bash", "run.sh"]

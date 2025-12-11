@@ -129,7 +129,7 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
 }
 }
 
-void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata, ContextPtr context)
+void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata, ContextPtr context, const bool validate_new_create_query)
 {
     auto & ast_create_query = query->as<ASTCreateQuery &>();
 
@@ -219,7 +219,8 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
     else
         ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(metadata.comment));
 
-    validateCreateQuery(ast_create_query, context);
+    if (validate_new_create_query)
+        validateCreateQuery(ast_create_query, context);
 }
 
 

@@ -63,11 +63,18 @@ This setting is configured by default as:
 
 ## bcrypt_workfactor {#bcrypt_workfactor}
 
-Work factor for the bcrypt_password authentication type which uses the [Bcrypt algorithm](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/).
+Work factor for the `bcrypt_password` authentication type which uses the [Bcrypt algorithm](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/).
+The work factor defines the amount of computations and time needed to compute the hash and verify the password.
 
 ```xml
 <bcrypt_workfactor>12</bcrypt_workfactor>
 ```
+
+:::warning
+For applications with high-frequency authentication,
+consider alternative authentication methods due to
+bcrypt's computational overhead at higher work factors.
+:::
 
 ## table_engines_require_grant {#table_engines_require_grant}
 

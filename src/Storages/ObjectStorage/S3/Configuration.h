@@ -19,7 +19,7 @@ public:
     static constexpr auto type_name = "s3";
     static constexpr auto namespace_name = "bucket";
     /// All possible signatures for S3 storage with structure argument (for example for s3 table function).
-    static constexpr auto max_number_of_arguments_with_structure = 9;
+    static constexpr auto max_number_of_arguments_with_structure = 10;
     static constexpr auto signatures_with_structure =
         " - url\n"
         " - url, NOSIGN\n"
@@ -41,10 +41,11 @@ public:
         " - url, access_key_id, secret_access_key, session_token, format, structure, compression_method, partition_strategy\n"
         " - url, access_key_id, secret_access_key, session_token, format, structure, partition_strategy, partition_columnns_in_data_file\n"
         " - url, access_key_id, secret_access_key, session_token, format, structure, compression_method, partition_strategy, partition_columnns_in_data_file\n"
+        " - url, access_key_id, secret_access_key, session_token, format, structure, compression_method, partition_strategy, partition_columnns_in_data_file, storage_class_name\n"
         "All signatures supports optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
 
     /// All possible signatures for S3 storage without structure argument (for example for S3 table engine).
-    static constexpr auto max_number_of_arguments_without_structure = 8;
+    static constexpr auto max_number_of_arguments_without_structure = 9;
     static constexpr auto signatures_without_structure =
         " - url\n"
         " - url, NOSIGN\n"
