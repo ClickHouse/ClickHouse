@@ -3447,20 +3447,28 @@ void Context::loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::Abstr
 const IUserDefinedSQLObjectsStorage & Context::getUserDefinedSQLObjectsStorage() const
 {
     callOnce(shared->user_defined_sql_objects_storage_initialized, [&] {
-        shared->user_defined_sql_objects_storage = createUserDefinedSQLObjectsStorage(getGlobalContext());
+        auto value = createUserDefinedSQLObjectsStorage(getGlobalContext());
+        SharedLockGuard lock(shared->mutex);
+        shared->user_defined_sql_objects_storage = value;
     });
 
     SharedLockGuard lock(shared->mutex);
+    if (!shared->user_defined_sql_objects_storage)
+        throw Exception(ErrorCodes::ABORTED, "Server shutdown is called");
     return *shared->user_defined_sql_objects_storage;
 }
 
 IUserDefinedSQLObjectsStorage & Context::getUserDefinedSQLObjectsStorage()
 {
     callOnce(shared->user_defined_sql_objects_storage_initialized, [&] {
-        shared->user_defined_sql_objects_storage = createUserDefinedSQLObjectsStorage(getGlobalContext());
+        auto value = createUserDefinedSQLObjectsStorage(getGlobalContext());
+        std::lock_guard lock(shared->mutex);
+        shared->user_defined_sql_objects_storage = value;
     });
 
     std::lock_guard lock(shared->mutex);
+    if (!shared->user_defined_sql_objects_storage)
+        throw Exception(ErrorCodes::ABORTED, "Server shutdown is called");
     return *shared->user_defined_sql_objects_storage;
 }
 
@@ -3473,10 +3481,14 @@ void Context::setUserDefinedSQLObjectsStorage(std::unique_ptr<IUserDefinedSQLObj
 IWorkloadEntityStorage & Context::getWorkloadEntityStorage() const
 {
     callOnce(shared->workload_entity_storage_initialized, [&] {
-        shared->workload_entity_storage = createWorkloadEntityStorage(getGlobalContext());
+        auto value = = createWorkloadEntityStorage(getGlobalContext());
+        std::lock_guard lock(shared->mutex);
+        shared->workload_entity_storage = std::move(value);
     });
 
     std::lock_guard lock(shared->mutex);
+    if (!shared->workload_entity_storage)
+        throw Exception(ErrorCodes::ABORTED, "Server shutdown is called");
     return *shared->workload_entity_storage;
 }
 
