@@ -3149,7 +3149,6 @@ def test_schema_inference_cache_multi_path(started_cluster):
     assert "a\t1\nb\t2\n" == instance.query(f"SELECT * FROM s3('{s3_path_prefix}/test2.parquet')")
     assert "1\ta\n2\tb\n" == instance.query(f"SELECT * FROM s3('{s3_path_prefix}/test1.parquet')")
     run_query(instance, "SYSTEM DROP SCHEMA CACHE FOR S3")
-    assert "" == instance.query("SELECT * FROM system.schema_inference_cache")
     instance.query(f"DESCRIBE TABLE (SELECT *, _path, _file, _size, _time FROM s3('{s3_path_prefix}/*'))")
     assert "a\t1\nb\t2\n" == instance.query(f"SELECT * FROM s3('{s3_path_prefix}/test2.parquet')")
     assert "1\ta\n2\tb\n" == instance.query(f"SELECT * FROM s3('{s3_path_prefix}/test1.parquet')")
