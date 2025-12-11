@@ -144,11 +144,10 @@ public:
 private:
     LoggerPtr log;
     /// Called for each individual entry being evicted from cache
-    void onEntryRemoval(const size_t weight_loss, const MappedPtr & mapped_ptr) override
+    void onEntryRemoval(const size_t weight_loss, const MappedPtr &) override
     {
         LOG_DEBUG(log, "cache eviction");
         ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheWeightLost, weight_loss);
-        UNUSED(mapped_ptr);
     }
 };
 
@@ -231,11 +230,10 @@ public:
 private:
     LoggerPtr log;
     /// Called for each individual entry being evicted from cache
-    void onEntryRemoval(const size_t weight_loss, const MappedPtr & mapped_ptr) override
+    void onEntryRemoval(const size_t weight_loss, const MappedPtr &) override
     {
         LOG_DEBUG(log, "cache eviction");
         ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheWeightLost, weight_loss);
-        UNUSED(mapped_ptr);
     }
 };
 
