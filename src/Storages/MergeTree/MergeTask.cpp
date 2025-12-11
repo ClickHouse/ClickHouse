@@ -1202,6 +1202,7 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
     for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
     {
         auto plan_for_part = std::make_unique<QueryPlan>();
+
         createReadFromPartStep(
             MergeTreeSequentialSourceType::Merge,
             *plan_for_part,
