@@ -192,6 +192,7 @@ namespace ServerSetting
     extern const ServerSettingsBool asynchronous_metrics_keeper_metrics_only;
     extern const ServerSettingsBool async_insert_queue_flush_on_shutdown;
     extern const ServerSettingsUInt64 async_insert_threads;
+    extern const ServerSettingsUInt64 async_insert_parse_threads;
     extern const ServerSettingsBool async_load_databases;
     extern const ServerSettingsBool async_load_system_database;
     extern const ServerSettingsUInt64 background_buffer_flush_schedule_pool_size;
@@ -2654,7 +2655,8 @@ try
         global_context->setAsynchronousInsertQueue(std::make_shared<AsynchronousInsertQueue>(
             global_context,
             server_settings[ServerSetting::async_insert_threads],
-            server_settings[ServerSetting::async_insert_queue_flush_on_shutdown]));
+            server_settings[ServerSetting::async_insert_queue_flush_on_shutdown],
+            server_settings[ServerSetting::async_insert_parse_threads]));
     }
 
     /// Set path for format schema files
