@@ -253,6 +253,7 @@ ObjectStorageQueueOrderedFileMetadata::LastProcessedInfo ObjectStorageQueueOrder
     zkutil::ZooKeeper::MultiTryGetResponse responses;
 
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log_);
+    zk_retry.resetFailures();
     zk_retry.retryLoop([&]
     {
         responses = ObjectStorageQueueMetadata::getZooKeeper(log_)->tryGet(paths);

@@ -568,6 +568,12 @@ void StorageObjectStorage::truncate(
                         path.path);
     }
 
+    if (configuration->isDataLakeConfiguration())
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Truncate is not supported for data lake engine");
+    }
+
     if (path.hasGlobs())
     {
         throw Exception(
