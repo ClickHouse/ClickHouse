@@ -268,8 +268,6 @@ struct StatisticsStringCopy
 
     void merge(const StatisticsStringCopy & s)
     {
-        if (s.min.empty())
-            return;
         addMin(s.min);
         addMax(s.max);
     }
