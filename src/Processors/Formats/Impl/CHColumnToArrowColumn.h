@@ -51,7 +51,8 @@ public:
         const std::vector<Chunk> & chunks,
         const Settings & settings,
         size_t columns_num,
-        std::shared_ptr<arrow::Schema> schema);
+        std::shared_ptr<arrow::Schema> schema,
+        std::optional<std::reference_wrapper<std::unordered_map<std::string, MutableColumnPtr>>> cached_dictionary_values = {});
 
     /// Makes a copy of this converter.
     /// This can be useful to prepare for conversion in multiple threads.
@@ -88,6 +89,11 @@ private:
     /// because LowCardinality column from header always has indexes type UInt8, so, we should get
     /// proper indexes type from first chunk of data.
     std::shared_ptr<arrow::Schema> arrow_schema;
+
+    /// Map {column name : arrow dictionary}.
+    /// To avoid converting dictionary from LowCardinality to Arrow
+    /// Dictionary every chunk we save it and reuse.
+    std::unordered_map<std::string, MutableColumnPtr> dictionary_values;
 };
 
 }

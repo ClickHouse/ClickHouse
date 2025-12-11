@@ -1421,12 +1421,14 @@ namespace DB
         const std::vector<Chunk> & chunks,
         const Settings & settings,
         size_t columns_num,
-        std::shared_ptr<arrow::Schema> schema)
+        std::shared_ptr<arrow::Schema> schema,
+        std::optional<std::reference_wrapper<std::unordered_map<std::string, MutableColumnPtr>>> cached_dictionary_values)
     {
         /// Map {column name : arrow dictionary}.
         /// To avoid converting dictionary from LowCardinality to Arrow
         /// Dictionary every chunk we save it and reuse.
-        std::unordered_map<std::string, MutableColumnPtr> dictionary_values;
+        std::unordered_map<std::string, MutableColumnPtr> local_dictionary_values;
+        std::unordered_map<std::string, MutableColumnPtr> & dictionary_values = cached_dictionary_values.value_or(local_dictionary_values);
 
         std::vector<arrow::ArrayVector> table_data(columns_num);
 
@@ -1494,7 +1496,7 @@ namespace DB
         const Chunk * chunk_to_initialize_schema = chunks.empty() ? nullptr : chunks.data();
         initializeArrowSchema(chunk_to_initialize_schema, columns_num, column_to_field_id);
 
-        res = chunkToArrowTable(header_columns, format_name, chunks, settings, columns_num, arrow_schema);
+        res = chunkToArrowTable(header_columns, format_name, chunks, settings, columns_num, arrow_schema, dictionary_values);
     }
 }
 
