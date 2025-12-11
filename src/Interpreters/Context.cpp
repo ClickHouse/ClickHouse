@@ -6756,6 +6756,10 @@ void Context::setMergeTreeReadTaskCallback(MergeTreeReadTaskCallback && callback
     merge_tree_read_task_callback = callback;
 }
 
+bool Context::hasMergeTreeAllRangesCallback() const
+{
+    return merge_tree_all_ranges_callback.has_value();
+}
 
 MergeTreeAllRangesCallback Context::getMergeTreeAllRangesCallback() const
 {
