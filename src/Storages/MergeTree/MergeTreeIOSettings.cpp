@@ -91,7 +91,7 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
 {
 }
 
-MergeTreeReaderSettings MergeTreeReaderSettings::createForQuery(const ContextPtr & context, const MergeTreeSettings & /*storage_settings*/, const SelectQueryInfo & query_info)
+MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
 
@@ -99,7 +99,6 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createForQuery(const ContextPtr
     result.read_settings = context->getReadSettings();
     result.save_marks_in_cache = true;
     result.checksum_on_read = settings[Setting::checksum_on_read];
-    result.read_in_order = query_info.input_order_info != nullptr;
     result.apply_deleted_mask = settings[Setting::apply_deleted_mask];
     result.use_asynchronous_read_from_pool = settings[Setting::allow_asynchronous_read_from_io_pool_for_merge_tree]
         && (settings[Setting::max_streams_to_max_threads_ratio] > 1 || settings[Setting::max_streams_for_merge_tree_reading] > 1);
@@ -115,6 +114,13 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createForQuery(const ContextPtr
     result.filesystem_prefetches_limit = settings[Setting::filesystem_prefetches_limit];
     result.enable_analyzer = settings[Setting::allow_experimental_analyzer];
     result.load_marks_asynchronously = settings[Setting::load_marks_asynchronously];
+    return result;
+}
+
+MergeTreeReaderSettings MergeTreeReaderSettings::createForQuery(const ContextPtr & context, const MergeTreeSettings & /*storage_settings*/, const SelectQueryInfo & query_info)
+{
+    auto result = createFromContext(context);
+    result.read_in_order = query_info.input_order_info != nullptr;
     return result;
 }
 

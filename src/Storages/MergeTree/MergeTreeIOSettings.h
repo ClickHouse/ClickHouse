@@ -68,6 +68,7 @@ struct MergeTreeReaderSettings
     bool enable_analyzer = false;
     bool load_marks_asynchronously = false;
 
+    static MergeTreeReaderSettings createFromContext(const ContextPtr & context);
     /// Note storage_settings used only in private, do not remove
     static MergeTreeReaderSettings createForQuery(const ContextPtr & context, const MergeTreeSettings & storage_settings, const SelectQueryInfo & query_info);
     static MergeTreeReaderSettings createForMergeMutation(ReadSettings read_settings);
