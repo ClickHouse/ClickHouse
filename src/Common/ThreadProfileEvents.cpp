@@ -22,7 +22,7 @@
 
 #include <base/errnoToString.h>
 #include <Common/logger_useful.h>
-
+#include <Core/AccurateComparison.h>
 
 namespace ProfileEvents
 {
@@ -562,7 +562,11 @@ void PerfEventsCounters::finalizeProfileEvents(ProfileEvents::Counters & profile
         const auto running = current_value.time_running - previous_value.time_running;
         const auto scaled_value = (current_value.value - previous_value.value) * enabled / std::max(1.f, float(running));
 
-        const auto delta = static_cast<UInt64>(scaled_value);
+        UInt64 delta = 0;
+
+        // If no overflow happens, then the value is converted to UInt64
+        accurate::convertNumeric<Float64, UInt64, false>(scaled_value, delta);
+
         if (min_enabled_time > enabled)
         {
             min_enabled_time = enabled;
