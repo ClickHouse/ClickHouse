@@ -4,7 +4,6 @@ sidebar_label: 'Query condition cache'
 sidebar_position: 64
 slug: /operations/query-condition-cache
 title: 'Query condition cache'
-doc_type: 'guide'
 ---
 
 # Query condition cache

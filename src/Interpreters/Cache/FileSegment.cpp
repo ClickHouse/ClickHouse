@@ -654,7 +654,7 @@ void FileSegment::completePartAndResetDownloader()
     LOG_TEST(log, "Complete batch. ({})", getInfoForLogUnlocked(lk));
 }
 
-void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key, const FileSegmentGuard::Lock & lock, bool force_shrink_to_downloaded_size)
+void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key, const FileSegmentGuard::Lock & lock)
 {
     chassert(downloaded_size);
     chassert(fs::file_size(getPath()) > 0);
@@ -674,11 +674,9 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     }
 
     size_t result_size = downloaded_size;
-    if (!force_shrink_to_downloaded_size)
-    {
-        size_t aligned_downloaded_size = FileCacheUtils::roundUpToMultiple(downloaded_size, cache->getBoundaryAlignment());
-        result_size = std::min(aligned_downloaded_size, range().size());
-    }
+    size_t aligned_downloaded_size = FileCacheUtils::roundUpToMultiple(downloaded_size, cache->getBoundaryAlignment());
+    if (aligned_downloaded_size < range().size())
+        result_size = aligned_downloaded_size;
 
     chassert(result_size <= range().size());
     chassert(result_size >= downloaded_size);
@@ -688,9 +686,6 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
         /// Nothing to resize;
         return;
     }
-
-    LOG_TEST(log, "Shrinking file segment {} -> {} (downloaded size: {})",
-             range().size(), result_size, downloaded_size.load());
 
     if (downloaded_size == result_size)
         setDownloadState(State::DOWNLOADED, lock);
@@ -736,35 +731,23 @@ size_t FileSegment::getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard:
     return desired_size - downloaded_size;
 }
 
-void FileSegment::complete(FileSegmentPtr && file_segment, bool allow_background_download, bool force_shrink_to_downloaded_size)
+void FileSegment::complete(bool allow_background_download)
 {
-    if (!file_segment)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is nullptr");
-
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentCompleteMicroseconds);
 
-    if (file_segment->isCompleted())
+    if (isCompleted())
         return;
 
-    auto locked_key = file_segment->lockKeyMetadata(false);
+    auto locked_key = lockKeyMetadata(false);
     if (!locked_key)
     {
         /// If we failed to lock a key, it must be in detached state.
-        if (file_segment->isDetached())
+        if (isDetached())
             return;
 
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot complete file segment: {}", file_segment->getInfoForLog());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot complete file segment: {}", getInfoForLog());
     }
 
-    SCOPE_EXIT_SAFE(
-        file_segment.reset();
-    );
-
-    file_segment->complete(locked_key, allow_background_download, force_shrink_to_downloaded_size);
-}
-
-void FileSegment::complete(const LockedKeyPtr & locked_key, bool allow_background_download, bool force_shrink_to_downloaded_size)
-{
     auto segment_lock = lock();
 
     if (isCompleted(false))
@@ -780,8 +763,8 @@ void FileSegment::complete(const LockedKeyPtr & locked_key, bool allow_backgroun
     });
 
     LOG_TEST(
-        log, "Complete based on current state (is_last_holder: {}, force shrink: {}, {})",
-        is_last_holder, force_shrink_to_downloaded_size, getInfoForLogUnlocked(segment_lock));
+        log, "Complete based on current state (is_last_holder: {}, {})",
+        is_last_holder, getInfoForLogUnlocked(segment_lock));
 
     if (is_downloader)
     {
@@ -848,7 +831,7 @@ void FileSegment::complete(const LockedKeyPtr & locked_key, bool allow_backgroun
                     /// preventing other operations on the same objects
                     remote_file_reader.reset();
 
-                    shrinkFileSegmentToDownloadedSize(*locked_key, segment_lock, force_shrink_to_downloaded_size);
+                    shrinkFileSegmentToDownloadedSize(*locked_key, segment_lock);
                 }
             }
             break;
@@ -877,7 +860,7 @@ void FileSegment::complete(const LockedKeyPtr & locked_key, bool allow_backgroun
 
                     remote_file_reader.reset();
 
-                    shrinkFileSegmentToDownloadedSize(*locked_key, segment_lock, force_shrink_to_downloaded_size);
+                    shrinkFileSegmentToDownloadedSize(*locked_key, segment_lock);
                 }
             }
             break;
@@ -910,8 +893,7 @@ String FileSegment::getInfoForLogUnlocked(const FileSegmentGuard::Lock &) const
     info << "current write offset: " << getCurrentWriteOffset() << ", ";
     info << "caller id: " << getCallerId() << ", ";
     info << "kind: " << toString(segment_kind) << ", ";
-    info << "unbound: " << is_unbound << ", ";
-    info << "background download: " << background_download_enabled;
+    info << "unbound: " << is_unbound;
 
     return info.str();
 }
@@ -1208,7 +1190,7 @@ void FileSegmentsHolder::reset()
             /// But actually we would only do that, if those file segments were already read partially by some other thread/query
             /// but they were not put to the download queue, because current thread was holding them in Holder.
             /// So as a culprit, we need to allow to happen what would have happened if we did not exist.
-            file_segment_it = completeAndPopFrontImpl(/*allow_background_download=*/true, /*force_shrink_to_downloaded_size=*/false);
+            file_segment_it = completeAndPopFrontImpl(true);
         }
         catch (...)
         {
@@ -1225,12 +1207,11 @@ FileSegmentsHolder::~FileSegmentsHolder()
     reset();
 }
 
-FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl(bool allow_background_download, bool force_shrink_to_downloaded_size)
+FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl(bool allow_background_download)
 {
-    auto file_segment_it = file_segments.begin();
-    FileSegment::complete(std::move(*file_segment_it), allow_background_download, force_shrink_to_downloaded_size);
+    front().complete(allow_background_download);
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheHoldFileSegments);
-    return file_segments.erase(file_segment_it);
+    return file_segments.erase(file_segments.begin());
 }
 
 FileSegment & FileSegmentsHolder::add(FileSegmentPtr && file_segment)

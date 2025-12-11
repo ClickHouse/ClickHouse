@@ -69,7 +69,7 @@ public:
     using Stack = std::stack<UInt64>;
     /// This queue can grow a lot and lead to OOM. That is why we use non-default
     /// allocator for container which throws exceptions in operator new
-    using DequeWithMemoryTracker = boost::container::devector<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
+    using DequeWithMemoryTracker = std::deque<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
     using Queue = std::queue<ExecutingGraph::Node *, DequeWithMemoryTracker>;
 
     void finish();

@@ -4,7 +4,6 @@ description: 'Returns the cumulative exponential decay over a time series at the
 sidebar_position: 134
 slug: /sql-reference/aggregate-functions/reference/exponentialTimeDecayedCount
 title: 'exponentialTimeDecayedCount'
-doc_type: 'reference'
 ---
 
 ## exponentialTimeDecayedCount {#exponentialtimedecayedcount}

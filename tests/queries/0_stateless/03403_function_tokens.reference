@@ -8,9 +8,10 @@ Ngram tokenizer
 []	Array(String)	1
 ['abc','bc ','c d',' de','def']	Array(String)	1
 ['abc','bc ','c d',' de','def']	Array(String)	1
-[]	Array(String)	1
+['abc def']	Array(String)	1
 Split tokenizer
 []	Array(String)	1
+['  a  bc d']	Array(String)	1
 ['a','bc','d']	Array(String)	1
 ['a','bc','d']	Array(String)	1
 ['a','bc','d']	Array(String)	1
@@ -37,9 +38,3 @@ Split tokenizer
 No-op tokenizer
 []	Array(String)	0
 ['abc def']	Array(String)	0
-['abc','def','foo','bar','baz','code','hello','world']
-Sparse tokenizer
-[]
-['abc','bc ','c d',' de','c de','bc de','def','bc def','ef ','f c',' cb','f cb','ef cb','cba']
-['abc ','bc d','c de',' def','c def','def ','c def ','bc def ','ef c','f cb','ef cb',' cba']
-['bc def ']

@@ -9,7 +9,7 @@ CREATE TABLE tab
 (
     id UInt64,
     doc String,
-    INDEX text_idx doc TYPE text(tokenizer = 'splitByNonAlpha')
+    INDEX text_idx doc TYPE text(tokenizer = 'default')
 )
 ENGINE = MergeTree
 ORDER BY id
