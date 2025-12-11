@@ -255,9 +255,7 @@ double RandomGenerator::randomZeroOne()
 
 String RandomGenerator::nextJSONCol()
 {
-    const String & pick = pickRandomly(jcols);
-
-    return pick;
+    return pickRandomly(jcols);
 }
 
 String RandomGenerator::nextTokenString()
