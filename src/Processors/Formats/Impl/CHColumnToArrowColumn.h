@@ -45,6 +45,8 @@ public:
         const std::optional<std::unordered_map<String, Int64>> & column_to_field_id = std::nullopt
     );
 
+    /// Because an arrow table can only have one dictionary per column, if the returned table is intended to be inserted into a larger table,
+    /// `cached_dictionary_values` should be provided to maintain this limitation.
     static std::shared_ptr<arrow::Table> chunkToArrowTable(
         const ColumnsWithTypeAndName & header_columns,
         const std::string & format_name,
