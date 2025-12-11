@@ -1225,7 +1225,7 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
     /// Check for subcolumns in unknown required columns.
     if (!unknown_required_source_columns.empty() && (!storage || storage->supportsSubcolumns()))
     {
-        for (const NameAndTypePair & pair : source_columns_ordinary)
+        for (const NameAndTypePair & pair : required_source_columns)
         {
             for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
             {
