@@ -22,6 +22,7 @@
 #include <Common/Exception.h>
 #include <Common/XMLUtils.h>
 #include <Common/logger_useful.h>
+#include <Common/HashiCorpVault.h>
 #include <base/errnoToString.h>
 #include <base/sort.h>
 #include <IO/WriteBufferFromString.h>
@@ -306,8 +307,13 @@ void ConfigProcessor::hideRecursive(Poco::XML::Node * config_root)
             if (element.hasAttribute("hide_in_preprocessed") && Poco::NumberParser::parseBool(element.getAttribute("hide_in_preprocessed")))
             {
                 config_root->removeChild(node);
-            } else
+            }
+            else
+            {
+                if (element.hasAttribute("hashicorp_vault_key"))
+                    element.removeAttribute("hashicorp_vault_key");
                 hideRecursive(node);
+            }
         }
         node = next_node;
     }
@@ -617,6 +623,31 @@ void ConfigProcessor::doIncludesRecursive(
         };
 
         process_include(attr_nodes["from_env"], get_env_node, "Env variable is not set: ");
+    }
+
+    if (attr_nodes["from_hashicorp_vault"] && HashiCorpVault::instance().isLoaded())
+    {
+        std::string hashicorp_vault_key_value;
+        if (static_cast<Element *>(node)->hasAttribute("hashicorp_vault_key"))
+            hashicorp_vault_key_value = static_cast<Element *>(node)->getAttribute("hashicorp_vault_key");
+
+        if (hashicorp_vault_key_value.empty())
+            throw Poco::Exception(
+                "Element <" + node->nodeName()
+                + "> has 'from_hashicorp_vault' attribute and does not have valid 'hashicorp_vault_key' attribute");
+
+        XMLDocumentPtr vault_document;
+
+        auto get_vault_node = [&](const std::string & name) -> const Node *
+        {
+            String vault_val = HashiCorpVault::instance().readSecret(name, hashicorp_vault_key_value);
+
+            vault_document = dom_parser.parseString("<from_hashicorp_vault>" + vault_val + "</from_hashicorp_vault>");
+
+            return getRootNode(vault_document.get());
+        };
+
+        process_include(attr_nodes["from_hashicorp_vault"], get_vault_node, "Vault secret is not set: ");
     }
 
     if (included_something)
