@@ -702,7 +702,7 @@ void FuzzConfig::validateClickHouseHealth()
         uint32_t i = 0;
         std::ifstream infile(fuzz_client_out, std::ios::in);
 
-        while (std::getline(infile, buf) && buf.size() > 0 && i < 2)
+        while (std::getline(infile, buf) && !buf.empty() && i < 2)
         {
             buf.erase(std::find_if(buf.rbegin(), buf.rend(), [](unsigned char c) { return !std::isspace(c); }).base(), buf.end());
             const uint32_t val = static_cast<uint32_t>(std::stoul(buf));
