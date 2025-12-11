@@ -416,6 +416,15 @@ BlockIO InterpreterSystemQuery::execute()
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AVRO");
 #endif
+        case Type::DROP_PARQUET_METADATA_CACHE:
+# if USE_PARQUET
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_PARQUET_METADATA_CACHE);
+            system_context->clearParquetMetadataCache();
+            system_context->clearParquetV3MetadataCache();
+            break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for Parquet");
+# endif
         case Type::DROP_PRIMARY_INDEX_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
             system_context->clearPrimaryIndexCache();
@@ -1968,6 +1977,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_CONNECTIONS_CACHE:
         case Type::DROP_MARK_CACHE:
         case Type::DROP_ICEBERG_METADATA_CACHE:
+        case Type::DROP_PARQUET_METADATA_CACHE:
         case Type::DROP_PRIMARY_INDEX_CACHE:
         case Type::DROP_MMAP_CACHE:
         case Type::DROP_QUERY_CONDITION_CACHE:
