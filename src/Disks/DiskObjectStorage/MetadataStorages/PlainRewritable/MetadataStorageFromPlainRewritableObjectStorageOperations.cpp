@@ -83,7 +83,8 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute()
         LOG_TRACE(
             getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"),
             "Materializing virtual directory '{}' with remote path='{}'",
-            path, metadata_object_key);
+            path,
+            metadata_object_key);
     else
         LOG_TRACE(
             getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"),
