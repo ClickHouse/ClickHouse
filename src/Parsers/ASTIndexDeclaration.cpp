@@ -66,23 +66,15 @@ void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & 
 {
     if (auto expr = getExpression())
     {
-        if (part_of_create_index_query)
-        {
-            if (expr->as<ASTExpressionList>())
-            {
-                ostr << "(";
-                expr->format(ostr, s, state, frame);
-                ostr << ")";
-            }
-            else
-                expr->format(ostr, s, state, frame);
-        }
-        else
+        if (!part_of_create_index_query)
         {
             s.writeIdentifier(ostr, name, /*ambiguous=*/false);
             ostr << " ";
-            expr->format(ostr, s, state, frame);
         }
+        /// Always wrap the index expression in parentheses for simplicity
+        ostr << "(";
+        expr->format(ostr, s, state, frame);
+        ostr << ")";
     }
 
     if (auto type = getType())
