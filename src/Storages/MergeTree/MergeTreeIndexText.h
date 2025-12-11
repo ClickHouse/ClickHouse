@@ -11,9 +11,7 @@
 #include <Interpreters/ITokenExtractor.h>
 
 #include <absl/container/flat_hash_map.h>
-
 #include <vector>
-
 #include <roaring.hh>
 
 namespace DB
@@ -112,11 +110,8 @@ struct PostingListRoaringCodec
     };
     UInt8 small_size;
     void add(UInt32 value, PostingListCodecsHolder &);
-    size_t size() const { return isSmall() ? small_size : large.first->cardinality(); }
-    bool isSmall() const { return small_size < max_small_size; }
-    auto & getSmall() { return small; }
-    PostingList & getLarge() const { return *large.first; }
-    size_t serialize(UInt64 header, WriteBuffer &ostr);
+    size_t size() const { return small_size < max_small_size ? small_size : large.first->cardinality(); }
+    size_t serialize(UInt64 header, WriteBuffer & ostr);
 };
 
 using PostingListRoaringCodecPtr = std::shared_ptr<PostingListRoaringCodec>;
@@ -134,7 +129,7 @@ struct PostingListBlockCodec
     PostingsContainer32 * postings;
     PostingListBlockCodec() : postings(nullptr) {}
     void add(UInt32 value, PostingListCodecsHolder &);
-    size_t serialize(UInt64 header, WriteBuffer &ostr);
+    size_t serialize(UInt64 header, WriteBuffer & ostr);
     size_t size() const { return postings->size(); }
 };
 

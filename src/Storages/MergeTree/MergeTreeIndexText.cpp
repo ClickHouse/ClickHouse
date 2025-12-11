@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/formatReadable.h>
@@ -124,7 +123,7 @@ size_t PostingListRoaringCodec::serialize(UInt64 header, WriteBuffer & ostr)
     {
         if (small_size < max_small_size)
         {
-            const auto & array = getSmall();
+            const auto & array = small;
             for (size_t i = 0; i < small_size; ++i)
             {
                 writeVarUInt(array[i], ostr);
@@ -143,7 +142,7 @@ size_t PostingListRoaringCodec::serialize(UInt64 header, WriteBuffer & ostr)
     }
     else
     {
-        chassert(!isSmall());
+        chassert(small_size == max_small_size);
         auto & posting_list = *large.first;
 
         posting_list.runOptimize();
