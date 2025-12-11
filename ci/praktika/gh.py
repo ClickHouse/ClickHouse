@@ -521,7 +521,7 @@ class GH:
             .replace("{", " ")
             .replace("}", " ")
             .replace(",", " ")
-            .replace(":", " ")
+            # .replace(":", " ") pytest test_file.py::test_function has ::
             .replace(";", " ")
             .replace("?", " ")
             .replace("!", " ")
@@ -531,7 +531,7 @@ class GH:
             .replace("=", " ")
             .replace("<", " ")
             .replace(">", " ")
-            .replace(".", " ")
+            # .replace(".", " ") pytest test_file.py::test_function has .
         )
 
         # Clean up multiple consecutive spaces

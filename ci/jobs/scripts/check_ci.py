@@ -218,16 +218,22 @@ class CIFailure:
 
     def create_gh_issue_on_flaky_or_broken_test(self):
         if self.issue_url:
-            assert False, "BUG"
+            assert False, "BUG: Issue URL already exists, cannot create duplicate"
 
         print(repr(self))
+
+        test_name = self.test_name
+        if "[" in self.test_name:
+            # Despite parameter might be valuable for failure reproduction, drop it for simplicity
+            test_name = test_name.split("[")[0]
+
         failure_reason = UserPrompt.get_string(
             "Enter the exact error text from the test output above that identifies the failure.\n"
             "This must be a substring from the output (e.g., 'Logical error', 'Result differs').\n"
             "It will be used to match and group similar failures",
             validator=lambda x: x in self.praktika_result.info,
         )
-        title = f"Flaky test: {self.test_name}"
+        title = f"Flaky test: {test_name}"
         body = f"""\
 Failure reason: {failure_reason}
 CI report: [{self.job_name}]({self.get_job_report_url(pr_number, head_sha, self.job_name)})
@@ -315,6 +321,8 @@ Test output:
             if not re.match(r"^(\d{5}|test)_", self.test_name):
                 raise Exception(f"Unexpected test name format: {self.test_name}")
             search_in_title = self.test_name
+            if "[" in self.test_name:
+                search_in_title = self.test_name.split("[")[0]
             labels = ["flaky test"]
             check_failure_reason = True  # Flag to check if failure reason matches
         elif self.job_type in (JobTypes.BUZZ_FUZZER, JobTypes.AST_FUZZER):
