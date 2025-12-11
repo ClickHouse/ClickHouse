@@ -45,6 +45,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_remove_unused_columns", false, true, "New setting. Add optimization to remove unused columns in query plan."},
             {"query_plan_optimize_join_order_limit", 1, 10, "Allow JOIN reordering with more tables by default"},
             {"iceberg_insert_max_partitions", 100, 100, "New setting."},
+            {"check_query_single_value_result", true, false, "Changed setting to make CHECK TABLE more useful"},
             {"use_paimon_partition_pruning", false, false, "New setting."},
             {"use_skip_indexes_for_disjunctions", false, true, "New setting"},
             {"allow_statistics_optimize", false, true, "Enable this optimization by default."},
@@ -64,7 +65,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"serialize_string_in_memory_with_zero_byte", true, true, "New setting"},
             {"optimize_inverse_dictionary_lookup", false, true, "New setting"},
             {"type_json_skip_invalid_typed_paths", false, false, "Allow skipping typed paths that fail type coercion in JSON columns"},
+            {"query_plan_optimize_join_order_algorithm", "greedy", "greedy", "New experimental setting."},
             {"s3_path_filter_limit", 0, 1000, "New setting"},
+            {"distributed_cache_use_clients_cache_for_read", true, true, "New setting"},
+            {"distributed_cache_use_clients_cache_for_write", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
