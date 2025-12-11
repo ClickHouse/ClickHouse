@@ -926,8 +926,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     prewhere_info = std::make_shared<PrewhereInfo>();
                     prewhere_info->prewhere_actions = prewhere_actions->clone();
                     prewhere_info->prewhere_column_name = prewhere_actions->getOutputs().at(0)->result_name;
-                    /// Do not remove prewhere column if it is the only column to read
-                    bool keep_prewhere_column = columns_names.size() == 1 && columns_names.at(0) == prewhere_info->prewhere_column_name;
+                    /// Do not remove prewhere column if it is needed later
+                    bool keep_prewhere_column = std::ranges::contains(columns_names, prewhere_info->prewhere_column_name);
                     prewhere_info->remove_prewhere_column = !keep_prewhere_column;
                     prewhere_info->need_filter = true;
                 }
