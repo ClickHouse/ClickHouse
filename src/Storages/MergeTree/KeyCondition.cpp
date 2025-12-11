@@ -2660,7 +2660,7 @@ KeyCondition::Description KeyCondition::getDescription() const
   * In the implementation, notice that we will need to create `Range` objects many many times, especially for suffix of the
   * hyperrectangle. However, this is a problem if PK is very long but filter only uses few key columns only because creating
   * and doing operations with `Range` object is very slow.
-  * That's why we use sparse reprensentation of hyperrectangle by only storing and processing
+  * That's why we use sparse representation of hyperrectangle by only storing and processing
   * information about key columns that are used by some RPNElement (and whose marks were also loaded in memory).
   *
   * It is important to note that even if we only have sparse representation of hyperrectangle, we actually enumerate
