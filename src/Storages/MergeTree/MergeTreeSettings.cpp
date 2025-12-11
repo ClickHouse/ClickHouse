@@ -62,7 +62,7 @@ namespace ErrorCodes
     DECLARE(UInt64, max_file_name_length, 127, "The maximal length of the file name to keep it as is without hashing", 0) \
     DECLARE(UInt64, min_bytes_for_full_part_storage, 0, "Only available in ClickHouse Cloud. Minimal uncompressed size in bytes to use full type of storage for data part instead of packed", 0) \
     DECLARE(UInt64, min_rows_for_full_part_storage, 0, "Only available in ClickHouse Cloud. Minimal number of rows to use full type of storage for data part instead of packed", 0) \
-    DECLARE(NonZeroUInt64, compact_parts_max_bytes_to_buffer, 128 * 1024 * 1024, "Only available in ClickHouse Cloud. Maximal number of bytes to write in a single stripe in compact parts", 0) \
+    DECLARE(UInt64, compact_parts_max_bytes_to_buffer, 128 * 1024 * 1024, "Only available in ClickHouse Cloud. Maximal number of bytes to write in a single stripe in compact parts", 0) \
     DECLARE(UInt64, compact_parts_max_granules_to_buffer, 128, "Only available in ClickHouse Cloud. Maximal number of granules to write in a single stripe in compact parts", 0) \
     DECLARE(UInt64, compact_parts_merge_max_bytes_to_prefetch_part, 16 * 1024 * 1024, "Only available in ClickHouse Cloud. Maximal size of compact part to read it in a whole to memory during merge.", 0) \
     DECLARE(UInt64, merge_max_bytes_to_prewarm_cache, 1ULL * 1024 * 1024 * 1024, "Only available in ClickHouse Cloud. Maximal size of part (compact or packed) to prewarm cache during merge.", 0) \
@@ -136,7 +136,7 @@ namespace ErrorCodes
     DECLARE(Milliseconds, sleep_before_commit_local_part_in_replicated_table_ms, 0, "For testing. Do not change it.", 0) \
     DECLARE(Bool, optimize_row_order, false, "Allow reshuffling of rows during part inserts and merges to improve the compressibility of the new part", 0) \
     DECLARE(Bool, use_adaptive_write_buffer_for_dynamic_subcolumns, true, "Allow to use adaptive writer buffers during writing dynamic subcolumns to reduce memory usage", 0) \
-    DECLARE(NonZeroUInt64, adaptive_write_buffer_initial_size, 16 * 1024, "Initial size of an adaptive write buffer", 0) \
+    DECLARE(UInt64, adaptive_write_buffer_initial_size, 16 * 1024, "Initial size of an adaptive write buffer", 0) \
     DECLARE(UInt64, min_free_disk_bytes_to_perform_insert, 0, "Minimum free disk space bytes to perform an insert.", 0) \
     DECLARE(Float, min_free_disk_ratio_to_perform_insert, 0.0, "Minimum free disk space ratio to perform an insert.", 0) \
     \
