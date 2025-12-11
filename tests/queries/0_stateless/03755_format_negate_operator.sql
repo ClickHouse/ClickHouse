@@ -1,3 +1,6 @@
+-- Old analyzer performs type checks and explain queries throw errors
+SET enable_analyzer=1;
+
 EXPLAIN SYNTAX SELECT (-(2)).1;
 EXPLAIN SYNTAX SELECT (-'a').1;
 EXPLAIN SYNTAX SELECT 1 FROM foo(bar[NOT 2 > 1]);
