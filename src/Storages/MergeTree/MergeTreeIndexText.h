@@ -147,15 +147,13 @@ struct PostingListBuilder
 {
 public:
     PostingListBuilder() = default;
-    ALWAYS_INLINE void initializeIfNeed(bool compress)
+    ALWAYS_INLINE void initialize(bool compress)
     {
-        if (std::holds_alternative<std::monostate>(codec))
-        {
-            if (!compress)
-                codec = std::make_shared<PostingListRoaringCodec>();
-            else
-                codec = std::make_shared<PostingListBlockCodec>();
-        }
+        chassert(std::holds_alternative<std::monostate>(codec));
+        if (!compress)
+            codec = std::make_shared<PostingListRoaringCodec>();
+        else
+            codec = std::make_shared<PostingListBlockCodec>();
     }
 
     size_t size() const
