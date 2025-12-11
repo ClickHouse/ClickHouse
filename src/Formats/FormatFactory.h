@@ -213,6 +213,9 @@ public:
         const std::optional<FormatSettings> & _format_settings = std::nullopt,
         FormatFilterInfoPtr format_filter_info = nullptr) const;
 
+    /// Creates a standalone JSONEachRow output format for debugging or testing.
+    OutputFormatPtr getDefaultJSONEachRowOutputFormat(WriteBuffer & buf, const Block & sample) const;
+
     /// Content-Type to set when sending HTTP response with this output format.
     String getContentType(const String & name, const std::optional<FormatSettings> & settings) const;
 

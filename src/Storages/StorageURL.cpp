@@ -713,6 +713,7 @@ void StorageURLSink::finalizeBuffers()
     catch (...)
     {
         /// Stop ParallelFormattingOutputFormat correctly.
+        cancelBuffers();
         releaseBuffers();
         throw;
     }
