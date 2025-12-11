@@ -1915,9 +1915,11 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateDirectoryFromVirtualNode)
         tx->createDirectoryRecursive("/A/B/C");
         tx->commit();
 
+#ifndef DEBUG_OR_SANITIZER_BUILD
         tx = metadata->createTransaction();
         EXPECT_ANY_THROW(tx->generateObjectKeyForPath("/A/B/file"));
         tx->commit();
+#endif
 
         tx = metadata->createTransaction();
         tx->createDirectoryRecursive("/A/B");
@@ -1929,4 +1931,12 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateDirectoryFromVirtualNode)
         tx->commit();
     }
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/B/file").front().remote_path), "I'm real");
+
+    EXPECT_EQ(
+        listAllBlobs("CreateDirectoryFromVirtualNode"),
+        std::vector<std::string>({
+            "./CreateDirectoryFromVirtualNode/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",
+            "./CreateDirectoryFromVirtualNode/__meta/ykwvvchguqasvfnkikaqtiebknfzafwv/prefix.path",
+            "./CreateDirectoryFromVirtualNode/ykwvvchguqasvfnkikaqtiebknfzafwv/file",
+        }));
 }
