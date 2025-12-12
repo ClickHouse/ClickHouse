@@ -7617,7 +7617,6 @@ void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
     if (!column)
         return;
 
-    /// Convert ptr and make simple check
     auto & column_map = typeid_cast<ColumnMap &>(*column);
     auto & offsets = column_map.getNestedColumn().getOffsets();
 
@@ -7626,10 +7625,30 @@ void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
     auto & value_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(1));
 
     size_t size = 0;
-    for (const auto & setting : all(changed_only ? SKIP_UNCHANGED : SKIP_NONE))
+
+    /// Iterate over standard settings
+    const auto & accessor = Traits::Accessor::instance();
+    for (size_t i = 0; i < accessor.size(); i++)
     {
-        const auto & name = setting.getName();
-        auto value = setting.getValueString();
+        if (changed_only && !accessor.isValueChanged(*this, i))
+            continue;
+
+        const auto & name = accessor.getName(i);
+        auto value = accessor.getValueString(*this, i);
+        key_column.insertData(name.data(), name.size());
+        value_column.insertData(value.data(), value.size());
+        size++;
+    }
+
+    /// Iterate over the custom settings
+    for (const auto & custom : custom_settings_map)
+    {
+        const auto & setting_field = custom.second;
+        if (changed_only && !setting_field.changed)
+            continue;
+
+        const auto & name = custom.first;
+        auto value = setting_field.toString();
         key_column.insertData(name.data(), name.size());
         value_column.insertData(value.data(), value.size());
         size++;
