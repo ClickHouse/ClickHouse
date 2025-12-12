@@ -350,7 +350,7 @@ ReadFromMergeTree::ReadFromMergeTree(
         query_info_.row_level_filter,
         query_info_.prewhere_info)), all_column_names_, query_info_, storage_snapshot_, context_)
     , data_settings(std::move(data_settings_))
-    , reader_settings(MergeTreeReaderSettings::create(context_, *data_settings, query_info_))
+    , reader_settings(MergeTreeReaderSettings::createForQuery(context_, *data_settings, query_info_))
     , prepared_parts(std::move(parts_))
     , mutations_snapshot(std::move(mutations_))
     , all_column_names(std::move(all_column_names_))
@@ -2142,7 +2142,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
         MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, mutations_snapshot, context_, log);
 
-        auto reader_settings = MergeTreeReaderSettings::create(context_, *data_settings_, query_info_);
+        auto reader_settings = MergeTreeReaderSettings::createForQuery(context_, *data_settings_, query_info_);
         result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
             res_parts,
             metadata_snapshot,
