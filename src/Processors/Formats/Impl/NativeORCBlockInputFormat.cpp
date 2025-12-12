@@ -1315,7 +1315,7 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
     {
         auto result_column = internal_type->createColumn();
         result_column->insertManyDefaults(rows);
-        return {result_column, internal_type, column_name};
+        return {std::move(result_column), internal_type, column_name};
     }
 
     size_t dict_size = orc_dict.dictionaryOffset.size() - 1;
