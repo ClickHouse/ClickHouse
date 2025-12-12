@@ -323,6 +323,7 @@ EvictionInfoPtr LRUFileCachePriority::collectEvictionInfo(
     size_t elements,
     IFileCachePriority::Iterator *,
     bool is_total_space_cleanup,
+    bool /* is_dynamic_resize */,
     const IFileCachePriority::UserInfo &,
     const CacheStateGuard::Lock & lock)
 {

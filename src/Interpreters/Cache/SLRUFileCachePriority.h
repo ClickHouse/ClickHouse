@@ -42,6 +42,7 @@ public:
         size_t elements,
         IFileCachePriority::Iterator * reservee,
         bool is_total_space_cleanup,
+        bool is_dynamic_resize,
         const IFileCachePriority::UserInfo & user,
         const CacheStateGuard::Lock &) override;
 

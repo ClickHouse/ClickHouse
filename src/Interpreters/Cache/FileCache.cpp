@@ -1006,13 +1006,25 @@ bool FileCache::doTryReserve(
                     return false;
                 }
                 query_eviction_info = query_priority->collectEvictionInfo(
-                    size, required_elements_num, main_priority_iterator.get(), /* is_total_space_cleanup */false, user, lock);
+                    size,
+                    required_elements_num,
+                    main_priority_iterator.get(),
+                    /* is_total_space_cleanup */false,
+                    /* is_dynamic_resize */false,
+                    user,
+                    lock);
             }
         }
 
         /// Check server-wide cache limits.
         main_eviction_info = main_priority->collectEvictionInfo(
-            size, required_elements_num, main_priority_iterator.get(), /* is_total_space_cleanup */false, user, lock);
+            size,
+            required_elements_num,
+            main_priority_iterator.get(),
+            /* is_total_space_cleanup */false,
+            /* is_dynamic_resize */false,
+            user,
+            lock);
 
         /// Can we already just increment size for the queue entry and quit?
         /// TODO: allow to quit here if query_context != nullptr.
@@ -1284,6 +1296,7 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
             elements_to_evict,
             /* reservee */nullptr,
             /* is_total_space_cleanup */true,
+            /* is_dynamic_resize */false,
             getInternalUser(),
             lock);
     }
@@ -2025,7 +2038,8 @@ bool FileCache::doDynamicResizeImpl(
         size_to_evict,
         elements_to_evict,
         /* reservee */nullptr,
-        /* is_total_space_cleanup */true,
+        /* is_total_space_cleanup */false,
+        /* is_dynamic_resize */true,
         getInternalUser(),
         state_lock);
 

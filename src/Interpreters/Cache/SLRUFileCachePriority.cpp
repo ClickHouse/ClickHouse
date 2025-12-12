@@ -23,8 +23,10 @@ namespace ErrorCodes
 
 namespace
 {
-    size_t getRatio(size_t total, double ratio)
+    size_t getRatio(size_t total, double ratio, bool ceil = false)
     {
+        if (ceil)
+            return static_cast<size_t>(std::ceil(total * std::clamp(ratio, 0.0, 1.0)));
         return std::lround(total * std::clamp(ratio, 0.0, 1.0));
     }
 }
@@ -180,6 +182,7 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
     size_t elements,
     IFileCachePriority::Iterator * reservee,
     bool is_total_space_cleanup,
+    bool is_dynamic_resize,
     const UserInfo & user,
     const CacheStateGuard::Lock & lock)
 {
@@ -203,6 +206,7 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
             evict_elements_from_probationary,
             reservee,
             is_total_space_cleanup,
+            is_dynamic_resize,
             user,
             lock);
 
@@ -215,8 +219,30 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
                 evict_elements_from_protected,
                 reservee,
                 is_total_space_cleanup,
+                is_dynamic_resize,
                 user,
                 lock));
+        return info;
+    }
+
+    if (is_dynamic_resize)
+    {
+        auto info = protected_queue.collectEvictionInfo(
+            getRatio(size, size_ratio, /* ceil */true),
+            getRatio(elements, size_ratio, /* ceil */true),
+            /* reservee */nullptr,
+            is_total_space_cleanup,
+            is_dynamic_resize,
+            user,
+            lock);
+        info->add(probationary_queue.collectEvictionInfo(
+            getRatio(size, 1 - size_ratio, /* ceil */true),
+            getRatio(elements, 1 - size_ratio, /* ceil */true),
+            /* reservee */nullptr,
+            is_total_space_cleanup,
+            is_dynamic_resize,
+            user,
+            lock));
         return info;
     }
 
@@ -233,9 +259,11 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
     }
 
     if (!evict_in_protected)
-        return probationary_queue.collectEvictionInfo(size, elements, reservee, is_total_space_cleanup, user, lock);
+        return probationary_queue.collectEvictionInfo(
+            size, elements, reservee, is_total_space_cleanup, is_dynamic_resize, user, lock);
 
-    auto info = protected_queue.collectEvictionInfo(size, elements, reservee, is_total_space_cleanup, user, lock);
+    auto info = protected_queue.collectEvictionInfo(
+        size, elements, reservee, is_total_space_cleanup, is_dynamic_resize, user, lock);
     if (!info->requiresEviction())
         return info;
 
@@ -408,6 +436,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
         stat.total_stat.releasable_count,
         /* reservee */nullptr,
         /* is_total_space_cleanup */false,
+        /* is_dynamic_resize */false,
         user,
         state_guard.lock());
 
@@ -581,6 +610,7 @@ bool SLRUFileCachePriority::tryIncreasePriority(
             /* elements */1,
             /* reservee */nullptr,
             /* is_total_space_cleanup */false,
+            /* is_dynamic_resize */false,
             FileCache::getInternalUser(),
             lock);
 
