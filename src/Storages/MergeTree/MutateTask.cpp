@@ -558,9 +558,7 @@ getColumnsForNewDataPart(
         auto old_type = part_columns.getPhysical(name).type;
         auto new_type = updated_header.getByName(new_name).type;
 
-        if (!new_type->supportsSparseSerialization()
-            || (new_type->isNullable() && settings.nullable_serialization_version == MergeTreeNullableSerializationVersion::BASIC)
-            || settings.isAlwaysDefault())
+        if (settings.isAlwaysDefault() || !settings.canUseSparseSerialization(*new_type))
             continue;
 
         auto new_info = new_type->createSerializationInfo(settings);
