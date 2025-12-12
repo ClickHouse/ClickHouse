@@ -224,7 +224,7 @@ ObjectIterator PaimonMetadata::iterate(
     /// remove delete files from data_files and apply partition pruning
     for (auto it = data_files.begin(); it != data_files.end();)
     {
-        if (delete_files.find(*it) != delete_files.end())
+        if (delete_files.contains(*it))
         {
             it = data_files.erase(it);
             LOG_TEST(log, "delete data file: {}", *it);
