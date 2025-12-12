@@ -1658,8 +1658,7 @@ bool MergeTask::MergeInvertedIndexStage::prepare() const
     if (global_ctx->temporary_inverted_index_storage)
         global_ctx->temporary_inverted_index_storage->commitTransaction();
 
-    auto storage_settings = global_ctx->data->getSettings();
-    auto reader_settings = MergeTreeReaderSettings::create(global_ctx->context, *storage_settings, SelectQueryInfo{});
+    auto reader_settings = MergeTreeReaderSettings::createForMergeMutation(global_ctx->context->getReadSettings());
 
     for (size_t index_idx = 0; index_idx < global_ctx->inverted_indexes_to_merge.size(); ++index_idx)
     {
