@@ -655,7 +655,7 @@ def test_alters_from_different_replicas(started_cluster):
     )
 
     main_node.query(
-        "INSERT INTO alters_from_different_replicas.dist (CounterID, StartDate, UserID) SELECT number, addDays(toDate('2020-02-02'), number), intHash32(number) FROM numbers(10)"
+        "INSERT INTO alters_from_different_replicas.dist (CounterID, StartDate, UserID) SELECT number, addDays(toDate('2020-02-02'), number), intHash32(number) FROM numbers(10) ORDER BY ALL"
     )
 
     # test_replica_restart
