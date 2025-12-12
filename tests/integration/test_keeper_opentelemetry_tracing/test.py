@@ -3,32 +3,9 @@ import pytest
 import time
 import uuid
 from helpers.cluster import ClickHouseCluster
+from helpers.keeper_utils import wait_nodes
 
 cluster = ClickHouseCluster(__file__)
-
-keeper1 = cluster.add_instance(
-    "keeper1",
-    main_configs=[
-        "configs/keeper/one.xml",
-        "configs/server/use_keeper.xml",
-    ],
-)
-
-keeper2 = cluster.add_instance(
-    "keeper2",
-    main_configs=[
-        "configs/keeper/two.xml",
-        "configs/server/use_keeper.xml",
-    ],
-)
-
-keeper3 = cluster.add_instance(
-    "keeper3",
-    main_configs=[
-        "configs/keeper/three.xml",
-        "configs/server/use_keeper.xml",
-    ],
-)
 
 clickhouse = cluster.add_instance(
     "clickhouse",
@@ -38,11 +15,33 @@ clickhouse = cluster.add_instance(
     ],
 )
 
+# we're running keepers as standalone ClickHouse servers as we need to collect span log from them
+keeper1 = cluster.add_instance(
+    "keeper1",
+    main_configs=[
+        "configs/keeper/keeper1.xml",
+    ],
+)
+keeper2 = cluster.add_instance(
+    "keeper2",
+    main_configs=[
+        "configs/keeper/keeper2.xml",
+    ],
+)
+keeper3 = cluster.add_instance(
+    "keeper3",
+    main_configs=[
+        "configs/keeper/keeper3.xml",
+    ],
+)
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
+        # Wait for all keeper nodes to be ready and form a cluster with a leader
+        wait_nodes(cluster, [keeper1, keeper2, keeper3])
         yield cluster
     finally:
         cluster.shutdown()
@@ -55,8 +54,6 @@ def test_keeper_opentelemetry_tracing(started_cluster):
     3. For each write operation, make sure that the replica that we have session with and the leader have the right spans in the right sequence.
     4. Find related ZooKeeper read (i.e. get, exists, or list) operations.
     5. For each read operation, make sure that the replica that we have session with has right spans in the right sequence and that other replicas have no spans.
-
-    Note: in this test, we're delibirately running keepers in standalone ClickHouse servers, this is needed for the span log to be there.
     """
 
     db = f"test_keeper_opentelemetry_tracing_{uuid.uuid4()}_database"

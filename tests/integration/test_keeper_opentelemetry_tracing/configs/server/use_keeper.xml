@@ -4,6 +4,8 @@
             <host>keeper2</host>
             <port>9181</port>
         </node>
+        <use_xid_64>1</use_xid_64>
+        <!-- TODO(mstetsyuk): evaluate if these are needed here and in the keeper -->
         <session_timeout_ms>10000</session_timeout_ms>
         <operation_timeout_ms>5000</operation_timeout_ms>
     </zookeeper>

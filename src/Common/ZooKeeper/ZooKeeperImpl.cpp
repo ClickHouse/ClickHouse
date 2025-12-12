@@ -1,3 +1,4 @@
+#include <atomic>
 #include <chrono>
 #include <Common/OpenTelemetryTracingContext.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -665,7 +666,7 @@ void ZooKeeper::sendHandshake()
     {
         write(ZOOKEEPER_PROTOCOL_VERSION);
     }
-    write(last_zxid_seen);
+    write(last_zxid_seen.load(std::memory_order_relaxed));
     write(timeout);
     write(previous_session_id);
     write(password);
