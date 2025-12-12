@@ -1070,6 +1070,18 @@ Result:
 └─────┴─────┴───────┘
 ```
 )", 0) \
+    DECLARE(Bool, enable_positional_arguments_for_projections, false, R"(
+Enables or disables supporting positional arguments in PROJECTION definitions. See also [enable_positional_arguments](#enable_positional_arguments) setting.
+
+:::note
+This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
+:::
+
+Possible values:
+
+- 0 — Positional arguments aren't supported.
+- 1 — Positional arguments are supported: column numbers can use instead of column names.
+)", 0) \
     DECLARE(Bool, enable_extended_results_for_datetime_functions, false, R"(
 Enables or disables returning results of type `Date32` with extended range (compared to type `Date`)
 or `DateTime64` with extended range (compared to type `DateTime`).
