@@ -481,6 +481,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"enable_named_columns_in_function_tuple", trueOrFalseSettingNoOracle},
     {"enable_parallel_blocks_marshalling", trueOrFalseSetting},
     {"enable_parsing_to_custom_serialization", trueOrFalseSetting},
+    {"enable_positional_arguments_for_projections", trueOrFalseSettingNoOracle},
     {"enable_reads_from_query_cache", trueOrFalseSetting},
     {"enable_s3_requests_logging", trueOrFalseSettingNoOracle},
     {"enable_scalar_subquery_optimization", trueOrFalseSetting},
