@@ -419,13 +419,16 @@ def main():
                     tee.stdin.close()
             if res != 0 and have_long_running_queries:
                 logging.info("Hung check failed with exit code %d", res)
-            else:
-                hung_check_status = "No queries hung\tOK\t\\N\t\n"
+                hung_check_status = (
+                    "Hung check failed, possible deadlock found\tFAIL\t\\N\t\n"
+                )
                 with open(
                     args.output_folder / "test_results.tsv", "w+", encoding="utf-8"
                 ) as results:
                     results.write(hung_check_status)
                     hung_check_log.unlink()
+            else:
+                logging.info("No queries hung")
 
     logging.info("Stress test finished")
 
