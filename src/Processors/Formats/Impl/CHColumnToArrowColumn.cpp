@@ -415,6 +415,13 @@ namespace DB
 
         arrow::StructBuilder & builder = assert_cast<arrow::StructBuilder &>(*array_builder);
 
+        if (column_tuple->tupleSize() == 0)
+        {
+            for (size_t i = start; i != end; ++i)
+                checkStatus(builder.Append(), column->getName(), format_name);
+            return builder.Finish().ValueOrDie();
+        }
+
         arrow::ArrayVector children;
         std::vector<std::string> field_names;
 
