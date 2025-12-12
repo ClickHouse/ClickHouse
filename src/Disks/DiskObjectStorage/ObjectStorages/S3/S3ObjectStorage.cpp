@@ -138,7 +138,7 @@ public:
     }
 
 private:
-    bool getBatchAndCheckNext(RelativePathsWithMetadata & batch) override
+    bool getBatchAndCheckNext(PathsWithMetadata & batch) override
     {
         ProfileEvents::increment(ProfileEvents::S3ListObjects);
         ProfileEvents::increment(ProfileEvents::DiskS3ListObjects);
@@ -156,7 +156,7 @@ private:
                 ObjectMetadata metadata{static_cast<uint64_t>(object.GetSize()), Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()), object.GetETag(), {}, {}};
                 if (with_tags)
                     metadata.tags = S3::getObjectTags(*client, request->GetBucket(), object.GetKey());
-                batch.emplace_back(std::make_shared<RelativePathWithMetadata>(object.GetKey(), std::move(metadata)));
+                batch.emplace_back(std::make_shared<PathWithMetadata>(object.GetKey(), std::move(metadata)));
             }
 
             /// It returns false when all objects were returned
@@ -270,7 +270,7 @@ ObjectStorageIteratorPtr S3ObjectStorage::iterate(const std::string & path_prefi
     return std::make_shared<S3IteratorAsync>(uri.bucket, path_prefix, client.get(), max_keys, with_tags);
 }
 
-void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
+void S3ObjectStorage::listObjects(const std::string & path, PathsWithMetadata & children, size_t max_keys) const
 {
     auto settings_ptr = s3_settings.get();
 
@@ -298,7 +298,7 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
             break;
 
         for (const auto & object : objects)
-            children.emplace_back(std::make_shared<RelativePathWithMetadata>(
+            children.emplace_back(std::make_shared<PathWithMetadata>(
                 object.GetKey(),
                 ObjectMetadata{
                     static_cast<uint64_t>(object.GetSize()),

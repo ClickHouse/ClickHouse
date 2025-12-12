@@ -70,7 +70,7 @@ namespace ErrorCodes
 
 ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObjectInfo(
     const ObjectInfo & object_info, ObjectStorageQueueMetadata::FileMetadataPtr file_metadata_)
-    : ObjectInfo(RelativePathWithMetadata{object_info.getPath(), object_info.getObjectMetadata()})
+    : ObjectInfo(PathWithMetadata{object_info.getPath(), object_info.getObjectMetadata()})
     , file_metadata(file_metadata_)
 {
 }
@@ -187,7 +187,7 @@ ObjectStorageQueueSource::FileIterator::next()
                 result->begin(),
                 result->end(),
                 std::back_inserter(new_batch),
-                [&](const std::shared_ptr<RelativePathWithMetadata> & object) { return std::make_shared<ObjectInfo>(*object); });
+                [&](const std::shared_ptr<PathWithMetadata> & object) { return std::make_shared<ObjectInfo>(*object); });
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueListedFiles, new_batch.size());
 
             for (auto it = new_batch.begin(); it != new_batch.end();)

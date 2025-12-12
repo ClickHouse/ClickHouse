@@ -46,7 +46,7 @@ public:
             if (callback)
                 callback(FileProgress(0, object_metadata.size_bytes));
 
-            return std::make_shared<ObjectInfo>(RelativePathWithMetadata{key, std::move(object_metadata)});
+            return std::make_shared<ObjectInfo>(PathWithMetadata{key, std::move(object_metadata)});
         }
     }
 

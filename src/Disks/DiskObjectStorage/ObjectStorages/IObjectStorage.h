@@ -111,25 +111,34 @@ struct ObjectMetadata
 
 struct DataLakeObjectMetadata;
 
-struct RelativePathWithMetadata
+struct PathWithMetadata
 {
     String relative_path;
     /// Object metadata: size, modification time, etc.
     std::optional<ObjectMetadata> metadata;
+    std::optional<String> absolute_path;
+    ObjectStoragePtr object_storage_to_use = nullptr;
 
-    RelativePathWithMetadata() = default;
+    PathWithMetadata() = default;
 
-    explicit RelativePathWithMetadata(String relative_path_, std::optional<ObjectMetadata> metadata_ = std::nullopt)
+    explicit PathWithMetadata(String relative_path_,
+        std::optional<ObjectMetadata> metadata_ = std::nullopt,
+        std::optional<String> absolute_path_ = std::nullopt,
+        ObjectStoragePtr object_storage_to_use_ = nullptr)
         : relative_path(std::move(relative_path_))
         , metadata(std::move(metadata_))
+        , absolute_path((absolute_path_.has_value() && !absolute_path_.value().empty()) ? absolute_path_ : std::nullopt)
+        , object_storage_to_use(object_storage_to_use_)
     {}
 
-    RelativePathWithMetadata(const RelativePathWithMetadata & other) = default;
+    PathWithMetadata(const PathWithMetadata & other) = default;
 
-    ~RelativePathWithMetadata() = default;
+    ~PathWithMetadata() = default;
 
     std::string getFileName() const { return std::filesystem::path(relative_path).filename(); }
     std::string getPath() const { return relative_path; }
+    std::optional<std::string> getAbsolutePath() const { return absolute_path; }
+    ObjectStoragePtr getObjectStorage() const { return object_storage_to_use; }
 };
 
 struct ObjectKeyWithMetadata
@@ -151,8 +160,8 @@ struct SmallObjectDataWithMetadata
     ObjectMetadata metadata;
 };
 
-using RelativePathWithMetadataPtr = std::shared_ptr<RelativePathWithMetadata>;
-using RelativePathsWithMetadata = std::vector<RelativePathWithMetadataPtr>;
+using PathWithMetadataPtr = std::shared_ptr<PathWithMetadata>;
+using PathsWithMetadata = std::vector<PathWithMetadataPtr>;
 using ObjectKeysWithMetadata = std::vector<ObjectKeyWithMetadata>;
 
 class IObjectStorageIterator;
@@ -188,7 +197,7 @@ public:
     virtual bool existsOrHasAnyChild(const std::string & path) const;
 
     /// List objects recursively by certain prefix.
-    virtual void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const;
+    virtual void listObjects(const std::string & path, PathsWithMetadata & children, size_t max_keys) const;
 
     /// List objects recursively by certain prefix. Use it instead of listObjects, if you want to list objects lazily.
     virtual ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys, bool with_tags) const;

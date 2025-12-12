@@ -172,7 +172,7 @@ std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std
     return object_metadata;
 }
 
-void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t/* max_keys */) const
+void LocalObjectStorage::listObjects(const std::string & path, PathsWithMetadata & children, size_t/* max_keys */) const
 {
     if (!fs::exists(path) || !fs::is_directory(path))
         return;
@@ -185,7 +185,7 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
             continue;
         }
 
-        children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry.path(), getObjectMetadata(entry.path(), false)));
+        children.emplace_back(std::make_shared<PathWithMetadata>(entry.path(), getObjectMetadata(entry.path(), false)));
     }
 }
 

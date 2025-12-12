@@ -9,6 +9,7 @@
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Core/Field.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 
 #include <cstdint>
 
@@ -79,6 +80,9 @@ struct ManifestFileEntry
 
     /// Data file is sorted with this sort_order_id (can be read from metadata.json)
     std::optional<Int32> sort_order_id;
+    // Resolved storage and key (set by SingleThreadIcebergKeysIterator)
+    ObjectStoragePtr storage_to_use;
+    String resolved_key;
 };
 
 /**

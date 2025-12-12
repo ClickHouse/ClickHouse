@@ -21,6 +21,8 @@ struct ClusterFunctionReadTaskResponse
     /// Data path (object path, in case of object storage).
     String path;
     FileBucketInfoPtr file_bucket_info;
+    /// Absolute path (including storage type prefix).
+    std::optional<String> absolute_path;
     /// Object metadata path, in case of data lake object.
     DataLakeObjectMetadata data_lake_metadata;
     /// Iceberg object metadata
