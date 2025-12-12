@@ -5,9 +5,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 
-#include <Columns/ColumnLazy.h>
-#include <Columns/ColumnTuple.h>
-
 #include <Core/Block.h>
 
 namespace DB
@@ -37,12 +34,9 @@ void BuffersWriter::write(const Block & block)
 
     for (size_t i = 0; i < num_columns; ++i)
     {
-        auto column = block.safeGetByPosition(i);
+        const auto & column = block.safeGetByPosition(i);
 
-        SerializationPtr serialization;
-
-        std::tie(serialization, std::ignore, column.column)
-            = NativeWriter::getSerializationAndColumn(format_settings.client_protocol_version, column);
+        SerializationPtr serialization = column.type->getDefaultSerialization();
 
         WriteBufferFromOwnString buffer;
 
