@@ -23,7 +23,7 @@ $CLICKHOUSE_CLIENT -q "create table dedup_test(A Int64) Engine = MergeTree order
 $CLICKHOUSE_CLIENT -q "create table dedup_dist(A Int64) Engine = Distributed('test_cluster_one_shard_two_replicas', currentDatabase(), dedup_test)"
 
 CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --async_insert=0"
-CLICKHOUSE_URL="{$CLICKHOUSE_URL}&async_insert=0"
+CLICKHOUSE_URL="${CLICKHOUSE_URL}&async_insert=0"
 
 function insert_data
 {
@@ -53,7 +53,7 @@ function insert_data
 
 export -f insert_data
 
-insert_data TEST_MARK_${CLICKHOUSE_DATABASE}_$RANDOM_first_run
+insert_data ${TEST_MARK}-${RANDOM}_first_run
 $CLICKHOUSE_CLIENT -q "system flush distributed dedup_dist"
 $CLICKHOUSE_CLIENT -q 'select count() from dedup_test'
 
@@ -64,7 +64,7 @@ function thread_insert
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        bash -c "insert_data $TEST_MARK$RANDOM-$RANDOM-$i" 2>&1| grep -Fav "Killed"
+        bash -c "insert_data ${TEST_MARK}-${RANDOM}-${RANDOM}-$i" 2>&1| grep -Fav "Killed"
         i=$((i + 1))
     done
 }
@@ -88,7 +88,8 @@ function thread_cancel
         if (( RANDOM % 2 )); then
             SIGNAL="KILL"
         fi
-        PID=$(grep -Fa "$TEST_MARK" /proc/*/cmdline | grep -Fav grep | grep -Eoa "/proc/[0-9]*/cmdline:" | grep -Eo "[0-9]*" | head -1)
+
+        PID=$(grep -Fa "query_id=$TEST_MARK" /proc/*/cmdline | grep -Fav grep | grep -Fav insert_data | grep -Eoa "/proc/[0-9]*/cmdline:" | grep -Eo "[0-9]*" | head -1)
         if [ ! -z "$PID" ]; then kill -s "$SIGNAL" "$PID"; fi
         sleep 0.$RANDOM;
         sleep 0.$RANDOM;
