@@ -3481,7 +3481,7 @@ void Context::setUserDefinedSQLObjectsStorage(std::unique_ptr<IUserDefinedSQLObj
 IWorkloadEntityStorage & Context::getWorkloadEntityStorage() const
 {
     callOnce(shared->workload_entity_storage_initialized, [&] {
-        auto value = = createWorkloadEntityStorage(getGlobalContext());
+        auto value = createWorkloadEntityStorage(getGlobalContext());
         std::lock_guard lock(shared->mutex);
         shared->workload_entity_storage = std::move(value);
     });
