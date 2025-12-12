@@ -350,4 +350,10 @@ UInt64 AllocationQueue::getRejects() const
     return rejects;
 }
 
+UInt64 AllocationQueue::getPending() const
+{
+    std::lock_guard lock(mutex);
+    return pending_allocations.size();
+}
+
 }

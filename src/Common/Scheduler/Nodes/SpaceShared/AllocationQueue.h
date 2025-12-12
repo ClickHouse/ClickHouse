@@ -42,6 +42,7 @@ public:
     void updateQueueLimit(Int64 value);
 
     UInt64 getRejects() const;
+    UInt64 getPending() const;
 
 private:
     bool setIncrease();

@@ -140,6 +140,9 @@ ColumnsDescription StorageSystemScheduler::getColumnsDescription()
         {"rejects", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "For `allocation_queue` nodes only. The total number of resource allocations rejected from this node."
         },
+        {"pending", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+            "For `allocation_queue` nodes only. The current number of pending resource allocations in this node."
+        },
     };
 }
 
@@ -189,6 +192,7 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         Field killers;
         Field victims;
         Field rejects;
+        Field pending;
 
         if (auto * ptr = dynamic_cast<ITimeSharedNode *>(node))
         {
@@ -244,6 +248,7 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         if (auto * ptr = dynamic_cast<AllocationQueue *>(node))
         {
             rejects = ptr->getRejects();
+            pending = ptr->getPending();
         }
 
         res_columns[i++]->insert(is_active);
@@ -280,6 +285,7 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insert(killers);
         res_columns[i++]->insert(victims);
         res_columns[i++]->insert(rejects);
+        res_columns[i++]->insert(pending);
     });
 }
 
