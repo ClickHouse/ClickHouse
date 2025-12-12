@@ -4,6 +4,7 @@
 #include <Interpreters/AggregateDescription.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/ProjectionIndex/IProjectionIndex.h>
 #include <Common/PODArray_fwd.h>
 
 #include <memory>
@@ -21,6 +22,8 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 using IColumnPermutation = PaddedPODArray<size_t>;
 
 struct KeyDescription;
+
+class ASTProjectionSelectQuery;
 
 /// Description of projections for Storage
 struct ProjectionDescription
@@ -70,9 +73,17 @@ struct ProjectionDescription
 
     bool with_parent_part_offset = false;
 
+    ProjectionIndexPtr index;
+
     /// Parse projection from definition AST
     static ProjectionDescription
     getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context);
+
+    static void fillProjectionDescriptionByQuery(
+        ProjectionDescription & result,
+        const ASTProjectionSelectQuery & query,
+        const ColumnsDescription & columns,
+        ContextPtr query_context);
 
     static ProjectionDescription getMinMaxCountProjection(
         const ColumnsDescription & columns,
@@ -114,6 +125,10 @@ struct ProjectionDescription
      * @return The resulting block after executing the projection query.
      */
     Block calculate(const Block & block, ContextPtr context, const IColumnPermutation * perm_ptr = nullptr) const;
+
+    /// Same as but ignores additional index-specific metadata or structures.
+    /// Only the query AST is used to compute the output block.
+    Block calculateByQuery(const Block & block, ContextPtr context, const IColumnPermutation * perm_ptr = nullptr) const;
 
     String getDirectoryName() const { return name + ".proj"; }
 };
