@@ -38,6 +38,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_SETTING;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
     extern const int READONLY;
 }
 
@@ -724,6 +725,15 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(MergeSelectorAlgorithm, merge_selector_algorithm, MergeSelectorAlgorithm::SIMPLE, R"(
     The algorithm to select parts for merges assignment
+    )", EXPERIMENTAL) \
+    DECLARE(Bool, merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once, false, R"(
+    Enable heuristic for simple merge selector which will lower maximum limit for merge choice.
+    By doing so number of concurrent merges will increase which can help with TOO_MANY_PARTS
+    errors but at the same time this will increase the write amplification.
+    )", EXPERIMENTAL) \
+    DECLARE(UInt64, merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent, 5, R"(
+    Controls the exponent value used in formulae building lowering curve. Lowering exponent will
+    lower merge widths which will trigger increase in write amplification. The reverse is also true.
     )", EXPERIMENTAL) \
     DECLARE(Bool, merge_selector_enable_heuristic_to_remove_small_parts_at_right, true, R"(
     Enable heuristic for selecting parts for merge which removes parts from right
@@ -2425,6 +2435,8 @@ void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_v
             /// In case the alias is being used (e.g. use enable_analyzer) we must change the original setting
             auto final_name = MergeTreeSettingsTraits::resolveName(change.name);
             auto setting_index = MergeTreeSettingsTraits::Accessor::instance().find(final_name);
+            if (setting_index == static_cast<size_t>(-1))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown setting in history: {}", final_name);
             auto previous_value = MergeTreeSettingsTraits::Accessor::instance().castValueUtil(setting_index, change.previous_value);
 
             if (get(final_name) != previous_value)

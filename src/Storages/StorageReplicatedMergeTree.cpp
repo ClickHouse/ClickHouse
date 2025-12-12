@@ -6503,7 +6503,7 @@ void StorageReplicatedMergeTree::alter(
 
     if (!query_settings[Setting::allow_suspicious_primary_key])
     {
-        MergeTreeData::verifySortingKey(future_metadata.sorting_key);
+        MergeTreeData::verifySortingKey(future_metadata.sorting_key, merging_params);
     }
 
     {
@@ -6581,8 +6581,8 @@ void StorageReplicatedMergeTree::alter(
                 future_metadata_in_zk.ttl_table = "";
         }
 
-        String new_indices_str = future_metadata.secondary_indices.toString();
-        if (new_indices_str != current_metadata->secondary_indices.toString())
+        String new_indices_str = future_metadata.secondary_indices.explicitToString();
+        if (new_indices_str != current_metadata->secondary_indices.explicitToString())
             future_metadata_in_zk.skip_indices = new_indices_str;
 
         String new_projections_str = future_metadata.projections.toString();
