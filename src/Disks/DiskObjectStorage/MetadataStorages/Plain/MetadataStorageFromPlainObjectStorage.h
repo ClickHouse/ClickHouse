@@ -98,7 +98,7 @@ public:
     void removeDirectory(const std::string & path) override;
     void removeRecursive(const std::string &) override;
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path) override;
 
 private:
     MetadataStorageFromPlainObjectStorage & metadata_storage;
