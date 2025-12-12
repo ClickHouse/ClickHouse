@@ -576,7 +576,7 @@ Projections can be modified or dropped with the [ALTER](/sql-reference/statement
 Projection indexes extend the projection subsystem by providing a lightweight, explicit way to define projection-level indexes. 
 Conceptually, a projection index is still a projection, but with simplified syntax and clearer intent: it defines an expression which is dedicated to filtering, rather than serving as materialized data.
 
-#### Syntax
+#### Syntax {#projection-index-syntax}
 ```sql
 PROJECTION <name> INDEX <index_expr> TYPE <index_type>
 ````
@@ -596,7 +596,7 @@ ENGINE = MergeTree
 ORDER BY id;
 ```
 
-#### Index types
+#### Index types {#projection-index-types}
 
 Currently supported:
 
