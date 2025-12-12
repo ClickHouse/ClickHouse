@@ -488,7 +488,7 @@ bool PaimonRestCatalog::tryGetTableMetadata(const String & database_name, const 
             }
             else
             {
-                std::stringstream ss;
+                std::stringstream ss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
                 table_json_ptr->stringify(ss);
                 result.setTableIsNotReadable(
                     fmt::format("Cannot read table {}, because no 'location' in response: {}", table_name, ss.str()));

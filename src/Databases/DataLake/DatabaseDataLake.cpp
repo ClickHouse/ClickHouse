@@ -218,19 +218,19 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
                 settings[DatabaseDataLakeSetting::region].value,
                 Context::getGlobalContextInstance());
             }
-            else if (!settings[DatabaseDataLakeSetting::dlf_access_key_id].value.empty() && 
-                    !settings[DatabaseDataLakeSetting::dlf_access_key_secret].value.empty() && 
-                    !settings[DatabaseDataLakeSetting::region].value.empty()) {
+            else if (!settings[DatabaseDataLakeSetting::dlf_access_key_id].value.empty()
+                && !settings[DatabaseDataLakeSetting::dlf_access_key_secret].value.empty()
+                && !settings[DatabaseDataLakeSetting::region].value.empty()) {
                 catalog_impl = std::make_shared<DataLake::PaimonRestCatalog>(
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
                 DataLake::PaimonToken(settings[DatabaseDataLakeSetting::dlf_access_key_id].value, settings[DatabaseDataLakeSetting::dlf_access_key_secret].value),
                 settings[DatabaseDataLakeSetting::region].value,
-                Context::getGlobalContextInstance());   
+                Context::getGlobalContextInstance());
             }
-            else 
+            else
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Paimon catalog requires either catalog_credential or (dlf_access_key_id, dlf_access_key_secret and region)"); 
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Paimon catalog requires either catalog_credential or (dlf_access_key_id, dlf_access_key_secret and region)");
             }
             break;
         }
