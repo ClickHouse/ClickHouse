@@ -26,30 +26,6 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
-# @pytest.fixture(scope="module")
-# def maven_container():
-#     docker_compose = os.path.join(
-#         DOCKER_COMPOSE_PATH, "docker_compose_paimon_rest_catalog.yml"
-#     )
-#     run_and_check(
-#         cluster.compose_cmd(
-#             "--env-file",
-#             cluster.instances["node"].env_file,
-#             "-f",
-#             docker_compose,
-#             "up",
-#             "--force-recreate",
-#             "-d",
-#             "--no-build",
-#         )
-#     )
-#     print(cluster.get_instance_docker_id("paimon_rest_catalog1"))
-#     yield docker.DockerClient(
-#         base_url="unix:///var/run/docker.sock",
-#         version=cluster.docker_api_version,
-#         timeout=600,
-#     ).containers.get(cluster.get_instance_docker_id("paimon_rest_catalog1"))
-
 def start_bear_token_server():
     instance_id = cluster.get_instance_docker_id("node")
     # cpoy paimon rest catalog to docker container    
