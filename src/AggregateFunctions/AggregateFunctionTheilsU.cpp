@@ -18,7 +18,7 @@ struct TheilsUData : CrossTabData
         return "theilsU";
     }
 
-    /// Based on https://en.wikipedia.org/wiki/Uncertainty_coefficient
+    /// Based on https://en.wikipedia.org/wiki/Uncertainty_coefficient.
     Float64 getResult() const
     {
         if (count < 2)
