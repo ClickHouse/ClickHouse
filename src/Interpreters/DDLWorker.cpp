@@ -125,6 +125,8 @@ DDLWorker::DDLWorker(
     {
         task_max_lifetime = config->getUInt64(prefix + ".task_max_lifetime", static_cast<UInt64>(task_max_lifetime));
         cleanup_delay_period = config->getUInt64(prefix + ".cleanup_delay_period", static_cast<UInt64>(cleanup_delay_period));
+        mark_replicas_active_interval_seconds = config->getUInt64(
+            prefix + ".mark_replicas_active_interval_seconds", static_cast<UInt64>(mark_replicas_active_interval_seconds));
         max_tasks_in_queue = std::max<UInt64>(1, config->getUInt64(prefix + ".max_tasks_in_queue", max_tasks_in_queue));
 
         if (config->has(prefix + ".host_name"))
@@ -1143,7 +1145,7 @@ bool DDLWorker::initializeMainThread()
             auto zookeeper = getAndSetZooKeeper();
             zookeeper->createAncestors(fs::path(queue_dir) / "");
             initializeReplication();
-            markReplicasActive(true);
+            markReplicasActive(/*reinitialized=*/true);
             initialized = true;
             return true;
         }
@@ -1198,21 +1200,32 @@ void DDLWorker::runMainThread()
 
 
     DB::setThreadName(ThreadName::DDL_WORKER);
-    LOG_DEBUG(log, "Starting DDLWorker thread");
-
+    LOG_INFO(log, "Starting DDLWorker thread");
+    Int64 last_mark_replicas_active_time_seconds = 0;
     while (!stop_flag)
     {
+        Int64 current_time_seconds = Poco::Timestamp().epochTime();
         try
         {
             bool reinitialized = !initialized;
 
             /// Reinitialize DDLWorker state (including ZooKeeper connection) if required
-            if (!initialized)
+            if (reinitialized)
             {
                 /// Stopped
                 if (!initializeMainThread())
                     break;
+
+                // markReplicasActive was called in initializeMainThread
+                last_mark_replicas_active_time_seconds = current_time_seconds;
                 LOG_DEBUG(log, "Initialized DDLWorker thread");
+            }
+
+            // We mark the replica active periodically in case there are changes in DNS.
+            if (current_time_seconds - mark_replicas_active_interval_seconds >= last_mark_replicas_active_time_seconds)
+            {
+                markReplicasActive(/*reinitialized=*/false);
+                last_mark_replicas_active_time_seconds = current_time_seconds;
             }
 
             cleanup_event->set();
@@ -1291,23 +1304,28 @@ void DDLWorker::initializeReplication()
 void DDLWorker::createReplicaDirs(const ZooKeeperPtr & zookeeper, const NameSet & host_ids)
 {
     for (const auto & host_id : host_ids)
+    {
+        LOG_INFO(log, "Creating replica dir for host id {}", host_id);
         zookeeper->createAncestors(fs::path(replicas_dir) / host_id / "");
+    }
 }
 
-void DDLWorker::markReplicasActive(bool /*reinitialized*/)
+void DDLWorker::markReplicasActive(bool reinitialized)
 {
     auto zookeeper = getZooKeeper();
 
-    // Reset all active_node_holders
-    for (auto & it : active_node_holders)
+    if (reinitialized)
     {
-        auto & active_node_holder = it.second.second;
-        if (active_node_holder)
-            active_node_holder->setAlreadyRemoved();
-        active_node_holder.reset();
+        // Reset all active_node_holders
+        for (auto & it : active_node_holders)
+        {
+            auto & active_node_holder = it.second.second;
+            if (active_node_holder)
+                active_node_holder->setAlreadyRemoved();
+            active_node_holder.reset();
+        }
+        active_node_holders.clear();
     }
-
-    active_node_holders.clear();
 
     const auto maybe_secure_port = context->getTCPPortSecure();
     const auto port = context->getTCPPort();
@@ -1317,15 +1335,38 @@ void DDLWorker::markReplicasActive(bool /*reinitialized*/)
     NameSet local_host_ids;
     for (const auto & host_id : host_ids)
     {
+        bool is_self_host = false;
         try
         {
             HostID host = HostID::fromString(host_id);
-            if (DDLTask::isSelfHostID(log, host, maybe_secure_port, port))
-                local_host_ids.emplace(host_id);
+            is_self_host = DDLTask::isSelfHostID(log, host, maybe_secure_port, port);
         }
         catch (const Exception & e)
         {
             LOG_WARNING(log, "Unable to check if host {} is a local address, exception: {}", host_id, e.displayText());
+            continue;
+        }
+
+        LOG_INFO(log, "Self host_id ({}) = {}", host_id, is_self_host);
+        if (is_self_host)
+        {
+            local_host_ids.emplace(host_id);
+            continue;
+        }
+
+        if (!reinitialized)
+        {
+            /// Remove this host_id from active_node_holders
+            auto it = active_node_holders.find(host_id);
+            if (it != active_node_holders.end())
+            {
+                auto & active_node_holder = it->second.second;
+                if (active_node_holder)
+                    active_node_holder->setAlreadyRemoved();
+                active_node_holder.reset();
+
+                active_node_holders.erase(it);
+            }
             continue;
         }
     }
@@ -1380,7 +1421,7 @@ void DDLWorker::markReplicasActive(bool /*reinitialized*/)
         }
         else
         {
-            LOG_DEBUG(log, "Marked a replica active: active_path={}, active_id={}", active_path, active_id);
+            LOG_INFO(log, "Marked a replica active: active_path={}, active_id={}", active_path, active_id);
         }
 
         auto active_node_holder_zookeeper = zookeeper;
