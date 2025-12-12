@@ -676,7 +676,7 @@ void Client::printChangedSettings() const
             {
                 if (i)
                     fmt::print(stderr, ", ");
-                fmt::print(stderr, "{} = '{}'", changes[i].name, toString(changes[i].value));
+                fmt::print(stderr, "{} = '{}'", changes[i].name, fieldToString(changes[i].value));
             }
 
             fmt::print(stderr, "\n");

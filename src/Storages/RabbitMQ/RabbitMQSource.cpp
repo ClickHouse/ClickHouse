@@ -1,6 +1,6 @@
 #include <Storages/RabbitMQ/RabbitMQSource.h>
 
-#include <Columns/IColumn.h>
+#include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
 #include <Common/DateLUT.h>
 #include <Formats/FormatFactory.h>
@@ -10,6 +10,7 @@
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <base/sleep.h>
 #include <Common/logger_useful.h>
+
 
 namespace DB
 {

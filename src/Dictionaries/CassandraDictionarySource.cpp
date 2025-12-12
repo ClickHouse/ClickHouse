@@ -6,6 +6,8 @@
 #include <Common/RemoteHostFilter.h>
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Dictionaries/DictionaryStructure.h>
+#include <IO/WriteHelpers.h>
+
 
 namespace DB
 {
@@ -48,7 +50,6 @@ void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
 
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
-#include <IO/WriteHelpers.h>
 #include <Dictionaries/CassandraSource.h>
 
 namespace DB

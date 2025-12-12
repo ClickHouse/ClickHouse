@@ -5,11 +5,11 @@
 #if USE_AWS_S3
 
 #include <IO/ReadBufferFromS3.h>
+#include <IO/WriteHelpers.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/Requests.h>
 
 #include <Common/Stopwatch.h>
-#include <Common/Throttler.h>
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
