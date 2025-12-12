@@ -82,6 +82,7 @@ common_stress_job_config = Job.Config(
             "./tests/docker_scripts/",
             "./ci/docker/stress-test",
             "./ci/jobs/scripts/clickhouse_proc.py",
+            "./ci/jobs/scripts/log_parser.py",
         ],
     ),
     allow_merge_on_failure=True,
@@ -252,8 +253,7 @@ class JobConfigs:
                 ArtifactNames.RPM_AMD_RELEASE,
                 ArtifactNames.TGZ_AMD_RELEASE,
             ],
-            # Release needs same architecture (for now) to handle `clickhouse hash-binary` to setup binary hash
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.ARM_LARGE,
             timeout=3 * 3600,
         ),
         Job.ParamSet(
@@ -264,7 +264,6 @@ class JobConfigs:
                 ArtifactNames.RPM_ARM_RELEASE,
                 ArtifactNames.TGZ_ARM_RELEASE,
             ],
-            # Release needs same architecture (for now) to handle `clickhouse hash-binary` to setup binary hash
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
@@ -688,6 +687,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/stress/stress.py",
                 "./tests/docker_scripts/",
                 "./ci/docker/stress-test",
+                "./ci/jobs/scripts/log_parser.py",
             ]
         ),
         allow_merge_on_failure=True,
@@ -1059,9 +1059,9 @@ class JobConfigs:
     )
     libfuzzer_job = Job.Config(
         name=JobNames.LIBFUZZER_TEST,
-        runs_on=RunnerLabels.FUNC_TESTER_ARM,
-        command="cd ./tests/ci && python3 libfuzzer_test_check.py 'libFuzzer tests'",
-        requires=["Build (arm_fuzzers)"],
+        runs_on=RunnerLabels.ARM_MEDIUM,
+        command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
+        requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
     )
     vector_search_stress_job = Job.Config(
         name="Vector Search Stress",

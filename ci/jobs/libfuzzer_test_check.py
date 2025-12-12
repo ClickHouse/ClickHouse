@@ -17,27 +17,20 @@ import argparse
 import logging
 import os
 import re
-import sys
-import zipfile
 import subprocess
+import zipfile
 from pathlib import Path
 from typing import List
 
-from botocore.exceptions import ClientError
+from ci.jobs.scripts.docker_image import DockerImage
+from ci.praktika.info import Info
+from ci.praktika.result import Result
+from ci.praktika.s3 import S3
+from ci.praktika.settings import Settings
+from ci.praktika.utils import Shell, Utils
 
-from build_download_helper import download_fuzzers
-from clickhouse_helper import CiLogsCredentials
-from docker_images_helper import DockerImage, get_docker_image, pull_image
-from env_helper import REPO_COPY, REPORT_PATH, S3_BUILDS_BUCKET, TEMP_PATH
-from pr_info import PRInfo
-from report import FAILURE, SUCCESS, JobReport, TestResult
-from s3_helper import S3Helper
-from stopwatch import Stopwatch
-from tee_popen import TeePopen
-
-TIMEOUT = 60 * 60 # 60 minutes
+TIMEOUT = 60 * 60  # 60 minutes
 NO_CHANGES_MSG = "Nothing to run"
-s3 = S3Helper()
 RUNNER_OUTPUT = "/test_output"
 
 
@@ -81,7 +74,6 @@ def get_run_command(
     repo_path: Path,
     result_path: Path,
     additional_envs: List[str],
-    ci_logs_args: str,
     image: DockerImage,
 ) -> str:
     additional_options = ["--hung-check"]
@@ -103,7 +95,6 @@ def get_run_command(
 
     return (
         f"docker run "
-        f"{ci_logs_args} "
         f"--user {uid}:{gid} "
         f"--workdir=/fuzzers "
         f"--volume={fuzzers_path}:/fuzzers "
@@ -125,19 +116,19 @@ def download_corpus(path):
     logging.info("Download corpus...")
 
     corpus_path = path / "corpus"
-    corpus_path.mkdir(exist_ok=True)
+    corpus_path.mkdir(parents=True, exist_ok=True)
 
     try:
-        s3.download_files(
-            bucket=S3_BUILDS_BUCKET,
-            s3_path="fuzzer/corpus/",
-            file_suffix=".zip",
-            local_directory=corpus_path,
+        S3.copy_file_from_s3(
+            s3_path=f"{Settings.S3_ARTIFACT_PATH}/fuzzer/corpus",
+            local_path=str(corpus_path),
+            include_pattern="*.zip",
+            recursive=True,
         )
-    except ClientError as e:
-        if e.response["Error"]["Code"] == "NoSuchKey":
-            logging.debug("No active corpus exists")
-            return
+    except Exception as e:
+        error_message = str(e).lower()
+        if "does not exist" in error_message or "not found" in error_message:
+            logging.info("Corpus does not exist in S3, starting with empty corpus")
         else:
             raise
 
@@ -173,10 +164,9 @@ def upload_corpus(path):
             zip_file_path = corpus_dir / f"{fuzzer_dir.name}.zip"
             with zipfile.ZipFile(zip_file_path, "w", zipfile.ZIP_DEFLATED) as zipf:
                 zipdir(fuzzer_dir, zipf)
-            s3.upload_file(
-                bucket=S3_BUILDS_BUCKET,
-                file_path=str(zip_file_path),
-                s3_path=f"fuzzer/corpus/{zip_file_path.name}",
+            S3.copy_file_to_s3(
+                s3_path=f"{Settings.S3_ARTIFACT_PATH}/fuzzer/corpus/{fuzzer_dir.name}.zip",
+                local_path=str(zip_file_path),
             )
 
 
@@ -198,11 +188,13 @@ def process_error(output_log: Path, fuzzer_result_dir: Path) -> list:
     test_unit = ""
     trace_file = ""
     stack_trace = []
-    TEST_UNIT_LINE = r"^artifact_prefix='.*\/'; Test unit written to ((?:(?!slow-unit-).)+)$"
-    error_info = [] # [(error_source, error_reason, test_unit, trace_file), ...]
+    TEST_UNIT_LINE = (
+        r"^artifact_prefix='.*\/'; Test unit written to ((?:(?!slow-unit-).)+)$"
+    )
+    error_info = []  # [(error_source, error_reason, test_unit, trace_file), ...]
     is_error = False
 
-    with open(output_log, "r", encoding="utf-8", errors='replace') as file:
+    with open(output_log, "r", encoding="utf-8", errors="replace") as file:
         for line in file:
             line = line.rstrip("\n")
             if is_error:
@@ -213,7 +205,9 @@ def process_error(output_log: Path, fuzzer_result_dir: Path) -> list:
                         trace_path = f"{fuzzer_result_dir}/{trace_file}"
                         with open(trace_path, "w", encoding="utf-8") as tracef:
                             tracef.write("\n".join(stack_trace))
-                        error_info.append((error_source, error_reason, test_unit, trace_file))
+                        error_info.append(
+                            (error_source, error_reason, test_unit, trace_file)
+                        )
                         # reset for next error
                         error_source = ""
                         error_reason = ""
@@ -221,7 +215,7 @@ def process_error(output_log: Path, fuzzer_result_dir: Path) -> list:
                         trace_file = ""
                         stack_trace = []
                     continue
-                stack_trace.append(line)                
+                stack_trace.append(line)
                 continue
 
             match = re.search(ERROR, line)
@@ -240,7 +234,9 @@ def process_error(output_log: Path, fuzzer_result_dir: Path) -> list:
                 if len(stack_trace) > 0:
                     with open(trace_path, "w", encoding="utf-8") as tracef:
                         tracef.write("\n".join(stack_trace))
-                    error_info.append((error_source, error_reason, test_unit, trace_file))
+                    error_info.append(
+                        (error_source, error_reason, test_unit, trace_file)
+                    )
                     # reset for next error
                     error_source = ""
                     error_reason = ""
@@ -276,10 +272,13 @@ def process_results(result_path: Path):
 
             raw_logs = []
             log_files = []
-            result = None
 
             status_mini = read_status(file_path_status_mini)
-            result = TestResult(f"{fuzzer} corpus minimization", status_mini[0], float(status_mini[2]))
+            result = Result(
+                f"{fuzzer} corpus minimization",
+                status_mini[0],
+                duration=float(status_mini[2]),
+            )
 
             if status_mini[0] == "ERROR":
                 errors += 1
@@ -315,21 +314,20 @@ def process_results(result_path: Path):
             for file in list(fuzzer_result_dir.glob("mini-slow-unit-*")):
                 log_files.append(str(file))
 
-            result.set_raw_logs("\n".join(raw_logs))
-            result.set_log_files("[" + ", ".join(f"'{f}'" for f in log_files) + "]")
+            result.set_info("\n".join(raw_logs))
+            result.set_files(log_files)
             test_results.append(result)
 
         # Process fuzzing results
         raw_logs = []
         log_files = []
-        result = None
 
         file_path_status = fuzzer_result_dir / "status.txt"
         file_path_out = fuzzer_result_dir / "out.txt"
         file_path_stdout = fuzzer_result_dir / "stdout.txt"
 
         status = read_status(file_path_status)
-        result = TestResult(fuzzer, status[0], float(status[2]))
+        result = Result(fuzzer, status[0], duration=float(status[2]))
         if status[0] == "OK":
             oks += 1
         elif status[0] == "ERROR":
@@ -348,7 +346,9 @@ def process_results(result_path: Path):
                     for line in err:
                         raw_logs.append("\t".join(s for s in line))
                 else:
-                    raw_logs.append("No stack traces found - this is unusual - check output files")
+                    raw_logs.append(
+                        "No stack traces found - this is unusual - check output files"
+                    )
                 if file_path_out.exists():
                     log_files.append(str(file_path_out))
                 if file_path_stdout.exists():
@@ -362,8 +362,8 @@ def process_results(result_path: Path):
         for file in list(fuzzer_result_dir.glob("slow-unit-*")):
             log_files.append(str(file))
 
-        result.set_raw_logs("\n".join(raw_logs))
-        result.set_log_files("[" + ", ".join(f"'{f}'" for f in log_files) + "]")
+        result.set_info("\n".join(raw_logs))
+        result.set_files(log_files)
         test_results.append(result)
 
     return [oks, errors, fails, test_results]
@@ -372,17 +372,15 @@ def process_results(result_path: Path):
 def main():
     logging.basicConfig(level=logging.INFO)
 
-    stopwatch = Stopwatch()
+    stopwatch = Utils.Stopwatch()
 
-    temp_path = Path(TEMP_PATH)
-    reports_path = Path(REPORT_PATH)
+    temp_path = Path(Utils.cwd()) / "ci/tmp"
     temp_path.mkdir(parents=True, exist_ok=True)
-    repo_path = Path(REPO_COPY)
+    repo_path = Path(Utils.cwd())
 
     args = parse_args()
     check_name = args.check_name
-
-    pr_info = PRInfo()
+    info = Info()
 
     temp_path.mkdir(parents=True, exist_ok=True)
 
@@ -393,13 +391,12 @@ def main():
         run_by_hash_num = 0
         run_by_hash_total = 0
 
-    docker_image = pull_image(get_docker_image("clickhouse/stateless-test"))
+    docker_image = DockerImage.get_docker_image(
+        "clickhouse/stateless-test"
+    ).pull_image()
 
-    fuzzers_path = temp_path / "fuzzers"
-    fuzzers_path.mkdir(parents=True, exist_ok=True)
-
+    fuzzers_path = temp_path
     download_corpus(fuzzers_path)
-    download_fuzzers(check_name, reports_path, fuzzers_path)
 
     for file in os.listdir(fuzzers_path):
         if file.endswith("_fuzzer"):
@@ -414,62 +411,40 @@ def main():
     result_path = temp_path / "result_path"
     result_path.mkdir(parents=True, exist_ok=True)
 
-    run_log_path = result_path / "run.log"
-
     additional_envs = get_additional_envs(
         check_name, run_by_hash_num, run_by_hash_total
     )
 
     additional_envs.append(f"TIMEOUT={TIMEOUT}")
 
-    ci_logs_credentials = CiLogsCredentials(Path(temp_path) / "export-logs-config.sh")
-    ci_logs_args = ci_logs_credentials.get_docker_arguments(
-        pr_info, stopwatch.start_time_str, check_name
-    )
-
     run_command = get_run_command(
         fuzzers_path,
         repo_path,
         result_path,
         additional_envs,
-        ci_logs_args,
         docker_image,
     )
     logging.info("Going to run libFuzzer tests: %s", run_command)
 
-    with TeePopen(run_command, run_log_path) as process:
-        retcode = process.wait()
-        if retcode == 0:
-            logging.info("Run successfully")
-            if (
-                pr_info.number == 0
-                and pr_info.base_ref == "master"
-                and pr_info.head_ref == "master"
-            ):
-                logging.info("Uploading corpus - running in master")
-                upload_corpus(fuzzers_path)
-            else:
-                logging.info("Not uploading corpus - running in PR")
-                zip_corpus(fuzzers_path)
-                subprocess.check_call(f"ls -al {fuzzers_path}/corpus/", shell=True)
+    if Shell.run(run_command) == 0:
+        logging.info("Run successfully")
+        if info.pr_number == 0 and info.git_branch == "master":
+            logging.info("Uploading corpus - running in master")
+            upload_corpus(fuzzers_path)
         else:
-            logging.info("Run failed")
+            logging.info("Not uploading corpus - running in PR")
+            zip_corpus(fuzzers_path)
+            subprocess.check_call(f"ls -al {fuzzers_path}/corpus/", shell=True)
+    else:
+        logging.info("Run failed")
 
     results = process_results(result_path)
 
-    success = results[1] == 0 and results[2] == 0
-
-    JobReport(
-        description=f"OK: {results[0]}, ERROR: {results[1]}, FAIL: {results[2]}",
-        test_results=results[3],
-        status=SUCCESS if success else FAILURE,
-        start_time=stopwatch.start_time_str,
-        duration=stopwatch.duration_seconds,
-        additional_files=[],
-    ).dump()
-
-    if not success:
-        sys.exit(1)
+    Result.create_from(
+        results=results[3],
+        stopwatch=stopwatch,
+        info=f"OK: {results[0]}, ERROR: {results[1]}, FAIL: {results[2]}",
+    ).complete_job()
 
 
 if __name__ == "__main__":
