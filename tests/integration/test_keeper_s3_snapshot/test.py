@@ -112,8 +112,8 @@ def test_s3_upload(started_cluster):
     def _check_snapshots():
         names = [n for n in get_saved_snapshots() if n.startswith("snapshot_")]
         idx = sorted(int(n.split("_")[1].split(".")[0]) for n in names)
-        assert len(idx) >= 4
-        for need, got in zip((50, 100, 150, 200), idx[:4]):
+        assert len(idx) == 4
+        for need, got in zip((50, 100, 150, 200), idx):
             assert got >= need
 
     retry(AssertionError, retries=10, delay=2, jitter=0, backoff=1)(_check_snapshots)
