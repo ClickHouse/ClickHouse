@@ -96,6 +96,8 @@ public:
         prev_value = value;
         ++header.size;
     }
+
+    /// Serializes posting list to a WriteBuffer-like output.
     template<typename Out>
     size_t serialize(Out & out)
     {
@@ -104,12 +106,14 @@ public:
         header.bytes = compressed_data.size();
         return serializeTo(out);
     }
+
     /// Serializes the container to a WriteBuffer-like output.
     template<typename Container, typename Out>
     size_t serialize(Container & in, Out & out)
     {
         chassert(std::is_sorted(in.begin(), in.end()));
         std::span<const T> container(in.data(), in.size());
+        header.size = container.size();
         while (!container.empty())
         {
             size_t segment_length = std::min<size_t>(container.size(), kBlockSize);
@@ -146,7 +150,7 @@ private:
         return out.offset() - offset;
     }
 
-    template<typename  In>
+    template<typename In>
     void deserializeFrom(In & in)
     {
         readContainerHeader(header, in);
@@ -166,6 +170,7 @@ private:
         compressed_buffer.finalize();
         ++header.block_count;
     }
+
     template<typename Out>
     static void writeBlockHeader(BlockHeader header, Out & out)
     {
@@ -198,6 +203,7 @@ private:
         writeVarUInt(header.size, out);
         writeVarUInt(header.base_value, out);
     }
+
     template<typename In>
     static void readContainerHeader(ContainerHeader & header, In & in)
     {
@@ -206,6 +212,7 @@ private:
        readOneField(header.size, in);
        readOneField(header.base_value, in);
     }
+
     static void decodeBlock(unsigned char *src, uint16_t n, uint32_t max_bits, std::vector<T> & out, uint32_t bytes_expected)
     {
         out.resize(n);
@@ -213,6 +220,7 @@ private:
         if (used != bytes_expected)
             throw Exception(ErrorCodes::CORRUPTED_DATA, "compressed/decompressed mismatch");
     }
+
     template<typename In, typename Consumer>
     void decompressBlock(In & in, std::string & temp_buffer, std::vector<T> & temp, Consumer &&consumer)
     {
