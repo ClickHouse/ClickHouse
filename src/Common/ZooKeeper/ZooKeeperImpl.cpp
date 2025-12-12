@@ -1406,7 +1406,9 @@ void ZooKeeper::pushRequest(RequestInfo && info)
             current_trace_context.isTraceEnabled() && current_trace_context.trace_flags & DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS
         )
         {
-            if (isFeatureEnabled(KeeperFeatureFlag::PASS_TRACING_CONTEXT))
+            /// We should only pass the tracing context if using 64-bit XIDs.
+            /// Otherwise, we would break Raft log entry deserialization.
+            if (use_xid_64 && isFeatureEnabled(KeeperFeatureFlag::PASS_TRACING_CONTEXT))
             {
                 info.request->tracing_context = current_trace_context;
             }

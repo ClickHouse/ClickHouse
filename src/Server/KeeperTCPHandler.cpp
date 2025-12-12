@@ -579,7 +579,7 @@ void KeeperTCPHandler::runImpl()
                         },
                         status,
                         error_message);
-                }
+                };
 
                 try
                 {
@@ -757,14 +757,21 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
         request_validator(*request);
     }
 
-    bool has_tracing;
-    Coordination::read(has_tracing, read_buffer);
-    if (has_tracing)
+    if (!read_buffer.eof())
     {
-        request->tracing_context.emplace();
-        request->tracing_context->deserialize(read_buffer);
+        bool has_tracing;
+        Coordination::read(has_tracing, read_buffer);
+        if (has_tracing)
+        {
+            /// The client should only pass the tracing context header if using 64-bit XIDs.
+            /// Otherwise, the Raft log entry deserialization would be broken.
+            chassert(use_xid_64);
 
-        ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.receive_request, request->tracing_context, receive_start_time);
+            request->tracing_context.emplace();
+            request->tracing_context->deserialize(read_buffer);
+
+            ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.receive_request, request->tracing_context, receive_start_time);
+        }
     }
 
     if (!keeper_dispatcher->putRequest(request, session_id, use_xid_64))
