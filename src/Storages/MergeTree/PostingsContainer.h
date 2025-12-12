@@ -3,6 +3,7 @@
 #include <IO/ReadHelpers.h>
 #include <Storages/MergeTree/IntegerCodecTrait.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/WriteBufferFromString.h>
 #include <roaring.hh>
 
 namespace DB
@@ -58,18 +59,32 @@ class PostingsContainerImpl
     static constexpr size_t kBlockSize = CodecTraits<T>::kBlockSize;
     struct BlockHeader
     {
-        uint16_t count;
-        uint16_t max_bits;
-        uint32_t bytes;
+        uint16_t count = 0;
+        uint16_t max_bits = 0;
+        uint32_t bytes = 0;
+    };
+    struct ContainerHeader
+    {
+        T base_value {};
+        uint32_t block_count = 0;
+        uint32_t bytes = 0;
+        uint32_t size = 0;
     };
 public:
     explicit PostingsContainerImpl() = default;
 
-    size_t size() const { return total; }
-    bool empty() const { return total == 0; }
+    size_t size() const { return header.size; }
+    bool empty() const { return header.size == 0; }
 
     void add(T value)
     {
+        if (!has_prev_value)
+        {
+            header.base_value = value;
+            prev_value = value;
+            has_prev_value = true;
+            current.reserve(kBlockSize);
+        }
         if (current.size() == kBlockSize)
         {
             std::span<const T> segment(current.begin(), current.end());
@@ -77,13 +92,16 @@ public:
             current.reserve(kBlockSize);
             current.clear();
         }
-        current.emplace_back(value);
+        current.emplace_back(value - prev_value);
+        prev_value = value;
+        ++header.size;
     }
     template<typename Out>
     size_t serialize(Out & out)
     {
         if (!current.empty())
             compressBlock(std::span<const T> (current.begin(), current.end()), temp_compression_data_buffer);
+        header.bytes = compressed_data.size();
         return serializeTo(out);
     }
     /// Serializes the container to a WriteBuffer-like output.
@@ -99,6 +117,7 @@ public:
             compressBlock(segment, temp_compression_data_buffer);
             container = container.subspan(segment_length);
         }
+        header.bytes = compressed_data.size();
         return serializeTo(out);
     }
 
@@ -107,59 +126,48 @@ public:
     void deserialize(In & in, Container & out)
     {
         deserializeFrom(in);
+        prev_value = header.base_value;
         std::string temp_buffer;
         std::vector<T> temp_compress_buffer;
         temp_compress_buffer.reserve(PostingsContainerImpl<T>::kBlockSize);
-        ReadBufferFromMemory data_buffer(compressed_buffer);
-        for (size_t i = 0; i < block_count; ++i)
+        ReadBufferFromMemory data_buffer(compressed_data);
+        for (size_t i = 0; i < static_cast<size_t>(header.block_count); ++i)
             decompressBlock(data_buffer, temp_buffer, temp_compress_buffer, [&out] (std::vector<uint32_t> & temp) { out.addMany(temp.size(), temp.data()); });
     }
 
-    size_t getSizeInBytes() const { return compressed_buffer.size(); }
+    size_t getSizeInBytes() const { return compressed_data.size(); }
 private:
     template<typename Out>
     size_t serializeTo(Out & out) const
     {
         auto offset = out.offset();
-        writeVarUInt(block_count, out);
-        writeVarUInt(total, out);
-        writeVarUInt(compressed_buffer.size(), out);
-        out.write(compressed_buffer.data(), compressed_buffer.size());
+        writeContainerHeader(header, out);
+        out.write(compressed_data.data(), compressed_data.size());
         return out.offset() - offset;
     }
 
     template<typename  In>
     void deserializeFrom(In & in)
     {
-        reset();
-        readVarUInt(block_count, in);
-        readVarUInt(total, in);
-        size_t bytes = 0;
-        readVarUInt(bytes, in);
-        compressed_buffer.resize(bytes);
-        in.readStrict(compressed_buffer.data(), bytes);
+        readContainerHeader(header, in);
+        compressed_data.resize(header.bytes);
+        in.readStrict(compressed_data.data(), header.bytes);
     }
 
-    void reset()
-    {
-        compressed_buffer.clear();
-        block_count = 0;
-        total = 0;
-    }
     void compressBlock(std::span<const T> segment, std::string & temp_compression_data)
     {
         auto [cap, bits] = CodecTraits<T>::evaluateSizeAndMaxBits(segment.data(), segment.size());
         temp_compression_data.resize(cap);
         auto bytes = CodecTraits<T>::encode(segment.data(), segment.size(), bits, reinterpret_cast<unsigned char*>(temp_compression_data.data()));
-        WriteBufferFromString wb(compressed_buffer, AppendModeTag{});
-        BlockHeader header { static_cast<uint16_t>(segment.size()), static_cast<uint16_t>(bits), static_cast<uint32_t>(bytes) };
-        writeHeader(header, wb);
-        wb.write(temp_compression_data.data(), bytes);
-        block_count++;
-        total += segment.size();
+        BlockHeader block_header { static_cast<uint16_t>(segment.size()), static_cast<uint16_t>(bits), static_cast<uint32_t>(bytes) };
+        WriteBufferFromString compressed_buffer(compressed_data, AppendModeTag {});
+        writeBlockHeader(block_header, compressed_buffer);
+        compressed_buffer.write(temp_compression_data.data(), bytes);
+        compressed_buffer.finalize();
+        ++header.block_count;
     }
     template<typename Out>
-    static void writeHeader(BlockHeader header, Out & out)
+    static void writeBlockHeader(BlockHeader header, Out & out)
     {
         writeVarUInt(header.count, out);
         writeVarUInt(header.bytes, out);
@@ -169,19 +177,35 @@ private:
     template <typename F, typename In>
     static void readOneField(F & out, In & in)
     {
-        uint64_t v = 0;
+        UInt64 v = 0;
         readVarUInt(v, in);
         out = static_cast<F>(v);
     }
 
     template<typename In>
-    static void readHeader(BlockHeader & header, In & in)
+    static void readBlockHeader(BlockHeader & header, In & in)
     {
         readOneField(header.count, in);
         readOneField(header.bytes, in);
         readOneField(header.max_bits, in);
     }
 
+    template<typename Out>
+    static void writeContainerHeader(ContainerHeader header, Out & out)
+    {
+        writeVarUInt(header.block_count, out);
+        writeVarUInt(header.bytes, out);
+        writeVarUInt(header.size, out);
+        writeVarUInt(header.base_value, out);
+    }
+    template<typename In>
+    static void readContainerHeader(ContainerHeader & header, In & in)
+    {
+       readOneField(header.block_count, in);
+       readOneField(header.bytes, in);
+       readOneField(header.size, in);
+       readOneField(header.base_value, in);
+    }
     static void decodeBlock(unsigned char *src, uint16_t n, uint32_t max_bits, std::vector<T> & out, uint32_t bytes_expected)
     {
         out.resize(n);
@@ -193,24 +217,30 @@ private:
     void decompressBlock(In & in, std::string & temp_buffer, std::vector<T> & temp, Consumer &&consumer)
     {
         /// Decode block header.
-        BlockHeader header;
-        readHeader(header, in);
-        temp.resize(header.count);
-        temp_buffer.resize(header.bytes);
-        in.readStrict(temp_buffer.data(), header.bytes);
+        BlockHeader block_header;
+        readBlockHeader(block_header, in);
+        temp.resize(block_header.count);
+        temp_buffer.resize(block_header.bytes);
+        in.readStrict(temp_buffer.data(), block_header.bytes);
         /// Decode postings
         unsigned char * p = reinterpret_cast<unsigned char *>(temp_buffer.data());
-        auto used = CodecTraits<T>::decode(p, header.count, header.max_bits, temp.data());
-        if (used != header.bytes)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Compressed and decompressed byte counts do not match. compressed = {}, decompressed = {}", header.bytes, used);
-        chassert(header.count == temp.size());
+        auto used = CodecTraits<T>::decode(p, block_header.count, block_header.max_bits, temp.data());
+        if (used != block_header.bytes)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Compressed and decompressed byte counts do not match. compressed = {}, decompressed = {}", block_header.bytes, used);
+        chassert(block_header.count == temp.size());
+        for (auto & e : temp)
+        {
+           e += prev_value;
+           prev_value = e;
+        }
         consumer(temp);
     }
-    std::string compressed_buffer;
+    ContainerHeader header;
+    std::string compressed_data;
     std::string temp_compression_data_buffer;
+    T prev_value;
+    bool has_prev_value = false;
     std::vector<T> current;
-    size_t block_count = 0;
-    size_t total = 0;
 };
 
 using PostingsContainer32 = PostingsContainerImpl<uint32_t>;

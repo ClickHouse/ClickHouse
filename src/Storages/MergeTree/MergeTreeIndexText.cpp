@@ -175,11 +175,6 @@ size_t PostingListBuilder::serialize(UInt64 header, WriteBuffer & ostr)
 
 UInt64 PostingsSerialization::serialize(UInt64 header, PostingListBuilder && postings, WriteBuffer & ostr)
 {
-    if (header & Flags::CompressedPostings)
-    {
-        chassert(std::get<PostingListBlockCodecPtr>(postings.getCodec()));
-        std::get<PostingListBlockCodecPtr>(postings.getCodec())->serialize(header, ostr);
-    }
     return postings.serialize(header, ostr);
 }
 
