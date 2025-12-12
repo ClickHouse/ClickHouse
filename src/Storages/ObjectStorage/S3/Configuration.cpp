@@ -102,6 +102,7 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
     "no_sign_request",
     "partition_strategy",
     "partition_columns_in_data_file",
+    "storage_class_name",
     /// Private configuration options
     "role_arn", /// for extra_credentials
     "role_session_name", /// for extra_credentials
@@ -1010,4 +1011,3 @@ void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
 }
 
 #endif
-
