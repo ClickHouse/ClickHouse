@@ -168,13 +168,17 @@ namespace
             if (token.empty())
                 return arrow::Status::IOError("Expected Basic auth scheme");
 
+
+            std::string user = "default";
+            std::string password;
+
             std::string credentials = base64Decode(token, true);
             auto pos = credentials.find(':');
-            if (pos == std::string::npos)
-                return arrow::Status::IOError("Malformed credentials");
-
-            auto user = credentials.substr(0, pos);
-            auto password = credentials.substr(pos + 1);
+            if (pos != std::string::npos)
+            {
+                user = credentials.substr(0, pos);
+                password = credentials.substr(pos + 1);
+            }
 
             std::string session_id;
             auto session_it = headers.find("x-clickhouse-session-id");
