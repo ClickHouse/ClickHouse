@@ -68,8 +68,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"type_json_skip_invalid_typed_paths", false, false, "Allow skipping typed paths that fail type coercion in JSON columns"},
             {"query_plan_optimize_join_order_algorithm", "greedy", "greedy", "New experimental setting."},
             {"s3_path_filter_limit", 0, 1000, "New setting"},
+            {"format_capn_proto_max_message_size", 0, 1_GiB, "Prevent allocating large amount of memory"},
+            {"parallel_replicas_allow_materialized_views", false, true, "Allow usage of materialized views with parallel replicas"},
             {"distributed_cache_use_clients_cache_for_read", true, true, "New setting"},
             {"distributed_cache_use_clients_cache_for_write", false, false, "New setting"},
+            {"enable_positional_arguments_for_projections", true, false, "New setting to control positional arguments in projections."},
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
@@ -100,6 +103,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"database_shared_drop_table_delay_seconds", 8 * 60 * 60, 8 * 60 * 60, "New setting."},
             {"filesystem_cache_allow_background_download", true, true, "New setting to control background downloads in filesystem cache per query."},
             {"show_processlist_include_internal", false, true, "New setting."},
+            {"enable_positional_arguments_for_projections", true, false, "New setting to control positional arguments in projections."},
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {
@@ -136,6 +140,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_receive_timeout_ms", 3000, 3000, "New setting"},
             {"distributed_cache_send_timeout_ms", 3000, 3000, "New setting"},
             {"distributed_cache_tcp_keep_alive_timeout_ms", 2900, 2900, "New setting"},
+            {"enable_positional_arguments_for_projections", true, false, "New setting to control positional arguments in projections."},
         });
         addSettingsChanges(settings_changes_history, "25.9",
         {
