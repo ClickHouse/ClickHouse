@@ -251,7 +251,7 @@ struct StatisticsStringRef
         int t = memcmp(a.ptr, b.ptr, std::min(a.len, b.len));
         if (t != 0)
             return t;
-        return a.len - b.len;
+        return int(a.len) - int(b.len);
     }
 };
 
@@ -320,7 +320,7 @@ struct StatisticsStringCopy
         int t = memcmp(a.ptr, b.data(), std::min(a.len, static_cast<UInt32>(b.size())));
         if (t != 0)
             return t;
-        return a.len - static_cast<UInt32>(b.size());
+        return int(a.len) - int(b.size());
     }
 };
 
