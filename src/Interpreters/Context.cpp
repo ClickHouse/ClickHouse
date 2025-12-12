@@ -851,7 +851,6 @@ struct ContextSharedPart : boost::noncopyable
         SHUTDOWN(log, "dictionaries loader", external_dictionaries_loader, enablePeriodicUpdates(false));
         SHUTDOWN(log, "UDFs loader", external_user_defined_executable_functions_loader, enablePeriodicUpdates(false));
         SHUTDOWN(log, "another UDFs storage", user_defined_sql_objects_storage, stopWatching());
-        SHUTDOWN(log, "workload entity storage", workload_entity_storage, stopWatching());
 
         LOG_TRACE(log, "Shutting down named sessions");
         Session::shutdownNamedSessions();
@@ -881,8 +880,10 @@ struct ContextSharedPart : boost::noncopyable
         SHUTDOWN(log, "fetches executor", fetch_executor, wait());
         SHUTDOWN(log, "moves executor", moves_executor, wait());
         SHUTDOWN(log, "common executor", common_executor, wait());
-
         TransactionLog::shutdownIfAny();
+
+        // Workload entity storage must be destructed when no queries or merges are running because PipelineExecutor may access it.
+        SHUTDOWN(log, "workload entity storage", workload_entity_storage, stopWatching());
 
         std::unique_ptr<SystemLogs> delete_system_logs;
         std::unique_ptr<EmbeddedDictionaries> delete_embedded_dictionaries;
@@ -3447,48 +3448,27 @@ void Context::loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::Abstr
 const IUserDefinedSQLObjectsStorage & Context::getUserDefinedSQLObjectsStorage() const
 {
     callOnce(shared->user_defined_sql_objects_storage_initialized, [&] {
-        auto value = createUserDefinedSQLObjectsStorage(getGlobalContext());
-        SharedLockGuard lock(shared->mutex);
-        shared->user_defined_sql_objects_storage = value;
+        shared->user_defined_sql_objects_storage = createUserDefinedSQLObjectsStorage(getGlobalContext());
     });
 
-    SharedLockGuard lock(shared->mutex);
-    if (!shared->user_defined_sql_objects_storage)
-        throw Exception(ErrorCodes::ABORTED, "Server shutdown is called");
     return *shared->user_defined_sql_objects_storage;
 }
 
 IUserDefinedSQLObjectsStorage & Context::getUserDefinedSQLObjectsStorage()
 {
     callOnce(shared->user_defined_sql_objects_storage_initialized, [&] {
-        auto value = createUserDefinedSQLObjectsStorage(getGlobalContext());
-        std::lock_guard lock(shared->mutex);
-        shared->user_defined_sql_objects_storage = value;
+        shared->user_defined_sql_objects_storage = createUserDefinedSQLObjectsStorage(getGlobalContext());
     });
 
-    std::lock_guard lock(shared->mutex);
-    if (!shared->user_defined_sql_objects_storage)
-        throw Exception(ErrorCodes::ABORTED, "Server shutdown is called");
     return *shared->user_defined_sql_objects_storage;
-}
-
-void Context::setUserDefinedSQLObjectsStorage(std::unique_ptr<IUserDefinedSQLObjectsStorage> storage)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->user_defined_sql_objects_storage = std::move(storage);
 }
 
 IWorkloadEntityStorage & Context::getWorkloadEntityStorage() const
 {
     callOnce(shared->workload_entity_storage_initialized, [&] {
-        auto value = createWorkloadEntityStorage(getGlobalContext());
-        std::lock_guard lock(shared->mutex);
-        shared->workload_entity_storage = std::move(value);
+        shared->workload_entity_storage = createWorkloadEntityStorage(getGlobalContext());
     });
 
-    std::lock_guard lock(shared->mutex);
-    if (!shared->workload_entity_storage)
-        throw Exception(ErrorCodes::ABORTED, "Server shutdown is called");
     return *shared->workload_entity_storage;
 }
 
