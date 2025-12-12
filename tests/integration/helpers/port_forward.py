@@ -1,6 +1,6 @@
 import socket
 import threading
-from typing import Any, Callable
+from typing import Callable
 
 
 # simple port forwarding
@@ -17,7 +17,7 @@ class PortForward:
         while True:
             try:
                 assert self._sock is not None
-                connection, addr = self._sock.accept()
+                connection, _ = self._sock.accept()
             except socket.timeout:
                 continue
             except Exception:

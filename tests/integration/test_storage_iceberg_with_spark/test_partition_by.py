@@ -7,13 +7,15 @@ from helpers.iceberg_utils import (
     create_iceberg_table,
     get_uuid_str
 )
+from helpers.cluster import ClickHouseCluster
+from pyspark.sql import SparkSession
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_partition_by(started_cluster_iceberg_with_spark, format_version, storage_type):
+def test_partition_by(started_cluster_iceberg_with_spark : ClickHouseCluster, format_version : str, storage_type : str) -> None:
     instance = started_cluster_iceberg_with_spark.instances["node1"]
-    spark = started_cluster_iceberg_with_spark.spark_session
+    spark : "SparkSession" = started_cluster_iceberg_with_spark.spark_session # type: ignore
     TABLE_NAME = (
         "test_partition_by_"
         + format_version

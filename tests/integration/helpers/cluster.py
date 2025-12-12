@@ -6,7 +6,7 @@ import json
 import logging
 import os
 import os.path as p
-from pandas.core.frame import DataFrame
+from pandas.core.frame import DataFrame  # pyright: ignore[reportMissingTypeStubs]
 import platform
 import pprint
 import pwd
