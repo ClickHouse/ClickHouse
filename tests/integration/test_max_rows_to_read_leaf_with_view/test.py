@@ -36,10 +36,7 @@ def started_cluster():
 """
             )
         node1.query(
-            "INSERT INTO local_table (id) select * from system.numbers ORDER BY ALL limit 200"
-        )
-        node2.query(
-            "INSERT INTO local_table (id) select * from system.numbers ORDER BY ALL limit 200"
+            "INSERT INTO local_table (id) select * from system.numbers limit 200"
         )
 
         yield cluster
