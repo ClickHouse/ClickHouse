@@ -361,6 +361,8 @@ private:
     void generateNextUpdate(RandomGenerator & rg, const SQLTable & t, Update * upt);
     void generateNextDelete(RandomGenerator & rg, const SQLTable & t, Delete * del);
     template <typename T>
+    void generateNextUpdateOrDeleteOnTable(RandomGenerator & rg, const SQLTable & t, T * st);
+    template <typename T>
     void generateNextUpdateOrDelete(RandomGenerator & rg, T * st);
     void generateNextTruncate(RandomGenerator & rg, Truncate * trunc);
     void generateNextOptimizeTableInternal(RandomGenerator & rg, const SQLTable & t, bool strict, OptimizeTable * ot);
@@ -372,6 +374,7 @@ private:
     void generateNextExchange(RandomGenerator & rg, Exchange * exc);
     void generateNextKill(RandomGenerator & rg, Kill * kil);
     void generateUptDelWhere(RandomGenerator & rg, const SQLTable & t, Expr * expr);
+    std::optional<String> alterSingleTable(RandomGenerator & rg, SQLTable & t, const uint32_t nalters, const bool no_oracle, Alter * at);
     void generateAlter(RandomGenerator & rg, Alter * at);
     void generateHotTableSettingsValues(RandomGenerator & rg, bool create, SettingValues * vals);
     void generateSettingValues(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SettingValues * vals);

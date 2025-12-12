@@ -142,40 +142,64 @@ void QueryOracle::insertOnTableOrCluster(
 
 /// Dump and read table oracle
 void QueryOracle::dumpTableContent(
-    RandomGenerator & rg, StatementGenerator & gen, const bool test_content, const SQLTable & t, SQLQuery & sq1)
+    RandomGenerator & rg,
+    StatementGenerator & gen,
+    const DumpOracleStrategy strategy,
+    const bool test_content,
+    const SQLTable & t,
+    SQLQuery & sq1)
 {
-    bool first = true;
     TopSelect * ts = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
     Select * sel = ts->mutable_sel();
     SelectStatementCore * ssc = sel->mutable_select_core();
     JoinedTableOrFunction * jtf = ssc->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
-    OrderByList * obs = ssc->mutable_orderby()->mutable_olist();
 
     insertOnTableOrCluster(rg, gen, t, false, jtf->mutable_tof());
     jtf->set_final(t.supportsFinal());
-
-    gen.flatTableColumnPath(0, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
-    for (const auto & entry : gen.entries)
+    switch (strategy)
     {
-        ExprOrderingTerm * eot = first ? obs->mutable_ord_term() : obs->add_extra_ord_terms();
+        case DumpOracleStrategy::DUMP_TABLE:
+        case DumpOracleStrategy::OPTIMIZE:
+        case DumpOracleStrategy::REATTACH:
+        case DumpOracleStrategy::BACKUP_RESTORE: {
+            /// Dump entire table and compare contents
+            bool first = true;
+            OrderByList * obs = ssc->mutable_orderby()->mutable_olist();
 
-        gen.columnPathRef(entry, ssc->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
-        gen.columnPathRef(entry, eot->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path());
-        if (rg.nextBool())
-        {
-            eot->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
+            gen.flatTableColumnPath(0, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
+            for (const auto & entry : gen.entries)
+            {
+                ExprOrderingTerm * eot = first ? obs->mutable_ord_term() : obs->add_extra_ord_terms();
+
+                gen.columnPathRef(entry, ssc->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
+                gen.columnPathRef(entry, eot->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path());
+                if (rg.nextBool())
+                {
+                    eot->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
+                }
+                if (rg.nextBool())
+                {
+                    eot->set_nulls_order(
+                        rg.nextBool() ? ExprOrderingTerm_NullsOrder::ExprOrderingTerm_NullsOrder_FIRST
+                                      : ExprOrderingTerm_NullsOrder::ExprOrderingTerm_NullsOrder_LAST);
+                }
+                first = false;
+            }
+            gen.entries.clear();
         }
-        if (rg.nextBool())
-        {
-            eot->set_nulls_order(
-                rg.nextBool() ? ExprOrderingTerm_NullsOrder::ExprOrderingTerm_NullsOrder_FIRST
-                              : ExprOrderingTerm_NullsOrder::ExprOrderingTerm_NullsOrder_LAST);
-        }
-        first = false;
+        break;
+        case DumpOracleStrategy::ALTER_UPDATE:
+            /// Just match the count
+            ssc->add_result_columns()
+                ->mutable_eca()
+                ->mutable_expr()
+                ->mutable_comp_expr()
+                ->mutable_func_call()
+                ->mutable_func()
+                ->set_catalog_func(FUNCcount);
+            break;
     }
-    gen.entries.clear();
-
     if (test_content)
     {
         /// Don't write statistics
@@ -280,6 +304,8 @@ void QueryOracle::dumpOracleIntermediateSteps(
     const bool test_content,
     std::vector<SQLQuery> & intermediate_queries)
 {
+    const std::optional<String> & cluster = t.getCluster();
+
     intermediate_queries.clear();
     switch (strategy)
     {
@@ -287,7 +313,6 @@ void QueryOracle::dumpOracleIntermediateSteps(
             SQLQuery next1;
             SQLQuery next2;
             SQLQuery next3;
-            const std::optional<String> & cluster = t.getCluster();
             const auto & t2
                 = test_content ? t : rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_to_test_format)).get();
 
@@ -321,7 +346,6 @@ void QueryOracle::dumpOracleIntermediateSteps(
         case DumpOracleStrategy::REATTACH: {
             SQLQuery next1;
             SQLQuery next2;
-            const std::optional<String> & cluster = t.getCluster();
             Detach * det = next1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_detach();
             Attach * att = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_attach();
 
@@ -352,7 +376,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
         case DumpOracleStrategy::BACKUP_RESTORE: {
             SQLQuery next1;
             SQLQuery next3;
-            std::optional<String> cluster;
+            std::optional<String> bcluster;
             BackupRestore * bac = next1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_backup_restore();
             BackupRestore * res = next3.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_backup_restore();
             SettingValues * bsett = nullptr;
@@ -366,11 +390,11 @@ void QueryOracle::dumpOracleIntermediateSteps(
             res->set_command(BackupRestore_BackupCommand_RESTORE);
 
             t.setName(baco->mutable_object()->mutable_est(), false);
-            cluster = gen.backupOrRestoreObject(baco, SQLObject::TABLE, t);
-            if (cluster.has_value())
+            bcluster = gen.backupOrRestoreObject(baco, SQLObject::TABLE, t);
+            if (bcluster.has_value())
             {
-                bac->mutable_cluster()->set_cluster(cluster.value());
-                res->mutable_cluster()->set_cluster(cluster.value());
+                bac->mutable_cluster()->set_cluster(bcluster.value());
+                res->mutable_cluster()->set_cluster(bcluster.value());
             }
             if (table_has_partitions && rg.nextSmallNumber() < 4)
             {
@@ -432,6 +456,32 @@ void QueryOracle::dumpOracleIntermediateSteps(
                 intermediate_queries.emplace_back(next2);
             }
             intermediate_queries.emplace_back(next3);
+        }
+        break;
+        case DumpOracleStrategy::ALTER_UPDATE: {
+            SQLQuery next;
+
+            if (rg.nextBool())
+            {
+                std::optional<String> acluster;
+                Alter * at = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
+
+                acluster = gen.alterSingleTable(rg, const_cast<SQLTable &>(t), 1, false, at);
+                if (acluster.has_value())
+                {
+                    at->mutable_cluster()->set_cluster(acluster.value());
+                }
+                if (rg.nextSmallNumber() < 3)
+                {
+                    gen.generateSettingValues(rg, serverSettings, at->mutable_setting_values());
+                }
+            }
+            else
+            {
+                gen.generateNextUpdateOrDeleteOnTable<LightUpdate>(
+                    rg, t, next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_upt());
+            }
+            intermediate_queries.emplace_back(next);
         }
         break;
     }

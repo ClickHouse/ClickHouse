@@ -12,7 +12,8 @@ enum class DumpOracleStrategy
     DUMP_TABLE = 1,
     OPTIMIZE = 2,
     REATTACH = 3,
-    BACKUP_RESTORE = 4
+    BACKUP_RESTORE = 4,
+    ALTER_UPDATE = 5
 };
 
 class QueryOracle
@@ -64,7 +65,13 @@ public:
     void generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2);
 
     /// Dump and read table oracle
-    void dumpTableContent(RandomGenerator & rg, StatementGenerator & gen, bool test_content, const SQLTable & t, SQLQuery & sq1);
+    void dumpTableContent(
+        RandomGenerator & rg,
+        StatementGenerator & gen,
+        const DumpOracleStrategy strategy,
+        const bool test_content,
+        const SQLTable & t,
+        SQLQuery & sq1);
     void dumpOracleIntermediateSteps(
         RandomGenerator & rg,
         StatementGenerator & gen,

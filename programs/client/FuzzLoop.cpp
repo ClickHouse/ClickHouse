@@ -764,8 +764,9 @@ bool Client::buzzHouse()
                     const uint32_t optimize_table = 20 * static_cast<uint32_t>(test_content && tbl.get().can_run_merges);
                     const uint32_t reattach_table = 20 * static_cast<uint32_t>(test_content);
                     const uint32_t backup_restore_table = 20 * static_cast<uint32_t>(test_content);
-                    const uint32_t dump_table = 50;
-                    const uint32_t prob_space2 = optimize_table + reattach_table + backup_restore_table + dump_table;
+                    const uint32_t alter_update_table = 20 * static_cast<uint32_t>(test_content);
+                    const uint32_t dump_table = 40;
+                    const uint32_t prob_space2 = optimize_table + reattach_table + backup_restore_table + alter_update_table + dump_table;
                     std::uniform_int_distribution<uint32_t> next_dist2(1, prob_space2);
                     const uint32_t nopt2 = next_dist2(rg.generator);
                     BuzzHouse::DumpOracleStrategy strategy = BuzzHouse::DumpOracleStrategy::DUMP_TABLE;
@@ -782,12 +783,17 @@ bool Client::buzzHouse()
                     {
                         strategy = BuzzHouse::DumpOracleStrategy::BACKUP_RESTORE;
                     }
+                    else if (
+                        alter_update_table && nopt2 < (optimize_table + reattach_table + backup_restore_table + alter_update_table + 1))
+                    {
+                        strategy = BuzzHouse::DumpOracleStrategy::ALTER_UPDATE;
+                    }
 
                     if (test_content)
                     {
                         /// Dump table content and read it later to look for correctness
                         full_query.resize(0);
-                        qo.dumpTableContent(rg, gen, test_content, tbl, sq1);
+                        qo.dumpTableContent(rg, gen, strategy, test_content, tbl, sq1);
                         BuzzHouse::SQLQueryToString(full_query, sq1);
                         fuzz_config->outf << full_query << std::endl;
                         server_up &= processBuzzHouseQuery(full_query);
