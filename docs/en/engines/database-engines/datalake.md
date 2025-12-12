@@ -59,8 +59,8 @@ The following settings are supported:
 | `aws_access_key_id`     | AWS access key ID for S3/Glue access (if not using vended credentials)                  |
 | `aws_secret_access_key` | AWS secret access key for S3/Glue access (if not using vended credentials)              |
 | `region`                | AWS region for the service (e.g., `us-east-1`)                                          |
-| `dlf_access_key_id`                | access key ID for DLF access                  |
-| `dlf_access_key_secret`                | secret access key for DLF access              |
+| `dlf_access_key_id`     | Access key ID for DLF access                                                            |
+| `dlf_access_key_secret` | Access key Secret for DLF access                                                        |
 
 ## Examples {#examples}
 
@@ -83,4 +83,3 @@ SETTINGS
    onelake_client_secret = client_secret;
 SHOW TABLES IN databse_name;       
 SELECT count() from database_name.table_name;
-```
