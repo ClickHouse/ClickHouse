@@ -426,6 +426,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::WAIT_FAILPOINT:
+        case Type::NOTIFY_FAILPOINT:
         {
             ostr << ' ';
             print_identifier(fail_point_name);

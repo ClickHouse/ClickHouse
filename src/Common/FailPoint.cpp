@@ -240,6 +240,20 @@ void FailPointInjection::disableFailPoint(const String & fail_point_name)
     fiu_disable(fail_point_name.c_str());
 }
 
+void FailPointInjection::notifyFailPoint(const String & fail_point_name)
+{
+    std::lock_guard lock(mu);
+    if (auto iter = fail_point_wait_channels.find(fail_point_name); iter != fail_point_wait_channels.end())
+    {
+        /// Notify the failpoint to continue execution without disabling it
+        iter->second->notifyAll();
+    }
+    else
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not find channel for fail point {}", fail_point_name);
+    }
+}
+
 void FailPointInjection::wait(const String & fail_point_name)
 {
     std::unique_lock lock(mu);
@@ -267,6 +281,10 @@ void FailPointInjection::enablePauseFailPoint(const String &, UInt64)
 }
 
 void FailPointInjection::disableFailPoint(const String &)
+{
+}
+
+void FailPointInjection::notifyFailPoint(const String &)
 {
 }
 
