@@ -1,5 +1,6 @@
 #pragma once
 #include <Interpreters/Cache/IFileCachePriority.h>
+#include <Interpreters/Cache/UserInfo.h>
 #include <deque>
 
 namespace DB
@@ -18,6 +19,8 @@ struct QueueEvictionInfo
     size_t elements_to_evict = 0;
     IFileCachePriority::HoldSpacePtr hold_space;
     std::string description;
+
+    FileCacheUserInfo::UserID user_id;
 
     std::string toString() const;
     /// Whether actual eviction is needed to be done.

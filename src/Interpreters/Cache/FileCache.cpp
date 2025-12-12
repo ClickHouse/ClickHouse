@@ -1006,13 +1006,13 @@ bool FileCache::doTryReserve(
                     return false;
                 }
                 query_eviction_info = query_priority->collectEvictionInfo(
-                    size, required_elements_num, main_priority_iterator.get(), /* is_total_space_cleanup */false, lock);
+                    size, required_elements_num, main_priority_iterator.get(), /* is_total_space_cleanup */false, user, lock);
             }
         }
 
         /// Check server-wide cache limits.
         main_eviction_info = main_priority->collectEvictionInfo(
-            size, required_elements_num, main_priority_iterator.get(), /* is_total_space_cleanup */false, lock);
+            size, required_elements_num, main_priority_iterator.get(), /* is_total_space_cleanup */false, user, lock);
 
         /// Can we already just increment size for the queue entry and quit?
         /// TODO: allow to quit here if query_context != nullptr.
@@ -1167,7 +1167,7 @@ bool FileCache::doEviction(
                     continue_from_last_eviction_pos,
                     /* max_candidates_size */0,
                     /* is_total_space_cleanup */false,
-                    user.user_id,
+                    user,
                     cache_guard,
                     cache_state_guard))
             {
@@ -1188,7 +1188,7 @@ bool FileCache::doEviction(
                 continue_from_last_eviction_pos,
                 /* max_candidates_size */0,
                 /* is_total_space_cleanup */false,
-                user.user_id,
+                user,
                 cache_guard,
                 cache_state_guard))
         {
@@ -1284,6 +1284,7 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
             elements_to_evict,
             /* reservee */nullptr,
             /* is_total_space_cleanup */true,
+            getInternalUser(),
             lock);
     }
 
@@ -1310,7 +1311,7 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
         /* continue_from_last_eviction_pos */false,
         /* max_candidates_size */keep_up_free_space_remove_batch,
         /* is_total_space_cleanup */true,
-        {},
+        getInternalUser(),
         cache_guard,
         cache_state_guard);
 
@@ -2025,6 +2026,7 @@ bool FileCache::doDynamicResizeImpl(
         elements_to_evict,
         /* reservee */nullptr,
         /* is_total_space_cleanup */true,
+        getInternalUser(),
         state_lock);
 
     chassert(!eviction_info->hasHoldSpace());
@@ -2060,7 +2062,7 @@ bool FileCache::doDynamicResizeImpl(
             /* continue_from_last_eviction_pos */false,
             /* max_candidates_size */0,
             /* is_total_space_cleanup */true,
-            {},
+            getInternalUser(),
             cache_guard,
             cache_state_guard))
     {

@@ -323,6 +323,7 @@ EvictionInfoPtr LRUFileCachePriority::collectEvictionInfo(
     size_t elements,
     IFileCachePriority::Iterator *,
     bool is_total_space_cleanup,
+    const IFileCachePriority::UserInfo &,
     const CacheStateGuard::Lock & lock)
 {
     auto info = std::make_unique<QueueEvictionInfo>(description);
@@ -378,7 +379,7 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     bool continue_from_last_eviction_pos,
     size_t max_candidates_size,
     bool /* is_total_space_cleanup */,
-    const UserID &,
+    const UserInfo &,
     CachePriorityGuard & cache_guard,
     CacheStateGuard &)
 {

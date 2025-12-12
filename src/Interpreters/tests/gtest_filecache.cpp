@@ -1560,8 +1560,8 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
     IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
     auto evicted = std::make_unique<EvictionCandidates>();
 
-    auto eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, state_guard.lock());
-    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, user.user_id, cache_guard, state_guard);
+    auto eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, user, state_guard.lock());
+    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, user, cache_guard, state_guard);
     eviction_info.reset();
 
     ASSERT_EQ(evicted->size(), 0); /// Nothing is evicted.
@@ -1575,8 +1575,8 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
 
     evicted = std::make_unique<EvictionCandidates>();
     stat = {};
-    eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, state_guard.lock());
-    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, user.user_id, cache_guard, state_guard);
+    eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, user, state_guard.lock());
+    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, user, cache_guard, state_guard);
 
     ASSERT_EQ(evicted->size(), 1);
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
@@ -1610,8 +1610,8 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
 
     evicted = std::make_unique<EvictionCandidates>();
     stat = {};
-    eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, state_guard.lock());
-    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, user.user_id, cache_guard, state_guard);
+    eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, user, state_guard.lock());
+    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, user, cache_guard, state_guard);
 
     ASSERT_EQ(evicted->size(), 1);
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
