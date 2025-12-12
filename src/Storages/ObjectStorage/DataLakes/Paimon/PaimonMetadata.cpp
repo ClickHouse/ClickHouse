@@ -1,3 +1,5 @@
+#include <unordered_set>
+#include "Core/Types.h"
 #include "config.h"
 
 #if USE_AVRO
@@ -102,11 +104,11 @@ void PaimonMetadata::updateState()
     }
     /// init snapshot, now only support latest snapshot
     auto snapshot_meta_info = table_client_ptr->getLastestTableSnapshotInfo();
-    if (snapshot.has_value() && snapshot_meta_info.first == snapshot->id)
+    if (!snapshot_meta_info.has_value() || (snapshot.has_value() && snapshot_meta_info->first == snapshot->id))
     {
         return;
     }
-    snapshot = table_client_ptr->getSnapshot(snapshot_meta_info);
+    snapshot = table_client_ptr->getSnapshot(*snapshot_meta_info);
     /// init manifest by snapshot
     std::vector<PaimonManifestFileMeta> base_manifest_list = table_client_ptr->getManifestMeta(snapshot->base_manifest_list);
     std::vector<PaimonManifestFileMeta> delta_manifest_list = table_client_ptr->getManifestMeta(snapshot->delta_manifest_list);
@@ -171,25 +173,39 @@ ObjectIterator PaimonMetadata::iterate(
 {
     SharedLockGuard shared_lock(mutex);
     Strings data_files;
+    std::unordered_set<String> delete_files;
     std::optional<PartitionPruner> partition_pruner;
     if (filter_dag_ && context_->getSettingsRef()[Setting::use_paimon_partition_pruning])
     {
         auto filter_dag = filter_dag_->clone();
         partition_pruner.emplace(*table_schema, filter_dag, getContext());
     }
+    auto read_files = [&](const PaimonManifestEntry & file_entry)
+    {
+        if (partition_pruner.has_value() && partition_pruner->canBePruned(file_entry))
+        {
+            return;
+        }
+        if (file_entry.kind != PaimonManifestEntry::Kind::DELETE)
+        {
+            data_files.emplace_back(
+                std::filesystem::path(table_path) / file_entry.file.bucket_path
+                / file_entry.file.file_name);
+            LOG_TEST(log, "manifest data file: {}", data_files.back());
+        }
+        else if (file_entry.kind == PaimonManifestEntry::Kind::DELETE)
+        {
+            auto path = std::filesystem::path(table_path) / file_entry.file.bucket_path
+                / file_entry.file.file_name;
+            delete_files.insert(path.string());
+            LOG_TEST(log, "manifest delete file: {}", path);
+        }
+    };
     for (const auto & entry : base_manifest)
     {
         for (const auto & file_entry : entry.entries)
         {
-            if (file_entry.kind == PaimonManifestEntry::Kind::DELETE)
-                continue;
-            if (partition_pruner.has_value() && partition_pruner->canBePruned(file_entry))
-            {
-                LOG_TEST(log, "partition prun manifest file: {}, {}", file_entry.file.file_name, file_entry.file.bucket_path);
-                continue;
-            }
-            data_files.emplace_back(std::filesystem::path(table_path) / file_entry.file.bucket_path / file_entry.file.file_name);
-            LOG_TEST(log, "base_manifest data file: {}", data_files.back());
+            read_files(file_entry);
         }
     }
 
@@ -197,15 +213,21 @@ ObjectIterator PaimonMetadata::iterate(
     {
         for (const auto & file_entry : entry.entries)
         {
-            if (file_entry.kind == PaimonManifestEntry::Kind::DELETE)
-                continue;
-            if (partition_pruner.has_value() && partition_pruner->canBePruned(file_entry))
-            {
-                LOG_TEST(log, "partition prun manifest file: {}, {}", file_entry.file.file_name, file_entry.file.bucket_path);
-                continue;
-            }
-            data_files.emplace_back(std::filesystem::path(table_path) / file_entry.file.bucket_path / file_entry.file.file_name);
-            LOG_TEST(log, "delta_manifest data file: {}", data_files.back());
+            read_files(file_entry);
+        }
+    }
+
+    /// remove delete files from data_files and apply partition pruning
+    for (auto it = data_files.begin(); it != data_files.end();)
+    {
+        if (delete_files.find(*it) != delete_files.end())
+        {
+            it = data_files.erase(it);
+            LOG_TEST(log, "delete data file: {}", *it);
+        }
+        else
+        {
+            ++it;
         }
     }
     return createKeysIterator(std::move(data_files), object_storage, callback_);
