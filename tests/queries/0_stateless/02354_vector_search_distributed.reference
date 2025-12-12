@@ -1,0 +1,10 @@
+# Direct query on local table - expect index usage
+6
+# Direct query on remote() - expect index usage
+12
+# Verify actual query results with remote()
+1
+2
+3
+4
+5
