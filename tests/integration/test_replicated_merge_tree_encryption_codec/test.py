@@ -68,8 +68,8 @@ def check_table():
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
     assert node1.query("SELECT * FROM tbl ORDER BY id") == TSV(expected)
     assert node2.query("SELECT * FROM tbl ORDER BY id") == TSV(expected)
-    assert node1.query("CHECK TABLE tbl") == "1\n"
-    assert node2.query("CHECK TABLE tbl") == "1\n"
+    assert node1.query("CHECK TABLE tbl SETTINGS check_query_single_value_result = 1") == "1\n"
+    assert node2.query("CHECK TABLE tbl SETTINGS check_query_single_value_result = 1") == "1\n"
 
 
 # Actual tests:

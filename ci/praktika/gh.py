@@ -27,14 +27,21 @@ class GH:
         updated_at: str
         created_at: str
         number: int
+        is_closed: bool = False
 
         @property
         def html_url(self):
             """Alias for url field for compatibility"""
             return self.url
 
+        @property
+        def state(self):
+            """Backwards compatibility property for state field"""
+            return "closed" if self.is_closed else "open"
+
         @classmethod
         def from_gh_json(cls, json_data):
+            state_str = json_data.get("state", "open").lower()
             return cls(
                 title=json_data["title"],
                 body=json_data["body"],
@@ -44,6 +51,7 @@ class GH:
                 updated_at=json_data["updatedAt"],
                 created_at=json_data["createdAt"],
                 number=json_data["number"],
+                is_closed=(state_str == "closed"),
             )
 
     @dataclasses.dataclass
@@ -487,22 +495,116 @@ class GH:
 
     @classmethod
     def find_issue(
-        cls, title, labels: List[str] = None, repo=""
+        cls,
+        title,
+        labels: List[str] = None,
+        repo="",
+        verbose=False,
+        include_closed_hours: int = 0,
     ) -> Optional["GH.GHIssue"]:
         if not repo:
             repo = _Environment.get().REPOSITORY
         if labels is None:
             labels = []
         label_cmd = "".join([f" --label '{label}'" for label in labels])
-        safe_title = shlex.quote(title)
-        cmd = f"gh issue list --json title,body,labels,author,url,updatedAt,createdAt,number --repo {repo} --search {safe_title} {label_cmd}"
-        output = Shell.get_output(cmd, verbose=False)
+
+        # GitHub search API doesn't handle special characters well in the query,
+        # even with 'in:title'. Remove special chars to create a keyword search,
+        # then do exact title matching on the results.
+        search_query = (
+            title.replace("'", "")
+            .replace('"', "")
+            .replace("(", " ")
+            .replace(")", " ")
+            .replace("[", " ")
+            .replace("]", " ")
+            .replace("{", " ")
+            .replace("}", " ")
+            .replace(",", " ")
+            # .replace(":", " ") pytest test_file.py::test_function has ::
+            .replace(";", " ")
+            .replace("?", " ")
+            .replace("!", " ")
+            .replace("*", " ")
+            .replace("&", " ")
+            .replace("|", " ")
+            .replace("=", " ")
+            .replace("<", " ")
+            .replace(">", " ")
+            # .replace(".", " ") pytest test_file.py::test_function has .
+        )
+
+        # Clean up multiple consecutive spaces
+        import re
+
+        search_query = re.sub(r"\s+", " ", search_query).strip()
+
+        # Use a generous length limit for better matching
+        if len(search_query) > 200:
+            search_query = search_query[:200]
+
+        # Construct the full search query with 'in:title' qualifier
+        # Wrap search query in quotes for exact phrase matching to avoid partial matches
+        full_search_query = f'in:title "{search_query}"'
+
+        # Add state filter based on whether we want to include closed issues
+        state_filter = "--state all" if include_closed_hours > 0 else "--state open"
+
+        # Add state qualifier to search query
+        # For recent closed issues: use OR logic to get (all open) OR (recently closed)
+        if include_closed_hours > 0:
+            from datetime import datetime, timedelta, timezone
+
+            cutoff_time = datetime.now(timezone.utc) - timedelta(
+                hours=include_closed_hours
+            )
+            # GitHub search date format: YYYY-MM-DDTHH:MM:SS
+            date_filter = cutoff_time.strftime("%Y-%m-%dT%H:%M:%S")
+            # Use OR to include all open issues plus recently closed ones
+            full_search_query = (
+                f"{full_search_query} (is:open OR closed:>={date_filter})"
+            )
+        else:
+            full_search_query = f"{full_search_query} is:open"
+
+        safe_search_query = shlex.quote(full_search_query)
+        cmd = f"gh issue list --json title,body,labels,author,url,updatedAt,createdAt,number,state --repo {repo} {state_filter} --search {safe_search_query} {label_cmd}"
+        output = Shell.get_output(cmd, verbose=verbose)
         try:
             issues = json.loads(output)
-            if issues:
-                return cls.GHIssue.from_gh_json(issues[0])
-            else:
+            if not issues:
                 return None
+
+            # Convert to GHIssue objects
+            gh_issues = [cls.GHIssue.from_gh_json(issue) for issue in issues]
+
+            # Filter results to find exact or close matches with the original title
+            # First try exact match (case-insensitive)
+            for gh_issue in gh_issues:
+                if gh_issue.title.lower() == title.lower():
+                    return [gh_issue]
+
+            # If no exact match and multiple results, try prefix matching
+            if len(gh_issues) > 1:
+                best_matches = []
+                for gh_issue in gh_issues:
+                    # Check if the issue title starts with the original title (or vice versa)
+                    if len(title) > 20:
+                        # For longer queries, check if at least the first 30 chars match
+                        if gh_issue.title.lower().startswith(
+                            title.lower()[:30]
+                        ) or title.lower().startswith(gh_issue.title.lower()[:30]):
+                            best_matches.append(gh_issue)
+
+                if len(best_matches) == 1:
+                    return best_matches
+                elif len(best_matches) > 1:
+                    # Return the most recently updated one
+                    return sorted(
+                        best_matches, key=lambda x: x.updated_at, reverse=True
+                    )[:1]
+
+            return gh_issues
         except Exception:
             print("ERROR: Failed to get issue data")
             traceback.print_exc()
@@ -681,6 +783,10 @@ class GH:
             return summary
 
         def to_markdown(self, pr_number=0, sha="", workflow_name="", branch=""):
+            def escape_pipes(text):
+                """Escape pipe characters for markdown tables"""
+                return str(text).replace("|", "\\|")
+
             if self.status == Result.Status.SUCCESS:
                 symbol = "✅"  # Green check mark
             elif self.status == Result.Status.FAILED:
@@ -724,7 +830,8 @@ class GH:
                         for sub_failed_result in failed_result.failed_results:
                             body += "|{}|{}|{}|{}|{}|\n".format(
                                 "",
-                                sub_failed_result.name,
+                                # Logical erros might have | that break comment formatting
+                                escape_pipes(sub_failed_result.name),
                                 sub_failed_result.status,
                                 sub_failed_result.info or "",
                                 sub_failed_result.comment or "",
