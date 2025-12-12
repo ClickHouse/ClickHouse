@@ -632,7 +632,7 @@ private:
             if (!processed_with_simd)
             {
                 /// Process chunks in a vectorized manner.
-                static constexpr size_t VEC_SIZE = 16; /// the choice of the constant has no huge performance impact. 16 seems the best.
+                static constexpr size_t VEC_SIZE = 8; /// the choice of the constant has no huge performance impact. 16 breaks interleaving with clang-21. 8 is ok.
                 typename Kernel::template State<ResultType> states[VEC_SIZE];
                 for (; prev + VEC_SIZE < off; i += VEC_SIZE, prev += VEC_SIZE)
                 {

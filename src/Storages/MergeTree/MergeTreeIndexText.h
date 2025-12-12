@@ -12,7 +12,8 @@
 
 #include <absl/container/flat_hash_map.h>
 #include <vector>
-#include <roaring.hh>
+
+#include <roaring/roaring.hh>
 
 namespace DB
 {
