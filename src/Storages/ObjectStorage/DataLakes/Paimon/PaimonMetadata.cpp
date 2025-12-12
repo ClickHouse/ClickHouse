@@ -9,23 +9,23 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
-#include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/Types.h>
 #include <Disks/IStoragePolicy.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/PartitionPruner.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/PartitionPruner.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
 #include <base/defines.h>
 #include <Common/Exception.h>
-#include <Common/assert_cast.h>
 #include <Common/SharedLockGuard.h>
+#include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 
 #include <Columns/ColumnString.h>
@@ -93,7 +93,7 @@ void PaimonMetadata::updateState()
     }
     if (!table_schema.has_value())
     {
-        std::stringstream ss;// STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        std::stringstream ss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         Poco::JSON::Stringifier::stringify(last_metadata_object, ss);
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse paimon table schema, json object: {}", ss.str());
     }
@@ -113,7 +113,8 @@ void PaimonMetadata::updateState()
     std::vector<PaimonManifestFileMeta> base_manifest_list = table_client_ptr->getManifestMeta(snapshot->base_manifest_list);
     std::vector<PaimonManifestFileMeta> delta_manifest_list = table_client_ptr->getManifestMeta(snapshot->delta_manifest_list);
 
-    auto get_or_default = [](const std::string & key, const std::string & default_value, std::unordered_map<String, String> & options) -> std::string
+    auto get_or_default
+        = [](const std::string & key, const std::string & default_value, std::unordered_map<String, String> & options) -> std::string
     {
         auto inner_it = options.find(key);
         return inner_it != options.end() ? inner_it->second : default_value;
@@ -121,11 +122,17 @@ void PaimonMetadata::updateState()
 
     for (const auto & manifest_meta : base_manifest_list)
     {
-        base_manifest.emplace_back(table_client_ptr->getDataManifest(manifest_meta.file_name, *table_schema, get_or_default(PAIMON_DEFAULT_PARTITION_NAME, PARTITION_DEFAULT_VALUE, table_schema->options)));
+        base_manifest.emplace_back(table_client_ptr->getDataManifest(
+            manifest_meta.file_name,
+            *table_schema,
+            get_or_default(PAIMON_DEFAULT_PARTITION_NAME, PARTITION_DEFAULT_VALUE, table_schema->options)));
     }
     for (const auto & manifest_meta : delta_manifest_list)
     {
-        delta_manifest.emplace_back(table_client_ptr->getDataManifest(manifest_meta.file_name, *table_schema, get_or_default(PAIMON_DEFAULT_PARTITION_NAME, PARTITION_DEFAULT_VALUE, table_schema->options)));
+        delta_manifest.emplace_back(table_client_ptr->getDataManifest(
+            manifest_meta.file_name,
+            *table_schema,
+            get_or_default(PAIMON_DEFAULT_PARTITION_NAME, PARTITION_DEFAULT_VALUE, table_schema->options)));
     }
 }
 
@@ -188,15 +195,12 @@ ObjectIterator PaimonMetadata::iterate(
         }
         if (file_entry.kind != PaimonManifestEntry::Kind::DELETE)
         {
-            data_files.emplace_back(
-                std::filesystem::path(table_path) / file_entry.file.bucket_path
-                / file_entry.file.file_name);
+            data_files.emplace_back(std::filesystem::path(table_path) / file_entry.file.bucket_path / file_entry.file.file_name);
             LOG_TEST(log, "manifest data file: {}", data_files.back());
         }
         else if (file_entry.kind == PaimonManifestEntry::Kind::DELETE)
         {
-            auto path = std::filesystem::path(table_path) / file_entry.file.bucket_path
-                / file_entry.file.file_name;
+            auto path = std::filesystem::path(table_path) / file_entry.file.bucket_path / file_entry.file.file_name;
             delete_files.insert(path.string());
             LOG_TEST(log, "manifest delete file: {}", path);
         }

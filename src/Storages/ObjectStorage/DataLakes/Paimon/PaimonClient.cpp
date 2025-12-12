@@ -18,8 +18,8 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Disks/IStoragePolicy.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
+#include <Disks/IStoragePolicy.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
@@ -37,8 +37,8 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Formats/FormatFactory.h>
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
-#include <Storages/ObjectStorage/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <boost/graph/properties.hpp>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
@@ -127,7 +127,8 @@ std::pair<Int32, String> PaimonTableClient::getLastestTableSchemaInfo()
         auto [_, ec] = std::from_chars(version_string.data(), version_string.data() + version_string.size(), current_version);
         if (ec != std::errc())
         {
-            throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "The Paimon schema file: {} version: {} is invalid.", file_name, version_string);
+            throw Exception(
+                ErrorCodes::CANNOT_PARSE_NUMBER, "The Paimon schema file: {} version: {} is invalid.", file_name, version_string);
         }
         return current_version;
     };
@@ -171,7 +172,8 @@ std::optional<std::pair<Int64, String>> PaimonTableClient::getLastestTableSnapsh
                 = std::from_chars(hint_version_string.data(), hint_version_string.data() + hint_version_string.size(), snapshot_version);
             if (ec != std::errc())
             {
-                throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "The Paimon snapshot hint file content: {} is invalid.", hint_version_string);
+                throw Exception(
+                    ErrorCodes::CANNOT_PARSE_NUMBER, "The Paimon snapshot hint file content: {} is invalid.", hint_version_string);
             }
         }
         latest_snapshot_path
@@ -183,7 +185,8 @@ std::optional<std::pair<Int64, String>> PaimonTableClient::getLastestTableSnapsh
     {
         Int64 next_snapshot_version = snapshot_version + 1;
         StoredObject store_object(
-            std::filesystem::path(table_location) / (PAIMON_SNAPSHOT_DIR) / (PAIMON_SNAPSHOT_PRIFIX + std::to_string(next_snapshot_version)));
+            std::filesystem::path(table_location) / (PAIMON_SNAPSHOT_DIR)
+            / (PAIMON_SNAPSHOT_PRIFIX + std::to_string(next_snapshot_version)));
         if (!object_storage->exists(store_object))
         {
             return std::make_pair(snapshot_version, latest_snapshot_path);
@@ -215,7 +218,8 @@ std::optional<std::pair<Int64, String>> PaimonTableClient::getLastestTableSnapsh
         auto [_, ec] = std::from_chars(version_string.data(), version_string.data() + version_string.size(), current_version);
         if (ec != std::errc())
         {
-            throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "The Paimon snapshot file: {} version: {} is invalid.", file_name, version_string);
+            throw Exception(
+                ErrorCodes::CANNOT_PARSE_NUMBER, "The Paimon snapshot file: {} version: {} is invalid.", file_name, version_string);
         }
         return current_version;
     };
