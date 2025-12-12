@@ -1070,6 +1070,18 @@ Result:
 └─────┴─────┴───────┘
 ```
 )", 0) \
+    DECLARE(Bool, enable_positional_arguments_for_projections, false, R"(
+Enables or disables supporting positional arguments in PROJECTION definitions. See also [enable_positional_arguments](#enable_positional_arguments) setting.
+
+:::note
+This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
+:::
+
+Possible values:
+
+- 0 — Positional arguments aren't supported.
+- 1 — Positional arguments are supported: column numbers can use instead of column names.
+)", 0) \
     DECLARE(Bool, enable_extended_results_for_datetime_functions, false, R"(
 Enables or disables returning results of type `Date32` with extended range (compared to type `Date`)
 or `DateTime64` with extended range (compared to type `DateTime`).
@@ -5929,6 +5941,9 @@ Max attempts to read with backoff
     DECLARE(Bool, cluster_function_process_archive_on_multiple_nodes, true, R"(
 If set to `true`, increases performance of processing archives in cluster functions. Should be set to `false` for compatibility and to avoid errors during upgrade to 25.7+ if using cluster functions with archives on earlier versions.
 )", 0) \
+    DECLARE(UInt64, max_streams_for_files_processing_in_cluster_functions, 0, R"(
+If is not zero, limit the number of threads reading data from files in *Cluster table functions.
+)", 0) \
     DECLARE(Bool, enable_filesystem_cache, true, R"(
 Use cache for remote filesystem. This setting does not turn on/off cache for disks (must be done via disk config), but allows to bypass cache for some queries if intended
 )", 0) \
@@ -6867,6 +6882,9 @@ The timeout in milliseconds for connecting to a remote replica during query exec
 )", BETA) \
     DECLARE(Bool, parallel_replicas_for_cluster_engines, true, R"(
 Replace table function engines with their -Cluster alternatives
+)", 0) \
+    DECLARE(Bool, parallel_replicas_allow_materialized_views, true, R"(
+Allow usage of materialized views with parallel replicas
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, allow_experimental_database_iceberg, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'iceberg'

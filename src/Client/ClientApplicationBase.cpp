@@ -6,6 +6,7 @@
 #include <Common/TerminalSize.h>
 #include <Common/Exception.h>
 #include <Common/SignalHandlers.h>
+#include <Client/JWTProvider.h>
 
 #include <Common/config_version.h>
 #include "config.h"

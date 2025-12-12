@@ -1517,7 +1517,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             expr1 = ein->mutable_expr()->mutable_expr();
             if (rg.nextBool())
             {
-                ExprList * elist = ein->mutable_exprs();
+                ExprList * elist = rg.nextBool() ? ein->mutable_tuple() : ein->mutable_array();
                 const uint32_t nclauses = rg.nextSmallNumber();
 
                 for (uint32_t i = 0; i < nclauses; i++)

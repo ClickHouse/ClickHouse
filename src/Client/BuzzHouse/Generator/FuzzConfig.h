@@ -262,7 +262,7 @@ public:
          allow_infinite_tables = false, compare_explains = false, allow_memory_tables = true, allow_client_restarts = false,
          enable_fault_injection_settings = false, enable_force_settings = false, allow_hardcoded_inserts = true,
          allow_async_requests = false, truncate_output = false, allow_transactions = true, enable_overflow_settings = false,
-         random_limited_values = false, set_smt_disk = true, allow_query_oracles = true;
+         random_limited_values = false, set_smt_disk = true, allow_query_oracles = true, allow_health_check = true;
     uint64_t seed = 0, min_insert_rows = 1, max_insert_rows = 1000, min_nested_rows = 0, max_nested_rows = 10, flush_log_wait_time = 1000,
              type_mask = std::numeric_limits<uint64_t>::max(), engine_mask = std::numeric_limits<uint64_t>::max();
     uint32_t max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5, max_dictionaries = 5,
@@ -308,6 +308,8 @@ public:
     String tableGetRandomPartitionOrPart(uint64_t rand_val, bool detached, bool partition, const String & database, const String & table);
 
     void comparePerformanceResults(const String & oracle_name, PerformanceResult & server, PerformanceResult & peer) const;
+
+    void validateClickHouseHealth();
 };
 
 }

@@ -27,6 +27,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/NestedUtils.h>
+#include <Interpreters/evaluateConstantExpression.h>
 
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -660,16 +661,21 @@ void registerStorageGenerateRandom(StorageFactory & factory)
 
         if (!engine_args.empty())
         {
-            const auto & ast_literal = engine_args[0]->as<const ASTLiteral &>();
-            if (!ast_literal.value.isNull())
-                random_seed = checkAndGetLiteralArgument<UInt64>(ast_literal, "random_seed");
+            engine_args[0] = evaluateConstantExpressionAsLiteral(engine_args[0], args.getLocalContext());
+            random_seed = checkAndGetLiteralArgument<UInt64>(engine_args[0], "random_seed");
         }
 
         if (engine_args.size() >= 2)
-            max_string_length = checkAndGetLiteralArgument<UInt64>(engine_args[1], "max_string_length");
+        {
+            engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.getLocalContext());
+            max_string_length = checkAndGetLiteralArgument<UInt64>(engine_args[0], "max_string_length");
+        }
 
         if (engine_args.size() == 3)
+        {
+            engine_args[2] = evaluateConstantExpressionAsLiteral(engine_args[2], args.getLocalContext());
             max_array_length = checkAndGetLiteralArgument<UInt64>(engine_args[2], "max_array_length");
+        }
 
         return std::make_shared<StorageGenerateRandom>(args.table_id, args.columns, args.comment, max_array_length, max_string_length, random_seed);
     });

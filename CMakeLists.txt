@@ -207,7 +207,7 @@ endif ()
 # Add a section with the hash of the compiled machine code for integrity checks.
 # Only for official builds, because adding a section can be time consuming (rewrite of several GB).
 # And cross compiled binaries are not supported (since you cannot execute clickhouse hash-binary)
-if (CLICKHOUSE_OFFICIAL_BUILD AND NOT CMAKE_CROSSCOMPILING AND NOT ENABLE_CLANG_TIDY)
+if (CLICKHOUSE_OFFICIAL_BUILD AND OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND NOT ENABLE_CLANG_TIDY)
     message(STATUS "Official build: A checksum hash will be added to the clickhouse executable")
     set (USE_BINARY_HASH 1 CACHE STRING "Calculate binary hash and store it in the separate section")
 else ()
@@ -682,6 +682,7 @@ if (NATIVE_BUILD_TARGETS
             # Avoid overriding .cargo/config.toml with native toolchain.
             "-DENABLE_RUST=OFF"
             "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=${ENABLE_CLICKHOUSE_SELF_EXTRACTING}"
+            "-DUSE_BINARY_HASH=${USE_BINARY_HASH}"
         ${PROJECT_SOURCE_DIR}
         WORKING_DIRECTORY "${NATIVE_BUILD_DIR}"
         COMMAND_ECHO STDOUT

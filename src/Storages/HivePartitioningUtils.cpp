@@ -123,8 +123,8 @@ void addPartitionColumnsToChunk(
         {
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
-                "Expected to find hive partitioning column {} in the path {}."
-                "Try it with hive partitioning disabled (partition_strategy='wildcard' and/or use_hive_partitioning=0",
+                "Expected to find hive partitioning column {} in the path {}. "
+                "Try it with hive partitioning disabled (partition_strategy = 'wildcard' and/or use_hive_partitioning = 0",
                 column_name,
                 path);
         }

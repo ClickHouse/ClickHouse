@@ -8,15 +8,13 @@ String SQLColumn::getColumnName() const
     return "c" + std::to_string(cname);
 }
 
-void SQLDatabase::finishDatabaseSpecification(DatabaseEngine * de, const bool add_params)
+void SQLDatabase::finishDatabaseSpecification(DatabaseEngine * de)
 {
-    if (add_params && isReplicatedDatabase())
+    if (isReplicatedDatabase())
     {
-        chassert(de->params_size() == 0);
-        de->add_params()->set_svalue("/clickhouse/path/" + this->getName());
-        de->add_params()->set_svalue("{shard}");
-        de->add_params()->set_svalue("{replica}");
-        this->nparams = 3;
+        de->add_params()->set_svalue(this->keeper_path);
+        de->add_params()->set_svalue(this->shard_name);
+        de->add_params()->set_svalue(this->replica_name);
     }
 }
 

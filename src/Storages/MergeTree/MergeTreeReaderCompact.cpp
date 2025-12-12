@@ -192,8 +192,7 @@ void MergeTreeReaderCompact::readData(
 
         if (seek_to_substream_mark)
         {
-            auto stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
-            size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], stream_name);
+            size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], name_and_type, substream_path, storage_settings);
             stream.seekToMarkAndColumn(from_mark, substream_position);
         }
 
@@ -235,8 +234,7 @@ void MergeTreeReaderCompact::readData(
 
             deserialize_settings.seek_stream_to_current_mark_callback = [&](const ISerialization::SubstreamPath & substream_path)
             {
-                auto stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
-                size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], stream_name);
+                size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], name_and_type, substream_path, storage_settings);
                 stream.seekToMarkAndColumn(from_mark, substream_position);
             };
         }
@@ -416,8 +414,7 @@ void MergeTreeReaderCompact::readPrefix(size_t column_idx, size_t from_mark, Mer
 
         if (seek_to_substream_mark)
         {
-            auto stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
-            size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], stream_name);
+            size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], column, substream_path, storage_settings);
             stream.seekToMarkAndColumn(from_mark, substream_position);
         }
 

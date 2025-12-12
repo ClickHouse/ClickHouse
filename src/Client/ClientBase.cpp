@@ -3406,6 +3406,11 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     if (options.contains("prompt"))
         getClientConfiguration().setString("prompt", options["prompt"].as<std::string>());
 
+    if (options.contains("oauth-url"))
+        getClientConfiguration().setString("oauth-url", options["oauth-url"].as<std::string>());
+    if (options.contains("oauth-client-id"))
+        getClientConfiguration().setString("oauth-client-id", options["oauth-client-id"].as<std::string>());
+
     if (options.contains("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
     if (options.contains("server_logs_file"))
