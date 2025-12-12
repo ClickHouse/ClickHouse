@@ -253,7 +253,6 @@ private:
     void analyzeDictionary(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
 
     /// If adding significantly large members here make sure to add them to memoryUsageBytes()
-    /// ---------------------------------------
     MergeTreeIndexTextParams params;
     /// Header of the text index contains the number of tokens and sparse index.
     DictionarySparseIndexPtr sparse_index;
@@ -261,7 +260,6 @@ private:
     TokenToPostingsInfosMap remaining_tokens;
     /// TODO: comment
     std::optional<RowsRange> current_range;
-    /// ---------------------------------------
 };
 
 /// Text index granule created on writing of the index.
@@ -286,7 +284,6 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     size_t memoryUsageBytes() const override;
 
     /// If adding significantly large members here make sure to add them to memoryUsageBytes()
-    /// ---------------------------------------
     MergeTreeIndexTextParams params;
     /// Pointers to tokens and posting lists in the granule.
     SortedTokensAndPostings tokens_and_postings;
@@ -295,7 +292,6 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     std::list<PostingList> posting_lists;
     std::unique_ptr<Arena> arena;
     LoggerPtr logger;
-    /// ---------------------------------------
 };
 
 struct MergeTreeIndexTextGranuleBuilder
@@ -310,7 +306,7 @@ struct MergeTreeIndexTextGranuleBuilder
     void setCurrentRow(size_t row) { current_row = row; }
 
     std::unique_ptr<MergeTreeIndexGranuleTextWritable> build();
-    bool empty() const { return tokens_map.empty(); }
+    bool empty() const { return num_processed_documents == 0; }
     void reset();
 
     MergeTreeIndexTextParams params;
@@ -318,6 +314,7 @@ struct MergeTreeIndexTextGranuleBuilder
 
     UInt64 current_row = 0;
     UInt64 num_processed_tokens = 0;
+    UInt64 num_processed_documents = 0;
     /// Pointers to posting lists for each token.
     TokenToPostingsMap tokens_map;
     /// Holder of posting lists. std::list is used to preserve the stability of pointers to posting lists.

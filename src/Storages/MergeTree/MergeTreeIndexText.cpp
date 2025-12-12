@@ -378,6 +378,9 @@ DictionaryBlock MergeTreeIndexGranuleText::deserializeDictionaryBlock(ReadBuffer
 
 void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state)
 {
+    if (sparse_index->empty())
+        return;
+
     const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
     auto global_search_mode = condition_text.getGlobalSearchMode();
     const auto & all_search_tokens = condition_text.getAllSearchTokens();
@@ -898,11 +901,13 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
             ArenaKeyHolder key_holder{std::string_view(token_start, token_length), *arena};
             tokens_map.emplace(key_holder, it, inserted);
 
-        auto & posting_list_builder = it->getMapped();
-        posting_list_builder.add(current_row, posting_lists);
-        ++num_processed_tokens;
-        return false;
-    });
+            auto & posting_list_builder = it->getMapped();
+            posting_list_builder.add(current_row, posting_lists);
+            ++num_processed_tokens;
+            return false;
+        });
+
+    ++num_processed_documents;
 }
 
 std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuilder::build()

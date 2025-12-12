@@ -1467,7 +1467,7 @@ void PartMergerWriter::finalizeTempProjectionsAndIndexes()
     {
         build_inverted_index_transform->finalize();
         temporary_inverted_index_storage->commitTransaction();
-        auto reader_settings = MergeTreeReaderSettings::create(ctx->context, *ctx->data->getSettings(), SelectQueryInfo{});
+        auto reader_settings = MergeTreeReaderSettings::createForMergeMutation(ctx->context->getReadSettings());
         const auto & indexes = build_inverted_index_transform->getIndexes();
 
         for (size_t i = 0; i < indexes.size(); ++i)
