@@ -249,11 +249,6 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
         {
             use_compression = config.getBool(config_name + "." + key);
         }
-        else if (key == "use_xid_64")
-        {
-            // Legacy config option - XIDs are now always 64-bit
-            // Keep parsing it for backward compatibility but ignore the value
-        }
         else if (key == "availability_zone_autodetect")
         {
             availability_zone_autodetect = config.getBool(config_name + "." + key);
