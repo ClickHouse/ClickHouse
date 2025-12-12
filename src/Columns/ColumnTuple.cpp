@@ -465,10 +465,7 @@ void ColumnTuple::expand(const Filter & mask, bool inverted)
 {
     if (columns.empty())
     {
-        size_t bytes = countBytesInFilter(mask);
-        if (inverted)
-            bytes = mask.size() - bytes;
-        column_length = bytes;
+        column_length = mask.size();
         return;
     }
 
@@ -480,10 +477,12 @@ ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
 {
     if (columns.empty())
     {
-        if (limit == 0 && column_length != perm.size())
-            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of permutation ({}) doesn't match size of column ({})", perm.size(), column_length);
+        size_t result_size = limit ? limit : perm.size();
+        if (perm.size() < result_size)
+            throw Exception(
+                ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of permutation ({}) is less than required ({})", perm.size(), result_size);
 
-        return cloneResized(limit ? std::min(column_length, limit) : column_length);
+        return cloneResized(result_size);
     }
 
     const size_t tuple_size = columns.size();
