@@ -544,7 +544,6 @@ DB::Names RestCatalog::getTables(const std::string & base_namespace, size_t limi
     auto encoded_namespace = encodeNamespaceForURI(base_namespace);
     const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encoded_namespace / "tables";
 
-    std::cerr << "endpoint: " << config.prefix / endpoint << std::endl;
     auto buf = createReadBuffer(config.prefix / endpoint);
     return parseTables(*buf, encoded_namespace, limit);
 }
