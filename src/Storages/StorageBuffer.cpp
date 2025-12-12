@@ -938,7 +938,7 @@ void StorageBuffer::flushAllBuffers(bool check_thresholds)
     {
         if (runner)
         {
-            (*runner)([&]()
+            runner->enqueueAndKeepTrack([&]()
             {
                 flushBuffer(buf, check_thresholds, false);
             });

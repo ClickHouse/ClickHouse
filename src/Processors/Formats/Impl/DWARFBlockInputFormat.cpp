@@ -261,7 +261,7 @@ void DWARFBlockInputFormat::initializeIfNeeded()
 
     runner.emplace(getFormatParsingThreadPool().get(), ThreadName::DWARF_DECODER);
     for (size_t i = 0; i < num_threads; ++i)
-        runner.value()(
+        runner.value().enqueueAndKeepTrack(
             [this, thread_group = CurrentThread::getGroup()]()
             {
                 try

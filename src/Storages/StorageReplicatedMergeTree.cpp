@@ -7833,7 +7833,7 @@ void StorageReplicatedMergeTree::fetchPartition(
         std::mutex missing_parts_mutex;
         for (const String & part : parts_to_fetch)
         {
-            fetch_partition_runner([&]()
+            fetch_partition_runner.enqueueAndKeepTrack([&]()
             {
                 bool fetched = false;
 
