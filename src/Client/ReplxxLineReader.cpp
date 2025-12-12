@@ -32,6 +32,7 @@
 #include <skim.h>
 #endif
 
+/* Flags should be or'd together */
 enum {
     MODE_INSERT,
     MODE_NORMAL,
