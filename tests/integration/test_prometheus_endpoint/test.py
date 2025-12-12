@@ -88,3 +88,4 @@ def test_prometheus_endpoint(start_cluster):
 
     assert metrics_dict["ClickHouseErrorMetric_NUMBER_OF_ARGUMENTS_DOESNT_MATCH"] >= 1
     assert metrics_dict["ClickHouseErrorMetric_ALL"] >= 1
+    assert metrics_dict["ClickHouse_Info"] == 1
