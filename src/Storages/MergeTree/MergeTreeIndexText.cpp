@@ -905,7 +905,8 @@ void PostingListBuilder::add(UInt32 value, PostingListCodecsHolder & postings_ho
         std::get<PostingListRoaringCodecPtr>(codec)->add(value, postings_holder);
     else if (std::holds_alternative<PostingListBlockCodecPtr>(codec))
         std::get<PostingListBlockCodecPtr>(codec)->add(value, postings_holder);
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "The codec is not initialized yet.");
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The codec is not initialized yet.");
 }
 
 void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
