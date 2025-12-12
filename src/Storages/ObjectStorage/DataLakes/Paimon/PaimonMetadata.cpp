@@ -128,7 +128,7 @@ void PaimonMetadata::updateState()
             *table_schema,
             get_or_default(PAIMON_DEFAULT_PARTITION_NAME, PARTITION_DEFAULT_VALUE, table_schema->options)));
     }
-    base_manifest.clear();
+    delta_manifest.clear();
     for (const auto & manifest_meta : delta_manifest_list)
     {
         delta_manifest.emplace_back(table_client_ptr->getDataManifest(
