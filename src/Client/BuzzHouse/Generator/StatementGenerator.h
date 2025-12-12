@@ -85,7 +85,8 @@ public:
 const constexpr uint32_t allow_set = (1 << 0), allow_cte = (1 << 1), allow_distinct = (1 << 2), allow_from = (1 << 3),
                          allow_prewhere = (1 << 4), allow_where = (1 << 5), allow_groupby = (1 << 6), allow_global_aggregate = (1 << 7),
                          allow_groupby_settings = (1 << 8), allow_orderby = (1 << 9), allow_orderby_settings = (1 << 10),
-                         allow_limit = (1 << 11), allow_window_clause = (1 << 12), allow_qualify = (1 << 13);
+                         allow_limitby = (1 << 11), allow_limit = (1 << 12), allow_offset = (1 << 13), allow_window_clause = (1 << 14),
+                         allow_qualify = (1 << 15);
 
 const constexpr uint32_t collect_generated = (1 << 0), flat_tuple = (1 << 1), flat_nested = (1 << 2), flat_json = (1 << 3),
                          skip_tuple_node = (1 << 4), skip_nested_node = (1 << 5), to_table_entries = (1 << 6), to_remote_entries = (1 << 7);
@@ -136,6 +137,7 @@ public:
 
 private:
     std::vector<TableEngineValues> likeEngsDeterministic, likeEngsNotDeterministic, likeEngsInfinite;
+    std::unordered_map<SQLFunc, uint32_t> dictFuncs;
     ExternalIntegrations & connections;
     const bool supports_cloud_features;
     const size_t deterministic_funcs_limit, deterministic_aggrs_limit;
@@ -342,10 +344,11 @@ private:
     void setClusterInfo(RandomGenerator & rg, SQLBase & b) const;
     template <typename T>
     void randomEngineParams(RandomGenerator & rg, std::optional<SQLRelation> & rel, T * te);
-    void generateMergeTreeEngineDetails(RandomGenerator & rg, const SQLRelation & rel, const SQLBase & b, bool add_pkey, TableEngine * te);
+    void generateMergeTreeEngineDetails(RandomGenerator & rg, const SQLRelation & rel, SQLBase & b, bool add_pkey, TableEngine * te);
     void generateEngineDetails(RandomGenerator & rg, const SQLRelation & rel, SQLBase & b, bool add_pkey, TableEngine * te);
 
     DatabaseEngineValues getNextDatabaseEngine(RandomGenerator & rg);
+    void generateDatabaseEngineDetails(RandomGenerator & rg, SQLDatabase & d);
     void getNextTableEngine(RandomGenerator & rg, bool use_external_integrations, SQLBase & b);
     void setRandomShardKey(RandomGenerator & rg, const std::optional<SQLTable> & t, Expr * expr);
     void getNextPeerTableDatabase(RandomGenerator & rg, SQLBase & b);
@@ -402,7 +405,7 @@ private:
     void prepareNextExplain(RandomGenerator & rg, ExplainQuery * eq);
     void generateOrderBy(RandomGenerator & rg, uint32_t ncols, bool allow_settings, bool is_window, OrderByStatement * ob);
     void generateLimitExpr(RandomGenerator & rg, Expr * expr);
-    void generateLimit(RandomGenerator & rg, bool has_order_by, LimitStatement * ls);
+    void generateLimitBy(RandomGenerator & rg, LimitByStatement * ls);
     void generateOffset(RandomGenerator & rg, bool has_order_by, OffsetStatement * off);
     void generateGroupByExpr(
         RandomGenerator & rg,
@@ -546,7 +549,7 @@ private:
                 const InOutFormat next_format
                     = (b.file_format.has_value() && (!this->allow_not_deterministic || rg.nextMediumNumber() < 81))
                     ? b.file_format.value()
-                    : static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
+                    : static_cast<InOutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
 
                 next->set_key("format");
                 next->set_value(InOutFormat_Name(next_format).substr(6));
@@ -636,6 +639,8 @@ public:
     const std::function<bool(const SQLTable &)> attached_tables = [](const SQLTable & t) { return t.isAttached(); };
     const std::function<bool(const SQLView &)> attached_views = [](const SQLView & v) { return v.isAttached(); };
     const std::function<bool(const SQLDictionary &)> attached_dictionaries = [](const SQLDictionary & d) { return d.isAttached(); };
+    const std::function<bool(const SQLTable &)> has_mergeable_tables
+        = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily() && t.can_run_merges; };
 
     const std::function<bool(const SQLTable &)> attached_tables_to_test_format
         = [](const SQLTable & t) { return t.isAttached() && t.teng != TableEngineValues::GenerateRandom; };

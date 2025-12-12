@@ -157,7 +157,7 @@ private:
         ColumnArray::Offset prev_to_offset = 0;
         const auto extract_array = [](const N * data, size_t prev_offset, size_t count)
         {
-            std::vector<StringRef> temp;
+            std::vector<std::string_view> temp;
             temp.reserve(count);
             for (size_t j = 0; j < count; ++j) { temp.emplace_back(data->getDataAt(prev_offset + j)); }
             return temp;
@@ -167,11 +167,11 @@ private:
         {
             const size_t m = from_offsets[row] - prev_from_offset;
             const size_t n = to_offsets[row] - prev_to_offset;
-            const std::vector<StringRef> from = extract_array(from_data, prev_from_offset, m);
-            const std::vector<StringRef> to = extract_array(to_data, prev_to_offset, n);
+            const std::vector<std::string_view> from = extract_array(from_data, prev_from_offset, m);
+            const std::vector<std::string_view> to = extract_array(to_data, prev_to_offset, n);
             prev_from_offset = from_offsets[row];
             prev_to_offset = to_offsets[row];
-            res_values[row] = levenshteinDistance<StringRef>(from, to);
+            res_values[row] = levenshteinDistance<std::string_view>(from, to);
         }
         return true;
     }
@@ -304,7 +304,7 @@ private:
 
         const auto extract_array = [](const N * data, size_t prev_offset, size_t count)
         {
-            std::vector<StringRef> temp;
+            std::vector<std::string_view> temp;
             temp.reserve(count);
             for (size_t j = 0; j < count; ++j) { temp.emplace_back(data->getDataAt(prev_offset + j)); }
             return temp;
@@ -314,8 +314,8 @@ private:
         {
             const size_t m = from_offsets[row] - prev_from_offset;
             const size_t n = to_offsets[row] - prev_to_offset;
-            const std::vector<StringRef> from = extract_array(from_data, prev_from_offset, m);
-            const std::vector<StringRef> to = extract_array(to_data, prev_to_offset, n);
+            const std::vector<std::string_view> from = extract_array(from_data, prev_from_offset, m);
+            const std::vector<std::string_view> to = extract_array(to_data, prev_to_offset, n);
             prev_from_offset = from_offsets[row];
             prev_to_offset = to_offsets[row];
 
@@ -324,7 +324,7 @@ private:
             std::span<const W> to_weights(column_to_weights->getData().begin() + prev_to_weights_offset, to_weights_offsets[row] - prev_to_weights_offset);
             prev_to_weights_offset = to_weights_offsets[row];
 
-            res_values[row] = static_cast<Float64>(DB::levenshteinDistanceWeighted<StringRef, W>(from, to, from_weights, to_weights));
+            res_values[row] = static_cast<Float64>(DB::levenshteinDistanceWeighted<std::string_view, W>(from, to, from_weights, to_weights));
         }
         return true;
     }

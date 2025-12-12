@@ -250,7 +250,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             newd.set_if_not_exists(true);
             deng->set_engine(t.db->deng);
             t.db->setName(newd.mutable_database());
-            t.db->finishDatabaseSpecification(deng, t.db->nparams > 0);
+            t.db->finishDatabaseSpecification(deng);
             CreateDatabaseToString(buf, newd);
             res &= !performQuery(buf + ";");
         }
@@ -285,7 +285,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
 bool ClickHouseIntegratedDatabase::truncatePeerTableOnRemote(const SQLTable & t)
 {
     chassert(t.hasDatabasePeer());
-    return !performQuery(fmt::format("{} {};", truncateStatement(), getTableName(t.db, t.tname)));
+    return !performQuery(fmt::format("{} {} SYNC;", truncateStatement(), getTableName(t.db, t.tname)));
 }
 
 bool ClickHouseIntegratedDatabase::performQueryOnServerOrRemote(const PeerTableDatabase pt, const String & query)
@@ -1516,7 +1516,7 @@ bool DolorIntegration::performDatabaseIntegration(RandomGenerator & rg, SQLDatab
     }
     buf += fmt::format(
         R"({{"seed":{},"database_name":"{}","storage":"{}","lake":"{}","catalog":"{}"}})",
-        rg.nextRandomUInt64(),
+        rg.nextInFullRange(),
         d.getSparkCatalogName(),
         d.storage == LakeStorage::S3 ? "s3" : (d.storage == LakeStorage::Azure ? "azure" : "local"),
         d.format == LakeFormat::DeltaLake ? "deltalake" : "iceberg",
@@ -1657,7 +1657,7 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
     chassert(t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine());
     buf += fmt::format(
         R"({{"seed":{},"catalog_name":"{}","database_name":"{}","table_name":"{}","storage":"{}","lake":"{}","format":"{}","deterministic":{},"columns":[)",
-        rg.nextRandomUInt64(),
+        rg.nextInFullRange(),
         t.getSparkCatalogName(),
         t.getDatabaseName(),
         t.getTableName(false),

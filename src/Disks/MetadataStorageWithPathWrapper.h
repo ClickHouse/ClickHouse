@@ -4,7 +4,7 @@
 
 #if USE_SSL
 
-#include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <string>
 
 namespace DB

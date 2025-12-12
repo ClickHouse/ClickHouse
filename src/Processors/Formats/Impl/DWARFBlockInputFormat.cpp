@@ -563,7 +563,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                             if (need[COL_ATTR_STR])
                             {
                                 auto data = unit.filename_table->getDataAt(idx);
-                                col_attr_str->insertData(data.data, data.size);
+                                col_attr_str->insertData(data.data(), data.size());
                             }
                         }
                         else if (need[COL_ATTR_STR])
