@@ -1,6 +1,8 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/NullableUtils.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
 namespace DB
@@ -215,6 +217,24 @@ static IAggregateFunction * createWithStringType(const IDataType & argument_type
     WhichDataType which(argument_type);
     if (which.idx == TypeIndex::String) return new AggregateFunctionTemplate<String>(args...);
     if (which.idx == TypeIndex::FixedString) return new AggregateFunctionTemplate<String>(args...);
+    return nullptr;
+}
+
+template <template <typename> class AggregateFunctionTemplate>
+static IAggregateFunction * createWithDateTimeTypeAndResultType(const IDataType & argument_type, const DataTypes & argument_types)
+{
+    WhichDataType which(argument_type);
+    DataTypePtr result_type = std::make_shared<DataTypeNullable>(argument_types[0]);
+
+    if (which.idx == TypeIndex::Date)
+        return new AggregateFunctionTemplate<UInt16>(argument_types, result_type);
+    if (which.idx == TypeIndex::Date32)
+        return new AggregateFunctionTemplate<Int32>(argument_types, result_type);
+    if (which.idx == TypeIndex::DateTime)
+        return new AggregateFunctionTemplate<UInt32>(argument_types, result_type);
+    if (which.idx == TypeIndex::DateTime64)
+        return new AggregateFunctionTemplate<DateTime64>(argument_types, result_type);
+
     return nullptr;
 }
 
