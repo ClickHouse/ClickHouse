@@ -37,6 +37,10 @@ target_compile_definitions(cxxabi PRIVATE -D_LIBCPP_BUILDING_LIBRARY -DHAS_THREA
 target_compile_options(cxxabi PRIVATE -nostdinc++ -fno-sanitize=undefined -Wno-macro-redefined)
 # Demangling is very slow under MSan due to frame-pointers, it is OK to omit them for cxxabi anyway
 target_compile_options(cxxabi PRIVATE -fomit-frame-pointer -momit-leaf-frame-pointer)
+# We sacrifice origins tracking here to make demangling faster (unlikely that the origin will be here anyway)
+if (SANITIZE STREQUAL "memory")
+    target_compile_options(cxxabi PRIVATE -fno-sanitize-memory-track-origins)
+endif()
 target_link_libraries(cxxabi PUBLIC unwind)
 
 # Enable capturing stack traces for all exceptions.
