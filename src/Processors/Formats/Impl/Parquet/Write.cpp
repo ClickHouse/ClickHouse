@@ -257,6 +257,7 @@ struct StatisticsStringRef
 
 struct StatisticsStringCopy
 {
+    bool empty = true;
     String min;
     String max;
 
@@ -264,12 +265,16 @@ struct StatisticsStringCopy
     {
         addMin(x);
         addMax(x);
+        empty = false;
     }
 
     void merge(const StatisticsStringCopy & s)
     {
-        addMin(s.min);
-        addMax(s.max);
+        if (s.empty)
+            return;
+        addMin(parquet::ByteArray(static_cast<UInt32>(s.min.size()), reinterpret_cast<const uint8_t *>(s.min.data())));
+        addMax(parquet::ByteArray(static_cast<UInt32>(s.max.size()), reinterpret_cast<const uint8_t *>(s.max.data())));
+        empty = false;
     }
 
     void clear() { *this = {}; }
@@ -277,7 +282,7 @@ struct StatisticsStringCopy
     parq::Statistics get(const WriteOptions & options) const
     {
         parq::Statistics s;
-        if (min.empty())
+        if (empty)
             return s;
         if (min.size() <= options.max_statistics_size)
         {
@@ -292,28 +297,18 @@ struct StatisticsStringCopy
         return s;
     }
 
-    void addMin(const String & x)
-    {
-        addMin(parquet::ByteArray(static_cast<UInt32>(x.size()), reinterpret_cast<const uint8_t *>(x.data())));
-    }
-
     void addMin(parquet::ByteArray x)
     {
-        if (min.empty() || compare(x, min) < 0)
+        if (empty || compare(x, min) < 0)
         {
             // assign to String to make a copy only when we update min
             min.assign(reinterpret_cast<const char *>(x.ptr), x.len);
         }
     }
 
-    void addMax(const String & x)
-    {
-        addMax(parquet::ByteArray(static_cast<UInt32>(x.size()), reinterpret_cast<const uint8_t *>(x.data())));
-    }
-
     void addMax(parquet::ByteArray x)
     {
-        if (max.empty() || compare(x, max) > 0)
+        if (empty || compare(x, max) > 0)
         {
             // assign to String to make a copy only when we update max
             max.assign(reinterpret_cast<const char *>(x.ptr), x.len);
