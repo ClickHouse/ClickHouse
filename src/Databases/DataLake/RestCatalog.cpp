@@ -93,6 +93,19 @@ std::string correctAPIURI(const std::string & uri)
     return std::filesystem::path(uri) / "v1";
 }
 
+String encodeNamespaceForURI(const String & namespace_name)
+{
+    String encoded;
+    for (const auto & ch : namespace_name)
+    {
+        if (ch == '.')
+            encoded += "%1F";
+        else
+            encoded.push_back(ch);
+    }
+    return encoded;
+}
+
 }
 
 std::string RestCatalog::Config::toString() const
@@ -528,10 +541,12 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
 
 DB::Names RestCatalog::getTables(const std::string & base_namespace, size_t limit) const
 {
-    const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / base_namespace / "tables";
+    auto encoded_namespace = encodeNamespaceForURI(base_namespace);
+    const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encoded_namespace / "tables";
 
+    std::cerr << "endpoint: " << config.prefix / endpoint << std::endl;
     auto buf = createReadBuffer(config.prefix / endpoint);
-    return parseTables(*buf, base_namespace, limit);
+    return parseTables(*buf, encoded_namespace, limit);
 }
 
 DB::Names RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & base_namespace, size_t limit) const
