@@ -171,7 +171,7 @@ using Stack = std::vector<Frame>;
 /// Second pass optimizations
 void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
 void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & nodes);
-void optimizePrewhere(QueryPlan::Node & parent_node);
+void optimizePrewhere(QueryPlan::Node & parent_node, bool remove_unused_columns);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings &);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 bool optimizeLazyMaterialization(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, size_t max_limit_for_lazy_materialization);
