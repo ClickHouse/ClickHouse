@@ -12,7 +12,7 @@ namespace DB
 class ExecutableFunctionTomorrow : public IExecutableFunction
 {
 public:
-    explicit ExecutableFunctionTomorrow(time_t time_) : day_value(time_) {}
+    explicit ExecutableFunctionTomorrow(DayNum day_value_) : day_value(day_value_) {}
 
     String getName() const override { return "tomorrow"; }
 
