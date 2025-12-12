@@ -209,6 +209,7 @@ static void splitAndModifyMutationCommands(
         NameSet mutated_columns;
         NameSet dropped_columns;
         NameSet ignored_columns;
+        NameSet extra_columns_for_indices_and_projections;
 
         for (const auto & command : commands)
         {
@@ -261,16 +262,35 @@ static void splitAndModifyMutationCommands(
                 }
                 if (command.type == MutationCommand::Type::MATERIALIZE_INDEX)
                 {
-                    const auto & indices = metadata_snapshot->getSecondaryIndices();
-                    auto it = std::find_if(indices.begin(), indices.end(), [command] (const auto & index) {return index.name == command.index_name;});
-                    if (it != indices.end())
+                    const auto & all_indices = metadata_snapshot->getSecondaryIndices();
+                    for (const auto & index : all_indices)
                     {
-                        for (const auto & col_name : it->expression->getRequiredColumns())
+                        if (index.name == command.index_name)
                         {
-                            for_interpreter.emplace_back(
-                                MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = col_name});
+                            auto required_columns = index.expression->getRequiredColumns();
+                            for (const auto & column : required_columns)
+                            {
+                                if (!part_columns.has(column))
+                                    extra_columns_for_indices_and_projections.insert(column);
+                            }
+                            break;
+                        }
+                    }
+                }
 
-                            mutated_columns.emplace(col_name);
+                if (command.type == MutationCommand::Type::MATERIALIZE_PROJECTION)
+                {
+                    const auto & all_projections = metadata_snapshot->getProjections();
+                    for (const auto & projection : all_projections)
+                    {
+                        if (projection.name == command.projection_name)
+                        {
+                            for (const auto & column : projection.required_columns)
+                            {
+                                if (!part_columns.has(column))
+                                    extra_columns_for_indices_and_projections.insert(column);
+                            }
+                            break;
                         }
                     }
                 }
@@ -374,6 +394,27 @@ static void splitAndModifyMutationCommands(
                      .column_name = column.name,
                 });
             }
+        }
+        for (const auto & column_name : extra_columns_for_indices_and_projections)
+        {
+            if (mutated_columns.contains(column_name))
+                continue;
+
+            if (column_name == "_part_offset")
+                continue;
+
+            auto data_type = metadata_snapshot->getColumns().getColumn(
+                GetColumnsOptions::AllPhysical,
+                column_name).type;
+
+            for_interpreter.push_back(
+                MutationCommand
+                {
+                    .type = MutationCommand::Type::READ_COLUMN,
+                    .column_name = column_name,
+                    .data_type = std::move(data_type),
+                }
+            );
         }
     }
     else
