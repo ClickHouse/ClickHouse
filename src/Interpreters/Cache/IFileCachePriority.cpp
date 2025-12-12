@@ -45,7 +45,7 @@ IFileCachePriority::Entry::Entry(const Entry & other)
 
 void IFileCachePriority::check(const CachePriorityGuard::Lock & lock) const
 {
-    if (getSize(lock) > max_size || getElementsCount(lock) > max_elements)
+    if ((max_size != 0 && getSize(lock) > max_size) || (max_elements != 0 && getElementsCount(lock) > max_elements))
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache limits violated. "
                         "{}", getStateInfoForLog(lock));
