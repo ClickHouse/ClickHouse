@@ -104,6 +104,16 @@ def start_dlf_token_server():
 def test_paimon_rest_catalog(started_cluster):
     start_bear_token_server()
     paimon_rest_catalog_container_ip = cluster.get_instance_ip("node")
+    # clean warehouse data path
+    instance_id = cluster.get_instance_docker_id("node")
+    run_and_check(
+        ["docker exec {cont_id} bash -lc \"rm -fr /tmp/warehouse\"".format(
+            cont_id=instance_id,
+        )]
+        , 
+        shell=True
+    )
+
     node.query("DROP DATABASE IF EXISTS paimon_rest_db SYNC;")
     node.query(f"create database paimon_rest_db engine = DataLakeCatalog('http://{paimon_rest_catalog_container_ip}:{PORT}') SETTINGS catalog_type='paimon_rest', warehouse='restWarehouse', catalog_credential='bear-token-xxx-xxx-xxx';", settings={"allow_experimental_database_paimon_rest_catalog": 1})
     # create database
@@ -170,7 +180,6 @@ def test_paimon_rest_catalog(started_cluster):
     )
 
     # insert data
-    instance_id = cluster.get_instance_docker_id("node")
     insert_cmd = '''java -jar target/paimon-server-starter-1.0-SNAPSHOT.jar "insert" "file:///tmp/warehouse/" "test" "test_table"'''
     run_and_check(
         ["docker exec {cont_id} bash -lc \"cd /root/paimon-rest-catalog && {insert_cmd}\"".format(
