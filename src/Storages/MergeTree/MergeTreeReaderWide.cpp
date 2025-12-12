@@ -327,7 +327,20 @@ ReadBuffer * MergeTreeReaderWide::getStream(
 
     auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", checksums, storage_settings);
     if (!stream_name)
+    {
+        /// We allow missing streams only for columns that are not present in this part.
+        if (data_part_info_for_read->getColumnPosition(name_and_type.getNameInStorage()))
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Stream {} for column {} is not found",
+                ISerialization::getFileNameForStream(
+                    name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings)),
+                name_and_type.name);
+        }
+
         return nullptr;
+    }
 
     auto it = streams.find(*stream_name);
     if (it == streams.end())

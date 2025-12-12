@@ -812,6 +812,14 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
             column_tuple.getColumnPtr(i), rows_offset, limit, settings, tuple_state->states[i], cache);
     }
 
+    /// Verify that all Tuple elements have the same size.
+    size_t expected_size = column_tuple.getColumn(0).size();
+    for (size_t i = 1; i < elems.size(); ++i)
+    {
+        if (column_tuple.getColumn(i).size() != expected_size)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of tuple element {}: {}. Expected size: {}", i, column_tuple.getColumn(i).size(), expected_size);
+    }
+
     typeid_cast<ColumnTuple &>(*mutable_column).addSize(column_tuple.getColumn(0).size());
 }
 
