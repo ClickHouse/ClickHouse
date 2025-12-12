@@ -1580,7 +1580,7 @@ void Aggregator::prepareAggregateInstructions(
             if (aggregate_columns[i][j]->isSparse()
                 && aggregate_columns[i][j]->getNumberOfDefaultRows() == 0)
                 allow_sparse_arguments = false;
-            
+
             /// Sparse columns with Nullable type may be handled incorrectly.
             if (aggregate_columns[i][j]->isSparse() && aggregate_functions[i]->getArgumentTypes()[j]->isNullable())
                 allow_sparse_arguments = false;
