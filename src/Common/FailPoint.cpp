@@ -123,7 +123,12 @@ static struct InitFiu
     ONCE(database_replicated_drop_after_removing_keeper_failed) \
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
     PAUSEABLE_ONCE(rmt_mutate_task_pause_in_prepare) \
-    PAUSEABLE_ONCE(rmt_merge_selecting_task_pause_when_scheduled)
+    PAUSEABLE(rmt_merge_selecting_task_pause_when_scheduled) \
+    PAUSEABLE(mt_merge_selecting_task_pause_when_scheduled) \
+    REGULAR(mt_select_parts_to_mutate_no_free_threads) \
+    REGULAR(mt_select_parts_to_mutate_max_part_size) \
+    REGULAR(rmt_merge_selecting_task_no_free_threads) \
+    REGULAR(rmt_merge_selecting_task_max_part_size)
 
 
 namespace FailPoints

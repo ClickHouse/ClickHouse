@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -36,6 +37,7 @@ ColumnsDescription StorageSystemMutations::getColumnsDescription()
         { "parts_in_progress_names",        std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of names of data parts that are currently being mutated."},
         { "parts_to_do_names",             std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of names of data parts that need to be mutated for the mutation to complete."},
         { "parts_to_do",                   std::make_shared<DataTypeInt64>(), "The number of data parts that need to be mutated for the mutation to complete."},
+        { "parts_postpone_reasons",        std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "A map of part names to reasons why they are postponed."},
         { "is_done",                       std::make_shared<DataTypeUInt8>(),
             "The flag whether the mutation is done or not. Possible values: "
             "1 if the mutation is completed, "
@@ -158,6 +160,16 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
             for (const String & part_name : status.parts_in_progress_names)
                 parts_in_progress_names.emplace_back(part_name);
 
+            Map parts_postpone_reasons_map;
+            parts_postpone_reasons_map.reserve(status.parts_postpone_reasons.size());
+            for (const auto & [part_name, reason] : status.parts_postpone_reasons)
+            {
+                Tuple key_value;
+                key_value.emplace_back(part_name);
+                key_value.emplace_back(reason);
+                parts_postpone_reasons_map.emplace_back(std::move(key_value));
+            }
+
             size_t col_num = 0;
             res_columns[col_num++]->insert(database);
             res_columns[col_num++]->insert(table);
@@ -170,6 +182,7 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
             res_columns[col_num++]->insert(parts_in_progress_names);
             res_columns[col_num++]->insert(parts_to_do_names);
             res_columns[col_num++]->insert(parts_to_do_names.size());
+            res_columns[col_num++]->insert(parts_postpone_reasons_map);
             res_columns[col_num++]->insert(status.is_done);
             res_columns[col_num++]->insert(status.is_killed);
             res_columns[col_num++]->insert(status.latest_failed_part);
