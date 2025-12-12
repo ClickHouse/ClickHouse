@@ -1580,10 +1580,14 @@ void Aggregator::prepareAggregateInstructions(
             if (aggregate_columns[i][j]->isSparse()
                 && aggregate_columns[i][j]->getNumberOfDefaultRows() == 0)
                 allow_sparse_arguments = false;
+            
+            /// Sparse columns with Nullable type may be handled incorrectly.
+            if (aggregate_columns[i][j]->isSparse() && aggregate_functions[i]->getArgumentTypes()[j]->isNullable())
+                allow_sparse_arguments = false;
 
             auto full_column = allow_sparse_arguments
                 ? aggregate_columns[i][j]->getPtr()
-                : recursiveRemoveSparse(aggregate_columns[i][j]->getPtr());
+                : recursiveRemoveSparse(aggregate_columns[i][j]->getPtr(), aggregate_functions[i]->getArgumentTypes()[j]);
 
             full_column = recursiveRemoveLowCardinality(full_column);
             if (full_column.get() != aggregate_columns[i][j])
