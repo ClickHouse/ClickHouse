@@ -46,8 +46,7 @@ void AllocationQueue::insertAllocation(ResourceAllocation & allocation, Resource
             "Negative allocation is not allowed: {}", initial_size);
     if (initial_size > 0 && max_queued >= 0 && pending_allocations.size() >= static_cast<size_t>(max_queued))
     {
-        // rejected_requests++; // TODO(serxa): introspection counters
-        // rejected_cost += allocation.cost;
+        ++rejects;
         throw Exception(ErrorCodes::SERVER_OVERLOADED,
             "Workload '{}' limit `max_waiting_queries` has been reached: {} of {}",
             getWorkloadName(), pending_allocations.size(), max_queued);
@@ -312,6 +311,7 @@ void AllocationQueue::updateQueueLimit(Int64 value)
             Exception(ErrorCodes::SERVER_OVERLOADED,
                 "Workload '{}' limit `max_waiting_queries` has been reached: {} of {}",
                 getWorkloadName(), pending_allocations.size(), max_queued)));
+        ++rejects;
     }
 }
 
@@ -343,6 +343,12 @@ void AllocationQueue::ensureUsable() const // TSA_REQUIRES(mutex)
         throw Exception(ErrorCodes::INVALID_SCHEDULER_NODE,
         "Allocation queue is about to be destructed for workload '{}'",
         getWorkloadName());
+}
+
+UInt64 AllocationQueue::getRejects() const
+{
+    std::lock_guard lock(mutex);
+    return rejects;
 }
 
 }

@@ -130,6 +130,10 @@ ColumnsDescription StorageSystemScheduler::getColumnsDescription()
         {"victims", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "For space-shared nodes only. The total number of allocations that were evicted from this node."
         },
+        // AllocationQueue
+        {"rejects", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+            "For `allocation_queue` nodes only. The total number of resource allocations rejected from this node."
+        },
     };
 }
 
@@ -176,6 +180,7 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         Field removes;
         Field killers;
         Field victims;
+        Field rejects;
 
         if (auto * ptr = dynamic_cast<ITimeSharedNode *>(node))
         {
@@ -226,6 +231,10 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
             killers = ptr->killers;
             victims = ptr->victims;
         }
+        if (auto * ptr = dynamic_cast<AllocationQueue *>(node))
+        {
+            rejects = ptr->getRejects();
+        }
 
         res_columns[i++]->insert(is_active);
         res_columns[i++]->insert(active_children);
@@ -258,6 +267,7 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insert(removes);
         res_columns[i++]->insert(killers);
         res_columns[i++]->insert(victims);
+        res_columns[i++]->insert(rejects);
     });
 }
 

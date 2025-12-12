@@ -41,6 +41,8 @@ public:
     std::pair<UInt64, Int64> getQueueLengthAndSize();
     void updateQueueLimit(Int64 value);
 
+    UInt64 getRejects() const;
+
 private:
     bool setIncrease();
     bool setDecrease();
@@ -48,7 +50,7 @@ private:
 
     /// Protects all the following fields
     /// NOTE: we need recursive mutex because increaseApproved()/decreaseApproved() may interact with the queue again
-    std::recursive_mutex mutex;
+    mutable std::recursive_mutex mutex;
 
     Int64 max_queued; /// Limit on the number of pending allocation
 
@@ -65,6 +67,8 @@ private:
     ResourceCost pending_allocations_size = 0;
 
     bool skip_activation = false; /// Optimization to avoid unnecessary activation
+
+    UInt64 rejects = 0; /// Number of rejected allocations
 };
 
 }
