@@ -132,7 +132,10 @@ class CIFailure:
         self.cidb_link = self.praktika_result.get_hlabel_link("cidb") or ""
 
     def __str__(self):
-        res = f"  {self.test_status or self.job_status}: {self.test_name or self.job_name}"
+        res = f"[{self.test_status or self.job_status}]"
+        res += f" {self.job_name}"
+        if self.test_name:
+            res += f": {self.test_name}"
         if self.labels:
             res += f"\n    Flags: {', '.join(self.labels)}"
         if self.issue_url:
@@ -218,16 +221,22 @@ class CIFailure:
 
     def create_gh_issue_on_flaky_or_broken_test(self):
         if self.issue_url:
-            assert False, "BUG"
+            assert False, "BUG: Issue URL already exists, cannot create duplicate"
 
         print(repr(self))
+
+        test_name = self.test_name
+        if "[" in self.test_name:
+            # Despite parameter might be valuable for failure reproduction, drop it for simplicity
+            test_name = test_name.split("[")[0]
+
         failure_reason = UserPrompt.get_string(
             "Enter the exact error text from the test output above that identifies the failure.\n"
             "This must be a substring from the output (e.g., 'Logical error', 'Result differs').\n"
             "It will be used to match and group similar failures",
             validator=lambda x: x in self.praktika_result.info,
         )
-        title = f"Flaky test: {self.test_name}"
+        title = f"Flaky test: {test_name}"
         body = f"""\
 Failure reason: {failure_reason}
 CI report: [{self.job_name}]({self.get_job_report_url(pr_number, head_sha, self.job_name)})
@@ -285,6 +294,12 @@ Test output:
         return False
 
     def can_process(self):
+        if self.job_type in (JobTypes.STATELESS, JobTypes.INTEGRATION):
+            if not re.match(r"^(\d{5}|test)_", self.test_name):
+                print(
+                    f"Only regular test failures can be handled, not [{self.test_name}] - skip"
+                )
+                return False
         if self.job_type in (JobTypes.DOCKER_TEST_IMAGES):
             print("It's likely infrastructure problem - cannot handle it")
             return False
@@ -295,7 +310,10 @@ Test output:
             print("This issue should be fixed before merge - cannot handle it")
             return False
         if "OOM" in self.test_name:
-            print("Cannot handle OOM errors - continue")
+            print("Cannot handle OOM errors - skip")
+            return False
+        if self.job_status == Result.Status.ERROR:
+            print("Cannot handle jobs with status error - skip")
             return False
         return True
 
@@ -306,28 +324,21 @@ Test output:
         Returns:
             bool: True if an existing issue was found and linked, False otherwise
         """
+        assert self.test_name
         check_failure_reason = False  # Flag to check if failure reason matches
 
         if self.job_type == JobTypes.BUILD:
             search_in_title = self.job_name
             labels = ["build"]
         elif self.job_type in (JobTypes.STATELESS, JobTypes.INTEGRATION):
-            if not re.match(r"^(\d{5}|test)_", self.test_name):
-                raise Exception(f"Unexpected test name format: {self.test_name}")
             search_in_title = self.test_name
+            if "[" in self.test_name:
+                search_in_title = self.test_name.split("[")[0]
             labels = ["flaky test"]
             check_failure_reason = True  # Flag to check if failure reason matches
         elif self.job_type in (JobTypes.BUZZ_FUZZER, JobTypes.AST_FUZZER):
-            if not self.test_name:
-                if self.job_status != Result.Status.ERROR:
-                    raise Exception(f"Unexpected job status: {self.job_status}")
-                print("      --> Looks like infrastructure problem - cannot handle it")
-                return False
             search_in_title = self.test_name
             labels = ["fuzz"]
-        elif self.job_type == JobTypes.PERFORMANCE:
-            print("      --> Performance tests - not yet supported")
-            return False
         else:
             raise Exception(f"Unsupported job type: {self.job_type}")
 
@@ -338,6 +349,7 @@ Test output:
         else:
             hours_since_start = 24  # Default fallback
 
+        print(f"Searching for issues with title: {search_in_title}")
         issues = GH.find_issue(
             title=search_in_title,
             labels=labels,
@@ -409,6 +421,7 @@ class JobFailuresList:
 
 
 class JobResultProcessor:
+    failure_counter = 0
 
     @staticmethod
     def process_job_failures(job_failures: JobFailuresList):
@@ -421,7 +434,9 @@ class JobResultProcessor:
         Args:
             job_failures: JobFailuresList containing all failure types for a job
         """
-        print(f"\n----- {job_failures.job_name} -----")
+        print(
+            f"\n=== {job_failures.job_name}. {len(job_failures.unknown_failures)} unknown failures ==="
+        )
 
         # Skip jobs with too many unknown failures to avoid overwhelming the user
         if len(job_failures.unknown_failures) > 7:
@@ -441,27 +456,19 @@ class JobResultProcessor:
 
         # Process unknown failures
         if not job_failures.unknown_failures:
-            print(f"  No unknown failures to process")
             return
 
         still_unknown = []
         if job_failures.unknown_failures:
-            print(f"Unknown failures ({len(job_failures.unknown_failures)}):")
-            for i, failure in enumerate(job_failures.unknown_failures):
+            for failure in job_failures.unknown_failures:
                 print("")
-                print(f"{i+1}. {failure}")
+                JobResultProcessor.failure_counter += 1
+                print(f"{JobResultProcessor.failure_counter}. {failure}")
                 print(f"cidb: {failure.cidb_link}")
 
                 if not failure.can_process():
                     still_unknown.append(failure)
                     time.sleep(3)
-                    continue
-
-                if not UserPrompt.confirm(
-                    "Check existing GitHub issue for this failure?"
-                ):
-                    failure.praktika_result.set_comment("IGNORED")
-                    still_unknown.append(failure)
                     continue
 
                 # Try to find existing issue first
@@ -668,7 +675,7 @@ def main():
     global head_sha, pr_number
     is_master_commit = False
     my_prs_number_and_title = Shell.get_output(
-        "gh pr list --author @me --json number,title --base master --limit 20"
+        "gh pr list --author @me --json number,title --base master --limit 20 --repo ClickHouse/ClickHouse"
     )
     my_prs_number_and_title = json.loads(my_prs_number_and_title)
     pr_menu = []

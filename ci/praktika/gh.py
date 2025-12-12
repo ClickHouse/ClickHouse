@@ -521,7 +521,7 @@ class GH:
             .replace("{", " ")
             .replace("}", " ")
             .replace(",", " ")
-            .replace(":", " ")
+            # .replace(":", " ") pytest test_file.py::test_function has ::
             .replace(";", " ")
             .replace("?", " ")
             .replace("!", " ")
@@ -531,7 +531,7 @@ class GH:
             .replace("=", " ")
             .replace("<", " ")
             .replace(">", " ")
-            .replace(".", " ")
+            # .replace(".", " ") pytest test_file.py::test_function has .
         )
 
         # Clean up multiple consecutive spaces
@@ -544,7 +544,8 @@ class GH:
             search_query = search_query[:200]
 
         # Construct the full search query with 'in:title' qualifier
-        full_search_query = f"in:title {search_query}"
+        # Wrap search query in quotes for exact phrase matching to avoid partial matches
+        full_search_query = f'in:title "{search_query}"'
 
         # Add state filter based on whether we want to include closed issues
         state_filter = "--state all" if include_closed_hours > 0 else "--state open"
