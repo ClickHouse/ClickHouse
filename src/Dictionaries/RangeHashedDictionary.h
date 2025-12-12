@@ -64,7 +64,7 @@ template <DictionaryKeyType dictionary_key_type>
 class RangeHashedDictionary final : public IDictionary
 {
 public:
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, std::string_view>;
 
     RangeHashedDictionary(
         const StorageID & dict_id_,
@@ -148,7 +148,7 @@ private:
     using KeyAttributeContainerType = std::conditional_t<
         dictionary_key_type == DictionaryKeyType::Simple,
         HashMap<UInt64, IntervalMap<RangeStorageType>, DefaultHash<UInt64>>,
-        HashMapWithSavedHash<StringRef, IntervalMap<RangeStorageType>, DefaultHash<StringRef>>>;
+        HashMapWithSavedHash<std::string_view, IntervalMap<RangeStorageType>, DefaultHash<std::string_view>>>;
 
     template <typename Value>
     using AttributeContainerType = std::conditional_t<std::is_same_v<Value, Array>, std::vector<Value>, PaddedPODArray<Value>>;
@@ -181,7 +181,7 @@ private:
             AttributeContainerType<UUID>,
             AttributeContainerType<IPv4>,
             AttributeContainerType<IPv6>,
-            AttributeContainerType<StringRef>,
+            AttributeContainerType<std::string_view>,
             AttributeContainerType<Array>>
             container;
 
@@ -390,7 +390,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumnInternal(
                     out->insert(value);
                 });
         }
-        else if constexpr (std::is_same_v<ValueType, StringRef>)
+        else if constexpr (std::is_same_v<ValueType, std::string_view>)
         {
             auto * out = column.get();
 
@@ -398,18 +398,18 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumnInternal(
                 getItemsInternalImpl<ValueType, true>(
                     attribute,
                     key_to_index,
-                    [&](size_t row, StringRef value, bool is_null)
+                    [&](size_t row, std::string_view value, bool is_null)
                     {
                         (*vec_null_map_to)[row] = is_null;
-                        out->insertData(value.data, value.size);
+                        out->insertData(value.data(), value.size());
                     });
             else
                 getItemsInternalImpl<ValueType, false>(
                     attribute,
                     key_to_index,
-                    [&](size_t, StringRef value, bool)
+                    [&](size_t, std::string_view value, bool)
                     {
-                        out->insertData(value.data, value.size);
+                        out->insertData(value.data(), value.size());
                     });
         }
         else
@@ -853,7 +853,7 @@ void RangeHashedDictionary<dictionary_key_type>::blockToAttributes(const Block &
                 continue;
             }
 
-            if constexpr (std::is_same_v<KeyType, StringRef>)
+            if constexpr (std::is_same_v<KeyType, std::string_view>)
                 key = copyStringInArena(string_arena, key);
 
             for (size_t attribute_index = 0; attribute_index < attributes.size(); ++attribute_index)
@@ -920,7 +920,7 @@ void RangeHashedDictionary<dictionary_key_type>::setAttributeValue(Attribute & a
         if constexpr (std::is_same_v<AttributeType, String>)
         {
             const auto & string = value.safeGet<String>();
-            StringRef string_ref = copyStringInArena(string_arena, string);
+            std::string_view string_ref = copyStringInArena(string_arena, string);
             value_to_insert = string_ref;
         }
         else

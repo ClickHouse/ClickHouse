@@ -8,15 +8,13 @@ String SQLColumn::getColumnName() const
     return "c" + std::to_string(cname);
 }
 
-void SQLDatabase::finishDatabaseSpecification(DatabaseEngine * de, const bool add_params)
+void SQLDatabase::finishDatabaseSpecification(DatabaseEngine * de)
 {
-    if (add_params && isReplicatedDatabase())
+    if (isReplicatedDatabase())
     {
-        chassert(de->params_size() == 0);
-        de->add_params()->set_svalue("/clickhouse/path/" + this->getName());
-        de->add_params()->set_svalue("{shard}");
-        de->add_params()->set_svalue("{replica}");
-        this->nparams = 3;
+        de->add_params()->set_svalue(this->keeper_path);
+        de->add_params()->set_svalue(this->shard_name);
+        de->add_params()->set_svalue(this->replica_name);
     }
 }
 
@@ -148,7 +146,8 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
         && !partition_columns_in_data_file.has_value() && !storage_class_name.has_value());
     has_partition_by = (isRedisEngine() || isKeeperMapEngine() || isMaterializedPostgreSQLEngine() || isAnyIcebergEngine()
                         || isAzureEngine() || isS3Engine())
-        && rg.nextSmallNumber() < 5;
+        && rg.nextSmallNumber() < 4;
+    has_order_by = isAnyIcebergEngine() && rg.nextSmallNumber() < 4;
     if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
     {
         /// Set bucket path first if possible
@@ -373,13 +372,13 @@ String SQLBase::getMetadataPath(const FuzzConfig & fc) const
     return has_metadata ? fmt::format("{}/metadatat{}", fc.server_file_path.generic_string(), tname) : "";
 }
 
-size_t SQLTable::numberOfInsertableColumns() const
+size_t SQLTable::numberOfInsertableColumns(const bool all) const
 {
     size_t res = 0;
 
     for (const auto & entry : cols)
     {
-        res += entry.second.canBeInserted() ? 1 : 0;
+        res += entry.second.canBeInserted() || all ? 1 : 0;
     }
     return res;
 }

@@ -1,4 +1,3 @@
-#include <base/StringRef.h>
 #include <base/types.h>
 
 #include <Columns/ColumnArray.h>
@@ -75,11 +74,11 @@ struct ValueHandler<ColumnVector<T>>
 template <>
 struct ValueHandler<ColumnString>
 {
-    using ValueType = StringRef;
+    using ValueType = std::string_view;
 
-    static StringRef getValue(const ColumnString & col, size_t pos) { return col.getDataAt(pos); }
+    static std::string_view getValue(const ColumnString & col, size_t pos) { return col.getDataAt(pos); }
 
-    static void insertValue(ColumnString & col, StringRef value) { col.insertData(value.data, value.size); }
+    static void insertValue(ColumnString & col, std::string_view value) { col.insertData(value.data(), value.size()); }
 
     static void insertDefault(ColumnString & col) { col.insertDefault(); }
 };
@@ -87,15 +86,15 @@ struct ValueHandler<ColumnString>
 template <>
 struct ValueHandler<ColumnFixedString>
 {
-    using ValueType = StringRef;
+    using ValueType = std::string_view;
 
-    static StringRef getValue(const ColumnFixedString & col, size_t pos)
+    static std::string_view getValue(const ColumnFixedString & col, size_t pos)
     {
         const size_t fixed_size = col.getN();
-        return StringRef(&col.getChars()[pos * fixed_size], fixed_size);
+        return std::string_view{reinterpret_cast<const char *>(&col.getChars()[pos * fixed_size]), fixed_size};
     }
 
-    static void insertValue(ColumnFixedString & col, StringRef value) { col.insertData(value.data, value.size); }
+    static void insertValue(ColumnFixedString & col, std::string_view value) { col.insertData(value.data(), value.size()); }
 
     static void insertDefault(ColumnFixedString & col) { col.insertDefault(); }
 };
