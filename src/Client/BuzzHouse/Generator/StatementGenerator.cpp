@@ -580,9 +580,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         if (has_to)
         {
             CreateMatViewTo * cmvt = cv->mutable_to();
-            SQLTable & t = const_cast<SQLTable &>(
-                next.has_with_cols ? rg.pickRandomly(filterCollection<SQLTable>(table_to_lambda)).get()
-                                   : rg.pickValueRandomlyFromMap(this->tables));
+            SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(next.has_with_cols ? table_to_lambda : attached_tables));
 
             t.setName(cmvt->mutable_est(), false);
             if (next.has_with_cols)
@@ -2482,7 +2480,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
     {
         const bool prev_enforce_final = this->enforce_final;
         const bool prev_allow_not_deterministic = this->allow_not_deterministic;
-        SQLView & v = const_cast<SQLView &>(rg.pickRandomly(filterCollection<SQLView>(attached_views)).get());
+        SQLView & v = rg.pickRandomly(filterCollection<SQLView>(attached_views));
 
         this->allow_not_deterministic = !v.is_deterministic;
         this->enforce_final = v.is_deterministic;
@@ -2539,7 +2537,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
     }
     else if (alter_table && nopt2 < (alter_view + alter_table + 1))
     {
-        SQLTable & t = const_cast<SQLTable &>(rg.pickRandomly(filterCollection<SQLTable>(attached_tables)).get());
+        SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
 
         cluster = this->alterSingleTable(rg, t, nalters, true, at);
     }

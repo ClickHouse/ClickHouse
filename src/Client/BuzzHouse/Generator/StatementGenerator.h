@@ -175,11 +175,11 @@ private:
     std::vector<CHFunction> one_arg_funcs;
     std::vector<ColumnPathChain> entries, table_entries, remote_entries;
     std::vector<std::reference_wrapper<const ColumnPathChain>> filtered_entries;
-    std::vector<std::reference_wrapper<const SQLTable>> filtered_tables;
-    std::vector<std::reference_wrapper<const SQLView>> filtered_views;
-    std::vector<std::reference_wrapper<const SQLDictionary>> filtered_dictionaries;
-    std::vector<std::reference_wrapper<const std::shared_ptr<SQLDatabase>>> filtered_databases;
-    std::vector<std::reference_wrapper<const SQLFunction>> filtered_functions;
+    std::vector<std::reference_wrapper<SQLTable>> filtered_tables;
+    std::vector<std::reference_wrapper<SQLView>> filtered_views;
+    std::vector<std::reference_wrapper<SQLDictionary>> filtered_dictionaries;
+    std::vector<std::reference_wrapper<std::shared_ptr<SQLDatabase>>> filtered_databases;
+    std::vector<std::reference_wrapper<SQLFunction>> filtered_functions;
     std::vector<std::reference_wrapper<const SQLRelation>> filtered_relations;
 
     std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes;
@@ -250,7 +250,7 @@ private:
     }
 
     template <typename T>
-    std::vector<std::reference_wrapper<const T>> & getNextCollectionResult()
+    std::vector<std::reference_wrapper<T>> & getNextCollectionResult()
     {
         if constexpr (std::is_same_v<T, SQLTable>)
         {
@@ -285,17 +285,17 @@ private:
 
 public:
     template <typename T>
-    std::vector<std::reference_wrapper<const T>> & filterCollection(const std::function<bool(const T &)> func)
+    std::vector<std::reference_wrapper<T>> & filterCollection(std::function<bool(T &)> func)
     {
         auto & input = getNextCollection<T>();
         auto & res = getNextCollectionResult<T>();
 
         res.clear();
-        for (const auto & entry : input)
+        for (auto & entry : input)
         {
             if (func(entry.second))
             {
-                res.emplace_back(std::ref<const T>(entry.second));
+                res.emplace_back(std::ref<T>(entry.second));
             }
         }
         return res;
@@ -489,7 +489,7 @@ private:
     static const constexpr auto aggrNotDeterministicIndexLambda = [](const CHAggregate & a) { return a.fnum == SQLFunc::FUNCany; };
 
     template <typename T, typename U>
-    void setObjectStoreParams(RandomGenerator & rg, T & b, U * source)
+    void setObjectStoreParams(RandomGenerator & rg, const T & b, U * source)
     {
         uint32_t added_path = 0;
         uint32_t added_format = 0;

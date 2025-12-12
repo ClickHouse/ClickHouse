@@ -299,7 +299,7 @@ void QueryOracle::generateExportQuery(
 void QueryOracle::dumpOracleIntermediateSteps(
     RandomGenerator & rg,
     StatementGenerator & gen,
-    const SQLTable & t,
+    SQLTable & t,
     const DumpOracleStrategy strategy,
     const bool test_content,
     std::vector<SQLQuery> & intermediate_queries)
@@ -466,7 +466,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
                 std::optional<String> acluster;
                 Alter * at = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
 
-                acluster = gen.alterSingleTable(rg, const_cast<SQLTable &>(t), 1, false, at);
+                acluster = gen.alterSingleTable(rg, t, 1, false, at);
                 if (acluster.has_value())
                 {
                     at->mutable_cluster()->set_cluster(acluster.value());

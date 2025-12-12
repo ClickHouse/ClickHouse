@@ -435,15 +435,15 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
 
             if (sfunc)
             {
-                setObjectStoreParams<SQLTable, S3Func>(rg, const_cast<SQLTable &>(t), sfunc);
+                setObjectStoreParams<SQLTable, S3Func>(rg, t, sfunc);
             }
             else if (afunc)
             {
-                setObjectStoreParams<SQLTable, AzureBlobStorageFunc>(rg, const_cast<SQLTable &>(t), afunc);
+                setObjectStoreParams<SQLTable, AzureBlobStorageFunc>(rg, t, afunc);
             }
             else if (lfunc)
             {
-                setObjectStoreParams<SQLTable, LocalFunc>(rg, const_cast<SQLTable &>(t), lfunc);
+                setObjectStoreParams<SQLTable, LocalFunc>(rg, t, lfunc);
             }
             if (!engineSettings.empty() && rg.nextSmallNumber() < 9)
             {
@@ -1038,7 +1038,7 @@ bool StatementGenerator::joinedTableOrFunction(
             < (derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf + cluster_udf
                + merge_index_udf + loop_udf + values_udf + random_data_udf + dictionary + 1))
     {
-        const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(has_dictionary_lambda)).get();
+        const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(has_dictionary_lambda));
 
         d.setName(rg.nextSmallNumber() < 8 ? tof->mutable_est() : tof->mutable_tfunc()->mutable_dictionary(), false);
         addDictionaryRelation(rel_name, d);
@@ -1094,7 +1094,7 @@ bool StatementGenerator::joinedTableOrFunction(
             < (derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf + cluster_udf
                + merge_index_udf + loop_udf + values_udf + random_data_udf + dictionary + url_encoded_table + table_engine_udf + 1))
     {
-        const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_replaceable_table_lambda)).get();
+        const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_replaceable_table_lambda));
 
         /// I think it's not possible to call final on table functions
         setTableFunction(rg, TableFunctionUsage::EngineReplace, tt, tof->mutable_tfunc());

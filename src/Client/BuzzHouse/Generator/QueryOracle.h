@@ -75,7 +75,7 @@ public:
     void dumpOracleIntermediateSteps(
         RandomGenerator & rg,
         StatementGenerator & gen,
-        const SQLTable & t,
+        SQLTable & t,
         DumpOracleStrategy strategy,
         bool test_content,
         std::vector<SQLQuery> & intermediate_queries);
