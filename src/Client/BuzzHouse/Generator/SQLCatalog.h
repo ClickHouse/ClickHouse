@@ -149,7 +149,8 @@ struct SQLDatabase
 {
 public:
     bool random_engine = false;
-    uint32_t dname = 0, nparams = 0;
+    String keeper_path, shard_name, replica_name;
+    uint32_t dname = 0, replica_counter = 0, shard_counter = 0;
     DatabaseEngineValues deng;
     std::optional<String> cluster;
     DetachStatus attached = DetachStatus::ATTACHED;
@@ -193,7 +194,7 @@ public:
 
     void setDatabasePath(RandomGenerator & rg, const FuzzConfig & fc);
 
-    void finishDatabaseSpecification(DatabaseEngine * de, bool add_params);
+    void finishDatabaseSpecification(DatabaseEngine * de);
 };
 
 struct SQLBase
@@ -202,10 +203,11 @@ public:
     String prefix;
     bool is_temp = false, is_deterministic = false, has_metadata = false, has_partition_by = false, has_order_by = false,
          random_engine = false, can_run_merges = true;
-    uint32_t tname = 0;
+    uint32_t tname = 0, replica_counter = 0, shard_counter = 0;
     std::shared_ptr<SQLDatabase> db = nullptr;
     std::optional<String> cluster, file_comp, partition_strategy, partition_columns_in_data_file, storage_class_name, host_params,
         bucket_path;
+    String keeper_path, shard_name, replica_db, replica_table, replica_name;
     DetachStatus attached = DetachStatus::ATTACHED;
     std::optional<TableEngineOption> toption;
     TableEngineValues teng = TableEngineValues::Null, sub = TableEngineValues::Null;

@@ -18,11 +18,11 @@ void StatementGenerator::addFieldAccess(RandomGenerator & rg, Expr * expr, const
         this->depth++;
         if (noption < 41)
         {
-            fa->set_array_index(rg.randomInt<uint32_t>(0, 4));
+            fa->set_array_index(rg.randomInt<int32_t>(-4, 4));
         }
         else if (noption < 71)
         {
-            fa->set_tuple_index(rg.randomInt<uint32_t>(0, 4));
+            fa->set_tuple_index(rg.randomInt<int32_t>(-4, 4));
         }
         else if (this->depth >= this->fc.max_depth || noption < 81)
         {
@@ -244,7 +244,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
         const SQLType * tp = randomTimeType(rg, std::numeric_limits<uint32_t>::max(), nullptr);
         const bool prev_allow_not_deterministic = this->allow_not_deterministic;
 
-        this->allow_not_deterministic = complex;
+        this->allow_not_deterministic &= complex;
         lv->set_no_quote_str(tp->appendRandomRawValue(rg, *this));
         this->allow_not_deterministic = prev_allow_not_deterministic;
         delete tp;
@@ -255,7 +255,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
         const bool prev_allow_not_deterministic = this->allow_not_deterministic;
         std::tie(tp, std::ignore) = randomDateType(rg, std::numeric_limits<uint32_t>::max());
 
-        this->allow_not_deterministic = complex;
+        this->allow_not_deterministic &= complex;
         lv->set_no_quote_str(tp->appendRandomRawValue(rg, *this));
         this->allow_not_deterministic = prev_allow_not_deterministic;
         delete tp;
@@ -265,7 +265,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
         const SQLType * tp = randomDateTimeType(rg, std::numeric_limits<uint32_t>::max(), nullptr);
         const bool prev_allow_not_deterministic = this->allow_not_deterministic;
 
-        this->allow_not_deterministic = complex;
+        this->allow_not_deterministic &= complex;
         lv->set_no_quote_str(tp->appendRandomRawValue(rg, *this));
         this->allow_not_deterministic = prev_allow_not_deterministic;
         delete tp;
@@ -645,9 +645,9 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
             {
                 this->generateSubquery(rg, ein->mutable_sel());
             }
-            else if (nopt2 < 8)
+            else if (nopt2 < 9)
             {
-                ExprList * elist2 = ein->mutable_exprs();
+                ExprList * elist2 = rg.nextBool() ? ein->mutable_tuple() : ein->mutable_array();
                 const uint32_t nclauses2
                     = rg.nextSmallNumber() < 9 ? nclauses : std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 4));
 
