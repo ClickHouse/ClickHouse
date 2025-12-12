@@ -153,6 +153,10 @@ void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
 
     if (use_default_null_map)
         col.getNullMapData().resize_fill(col.getNestedColumn().size());
+
+    /// Verify that null map and nested column have the same sizes
+    if (col.getNullMapColumnPtr()->size() != col.getNestedColumnPtr()->size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of null map column doesn't match the size of nested column: {} != {}", col.getNullMapColumnPtr()->size(), col.getNestedColumnPtr()->size());
 }
 
 
