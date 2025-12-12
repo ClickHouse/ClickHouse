@@ -245,6 +245,11 @@ bool isFromJoinTree(const IQueryTreeNode * node_source, const IQueryTreeNode * t
             stack.push(child_join_node->getLeftTableExpression().get());
             stack.push(child_join_node->getRightTableExpression().get());
         }
+
+        if (const auto * child_join_node = current->as<CrossJoinNode>())
+        {
+            stack.push_range(child_join_node->getTableExpressions() | std::views::transform(&QueryTreeNodePtr::get));
+        }
     }
     return false;
 }
