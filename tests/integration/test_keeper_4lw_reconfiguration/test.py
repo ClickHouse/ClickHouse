@@ -118,7 +118,7 @@ def three_to_five_reconfig(started_cluster):
     waiter2 = p.apply_async(start, (node7,))
 
     command = {
-        "max_action_wait_time_ms": 180000,
+        "max_action_wait_time_ms": 30000,
         "max_total_wait_time_ms": 600000,
         "preconditions": {
               "leaders": [4, 5],
@@ -140,7 +140,8 @@ def three_to_five_reconfig(started_cluster):
                         "endpoint": "node7:9234",
                         "priority": 100,
                     },
-                ]
+                ],
+                "retry": 3
             },
             {
                 "transfer_leadership": [6, 7]
@@ -231,4 +232,4 @@ def test_precondition_failure(started_cluster):
     result_str = keeper_utils.send_4lw_cmd(started_cluster, node3, cmd="rcfg", port=9181, argument=json_command, timeout_sec=300)
     result = json.loads(result_str)
     assert result["status"] == "error"
-    assert "expected member" in result["message"]
+    assert "found in cluster, but precondition" in result["message"]

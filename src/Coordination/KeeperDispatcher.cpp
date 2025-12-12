@@ -1034,26 +1034,35 @@ Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
 }
 
 
-void KeeperDispatcher::executeClusterUpdateActionAndWaitConfigChange(const ClusterUpdateAction & action, KeeperDispatcher::ConfigCheckCallback check_callback, size_t max_action_wait_time_ms)
+void KeeperDispatcher::executeClusterUpdateActionAndWaitConfigChange(const ClusterUpdateAction & action, KeeperDispatcher::ConfigCheckCallback check_callback, size_t max_action_wait_time_ms, int64_t retry_count)
 {
-    pushClusterUpdates({action});
-    Stopwatch watch;
-    LOG_DEBUG(log, "Waiting for configuration update {} to be applied, will wait for {} ms", action, max_action_wait_time_ms);
-    while (watch.elapsedMilliseconds() < max_action_wait_time_ms)
+    for (int64_t attempt = 0; attempt <= retry_count; ++attempt)
     {
-        if (keeper_context->isShutdownCalled())
-            throw Exception(ErrorCodes::ABORTED, "Shutdown called, aborting configuration update");
-
         if (check_callback(server.get()))
         {
-            LOG_DEBUG(log, "Configuration update {} applied successfully", action);
+            LOG_DEBUG(log, "Configuration update {} already applied, nothing to do", action);
             return;
         }
 
-        std::this_thread::sleep_for(1000ms);
-    }
+        pushClusterUpdates({action});
+        Stopwatch watch;
+        LOG_DEBUG(log, "Waiting for configuration update {} to be applied, will wait for {} ms", action, max_action_wait_time_ms);
+        while (watch.elapsedMilliseconds() < max_action_wait_time_ms)
+        {
+            if (keeper_context->isShutdownCalled())
+                throw Exception(ErrorCodes::ABORTED, "Shutdown called, aborting configuration update");
 
-    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded waiting for configuration update {} to happen", action);
+            if (check_callback(server.get()))
+            {
+                LOG_DEBUG(log, "Configuration update {} applied successfully", action);
+                return;
+            }
+
+            std::this_thread::sleep_for(1000ms);
+        }
+        LOG_INFO(log, "Timeout exceeded waiting for configuration update {} to be applied, attempt {}/{}", action, attempt + 1, retry_count + 1);
+    }
+    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded (with retries count {}) waiting for configuration update {} to happen", action, retry_count);
 }
 
 void KeeperDispatcher::checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr reconfig_command)
@@ -1080,8 +1089,8 @@ void KeeperDispatcher::checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr
             {
                 if (!nodes.contains(participant->get_id()))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Precondition failed: expected member id {} not found in actual members",
-                        participant->get_id());
+                        "Precondition failed: member with with id {} found in cluster, but precondition members are {}",
+                        participant->get_id(), fmt::join(nodes, ", "));
             }
         }
 
@@ -1116,10 +1125,11 @@ void KeeperDispatcher::checkReconfigCommandActions(Poco::JSON::Object::Ptr recon
     std::unordered_map<int32_t, bool> state_model;
 
     auto config = server->getKeeperStateMachine()->getClusterConfig();
+    auto leader_id = server->getLeaderID();
     for (const auto & srv : config->get_servers())
     {
         int32_t server_id = srv->get_id();
-        state_model[server_id] = server_id == server->getLeaderID();
+        state_model[server_id] = server_id == leader_id;
     }
     auto is_leader = [&state_model](int32_t server_id) -> bool
     {
@@ -1150,11 +1160,10 @@ void KeeperDispatcher::checkReconfigCommandActions(Poco::JSON::Object::Ptr recon
                         "Reconfigure command cannot remove leader server id {} from cluster, transfer leadership first and than remove it",
                         member_id);
                 }
-                if (auto it = state_model.find(member_id); it != state_model.end())
-                    state_model.erase(it);
+                state_model.erase(member_id);
             }
         }
-        if (action_obj->has("add_members"))
+        else if (action_obj->has("add_members"))
         {
             auto add_members = action_obj->getArray("add_members");
             for (const auto & member_id_json : *add_members)
@@ -1170,7 +1179,7 @@ void KeeperDispatcher::checkReconfigCommandActions(Poco::JSON::Object::Ptr recon
                 state_model[member_id] = false;
             }
         }
-        if (action_obj->has("transfer_leadership"))
+        else if (action_obj->has("transfer_leadership"))
         {
             bool found = false;
             std::vector<int32_t> leader_ids;
@@ -1189,12 +1198,12 @@ void KeeperDispatcher::checkReconfigCommandActions(Poco::JSON::Object::Ptr recon
 
             for (const auto & leader_id_json : *leader_ids_array)
             {
-                int32_t leader_id = leader_id_json.convert<int32_t>();
-                leader_ids.push_back(leader_id);
-                if (state_model.contains(leader_id))
+                int32_t current_leader_id = leader_id_json.convert<int32_t>();
+                leader_ids.push_back(current_leader_id);
+                if (state_model.contains(current_leader_id))
                 {
                     found = true;
-                    state_model[leader_id] = true;
+                    state_model[current_leader_id] = true;
                 }
             }
 
@@ -1205,7 +1214,7 @@ void KeeperDispatcher::checkReconfigCommandActions(Poco::JSON::Object::Ptr recon
                     fmt::join(leader_ids, ", "));
             }
         }
-        if (action_obj->has("set_priority"))
+        else if (action_obj->has("set_priority"))
         {
             const auto & set_priority_obj = action_obj->getArray("set_priority");
             for (const auto & priority_change: *set_priority_obj)
@@ -1218,6 +1227,10 @@ void KeeperDispatcher::checkReconfigCommandActions(Poco::JSON::Object::Ptr recon
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Reconfigure command cannot set priority 0 for server {}, because it can be potentially a leader", member_id);
                 }
             }
+        }
+        else
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown action in reconfigure command");
         }
     }
 }
@@ -1244,12 +1257,18 @@ try
     Stopwatch total_watch;
     for (const auto & action_json : *actions)
     {
+
         UInt64 time_left_for_action = max_action_wait_time_ms;
         UInt64 time_spent = total_watch.elapsedMilliseconds();
         UInt64 time_left_total = max_total_wait_time_ms > time_spent ? max_total_wait_time_ms - time_spent : 0;
         UInt64 time_left = std::min(time_left_for_action, time_left_total);
 
         const auto & action_obj = action_json.extract<Poco::JSON::Object::Ptr>();
+
+        int64_t retry_count = 1;
+        if (action_obj->has("retry"))
+            retry_count = std::min(retry_count, action_obj->getValue<int64_t>("retry"));
+
         if (action_obj->has("remove_members"))
         {
             auto remove_members = action_obj->getArray("remove_members");
@@ -1275,7 +1294,7 @@ try
                         return false;
                     }
                 };
-                executeClusterUpdateActionAndWaitConfigChange(remove_action, std::move(remove_callback), time_left);
+                executeClusterUpdateActionAndWaitConfigChange(remove_action, std::move(remove_callback), time_left, retry_count);
             }
         }
         else if (action_obj->has("add_members"))
@@ -1307,7 +1326,7 @@ try
                         return false;
                     }
                 };
-                executeClusterUpdateActionAndWaitConfigChange(add_action, std::move(add_callback), time_left);
+                executeClusterUpdateActionAndWaitConfigChange(add_action, std::move(add_callback), time_left, retry_count);
             }
         }
         else if (action_obj->has("transfer_leadership"))
@@ -1339,7 +1358,7 @@ try
                     return false;
                 }
             };
-            executeClusterUpdateActionAndWaitConfigChange(transfer_action, std::move(check_callback), time_left);
+            executeClusterUpdateActionAndWaitConfigChange(transfer_action, std::move(check_callback), time_left, retry_count);
         }
         else if (action_obj->has("set_priority"))
         {
@@ -1375,7 +1394,7 @@ try
                         return false;
                     }
                 };
-                executeClusterUpdateActionAndWaitConfigChange(update_priority_action, std::move(priority_callback), time_left);
+                executeClusterUpdateActionAndWaitConfigChange(update_priority_action, std::move(priority_callback), time_left, retry_count);
             }
         }
         else

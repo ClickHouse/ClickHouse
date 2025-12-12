@@ -102,7 +102,7 @@ private:
         RaftAppendResult & result, KeeperRequestsForSessions & requests_for_sessions, bool clear_requests_on_success);
 
     using ConfigCheckCallback = std::function<bool(KeeperServer * server)>;
-    void executeClusterUpdateActionAndWaitConfigChange(const ClusterUpdateAction & action, ConfigCheckCallback check_callback, size_t max_action_wait_time_ms);
+    void executeClusterUpdateActionAndWaitConfigChange(const ClusterUpdateAction & action, ConfigCheckCallback check_callback, size_t max_action_wait_time_ms, int64_t retry_count);
 
     /// Verify some logical issues in command, like duplicate ids, wrong leadership transfer and etc
     void checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr reconfig_command);
