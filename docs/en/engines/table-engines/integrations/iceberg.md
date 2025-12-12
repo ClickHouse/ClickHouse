@@ -8,50 +8,157 @@ title: 'Iceberg table engine'
 doc_type: 'reference'
 ---
 
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import S3Parameters from './snippets/_s3_parameters.md';
+import AzureBlobStorageParameters from './snippets/_azure_blob_storage_parameters.md';
+import HDFSParameters from './snippets/_hdfs_parameters.md';
+
 # Iceberg table engine {#iceberg-table-engine}
 
-:::warning 
-We recommend using the [Iceberg Table Function](/sql-reference/table-functions/iceberg.md) for working with Iceberg data in ClickHouse. The Iceberg Table Function currently provides sufficient functionality, offering a partial read-only interface for Iceberg tables.
+:::warning
+We recommend using the [Iceberg table function](/sql-reference/table-functions/iceberg) for working with Iceberg data in ClickHouse.
+The Iceberg Table Function currently provides sufficient functionality, offering a partial read-only interface for Iceberg tables.
 
-The Iceberg Table Engine is available but may have limitations. ClickHouse wasn't originally designed to support tables with externally changing schemas, which can affect the functionality of the Iceberg Table Engine. As a result, some features that work with regular tables may be unavailable or may not function correctly, especially when using the old analyzer.
+The Iceberg Table Engine is available but may have limitations.
+ClickHouse wasn't originally designed to support tables with externally changing schemas, which can affect the functionality of the Iceberg Table Engine. As a result, some features that work with regular tables may be unavailable or may not function correctly, especially when using the old analyzer.
 
 For optimal compatibility, we suggest using the Iceberg Table Function while we continue to improve support for the Iceberg Table Engine.
 :::
 
 This engine provides a read-only integration with existing Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS and locally stored tables.
 
-## Create table {#create-table}
+## Create a table {#create-table}
 
 Note that the Iceberg table must already exist in the storage, this command does not take DDL parameters to create a new table.
 
+**Table engine `Iceberg` is an alias to `IcebergS3` now.**
+
+<Tabs>
+<TabItem value="S3" label="S3" default>
+
 ```sql
 CREATE TABLE iceberg_table_s3
-    ENGINE = IcebergS3(url,  [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])
-
-CREATE TABLE iceberg_table_azure
-    ENGINE = IcebergAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
-
-CREATE TABLE iceberg_table_hdfs
-    ENGINE = IcebergHDFS(path_to_table, [,format] [,compression_method])
-
-CREATE TABLE iceberg_table_local
-    ENGINE = IcebergLocal(path_to_table, [,format] [,compression_method])
+ENGINE = IcebergS3(path[, NOSIGN | aws_access_key_id, aws_secret_access_key, [session_token]], format[,compression])
 ```
 
-## Engine arguments {#engine-arguments}
+<br/>
+<details>
+<summary>See argument descriptions</summary>
+<S3Parameters/>
+</details>
 
-Description of the arguments coincides with description of arguments in engines `S3`, `AzureBlobStorage`, `HDFS` and `File` correspondingly.
+:::note
 `format` stands for the format of data files in the Iceberg table.
+:::
+
+<br/>
+</TabItem>
+
+<TabItem value="Azure" label="Azure">
+
+```sql
+CREATE TABLE iceberg_table_azure
+ENGINE = IcebergAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+```
+
+<details>
+<summary>See argument descriptions</summary>
+<AzureBlobStorageParameters/>
+</details>
+
+:::note
+`format` stands for the format of data files in the Iceberg table.
+:::
+<br/>
+</TabItem>
+
+<TabItem value="HDFS" label="HDFS">
+
+```sql
+CREATE TABLE iceberg_table_hdfs
+ENGINE = IcebergHDFS(URI[,format][,compression_method])
+```
+
+<details>
+<summary>See argument descriptions</summary>
+<HDFSParameters/>
+</details>
+
+:::note
+`format` stands for the format of data files in the Iceberg table.
+:::
+
+</TabItem>
+
+<TabItem value="Local" label="Local storage">
+
+```sql
+CREATE TABLE iceberg_table_local
+ENGINE = IcebergLocal(path_to_table, [,format] [,compression_method])
+```
+
+| Parameter            | Description                                                                                                                                      |
+|----------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
+| `path_to_table`      | Path to the Iceberg table directory in the local filesystem.                                                                                     |
+| `format`             | Specifies one of the available file formats. The available formats are listed in the [Formats](/sql-reference/formats#formats-overview) section. |
+| `compression_method` | Compression method. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. Optional.                                           |
+
+:::note
+`format` stands for the format of data files in the Iceberg table.
+:::
+<br/>
+</TabItem>
+</Tabs>
 
 Engine parameters can be specified using [Named Collections](../../../operations/named-collections.md)
 
-### Example {#example}
+## Examples {#examples}
+
+<Tabs>
+<TabItem value="S3" label="S3" default>
 
 ```sql
-CREATE TABLE iceberg_table ENGINE=IcebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
+CREATE TABLE iceberg_table
+ENGINE=IcebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
 ```
 
-Using named collections:
+</TabItem>
+
+<TabItem value="Azure" label="Azure">
+
+```sql
+CREATE TABLE iceberg_table
+ENGINE=IcebergAzure('DefaultEndpointsProtocol=https;AccountName=myaccount;AccountKey=mykey;', 'mycontainer', 'path/to/iceberg_table')
+```
+
+</TabItem>
+
+<TabItem value="HDFS" label="HDFS">
+
+```sql
+CREATE TABLE iceberg_table
+ENGINE=IcebergHDFS('hdfs://hdfs-namenode:9000/warehouse/iceberg_table')
+```
+
+</TabItem>
+
+<TabItem value="Local" label="Local storage">
+
+```sql
+CREATE TABLE iceberg_table
+ENGINE=IcebergLocal('/path/to/local/iceberg_table')
+```
+
+</TabItem>
+</Tabs>
+
+## Using named collections {#using-named-collections}
+
+Here is an example of configuring a named collection for storing the connection details and credentials:
+
+<Tabs>
+<TabItem value="S3" label="S3" default>
 
 ```xml
 <clickhouse>
@@ -67,231 +174,80 @@ Using named collections:
 
 ```sql
 CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table')
-
 ```
 
-## Aliases {#aliases}
+</TabItem>
 
-Table engine `Iceberg` is an alias to `IcebergS3` now.
+<TabItem value="Azure" label="Azure">
 
-## Schema evolution {#schema-evolution}
-At the moment, with the help of CH, you can read iceberg tables, the schema of which has changed over time. We currently support reading tables where columns have been added and removed, and their order has changed. You can also change a column where a value is required to one where NULL is allowed. Additionally, we support permitted type casting for simple types, namely:  
-* int -> long
-* float -> double
-* decimal(P, S) -> decimal(P', S) where P' > P. 
-
-Currently, it is not possible to change nested structures or the types of elements within arrays and maps.
-
-To read a table where the schema has changed after its creation with dynamic schema inference, set allow_dynamic_metadata_for_data_lakes = true when creating the table.
-
-## Partition pruning {#partition-pruning}
-
-ClickHouse supports partition pruning during SELECT queries for Iceberg tables, which helps optimize query performance by skipping irrelevant data files. To enable partition pruning, set `use_iceberg_partition_pruning = 1`. For more information about iceberg partition pruning address https://iceberg.apache.org/spec/#partitioning
-
-## Time travel {#time-travel}
-
-ClickHouse supports time travel for Iceberg tables, allowing you to query historical data with a specific timestamp or snapshot ID.
-
-## Processing of tables with deleted rows {#deleted-rows}
-
-Currently, only Iceberg tables with [position deletes](https://iceberg.apache.org/spec/#position-delete-files) are supported. 
-
-The following deletion methods are **not supported**:
-- [Equality deletes](https://iceberg.apache.org/spec/#equality-delete-files)
-- [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3)
-
-### Basic usage {#basic-usage}
- ```sql
- SELECT * FROM example_table ORDER BY 1 
- SETTINGS iceberg_timestamp_ms = 1714636800000
- ```
-
- ```sql
- SELECT * FROM example_table ORDER BY 1 
- SETTINGS iceberg_snapshot_id = 3547395809148285433
- ```
-
-Note: You cannot specify both `iceberg_timestamp_ms` and `iceberg_snapshot_id` parameters in the same query.
-
-### Important considerations {#important-considerations}
-
-- **Snapshots** are typically created when:
-  - New data is written to the table
-  - Some kind of data compaction is performed
-
-- **Schema changes typically don't create snapshots** - This leads to important behaviors when using time travel with tables that have undergone schema evolution.
-
-### Example scenarios {#example-scenarios}
-
-All scenarios are written in Spark because CH doesn't support writing to Iceberg tables yet.
-
-#### Scenario 1: Schema changes without new snapshots {#scenario-1}
-
-Consider this sequence of operations:
-
- ```sql
- -- Create a table with two columns
-  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example (
-  order_number int, 
-  product_code string
-  ) 
-  USING iceberg 
-  OPTIONS ('format-version'='2')
-
--- Insert data into the table
-  INSERT INTO spark_catalog.db.time_travel_example VALUES 
-    (1, 'Mars')
-
-  ts1 = now() // A piece of pseudo code
-
--- Alter table to add a new column
-  ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
- 
-  ts2 = now()
-
--- Insert data into the table
-  INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
-
-   ts3 = now()
-
--- Query the table at each timestamp
-  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
-
-+------------+------------+
-|order_number|product_code|
-+------------+------------+
-|           1|        Mars|
-+------------+------------+
-  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
-
-+------------+------------+
-|order_number|product_code|
-+------------+------------+
-|           1|        Mars|
-+------------+------------+
-
-  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts3;
-
-+------------+------------+-----+
-|order_number|product_code|price|
-+------------+------------+-----+
-|           1|        Mars| NULL|
-|           2|       Venus|100.0|
-+------------+------------+-----+
+```xml
+<clickhouse>
+    <named_collections>
+        <iceberg_azure_conf>
+            <connection_string>DefaultEndpointsProtocol=https;AccountName=myaccount;AccountKey=mykey;EndpointSuffix=core.windows.net</connection_string>
+            <container_name>mycontainer</container_name>
+        </iceberg_azure_conf>
+    </named_collections>
+</clickhouse>
 ```
-
-Query results at different timestamps:
-
-- At ts1 & ts2: Only the original two columns appear
-- At ts3: All three columns appear, with NULL for the price of the first row
-
-#### Scenario 2: Historical vs. current schema differences {#scenario-2}
-
-A time travel query at a current moment might show a different schema than the current table:
 
 ```sql
--- Create a table
-  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_2 (
-  order_number int, 
-  product_code string
-  ) 
-  USING iceberg 
-  OPTIONS ('format-version'='2')
-
--- Insert initial data into the table
-  INSERT INTO spark_catalog.db.time_travel_example_2 VALUES (2, 'Venus');
-
--- Alter table to add a new column
-  ALTER TABLE spark_catalog.db.time_travel_example_2 ADD COLUMN (price double);
-
-  ts = now();
-
--- Query the table at a current moment but using timestamp syntax
-
-  SELECT * FROM spark_catalog.db.time_travel_example_2 TIMESTAMP AS OF ts;
-
-    +------------+------------+
-    |order_number|product_code|
-    +------------+------------+
-    |           2|       Venus|
-    +------------+------------+
-
--- Query the table at a current moment
-  SELECT * FROM spark_catalog.db.time_travel_example_2;
-    +------------+------------+-----+
-    |order_number|product_code|price|
-    +------------+------------+-----+
-    |           2|       Venus| NULL|
-    +------------+------------+-----+
+CREATE TABLE iceberg_table ENGINE=IcebergAzure(iceberg_azure_conf, blobpath = 'path/to/iceberg_table')
 ```
 
-This happens because `ALTER TABLE` doesn't create a new snapshot but for the current table Spark takes value of `schema_id` from the latest metadata file, not a snapshot.
+</TabItem>
 
-#### Scenario 3: Historical vs. current schema differences {#scenario-3}
+<TabItem value="HDFS" label="HDFS">
 
-The second one is that while doing time travel you can't get state of table before any data was written to it:
+```xml
+<clickhouse>
+    <named_collections>
+        <iceberg_hdfs_conf>
+            <url>hdfs://hdfs-namenode:9000/warehouse/</url>
+        </iceberg_hdfs_conf>
+    </named_collections>
+</clickhouse>
+```
 
 ```sql
--- Create a table
-  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_3 (
-  order_number int, 
-  product_code string
-  ) 
-  USING iceberg 
-  OPTIONS ('format-version'='2');
-
-  ts = now();
-
--- Query the table at a specific timestamp
-  SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- Finises with error: Cannot find a snapshot older than ts.
+CREATE TABLE iceberg_table ENGINE=IcebergHDFS(iceberg_hdfs_conf, path_to_table = 'iceberg_table')
 ```
 
-In Clickhouse the behavior is consistent with Spark. You can mentally replace Spark Select queries with Clickhouse Select queries and it will work the same way.
+</TabItem>
 
-## Metadata file resolution {#metadata-file-resolution}
-When using the `Iceberg` table engine in ClickHouse, the system needs to locate the correct metadata.json file that describes the Iceberg table structure. Here's how this resolution process works:
+<TabItem value="Local" label="Local storage">
 
-### Candidates search {#candidate-search}
-
-1. **Direct Path Specification**:
-* If you set `iceberg_metadata_file_path`, the system will use this exact path by combining it with the Iceberg table directory path.
-* When this setting is provided, all other resolution settings are ignored.
-2. **Table UUID Matching**:
-* If `iceberg_metadata_table_uuid` is specified, the system will:
-  * Look only at `.metadata.json` files in the `metadata` directory
-  * Filter for files containing a `table-uuid` field matching your specified UUID (case-insensitive)
-
-3. **Default Search**:
-* If neither of the above settings are provided, all `.metadata.json` files in the `metadata` directory become candidates
-
-### Selecting the most recent file {#most-recent-file}
-
-After identifying candidate files using the above rules, the system determines which one is the most recent:
-
-* If `iceberg_recent_metadata_file_by_last_updated_ms_field` is enabled:
-  * The file with the largest `last-updated-ms` value is selected
-
-* Otherwise:
-  * The file with the highest version number is selected
-  * (Version appears as `V` in filenames formatted as `V.metadata.json` or `V-uuid.metadata.json`)
-
-**Note**: All mentioned settings are engine-level settings and must be specified during table creation as shown below:
-
-```sql 
-CREATE TABLE example_table ENGINE = Iceberg(
-    's3://bucket/path/to/iceberg_table'
-) SETTINGS iceberg_metadata_table_uuid = '6f6f6407-c6a5-465f-a808-ea8900e35a38';
+```xml
+<clickhouse>
+    <named_collections>
+        <iceberg_local_conf>
+            <path>/path/to/tables/</path>
+        </iceberg_local_conf>
+    </named_collections>
+</clickhouse>
 ```
 
-**Note**: While Iceberg Catalogs typically handle metadata resolution, the `Iceberg` table engine in ClickHouse directly interprets files stored in S3 as Iceberg tables, which is why understanding these resolution rules is important.
+```sql
+CREATE TABLE iceberg_table ENGINE=IcebergLocal(iceberg_local_conf, path_to_table = 'iceberg_table')
+```
 
-## Data cache {#data-cache}
+</TabItem>
+</Tabs>
 
-`Iceberg` table engine and table function support data caching same as `S3`, `AzureBlobStorage`, `HDFS` storages. See [here](../../../engines/table-engines/integrations/s3.md#data-cache).
+## Features {#features}
 
-## Metadata cache {#metadata-cache}
+The `iceberg` table engine offers much of the same functionality that the recommended `iceberg` table function does.
+See the corresponding sections in the table function docs for more details:
 
-`Iceberg` table engine and table function support metadata cache storing the information of manifest files, manifest list and metadata json. The cache is stored in memory. This feature is controlled by setting `use_iceberg_metadata_files_cache`, which is enabled by default.
+| Feature                                                                                                              |
+|----------------------------------------------------------------------------------------------------------------------|
+| [Schema evolution](/sql-reference/table-functions/iceberg-schema-evolution)                                          |
+| [Partition pruning](/sql-reference/table-functions/iceberg-query-optimization#partition-pruning)                     |
+| [Time travel](/sql-reference/table-functions/iceberg-time-travel)                                                    |
+| [Processing of tables with deleted rows](/sql-reference/table-functions/iceberg-processing-tables-with-deleted-rows) |
+| [Metadata file resolution](/sql-reference/table-functions/iceberg-metadata-resolution)                               |
+| [Data cache](/sql-reference/table-functions/iceberg-query-optimization#data-cache)                                   |
+| [Metadata cache](/sql-reference/table-functions/iceberg-metadata-resolution#metadata-cache)                          |
 
 ## See also {#see-also}
 
