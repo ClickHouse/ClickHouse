@@ -23,7 +23,7 @@ using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
 void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const override;
 
-String sendFourLetterCommand(String host, String port, String command) const;
+std::expected<String,String> sendFourLetterCommand(String host, String port, String command) const;
 
 };
 

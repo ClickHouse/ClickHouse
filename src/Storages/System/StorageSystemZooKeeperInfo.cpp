@@ -64,50 +64,50 @@ ColumnsDescription StorageSystemZooKeeperInfo::getColumnsDescription()
         /* 4 */ {"is_connected", std::make_shared<DataTypeUInt8>(), "Is the zookeeper connected."},
 
         /// isro command
-        /* 5 */ {"is_readonly", std::make_shared<DataTypeUInt8>(), "Is readonly."},
+        /* 5 */ {"is_readonly", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "Is readonly."},
 
         /// mntr command
-        /* 6 */ {"version", std::make_shared<DataTypeString>(), "The ZooKeeper version."},
-        /* 7 */ {"avg_latency", std::make_shared<DataTypeUInt64>(), "The average latency."},
-        /* 8 */ {"max_latency", std::make_shared<DataTypeUInt64>(), "The max latency."},
-        /* 9 */ {"min_latency", std::make_shared<DataTypeUInt64>(), "The min latency."},
-        /* 10 */ {"packets_received", std::make_shared<DataTypeUInt64>(), "The number of packets received."},
-        /* 11 */ {"packets_sent", std::make_shared<DataTypeUInt64>(), "The number of packets sent."},
-        /* 12 */ {"outstanding_requests", std::make_shared<DataTypeUInt64>(), "The number of outstanding requests."},
-        /* 13 */ {"server_state", std::make_shared<DataTypeString>(), "Server state."},
-        /* 14 */ {"is_leader", std::make_shared<DataTypeUInt8>(), "Is this zookeeper leader."},
-        /* 15 */ {"znode_count", std::make_shared<DataTypeUInt64>(), "The znode count."},
-        /* 16 */ {"watch_count", std::make_shared<DataTypeUInt64>(), "The watch count."},
-        /* 17 */ {"ephemerals_count", std::make_shared<DataTypeUInt64>(), "The ephemerals count."},
-        /* 18 */ {"approximate_data_size", std::make_shared<DataTypeUInt64>(), "The approximate data size."},
-        /* 19 */ {"followers", std::make_shared<DataTypeUInt64>(), "The followers of the leader. This field is only exposed by the leader."},
-        /* 20 */ {"synced_followers", std::make_shared<DataTypeUInt64>(), "The synced followers of the leader. This field is only exposed by the leader."},
-        /* 21 */ {"pending_syncs", std::make_shared<DataTypeUInt64>(), "The pending syncs of the leader. This field is only exposed by the leader."},
-        /* 22 */ {"open_file_descriptor_count", std::make_shared<DataTypeUInt64>(), "The open file descriptor count. Only available on Unix platforms."},
-        /* 23 */ {"max_file_descriptor_count", std::make_shared<DataTypeUInt64>(), "The max file descriptor count. Only available on Unix platforms."},
+        /* 6 */ {"version", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "The ZooKeeper version."},
+        /* 7 */ {"avg_latency", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The average latency."},
+        /* 8 */ {"max_latency", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The max latency."},
+        /* 9 */ {"min_latency", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The min latency."},
+        /* 10 */ {"packets_received", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The number of packets received."},
+        /* 11 */ {"packets_sent", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The number of packets sent."},
+        /* 12 */ {"outstanding_requests", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The number of outstanding requests."},
+        /* 13 */ {"server_state", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Server state."},
+        /* 14 */ {"is_leader", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "Is this zookeeper leader."},
+        /* 15 */ {"znode_count", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The znode count."},
+        /* 16 */ {"watch_count", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The watch count."},
+        /* 17 */ {"ephemerals_count", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The ephemerals count."},
+        /* 18 */ {"approximate_data_size", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The approximate data size."},
+        /* 19 */ {"followers", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The followers of the leader. This field is only exposed by the leader."},
+        /* 20 */ {"synced_followers", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The synced followers of the leader. This field is only exposed by the leader."},
+        /* 21 */ {"pending_syncs", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The pending syncs of the leader. This field is only exposed by the leader."},
+        /* 22 */ {"open_file_descriptor_count", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The open file descriptor count. Only available on Unix platforms."},
+        /* 23 */ {"max_file_descriptor_count", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The max file descriptor count. Only available on Unix platforms."},
 
 
         ///srvr command
-        /* 24 */ {"connections", std::make_shared<DataTypeUInt64>(), "The ZooKeeper connections."},
-        /* 25 */ {"outstanding", std::make_shared<DataTypeUInt64>(), "The ZooKeeper outstanding."},
-        /* 26 */ {"zxid", std::make_shared<DataTypeInt64>(), "The ZooKeeper zxid."},
-        /* 27 */ {"node_count", std::make_shared<DataTypeUInt64>(), "The ZooKeeper node count."},
+        /* 24 */ {"connections", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The ZooKeeper connections."},
+        /* 25 */ {"outstanding", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The ZooKeeper outstanding."},
+        /* 26 */ {"zxid", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()), "The ZooKeeper zxid."},
+        /* 27 */ {"node_count", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The ZooKeeper node count."},
 
 
         /// dirs command
-        /* 28 */ {"snapshot_dir_size", std::make_shared<DataTypeUInt64>(), "The ZooKeeper snapshot directory size."},
-        /* 29 */ {"log_dir_size", std::make_shared<DataTypeUInt64>(), "The ZooKeeper log directory size."},
+        /* 28 */ {"snapshot_dir_size", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The ZooKeeper snapshot directory size."},
+        /* 29 */ {"log_dir_size", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The ZooKeeper log directory size."},
 
 
         /// lgif command
-        /* 30 */ {"first_log_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper first log index."},
-        /* 31 */ {"first_log_term", std::make_shared<DataTypeUInt64>(), "The ZooKeeper first log term."},
-        /* 32 */ {"last_log_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper last log index."},
-        /* 33 */ {"last_log_term", std::make_shared<DataTypeUInt64>(), "The ZooKeeper last log term."},
-        /* 34 */ {"last_committed_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper last committed index."},
-        /* 35 */ {"leader_committed_log_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper leader committed log index."},
-        /* 36 */ {"target_committed_log_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper target committed log index."},
-        /* 37 */ {"last_snapshot_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper last snapshot index."},
+        /* 30 */ {"first_log_idx", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The ZooKeeper first log index."},
+        /* 31 */ {"first_log_term", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The ZooKeeper first log term."},
+        /* 32 */ {"last_log_idx", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The ZooKeeper last log index."},
+        /* 33 */ {"last_log_term", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The ZooKeeper last log term."},
+        /* 34 */ {"last_committed_idx", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The ZooKeeper last committed index."},
+        /* 35 */ {"leader_committed_log_idx", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The ZooKeeper leader committed log index."},
+        /* 36 */ {"target_committed_log_idx", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The ZooKeeper target committed log index."},
+        /* 37 */ {"last_snapshot_idx", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The ZooKeeper last snapshot index."},
     };
 }
 
@@ -127,8 +127,8 @@ static std::map<String,String> getTokens(String response, char separator)
 
         auto pos = line.rfind(separator);
         chassert(pos != std::string::npos);
-        key = line.substr(0, pos);
-        value = line.substr(pos);
+        key = line.substr(0, pos-1);
+        value = line.substr(pos+1);
 
         responses_map[key] = value;
     }
@@ -197,169 +197,189 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
 
 
         /// ruok command
-        String ruok_output = sendFourLetterCommand(host, port, "ruok");
-        if (ruok_output == "imok")
-            res_columns[4]->insert(true);
-        else
-            res_columns[4]->insert(false);
+        auto ruok_output = sendFourLetterCommand(host, port, "ruok");
+        if (ruok_output.has_value())
+        {
+            if (ruok_output.value() == "imok")
+                res_columns[4]->insert(true);
+            else
+                res_columns[4]->insert(false);
+        }
 
 
         /// isro command
         /// The server will respond with "ro" if in read-only mode or "rw" if not in read-only mode.
-        String isro_output = sendFourLetterCommand(host, port, "isro");
-        if (isro_output == "ro")
-            res_columns[5]->insert(true);
-        else
-            res_columns[5]->insert(false);
-
-        /// mntr command
-        String mntr_output = sendFourLetterCommand(host, port, "mntr");
-        std::map <String, String> mntr_responses_map = getTokens(mntr_output, '\t');
-
-        /// /* 6 */{"version", std::make_shared<DataTypeString>(), "The ZooKeeper version."},
-        res_columns[6]->insert(mntr_responses_map["zk_version"]);
-
-        // /* 7 */ {"avg_latency", std::make_shared<DataTypeUInt64>(), "The average latency."},
-        res_columns[7]->insert(parse<int>(mntr_responses_map["zk_avg_latency"]));
-
-        // /* 8 */ {"max_latency", std::make_shared<DataTypeUInt64>(), "The max latency."},
-        res_columns[8]->insert(parse<int>(mntr_responses_map["zk_max_latency"]));
-
-        //  /* 9 */ {"min_latency", std::make_shared<DataTypeUInt64>(), "The min latency."},
-        res_columns[9]->insert(parse<int>(mntr_responses_map["zk_min_latency"]));
-
-        // /* 10 */ {"packets_received", std::make_shared<DataTypeUInt64>(), "The number of packets received."},
-        res_columns[10]->insert(parse<int>(mntr_responses_map["zk_packets_received"]));
-
-        // /* 11 */ {"packets_sent", std::make_shared<DataTypeUInt64>(), "The number of packets sent."},
-        res_columns[11]->insert(parse<int>(mntr_responses_map["zk_packets_sent"]));
-
-        // /* 12 */ {"outstanding_requests", std::make_shared<DataTypeUInt64>(), "The number of outstanding requests."},
-        res_columns[12]->insert(parse<int>(mntr_responses_map["zk_outstanding_requests"]));
-
-        // /* 13 */ {"server_state", std::make_shared<DataTypeString>(), "Server state."},
-        res_columns[13]->insert(mntr_responses_map["zk_server_state"]);
-
-        auto followers_in_string = mntr_responses_map["zk_followers"];
-        int followers = 0;
-        if (!followers_in_string.empty())
+        auto isro_output = sendFourLetterCommand(host, port, "isro");
+        if (isro_output.has_value())
         {
-            followers = parse<int>(followers_in_string);
+            if (isro_output.value() == "ro")
+                res_columns[5]->insert(true);
+            else
+                res_columns[5]->insert(false);
         }
 
-        ///* 14 */ {"is_leader", std::make_shared<DataTypeUInt8>(), "Is this zookeeper leader."},
-        if (followers)
-            res_columns[14]->insert(true);
-        else
-            res_columns[14]->insert(false);
+        /// mntr command
+        auto mntr_output_expected = sendFourLetterCommand(host, port, "mntr");
+        if (mntr_output_expected.has_value())
+        {
+            String mntr_output = mntr_output_expected.value();
+            std::map <String, String> mntr_responses_map = getTokens(mntr_output, '\t');
 
-        ///* 15 */ {"znode_count", std::make_shared<DataTypeUInt64>(), "The znode count."},
-        res_columns[15]->insert(parse<int>(mntr_responses_map["zk_znode_count"]));
+            /// /* 6 */{"version", std::make_shared<DataTypeString>(), "The ZooKeeper version."},
+            res_columns[6]->insert(mntr_responses_map["zk_version"]);
 
-        // /* 16 */ {"watch_count", std::make_shared<DataTypeUInt64>(), "The watch count."},
-        res_columns[16]->insert(parse<int>(mntr_responses_map["zk_watch_count"]));
+            // /* 7 */ {"avg_latency", std::make_shared<DataTypeUInt64>(), "The average latency."},
+            res_columns[7]->insert(parse<int>(mntr_responses_map["zk_avg_latency"]));
 
-        // /* 17 */ {"ephemerals_count", std::make_shared<DataTypeUInt64>(), "The ephemerals count."},
-        res_columns[17]->insert(parse<int>(mntr_responses_map["zk_ephemerals_count"]));
+            // /* 8 */ {"max_latency", std::make_shared<DataTypeUInt64>(), "The max latency."},
+            res_columns[8]->insert(parse<int>(mntr_responses_map["zk_max_latency"]));
 
-        // /* 18 */ {"approximate_data_size", std::make_shared<DataTypeUInt64>(), "The approximate data size."},
-        res_columns[18]->insert(parse<int>(mntr_responses_map["zk_approximate_data_size"]));
+            //  /* 9 */ {"min_latency", std::make_shared<DataTypeUInt64>(), "The min latency."},
+            res_columns[9]->insert(parse<int>(mntr_responses_map["zk_min_latency"]));
 
-        // /* 19 */ {"followers", std::make_shared<DataTypeUInt64>(), "The followers of the leader. This field is only exposed by the leader."},
-        if (!mntr_responses_map["zk_followers"].empty())
-            res_columns[19]->insert(parse<int>(mntr_responses_map["zk_followers"]));
-        else
-            res_columns[19]->insert(0);
+            // /* 10 */ {"packets_received", std::make_shared<DataTypeUInt64>(), "The number of packets received."},
+            res_columns[10]->insert(parse<int>(mntr_responses_map["zk_packets_received"]));
 
-        // /* 20 */ {"synced_followers", std::make_shared<DataTypeUInt64>(), "The synced followers of the leader. This field is only exposed by the leader."},
-        int synced_followers = 0;
-        if (!mntr_responses_map["zk_synced_followers"].empty())
-            synced_followers = parse<int>(mntr_responses_map["zk_synced_followers"]);
-        res_columns[20]->insert(synced_followers);
+            // /* 11 */ {"packets_sent", std::make_shared<DataTypeUInt64>(), "The number of packets sent."},
+            res_columns[11]->insert(parse<int>(mntr_responses_map["zk_packets_sent"]));
 
-        // /* 21 */ {"pending_syncs", std::make_shared<DataTypeUInt64>(), "The pending syncs of the leader. This field is only exposed by the leader."},
-        res_columns[21]->insert(followers - synced_followers);
+            // /* 12 */ {"outstanding_requests", std::make_shared<DataTypeUInt64>(), "The number of outstanding requests."},
+            res_columns[12]->insert(parse<int>(mntr_responses_map["zk_outstanding_requests"]));
 
-        // /* 22 */ {"open_file_descriptor_count", std::make_shared<DataTypeUInt64>(), "The open file descriptor count. Only available on Unix platforms."},
-        if (!mntr_responses_map["zk_open_file_descriptor_count"].empty())
-            res_columns[22]->insert(parse<int>(mntr_responses_map["zk_open_file_descriptor_count"]));
-        else
-            res_columns[22]->insert(0);
+            // /* 13 */ {"server_state", std::make_shared<DataTypeString>(), "Server state."},
+            res_columns[13]->insert(mntr_responses_map["zk_server_state"]);
 
-        // /* 23 */ {"max_file_descriptor_count", std::make_shared<DataTypeUInt64>(), "The max file descriptor count. Only available on Unix platforms."},
-        if (!mntr_responses_map["zk_max_file_descriptor_count"].empty())
-            res_columns[23]->insert(parse<int>(mntr_responses_map["zk_max_file_descriptor_count"]));
-        else
-            res_columns[23]->insert(0);
+            auto followers_in_string = mntr_responses_map["zk_followers"];
+            int followers = 0;
+            if (!followers_in_string.empty())
+            {
+                followers = parse<int>(followers_in_string);
+            }
+
+            ///* 14 */ {"is_leader", std::make_shared<DataTypeUInt8>(), "Is this zookeeper leader."},
+            if (followers)
+                res_columns[14]->insert(true);
+            else
+                res_columns[14]->insert(false);
+
+            ///* 15 */ {"znode_count", std::make_shared<DataTypeUInt64>(), "The znode count."},
+            res_columns[15]->insert(parse<int>(mntr_responses_map["zk_znode_count"]));
+
+            // /* 16 */ {"watch_count", std::make_shared<DataTypeUInt64>(), "The watch count."},
+            res_columns[16]->insert(parse<int>(mntr_responses_map["zk_watch_count"]));
+
+            // /* 17 */ {"ephemerals_count", std::make_shared<DataTypeUInt64>(), "The ephemerals count."},
+            res_columns[17]->insert(parse<int>(mntr_responses_map["zk_ephemerals_count"]));
+
+            // /* 18 */ {"approximate_data_size", std::make_shared<DataTypeUInt64>(), "The approximate data size."},
+            res_columns[18]->insert(parse<int>(mntr_responses_map["zk_approximate_data_size"]));
+
+            // /* 19 */ {"followers", std::make_shared<DataTypeUInt64>(), "The followers of the leader. This field is only exposed by the leader."},
+            if (!mntr_responses_map["zk_followers"].empty())
+                res_columns[19]->insert(parse<int>(mntr_responses_map["zk_followers"]));
+            else
+                res_columns[19]->insert(0);
+
+            // /* 20 */ {"synced_followers", std::make_shared<DataTypeUInt64>(), "The synced followers of the leader. This field is only exposed by the leader."},
+            int synced_followers = 0;
+            if (!mntr_responses_map["zk_synced_followers"].empty())
+                synced_followers = parse<int>(mntr_responses_map["zk_synced_followers"]);
+            res_columns[20]->insert(synced_followers);
+
+            // /* 21 */ {"pending_syncs", std::make_shared<DataTypeUInt64>(), "The pending syncs of the leader. This field is only exposed by the leader."},
+            res_columns[21]->insert(followers - synced_followers);
+
+            // /* 22 */ {"open_file_descriptor_count", std::make_shared<DataTypeUInt64>(), "The open file descriptor count. Only available on Unix platforms."},
+            if (!mntr_responses_map["zk_open_file_descriptor_count"].empty())
+                res_columns[22]->insert(parse<int>(mntr_responses_map["zk_open_file_descriptor_count"]));
+            else
+                res_columns[22]->insert(0);
+
+            // /* 23 */ {"max_file_descriptor_count", std::make_shared<DataTypeUInt64>(), "The max file descriptor count. Only available on Unix platforms."},
+            if (!mntr_responses_map["zk_max_file_descriptor_count"].empty())
+                res_columns[23]->insert(parse<int>(mntr_responses_map["zk_max_file_descriptor_count"]));
+            else
+                res_columns[23]->insert(0);
+        }
 
 
         /// srvr command
-        String srvr_output = sendFourLetterCommand(host, port, "srvr");
-        std::map <String, String> srvr_responses_map = getTokens(srvr_output, ':');
+        auto srvr_output_expected = sendFourLetterCommand(host, port, "srvr");
+        if (srvr_output_expected.has_value())
+        {
+            String srvr_output = srvr_output_expected.value();
+            std::map <String, String> srvr_responses_map = getTokens(srvr_output, ':');
 
-        ///* 24 */ {"connections", std::make_shared<DataTypeUInt64>(), "The ZooKeeper connections."},
-        res_columns[24]->insert(parse<int>(srvr_responses_map["Connections"]));
+            ///* 24 */ {"connections", std::make_shared<DataTypeUInt64>(), "The ZooKeeper connections."},
+            res_columns[24]->insert(parse<int>(srvr_responses_map["Connections"]));
 
-        ///* 25 */ {"outstanding", std::make_shared<DataTypeUInt64>(), "The ZooKeeper outstanding."},
-        res_columns[25]->insert(parse<int>(srvr_responses_map["Outstanding"]));
+            ///* 25 */ {"outstanding", std::make_shared<DataTypeUInt64>(), "The ZooKeeper outstanding."},
+            res_columns[25]->insert(parse<int>(srvr_responses_map["Outstanding"]));
 
-        //* 26 */ {"zxid", std::make_shared<DataTypeInt64>(), "The ZooKeeper zxid."},
-        res_columns[26]->insert(parse<int>(srvr_responses_map["Zxid"]));
+            //* 26 */ {"zxid", std::make_shared<DataTypeInt64>(), "The ZooKeeper zxid."},
+            res_columns[26]->insert(parse<int>(srvr_responses_map["Zxid"]));
 
-        //* 27 */ {"node_count", std::make_shared<DataTypeUInt64>(), "The ZooKeeper node count."},
-        res_columns[27]->insert(parse<int>(srvr_responses_map["Node count"]));
+            //* 27 */ {"node_count", std::make_shared<DataTypeUInt64>(), "The ZooKeeper node count."},
+            res_columns[27]->insert(parse<int>(srvr_responses_map["Node count"]));
+        }
 
 
         /// dirs command
-        String dirs_output = sendFourLetterCommand(host, port, "dirs");
-        std::map <String, String> dirs_responses_map = getTokens(dirs_output, ':');
+        auto dirs_output_expected = sendFourLetterCommand(host, port, "dirs");
+        if (dirs_output_expected.has_value())
+        {
+            String dirs_output = dirs_output_expected.value();
+            std::map <String, String> dirs_responses_map = getTokens(dirs_output, ':');
 
-        //* 28 */ {"snapshot_dir_size", std::make_shared<DataTypeUInt64>(), "The ZooKeeper snapshot directory size."},
-        res_columns[28]->insert(parse<int>(dirs_responses_map["snapshot_dir_size"]));
+            //* 28 */ {"snapshot_dir_size", std::make_shared<DataTypeUInt64>(), "The ZooKeeper snapshot directory size."},
+            res_columns[28]->insert(parse<int>(dirs_responses_map["snapshot_dir_size"]));
 
-        //* 29 */ {"log_dir_size", std::make_shared<DataTypeUInt64>(), "The ZooKeeper log directory size."},
-        res_columns[29]->insert(parse<int>(dirs_responses_map["log_dir_size"]));
-
+            //* 29 */ {"log_dir_size", std::make_shared<DataTypeUInt64>(), "The ZooKeeper log directory size."},
+            res_columns[29]->insert(parse<int>(dirs_responses_map["log_dir_size"]));
+        }
 
         /// lgif command
-        String lgif_output = sendFourLetterCommand(host, port, "lgif");
-        std::map <String, String> lgif_responses_map = getTokens(lgif_output, '\t');
+        auto lgif_output_expected = sendFourLetterCommand(host, port, "lgif");
+        if (lgif_output_expected.has_value())
+        {
+            String lgif_output = lgif_output_expected.value();
+            std::map <String, String> lgif_responses_map = getTokens(lgif_output, '\t');
 
-        // /* 30 */ {"first_log_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper first log index."},
-        res_columns[30]->insert(parse<int>(lgif_responses_map["first_log_idx"]));
+            // /* 30 */ {"first_log_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper first log index."},
+            res_columns[30]->insert(parse<int>(lgif_responses_map["first_log_idx"]));
 
-        // /* 31 */ {"first_log_term", std::make_shared<DataTypeUInt64>(), "The ZooKeeper first log term."},
-        res_columns[31]->insert(parse<int>(lgif_responses_map["first_log_term"]));
+            // /* 31 */ {"first_log_term", std::make_shared<DataTypeUInt64>(), "The ZooKeeper first log term."},
+            res_columns[31]->insert(parse<int>(lgif_responses_map["first_log_term"]));
 
-        // /* 32 */ {"last_log_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper last log index."},
-        res_columns[32]->insert(parse<int>(lgif_responses_map["last_log_idx"]));
+            // /* 32 */ {"last_log_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper last log index."},
+            res_columns[32]->insert(parse<int>(lgif_responses_map["last_log_idx"]));
 
-        // /* 33 */ {"last_log_term", std::make_shared<DataTypeUInt64>(), "The ZooKeeper last log term."},
-        res_columns[33]->insert(parse<int>(lgif_responses_map["last_log_term"]));
+            // /* 33 */ {"last_log_term", std::make_shared<DataTypeUInt64>(), "The ZooKeeper last log term."},
+            res_columns[33]->insert(parse<int>(lgif_responses_map["last_log_term"]));
 
-        // /* 34 */ {"last_committed_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper last committed index."},
-        res_columns[34]->insert(parse<int>(lgif_responses_map["last_committed_log_idx"]));
+            // /* 34 */ {"last_committed_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper last committed index."},
+            res_columns[34]->insert(parse<int>(lgif_responses_map["last_committed_log_idx"]));
 
-        // /* 35 */ {"leader_committed_log_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper leader committed log index."},
-        res_columns[35]->insert(parse<int>(lgif_responses_map["leader_committed_log_idx"]));
+            // /* 35 */ {"leader_committed_log_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper leader committed log index."},
+            res_columns[35]->insert(parse<int>(lgif_responses_map["leader_committed_log_idx"]));
 
-        // /* 36 */ {"target_committed_log_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper target committed log index."},
-        res_columns[36]->insert(parse<int>(lgif_responses_map["target_committed_log_idx"]));
+            // /* 36 */ {"target_committed_log_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper target committed log index."},
+            res_columns[36]->insert(parse<int>(lgif_responses_map["target_committed_log_idx"]));
 
-        // /* 37 */ {"last_snapshot_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper last snapshot index."},
-        res_columns[37]->insert(parse<int>(lgif_responses_map["last_snapshot_idx"]));
+            // /* 37 */ {"last_snapshot_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper last snapshot index."},
+            res_columns[37]->insert(parse<int>(lgif_responses_map["last_snapshot_idx"]));
+        }
 
     }
 
 }
 
 
-String StorageSystemZooKeeperInfo::sendFourLetterCommand(String host, String port, String command) const
+std::expected<String,String> StorageSystemZooKeeperInfo::sendFourLetterCommand(String host, String port, String command) const
 {
     Poco::Net::SocketAddress address(host, port);
     Poco::Net::StreamSocket socket;
 
-//    size_t MAX_RESPONSE_SIZE = 1000000;
     String response;
     try
     {
@@ -382,6 +402,7 @@ String StorageSystemZooKeeperInfo::sendFourLetterCommand(String host, String por
     catch (...)
     {
         LOG_INFO(getLogger("StorageSystemZooKeeperInfo"), "Exception  {} ", getCurrentExceptionMessage(true));
+        return getCurrentExceptionMessage(true);
     }
 
     return response;
