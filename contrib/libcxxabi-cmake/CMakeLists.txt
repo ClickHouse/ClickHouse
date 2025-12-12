@@ -1,8 +1,5 @@
 set(LIBCXXABI_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/libcxxabi")
 
-set(LIBCXX_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/libcxx")
-set(LIBCXX_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/llvm-project/libcxx")
-
 set(SRCS
 "${LIBCXXABI_SOURCE_DIR}/src/abort_message.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_aux_runtime.cpp"
