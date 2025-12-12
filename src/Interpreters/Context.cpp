@@ -880,6 +880,7 @@ struct ContextSharedPart : boost::noncopyable
         SHUTDOWN(log, "fetches executor", fetch_executor, wait());
         SHUTDOWN(log, "moves executor", moves_executor, wait());
         SHUTDOWN(log, "common executor", common_executor, wait());
+
         TransactionLog::shutdownIfAny();
 
         // Workload entity storage must be destructed when no queries or merges are running because PipelineExecutor may access it.
