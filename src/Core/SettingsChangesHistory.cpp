@@ -101,6 +101,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"database_shared_drop_table_delay_seconds", 8 * 60 * 60, 8 * 60 * 60, "New setting."},
             {"filesystem_cache_allow_background_download", true, true, "New setting to control background downloads in filesystem cache per query."},
             {"show_processlist_include_internal", false, true, "New setting."},
+            {"enable_function_early_short_circuit", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {
