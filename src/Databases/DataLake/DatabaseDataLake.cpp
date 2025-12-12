@@ -1,8 +1,6 @@
 #include <algorithm>
 #include <array>
 #include <memory>
-#include <optional>
-#include <vector>
 #include <Databases/DataLake/DatabaseDataLake.h>
 #include <Core/SettingsEnums.h>
 #include <Databases/DataLake/HiveCatalog.h>
@@ -10,10 +8,9 @@
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
+#include <Databases/DataLake/PaimonRestCatalog.h>
 #include <Common/Exception.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
-#include <Databases/DataLake/PaimonRestCatalog.h>
-#include <Disks/IStoragePolicy.h>
 
 
 #if USE_AVRO && USE_PARQUET
@@ -397,14 +394,6 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
                 {
                     return std::make_shared<StorageLocalPaimonConfiguration>(storage_settings);
                 }
-                /// Fake storage in case when catalog store not only
-                /// primary-type tables (DeltaLake or Iceberg), but for
-                /// examples something else like INFORMATION_SCHEMA.
-                /// Such tables are unreadable, but at least we can show
-                /// them in SHOW CREATE TABLE, as well we can show their
-                /// schema.
-                /// We use local as substitution for fake because it has 0
-                /// dependencies and the most lightweight
                 case DB::DatabaseDataLakeStorageType::Other:
                 {
                     return std::make_shared<StorageLocalPaimonConfiguration>(storage_settings);

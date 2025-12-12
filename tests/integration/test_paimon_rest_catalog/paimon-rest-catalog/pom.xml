@@ -61,28 +61,6 @@
 
     <build>
         <plugins>
-<!--            <plugin>-->
-<!--                <groupId>org.apache.maven.plugins</groupId>-->
-<!--                <artifactId>maven-assembly-plugin</artifactId>-->
-<!--                <version>3.6.0</version>-->
-<!--                <configuration>-->
-<!--                    <descriptorRefs>-->
-<!--                        <descriptorRef>jar-with-dependencies</descriptorRef> &lt;!&ndash; 打包所有依赖 &ndash;&gt;-->
-<!--                    </descriptorRefs>-->
-<!--                    <archive>-->
-<!--                        <manifest>-->
-<!--                            <mainClass>org.apache.paimon.rest.RESTCatalogServerStarter</mainClass> &lt;!&ndash; 指定主类 &ndash;&gt;-->
-<!--                        </manifest>-->
-<!--                    </archive>-->
-<!--                </configuration>-->
-<!--                <executions>-->
-<!--                    <execution>-->
-<!--                        <id>make-assembly</id>-->
-<!--                        <phase>package</phase>-->
-<!--                        <goals><goal>single</goal></goals>-->
-<!--                    </execution>-->
-<!--                </executions>-->
-<!--            </plugin>-->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
@@ -112,22 +90,12 @@
 
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <!-- 主类全类名（替换为你的程序入口类） -->
                                     <mainClass>org.apache.paimon.rest.RESTCatalogServerStarter</mainClass>
                                     <manifestEntries>
                                         <Implementation-Version>${project.version}</Implementation-Version>
                                         <Class-Path>.</Class-Path>
                                     </manifestEntries>
                                 </transformer>
-
-
-                                <!--                                &lt;!&ndash; 3.2 引入项目的自定义 META-INF（覆盖依赖的 META-INF） &ndash;&gt;-->
-<!--                                <transformer implementation="org.apache.maven.plugins.shade.resource.IncludeResourceTransformer">-->
-<!--                                    &lt;!&ndash; 要引入的资源目录（项目 src/main/resources 下的 META-INF） &ndash;&gt;-->
-<!--                                    <resource>META-INF</resource>-->
-<!--                                    &lt;!&ndash; 资源所在路径（默认是项目 resources 目录，可自定义） &ndash;&gt;-->
-<!--                                    <file>src/main/resources/META-INF</file>-->
-<!--                                </transformer>-->
                             </transformers>
                         </configuration>
                     </execution>

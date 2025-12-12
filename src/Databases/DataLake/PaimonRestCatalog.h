@@ -1,21 +1,20 @@
 #pragma once
-
-#include "Core/Names.h"
-#include "Core/Types.h"
 #include "config.h"
 
 #if USE_AVRO
-#include <Databases/DataLake/ICatalog.h>
-#include <Poco/Net/HTTPBasicCredentials.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
-#include <IO/HTTPHeaderEntries.h>
-#include <Interpreters/Context_fwd.h>
 #include <filesystem>
-#include <Poco/JSON/Object.h>
 #include <optional>
 #include <unordered_map>
 #include <vector>
+#include <Core/Names.h>
+#include <Core/Types.h>
+#include <Databases/DataLake/ICatalog.h>
+#include <IO/HTTPHeaderEntries.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
+#include <Interpreters/Context_fwd.h>
 #include <base/types.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/Net/HTTPBasicCredentials.h>
 
 namespace DataLake
 {
@@ -54,7 +53,7 @@ static constexpr auto NEW_LINE = "\n";
 }
 
 
-struct PaimonToken 
+struct PaimonToken
 {
     const String token_provider;
     const String bear_token;
@@ -63,50 +62,41 @@ struct PaimonToken
     mutable String dlf_generated_authorization;
 
     explicit PaimonToken(const String & bear_token_)
-    : token_provider("bear"),
-    bear_token(bear_token_) {}
+        : token_provider("bear")
+        , bear_token(bear_token_)
+    {
+    }
 
     PaimonToken(const String & access_key_id_, const String & access_key_secret_)
-    : token_provider("dlf"),
-    dlf_access_key_id(access_key_id_),
-    dlf_access_key_secret(access_key_secret_) {}
+        : token_provider("dlf")
+        , dlf_access_key_id(access_key_id_)
+        , dlf_access_key_secret(access_key_secret_)
+    {
+    }
 };
 
 class PaimonRestCatalog final : public ICatalog, private DB::WithContext
 {
 public:
     explicit PaimonRestCatalog(
-        const String & warehouse_,
-        const String & base_url_,
-        const PaimonToken & token_,
-        const String & region,
-        DB::ContextPtr context_);
-    
+        const String & warehouse_, const String & base_url_, const PaimonToken & token_, const String & region, DB::ContextPtr context_);
+
     ~PaimonRestCatalog() override = default;
-    
+
     bool empty() const override;
 
     DB::Names getTables() const override;
 
     bool existsTable(const String & database_name, const String & table_name) const override;
 
-    void getTableMetadata(
-        const String & database_name,
-        const String & table_name,
-        TableMetadata & result) const override;
+    void getTableMetadata(const String & database_name, const String & table_name, TableMetadata & result) const override;
 
-    bool tryGetTableMetadata(
-        const String & database_name,
-        const String & table_name,
-        TableMetadata & result) const override;
+    bool tryGetTableMetadata(const String & database_name, const String & table_name, TableMetadata & result) const override;
 
-    std::optional<StorageType> getStorageType() const override {return storage_type;}
+    std::optional<StorageType> getStorageType() const override { return storage_type; }
 
-    DB::DatabaseDataLakeCatalogType getCatalogType() const override
-    {
-        return DB::DatabaseDataLakeCatalogType::PAIMON_REST;
-    }
-    
+    DB::DatabaseDataLakeCatalogType getCatalogType() const override { return DB::DatabaseDataLakeCatalogType::PAIMON_REST; }
+
 private:
     using StopCondition = std::function<bool(const String &)>;
     using ExecuteFunc = std::function<void(const String &)>;
@@ -122,11 +112,11 @@ private:
 
     // void listDatabases();
     void createAuthHeaders(
-            DB::HTTPHeaderEntries & current_headers,
-            const String & resource_path,
-            const std::unordered_map<String, String> & query_params,
-            const String & method,
-            const std::optional<String> & data = std::nullopt) const;
+        DB::HTTPHeaderEntries & current_headers,
+        const String & resource_path,
+        const std::unordered_map<String, String> & query_params,
+        const String & method,
+        const std::optional<String> & data = std::nullopt) const;
 
     DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
         const String & endpoint,
@@ -140,7 +130,11 @@ private:
 
     void forEachTables(const String & database, DB::Names & tables, StopCondition stop_condition = {}, ExecuteFunc execute_func = {}) const;
 
-    Poco::JSON::Object::Ptr requestRest(const String & endpoint, const String & method, const Poco::URI::QueryParameters & params = {}, const DB::HTTPHeaderEntries & headers = {}) const;
+    Poco::JSON::Object::Ptr requestRest(
+        const String & endpoint,
+        const String & method,
+        const Poco::URI::QueryParameters & params = {},
+        const DB::HTTPHeaderEntries & headers = {}) const;
 };
 }
 #endif

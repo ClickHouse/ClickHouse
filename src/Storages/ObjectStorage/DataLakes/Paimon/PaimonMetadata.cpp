@@ -1,5 +1,3 @@
-#include <unordered_set>
-#include "Core/Types.h"
 #include "config.h"
 
 #if USE_AVRO
@@ -8,8 +6,10 @@
 #include <memory>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
+#include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Disks/IStoragePolicy.h>
 #include <IO/ReadHelpers.h>

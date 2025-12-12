@@ -3,43 +3,43 @@
 
 #if USE_AVRO
 
+#include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <memory>
+#include <optional>
+#include <sstream>
 #include <unordered_map>
 #include <vector>
-#include <fmt/ranges.h>
-#include <Poco/String.h>
-#include "Databases/DataLake/Common.h"
-#include "Databases/DataLake/ICatalog.h"
-#include "IO/HTTPHeaderEntries.h"
-#include "IO/WriteHelpers.h"
+#include <Core/Names.h>
+#include <Databases/DataLake/Common.h>
+#include <Databases/DataLake/ICatalog.h>
 #include <Databases/DataLake/PaimonRestCatalog.h>
-#include <algorithm>
-#include <optional>
-#include <fmt/format.h>
-#include <fmt/chrono.h>
-#include "Common/Exception.h"
-#include "Interpreters/Context_fwd.h"
-#include "base/types.h"
-#include <chrono>
-#include <Poco/MD5Engine.h>
-#include <Common/Base64.h>
+#include <Databases/DataLake/StorageCredentials.h>
+#include <IO/HTTPHeaderEntries.h>
 #include <IO/WriteBufferFromString.h>
-#include <Common/OpenSSLHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <Poco/JSON/Array.h>
-#include <Poco/JSON/Parser.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonTableSchema.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
-#include <memory>
-#include <sstream>
+#include <base/types.h>
+#include <fmt/chrono.h>
+#include <fmt/format.h>
+#include <fmt/ranges.h>
+#include <Poco/JSON/Array.h>
+#include <Poco/JSON/Parser.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/Logger.h>
-#include "Common/Logger.h"
-#include "Common/logger_useful.h"
-#include "Core/Names.h"
-#include "Databases/DataLake/StorageCredentials.h"
+#include <Poco/MD5Engine.h>
+#include <Poco/String.h>
+#include <Common/Base64.h>
+#include <Common/Exception.h>
+#include <Common/Logger.h>
+#include <Common/OpenSSLHelpers.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB::ErrorCodes
@@ -60,7 +60,8 @@ String md5(const String & input)
     return DB::base64Encode(String(reinterpret_cast<const char *>(md5.digest().data()), md5.digestLength()));
 }
 
-String bytesToHex(const String & bytes) {
+String bytesToHex(const String & bytes)
+{
     const char hex_digits[] = "0123456789abcdef";
     DB::WriteBufferFromOwnString hex_str;
     for (const auto byte : bytes)
@@ -72,26 +73,22 @@ String bytesToHex(const String & bytes) {
 }
 
 
-const std::vector<String> PaimonRestCatalog::SIGNED_HEADERS = {
-    Poco::toLower(String(DLF_CONTENT_MD5_HEADER_KEY)),
-    Poco::toLower(String(DLF_CONTENT_TYPE_KEY)),
-    Poco::toLower(String(DLF_CONTENT_SHA56_HEADER_KEY)),
-    Poco::toLower(String(DLF_DATE_HEADER_KEY)),
-    Poco::toLower(String(DLF_AUTH_VERSION_HEADER_KEY)), 
-    Poco::toLower(String(DLF_SECURITY_TOKEN_HEADER_KEY))};
+const std::vector<String> PaimonRestCatalog::SIGNED_HEADERS
+    = {Poco::toLower(String(DLF_CONTENT_MD5_HEADER_KEY)),
+       Poco::toLower(String(DLF_CONTENT_TYPE_KEY)),
+       Poco::toLower(String(DLF_CONTENT_SHA56_HEADER_KEY)),
+       Poco::toLower(String(DLF_DATE_HEADER_KEY)),
+       Poco::toLower(String(DLF_AUTH_VERSION_HEADER_KEY)),
+       Poco::toLower(String(DLF_SECURITY_TOKEN_HEADER_KEY))};
 
 PaimonRestCatalog::PaimonRestCatalog(
-        const String & warehouse_,
-        const String & base_url_,
-        const PaimonToken & token_,
-        const String & region_,
-        DB::ContextPtr context_)
-        : ICatalog(warehouse_)
-        , DB::WithContext(context_)
-        , base_url(base_url_)
-        , token(token_)
-        , region(region_)
-        , log(getLogger("PaimonRestCatalog(" + warehouse_ +")"))
+    const String & warehouse_, const String & base_url_, const PaimonToken & token_, const String & region_, DB::ContextPtr context_)
+    : ICatalog(warehouse_)
+    , DB::WithContext(context_)
+    , base_url(base_url_)
+    , token(token_)
+    , region(region_)
+    , log(getLogger("PaimonRestCatalog(" + warehouse_ + ")"))
 {
     loadConfig();
 }
@@ -99,14 +96,14 @@ PaimonRestCatalog::PaimonRestCatalog(
 void PaimonRestCatalog::loadConfig()
 {
     Poco::URI::QueryParameters params = {{"warehouse", warehouse}};
-    auto object = requestRest(std::filesystem::path(API_VERSION)/CONFIG_ENDPOINT, "GET", params);
-    auto set_config = [this] (const Poco::JSON::Object::Ptr & object_)
+    auto object = requestRest(std::filesystem::path(API_VERSION) / CONFIG_ENDPOINT, "GET", params);
+    auto set_config = [this](const Poco::JSON::Object::Ptr & object_)
     {
         if (!object_)
             return;
         if (object_->has("prefix"))
             this->prefix = object_->get("prefix").extract<String>();
-        if (object_->has("warehouse")) 
+        if (object_->has("warehouse"))
         {
             this->warehouse_root_path = object_->get("warehouse").extract<String>();
         }
@@ -117,27 +114,27 @@ void PaimonRestCatalog::loadConfig()
     const auto & override_config = object->getObject("overrides");
     set_config(override_config);
 
-    
+
     if (prefix.empty())
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Could not found prefix in catalog configuration.");
     if (warehouse.empty())
     {
         LOG_WARNING(log, "Could not found warehouse in catalog configuration.");
     }
-    else 
+    else
     {
         storage_type = parseStorageTypeFromLocation(warehouse_root_path);
     }
 }
 
 void PaimonRestCatalog::createAuthHeaders(
-            DB::HTTPHeaderEntries & current_headers,
-            const String & resource_path,
-            const std::unordered_map<String, String> & query_params,
-            const String & method,
-            const std::optional<String> & data) const
+    DB::HTTPHeaderEntries & current_headers,
+    const String & resource_path,
+    const std::unordered_map<String, String> & query_params,
+    const String & method,
+    const std::optional<String> & data) const
 {
-    if (!token.has_value()) 
+    if (!token.has_value())
     {
         return;
     }
@@ -153,12 +150,12 @@ void PaimonRestCatalog::createAuthHeaders(
         {
             headers_map.emplace(entry.name, entry.value);
         }
-        auto get_or_default = [] (const std::unordered_map<String, String> & map, const String & key_, const String & value_)
+        auto get_or_default = [](const std::unordered_map<String, String> & map, const String & key_, const String & value_)
         {
             auto it = map.find(key_);
             return it == map.end() ? value_ : it->second;
         };
-        auto generate_sign_headers = [&headers_map](std::optional<String> data_, String date_time_, std::optional<String> security_token_) 
+        auto generate_sign_headers = [&headers_map](std::optional<String> data_, String date_time_, std::optional<String> security_token_)
         {
             headers_map.emplace(DLF_DATE_HEADER_KEY, date_time_);
             headers_map.emplace(DLF_CONTENT_SHA56_HEADER_KEY, DLF_CONTENT_SHA56_VALUE);
@@ -172,12 +169,13 @@ void PaimonRestCatalog::createAuthHeaders(
             {
                 headers_map.emplace(DLF_SECURITY_TOKEN_HEADER_KEY, security_token_.value());
             }
-            else 
+            else
             {
                 headers_map.emplace(DLF_SECURITY_TOKEN_HEADER_KEY, "");
             }
         };
-        auto get_authorization = [&headers_map, &query_params, &resource_path, &method, get_or_default, this](String date, String date_time) -> String
+        auto get_authorization
+            = [&headers_map, &query_params, &resource_path, &method, get_or_default, this](String date, String date_time) -> String
         {
             auto get_canonical_request = [&]()
             {
@@ -190,13 +188,13 @@ void PaimonRestCatalog::createAuthHeaders(
                     DB::writeString(sep, canonical_part);
                     DB::writeString(trim(entry.first), canonical_part);
                     DB::writeString("=", canonical_part);
-                    if (!entry.second.empty()) 
+                    if (!entry.second.empty())
                     {
                         DB::writeString(trim(entry.second), canonical_part);
                     }
                     sep = "&";
                 }
-                
+
                 /// signed headers
                 std::map<String, String> headers_ordered_map;
                 for (const auto & entry : headers_map)
@@ -212,7 +210,7 @@ void PaimonRestCatalog::createAuthHeaders(
                 std::vector<String> join_vec{method, canonical_request_resource_path, canonical_part.str()};
                 for (const auto & entry : headers_ordered_map)
                 {
-                    join_vec.emplace_back(fmt::format("{}:{}",entry.first, entry.second));
+                    join_vec.emplace_back(fmt::format("{}:{}", entry.first, entry.second));
                 }
                 String content_sha56 = get_or_default(headers_map, DLF_CONTENT_SHA56_HEADER_KEY, DLF_CONTENT_SHA56_VALUE);
                 join_vec.emplace_back(content_sha56);
@@ -221,11 +219,12 @@ void PaimonRestCatalog::createAuthHeaders(
             String canonical_request = get_canonical_request();
             LOG_TEST(log, "canonical_request: {}", canonical_request);
             String string_to_sign = fmt::to_string(fmt::join(
-                {String(SIGNATURE_ALGORITHM), 
-                date_time, 
-                fmt::format("{}/{}/{}/{}", date, region, PRODUCT, REQUEST_TYPE),
-                bytesToHex(DB::encodeSHA256(canonical_request))}, DLF_NEW_LINE));
-            
+                {String(SIGNATURE_ALGORITHM),
+                 date_time,
+                 fmt::format("{}/{}/{}/{}", date, region, PRODUCT, REQUEST_TYPE),
+                 bytesToHex(DB::encodeSHA256(canonical_request))},
+                DLF_NEW_LINE));
+
             String key_secret = fmt::format("aliyun_v4{}", token->dlf_access_key_secret);
             std::vector<uint8_t> key_secret_byte(key_secret.data(), key_secret.data() + key_secret.length());
             auto date_key = DB::hmacSHA256(key_secret_byte, date);
@@ -234,19 +233,22 @@ void PaimonRestCatalog::createAuthHeaders(
             auto signing_key = DB::hmacSHA256(date_region_service_key, REQUEST_TYPE);
             auto result = DB::hmacSHA256(signing_key, string_to_sign);
             String signature = bytesToHex(String(reinterpret_cast<const char *>(result.data()), result.size()));
-            return fmt::to_string(fmt::join({
-                fmt::format("{} Credential={}/{}/{}/{}/{}", SIGNATURE_ALGORITHM, token->dlf_access_key_id, date, region, PRODUCT, REQUEST_TYPE),
-                fmt::format("{}={}", SIGNATURE_KEY, signature)}, ","));
+            return fmt::to_string(fmt::join(
+                {fmt::format(
+                     "{} Credential={}/{}/{}/{}/{}", SIGNATURE_ALGORITHM, token->dlf_access_key_id, date, region, PRODUCT, REQUEST_TYPE),
+                 fmt::format("{}={}", SIGNATURE_KEY, signature)},
+                ","));
         };
         DB::HTTPHeaderEntries result;
         auto now = std::chrono::system_clock::now();
         std::time_t now_time_t = std::chrono::system_clock::to_time_t(now);
         thread_local struct tm utc_tm_buf;
-        struct tm* utc_tm = gmtime_r(&now_time_t, &utc_tm_buf);
+        struct tm * utc_tm = gmtime_r(&now_time_t, &utc_tm_buf);
         String date_time = get_or_default(headers_map, DLF_DATE_HEADER_KEY, fmt::format(AUTH_DATE_TIME_FORMATTER, *utc_tm));
         String date = date_time.substr(0, 8);
         generate_sign_headers(data, date_time, std::nullopt);
-        String authorization = token->dlf_generated_authorization.empty() ? get_authorization(date, date_time) : token->dlf_generated_authorization;
+        String authorization
+            = token->dlf_generated_authorization.empty() ? get_authorization(date, date_time) : token->dlf_generated_authorization;
         token->dlf_generated_authorization = authorization;
         headers_map.emplace(DLF_AUTHORIZATION_HEADER_KEY, authorization);
         current_headers.clear();
@@ -260,10 +262,7 @@ void PaimonRestCatalog::createAuthHeaders(
 }
 
 DB::ReadWriteBufferFromHTTPPtr PaimonRestCatalog::createReadBuffer(
-    const String & endpoint,
-    const String & method,
-    const Poco::URI::QueryParameters & params,
-    const DB::HTTPHeaderEntries & headers) const
+    const String & endpoint, const String & method, const Poco::URI::QueryParameters & params, const DB::HTTPHeaderEntries & headers) const
 {
     const auto & context = getContext();
     Poco::URI url(base_url / endpoint);
@@ -303,9 +302,12 @@ DB::ReadWriteBufferFromHTTPPtr PaimonRestCatalog::createReadBuffer(
 
     bool refresh_token = true;
     LOG_TRACE(log, "Requesting endpoint: {}", endpoint);
-    try {
+    try
+    {
         return create_buffer();
-    } catch (DB::HTTPException & e) {
+    }
+    catch (DB::HTTPException & e)
+    {
         if (e.code() == Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED && refresh_token && token->token_provider == "dlf")
         {
             refresh_token = false;
@@ -316,9 +318,10 @@ DB::ReadWriteBufferFromHTTPPtr PaimonRestCatalog::createReadBuffer(
     }
 }
 
-void PaimonRestCatalog::forEachDatabase(DB::Strings & databases, StopCondition stop_condition, ExecuteFunc execute_func) const 
+void PaimonRestCatalog::forEachDatabase(DB::Strings & databases, StopCondition stop_condition, ExecuteFunc execute_func) const
 {
-    auto json_ptr = requestRest(std::filesystem::path(API_VERSION)/prefix/DATABASES_ENDPOINT, "GET", {{"maxResults", fmt::to_string(LIST_MAX_RESULTS)}});
+    auto json_ptr = requestRest(
+        std::filesystem::path(API_VERSION) / prefix / DATABASES_ENDPOINT, "GET", {{"maxResults", fmt::to_string(LIST_MAX_RESULTS)}});
     auto databases_array = json_ptr->getArray("databases");
     String next_page_token;
     if (json_ptr->has("nextPageToken") && !json_ptr->isNull("nextPageToken"))
@@ -327,8 +330,8 @@ void PaimonRestCatalog::forEachDatabase(DB::Strings & databases, StopCondition s
     }
     bool first_iteration = true;
     bool stop = false;
-    
-    while (first_iteration || !next_page_token.empty()) 
+
+    while (first_iteration || !next_page_token.empty())
     {
         first_iteration = false;
         for (size_t i = 0; i < databases_array->size(); ++i)
@@ -351,13 +354,13 @@ void PaimonRestCatalog::forEachDatabase(DB::Strings & databases, StopCondition s
             break;
         }
         Poco::URI::QueryParameters params = {
-        {"maxResults", fmt::to_string(LIST_MAX_RESULTS)},
+            {"maxResults", fmt::to_string(LIST_MAX_RESULTS)},
         };
         if (!next_page_token.empty())
         {
             params.emplace_back("pageToken", next_page_token);
         }
-        json_ptr = requestRest(std::filesystem::path(API_VERSION)/prefix/DATABASES_ENDPOINT, "GET", params);
+        json_ptr = requestRest(std::filesystem::path(API_VERSION) / prefix / DATABASES_ENDPOINT, "GET", params);
         databases_array = json_ptr->getArray("databases");
         if (json_ptr->has("nextPageToken") && !json_ptr->isNull("nextPageToken"))
         {
@@ -366,9 +369,13 @@ void PaimonRestCatalog::forEachDatabase(DB::Strings & databases, StopCondition s
     }
 }
 
-void PaimonRestCatalog::forEachTables(const String & database, DB::Names & tables, StopCondition stop_condition, ExecuteFunc execute_func) const
+void PaimonRestCatalog::forEachTables(
+    const String & database, DB::Names & tables, StopCondition stop_condition, ExecuteFunc execute_func) const
 {
-    auto json_ptr = requestRest(std::filesystem::path(API_VERSION)/prefix/DATABASES_ENDPOINT/database/TABLES_ENDPOINT, "GET", {{"maxResults", fmt::to_string(LIST_MAX_RESULTS)}});
+    auto json_ptr = requestRest(
+        std::filesystem::path(API_VERSION) / prefix / DATABASES_ENDPOINT / database / TABLES_ENDPOINT,
+        "GET",
+        {{"maxResults", fmt::to_string(LIST_MAX_RESULTS)}});
     auto tables_array = json_ptr->getArray("tables");
     String next_page_token;
     if (json_ptr->has("nextPageToken") && !json_ptr->isNull("nextPageToken"))
@@ -377,8 +384,8 @@ void PaimonRestCatalog::forEachTables(const String & database, DB::Names & table
     }
     bool first_iteration = true;
     bool stop = false;
-    
-    while (first_iteration || !next_page_token.empty()) 
+
+    while (first_iteration || !next_page_token.empty())
     {
         first_iteration = false;
         for (size_t i = 0; i < tables_array->size(); ++i)
@@ -401,13 +408,14 @@ void PaimonRestCatalog::forEachTables(const String & database, DB::Names & table
             break;
         }
         Poco::URI::QueryParameters params = {
-        {"maxResults", fmt::to_string(LIST_MAX_RESULTS)},
+            {"maxResults", fmt::to_string(LIST_MAX_RESULTS)},
         };
         if (!next_page_token.empty())
         {
             params.emplace_back("pageToken", next_page_token);
         }
-        json_ptr = requestRest(std::filesystem::path(API_VERSION)/prefix/DATABASES_ENDPOINT/database/TABLES_ENDPOINT, "GET", params);
+        json_ptr
+            = requestRest(std::filesystem::path(API_VERSION) / prefix / DATABASES_ENDPOINT / database / TABLES_ENDPOINT, "GET", params);
         tables_array = json_ptr->getArray("tables");
         if (json_ptr->has("nextPageToken") && !json_ptr->isNull("nextPageToken"))
         {
@@ -421,10 +429,10 @@ bool PaimonRestCatalog::empty() const
 {
     DB::Strings databases;
     DB::Names tables;
-    auto list_database_stop_condition = [this, &tables](const String & database_name) 
+    auto list_database_stop_condition = [this, &tables](const String & database_name)
     {
         /// stop when get any table
-        forEachTables(database_name, tables, [](const String & ){ return true; });
+        forEachTables(database_name, tables, [](const String &) { return true; });
         return !tables.empty();
     };
     forEachDatabase(databases, list_database_stop_condition);
@@ -435,19 +443,17 @@ DB::Names PaimonRestCatalog::getTables() const
 {
     DB::Strings databases;
     DB::Names tables;
-    auto list_tables = [this, &tables](const String & database_name) 
-    {
-        forEachTables(database_name, tables, {});
-    };
+    auto list_tables = [this, &tables](const String & database_name) { forEachTables(database_name, tables, {}); };
     forEachDatabase(databases, {}, list_tables);
     return tables;
 }
 
 bool PaimonRestCatalog::existsTable(const String & database_name, const String & table_name) const
 {
-    try 
+    try
     {
-        createReadBuffer(std::filesystem::path(API_VERSION)/prefix/DATABASES_ENDPOINT/database_name/TABLES_ENDPOINT/table_name, "GET");
+        createReadBuffer(
+            std::filesystem::path(API_VERSION) / prefix / DATABASES_ENDPOINT / database_name / TABLES_ENDPOINT / table_name, "GET");
     }
     catch (const DB::HTTPException & e)
     {
@@ -462,8 +468,10 @@ bool PaimonRestCatalog::existsTable(const String & database_name, const String &
 
 bool PaimonRestCatalog::tryGetTableMetadata(const String & database_name, const String & table_name, TableMetadata & result) const
 {
-    try {
-        auto table_json_ptr = requestRest(std::filesystem::path(API_VERSION)/prefix/DATABASES_ENDPOINT/database_name/TABLES_ENDPOINT/table_name, "GET");
+    try
+    {
+        auto table_json_ptr = requestRest(
+            std::filesystem::path(API_VERSION) / prefix / DATABASES_ENDPOINT / database_name / TABLES_ENDPOINT / table_name, "GET");
         if (result.requiresLocation())
         {
             if (table_json_ptr->has("path"))
@@ -482,7 +490,8 @@ bool PaimonRestCatalog::tryGetTableMetadata(const String & database_name, const 
             {
                 std::stringstream ss;
                 table_json_ptr->stringify(ss);
-                result.setTableIsNotReadable(fmt::format("Cannot read table {}, because no 'location' in response: {}", table_name, ss.str()));
+                result.setTableIsNotReadable(
+                    fmt::format("Cannot read table {}, because no 'location' in response: {}", table_name, ss.str()));
             }
         }
 
@@ -507,14 +516,18 @@ bool PaimonRestCatalog::tryGetTableMetadata(const String & database_name, const 
 
         if (result.isDefaultReadableTable() && result.requiresCredentials())
         {
-            auto table_token_json_ptr = requestRest(std::filesystem::path(API_VERSION)/prefix/DATABASES_ENDPOINT/database_name/TABLES_ENDPOINT/table_name/TABLE_TOKEN_ENDPOINT, "GET");
+            auto table_token_json_ptr = requestRest(
+                std::filesystem::path(API_VERSION) / prefix / DATABASES_ENDPOINT / database_name / TABLES_ENDPOINT / table_name
+                    / TABLE_TOKEN_ENDPOINT,
+                "GET");
             StorageType table_storage_type = parseStorageTypeFromLocation(result.getLocation());
             switch (table_storage_type)
             {
-                case StorageType::S3:
-                {
-                    static constexpr std::array<String, 3> access_key_id_strs = {"fs.s3a.access-key", "fs.s3a.access.key", "fs.oss.accessKeyId"};
-                    static constexpr std::array<String, 3> secret_access_key_strs = {"fs.s3a.secret-key", "fs.s3a.secret.key", "fs.oss.accessKeySecret"};
+                case StorageType::S3: {
+                    static constexpr std::array<String, 3> access_key_id_strs
+                        = {"fs.s3a.access-key", "fs.s3a.access.key", "fs.oss.accessKeyId"};
+                    static constexpr std::array<String, 3> secret_access_key_strs
+                        = {"fs.s3a.secret-key", "fs.s3a.secret.key", "fs.oss.accessKeySecret"};
                     static constexpr std::array<String, 1> session_token_strs = {"fs.oss.securityToken"};
 
                     std::string access_key_id;
@@ -549,8 +562,7 @@ bool PaimonRestCatalog::tryGetTableMetadata(const String & database_name, const 
                     result.setStorageCredentials(std::make_shared<S3Credentials>(access_key_id, secret_access_key, ""));
                     break;
                 }
-                default:
-                {
+                default: {
                     LOG_WARNING(log, "Unsupported storage type {} for table {} to get table token", table_storage_type, table_name);
                     break;
                 }
@@ -568,7 +580,8 @@ bool PaimonRestCatalog::tryGetTableMetadata(const String & database_name, const 
     }
 }
 
-Poco::JSON::Object::Ptr PaimonRestCatalog::requestRest(const String & endpoint, const String & method, const Poco::URI::QueryParameters & params, const DB::HTTPHeaderEntries & headers) const
+Poco::JSON::Object::Ptr PaimonRestCatalog::requestRest(
+    const String & endpoint, const String & method, const Poco::URI::QueryParameters & params, const DB::HTTPHeaderEntries & headers) const
 {
     auto buf = createReadBuffer(endpoint, method, params, headers);
     std::string json_str;
