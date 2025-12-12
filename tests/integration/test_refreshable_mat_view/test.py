@@ -189,7 +189,7 @@ def fn_setup_tables():
 
 
 def opposite_minutes():
-    return (59 - datetime.now().minute) % 60 + 1
+    return (60 - datetime.now().minute) % 60
 
 
 @pytest.mark.parametrize(
