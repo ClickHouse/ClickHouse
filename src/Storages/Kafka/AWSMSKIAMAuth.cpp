@@ -9,7 +9,7 @@
 #include <chrono>
 #include <memory>
 
-#ifdef USE_AWS_S3
+#if USE_AWS_S3
 #include <aws/core/auth/AWSCredentialsProvider.h>
 #include <aws/core/auth/signer/AWSAuthV4Signer.h>
 #include <aws/core/http/HttpRequest.h>
@@ -31,7 +31,7 @@ namespace ErrorCodes
     extern const int AWS_ERROR;
 }
 
-#ifdef USE_AWS_S3
+#if USE_AWS_S3
 
 namespace
 {
