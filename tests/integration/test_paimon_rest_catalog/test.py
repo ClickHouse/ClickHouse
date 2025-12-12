@@ -199,3 +199,8 @@ def test_paimon_rest_catalog(started_cluster):
     node.query(f"create database paimon_rest_db_dlf engine = DataLakeCatalog('http://{paimon_rest_catalog_container_ip}:{DLF_PORT}') SETTINGS catalog_type='paimon_rest', warehouse='restWarehouse', dlf_access_key_id='accessKeyId', dlf_access_key_secret='accessKeySecret', region='cn-hangzhou';", settings={"allow_experimental_database_paimon_rest_catalog": 1})
     node.query("show tables;", database="paimon_rest_db_dlf")
 
+    node.query("DROP DATABASE IF EXISTS paimon_rest_db_dlf SYNC;")
+    node.query(f"create database paimon_rest_db_dlf engine = DataLakeCatalog('http://{paimon_rest_catalog_container_ip}:{DLF_PORT}') SETTINGS catalog_type='paimon_rest', warehouse='restWarehouse', dlf_access_key_id='accessKeyIdxx', dlf_access_key_secret='accessKeySecret', region='cn-hangzhou';", settings={"allow_experimental_database_paimon_rest_catalog": 1})
+    error = node.query_and_get_error("show tables;", database="paimon_rest_db_dlf")
+    assert "HTTP status code: 401" in error
+
