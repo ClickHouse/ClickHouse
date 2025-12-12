@@ -160,6 +160,7 @@ public:
 
         Cell * getPtr() const { return current_it.getPtr(); }
         size_t getHash() const { return current_it.getHash(); }
+        size_t getBucket() const { return bucket; }
     };
 
 
@@ -200,6 +201,7 @@ public:
 
         const Cell * getPtr() const { return current_it.getPtr(); }
         size_t getHash() const { return current_it.getHash(); }
+        size_t getBucket() const { return bucket; }
     };
 
 
@@ -219,6 +221,22 @@ public:
 
     const_iterator end() const         { return { this, MAX_BUCKET, impls[MAX_BUCKET].end() }; }
     iterator end()                     { return { this, MAX_BUCKET, impls[MAX_BUCKET].end() }; }
+
+    const_iterator iteratorAt(size_t bucket) const
+    {
+        if (bucket >= NUM_BUCKETS)
+            return end();
+        auto impl_it = beginOfNextNonEmptyBucket(bucket);
+        return { this, bucket, impl_it };
+    }
+
+    iterator iteratorAt(size_t bucket)
+    {
+        if (bucket >= NUM_BUCKETS)
+            return end();
+        auto impl_it = beginOfNextNonEmptyBucket(bucket);
+        return { this, bucket, impl_it };
+    }
 
 
     /// Insert a value. In the case of any more complex values, it is better to use the `emplace` function.
