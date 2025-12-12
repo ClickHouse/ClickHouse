@@ -333,6 +333,18 @@ std::pair<bool, std::optional<DirectoryRemoteInfo>> InMemoryDirectoryTree::exist
     return {true, inode->remote_info};
 }
 
+bool InMemoryDirectoryTree::existsVirtualDirectory(const std::string & path) const
+{
+    std::lock_guard guard(mutex);
+    const auto normalized_path = normalizePath(path);
+    const auto inode = walk(normalized_path);
+
+    if (!inode)
+        return false;
+
+    return inode->isVirtual();
+}
+
 bool InMemoryDirectoryTree::existsFile(const std::string & path) const
 {
     std::lock_guard guard(mutex);

@@ -66,7 +66,7 @@ MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFr
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute()
 {
-    auto [exists_directory, info] = fs_tree->existsDirectory(path);
+    const auto [exists_directory, info] = fs_tree->existsDirectory(path);
     if (info)
         return;
 
