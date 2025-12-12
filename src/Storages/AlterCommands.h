@@ -87,6 +87,8 @@ struct AlterCommand
     /// For COMMENT column or table
     std::optional<String> comment;
 
+    UUID uuid = UUIDHelpers::Nil;
+
     /// For ADD or MODIFY - after which column to add a new one. If an empty string, add to the end.
     String after_column;
 
