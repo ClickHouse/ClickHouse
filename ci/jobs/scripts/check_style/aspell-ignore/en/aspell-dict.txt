@@ -415,6 +415,8 @@ HNSW
 HSTS
 HTTPConnection
 HTTPThreads
+HTTPs
+HTTPSecureThreads
 HashedDictionary
 HashedDictionaryThreads
 HashedDictionaryThreadsActive
@@ -486,6 +488,7 @@ IntervalQuarter
 IntervalSecond
 IntervalWeek
 IntervalYear
+InterserverSecureThreads
 intExp
 intHash
 IntN
@@ -610,6 +613,8 @@ Keccak
 KeeperAliveConnections
 KeeperMap
 KeeperOutstandingRequests
+KeeperTCPSecureThreads
+KeeperTCPThreads
 Kerberos
 Khanna
 Kibana
@@ -1161,6 +1166,7 @@ TAVG
 TCPConnection
 TCPHandler
 TCPThreads
+TCPSecureThreads
 TDigest
 TINYINT
 TLSv
@@ -2138,6 +2144,7 @@ gtid
 gunzip
 gzip
 gzipped
+GRPCThreads
 hackernews
 hadoop
 halfMD
@@ -2779,6 +2786,7 @@ proleptic
 prometheus
 prometheusQuery
 prometheusQueryRange
+PrometheusThreads
 proportionsZTest
 proto
 protobuf
