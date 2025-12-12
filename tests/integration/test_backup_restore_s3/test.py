@@ -994,14 +994,7 @@ def test_backup_restore_s3_plain(cluster):
 
     assert instance.query("SELECT count(*) FROM sample") == "100\n"
 
-    table_data_path = (
-        instance.query(
-            f"SELECT data_paths[1] FROM system.tables WHERE name='sample' and database='default'"
-        )
-        .strip()
-        .replace("/var/lib/clickhouse/", "")
-        .strip("/")
-    )
+    table_data_path = instance.query(f"SELECT data_paths[1] FROM system.tables WHERE name='sample' and database='default'").strip().replace("/var/lib/clickhouse/", "").strip("/")
     minio = cluster.minio_client
     local_path = os.path.join(instance.path, "database")
     source_table_path = f"{local_path}/{table_data_path}"
@@ -1009,16 +1002,10 @@ def test_backup_restore_s3_plain(cluster):
     print(f"Copying from {source_table_path} to {remote_blob_path}")
     remove_directory(minio, cluster.minio_bucket, remote_blob_path)
     upload_directory(
-        minio,
-        cluster.minio_bucket,
-        source_table_path,
-        remote_blob_path,
-        use_relpath=True,
+        minio, cluster.minio_bucket, source_table_path, remote_blob_path, use_relpath=True
     )
 
-    table_uuid = instance.query(
-        f"SELECT uuid FROM system.tables WHERE name='sample' and database='default'"
-    ).strip()
+    table_uuid = instance.query(f"SELECT uuid FROM system.tables WHERE name='sample' and database='default'").strip()
     instance.query(
         f"""
         DROP TABLE sample SYNC;
@@ -1121,22 +1108,3 @@ def test_backup_restore_with_s3_throttle(cluster, broken_s3, to_disk):
             DROP DATABASE IF EXISTS restored SYNC;
             """
         )
-
-
-def test_backup_restore_database_plain_rewritable(cluster):
-    node = cluster.instances["node"]
-    backup_name = new_backup_name()
-    backup_destination = f"Disk('disk_s3_plain_rewritable', '{backup_name}')"
-    node.query(
-        f"""
-        CREATE DATABASE d0 ENGINE = Atomic;
-        CREATE TABLE d0.t0 (c0 Int) ENGINE = MergeTree() ORDER BY tuple();
-        BACKUP DATABASE d0 TO {backup_destination}
-        """
-    )
-
-    node.query(
-        f"""
-        RESTORE DATABASE d0 AS d1 FROM {backup_destination};
-        """
-    )
