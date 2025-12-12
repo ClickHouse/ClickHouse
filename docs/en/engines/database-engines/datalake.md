@@ -83,3 +83,4 @@ SETTINGS
    onelake_client_secret = client_secret;
 SHOW TABLES IN databse_name;       
 SELECT count() from database_name.table_name;
+```
