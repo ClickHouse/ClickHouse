@@ -1624,7 +1624,7 @@ private:
     void fillNullsFromBlocks(MutableColumns & columns_keys_and_right, size_t & rows_added)
     {
         /// For parallel iteration, only the first bucket stream (bucket_idx == 0) handles nullmaps
-        /// to avoid duplicates across streams
+        /// to avoid duplicates accross streams
         if (bucket_idx != 0)
             return;
 
