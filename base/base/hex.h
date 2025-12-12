@@ -177,13 +177,14 @@ namespace impl
         {
             constexpr auto num_bytes = sizeof(TUInt);
             TUInt res;
-            auto * src = reinterpret_cast<const uint8_t *>(data);
             if constexpr (num_bytes <= 4)
             {
+                const auto * src = reinterpret_cast<const uint8_t *>(data);
                 res = heks::decode_integral_naive<TUInt>(src);
             }
             else if constexpr (num_bytes == 8)
             {
+                const auto * src = reinterpret_cast<const uint8_t *>(data);
                 #if defined(__AVX__)
                 res = heks::decode_integral8(src);
                 #else

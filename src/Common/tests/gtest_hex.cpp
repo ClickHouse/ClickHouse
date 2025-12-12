@@ -46,6 +46,7 @@ TEST(HexTest, Hexing)
 template <typename T>
 static T unhexer(std::string_view s)
 {
+    // NOLINTNEXTLINE(bugprone-suspicious-stringview-data-usage)
     return unhexUInt<T>(s.data());
 }
 
