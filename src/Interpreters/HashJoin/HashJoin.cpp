@@ -1516,7 +1516,7 @@ private:
         if (flag_per_row)
         {
             /// For parallel iteration with flag_per_row mode, only stream 0 processes the columns data
-            /// The data in parent.data->columns is not partitioned by hash buckets, so we can't distribute accross streams
+            /// The data in parent.data->columns is not partitioned by hash buckets, so we can't distribute across streams
             if (bucket_idx != 0)
                 return rows_added;
 
@@ -1624,7 +1624,7 @@ private:
     void fillNullsFromBlocks(MutableColumns & columns_keys_and_right, size_t & rows_added)
     {
         /// For parallel iteration, only the first bucket stream (bucket_idx == 0) handles nullmaps
-        /// to avoid duplicates accross streams
+        /// to avoid duplicates across streams
         if (bucket_idx != 0)
             return;
 
