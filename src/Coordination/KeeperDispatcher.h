@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include "config.h"
 
 #if USE_NURAFT
@@ -161,6 +162,17 @@ public:
     bool isFollower() const
     {
         return server->isFollower();
+    }
+
+    const char * getRoleString() const
+    {
+        if (isLeader())
+            return "leader";
+        if (isFollower())
+            return "follower";
+        if (isObserver())
+            return "observer";
+        return "unknown";
     }
 
     bool hasLeader() const

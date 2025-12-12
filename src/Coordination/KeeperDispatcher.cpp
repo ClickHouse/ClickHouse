@@ -5,8 +5,11 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <base/hex.h>
+#include <Common/OpenTelemetryTraceContext.h>
+#include <Common/OpenTelemetryTracingContext.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/setThreadName.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/checkStackSize.h>
@@ -14,6 +17,9 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
+#include <Coordination/KeeperCommon.h>
+#include <Coordination/KeeperSpans.h>
+#include <Interpreters/Context.h>
 #include <Coordination/CoordinationSettings.h>
 
 #include <Disks/IDisk.h>
@@ -141,6 +147,20 @@ void KeeperDispatcher::requestThread()
 
     while (!shutdown_called)
     {
+        const auto handle_opentelemetery_spans = [](const Coordination::ZooKeeperRequestPtr & request)
+        {
+
+            ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.process_request, request->client_tracing_context);
+
+            request->server_tracing_context =
+            {
+                .trace_id = request->client_tracing_context->trace_id,
+                .span_id = request->spans.process_request.span->span_id,
+                .tracestate = request->client_tracing_context->tracestate,
+                .trace_flags = request->client_tracing_context->trace_flags,
+            };
+        };
+
         KeeperRequestForSession request;
 
         const auto & coordination_settings = configuration_and_settings->coordination_settings;
@@ -162,6 +182,8 @@ void KeeperDispatcher::requestThread()
                 CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequests);
                 if (shutdown_called)
                     break;
+
+                handle_opentelemetery_spans(request.request);
 
                 Int64 mem_soft_limit = keeper_context->getKeeperMemorySoftLimit();
                 if (configuration_and_settings->standalone_keeper && isExceedingMemorySoftLimit() && checkIfRequestIncreaseMem(request.request))
@@ -200,10 +222,14 @@ void KeeperDispatcher::requestThread()
                         if (requests_queue->tryPop(request))
                         {
                             CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequests);
+
+                            handle_opentelemetery_spans(request.request);
+
                             /// Don't append read request into batch, we have to process them separately
                             if (!coordination_settings[CoordinationSetting::quorum_reads] && request.request->isReadRequest())
                             {
                                 const auto & last_request = current_batch.back();
+                                ZooKeeperOpentelemetrySpans::maybeInitialize(request.request->spans.read_wait_for_write, request.request->server_tracing_context);
                                 std::lock_guard lock(read_request_queue_mutex);
                                 read_request_queue[last_request.session_id][last_request.request->xid].push_back(request);
                             }
@@ -346,6 +372,26 @@ void KeeperDispatcher::responseThread()
         {
             if (shutdown_called)
                 break;
+
+            if (auto request = response_for_session.request; request)
+            {
+                ZooKeeperOpentelemetrySpans::maybeFinalize(
+                    request->spans.dispatcher_responses_queue,
+                    {
+                        {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
+                        {"keeper.session_id", std::to_string(response_for_session.session_id)},
+                        {"keeper.xid", std::to_string(request->xid)},
+                    });
+
+                ZooKeeperOpentelemetrySpans::maybeFinalize(
+                    request->spans.process_request,
+                    {
+                        {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
+                        {"keeper.session_id", std::to_string(response_for_session.session_id)},
+                        {"keeper.xid", std::to_string(request->xid)},
+                        {"raft.role", getRoleString()},
+                    });
+            }
 
             try
             {
@@ -491,10 +537,21 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
                     {
                         for (const auto & read_request : request_queue_it->second)
                         {
-                            if (server->isLeaderAlive())
-                                server->putLocalReadRequest(read_request);
-                            else
+                            if (!server->isLeaderAlive())
+                            {
                                 addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS);
+                                continue;
+                            }
+
+                            ZooKeeperOpentelemetrySpans::maybeFinalize(
+                                read_request.request->spans.read_wait_for_write,
+                                {
+                                    {"keeper.operation", Coordination::opNumToString(read_request.request->getOpNum())},
+                                    {"keeper.session_id", std::to_string(read_request.session_id)},
+                                    {"keeper.xid", std::to_string(read_request.request->xid)},
+                                });
+
+                            server->putLocalReadRequest(read_request);
                         }
 
                         xid_to_request_queue.erase(request_queue_it);

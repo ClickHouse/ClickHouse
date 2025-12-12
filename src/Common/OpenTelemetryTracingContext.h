@@ -16,6 +16,7 @@ enum TraceFlags : UInt8
 {
     TRACE_FLAG_NONE = 0,
     TRACE_FLAG_SAMPLED = 1,
+    TRACE_FLAG_KEEPER_SPANS = 2,
 };
 
 /// The runtime info we need to create new OpenTelemetry spans.

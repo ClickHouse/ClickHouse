@@ -51,23 +51,19 @@ std::string ZooKeeperRequest::toString(bool short_format) const
         toStringImpl(short_format));
 }
 
-void ZooKeeperRequest::write(WriteBuffer & out, bool use_xid_64) const
+void ZooKeeperRequest::write(WriteBuffer & out) const
 {
-    size_t request_size = 0;
-    if (use_xid_64)
-        request_size += sizeof(int64_t);
-    else
-        request_size += sizeof(int32_t);
-
-    request_size += Coordination::size(getOpNum()) + sizeImpl();
+    size_t request_size = sizeof(int64_t) + Coordination::size(getOpNum()) + sizeImpl();
 
     Coordination::write(static_cast<int32_t>(request_size), out);
-    if (use_xid_64)
-        Coordination::write(static_cast<int64_t>(xid), out);
-    else
-        Coordination::write(static_cast<int32_t>(xid), out);
+    Coordination::write(static_cast<int64_t>(xid), out);
     Coordination::write(getOpNum(), out);
     writeImpl(out);
+
+    bool has_tracing = client_tracing_context.has_value();
+    Coordination::write(has_tracing, out);
+    if (has_tracing)
+        client_tracing_context->serialize(out);
 }
 
 void ZooKeeperSyncRequest::writeImpl(WriteBuffer & out) const
@@ -1211,6 +1207,15 @@ std::shared_ptr<ZooKeeperRequest> ZooKeeperRequest::read(ReadBuffer & in)
     auto request = ZooKeeperRequestFactory::instance().get(op_num);
     request->xid = xid;
     request->readImpl(in);
+
+    bool has_tracing;
+    Coordination::read(has_tracing, in);
+    if (has_tracing)
+    {
+        request->client_tracing_context.emplace();
+        request->client_tracing_context->deserialize(in);
+    }
+
     return request;
 }
 

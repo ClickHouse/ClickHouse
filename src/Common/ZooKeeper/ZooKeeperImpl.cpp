@@ -1,4 +1,7 @@
 #include <chrono>
+#include <Common/OpenTelemetryTracingContext.h>
+#include <Common/OpenTelemetryTraceContext.h>
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/OSThreadNiceValue.h>
@@ -37,6 +40,7 @@
 
 #include <Coordination/KeeperConstants.h>
 #include <Interpreters/AggregatedZooKeeperLog.h>
+#include <Coordination/KeeperSpans.h>
 #include "config.h"
 
 #if USE_SSL
@@ -433,11 +437,6 @@ ZooKeeper::ZooKeeper(
     try
     {
         use_compression = args.use_compression;
-        if (args.use_xid_64)
-        {
-            use_xid_64 = true;
-            close_xid = CLOSE_XID_64;
-        }
         connect(nodes, static_cast<Poco::Timespan::TimeDiff>(args.connection_timeout_ms) * 1000);
     }
     catch (...)
@@ -648,19 +647,8 @@ void ZooKeeper::sendHandshake()
     bool read_only = true;
 
     write(handshake_length);
-    if (use_xid_64)
-    {
-        write(ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64);
-        write(use_compression);
-    }
-    else if (use_compression)
-    {
-        write(ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION);
-    }
-    else
-    {
-        write(ZOOKEEPER_PROTOCOL_VERSION);
-    }
+    write(ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64);
+    write(use_compression);
     write(last_zxid_seen.load(std::memory_order_relaxed));
     write(timeout);
     write(previous_session_id);
@@ -691,18 +679,8 @@ void ZooKeeper::receiveHandshake()
                                      "Keeper server rejected the connection during the handshake. "
                                      "Possibly it's overloaded, doesn't see leader or stale");
 
-    if (use_xid_64)
-    {
-        if (protocol_version_read < ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64)
-            throw Exception(Error::ZMARSHALLINGERROR, "Unexpected protocol version with 64bit XID: {}", protocol_version_read);
-    }
-    else if (use_compression)
-    {
-        if (protocol_version_read != ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION)
-            throw Exception(Error::ZMARSHALLINGERROR, "Unexpected protocol version with compression: {}", protocol_version_read);
-    }
-    else if (protocol_version_read != ZOOKEEPER_PROTOCOL_VERSION)
-        throw Exception(Error::ZMARSHALLINGERROR, "Unexpected protocol version: {}", protocol_version_read);
+    if (protocol_version_read < ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64)
+        throw Exception(Error::ZMARSHALLINGERROR, "Unexpected protocol version with 64bit XID: {}", protocol_version_read);
 
     read(timeout);
     if (timeout != args.session_timeout_ms)
@@ -722,7 +700,7 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
     request.scheme = scheme;
     request.data = data;
     request.xid = AUTH_XID;
-    request.write(getWriteBuffer(), use_xid_64);
+    request.write(getWriteBuffer());
     flushWriteBuffer();
 
     int32_t length;
@@ -732,16 +710,7 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
 
     read(length);
     size_t count_before_event = in->count();
-    if (use_xid_64)
-    {
-        read(read_xid);
-    }
-    else
-    {
-        int32_t xid_32{0};
-        read(xid_32);
-        read_xid = xid_32;
-    }
+    read(read_xid);
 
     read(zxid);
     read(err);
@@ -802,6 +771,12 @@ void ZooKeeper::sendThread()
 
                     auto dequeue_ts = clock::now();
 
+                    ZooKeeperOpentelemetrySpans::maybeFinalize(
+                        info.request->spans.client_requests_queue,
+                        {
+                            {"zookeeper_client.requests_queue.size", std::to_string(requests_queue.size())},
+                        });
+
                     chassert(info.request->enqueue_ts != std::chrono::steady_clock::time_point{});
                     HistogramMetrics::observe(
                         HistogramMetrics::KeeperClientQueueDuration,
@@ -827,7 +802,7 @@ void ZooKeeper::sendThread()
                         info.request->addRootPath(args.chroot);
 
                     info.request->probably_sent = true;
-                    info.request->write(getWriteBuffer(), use_xid_64);
+                    info.request->write(getWriteBuffer());
                     flushWriteBuffer();
 
                     logOperationIfNeeded(info.request);
@@ -844,7 +819,7 @@ void ZooKeeper::sendThread()
 
                 ZooKeeperHeartbeatRequest request;
                 request.xid = PING_XID;
-                request.write(getWriteBuffer(), use_xid_64);
+                request.write(getWriteBuffer());
                 flushWriteBuffer();
             }
 
@@ -938,16 +913,7 @@ void ZooKeeper::receiveEvent()
 
     read(length);
     size_t count_before_event = in->count();
-    if (use_xid_64)
-    {
-        read(xid);
-    }
-    else
-    {
-        int32_t xid_32{0};
-        read(xid_32);
-        xid = xid_32;
-    }
+    read(xid);
     read(zxid);
     read(err);
 
@@ -1374,8 +1340,6 @@ void ZooKeeper::pushRequest(RequestInfo && info)
         if (!info.request->xid)
         {
             info.request->xid = next_xid.fetch_add(1);
-            if (!use_xid_64)
-                info.request->xid = static_cast<int32_t>(info.request->xid);
 
             if (info.request->xid == close_xid)
                 throw Exception::fromMessage(Error::ZSESSIONEXPIRED, "xid equal to close_xid");
@@ -1391,7 +1355,20 @@ void ZooKeeper::pushRequest(RequestInfo && info)
 
         maybeInjectSendFault();
 
+        if (
+            const auto & current_trace_context = OpenTelemetry::CurrentContext();
+            current_trace_context.isTraceEnabled() && current_trace_context.trace_flags & DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS
+        )
+        {
+            if (isFeatureEnabled(KeeperFeatureFlag::PASS_TRACING_CONTEXT))
+            {
+                info.request->client_tracing_context = current_trace_context;
+            }
+        }
+
         info.request->enqueue_ts = clock::now();
+
+        ZooKeeperOpentelemetrySpans::maybeInitialize(info.request->spans.client_requests_queue, info.request->client_tracing_context);
 
         if (!requests_queue.tryPush(std::move(info), args.operation_timeout_ms))
         {

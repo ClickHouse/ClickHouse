@@ -25,6 +25,9 @@
 #    include <Common/logger_useful.h>
 #    include <Common/setThreadName.h>
 #    include <Common/HistogramMetrics.h>
+#    include <Common/OpenTelemetryTracingContext.h>
+#    include <Coordination/KeeperCommon.h>
+#    include <Coordination/KeeperSpans.h>
 
 #    include <Compression/CompressionFactory.h>
 
@@ -464,6 +467,9 @@ void KeeperTCPHandler::runImpl()
     auto response_callback = [my_responses = this->responses, my_poll_wrapper = this->poll_wrapper](
                                  const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)
     {
+        if (request)
+            ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.send_response, request->client_tracing_context);
+
         if (!my_responses->push(RequestWithResponse{response, std::move(request)}))
             throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with xid {} and zxid {}", response->xid, response->zxid);
 
@@ -536,6 +542,7 @@ void KeeperTCPHandler::runImpl()
                 auto dequeue_ts = std::chrono::steady_clock::now();
 
                 auto & response = request_with_response.response;
+                auto & request = request_with_response.request;
 
                 if (response->xid != Coordination::WATCH_XID && response->error != Coordination::Error::ZSESSIONEXPIRED)
                 {
@@ -559,6 +566,22 @@ void KeeperTCPHandler::runImpl()
                 updateStats(response, request_with_response.request);
                 packageSent();
 
+                const auto maybe_finalize_opentelemetery_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
+                {
+                    if (!request)
+                        return;
+
+                    ZooKeeperOpentelemetrySpans::maybeFinalize(
+                        request->spans.send_response,
+                        {
+                            {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
+                            {"keeper.xid", std::to_string(request->xid)},
+                        },
+                        status,
+                        error_message);
+                };
+
+                try
                 {
                     Stopwatch watch;
 
@@ -569,6 +592,13 @@ void KeeperTCPHandler::runImpl()
 
                     HistogramMetrics::observe(HistogramMetrics::KeeperServerSendDuration, elapsed_ms);
                 }
+                catch (...)
+                {
+                    maybe_finalize_opentelemetery_span(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
+                    throw;
+                }
+
+                maybe_finalize_opentelemetery_span(OpenTelemetry::SpanStatus::OK, "");
 
                 log_long_operation("Sending response");
                 if (response->error == Coordination::Error::ZSESSIONEXPIRED)
@@ -677,6 +707,8 @@ ReadBuffer & KeeperTCPHandler::getReadBuffer()
 
 std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveRequest()
 {
+    const UInt64 receive_start_time = ZooKeeperOpentelemetrySpans::now();
+
     std::optional<LimitReadBuffer> limited_buffer_holder;
     /// Wrap regular read buffer with LimitReadBuffer to apply max_request_size
     /// (this should be done on per-request basis)
@@ -725,6 +757,18 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
         request_validator(*request);
     }
 
+    bool has_tracing;
+    Coordination::read(has_tracing, read_buffer);
+    if (has_tracing)
+    {
+        /// If the client sends the tracing header, it should use 64-bit XIDs.
+        chassert(use_xid_64);
+
+        request->client_tracing_context.emplace();
+        request->client_tracing_context->deserialize(read_buffer);
+
+        ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.receive_request, request->client_tracing_context, receive_start_time);
+    }
 
     if (!keeper_dispatcher->putRequest(request, session_id, use_xid_64))
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session {} already disconnected", session_id);
