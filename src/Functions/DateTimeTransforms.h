@@ -2132,28 +2132,28 @@ struct ToRelativeHourNumImpl
 {
     static constexpr auto name = "toRelativeHourNum";
 
-    static auto execute(Int64 t, const DateLUTImpl & time_zone)
+    ALWAYS_INLINE static auto execute(Int64 t, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
             return static_cast<Int64>(time_zone.toStableRelativeHourNum(t));
         else
             return static_cast<UInt32>(time_zone.toRelativeHourNum(t));
     }
-    static UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
+    ALWAYS_INLINE static UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
             return static_cast<UInt32>(time_zone.toStableRelativeHourNum(static_cast<DateLUTImpl::Time>(t)));
         else
             return static_cast<UInt32>(time_zone.toRelativeHourNum(static_cast<DateLUTImpl::Time>(t)));
     }
-    static auto execute(Int32 d, const DateLUTImpl & time_zone)
+    ALWAYS_INLINE static auto execute(Int32 d, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
             return static_cast<Int64>(time_zone.toStableRelativeHourNum(ExtendedDayNum(d)));
         else
             return static_cast<UInt32>(time_zone.toRelativeHourNum(ExtendedDayNum(d)));
     }
-    static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
+    ALWAYS_INLINE static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
             return static_cast<UInt32>(time_zone.toStableRelativeHourNum(DayNum(d)));
@@ -2425,6 +2425,21 @@ struct Transformer
     {
         using ValueType = typename ToTypeVector::value_type;
         vec_to.resize(input_rows_count);
+
+        if constexpr (
+            std::is_same_v<FromType, DataTypeDateTime> &&
+            std::is_same_v<ToType, DataTypeNumber<UInt32>> &&
+            std::is_same_v<Transform, ToRelativeHourNumImpl<ResultPrecision::Standard>> &&
+            !is_extended_result
+        )
+        {
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                vec_to[i] = transform.execute(vec_from[i], time_zone);
+            }
+
+            return;
+        }
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {

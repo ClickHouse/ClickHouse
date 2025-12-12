@@ -1337,6 +1337,7 @@ Zabbix
 Zipkin
 ZooKeeper
 ZooKeeper's
+ZooKeeperClientLastZXIDSeen
 ZooKeeperRequest
 ZooKeeperSession
 ZooKeeperWatch
@@ -3566,3 +3567,4 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+zxid

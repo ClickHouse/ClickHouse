@@ -4,7 +4,6 @@
 #include <mutex>
 #include <optional>
 #include <string_view>
-#include <vector>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
 #include <Columns/ColumnBLOB.h>
@@ -88,6 +87,8 @@
 #include <fmt/ostream.h>
 #include <Common/StringUtils.h>
 
+#include <Common/FailPoint.h>
+
 using namespace std::literals;
 using namespace DB;
 
@@ -137,6 +138,11 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 tcp_close_connection_after_queries_num;
     extern const ServerSettingsUInt64 tcp_close_connection_after_queries_seconds;
 }
+
+namespace FailPoints
+{
+extern const char parallel_replicas_reading_response_timeout[];
+}
 }
 
 namespace CurrentMetrics
@@ -176,7 +182,6 @@ namespace DB::ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int USER_EXPIRED;
     extern const int INCORRECT_DATA;
-    extern const int UNKNOWN_TABLE;
     extern const int TCP_CONNECTION_LIMIT_REACHED;
     extern const int MEMORY_LIMIT_EXCEEDED;
 
@@ -714,22 +719,28 @@ void TCPHandler::runImpl()
                 ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, watch.elapsedMicroseconds());
             });
 
-            query_state->query_context->setMergeTreeReadTaskCallback([this, &query_state](ParallelReadRequest request) -> std::optional<ParallelReadResponse>
-            {
-                Stopwatch watch;
-                CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::MergeTreeReadTaskRequestsSent);
+            query_state->query_context->setMergeTreeReadTaskCallback(
+                [this, &query_state](ParallelReadRequest request) -> std::optional<ParallelReadResponse>
+                {
+                    Stopwatch watch;
+                    CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::MergeTreeReadTaskRequestsSent);
 
-                std::lock_guard lock(callback_mutex);
+                    std::lock_guard lock(callback_mutex);
 
-                checkIfQueryCanceled(*query_state);
+                    checkIfQueryCanceled(*query_state);
 
-                sendMergeTreeReadTaskRequest(std::move(request));
+                    sendMergeTreeReadTaskRequest(std::move(request));
 
-                ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSent);
-                auto res = receivePartitionMergeTreeReadTaskResponse(*query_state);
-                ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
-                return res;
-            });
+                    fiu_do_on(FailPoints::parallel_replicas_reading_response_timeout, {
+                        throw NetException(
+                            ErrorCodes::SOCKET_TIMEOUT, "Simulated network error on the first attempt to get a task from the coordinator");
+                    });
+
+                    ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSent);
+                    auto res = receivePartitionMergeTreeReadTaskResponse(*query_state);
+                    ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
+                    return res;
+                });
 
             query_state->query_context->setBlockMarshallingCallback(
                 [this, &query_state](const Block & block)
@@ -1174,16 +1185,10 @@ void TCPHandler::startInsertQuery(QueryState & state)
     /// Send ColumnsDescription for insertion table
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
     {
-        const auto & table_id = state.query_context->getInsertionTable();
         if (state.query_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields])
         {
-            if (!table_id.empty())
-            {
-                auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, state.query_context);
-                if (!storage_ptr)
-                    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_id.getNameForLogs());
-                sendTableColumns(state, storage_ptr->getInMemoryMetadataPtr()->getColumns());
-            }
+            if (state.query_context->hasInsertionTableColumnsDescription())
+                sendTableColumns(state, state.query_context->getInsertionTableColumnsDescription().value());
         }
     }
 
