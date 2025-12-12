@@ -423,7 +423,6 @@ namespace DB
         }
 
         arrow::ArrayVector children;
-        std::vector<std::string> field_names;
 
         for (size_t i = 0; i != column_tuple->tupleSize(); ++i)
         {
@@ -439,10 +438,9 @@ namespace DB
                 dictionary_values);
 
             children.push_back(nested_arrow_array);
-            field_names.push_back(name);
         }
 
-        return std::move(arrow::StructArray::Make(children, field_names)).ValueOrDie();
+        return std::move(arrow::StructArray::Make(children, builder.type()->fields())).ValueOrDie();
     }
 
     template<typename From, typename To>
@@ -591,18 +589,18 @@ namespace DB
         const CHColumnToArrowColumn::Settings & settings,
         std::unordered_map<String, MutableColumnPtr> & dictionary_values)
     {
-        return
-            buildArrowListArrayWithArrayColumnData(
-                column_name,
-                assert_cast<ColumnMap *>(&column->assumeMutableRef())->getNestedColumnPtr(),
-                column_type,
-                null_bytemap,
-                array_builder,
-                format_name,
-                start,
-                end,
-                settings,
-                dictionary_values);
+        auto * column_map = assert_cast<ColumnMap *>(&column->assumeMutableRef());
+        auto nested_column = column_map->getNestedColumnPtr();
+        const auto * type_map = assert_cast<const DataTypeMap *>(column_type.get());
+        const DataTypePtr & nested_type = type_map->getNestedType();
+
+        auto * map_builder = assert_cast<arrow::MapBuilder *>(array_builder);
+        auto builder = arrow::MakeBuilder(arrow::list(map_builder->value_builder()->type())).ValueOrDie();
+
+        auto list = buildArrowListArrayWithArrayColumnData(column_name, nested_column, nested_type, null_bytemap, builder.get(), format_name, start, end, settings, dictionary_values);
+        auto * list_array = assert_cast<arrow::ListArray *>(list.get());
+
+        return std::make_shared<arrow::MapArray>(map_builder->type(), list_array->length(), list_array->offsets()->data()->buffers[1], list_array->values());
     }
 
     template<typename ValueType>
