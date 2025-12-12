@@ -812,10 +812,6 @@ void StatementGenerator::generateNextOptimizeTableInternal(RandomGenerator & rg,
         t.can_run_merges && (t.supportsFinal() || t.isMergeTreeFamily() || rg.nextMediumNumber() < 21)
         && (strict || rg.nextSmallNumber() < 4));
     ot->set_use_force(rg.nextBool());
-    if (rg.nextSmallNumber() < 3)
-    {
-        generateSettingValues(rg, serverSettings, ot->mutable_setting_values());
-    }
 }
 
 void StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, OptimizeTable * ot)

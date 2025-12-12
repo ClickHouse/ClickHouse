@@ -693,7 +693,15 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"insert_deduplicate", trueOrFalseSettingNoOracle},
     {"insert_distributed_one_random_shard", trueOrFalseSettingNoOracle},
     {"insert_null_as_default", trueOrFalseSettingNoOracle},
-    {"insert_quorum", CHSetting(zeroOneTwo, {}, false)},
+    {"insert_quorum",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings & choices = {"0", "1", "2", "'auto'"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
     {"insert_quorum_parallel", trueOrFalseSettingNoOracle},
     {"insert_shard_id",
      CHSetting(
@@ -800,7 +808,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"multiple_joins_try_to_keep_original_names", trueOrFalseSetting},
     {"mutations_execute_nondeterministic_on_initiator", trueOrFalseSetting},
     {"mutations_execute_subqueries_on_initiator", trueOrFalseSetting},
-    {"mutations_sync", CHSetting(zeroOneTwo, {}, false)},
+    {"mutations_sync", CHSetting(zeroToThree, {}, false)},
     {"mysql_map_fixed_string_to_text_in_show_columns", trueOrFalseSettingNoOracle},
     {"mysql_map_string_to_text_in_show_columns", trueOrFalseSettingNoOracle},
     {"normalize_function_names", trueOrFalseSetting},
@@ -1336,7 +1344,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              {"external_table_functions_use_nulls", trueOrFalseSettingNoOracle},
              {"external_table_strict_query", trueOrFalseSettingNoOracle},
              {"ignore_data_skipping_indices", trueOrFalseSettingNoOracle},
-             {"lightweight_deletes_sync", CHSetting(zeroOneTwo, {}, false)},
+             {"lightweight_deletes_sync", CHSetting(zeroToThree, {}, false)},
              {"optimize_using_constraints", trueOrFalseSettingNoOracle},
              {"parallel_replica_offset",
               CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.nextSmallNumber() - 1); }, {}, false)},

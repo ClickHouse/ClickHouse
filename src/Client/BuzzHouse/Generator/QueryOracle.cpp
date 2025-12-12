@@ -304,20 +304,21 @@ void QueryOracle::dumpOracleIntermediateSteps(
     const bool test_content,
     std::vector<SQLQuery> & intermediate_queries)
 {
+    SQLQuery next;
+    SettingValues * set = nullptr;
     const std::optional<String> & cluster = t.getCluster();
 
     intermediate_queries.clear();
     switch (strategy)
     {
         case DumpOracleStrategy::DUMP_TABLE: {
-            SQLQuery next1;
             SQLQuery next2;
             SQLQuery next3;
             const auto & t2
                 = test_content ? t : rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_to_test_format)).get();
 
             /// Export data
-            generateExportQuery(rg, gen, test_content, t, next1);
+            generateExportQuery(rg, gen, test_content, t, next);
             /// Truncate table, then insert everything again
             Truncate * trunc = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_trunc();
 
@@ -326,27 +327,41 @@ void QueryOracle::dumpOracleIntermediateSteps(
             {
                 trunc->mutable_cluster()->set_cluster(cluster.value());
             }
-            trunc->set_sync(true);
-            /// Import data again
-            generateImportQuery(rg, gen, t2, next1, next3);
+            set = trunc->mutable_setting_values();
+            SetValue * sv = set->mutable_set_value();
 
-            intermediate_queries.emplace_back(next1);
+            /// Wait for mutation to finish
+            sv->set_property("alter_sync");
+            sv->set_value("2");
+            /// Import data again
+            generateImportQuery(rg, gen, t2, next, next3);
+
+            intermediate_queries.emplace_back(next);
             intermediate_queries.emplace_back(next2);
             intermediate_queries.emplace_back(next3);
         }
         break;
         case DumpOracleStrategy::OPTIMIZE: {
-            SQLQuery next;
+            OptimizeTable * ot = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_opt();
 
-            gen.generateNextOptimizeTableInternal(
-                rg, t, true, next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_opt());
+            gen.generateNextOptimizeTableInternal(rg, t, true, ot);
+            if (rg.nextSmallNumber() < 3)
+            {
+                set = ot->mutable_setting_values();
+                gen.generateSettingValues(rg, serverSettings, ot->mutable_setting_values());
+            }
+            set = set ? set : ot->mutable_setting_values();
+            SetValue * sv = set->has_set_value() ? set->add_other_values() : set->mutable_set_value();
+
+            /// Wait for mutation to finish
+            sv->set_property("alter_sync");
+            sv->set_value("2");
             intermediate_queries.emplace_back(next);
         }
         break;
         case DumpOracleStrategy::REATTACH: {
-            SQLQuery next1;
             SQLQuery next2;
-            Detach * det = next1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_detach();
+            Detach * det = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_detach();
             Attach * att = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_attach();
 
             det->set_sobject(SQLObject::TABLE);
@@ -369,15 +384,14 @@ void QueryOracle::dumpOracleIntermediateSteps(
             {
                 gen.generateSettingValues(rg, serverSettings, att->mutable_setting_values());
             }
-            intermediate_queries.emplace_back(next1);
+            intermediate_queries.emplace_back(next);
             intermediate_queries.emplace_back(next2);
         }
         break;
         case DumpOracleStrategy::BACKUP_RESTORE: {
-            SQLQuery next1;
             SQLQuery next3;
             std::optional<String> bcluster;
-            BackupRestore * bac = next1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_backup_restore();
+            BackupRestore * bac = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_backup_restore();
             BackupRestore * res = next3.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_backup_restore();
             SettingValues * bsett = nullptr;
             SettingValues * rsett = nullptr;
@@ -440,7 +454,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
                 gen.generateSettingValues(rg, formatSettings, rsett);
             }
 
-            intermediate_queries.emplace_back(next1);
+            intermediate_queries.emplace_back(next);
             if (baco->partitions_size() == 0)
             {
                 /// Truncate table, so it is restored into an empty one
@@ -452,15 +466,18 @@ void QueryOracle::dumpOracleIntermediateSteps(
                 {
                     trunc->mutable_cluster()->set_cluster(cluster.value());
                 }
-                trunc->set_sync(true);
+                set = trunc->mutable_setting_values();
+                SetValue * sv = set->mutable_set_value();
+
+                /// Wait for mutation to finish
+                sv->set_property("alter_sync");
+                sv->set_value("2");
                 intermediate_queries.emplace_back(next2);
             }
             intermediate_queries.emplace_back(next3);
         }
         break;
         case DumpOracleStrategy::ALTER_UPDATE: {
-            SQLQuery next;
-
             if (rg.nextBool())
             {
                 std::optional<String> acluster;
@@ -473,13 +490,24 @@ void QueryOracle::dumpOracleIntermediateSteps(
                 }
                 if (rg.nextSmallNumber() < 3)
                 {
-                    gen.generateSettingValues(rg, serverSettings, at->mutable_setting_values());
+                    set = at->mutable_setting_values();
+                    gen.generateSettingValues(rg, serverSettings, set);
                 }
+                set = set ? set : at->mutable_setting_values();
+                SetValue * sv = set->has_set_value() ? set->add_other_values() : set->mutable_set_value();
+                SetValue * sv2 = set->add_other_values();
+
+                /// Wait for mutation to finish
+                sv->set_property("alter_sync");
+                sv->set_value("2");
+                sv2->set_property("mutations_sync");
+                sv2->set_value("3");
             }
             else
             {
-                gen.generateNextUpdateOrDeleteOnTable<LightUpdate>(
-                    rg, t, next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_upt());
+                LightUpdate * upt = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_upt();
+
+                gen.generateNextUpdateOrDeleteOnTable<LightUpdate>(rg, t, upt);
             }
             intermediate_queries.emplace_back(next);
         }
