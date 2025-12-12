@@ -478,6 +478,22 @@ The token bloom filter is the same as `ngrambf_v1`, but stores tokens (sequences
 tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
 ```
 
+#### Hypothesis
+
+Special type of index which is applied to the checks defined in a query (e.g. in a WHERE clause).
+
+Example for table with column `a`:
+
+We define the following index first
+```sql
+INDEX t (a < 10) TYPE hypothesis GRANULARITY 1`
+```
+
+If a check contains `a > 15`, based on the hypothesis we can instantly return empty results
+because we know this check will never be true.
+
+Multiple hypothesis indices can be defined for a single table.
+
 #### Sparse grams bloom filter {#sparse-grams-bloom-filter}
 
 The sparse grams bloom filter is similar to `ngrambf_v1` but uses [sparse grams tokens](/sql-reference/functions/string-functions.md/#sparseGrams) instead of ngrams.

@@ -4,7 +4,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
 
-#include <Interpreters/TreeCNFConverter.h>
+#include <Common/CNFHelpers.h>
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
