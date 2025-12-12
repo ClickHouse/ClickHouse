@@ -107,6 +107,29 @@ ColumnsDescription StorageSystemScheduler::getColumnsDescription()
         {"tokens", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
             "For `bandwidth_limit` nodes only. Number of tokens currently available in token-bucket throttler."
         },
+
+        // ISpaceSharedNode
+        {"updates", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+            "For space-shared nodes only. The total number of updates propagated through this node."
+        },
+        {"increases", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+            "For space-shared nodes only. The total number of increase requests approved by this node."
+        },
+        {"decreases", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+            "For space-shared nodes only. The total number of decrease requests approved by this node."
+        },
+        {"admits", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+            "For space-shared nodes only. The total number of allocations admitted by this node."
+        },
+        {"removes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+            "For space-shared nodes only. The total number of allocations removed from this node."
+        },
+        {"killers", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+            "For space-shared nodes only. The total number of evictions initiated due to increase requests by this node."
+        },
+        {"victims", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+            "For space-shared nodes only. The total number of allocations that were evicted from this node."
+        },
     };
 }
 
@@ -146,6 +169,13 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         Field max_burst;
         Field throttling_us;
         Field tokens;
+        Field updates;
+        Field increases;
+        Field decreases;
+        Field admits;
+        Field removes;
+        Field killers;
+        Field victims;
 
         if (auto * ptr = dynamic_cast<ITimeSharedNode *>(node))
         {
@@ -186,6 +216,16 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
             throttling_us = ptr->getThrottlingDuration().count() / 1000;
             tokens = ptr->getTokens();
         }
+        if (auto * ptr = dynamic_cast<ISpaceSharedNode *>(node))
+        {
+            updates = ptr->updates;
+            increases = ptr->increases;
+            decreases = ptr->decreases;
+            admits = ptr->admits;
+            removes = ptr->removes;
+            killers = ptr->killers;
+            victims = ptr->victims;
+        }
 
         res_columns[i++]->insert(is_active);
         res_columns[i++]->insert(active_children);
@@ -211,6 +251,13 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insert(max_burst);
         res_columns[i++]->insert(throttling_us);
         res_columns[i++]->insert(tokens);
+        res_columns[i++]->insert(updates);
+        res_columns[i++]->insert(increases);
+        res_columns[i++]->insert(decreases);
+        res_columns[i++]->insert(admits);
+        res_columns[i++]->insert(removes);
+        res_columns[i++]->insert(killers);
+        res_columns[i++]->insert(victims);
     });
 }
 

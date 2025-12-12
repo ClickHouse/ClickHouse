@@ -82,6 +82,7 @@ void AllocationLimit::approveIncrease()
 {
     SCHED_DBG("{} -- approveIncrease({})", getPath(), increase->allocation.id);
     chassert(increase);
+    count(*increase);
     allocated += increase->size;
     increase = nullptr;
     child->approveIncrease();
@@ -93,6 +94,7 @@ void AllocationLimit::approveDecrease()
     SCHED_DBG("{} -- approveDecrease({})", getPath(), decrease->allocation.id);
 
     chassert(decrease);
+    count(*decrease);
     allocated -= decrease->size;
 
     // Check if allocation being killed released all its resources
@@ -114,6 +116,7 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
 {
     SCHED_DBG("{} -- propagateUpdate(from_child={}, update={})", getPath(), from_child.basename, update.toString());
     chassert(&from_child == child.get());
+    count(update);
     bool reapply_constraint = false;
     if (update.attached)
     {
@@ -167,6 +170,10 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
                     allocation_to_kill->killAllocation(std::make_exception_ptr(
                         Exception(ErrorCodes::RESOURCE_LIMIT_EXCEEDED,
                             "Workload '{}' limit is hit for resource '{}': {}", getWorkloadName(), getResourceName(), details)));
+
+                    // Introspection
+                    new_increase->allocation.queue.countKiller(*this);
+                    allocation_to_kill->queue.countVictim(*this);
                 }
             }
             // Block until there is enough resource to process child's increase request

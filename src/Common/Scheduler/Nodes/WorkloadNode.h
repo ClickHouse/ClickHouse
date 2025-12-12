@@ -877,6 +877,7 @@ private:
     void propagateUpdate(ISpaceSharedNode & from_child, Update && update) override
     {
         chassert(&from_child == child.get());
+        count(update);
         if (update.attached)
             allocated += update.attached->allocated;
         if (update.detached)
@@ -892,6 +893,7 @@ private:
     void approveIncrease() override
     {
         chassert(increase);
+        count(*increase);
         allocated += increase->size;
         increase = nullptr;
         child->approveIncrease();
@@ -901,6 +903,7 @@ private:
     void approveDecrease() override
     {
         chassert(decrease);
+        count(*decrease);
         allocated -= decrease->size;
         decrease = nullptr;
         child->approveDecrease();

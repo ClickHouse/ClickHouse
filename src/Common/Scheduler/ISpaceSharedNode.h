@@ -94,7 +94,6 @@ public:
     ///  A0 A1 A2 A3 A4 A5 A6 A7 A8 - ResourceAllocations
     ///    <-- killing order --
     virtual ResourceAllocation * selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details) = 0;
-
     /// For parent only. Sets the usage key.
     void setUsageKey(double value, size_t tie_breaker)
     {
@@ -115,6 +114,49 @@ public:
     bool isRunning() const noexcept { return running_hook.is_linked(); }
     bool isIncreasing() const noexcept { return increasing_hook.is_linked(); }
     bool isDecreasing() const noexcept { return decreasing_hook.is_linked(); }
+
+    /// Helper for introspection metrics
+    void count(Update &)
+    {
+        ++updates;
+    }
+
+    void count(IncreaseRequest & request)
+    {
+        ++increases;
+        if (request.pending_allocation)
+            ++admits;
+    }
+
+    void count(DecreaseRequest & request)
+    {
+        ++decreases;
+        if (request.removing_allocation)
+            ++removes;
+    }
+
+    void countKiller(ISpaceSharedNode & limit)
+    {
+        ++killers;
+        if (this != &limit && parent)
+            castParent().countKiller(limit);
+    }
+
+    void countVictim(ISpaceSharedNode & limit)
+    {
+        ++victims;
+        if (this != &limit && parent)
+            castParent().countVictim(limit);
+    }
+
+    /// Introspection counters
+    UInt64 updates = 0;
+    UInt64 increases = 0;
+    UInt64 decreases = 0;
+    UInt64 admits = 0;
+    UInt64 removes = 0;
+    UInt64 killers = 0;
+    UInt64 victims = 0;
 
 private:
     /// Hooks for intrusive data structures

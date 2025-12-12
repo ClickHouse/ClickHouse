@@ -2166,7 +2166,7 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationSelfKilled)
     ResourceTest t;
 
     t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
-    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100"); // TODO(serxa): support usual set of suffixes like 'M', 'Mi' etc.
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
 
     ClassifierPtr c = t.manager->acquire("all");
 

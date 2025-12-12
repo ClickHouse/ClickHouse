@@ -79,6 +79,7 @@ ResourceAllocation * PrecedenceAllocation::selectAllocationToKill(IncreaseReques
 void PrecedenceAllocation::approveIncrease()
 {
     chassert(increase);
+    count(*increase);
     allocated += increase->size;
     if (!increase_child->isRunning()) // We are adding the first allocation
         running_children.insert(*increase_child);
@@ -91,6 +92,7 @@ void PrecedenceAllocation::approveIncrease()
 void PrecedenceAllocation::approveDecrease()
 {
     chassert(decrease);
+    count(*decrease);
     allocated -= decrease->size;
     chassert(decrease_child->isRunning());
     if (decrease_child->allocated == decrease->size) // We are removing the last allocation
@@ -102,6 +104,7 @@ void PrecedenceAllocation::approveDecrease()
 
 void PrecedenceAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update && update)
 {
+    count(update);
     if (update.attached)
     {
         allocated += update.attached->allocated;

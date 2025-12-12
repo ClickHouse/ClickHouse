@@ -97,6 +97,7 @@ ResourceAllocation * FairAllocation::selectAllocationToKill(IncreaseRequest & ki
 void FairAllocation::approveIncrease()
 {
     chassert(increase);
+    count(*increase);
     allocated += increase->size;
     increase = nullptr;
     increase_child->approveIncrease();
@@ -106,6 +107,7 @@ void FairAllocation::approveIncrease()
 void FairAllocation::approveDecrease()
 {
     chassert(decrease);
+    count(*decrease);
     allocated -= decrease->size;
     decrease = nullptr;
     decrease_child->approveDecrease();
@@ -114,6 +116,7 @@ void FairAllocation::approveDecrease()
 
 void FairAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update && update)
 {
+    count(update);
     bool reset_increase = false;
     if (update.attached)
     {

@@ -150,6 +150,7 @@ void AllocationQueue::approveIncrease()
 {
     std::lock_guard lock(mutex);
     chassert(increase);
+    count(*increase);
     ResourceAllocation & allocation = increase->allocation;
     if (allocation.allocated == 0)
     {
@@ -177,6 +178,7 @@ void AllocationQueue::approveDecrease()
     std::lock_guard lock(mutex);
 
     chassert(decrease);
+    count(*decrease);
     ResourceAllocation & allocation = decrease->allocation;
     decreasing_allocations.erase(decreasing_allocations.iterator_to(allocation));
 
