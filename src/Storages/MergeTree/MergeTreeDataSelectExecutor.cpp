@@ -48,6 +48,7 @@
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/quoteString.h>
+#include <Storages/MergeTree/MergeTreeIndexText.h>
 
 #include <IO/WriteBufferFromOStream.h>
 
@@ -1961,7 +1962,6 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
     size_t index_marks_count = (marks_count + index_granularity - 1) / index_granularity;
 
-
     /// The vector similarity index can only be used if the PK did not prune some ranges within the part.
     /// (the vector index is built on the entire part).
     const bool all_match  = (marks_count == ranges.getNumberOfMarks());
@@ -1992,11 +1992,35 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     size_t ranges_size = ranges.size();
     RangesInDataPartReadHints read_hints = in_read_hints;
 
-    if (bulk_filtering)
+    if (index_helper->isInvertedIndex() && !use_skip_indexes_for_disjunctions)
+    {
+        MergeTreeIndexGranulePtr granule;
+        reader.read(0, condition.get(), granule);
+        auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
+
+        for (const auto & range : ranges)
+        {
+            for (size_t mark = range.begin; mark < range.end; ++mark)
+            {
+                size_t row_begin = part->index_granularity->getMarkStartingRow(mark);
+                size_t row_end = part->index_granularity->getMarkStartingRow(mark + 1);
+                granule_text.setCurrentRange(RowsRange(row_begin, row_end));
+
+                if (condition->mayBeTrueOnGranule(granule, nullptr))
+                {
+                    if (res.empty() || mark - res.back().end > min_marks_for_seek)
+                        res.push_back(MarkRange(mark, mark + 1));
+                    else
+                        res.back().end = mark + 1;
+                }
+            }
+        }
+    }
+    else if (bulk_filtering)
     {
         MergeTreeIndexBulkGranulesPtr granules;
-
         size_t current_granule_num = 0;
+
         for (size_t i = 0; i < ranges_size; ++i)
         {
             const MarkRange & index_range = index_ranges[i];

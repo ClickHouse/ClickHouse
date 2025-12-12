@@ -47,7 +47,7 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
 }
 
-static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 16;
+static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 12;
 static constexpr UInt64 MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = 6;
 
 static_assert(MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS must be less or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
@@ -461,12 +461,10 @@ bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query)
 
 bool MergeTreeIndexGranuleText::hasAllQueryTokens(const TextSearchQuery & query) const
 {
-    for (const auto & token : query.tokens)
-    {
-        if (!remaining_tokens.contains(token))
-            return false;
-    }
-    return !query.tokens.empty(); /// return false in case of no tokens
+    if (query.tokens.empty())
+        return false;
+
+    return hasAllQueryTokensOrEmpty(query);
 }
 
 bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const

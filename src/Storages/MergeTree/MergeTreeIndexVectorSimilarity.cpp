@@ -519,6 +519,13 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
         search_result.dump_to(result.rows.data());
     }
 
+#ifndef NDEBUG
+    /// Duplicates should in theory not be possible but better be safe than sorry ...
+    const bool has_duplicates = std::adjacent_find(rows.begin(), rows.end()) != rows.end();
+    if (has_duplicates)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Usearch returned duplicate row numbers");
+#endif
+
     ProfileEvents::increment(ProfileEvents::USearchSearchCount);
     ProfileEvents::increment(ProfileEvents::USearchSearchVisitedMembers, search_result.visited_members);
     ProfileEvents::increment(ProfileEvents::USearchSearchComputedDistances, search_result.computed_distances);

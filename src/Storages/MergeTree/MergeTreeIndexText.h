@@ -12,6 +12,7 @@
 
 #include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
+#include <absl/container/flat_hash_set.h>
 #include <base/types.h>
 
 #include <vector>
@@ -363,6 +364,7 @@ public:
 
     bool supportsReadingOnParallelReplicas() const override { return true; }
     MergeTreeIndexTextParams getParams() const { return params; }
+    bool isInvertedIndex() const override { return true; }
 
     MergeTreeIndexSubstreams getSubstreams() const override;
     MergeTreeIndexFormat getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const override;

@@ -82,8 +82,8 @@ private:
     roaring::Roaring analyzed_granules;
     roaring::Roaring may_be_true_granules;
 
-    absl::flat_hash_set<std::string_view> useful_tokens;
     std::vector<bool> is_always_true;
+    absl::flat_hash_set<std::string_view> useful_tokens;
 };
 
 }
