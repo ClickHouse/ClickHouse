@@ -6,6 +6,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/TestKeeper.h>
 
+#include <Core/Settings.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -50,6 +51,11 @@ namespace ErrorCodes
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
 }
+
+namespace Setting
+{
+    extern const SettingsDouble opentelemetry_keeper_spans_probability;
+}
 }
 
 
@@ -67,8 +73,15 @@ namespace
         if (!(context.trace_flags & DB::OpenTelemetry::TRACE_FLAG_SAMPLED))
             return false;
 
-        const double sample_probability = [&]
+        const double sample_probability = [&] -> double
         {
+            if (const auto global_context = DB::Context::getGlobalContextInstance())
+            {
+                const auto & settings = global_context->getSettingsRef();
+                if (auto opentelemetry_keeper_spans_probability = settings[DB::Setting::opentelemetry_keeper_spans_probability]; opentelemetry_keeper_spans_probability > 0.0)
+                    return opentelemetry_keeper_spans_probability.value;
+            }
+
             if (num_requests > 100)
                 return 1.0 / 10;
             if (num_requests > 10)
