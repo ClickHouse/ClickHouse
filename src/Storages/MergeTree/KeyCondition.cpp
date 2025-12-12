@@ -2696,13 +2696,13 @@ static BoolMask forAnyHyperrectangle(
 {
     const size_t key_size = equal_boundaries_mask.size();
 
-    [[maybe_unused]] const size_t sparse_keys_size = sparse_key_indices.size();
+#ifndef NDEBUG
+    const size_t sparse_keys_size = sparse_key_indices.size();
 
     chassert(key_size == key_col_to_sparse_pos.size());
-    chassert(sparse_data_types.size() == sparse_key_indices.size());
+    chassert(sparse_key_indices.size() <= sparse_data_types.size());
     chassert(prefix_size <= key_size);
 
-#ifndef NDEBUG
     for (size_t i = 1; i < sparse_keys_size; ++i)
         chassert(sparse_key_indices[i - 1] < sparse_key_indices[i]);
     for (size_t i = 0; i < sparse_keys_size; ++i)
@@ -2872,6 +2872,14 @@ BoolMask KeyCondition::checkInRange(
     for (size_t i = 0; i < key_size; ++i)
         equal_boundaries_mask[i] = (left_keys[i] == right_keys[i]);
 
+    /// `data_types` size might be larger than `key_size`. We can resize here to create a new
+    /// `data_types` that is shrunk to `key_size` to make it more intuitive for the optimized version.
+    /// However, optimized overload `checkInRange`, `forAnyHyperrectangle`, and `checkInHyperrectangle`
+    /// make no assumption that `data_types` size must be same as the `key_size`.
+    /// The following assumption always works:
+    ///     - sparse key size is derived from sparse_key_indices/identity_index_map.size()
+    ///     - key size is derived from equal_boundaries_mask.size()
+
     return checkInRange(
         identity_index_map,
         left_keys,
@@ -2895,10 +2903,10 @@ BoolMask KeyCondition::checkInRange(
     if (sparse_keys_size == 0)
         return BoolMask(true, true);
 
+#ifndef NDEBUG
     chassert(sparse_keys_size <= sparse_data_types.size());
     chassert(equal_boundaries_mask.size() > *std::max_element(sparse_key_indices.begin(), sparse_key_indices.end()));
 
-#ifndef NDEBUG
     for (size_t i = 1; i < sparse_keys_size; ++i)
         chassert(sparse_key_indices[i - 1] < sparse_key_indices[i]);
 #endif
@@ -2994,6 +3002,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
     const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
 {
     const size_t key_size = hyperrectangle.size();
+
+    /// Equality does not hold in all cases but it's not necessary
     chassert(data_types.size() >= key_size);
 
     /// Identity mapping: full key index -> sparse key index
