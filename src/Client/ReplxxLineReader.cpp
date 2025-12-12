@@ -710,7 +710,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         return Replxx::ACTION_RESULT::CONTINUE;
     }, MODE_CHANGE);
 
-    for (char c = 33; c < 127; c++) {
+    for (char c = 32; c < 127; c++) {
         rx.bind_key(c, [this](char32_t code) {
             uint64_t reps = vimbuffer == 0 ? 1 : vimbuffer;
             vimbuffer = 0;
@@ -834,7 +834,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
 
     for (char c = '0'; c <= '9'; c++) {
         rx.bind_key(c, [this](char32_t code) { vimbuffer = 10 * vimbuffer + (code - '0'); return Replxx::ACTION_RESULT::CONTINUE; }, MODE_NORMAL);
-        for (int mode = MODE_DELETE; mode <= MODE_REPLACE; mode++)
+        for (int mode = MODE_DELETE; mode < MODE_REPLACE; mode++)
             rx.bind_key(c, [this](char32_t code) { vimbufferinner = 10 * vimbufferinner + (code - '0'); return Replxx::ACTION_RESULT::CONTINUE; }, mode);
     }
     rx.bind_key('0', [this](char32_t code) {
