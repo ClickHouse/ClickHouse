@@ -45,6 +45,10 @@ ZooKeeperArgs::ZooKeeperArgs(const Poco::Util::AbstractConfiguration & config, c
     if (session_timeout_ms < 0 || operation_timeout_ms < 0 || connection_timeout_ms < 0)
         throw KeeperException::fromMessage(Coordination::Error::ZBADARGUMENTS, "Timeout cannot be negative");
 
+    if (pass_opentelemetry_tracing_context && !use_xid_64)
+        throw KeeperException::fromMessage(Coordination::Error::ZBADARGUMENTS,
+            "pass_opentelemetry_tracing_context requires use_xid_64 to be enabled");
+
     /// init get_priority_load_balancing
     get_priority_load_balancing.hostname_prefix_distance.resize(hosts.size());
     get_priority_load_balancing.hostname_levenshtein_distance.resize(hosts.size());
@@ -257,6 +261,10 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
         else if (key == "use_xid_64")
         {
             use_xid_64 = config.getBool(config_name + "." + key);
+        }
+        else if (key == "pass_opentelemetry_tracing_context")
+        {
+            pass_opentelemetry_tracing_context = config.getBool(config_name + "." + key);
         }
         else if (key == "availability_zone_autodetect")
         {

@@ -319,15 +319,14 @@ nuraft::ptr<nuraft::buffer> IKeeperStateMachine::getZooKeeperLogEntry(const Keep
     DB::writeIntBinary(static_cast<uint8_t>(KeeperDigestVersion::NO_DIGEST), write_buf); /// digest version or NO_DIGEST flag
     DB::writeIntBinary(static_cast<uint64_t>(0), write_buf); /// digest value
 
-    // TODO(mstetsyuk): always use 64 bit xid
     if (request_for_session.use_xid_64)
+    {
         Coordination::write(xid_helper.parts.upper, write_buf); /// for 64bit XID MSB
 
-    const bool has_tracing = request->tracing_context.has_value();
-    DB::writeIntBinary(static_cast<uint8_t>(has_tracing), write_buf);
-    if (has_tracing)
-    {
-        request->tracing_context->serialize(write_buf);
+        if (request->tracing_context)
+        {
+            request->tracing_context->serialize(write_buf);
+        }
     }
 
     /// if new fields are added, update KeeperStateMachine::ZooKeeperLogSerializationVersion along with parseRequest function and PreAppendLog callback handler
@@ -397,17 +396,13 @@ std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
         xid_helper.xid = static_cast<int32_t>(xid_helper.parts.lower);
     }
 
+    std::optional<OpenTelemetry::TracingContext> tracing_context;
     if (!buffer.eof())
     {
         version = WITH_OPTIONAL_TRACING_CONTEXT;
 
-        uint8_t has_tracing;
-        readIntBinary(has_tracing, buffer);
-        if (has_tracing)
-        {
-            request_for_session->request->tracing_context.emplace();
-            request_for_session->request->tracing_context->deserialize(buffer);
-        }
+        tracing_context.emplace();
+        tracing_context->deserialize(buffer);
     }
 
     if (serialization_version)
@@ -456,6 +451,9 @@ std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
     request_for_session->request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
     request_for_session->request->xid = xid;
     request_for_session->request->readImpl(buffer);
+
+    if (tracing_context)
+        request_for_session->request->tracing_context = std::move(tracing_context);
 
     if (should_cache && !final)
     {

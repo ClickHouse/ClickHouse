@@ -57,6 +57,7 @@ const char * toOperationTypeMetricLabel(OpNum op_num);
 static constexpr int32_t ZOOKEEPER_PROTOCOL_VERSION = 0;
 static constexpr int32_t ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION = 10;
 static constexpr int32_t ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64 = 11;
+static constexpr int32_t ZOOKEEPER_PROTOCOL_VERSION_WITH_TRACING = 12;
 static constexpr int32_t KEEPER_PROTOCOL_VERSION_CONNECTION_REJECT = 42;
 static constexpr int32_t CLIENT_HANDSHAKE_LENGTH = 44;
 static constexpr int32_t CLIENT_HANDSHAKE_LENGTH_WITH_READONLY = 45;

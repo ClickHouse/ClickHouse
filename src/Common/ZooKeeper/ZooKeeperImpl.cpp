@@ -443,6 +443,7 @@ ZooKeeper::ZooKeeper(
             use_xid_64 = true;
             close_xid = CLOSE_XID_64;
         }
+        pass_opentelemetry_tracing_context = args.pass_opentelemetry_tracing_context;
         connect(nodes, static_cast<Poco::Timespan::TimeDiff>(args.connection_timeout_ms) * 1000);
     }
     catch (...)
@@ -653,7 +654,12 @@ void ZooKeeper::sendHandshake()
     bool read_only = true;
 
     write(handshake_length);
-    if (use_xid_64)
+    if (pass_opentelemetry_tracing_context)
+    {
+        write(ZOOKEEPER_PROTOCOL_VERSION_WITH_TRACING);
+        write(use_compression);
+    }
+    else if (use_xid_64)
     {
         write(ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64);
         write(use_compression);
@@ -696,6 +702,15 @@ void ZooKeeper::receiveHandshake()
                                      "Keeper server rejected the connection during the handshake. "
                                      "Possibly it's overloaded, doesn't see leader or stale");
 
+    if (pass_opentelemetry_tracing_context)
+    {
+        if (protocol_version_read < ZOOKEEPER_PROTOCOL_VERSION_WITH_TRACING)
+        {
+            LOG_DEBUG(log, "Server doesn't support tracing context (protocol version {}), disabling tracing context passing", protocol_version_read);
+            pass_opentelemetry_tracing_context = false;
+        }
+    }
+
     if (use_xid_64)
     {
         if (protocol_version_read < ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64)
@@ -727,7 +742,7 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
     request.scheme = scheme;
     request.data = data;
     request.xid = AUTH_XID;
-    request.write(getWriteBuffer(), use_xid_64);
+    request.write(getWriteBuffer(), use_xid_64, pass_opentelemetry_tracing_context);
     flushWriteBuffer();
 
     int32_t length;
@@ -838,7 +853,7 @@ void ZooKeeper::sendThread()
                         info.request->addRootPath(args.chroot);
 
                     info.request->probably_sent = true;
-                    info.request->write(getWriteBuffer(), use_xid_64);
+                    info.request->write(getWriteBuffer(), use_xid_64, pass_opentelemetry_tracing_context);
                     flushWriteBuffer();
 
                     logOperationIfNeeded(info.request);
@@ -855,7 +870,7 @@ void ZooKeeper::sendThread()
 
                 ZooKeeperHeartbeatRequest request;
                 request.xid = PING_XID;
-                request.write(getWriteBuffer(), use_xid_64);
+                request.write(getWriteBuffer(), use_xid_64, pass_opentelemetry_tracing_context);
                 flushWriteBuffer();
             }
 
@@ -1407,12 +1422,7 @@ void ZooKeeper::pushRequest(RequestInfo && info)
             current_trace_context.isTraceEnabled() && current_trace_context.trace_flags & DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS
         )
         {
-            /// We should only pass the tracing context if using 64-bit XIDs.
-            /// Otherwise, we would break Raft log entry deserialization.
-            if (use_xid_64 && isFeatureEnabled(KeeperFeatureFlag::PASS_TRACING_CONTEXT))
-            {
-                info.request->tracing_context = current_trace_context;
-            }
+            info.request->tracing_context = current_trace_context;
         }
 
         info.request->enqueue_ts = clock::now();

@@ -25,7 +25,6 @@ enum class KeeperFeatureFlag : size_t
     REMOVE_RECURSIVE,
     MULTI_WATCHES,
     CHECK_STAT,
-    PASS_TRACING_CONTEXT,
 };
 
 class KeeperFeatureFlags

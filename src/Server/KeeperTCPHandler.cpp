@@ -272,7 +272,9 @@ void KeeperTCPHandler::sendHandshake(bool has_leader, bool & use_compression)
     Coordination::write(Coordination::SERVER_HANDSHAKE_LENGTH, *out);
     if (has_leader)
     {
-        if (use_xid_64)
+        if (expect_opentelemetry_tracing_context)
+            Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_TRACING, *out);
+        else if (use_xid_64)
             Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64, *out);
         else if (use_compression)
             Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION, *out);
@@ -312,9 +314,8 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool
 
     Coordination::read(protocol_version, *in);
 
-    if (protocol_version != Coordination::ZOOKEEPER_PROTOCOL_VERSION
-        && protocol_version < Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION
-        && protocol_version > Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64)
+    if (protocol_version > Coordination::ZOOKEEPER_PROTOCOL_VERSION
+        && protocol_version < Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION)
     {
         throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected protocol version: {}", toString(protocol_version));
     }
@@ -322,6 +323,18 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool
     if (protocol_version == Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION)
     {
         use_compression = true;
+    }
+    else if (protocol_version >= Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_TRACING)
+    {
+        if (!keeper_context->getCoordinationSettings()[CoordinationSetting::use_xid_64])
+            throw Exception(
+                ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+                "keeper_server.coordination_settings.use_xid_64 is set to 'false' while client has it enabled");
+
+        expect_opentelemetry_tracing_context = true;
+        close_xid = Coordination::CLOSE_XID_64;
+        use_xid_64 = true;
+        Coordination::read(use_compression, *in);
     }
     else if (protocol_version >= Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64)
     {
@@ -757,16 +770,13 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
         request_validator(*request);
     }
 
-    if (!read_buffer.eof())
+    if (expect_opentelemetry_tracing_context)
     {
-        bool has_tracing;
-        Coordination::read(has_tracing, read_buffer);
-        if (has_tracing)
-        {
-            /// The client should only pass the tracing context header if using 64-bit XIDs.
-            /// Otherwise, the Raft log entry deserialization would be broken.
-            chassert(use_xid_64);
+        uint8_t has_tracing_context;
+        Coordination::read(has_tracing_context, read_buffer);
 
+        if (has_tracing_context)
+        {
             request->tracing_context.emplace();
             request->tracing_context->deserialize(read_buffer);
 
