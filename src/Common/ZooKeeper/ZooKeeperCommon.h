@@ -75,7 +75,7 @@ struct ZooKeeperRequest : virtual Request
     virtual OpNum getOpNum() const = 0;
 
     /// Writes length, xid, op_num, then the rest.
-    void write(WriteBuffer & out) const;
+    void write(WriteBuffer & out, bool use_xid_64) const;
     std::string toString(bool short_format = false) const;
 
     virtual void writeImpl(WriteBuffer &) const = 0;

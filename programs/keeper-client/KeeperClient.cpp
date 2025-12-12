@@ -180,7 +180,7 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
             .binding("operation-timeout"));
 
     options.addOption(
-        Poco::Util::Option("use-xid-64", "", "(ignored, always uses 64-bit XID)")
+        Poco::Util::Option("use-xid-64", "", "use 64-bit XID. default false.")
             .binding("use-xid-64"));
 
     options.addOption(
@@ -528,6 +528,7 @@ void KeeperClient::connectToKeeper()
     new_zk_args.connection_timeout_ms = config().getInt("connection-timeout", 10) * 1000;
     new_zk_args.session_timeout_ms = config().getInt("session-timeout", 10) * 1000;
     new_zk_args.operation_timeout_ms = config().getInt("operation-timeout", 10) * 1000;
+    new_zk_args.use_xid_64 = config().hasOption("use-xid-64");
     new_zk_args.password = config().getString("password", "");
     new_zk_args.identity = config().getString("identity", "");
     if (!new_zk_args.identity.empty())
