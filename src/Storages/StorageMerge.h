@@ -187,7 +187,7 @@ public:
 
     QueryPlanRawPtrs getChildPlans() override;
 
-    void addFilter(FilterDAGInfo filter);
+    void addFilterDAGInfo(FilterDAGInfo filter);
 
 private:
     const size_t required_max_block_size;
