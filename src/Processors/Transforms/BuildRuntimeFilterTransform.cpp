@@ -19,6 +19,9 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     UInt64 exact_values_limit_,
     UInt64 bloom_filter_bytes_,
     UInt64 bloom_filter_hash_functions_,
+    Float64 pass_ratio_threshold_for_disabling_,
+    UInt64 blocks_to_skip_before_reenabling_,
+    Float64 max_ratio_of_set_bits_in_bloom_filter_,
     bool allow_to_use_not_exact_filter_)
     : ISimpleTransform(header_, header_, true)
     , filter_column_name(filter_column_name_)
@@ -35,13 +38,18 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
         built_filter = std::make_unique<ApproximateRuntimeFilter>(
             filters_to_merge_,
             filter_column_target_type,
+            pass_ratio_threshold_for_disabling_,
+            blocks_to_skip_before_reenabling_,
             bloom_filter_bytes_,
             exact_values_limit_,
-            bloom_filter_hash_functions_);
+            bloom_filter_hash_functions_,
+            max_ratio_of_set_bits_in_bloom_filter_);
     else
         built_filter = std::make_unique<ExactNotContainsRuntimeFilter>(
             filters_to_merge_,
             filter_column_target_type,
+            pass_ratio_threshold_for_disabling_,
+            blocks_to_skip_before_reenabling_,
             bloom_filter_bytes_,
             exact_values_limit_);
 }
