@@ -47,7 +47,7 @@ SELECT
 
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Comparison;
 
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIsNotDistinctFrom>(documentation);
 }

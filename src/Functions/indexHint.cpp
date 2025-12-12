@@ -40,7 +40,7 @@ SELECT FlightDate AS k, count() FROM ontime WHERE indexHint(k = '2025-09-15') GR
     };
     FunctionDocumentation::IntroducedIn introduced_in_indexHint = {1, 1};
     FunctionDocumentation::Category category_indexHint = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_indexHint = {description_indexHint, syntax_indexHint, arguments_indexHint, returned_value_indexHint, examples_indexHint, introduced_in_indexHint, category_indexHint};
+    FunctionDocumentation documentation_indexHint = {description_indexHint, syntax_indexHint, arguments_indexHint, {}, returned_value_indexHint, examples_indexHint, introduced_in_indexHint, category_indexHint};
 
     factory.registerFunction<FunctionIndexHint>(documentation_indexHint);
 }

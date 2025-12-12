@@ -410,7 +410,7 @@ REGISTER_FUNCTION(NormalizedGini)
     };
     FunctionDocumentation::IntroducedIn doc_introduced_in = {25, 1};
     FunctionDocumentation::Category doc_category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {doc_description, doc_syntax, doc_arguments, doc_returned_value, doc_examples, doc_introduced_in, doc_category};
+    FunctionDocumentation documentation = {doc_description, doc_syntax, doc_arguments, {}, doc_returned_value, doc_examples, doc_introduced_in, doc_category};
 
     factory.registerFunction<FunctionArrayNormalizedGini>(documentation, FunctionFactory::Case::Sensitive);
 }

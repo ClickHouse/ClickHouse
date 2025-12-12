@@ -85,7 +85,7 @@ SELECT replicate(1, ['a', 'b', 'c']);
     };
     FunctionDocumentation::IntroducedIn introduced_in_replicate = {1, 1};
     FunctionDocumentation::Category category_replicate = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_replicate = {description_replicate, syntax_replicate, arguments_replicate, returned_value_replicate, examples_replicate, introduced_in_replicate, category_replicate};
+    FunctionDocumentation documentation_replicate = {description_replicate, syntax_replicate, arguments_replicate, {}, returned_value_replicate, examples_replicate, introduced_in_replicate, category_replicate};
 
     factory.registerFunction<FunctionReplicate>(documentation_replicate);
 }

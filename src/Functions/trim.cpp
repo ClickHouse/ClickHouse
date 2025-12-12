@@ -242,7 +242,7 @@ By default, removes common whitespace (ASCII) characters.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation_left = {description_left, syntax_left, arguments_left, returned_value_left, examples_left, introduced_in, category};
+    FunctionDocumentation documentation_left = {description_left, syntax_left, arguments_left, {}, returned_value_left, examples_left, introduced_in, category};
 
     FunctionDocumentation::Description description_right = R"(
 Removes the specified characters from the end of a string.
@@ -265,7 +265,7 @@ By default, removes common whitespace (ASCII) characters.
         )"
     }
     };
-    FunctionDocumentation documentation_right = {description_right, syntax_right, arguments_right, returned_value_right, examples_right, introduced_in, category};
+    FunctionDocumentation documentation_right = {description_right, syntax_right, arguments_right, {}, returned_value_right, examples_right, introduced_in, category};
 
     FunctionDocumentation::Description description_both = R"(
 Removes the specified characters from the start and end of a string.
@@ -288,7 +288,7 @@ By default, removes common whitespace (ASCII) characters.
         )"
     }
     };
-    FunctionDocumentation documentation_both = {description_both, syntax_both, arguments_both, returned_value_both, examples_both, introduced_in, category};
+    FunctionDocumentation documentation_both = {description_both, syntax_both, arguments_both, {}, returned_value_both, examples_both, introduced_in, category};
 
     factory.registerFunction<FunctionTrimLeft>(documentation_left);
     factory.registerFunction<FunctionTrimRight>(documentation_right);

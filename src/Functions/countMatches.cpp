@@ -206,7 +206,7 @@ The behavior of this function depends on the ClickHouse version:
     };
     FunctionDocumentation::IntroducedIn introduced_in_case_sensitive = {21, 1};
     FunctionDocumentation::Category category_case_sensitive = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation_case_sensitive = {description_case_sensitive, syntax_case_sensitive, arguments_case_sensitive, returned_value_case_sensitive, examples_case_sensitive, introduced_in_case_sensitive, category_case_sensitive};
+    FunctionDocumentation documentation_case_sensitive = {description_case_sensitive, syntax_case_sensitive, arguments_case_sensitive, {}, returned_value_case_sensitive, examples_case_sensitive, introduced_in_case_sensitive, category_case_sensitive};
 
     FunctionDocumentation::Description description_case_insensitive = R"(
 Like [`countMatches`](#countMatches) but performs case-insensitive matching.
@@ -230,7 +230,7 @@ Like [`countMatches`](#countMatches) but performs case-insensitive matching.
     };
     FunctionDocumentation::IntroducedIn introduced_in_case_insensitive = {21, 1};
     FunctionDocumentation::Category category_case_insensitive = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation_case_insensitive = {description_case_insensitive, syntax_case_insensitive, arguments_case_insensitive, returned_value_case_insensitive, examples_case_insensitive, introduced_in_case_insensitive, category_case_insensitive};
+    FunctionDocumentation documentation_case_insensitive = {description_case_insensitive, syntax_case_insensitive, arguments_case_insensitive, {}, returned_value_case_insensitive, examples_case_insensitive, introduced_in_case_insensitive, category_case_insensitive};
 
     factory.registerFunction<FunctionCountMatches<FunctionCountMatchesCaseSensitive>>(documentation_case_sensitive);
     factory.registerFunction<FunctionCountMatches<FunctionCountMatchesCaseInsensitive>>(documentation_case_insensitive);
