@@ -71,6 +71,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"parallel_replicas_allow_materialized_views", false, true, "Allow usage of materialized views with parallel replicas"},
             {"distributed_cache_use_clients_cache_for_read", true, true, "New setting"},
             {"distributed_cache_use_clients_cache_for_write", false, false, "New setting"},
+            {"allow_experimental_database_paimon_rest_catalog", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {

@@ -220,7 +220,8 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
             }
             else if (!settings[DatabaseDataLakeSetting::dlf_access_key_id].value.empty()
                 && !settings[DatabaseDataLakeSetting::dlf_access_key_secret].value.empty()
-                && !settings[DatabaseDataLakeSetting::region].value.empty()) {
+                && !settings[DatabaseDataLakeSetting::region].value.empty())
+            {
                 catalog_impl = std::make_shared<DataLake::PaimonRestCatalog>(
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
