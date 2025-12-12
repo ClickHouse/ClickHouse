@@ -118,7 +118,7 @@ struct FormatSettings
 
     size_t max_block_size_bytes = 0;
 
-    bool is_pretty_format = false;
+    bool pretty_format = false;
 
     enum class ArrowCompression : uint8_t
     {
