@@ -97,8 +97,7 @@ ResourceAllocation * FairAllocation::selectAllocationToKill(IncreaseRequest & ki
 void FairAllocation::approveIncrease()
 {
     chassert(increase);
-    count(*increase);
-    allocated += increase->size;
+    apply(*increase);
     increase = nullptr;
     increase_child->approveIncrease();
     setIncrease(*increase_child, increase_child->increase);
@@ -107,8 +106,7 @@ void FairAllocation::approveIncrease()
 void FairAllocation::approveDecrease()
 {
     chassert(decrease);
-    count(*decrease);
-    allocated -= decrease->size;
+    apply(*decrease);
     decrease = nullptr;
     decrease_child->approveDecrease();
     setDecrease(*decrease_child, decrease_child->decrease);
@@ -116,18 +114,10 @@ void FairAllocation::approveDecrease()
 
 void FairAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update && update)
 {
-    count(update);
     bool reset_increase = false;
-    if (update.attached)
-    {
-        allocated += update.attached->allocated;
+    apply(update);
+    if (update.attached || update.detached)
         reset_increase = true; // child's allocation changed, we need change the key
-    }
-    if (update.detached)
-    {
-        allocated -= update.detached->allocated;
-        reset_increase = true; // child's allocation changed, we need change the key
-    }
     if (reset_increase || update.increase)
     {
         if (setIncrease(from_child, update.increase ? *update.increase : from_child.increase))

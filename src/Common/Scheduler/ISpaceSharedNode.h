@@ -28,6 +28,7 @@ public:
     {}
 
     ResourceCost allocated = 0; /// Currently allocated amount of resource under this node.
+    size_t allocations = 0; /// Number of currently running allocations under this node.
 
     /// Requests to be processed next from the node or its children.
     /// Keeping these fields up-to-date is part of request processing and activation logic
@@ -115,24 +116,41 @@ public:
     bool isIncreasing() const noexcept { return increasing_hook.is_linked(); }
     bool isDecreasing() const noexcept { return decreasing_hook.is_linked(); }
 
-    /// Helper for introspection metrics
-    void count(Update &)
+    void apply(Update & update)
     {
+        if (update.attached)
+        {
+            allocated += update.attached->allocated;
+            allocations += update.attached->allocations;
+        }
+        if (update.detached)
+        {
+            allocated -= update.detached->allocated;
+            allocations -= update.detached->allocations;
+        }
         ++updates;
     }
 
-    void count(IncreaseRequest & request)
+    void apply(IncreaseRequest & request)
     {
+        allocated += request.size;
         ++increases;
         if (request.pending_allocation)
+        {
+            ++allocations;
             ++admits;
+        }
     }
 
-    void count(DecreaseRequest & request)
+    void apply(DecreaseRequest & request)
     {
+        allocated -= request.size;
         ++decreases;
         if (request.removing_allocation)
+        {
+            --allocations;
             ++removes;
+        }
     }
 
     void countKiller(ISpaceSharedNode & limit)

@@ -82,8 +82,7 @@ void AllocationLimit::approveIncrease()
 {
     SCHED_DBG("{} -- approveIncrease({})", getPath(), increase->allocation.id);
     chassert(increase);
-    count(*increase);
-    allocated += increase->size;
+    apply(*increase);
     increase = nullptr;
     child->approveIncrease();
     setIncrease(child->increase, false);
@@ -94,8 +93,7 @@ void AllocationLimit::approveDecrease()
     SCHED_DBG("{} -- approveDecrease({})", getPath(), decrease->allocation.id);
 
     chassert(decrease);
-    count(*decrease);
-    allocated -= decrease->size;
+    apply(*decrease);
 
     // Check if allocation being killed released all its resources
     if (&decrease->allocation == allocation_to_kill && decrease->removing_allocation)
@@ -116,16 +114,12 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
 {
     SCHED_DBG("{} -- propagateUpdate(from_child={}, update={})", getPath(), from_child.basename, update.toString());
     chassert(&from_child == child.get());
-    count(update);
+    apply(update);
     bool reapply_constraint = false;
     if (update.attached)
-    {
-        allocated += update.attached->allocated;
         reapply_constraint = true;
-    }
     if (update.detached)
     {
-        allocated -= update.detached->allocated;
         // In case of a queue purge we may need to clear allocation_to_kill
         if (allocation_to_kill && update.detached == static_cast<ISpaceSharedNode *>(&allocation_to_kill->queue))
             allocation_to_kill = nullptr;

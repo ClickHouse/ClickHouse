@@ -109,6 +109,12 @@ ColumnsDescription StorageSystemScheduler::getColumnsDescription()
         },
 
         // ISpaceSharedNode
+        {"allocated", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()),
+            "For space-shared nodes only. The currently allocated amount of resource under this node."
+        },
+        {"allocations", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+            "For space-shared nodes only. The current number of running resource allocations under this node."
+        },
         {"updates", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "For space-shared nodes only. The total number of updates propagated through this node."
         },
@@ -173,6 +179,8 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         Field max_burst;
         Field throttling_us;
         Field tokens;
+        Field allocated;
+        Field allocations;
         Field updates;
         Field increases;
         Field decreases;
@@ -223,6 +231,8 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         }
         if (auto * ptr = dynamic_cast<ISpaceSharedNode *>(node))
         {
+            allocated = ptr->allocated;
+            allocations = ptr->allocations;
             updates = ptr->updates;
             increases = ptr->increases;
             decreases = ptr->decreases;
@@ -260,6 +270,8 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insert(max_burst);
         res_columns[i++]->insert(throttling_us);
         res_columns[i++]->insert(tokens);
+        res_columns[i++]->insert(allocated);
+        res_columns[i++]->insert(allocations);
         res_columns[i++]->insert(updates);
         res_columns[i++]->insert(increases);
         res_columns[i++]->insert(decreases);

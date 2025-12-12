@@ -137,6 +137,7 @@ void AllocationQueue::purgeQueue()
     increase = nullptr;
     decrease = nullptr;
     allocated = 0;
+    allocations = 0;
     is_not_usable = true;
 }
 
@@ -149,7 +150,6 @@ void AllocationQueue::approveIncrease()
 {
     std::lock_guard lock(mutex);
     chassert(increase);
-    count(*increase);
     ResourceAllocation & allocation = increase->allocation;
     if (allocation.allocated == 0)
     {
@@ -160,7 +160,7 @@ void AllocationQueue::approveIncrease()
     }
     else
         increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
-    allocated += increase->size;
+    apply(*increase);
     allocation.allocated += increase->size;
 
     // Notify allocation
@@ -177,7 +177,6 @@ void AllocationQueue::approveDecrease()
     std::lock_guard lock(mutex);
 
     chassert(decrease);
-    count(*decrease);
     ResourceAllocation & allocation = decrease->allocation;
     decreasing_allocations.erase(decreasing_allocations.iterator_to(allocation));
 
@@ -188,7 +187,7 @@ void AllocationQueue::approveDecrease()
         increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
 
     // Update the key and other fields
-    allocated -= decrease->size;
+    apply(*decrease);
     allocation.allocated -= decrease->size;
     allocation.fair_key -= decrease->size;
 
