@@ -2261,6 +2261,11 @@ protected:
     }
 };
 
+bool isFirstIdentifier(ParserExpressionImpl::Layers & layers)
+{
+    return layers.size() == 1 && dynamic_cast<ExpressionLayer *>(layers.front().get()) != nullptr;
+}
+
 std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_function, bool is_first_identifier, bool allow_function_parameters_ = true)
 {
     /// Special cases for expressions that look like functions but contain some syntax sugar:
@@ -2428,7 +2433,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (ParserFunctionName().parse(pos, identifier, expected)
         && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
     {
-        auto start = getFunctionLayer(identifier, is_table_function, /*is_first_identifier=*/true,allow_function_parameters);
+        auto start = getFunctionLayer(identifier, is_table_function, /*is_first_identifier=*/true, allow_function_parameters);
         start->is_table_function = is_table_function;
         if (ParserExpressionImpl().parse(std::move(start), pos, node, expected))
             return true;
@@ -2584,7 +2589,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
             if (function_name_parser.parse(pos, tmp, expected)
                 && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
             {
-                layers.push_back(getFunctionLayer(tmp, layers.front()->is_table_function, /*is_first_identifier=*/layers.size() == 1));
+                layers.push_back(getFunctionLayer(tmp, layers.front()->is_table_function, isFirstIdentifier(layers)));
                 return Action::OPERAND;
             }
             return Action::NONE;
@@ -2671,7 +2676,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         {
             ++pos;
             auto identifier = std::make_shared<ASTIdentifier>(cur_op->second.function_name);
-            layers.push_back(getFunctionLayer(identifier, layers.front()->is_table_function, /*is_first_identifier=*/layers.size() == 1));
+            layers.push_back(getFunctionLayer(identifier, layers.front()->is_table_function, isFirstIdentifier(layers)));
         }
         else
         {
@@ -2716,7 +2721,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         if (function_name_parser.parse(pos, tmp, expected) && pos->type == TokenType::OpeningRoundBracket)
         {
             ++pos;
-            layers.push_back(getFunctionLayer(tmp, layers.front()->is_table_function, /*is_first_identifier=*/layers.size() == 1));
+            layers.push_back(getFunctionLayer(tmp, layers.front()->is_table_function, isFirstIdentifier(layers)));
             return Action::OPERAND;
         }
         pos = old_pos;
