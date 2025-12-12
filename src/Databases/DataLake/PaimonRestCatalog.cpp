@@ -258,7 +258,7 @@ void PaimonRestCatalog::createAuthHeaders(
         }
         return;
     }
-    throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknow token provider: {}", token->token_provider);
+    throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknown token provider: {}", token->token_provider);
 }
 
 DB::ReadWriteBufferFromHTTPPtr PaimonRestCatalog::createReadBuffer(
