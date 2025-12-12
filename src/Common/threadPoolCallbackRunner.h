@@ -165,7 +165,8 @@ public:
 
     /// Adds a new task to the pool and returns it
     /// You are responsible for handling it from now on, checking its status and so on. You must implement your own waitForAllToFinish* equivalent
-    /// You must ensure the task outlives this TheadPool object
+    /// You must ensure that all returned tasks are waited upon (i.e., their futures are completed) before the ThreadPool is destroyed.
+    /// Otherwise, the task's lambda may reference a destroyed pool state, leading to undefined behavior.
     [[nodiscard]] std::shared_ptr<Task> enqueueAndGiveOwnership(Callback && callback, Priority priority = {}, std::optional<uint64_t> wait_microseconds = {})
     {
         auto promise = std::make_shared<std::promise<Result>>();
