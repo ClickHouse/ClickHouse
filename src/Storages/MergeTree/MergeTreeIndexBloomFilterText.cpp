@@ -835,6 +835,10 @@ void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach
         if (index.arguments.size() != 4)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "`ngrambf` index must have exactly 4 arguments.");
 
+        UInt64 ngram_length = index.arguments[0].safeGet<UInt64>();
+        if (ngram_length < 1 || ngram_length > 8)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "`ngrambf` length must be between 1 and 8.");
+
         first_bf_param_idx = 1;
     }
     else if (index.type == SplitByNonAlphaTokenExtractor::getName())
