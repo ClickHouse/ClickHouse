@@ -1976,7 +1976,12 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} has invalid version metadata: {}", res.part->name, version.toString());
 
         if (version_updated)
-            res.part->storeVersionMetadata(/* force */ true);
+        {
+            if (supportsTransactions())
+                res.part->storeVersionMetadata(/* force */ true);
+            else
+                LOG_INFO(log, "Skip version metadata update of {} in case of ATTACH AS REPLICATED", res.part->name);
+        }
 
         /// Deactivate part if creation was not committed or if removal was.
         if (version.creation_csn == Tx::RolledBackCSN || version.removal_csn)
