@@ -1,0 +1,55 @@
+--- Test 1: Int32 column used as boolean condition in WHERE
+Expression
+  Expression
+    ReadFromMergeTree
+    Indexes:
+      PrimaryKey
+        Keys:
+          id
+        Condition: (id not in [0, 0])
+        Parts: 1/1
+        Granules: 1/1
+        Search Algorithm: generic exclusion search
+      Ranges: 1
+Expression
+  Expression
+    ReadFromMergeTree
+    Indexes:
+      PrimaryKey
+        Keys:
+          id
+        Condition: not((id not in [0, 0]))
+        Parts: 1/1
+        Granules: 1/1
+        Search Algorithm: generic exclusion search
+      Ranges: 1
+--- Test 2: Float column used as boolean condition in WHERE
+Expression
+  Expression
+    ReadFromMergeTree
+    Indexes:
+      PrimaryKey
+        Keys:
+          x
+        Condition: (x not in [0, 0])
+        Parts: 1/1
+        Granules: 1/1
+        Search Algorithm: generic exclusion search
+      Ranges: 1
+-2.5
+1.5
+--- Test 3: Nullable column used as boolean condition in WHERE
+Expression
+  Expression
+    ReadFromMergeTree
+    Indexes:
+      PrimaryKey
+        Keys:
+          id
+        Condition: (id not in [0, 0])
+        Parts: 1/1
+        Granules: 1/1
+        Search Algorithm: generic exclusion search
+      Ranges: 1
+1	one
+2	two
