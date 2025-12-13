@@ -1,3 +1,4 @@
+import argparse
 import json
 import re
 import sys
@@ -129,8 +130,7 @@ class CIFailure:
             self.ignorable = True
             self.praktika_result.set_comment("IGNORED")
 
-        # self.issue_url = self.praktika_result.get_hlabel_link("issue") or ""
-        self.issue_url = ""  # do not set issue_url for now to fetch it from GH and match the failure reason from the issue boddy
+        self.issue_url = self.praktika_result.get_hlabel_link("issue") or ""
         self.labels = self.praktika_result.ext.get("labels", [])
         self.cidb_link = self.praktika_result.get_hlabel_link("cidb") or ""
 
@@ -295,6 +295,97 @@ Test output:
         else:
             raise Exception(f"Unsupported job type: {self.job_type}")
         return False
+
+    def create_infrastructure_issue(self):
+        """
+        Interactively create GitHub issues for infrastructure failures that don't have existing issues.
+
+        Returns:
+            bool: True if issue was created successfully, False otherwise
+        """
+        if self.issue_url:
+            raise AssertionError(
+                "BUG: Issue URL is already set, this should be a known issue"
+            )
+
+        print(repr(self))
+
+        failure_reason = UserPrompt.get_string(
+            "Enter the exact error text from the test output above that identifies the failure.\n"
+            "This must be a substring that appears in the output (e.g., 'Timeout', 'Connection refused').\n"
+            "This text will be used to automatically detect and categorize similar failures in the future",
+            validator=lambda x: x in self.praktika_result.info,
+        )
+        ci_failure_flags = UserPrompt.get_string(
+            "Enter the CI failure flag associated with this failure type.\n"
+            "Available options: 'retry_ok' (for transient failures that may succeed on retry) or leave empty for none",
+            validator=lambda x: x in ("retry_ok", "")
+            and x in self.praktika_result.ext.get("labels", []),
+        )
+        # support only one flag for now, in future we may need to support multiple flags
+        ci_failure_flags = [ci_failure_flags] if ci_failure_flags else []
+        menu = []
+        menu.append(("Block: Block merge until issue is resolved", "block"))
+        menu.append(
+            (
+                "Rerun: Automatically retry failed job once, block merge if retry also fails",
+                "rerun",
+            )
+        )
+        menu.append(
+            (
+                "Ignore: Allow merge regardless of this failure (use for known non-critical issues)",
+                "ignore",
+            )
+        )
+        required_ci_action = UserPrompt.select_from_menu(
+            menu, question="Select the CI action to take when this failure is detected"
+        )
+        job_pattern = (
+            UserPrompt.get_string(
+                f"Enter SQL LIKE pattern to match job names affected by this failure.\n"
+                f"Current job: '{self.job_name}'\n"
+                f"Use '%' as wildcard (e.g., '%Stateless%' matches any job containing 'Stateless')",
+                validator=lambda x: all(
+                    part in self.job_name for part in x.split("%") if part
+                ),
+            )
+            or "%"
+        )
+        test_pattern = (
+            UserPrompt.get_string(
+                f"Enter SQL LIKE pattern to match test names affected by this failure.\n"
+                f"Current test: '{self.test_name}'\n"
+                f"Use '%' as wildcard (e.g., '%timeout%' matches any test containing 'timeout')",
+                validator=lambda x: all(
+                    part in self.test_name for part in x.split("%") if part
+                ),
+            )
+            or "%"
+        )
+        title = UserPrompt.get_string(
+            "Enter a concise, descriptive title for this infrastructure issue",
+            validator=lambda x: len(x.strip()) > 10,
+        )
+        body = f"""\
+Failure reason: {failure_reason}
+
+Failure flags: {', '.join(ci_failure_flags)}
+
+Required CI action: {required_ci_action[1]}
+
+Job pattern: {job_pattern}
+Test pattern: {test_pattern}
+
+CI report example: [{self.job_name}]({self.get_job_report_url(pr_number, head_sha, self.job_name)})
+Test output example:
+```
+{self.praktika_result.get_info_truncated(truncate_from_top=False, max_info_lines_cnt=50, max_line_length=200)}
+```
+"""
+        labels = ["testing", "infrastructure"]
+
+        return self._create_and_link_gh_issue(title, body, labels)
 
     def can_process(self):
         if self.job_type in (JobTypes.STATELESS, JobTypes.INTEGRATION):
@@ -493,7 +584,16 @@ class JobResultProcessor:
 
                 # Create new issue if user confirms
                 if UserPrompt.confirm("Create GitHub issue for this failure?"):
-                    if failure.create_issue():
+                    if create_infrastructure_issue and UserPrompt.confirm(
+                        "Create infrastructure issue?"
+                    ):
+                        print(
+                            "Creating infrastructure issue [--create-infrastructure-issue]"
+                        )
+                        res = failure.create_infrastructure_issue()
+                    else:
+                        res = failure.create_issue()
+                    if res:
                         print(f"Issue created: {failure.issue_url}")
                         failure.praktika_result.set_comment("ISSUE CREATED")
                         job_failures.known_failures.append(failure)
@@ -678,11 +778,30 @@ def get_commit_statuses(head_sha: str) -> dict:
 
 issues_created = 0
 ci_start_time = None
+create_infrastructure_issue = False
 
 
 def main():
-    global head_sha, pr_number
+    global head_sha, pr_number, create_infrastructure_issue
     is_master_commit = False
+
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(
+        description="Check CI status and process failures for ClickHouse PRs"
+    )
+    parser.add_argument(
+        "pr_number",
+        type=int,
+        nargs="?",
+        help="PR number to process (optional, interactive mode if not provided)",
+    )
+    parser.add_argument(
+        "--create-infrastructure-issue",
+        action="store_true",
+        help="Create infrastructure issues for failures",
+    )
+    args = parser.parse_args()
+    create_infrastructure_issue = args.create_infrastructure_issue
 
     # Check gh CLI version
     gh_version_output = Shell.get_output("gh --version")
@@ -701,13 +820,9 @@ def main():
         sys.exit(1)
 
     # Check if PR number was provided as command-line argument
-    if len(sys.argv) > 1:
-        try:
-            pr_number = int(sys.argv[1])
-            print(f"Using PR number from command line: {pr_number}")
-        except ValueError:
-            print(f"ERROR: Invalid PR number provided: {sys.argv[1]}")
-            sys.exit(1)
+    if args.pr_number is not None:
+        pr_number = args.pr_number
+        print(f"Using PR number from command line: {pr_number}")
     else:
         # Interactive mode: show menu to select PR
         my_prs_number_and_title = Shell.get_output(
