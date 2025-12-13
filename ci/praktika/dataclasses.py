@@ -6,7 +6,7 @@ from .utils import MetaClasses, Utils
 
 
 @dataclass
-class TestCaseIssue:
+class TestingIssue:
     """Represents a single flaky test issue from GitHub"""
 
     test_name: str
@@ -15,6 +15,13 @@ class TestCaseIssue:
     issue_url: str
     title: str
     body: str
+    labels: List[str]
+
+    failure_reason: str = ""
+    failure_flags: List[str] = field(default_factory=list)
+    ci_action: str = ""
+    test_pattern: str = ""
+    job_pattern: str = ""
 
 
 @dataclass
@@ -22,8 +29,8 @@ class TestCaseIssueCatalog(MetaClasses.Serializable):
     """Catalog of all flaky test issues, both active and resolved"""
 
     name: str = "flaky_test_catalog"
-    active_test_issues: List[TestCaseIssue] = field(default_factory=list)
-    resolved_test_issues: List[TestCaseIssue] = field(default_factory=list)
+    active_test_issues: List[TestingIssue] = field(default_factory=list)
+    resolved_test_issues: List[TestingIssue] = field(default_factory=list)
 
     @classmethod
     def file_name_static(cls, name):
@@ -33,11 +40,11 @@ class TestCaseIssueCatalog(MetaClasses.Serializable):
     def from_dict(cls, obj: dict):
         """Custom deserialization to handle nested TestCaseIssue objects"""
         active_issues = [
-            TestCaseIssue(**issue) if isinstance(issue, dict) else issue
+            TestingIssue(**issue) if isinstance(issue, dict) else issue
             for issue in obj.get("active_test_issues", [])
         ]
         resolved_issues = [
-            TestCaseIssue(**issue) if isinstance(issue, dict) else issue
+            TestingIssue(**issue) if isinstance(issue, dict) else issue
             for issue in obj.get("resolved_test_issues", [])
         ]
         return cls(

@@ -13,6 +13,7 @@ from .utils import MetaClasses, Shell, Utils
 try:
     import boto3
     from botocore.exceptions import ClientError, NoCredentialsError
+
     BOTO3_AVAILABLE = True
 except ImportError:
     BOTO3_AVAILABLE = False
@@ -102,7 +103,7 @@ class S3:
             return None
         if cls._boto3_client is None:
             try:
-                cls._boto3_client = boto3.client('s3')
+                cls._boto3_client = boto3.client("s3")
             except Exception as e:
                 print(f"WARNING: Failed to initialize boto3 client: {e}")
                 return None
@@ -283,7 +284,9 @@ class S3:
                     else:
                         local_file = Path(local_path)
                         if not local_file.parent.is_dir():
-                            assert False, f"Parent path for [{local_path}] does not exist"
+                            assert (
+                                False
+                            ), f"Parent path for [{local_path}] does not exist"
 
                     local_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -295,8 +298,8 @@ class S3:
                     return True
 
                 except ClientError as e:
-                    error_code = e.response.get('Error', {}).get('Code', '')
-                    if error_code in ['404', 'NoSuchKey']:
+                    error_code = e.response.get("Error", {}).get("Code", "")
+                    if error_code in ["404", "NoSuchKey"]:
                         if not no_strict:
                             print(f"ERROR: S3 object not found: {s3_path}")
                         return False
