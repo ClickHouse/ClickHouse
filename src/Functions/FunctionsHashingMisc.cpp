@@ -16,7 +16,7 @@ Produces a 64-bit [SipHash](https://en.wikipedia.org/wiki/SipHash) hash value.
 
 This is a cryptographic hash function. It works at least three times faster than the [`MD5`](#MD5) hash function.
 
-The function [interprets](/sql-reference/functions/type-conversion-functions#reinterpretasstring) all the input parameters as strings and calculates the hash value for each of them.
+The function [interprets](/sql-reference/functions/type-conversion-functions#reinterpretAsString) all the input parameters as strings and calculates the hash value for each of them.
 It then combines the hashes using the following algorithm:
 
 1. The first and the second hash value are concatenated to an array which is hashed.
