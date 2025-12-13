@@ -75,3 +75,184 @@ SELECT midpoint(123, null) AS result, toTypeName(result) AS type;
 SELECT midpoint(3, 1.5, null) AS result, toTypeName(result) AS type;
 SELECT midpoint(null, null) AS result, toTypeName(result) AS type;
 SELECT midpoint(null, null, null) AS result, toTypeName(result) AS type;
+
+-- ===============================================================
+-- Single argument
+-- ===============================================================
+
+SELECT midpoint(42) AS result, toTypeName(result) AS type;
+SELECT midpoint(ui8) AS result, toTypeName(result) AS type FROM midpoint_test;
+SELECT midpoint(d32) AS result, toTypeName(result) AS type FROM midpoint_test;
+
+-- single-arg Nullable return type
+SELECT midpoint(toNullable(42)) AS result, toTypeName(result) AS type;
+
+-- ===============================================================
+-- Temporal edge coverage
+-- ===============================================================
+
+SELECT midpoint(toDate32('1900-01-01'), toDate32('1900-01-03')) AS result, toTypeName(result) AS type;
+
+SELECT midpoint(
+    toDateTime64('2025-01-01 00:00:00.000', 3),
+    toDateTime64('2025-01-01 00:00:02.000', 3)
+) AS result, toTypeName(result) AS type;
+
+-- mix DateTime and DateTime64
+SELECT midpoint(
+    toDateTime('2025-01-01 00:00:00'),
+    toDateTime64('2025-01-01 00:00:01.000', 3)
+) AS result, toTypeName(result) AS type;
+
+-- mixed Time64 scales
+SELECT midpoint(toTime64('12:00:00', 0), toTime64('14:00:00', 3)) AS result, toTypeName(result) AS type;
+
+-- ===============================================================
+-- Nullable return type
+-- ===============================================================
+
+SELECT midpoint(toNullable(1), 11) AS result, toTypeName(result) AS type;
+
+SELECT midpoint(materialize(toNullable(1)), 11) AS result, toTypeName(result) AS type;
+
+SELECT midpoint(materialize(toNullable(1)), materialize(toNullable(11))) AS result, toTypeName(result) AS type;
+
+-- Nullable temporal return type
+SELECT midpoint(toNullable(toDate('2025-01-01')), toDate('2025-01-05')) AS result, toTypeName(result) AS type;
+
+-- ===============================================================
+-- Nullable columns: per-row NULL skipping
+-- ===============================================================
+
+DROP TABLE IF EXISTS midpoint_nullable_test;
+CREATE TABLE midpoint_nullable_test
+(
+    a Nullable(Int32),
+    b Nullable(Int32),
+    c Int32
+)
+ENGINE = Memory;
+
+INSERT INTO midpoint_nullable_test VALUES
+    (1,    3,    10),
+    (NULL, 3,    10),
+    (1,    NULL, 10),
+    (NULL, NULL, 10);
+
+SELECT a, b, midpoint(a, b) AS result, toTypeName(result) AS type
+FROM midpoint_nullable_test
+ORDER BY ifNull(a, -999), ifNull(b, -999);
+
+SELECT a, b, c, midpoint(a, b, c) AS result, toTypeName(result) AS type
+FROM midpoint_nullable_test
+ORDER BY ifNull(a, -999), ifNull(b, -999);
+
+SELECT a, midpoint(a, 11) AS result, toTypeName(result) AS type
+FROM midpoint_nullable_test
+ORDER BY ifNull(a, -999);
+
+-- ===============================================================
+-- Illegal-type
+-- ===============================================================
+
+SELECT midpoint('a', 'b'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT midpoint(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+-- ===============================================================
+-- Const + non-const combinations (2-arg specialization + nullable path)
+-- ===============================================================
+
+-- 2-arg specialization (one column, one const)
+SELECT midpoint(i32, 10) AS result, toTypeName(result) AS type FROM midpoint_test;
+SELECT midpoint(10, i32) AS result, toTypeName(result) AS type FROM midpoint_test;
+
+SELECT midpoint(toNullable(ui8), 11) AS result, toTypeName(result) AS type FROM midpoint_test;
+SELECT midpoint(ui8, toNullable(11)) AS result, toTypeName(result) AS type FROM midpoint_test;
+SELECT midpoint(toNullable(ui8), toNullable(11)) AS result, toTypeName(result) AS type FROM midpoint_test;
+
+SELECT midpoint(toNullable(1), toNullable(2)) AS result, toTypeName(result) AS type;
+
+SELECT midpoint(toNullable(1), toNullable(2)) AS result, toTypeName(result) AS type FROM numbers(1);
+
+-- ===============================================================
+-- Typed NULL arguments (Nullable(T) constant NULL, not Nullable(Nothing))
+-- ===============================================================
+
+SELECT midpoint(CAST(NULL AS Nullable(Int32)), 11) AS result, toTypeName(result) AS type FROM numbers(1);
+SELECT midpoint(11, CAST(NULL AS Nullable(Int32))) AS result, toTypeName(result) AS type FROM numbers(1);
+SELECT midpoint(CAST(NULL AS Nullable(Int32)), CAST(NULL AS Nullable(Int32))) AS result, toTypeName(result) AS type FROM numbers(1);
+SELECT midpoint(11, CAST(NULL AS Nullable(Int32)), CAST(NULL AS Nullable(Int32))) AS result, toTypeName(result) AS type FROM numbers(1);
+
+-- ===============================================================
+-- Nullable + non-nullable column mix (2-arg) on a table with real NULLs
+-- ===============================================================
+
+SELECT a, c, midpoint(a, c) AS result, toTypeName(result) AS type
+FROM midpoint_nullable_test
+ORDER BY ifNull(a, -999), c;
+
+SELECT b, c, midpoint(b, c) AS result, toTypeName(result) AS type
+FROM midpoint_nullable_test
+ORDER BY ifNull(b, -999), c;
+
+-- ===============================================================
+-- materialize() with nullable non-const argument
+-- ===============================================================
+
+SELECT midpoint(materialize(toNullable(ui8)), 11) AS result, toTypeName(result) AS type FROM midpoint_test;
+
+-- ===============================================================
+-- All arguments are Nullable columns: some rows all NULL, others partially non-NULL
+-- ===============================================================
+
+DROP TABLE IF EXISTS midpoint_nullable3_test;
+CREATE TABLE midpoint_nullable3_test
+(
+    a Nullable(Int32),
+    b Nullable(Int32),
+    c Nullable(Int32)
+)
+ENGINE = Memory;
+
+INSERT INTO midpoint_nullable3_test VALUES
+    (1,    3,    5),
+    (NULL, 3,    5),
+    (1,    NULL, 5),
+    (1,    3,    NULL),
+    (NULL, NULL, 5),
+    (NULL, 3,    NULL),
+    (1,    NULL, NULL),
+    (NULL, NULL, NULL);
+
+SELECT
+    a, b, c,
+    midpoint(a, b, c) AS result,
+    toTypeName(result) AS type
+FROM midpoint_nullable3_test
+ORDER BY
+    ifNull(a, -999),
+    ifNull(b, -999),
+    ifNull(c, -999);
+
+SELECT
+    a, b, c,
+    midpoint(a, b, c, 1) AS result,
+    toTypeName(result) AS type
+FROM midpoint_nullable3_test
+ORDER BY
+    ifNull(a, -999),
+    ifNull(b, -999),
+    ifNull(c, -999);
+
+-- ===============================================================
+-- Signed Nullable rounding consistency
+-- ===============================================================
+
+SELECT midpoint(i8, i16) AS result, toTypeName(result) AS type FROM midpoint_test;
+SELECT midpoint(toNullable(i8), toNullable(i16)) AS result, toTypeName(result) AS type FROM midpoint_test;
+
+SELECT midpoint(1, 10) AS result, toTypeName(result) AS type;
+SELECT midpoint(-1, -10) AS result, toTypeName(result) AS type;
+SELECT midpoint(toNullable(-1), toNullable(-10)) AS result, toTypeName(result) AS type;
+SELECT midpoint(toNullable(1), toNullable(10)) AS result, toTypeName(result) AS type;
