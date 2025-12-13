@@ -20,7 +20,8 @@ SETTINGS max_memory_usage = '400M';
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT read_rows < 110000 FROM system.query_log
+--- 100 granules for reading from main table, 10 granules for lazy reading
+SELECT read_rows <= (1024 * 110) FROM system.query_log
 WHERE type = 'QueryFinish' AND current_database = currentDatabase()
 AND event_date >= yesterday()
 AND lower(query) LIKE lower('SELECT s FROM order_by_desc ORDER BY u%');

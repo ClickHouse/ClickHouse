@@ -42,6 +42,8 @@ public:
 
     virtual bool canReadIncompleteGranules() const = 0;
 
+    virtual bool mustApplyFilter() const { return false; }
+
     virtual size_t getResultColumnCount() const { return getColumns().size(); }
 
     virtual bool producesFilterOnly() const { return false; }
