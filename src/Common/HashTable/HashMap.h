@@ -265,7 +265,17 @@ public:
     void forEachMapped(Func && func)
     {
         for (auto & v : *this)
-            func(v.getMapped());
+        {
+            if constexpr (std::is_same_v<decltype(func(v.getMapped())), bool>)
+            {
+                if (!func(v.getMapped()))
+                    break;
+            }
+            else
+            {
+                func(v.getMapped());
+            }
+        }
     }
 
     typename Cell::Mapped & ALWAYS_INLINE operator[](const Key & x)

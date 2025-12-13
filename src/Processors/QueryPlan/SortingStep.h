@@ -119,10 +119,11 @@ public:
 
     void serializeSettings(QueryPlanSerializationSettings & settings) const override;
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    bool isSerializable() const override { return type == Type::Full && partition_by_description.empty(); }
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
+    bool supportsDataflowStatisticsCollection() const override { return true; }
     void setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker_) { threshold_tracker = threshold_tracker_; }
 
 private:

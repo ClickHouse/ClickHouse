@@ -1,11 +1,21 @@
-#include <Common/Exception.h>
-#include <Processors/QueryPlan/ReadFromLocalReplica.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Interpreters/Context.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/ReadFromLocalReplica.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Poco/Logger.h>
+#include <Common/Exception.h>
+#include <Common/logger_useful.h>
 
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+
+#include <memory>
 #include <stack>
 
 namespace DB
@@ -32,9 +42,10 @@ void checkHeaders(const QueryPlan::Node & node, const std::string_view context_d
 
 namespace ErrorCodes
 {
-    extern const int INCORRECT_DATA;
-    extern const int TOO_MANY_QUERY_PLAN_OPTIMIZATIONS;
-    extern const int PROJECTION_NOT_USED;
+extern const int INCORRECT_DATA;
+extern const int TOO_MANY_QUERY_PLAN_OPTIMIZATIONS;
+extern const int PROJECTION_NOT_USED;
+extern const int LOGICAL_ERROR;
 }
 
 namespace QueryPlanOptimizations
@@ -88,8 +99,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
             /// Traverse all children first.
             if (frame.next_child < frame.node->children.size())
             {
-                stack.push(
-                {
+                stack.push({
                     .node = frame.node->children[frame.next_child],
                     .depth_limit = frame.depth_limit ? (frame.depth_limit - 1) : 0,
                 });
@@ -116,9 +126,10 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
                 if (optimization_settings.is_explain)
                     return;
 
-                throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
-                                "Too many optimizations applied to query plan. Current limit {}",
-                                max_optimizations_to_apply);
+                throw Exception(
+                    ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
+                    "Too many optimizations applied to query plan. Current limit {}",
+                    max_optimizations_to_apply);
             }
 
 
@@ -147,7 +158,9 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
     }
 }
 
-struct NoOp{};
+struct NoOp
+{
+};
 
 template <typename Func1, typename Func2 = NoOp>
 void traverseQueryPlan(Stack & stack, QueryPlan::Node & root, Func1 && on_enter, Func2 && on_leave = {})
@@ -182,6 +195,256 @@ void traverseQueryPlan(Stack & stack, QueryPlan::Node & root, Func1 && on_enter,
         }
 
         stack.pop_back();
+    }
+}
+
+/// Find the top node of the parallel replicas plan. E.g.:
+///
+/// Expression ((Project names + Projection))
+///  MergingAggregated
+///    Union
+///      Aggregating  <-- this node is the last plan step to be executed on replicas
+///        Expression (Before GROUP BY)
+///          Expression ((WHERE + Change column names to column identifiers))
+///            ReadFromMergeTree (default.hits)
+///      ReadFromRemoteParallelReplicas (Query: ... Replicas: ...)
+///
+QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel_replicas_root)
+{
+    QueryPlan::Node * replicas_plan_top_node = nullptr;
+
+    Stack stack;
+    stack.push_back({.node = plan_with_parallel_replicas_root});
+
+    while (!stack.empty())
+    {
+        auto & frame = stack.back();
+
+        /// Currently the approach is very simple: we look for Union step in the plan tree,
+        /// and consider its children. The first child that is not ReadFromParallelRemoteReplicas
+        /// is considered the top node of replicas plan.
+        if (typeid_cast<UnionStep *>(frame.node->step.get()))
+        {
+            bool found_read_from_parallel_replicas = false;
+
+            for (const auto & child : frame.node->children)
+            {
+                auto * node = child;
+                /// ExpressionStep can be placed on top of ReadFromRemoteParallelReplicas
+                if (typeid_cast<const ExpressionStep *>(node->step.get()) || typeid_cast<const FilterStep *>(node->step.get()))
+                {
+                    chassert(!node->children.empty());
+                    node = node->children.front();
+                }
+                if (typeid_cast<const DelayedCreatingSetsStep *>(node->step.get())
+                    || typeid_cast<const CreatingSetsStep *>(node->step.get()))
+                {
+                    chassert(!node->children.empty());
+                    node = node->children.front();
+                }
+                if (!typeid_cast<const ReadFromParallelRemoteReplicasStep *>(node->step.get()))
+                {
+                    if (replicas_plan_top_node)
+                    {
+                        // TODO(nickitat): support multiple read steps with parallel replicas
+                        LOG_DEBUG(getLogger("optimizeTree"), "Top node for parallel replicas plan is already found");
+                        return nullptr;
+                    }
+
+                    replicas_plan_top_node = node;
+                }
+                else
+                {
+                    found_read_from_parallel_replicas = true;
+                }
+            }
+
+            /// We found pattern
+            ///     Union
+            ///       ReadFromParallelRemoteReplicas
+            ///       <replicas_plan_top_node>
+            if (replicas_plan_top_node && found_read_from_parallel_replicas)
+                break;
+        }
+
+        /// Traverse all children first.
+        if (frame.next_child < frame.node->children.size())
+        {
+            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+            ++frame.next_child;
+            stack.push_back(next_frame);
+            continue;
+        }
+
+        stack.pop_back();
+    }
+
+    return replicas_plan_top_node;
+}
+
+/// Now when we found the top node of replicas plan, we need to find the corresponding node in the single node plan.
+/// The working principle behind automatic parallel replicas is that we use statistics collected during execution of single-node plan
+/// to estimate whether parallel replicas will be beneficial for the query or not. For that, we need to estimate how much data
+/// replicas will send to the initiator. To do that, we found the node that will be at the top of replicas plan (e.g. Aggregating step in the example above),
+/// and ask it collect statistics on the number of bytes it'd send to the initiator if we executed the query with parallel replicas.
+std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan(
+    const QueryPlan::Node & final_node_in_replica_plan,
+    QueryPlan::Node & parallel_replicas_plan_root,
+    QueryPlan::Node & single_replica_plan_root)
+{
+    auto pr_node_hashes = calculateHashTableCacheKeys(parallel_replicas_plan_root);
+    if (auto it = pr_node_hashes.find(&final_node_in_replica_plan); it != pr_node_hashes.end())
+    {
+        auto nopr_node_hashes = calculateHashTableCacheKeys(single_replica_plan_root);
+
+        for (const auto & [nopr_node, nopr_hash] : nopr_node_hashes)
+        {
+            if (nopr_hash == it->second)
+            {
+                LOG_DEBUG(getLogger("optimizeTree"), "Found matching node in original plan: {}", nopr_node->step->getName());
+                return std::make_pair(nopr_node, nopr_hash);
+            }
+        }
+        LOG_DEBUG(getLogger("optimizeTree"), "Cannot find step with matching hash in single-node plan");
+        return std::make_pair(nullptr, 0);
+    }
+    else
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find replicas_plan_top_node in hash table");
+    }
+}
+
+/// Heuristic-based algorithm to decide whether to enable parallel replicas for the given query
+void considerEnablingParallelReplicas(
+     const QueryPlanOptimizationSettings & optimization_settings,
+     QueryPlan::Node & root,
+     QueryPlan::Nodes &,
+     QueryPlan & query_plan)
+{
+    if (!optimization_settings.automatic_parallel_replicas_mode)
+        return;
+
+    if (!optimization_settings.query_plan_with_parallel_replicas_builder)
+        return;
+
+    if (optimization_settings.parallel_replicas_enabled)
+        return;
+
+    // Cannot guarantee projection usage with parallel replicas
+    if (optimization_settings.force_use_projection)
+        return;
+
+    // Some tests fail because on uninitialized `MergeTreeData::SnapshotData`
+    if (optimization_settings.allow_experimental_full_text_index)
+        return;
+
+    Stack stack;
+    // Technically, it isn't required for all steps to support dataflow statistics collection,
+    // but only for those that we will actually instrument (see `setRuntimeDataflowStatisticsCacheUpdater` calls below).
+    // However, currently only relatively simple plans are supported (no JOINs, CreatingSets from subqueries, UNIONs, etc.),
+    // since all these steps obviously don't support statistics collection, `supportsDataflowStatisticsCollection` is handy to check if the plan is simple enough.
+    bool plan_is_simple_enough = true;
+    traverseQueryPlan(
+        stack, root, [&](auto & frame_node) { plan_is_simple_enough &= frame_node.step->supportsDataflowStatisticsCollection(); });
+    if (!plan_is_simple_enough)
+    {
+        LOG_DEBUG(getLogger("optimizeTree"), "Some steps in the plan don't support dataflow statistics collection. Skipping optimization");
+        return;
+    }
+
+    auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder();
+    if (!plan_with_parallel_replicas)
+        return;
+
+    const auto * final_node_in_replica_plan = findTopNodeOfReplicasPlan(plan_with_parallel_replicas->getRootNode());
+    if (!final_node_in_replica_plan)
+        return;
+    LOG_DEBUG(getLogger("optimizeTree"), "Top node of replicas plan: {}", final_node_in_replica_plan->step->getName());
+
+    const auto [corresponding_node_in_single_replica_plan, single_replica_plan_node_hash]
+        = findCorrespondingNodeInSingleNodePlan(*final_node_in_replica_plan, *plan_with_parallel_replicas->getRootNode(), root);
+    if (!corresponding_node_in_single_replica_plan)
+        return;
+
+    /// Now we need to set cache keys (i.e. enable statistics collection) for both steps: the top node and the reading step.
+    {
+        const auto * reading_step = corresponding_node_in_single_replica_plan;
+        while (reading_step && !reading_step->children.empty())
+        {
+            // TODO(nickitat): support multiple read steps with parallel replicas
+            if (reading_step->children.size() > 1)
+                return;
+            reading_step = reading_step->children.front();
+        }
+
+        if (!reading_step->step->supportsDataflowStatisticsCollection())
+        {
+            LOG_DEBUG(
+                getLogger("optimizeTree"),
+                "Reading step ({}) doesn't support dataflow statistics collection. Skipping statistics collection",
+                reading_step->step->getName());
+            return;
+        }
+
+        if (!corresponding_node_in_single_replica_plan->step->supportsDataflowStatisticsCollection())
+        {
+            LOG_DEBUG(
+                getLogger("optimizeTree"),
+                "Step ({}) doesn't support dataflow statistics collection. Skipping statistics collection",
+                corresponding_node_in_single_replica_plan->step->getName());
+            return;
+        }
+
+        auto * source_reading_step = dynamic_cast<SourceStepWithFilter *>(reading_step->step.get());
+        if (!source_reading_step)
+        {
+            LOG_DEBUG(
+                getLogger("optimizeTree"),
+                "Expected SourceStepWithFilter as reading step, got {}. Skipping statistics collection",
+                reading_step->step->getName());
+            return;
+        }
+
+        auto updater = source_reading_step->getContext()->getRuntimeDataflowStatisticsCacheUpdater();
+        updater->setCacheKey(single_replica_plan_node_hash);
+        source_reading_step->setRuntimeDataflowStatisticsCacheUpdater(updater);
+        corresponding_node_in_single_replica_plan->step->setRuntimeDataflowStatisticsCacheUpdater(updater);
+    }
+
+    if (optimization_settings.automatic_parallel_replicas_mode == 2)
+        return;
+
+    const auto & stats_cache = getRuntimeDataflowStatisticsCache();
+    if (const auto stats = stats_cache.getStats(single_replica_plan_node_hash))
+    {
+        const auto max_threads = optimization_settings.max_threads;
+        const auto num_replicas = optimization_settings.max_parallel_replicas;
+        LOG_DEBUG(
+            getLogger("optimizeTree"),
+            "stats->input_bytes={}, stats->output_bytes={}, max_threads={}, num_replicas={}",
+            stats->input_bytes,
+            stats->output_bytes,
+            max_threads,
+            num_replicas);
+        if (stats->input_bytes / max_threads > (stats->input_bytes / (max_threads * num_replicas)) + stats->output_bytes / num_replicas)
+        {
+            if (optimization_settings.automatic_parallel_replicas_min_bytes_per_replica
+                && stats->input_bytes / num_replicas < optimization_settings.automatic_parallel_replicas_min_bytes_per_replica)
+            {
+                LOG_DEBUG(
+                    getLogger("optimizeTree"),
+                    "Not enabling parallel replicas reading because {} < automatic_parallel_replicas_min_bytes_per_replica {}",
+                    stats->input_bytes / num_replicas,
+                    optimization_settings.automatic_parallel_replicas_min_bytes_per_replica);
+                return;
+            }
+
+            query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(plan_with_parallel_replicas));
+        }
+    }
+    else
+    {
+        LOG_DEBUG(getLogger("optimizeTree"), "No stats found for hash {}", single_replica_plan_node_hash);
     }
 }
 
@@ -353,9 +616,10 @@ void optimizeTreeSecondPass(
                 {
                     /// Limit only first pass in EXPLAIN mode.
                     if (!optimization_settings.is_explain)
-                        throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
-                                        "Too many projection optimizations applied to query plan. Current limit {}",
-                                        max_optimizations_to_apply);
+                        throw Exception(
+                            ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
+                            "Too many projection optimizations applied to query plan. Current limit {}",
+                            max_optimizations_to_apply);
                 }
 
                 /// Stack is updated after this optimization and frame is not valid anymore.
@@ -385,7 +649,7 @@ void optimizeTreeSecondPass(
             stack.push_back(next_frame);
             continue;
         }
-        if (auto * read_from_local = typeid_cast<ReadFromLocalParallelReplicaStep*>(frame.node->step.get()))
+        if (auto * read_from_local = typeid_cast<ReadFromLocalParallelReplicaStep *>(frame.node->step.get()))
         {
             read_from_local_parallel_replica_plan = true;
 
@@ -469,23 +733,26 @@ void optimizeTreeSecondPass(
 
     if (optimization_settings.force_use_projection && has_reading_from_mt && applied_projection_names.empty())
         throw Exception(
-            ErrorCodes::PROJECTION_NOT_USED,
-            "No projection is used when optimize_use_projections = 1 and force_optimize_projection = 1");
+            ErrorCodes::PROJECTION_NOT_USED, "No projection is used when optimize_use_projections = 1 and force_optimize_projection = 1");
 
-    if (!optimization_settings.force_projection_name.empty() && has_reading_from_mt && !applied_projection_names.contains(optimization_settings.force_projection_name))
+    if (!optimization_settings.force_projection_name.empty() && has_reading_from_mt
+        && !applied_projection_names.contains(optimization_settings.force_projection_name))
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "Projection {} is specified in setting force_optimize_projection_name but not used",
-             optimization_settings.force_projection_name);
+            optimization_settings.force_projection_name);
 
     /// Trying to reuse sorting property for other steps.
     applyOrder(optimization_settings, root);
 
     if (optimization_settings.query_plan_join_shard_by_pk_ranges)
         optimizeJoinByShards(root);
+
+    considerEnablingParallelReplicas(optimization_settings, root, nodes, query_plan);
 }
 
-void addStepsToBuildSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+void addStepsToBuildSets(
+    const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
     Stack stack;
     stack.push_back({.node = &root});
