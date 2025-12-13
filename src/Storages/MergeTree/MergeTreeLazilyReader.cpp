@@ -87,12 +87,13 @@ MergeTreeLazilyReader::MergeTreeLazilyReader(
     const MergeTreeData & storage_,
     const StorageSnapshotPtr & storage_snapshot_,
     const LazilyReadInfoPtr & lazily_read_info_,
-    const ContextPtr & context_,
+    const ContextPtr & context,
     const AliasToName & alias_index_)
     : storage(storage_)
     , data_part_infos(lazily_read_info_->data_part_infos)
     , storage_snapshot(storage_snapshot_)
-    , use_uncompressed_cache(context_->getSettingsRef()[Setting::use_uncompressed_cache])
+    , use_uncompressed_cache(context->getSettingsRef()[Setting::use_uncompressed_cache])
+    , reader_settings(MergeTreeReaderSettings::createFromContext(context))
 {
     NameSet columns_name_set;
 
@@ -114,10 +115,7 @@ MergeTreeLazilyReader::MergeTreeLazilyReader(
     }
 }
 
-void MergeTreeLazilyReader::readLazyColumns(
-    const MergeTreeReaderSettings & reader_settings,
-    const PartIndexToRowOffsets & part_to_row_offsets,
-    MutableColumns & lazily_read_columns)
+void MergeTreeLazilyReader::readLazyColumns(const PartIndexToRowOffsets & part_to_row_offsets, MutableColumns & lazily_read_columns)
 {
     const auto columns_size = lazily_read_columns.size();
 
@@ -262,13 +260,6 @@ void MergeTreeLazilyReader::transformLazyColumns(
     chassert(row_num_column->size() == part_num_column->size());
     const size_t rows_size = row_num_column->size();
 
-    ReadSettings read_settings;
-    MergeTreeReaderSettings reader_settings =
-    {
-        .read_settings = read_settings,
-        .save_marks_in_cache = true,
-    };
-
     MutableColumns lazily_read_columns;
     lazily_read_columns.resize(columns_size);
 
@@ -287,7 +278,7 @@ void MergeTreeLazilyReader::transformLazyColumns(
     matchDataPartToRowOffsets(row_num_column, part_num_column, part_to_row_offsets, permutation);
 
     /// Actually read the lazily materialized column data from MergeTree.
-    readLazyColumns(reader_settings, part_to_row_offsets, lazily_read_columns);
+    readLazyColumns(part_to_row_offsets, lazily_read_columns);
 
     /// Restore the original order of the rows.
     for (size_t i = 0; i < lazily_read_columns.size(); ++i)

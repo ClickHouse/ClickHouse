@@ -44,6 +44,7 @@ class JobTypes:
     FINISH_WORKFLOW = "Finish Workflow"
     DOCKER_TEST_IMAGES = "Docker test images"
     BUGFIX_VALIDATION_FUNCTIONAL = "Bugfix validation functional"
+    BUGFIX_VALIDATION_INTEGRATION = "Bugfix validation integration"
     CLICKBENCH = "ClickBench"
 
 
@@ -99,6 +100,8 @@ class CIFailure:
             self.job_type = JobTypes.UPGRADE
         elif "Bugfix validation (functional tests)" in self.job_name:
             self.job_type = JobTypes.BUGFIX_VALIDATION_FUNCTIONAL
+        elif "Bugfix validation (integration tests)" in self.job_name:
+            self.job_type = JobTypes.BUGFIX_VALIDATION_INTEGRATION
         elif "Performance" in self.job_name:
             self.job_type = JobTypes.PERFORMANCE
         elif self.job_name.startswith("Dockers Build"):
@@ -307,6 +310,12 @@ Test output:
             print("Job type is not supported yet")
             return False
         if self.job_type in (JobTypes.FINISH_WORKFLOW):
+            print("This issue should be fixed before merge - cannot handle it")
+            return False
+        if self.job_type in (
+            JobTypes.BUGFIX_VALIDATION_FUNCTIONAL,
+            JobTypes.BUGFIX_VALIDATION_INTEGRATION,
+        ):
             print("This issue should be fixed before merge - cannot handle it")
             return False
         if "OOM" in self.test_name:
@@ -674,32 +683,59 @@ ci_start_time = None
 def main():
     global head_sha, pr_number
     is_master_commit = False
-    my_prs_number_and_title = Shell.get_output(
-        "gh pr list --author @me --json number,title --base master --limit 20 --repo ClickHouse/ClickHouse"
-    )
-    my_prs_number_and_title = json.loads(my_prs_number_and_title)
-    pr_menu = []
-    pr_menu.append((f"Process commit sha on master", 0))
-    pr_menu.append((f"Enter PR number manually", 1))
-    for pr_dict in my_prs_number_and_title:
-        pr_number = pr_dict["number"]
-        pr_title = pr_dict["title"]
-        pr_menu.append((f"#{pr_number}: {pr_title}", pr_number))
 
-    selected_pr = UserPrompt.select_from_menu(pr_menu, "Select a PR to merge")
-    if selected_pr[1] == 1:
-        # PR numbers are expected to be in the range 80000-100000 for recent PRs
-        pr_number = UserPrompt.get_number(
-            "Enter PR number", lambda x: x > 80000 and x < 100000
-        )
-    elif selected_pr[1] == 0:
-        is_master_commit = True
-        commit_sha = UserPrompt.get_string(
-            "Enter commit sha", validator=lambda x: len(x) == 40
-        )
-        pr_number = None
+    # Check gh CLI version
+    gh_version_output = Shell.get_output("gh --version")
+    # Output format: "gh version 2.xx.x (yyyy-mm-dd)\n..."
+    version_match = re.search(r"gh version (\d+)\.(\d+)", gh_version_output)
+    if version_match:
+        major = int(version_match.group(1))
+        minor = int(version_match.group(2))
+        if major < 2 or (major == 2 and minor <= 80):
+            print(
+                f"ERROR: gh CLI version {major}.{minor} is too old. Version newer than 2.80 is required."
+            )
+            sys.exit(1)
     else:
-        pr_number = selected_pr[1]
+        print("ERROR: Could not parse gh CLI version")
+        sys.exit(1)
+
+    # Check if PR number was provided as command-line argument
+    if len(sys.argv) > 1:
+        try:
+            pr_number = int(sys.argv[1])
+            print(f"Using PR number from command line: {pr_number}")
+        except ValueError:
+            print(f"ERROR: Invalid PR number provided: {sys.argv[1]}")
+            sys.exit(1)
+    else:
+        # Interactive mode: show menu to select PR
+        my_prs_number_and_title = Shell.get_output(
+            "gh pr list --author @me --json number,title --base master --limit 20 --repo ClickHouse/ClickHouse"
+        )
+        my_prs_number_and_title = json.loads(my_prs_number_and_title)
+        pr_menu = []
+        pr_menu.append((f"Process commit sha on master", 0))
+        pr_menu.append((f"Enter PR number manually", 1))
+        for pr_dict in my_prs_number_and_title:
+            pr_number = pr_dict["number"]
+            pr_title = pr_dict["title"]
+            pr_menu.append((f"#{pr_number}: {pr_title}", pr_number))
+
+        selected_pr = UserPrompt.select_from_menu(pr_menu, "Select a PR to merge")
+        if selected_pr[1] == 1:
+            # PR numbers are expected to be in the range 80000-100000 for recent PRs
+            pr_number = UserPrompt.get_number(
+                "Enter PR number", lambda x: x > 80000 and x < 100000
+            )
+        elif selected_pr[1] == 0:
+            is_master_commit = True
+            commit_sha = UserPrompt.get_string(
+                "Enter commit sha", validator=lambda x: len(x) == 40
+            )
+            pr_number = None
+        else:
+            pr_number = selected_pr[1]
 
     if not is_master_commit:
         pr_url = f"https://github.com/ClickHouse/ClickHouse/pull/{pr_number}"

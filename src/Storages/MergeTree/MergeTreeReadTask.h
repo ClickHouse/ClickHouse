@@ -129,7 +129,7 @@ public:
         UncompressedCache * uncompressed_cache = nullptr;
         MarkCache * mark_cache = nullptr;
         PatchJoinCache * patch_join_cache = nullptr;
-        MergeTreeReaderSettings reader_settings{};
+        MergeTreeReaderSettings reader_settings;
         StorageSnapshotPtr storage_snapshot{};
         ValueSizeMap value_size_map{};
         ReadBufferFromFileBase::ProfileCallback profile_callback{};
