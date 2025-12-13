@@ -310,17 +310,12 @@ def test_first():
             '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [135, "2"], [150, "1"], [165, "1"], [210, "3"]]}]}',
             [
                 [
-                    "[('__name__','test_data')]",
+                    "[]",
                     "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',2),('1970-01-01 00:02:30.000',1),('1970-01-01 00:02:45.000',1),('1970-01-01 00:03:30.000',3)]",
                 ]
             ],
-            # FIXME: Results are different!
-            # | E   AssertionError: query: idelta(test_data[45s])[120s:15s]
-            # | E   assert '{"resultType...210, "3"]]}]}' == '{"resultType...210, "3"]]}]}'
-            # | E
-            # | E     - {"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [135, "2"], [150, "1"], [165, "1"], [210, "3"]]}]}
-            # | E     + {"resultType": "matrix", "result": [{"metric": {"__name__": "test_data"}, "values": [[120, "0"], [135, "2"], [150, "1"], [165, "1"], [210, "3"]]}]}
-            False
+            # Everything is Ok
+            True
         ),
         (
             "irate(test_data[45s])[120s:15s]",
@@ -328,17 +323,12 @@ def test_first():
             '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [135, "0.2"], [150, "0.1"], [165, "0.1"], [210, "0.3"]]}]}',
             [
                 [
-                    "[('__name__','test_data')]",
+                    "[]",
                     "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',0.2),('1970-01-01 00:02:30.000',0.1),('1970-01-01 00:02:45.000',0.1),('1970-01-01 00:03:30.000',0.3)]",
                 ]
             ],
-            # FIXME: Results are different!
-            # | E   AssertionError: query: irate(test_data[45s])[120s:15s]
-            # | E   assert '{"resultType...0, "0.3"]]}]}' == '{"resultType...0, "0.3"]]}]}'
-            # | E
-            # | E     - {"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [135, "0.2"], [150, "0.1"], [165, "0.1"], [210, "0.3"]]}]}
-            # | E     + {"resultType": "matrix", "result": [{"metric": {"__name__": "test_data"}, "values": [[120, "0"], [135, "0.2"], [150, "0.1"], [165, "0.1"], [210, "0.3"]]}]}
-            False
+            # Everything is Ok
+            True
         ),
         (
             "test_data[120s:15s]",
@@ -359,18 +349,12 @@ def test_first():
             '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [135, "3"], [150, "4.5"], [165, "2.5"], [210, "3.75"]]}]}',
             [
                 [
-                    "[('__name__','test_data')]",
+                    "[]",
                     "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',3),('1970-01-01 00:02:30.000',4.5),('1970-01-01 00:02:45.000',2.5),('1970-01-01 00:03:30.000',3.75)]",
                 ]
             ],
-            # FIXME: Results are different!
-            # | E   AssertionError: query: delta(test_data[45s])[120s:15s]
-            # | E   assert '{"resultType..., "3.75"]]}]}' == '{"resultType..., "3.75"]]}]}'
-            # | E
-            # | E     - {"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [135, "3"], [150, "4.5"], [165, "2.5"], [210, "3.75"]]}]}
-            # | E     + {"resultType": "matrix", "result": [{"metric": {"__name__": "test_data"}, "values": [[120, "0"], [135, "3"], [150, "4.5"], [165, "2.5"], [210, "3.75"]]}]}
-            # | E     ?
-            False
+            # Everything is Ok
+            True
         ),
         (
             "rate(test_data[45s])[120s:15s]",
@@ -378,20 +362,12 @@ def test_first():
             '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [135, "0.06666666666666667"], [150, "0.1"], [165, "0.05555555555555555"], [210, "0.08333333333333333"]]}]}',
             [
                 [
-                    "[('__name__','test_data')]",
+                    "[]",
                     "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',0.06666666666666667),('1970-01-01 00:02:30.000',0.1),('1970-01-01 00:02:45.000',0.05555555555555555),('1970-01-01 00:03:30.000',0.08333333333333333)]",
                 ]
             ],
-            # FIXME: Results are different!
-            # | E   AssertionError: query: rate(test_data[45s])[120s:15s]
-            # | E   assert '{"resultType..., "0.08"]]}]}' == '{"resultType...3333333"]]}]}'
-            # | E
-            # | E     - {"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [135, "0.06666666666666667"], [150, "0.1"], [165, "0.05555555555555555"], [210, "0.08333333333333333"]]}]}
-            # | E     ?                                                                                     ---------------                             ^^^^^^^^^^^^^^^^               ---------------
-            # | E     + {"resultType": "matrix", "result": [{"metric": {"__name__": "test_data"}, "values": [[120, "0"], [135, "0.07"], [150, "0.1"], [165, "0.06"], [210, "0.08"]]}]}
-            # | E     ?                                                 ++++++++...
-            # | E
-            False
+            # Everything is Ok
+            True
         ),
         (
             "idelta(test_data[35s])[120s:15s]",
@@ -399,18 +375,12 @@ def test_first():
             '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [135, "2"], [150, "1"], [210, "3"]]}]}',
             [
                 [
-                    "[('__name__','test_data')]",
+                    "[]",
                     "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',2),('1970-01-01 00:02:30.000',1),('1970-01-01 00:03:30.000',3)]",
                 ]
             ],
-            # FIXME: Results are different!
-            # | E   AssertionError: query: idelta(test_data[35s])[120s:15s]
-            # | E   assert '{"resultType...210, "3"]]}]}' == '{"resultType...210, "3"]]}]}'
-            # | E
-            # | E     - {"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [135, "2"], [150, "1"], [210, "3"]]}]}
-            # | E     + {"resultType": "matrix", "result": [{"metric": {"__name__": "test_data"}, "values": [[120, "0"], [135, "2"], [150, "1"], [210, "3"]]}]}
-            # | E     ?
-            False
+            # Everything is Ok
+            True
         ),
     ]
 

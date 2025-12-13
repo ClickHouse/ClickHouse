@@ -35,8 +35,8 @@ namespace ErrorCodes
 namespace
 {
     using ScalarType = PrometheusQueryTree::ScalarType;
-    using IntervalType = PrometheusQueryTree::IntervalType;
-    using ScalarOrInterval = PrometheusQueryParsingUtil::ScalarOrInterval;
+    using DurationType = PrometheusQueryTree::DurationType;
+    using ScalarOrDuration = PrometheusQueryParsingUtil::ScalarOrDuration;
     using ResultType = PrometheusQueryResultType;
     using Node = PrometheusQueryTree::Node;
 
@@ -162,11 +162,11 @@ namespace
             return true;
         }
 
-        bool parseScalarOrLiteral(const antlr4::tree::TerminalNode * ctx, ScalarOrInterval & result)
+        bool parseScalarOrLiteral(const antlr4::tree::TerminalNode * ctx, ScalarOrDuration & result)
         {
             String error_message;
             size_t error_pos;
-            if (!PrometheusQueryParsingUtil::parseScalarOrInterval(getText(ctx), result, error_message, error_pos))
+            if (!PrometheusQueryParsingUtil::parseScalarOrDuration(getText(ctx), result, error_message, error_pos))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx));
                 return false;
@@ -174,14 +174,14 @@ namespace
             return true;
         }
 
-        bool parseTimeRange(const antlr4::tree::TerminalNode * ctx, ScalarOrInterval & res_range, size_t & res_start_pos, size_t & res_length)
+        bool parseTimeRange(const antlr4::tree::TerminalNode * ctx, ScalarOrDuration & res_range, size_t & res_start_pos, size_t & res_length)
         {
             std::string_view sv = getText(ctx);
 
             String error_message;
             size_t error_pos;
             std::string_view range_sv;
-            ScalarOrInterval range;
+            ScalarOrDuration range;
 
             if (!PrometheusQueryParsingUtil::findTimeRange(sv, range_sv, error_message, error_pos))
             {
@@ -189,7 +189,7 @@ namespace
                 return false;
             }
 
-            if (!PrometheusQueryParsingUtil::parseScalarOrInterval(range_sv, range, error_message, error_pos))
+            if (!PrometheusQueryParsingUtil::parseScalarOrDuration(range_sv, range, error_message, error_pos))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx) + (range_sv.data() - sv.data()));
                 return false;
@@ -202,8 +202,8 @@ namespace
         }
 
         bool parseSubqueryRangeAndResolution(const antlr4::tree::TerminalNode * ctx,
-                                             ScalarOrInterval & res_range, size_t & res_range_start_pos, size_t & res_range_length,
-                                             ScalarOrInterval & res_resolution, size_t & res_resolution_start_pos, size_t & res_resolution_length)
+                                             ScalarOrDuration & res_range, size_t & res_range_start_pos, size_t & res_range_length,
+                                             ScalarOrDuration & res_resolution, size_t & res_resolution_start_pos, size_t & res_resolution_length)
 
         {
             std::string_view sv = getText(ctx);
@@ -212,8 +212,8 @@ namespace
             size_t error_pos;
             std::string_view range_sv;
             std::string_view resolution_sv;
-            ScalarOrInterval range;
-            ScalarOrInterval resolution;
+            ScalarOrDuration range;
+            ScalarOrDuration resolution;
 
             if (!PrometheusQueryParsingUtil::findSubqueryRangeAndResolution(sv, range_sv, resolution_sv, error_message, error_pos))
             {
@@ -221,13 +221,13 @@ namespace
                 return false;
             }
 
-            if (!PrometheusQueryParsingUtil::parseScalarOrInterval(range_sv, range, error_message, error_pos))
+            if (!PrometheusQueryParsingUtil::parseScalarOrDuration(range_sv, range, error_message, error_pos))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx) + (range_sv.data() - sv.data()));
                 return false;
             }
 
-            if (!resolution_sv.empty() && !PrometheusQueryParsingUtil::parseScalarOrInterval(resolution_sv, resolution, error_message, error_pos))
+            if (!resolution_sv.empty() && !PrometheusQueryParsingUtil::parseScalarOrDuration(resolution_sv, resolution, error_message, error_pos))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx) + (resolution_sv.data() - sv.data()));
                 return false;
@@ -245,9 +245,9 @@ namespace
         using Matcher = PrometheusQueryTree::Matcher;
         using MatcherType = PrometheusQueryTree::MatcherType;
         using MatcherList = PrometheusQueryTree::MatcherList;
-        using StringLiteral = PrometheusQueryTree::StringLiteral;
         using ScalarLiteral = PrometheusQueryTree::ScalarLiteral;
-        using IntervalLiteral = PrometheusQueryTree::IntervalLiteral;
+        using StringLiteral = PrometheusQueryTree::StringLiteral;
+        using Duration = PrometheusQueryTree::Duration;
         using InstantSelector = PrometheusQueryTree::InstantSelector;
         using RangeSelector = PrometheusQueryTree::RangeSelector;
         using Subquery = PrometheusQueryTree::Subquery;
@@ -271,37 +271,37 @@ namespace
             return addNode(std::move(new_node));
         }
 
-        /// Makes a node for a scalar or an interval literal after parsing it.
-        Node * makeNodeForScalarOrInterval(antlr4::tree::TerminalNode * ctx, bool negate = false)
+        /// Makes a node for a scalar or a duration literal after parsing it.
+        Node * makeNodeForScalarOrDuration(antlr4::tree::TerminalNode * ctx, bool negate = false)
         {
-            PrometheusQueryParsingUtil::ScalarOrInterval scalar_or_interval;
-            if (!parseScalarOrLiteral(ctx, scalar_or_interval))
+            PrometheusQueryParsingUtil::ScalarOrDuration scalar_or_duration;
+            if (!parseScalarOrLiteral(ctx, scalar_or_duration))
             {
                 chassert(error_listener.hasError());
                 return nullptr;
             }
             if (negate)
-                scalar_or_interval.negate();
-            return makeNodeForScalarOrInterval(scalar_or_interval, getStartPos(ctx), getLength(ctx));
+                scalar_or_duration.negate();
+            return makeNodeForScalarOrDuration(scalar_or_duration, getStartPos(ctx), getLength(ctx));
         }
 
-        Node * makeNodeForScalarOrInterval(const ScalarOrInterval & scalar_or_interval, size_t start_pos, size_t length)
+        Node * makeNodeForScalarOrDuration(const ScalarOrDuration & scalar_or_duration, size_t start_pos, size_t length)
         {
-            chassert(!scalar_or_interval.empty());
-            if (scalar_or_interval.scalar)
+            chassert(!scalar_or_duration.empty());
+            if (scalar_or_duration.scalar)
             {
                 auto new_node = std::make_unique<ScalarLiteral>();
                 new_node->start_pos = start_pos;
                 new_node->length = length;
-                new_node->scalar = *scalar_or_interval.scalar;
+                new_node->scalar = *scalar_or_duration.scalar;
                 return addNode(std::move(new_node));
             }
             else
             {
-                auto new_node = std::make_unique<IntervalLiteral>();
+                auto new_node = std::make_unique<Duration>();
                 new_node->start_pos = start_pos;
                 new_node->length = length;
-                new_node->interval = *scalar_or_interval.interval;
+                new_node->duration = *scalar_or_duration.duration;
                 return addNode(std::move(new_node));
             }
         }
@@ -410,7 +410,7 @@ namespace
 
             auto * instant_selector = makeInstantSelector(instant_selector_ctx);
 
-            ScalarOrInterval range;
+            ScalarOrDuration range;
             size_t range_start_pos;
             size_t range_length;
             if (!instant_selector || !parseTimeRange(time_range_ctx, range, range_start_pos, range_length))
@@ -419,7 +419,7 @@ namespace
                 return nullptr;
             }
 
-            auto * range_node = makeNodeForScalarOrInterval(range, range_start_pos, range_length);
+            auto * range_node = makeNodeForScalarOrDuration(range, range_start_pos, range_length);
 
             addChild(new_node.get(), instant_selector);
             addChild(new_node.get(), range_node);
@@ -436,8 +436,8 @@ namespace
             if (!subquery_range_ctx)
                 throwInconsistentSchema("SubqueryOp", ctx->getText());
 
-            ScalarOrInterval range;
-            ScalarOrInterval resolution;
+            ScalarOrDuration range;
+            ScalarOrDuration resolution;
             size_t range_start_pos;
             size_t range_length;
             size_t resolution_start_pos;
@@ -448,11 +448,11 @@ namespace
                 return nullptr;
             }
 
-            auto * range_node = makeNodeForScalarOrInterval(range, range_start_pos, range_length);
+            auto * range_node = makeNodeForScalarOrDuration(range, range_start_pos, range_length);
 
             Node * resolution_node = nullptr;
             if (!resolution.empty())
-                resolution_node = makeNodeForScalarOrInterval(resolution, resolution_start_pos, resolution_length);
+                resolution_node = makeNodeForScalarOrDuration(resolution, resolution_start_pos, resolution_length);
 
             addChild(new_node.get(), expression);
             addChild(new_node.get(), range_node);
@@ -494,21 +494,21 @@ namespace
                 size_t offset_index = 1;
                 if (getStartPos(offset_ctx) < getStartPos(at_ctx))
                     std::swap(at_index, offset_index);
-                at_node = makeNodeForScalarOrInterval(ctx->NUMBER(at_index));
+                at_node = makeNodeForScalarOrDuration(ctx->NUMBER(at_index));
                 if (at_node)
-                    offset_node = makeNodeForScalarOrInterval(ctx->NUMBER(offset_index), negative_offset);
+                    offset_node = makeNodeForScalarOrDuration(ctx->NUMBER(offset_index), negative_offset);
                 ok = at_node && offset_node;
             }
             else if (at_ctx)
             {
                 size_t at_index = 0;
-                at_node = makeNodeForScalarOrInterval(ctx->NUMBER(at_index));
+                at_node = makeNodeForScalarOrDuration(ctx->NUMBER(at_index));
                 ok = (at_node != nullptr);
             }
             else if (offset_ctx)
             {
                 size_t offset_index = 0;
-                offset_node = makeNodeForScalarOrInterval(ctx->NUMBER(offset_index), negative_offset);
+                offset_node = makeNodeForScalarOrDuration(ctx->NUMBER(offset_index), negative_offset);
                 ok = (offset_node != nullptr);
             }
 
@@ -776,7 +776,7 @@ namespace
         std::any visitLiteral(antlr4_grammars::PromQLParser::LiteralContext * ctx) override
         {
             if (auto * number_ctx = ctx->NUMBER())
-                return makeNodeForScalarOrInterval(number_ctx);
+                return makeNodeForScalarOrDuration(number_ctx);
             else if (auto * string_ctx = ctx->STRING())
                 return makeStringLiteral(string_ctx);
             else
