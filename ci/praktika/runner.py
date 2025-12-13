@@ -15,7 +15,7 @@ from .gh import GH
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
 from .info import Info
-from .native_jobs import _is_praktika_job
+from .native_jobs import _is_praktika_job, _mark_flaky_and_infrastructure_issues
 from .result import Result, ResultInfo
 from .runtime import RunConfig
 from .s3 import S3
@@ -609,6 +609,19 @@ class Runner:
                 CacheRunnerHooks.post_run(workflow, job)
 
         workflow_result = None
+        if (
+            workflow.enable_report
+            and workflow.enable_open_issues_check
+            and not _is_praktika_job(job.name)
+        ):
+            try:
+                _mark_flaky_and_infrastructure_issues(result, job.name)
+            except Exception as e:
+                print(f"ERROR: failed to check open issues: {e}")
+                traceback.print_exc()
+                result.set_info("Open issues check failed")
+
+        # always in the end
         if workflow.enable_report:
             print(f"Run html report hook")
             HtmlRunnerHooks.post_run(workflow, job, info_errors)

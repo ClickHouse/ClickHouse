@@ -522,9 +522,155 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     return Result.create_from(name=job_name, results=results, files=files)
 
 
+def _mark_flaky_and_infrastructure_issues(result: Result, job_name: str) -> bool:
+    """
+    Downloads flaky test catalog from S3 and marks matching test results as flaky
+    or infrastructure issues. Can be called on a single job result.
+
+    Args:
+        result: The result object to check and mark
+        job_name: The job name for infrastructure job pattern matching
+
+    Returns:
+        True if successful, False if catalog download failed
+    """
+    from .dataclasses import TestCaseIssueCatalog
+
+    if result.is_ok():
+        print("Result succeeded, no flaky test check needed.")
+        return True
+
+    print("Checking for flaky tests and infrastructure issues...")
+
+    # Download catalog from S3
+    catalog_name = TestCaseIssueCatalog.name
+    s3_catalog_path = f"{Settings.HTML_S3_PATH}/statistics/{catalog_name}.json.gz"
+    local_catalog_gz = TestCaseIssueCatalog.file_name_static(name=catalog_name) + ".gz"
+    local_catalog_json = TestCaseIssueCatalog.file_name_static(name=catalog_name)
+
+    if not S3.copy_file_from_s3(s3_catalog_path, local_catalog_gz, no_strict=True):
+        print("  WARNING: Could not download flaky test catalog from S3")
+        return False
+
+    if not Utils.decompress_file(local_catalog_gz, local_catalog_json):
+        print("  WARNING: Could not decompress flaky test catalog")
+        return False
+
+    flaky_catalog = TestCaseIssueCatalog.from_fs(name=catalog_name)
+
+    # Build a lookup map: test_name -> issue (for fast matching)
+    flaky_tests_map = {
+        issue.test_name: issue
+        for issue in flaky_catalog.active_test_issues
+        if issue.test_name
+        and issue.test_name != "unknown"
+        and any(l in issue.labels for l in ["flaky test", "fuzz"])
+    }
+    print(f"  Loaded {len(flaky_tests_map)} flaky test patterns")
+
+    # Build a list of infrastructure issues
+    infrastructure_issues = [
+        issue
+        for issue in flaky_catalog.active_test_issues
+        if any(l in issue.labels for l in ["infrastructure"])
+    ]
+    print(f"  Loaded {len(infrastructure_issues)} infrastructure issues")
+
+    # Walk the result tree and flag flaky leaves
+    def check_and_mark_flaky(res: Result):
+        if res.is_ok() or res.has_label("issue"):
+            return
+
+        if res.results:
+            for sub_result in res.results:
+                check_and_mark_flaky(sub_result)
+        else:
+            for test_name, issue in flaky_tests_map.items():
+                name_in_report = res.name
+                if ".py" in name_in_report:
+                    # Normalize pytest parameterized names.
+                    # If the issue already includes parameters (e.g. "test_x[param]"),
+                    # do exact matching later. Otherwise, strip the "[param]" suffix
+                    # from the reported test name so we can match the base test name.
+                    if "[" in test_name:
+                        # Issue mentions a specific parametrization: keep full name for exact match
+                        pass
+                    elif "[" in name_in_report:
+                        # Issue mentions only the base test: compare against the base part
+                        name_in_report = name_in_report.split("[")[0]
+
+                if name_in_report.endswith(
+                    test_name
+                ):  # TODO: Replace suffix match with a canonical test id matcher (e.g. full nodeid/path)
+                    # Check if failure_reason is present in result.info
+                    if issue.failure_reason and issue.failure_reason not in res.info:
+                        print(
+                            f"  WARNING: Test name matched but failure_reason '{issue.failure_reason}' not found in result.info for '{res.name}' (issue: #{issue.issue}) - skipping"
+                        )
+                        continue
+                    print(
+                        f"  Marking '{res.name}' as flaky (matched: {test_name}, issue: #{issue.issue})"
+                    )
+                    res.set_clickable_label(label="issue", link=issue.issue_url)
+                    break
+
+    # Walk the result tree and flag infrastructure issues
+    def check_and_mark_infrastructure(res: Result, top_level_result_name: str):
+        if res.is_ok():
+            return
+
+        if res.results:
+            for sub_result in res.results:
+                check_and_mark_infrastructure(sub_result, top_level_result_name)
+        else:
+            for issue in infrastructure_issues:
+                matched = True
+
+                # Check failure_reason if present
+                if issue.failure_reason and issue.failure_reason not in res.info:
+                    matched = False
+
+                # Check failure_flags with result.ext.get("labels", [])
+                if matched and issue.failure_flags:
+                    result_labels = res.ext.get("labels", [])
+                    if not any(flag in result_labels for flag in issue.failure_flags):
+                        matched = False
+
+                # Check test_pattern (SQL style %name%) with result.name
+                if matched and issue.test_pattern:
+                    # Split by % and check if any non-empty part is in result.name
+                    pattern_parts = [p for p in issue.test_pattern.split("%") if p]
+                    if not any(part in res.name for part in pattern_parts):
+                        matched = False
+
+                # Check job_pattern (SQL style %name%) with top level result name
+                if matched and issue.job_pattern:
+                    # Split by % and check if any non-empty part is in top_level_result_name
+                    job_pattern_parts = [p for p in issue.job_pattern.split("%") if p]
+                    if not any(
+                        part in top_level_result_name for part in job_pattern_parts
+                    ):
+                        matched = False
+
+                if matched:
+                    print(
+                        f"  Marking '{res.name}' as infrastructure issue (issue: #{issue.issue})"
+                    )
+                    res.set_clickable_label(label="issue", link=issue.issue_url)
+                    break
+
+    # Check the result
+    check_and_mark_flaky(result)
+    check_and_mark_infrastructure(result, job_name)
+    result.dump()
+    print("Flaky test check and infrastructure issue check completed")
+    return True
+
+
 def _check_and_mark_flaky_tests(workflow_result: Result):
     """
-    Downloads flaky test catalog from S3 and marks matching test results as flaky.
+    Downloads flaky test catalog from S3 and marks matching test results as flaky
+    for the entire workflow.
 
     Args:
         workflow_result: The workflow result object containing all test results
@@ -535,7 +681,7 @@ def _check_and_mark_flaky_tests(workflow_result: Result):
         print("Workflow succeeded, no flaky test check needed.")
         return
 
-    print("Checking for flaky tests...")
+    print("Checking for flaky tests and infrastructure issues...")
 
     # Download catalog from S3
     catalog_name = TestCaseIssueCatalog.name
@@ -557,9 +703,19 @@ def _check_and_mark_flaky_tests(workflow_result: Result):
     flaky_tests_map = {
         issue.test_name: issue
         for issue in flaky_catalog.active_test_issues
-        if issue.test_name and issue.test_name != "unknown"
+        if issue.test_name
+        and issue.test_name != "unknown"
+        and any(l in issue.labels for l in ["flaky test", "fuzz"])
     }
     print(f"  Loaded {len(flaky_tests_map)} flaky test patterns")
+
+    # Build a list of infrastructure issues
+    infrastructure_issues = [
+        issue
+        for issue in flaky_catalog.active_test_issues
+        if any(l in issue.labels for l in ["infrastructure"])
+    ]
+    print(f"  Loaded {len(infrastructure_issues)} infrastructure issues")
 
     # Walk the result tree and flag flaky leaves
     def check_and_mark_flaky(result: Result):
@@ -572,31 +728,86 @@ def _check_and_mark_flaky_tests(workflow_result: Result):
         else:
             for test_name, issue in flaky_tests_map.items():
                 name_in_report = result.name
-
-                # Normalize pytest parameterized names.
-                # If the issue already includes parameters (e.g. "test_x[param]"),
-                # do exact matching later. Otherwise, strip the "[param]" suffix
-                # from the reported test name so we can match the base test name.
-                if "[" in test_name:
-                    # Issue mentions a specific parametrization: keep full name for exact match
-                    pass
-                elif "[" in name_in_report:
-                    # Issue mentions only the base test: compare against the base part
-                    name_in_report = name_in_report.split("[")[0]
+                if ".py" in name_in_report:
+                    # Normalize pytest parameterized names.
+                    # If the issue already includes parameters (e.g. "test_x[param]"),
+                    # do exact matching later. Otherwise, strip the "[param]" suffix
+                    # from the reported test name so we can match the base test name.
+                    if "[" in test_name:
+                        # Issue mentions a specific parametrization: keep full name for exact match
+                        pass
+                    elif "[" in name_in_report:
+                        # Issue mentions only the base test: compare against the base part
+                        name_in_report = name_in_report.split("[")[0]
 
                 if name_in_report.endswith(
                     test_name
                 ):  # TODO: Replace suffix match with a canonical test id matcher (e.g. full nodeid/path)
+                    # Check if failure_reason is present in result.info
+                    if issue.failure_reason and issue.failure_reason not in result.info:
+                        print(
+                            f"  WARNING: Test name matched but failure_reason '{issue.failure_reason}' not found in result.info for '{result.name}' (issue: #{issue.issue}) - skipping"
+                        )
+                        continue
                     print(
                         f"  Marking '{result.name}' as flaky (matched: {test_name}, issue: #{issue.issue})"
                     )
                     result.set_clickable_label(label="issue", link=issue.issue_url)
                     break
 
+    # Walk the result tree and flag infrastructure issues
+    def check_and_mark_infrastructure(result: Result, top_level_result_name: str):
+        if result.is_ok():
+            return
+
+        if result.results:
+            for sub_result in result.results:
+                check_and_mark_infrastructure(sub_result, top_level_result_name)
+        else:
+            for issue in infrastructure_issues:
+                matched = True
+
+                # Check failure_reason if present
+                if issue.failure_reason and issue.failure_reason not in result.info:
+                    matched = False
+
+                # Check failure_flags with result.ext.get("labels", [])
+                if matched and issue.failure_flags:
+                    result_labels = result.ext.get("labels", [])
+                    if not any(flag in result_labels for flag in issue.failure_flags):
+                        matched = False
+
+                # Check test_pattern (SQL style %name%) with result.name
+                if matched and issue.test_pattern:
+                    # Split by % and check if any non-empty part is in result.name
+                    pattern_parts = [p for p in issue.test_pattern.split("%") if p]
+                    if not any(part in result.name for part in pattern_parts):
+                        matched = False
+
+                # Check job_pattern (SQL style %name%) with top level result name
+                if matched and issue.job_pattern:
+                    # Split by % and check if any non-empty part is in top_level_result_name
+                    job_pattern_parts = [p for p in issue.job_pattern.split("%") if p]
+                    if not any(
+                        part in top_level_result_name for part in job_pattern_parts
+                    ):
+                        matched = False
+
+                if matched:
+                    print(
+                        f"  Marking '{result.name}' as infrastructure issue (issue: #{issue.issue})"
+                    )
+                    result.set_clickable_label(label="issue", link=issue.issue_url)
+                    break
+
     # Check all workflow results
     check_and_mark_flaky(workflow_result)
+    for job_result in workflow_result.results:
+        check_and_mark_infrastructure(job_result, job_result.name)
     workflow_result.dump()
-    print("Flaky test check completed and results updated")
+    print(
+        "Flaky test check and infrastructure issue check completed and results updated"
+    )
 
 
 def _finish_workflow(workflow, job_name):
