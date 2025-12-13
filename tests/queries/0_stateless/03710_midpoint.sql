@@ -431,3 +431,18 @@ SELECT
         toDecimal64('999999999999999.999', 3)
     ) AS r,
     toTypeName(r) AS t;
+
+
+-- ===============================================================
+-- avg2
+-- ===============================================================
+
+SELECT avg2(3, 6);
+
+SELECT avg2(toNullable(3), 6);
+
+SELECT avg2(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT avg2(3); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT avg2(3, 6, 3); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }

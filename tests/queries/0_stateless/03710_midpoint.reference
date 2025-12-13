@@ -494,3 +494,14 @@ SELECT
     ) AS r,
     toTypeName(r) AS t;
 999999999999999.999	Decimal(18, 3)
+-- ===============================================================
+-- avg2
+-- ===============================================================
+
+SELECT avg2(3, 6);
+4
+SELECT avg2(toNullable(3), 6);
+4
+SELECT avg2(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT avg2(3); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT avg2(3, 6, 3); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
