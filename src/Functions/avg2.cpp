@@ -21,10 +21,7 @@ class Avg2Resolver : public MidpointResolver<SpecializedFunction>
 {
 public:
     static constexpr auto name = "avg2";
-    static FunctionOverloadResolverPtr create(ContextPtr context_)
-    {
-        return std::make_unique<Avg2Resolver<SpecializedFunction>>(context_);
-    }
+    static FunctionOverloadResolverPtr create(ContextPtr context_) { return std::make_unique<Avg2Resolver<SpecializedFunction>>(context_); }
 
     explicit Avg2Resolver(ContextPtr context_)
         : MidpointResolver<SpecializedFunction>(context_)
@@ -33,25 +30,9 @@ public:
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
+    bool isVariadic() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
-    {
-        if (types.size() != 2)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 2",
-                name,
-                types.size());
-
-        if (types.size() == 2)
-        {
-            const auto & arg_0_type = types[0];
-            const auto & arg_1_type = types[1];
-            if (isNumber(arg_0_type) && isNumber(arg_1_type))
-                return SpecializedFunction::create(this->context)->getReturnTypeImpl(types);
-        }
-        return FunctionMidpoint::resolveReturnType(types);
-    }
+    DataTypePtr getReturnTypeImpl(const DataTypes & types) const override { return getLeastSupertype(types); }
 };
 
 REGISTER_FUNCTION(Avg2)
