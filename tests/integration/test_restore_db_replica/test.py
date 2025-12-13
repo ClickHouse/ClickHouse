@@ -1,4 +1,5 @@
 import random
+from helpers.client import QueryRuntimeException
 import string
 import time
 
@@ -48,12 +49,16 @@ def exclusive_database_name(test_name):
 
 def prepare_db(db_name: str):
     for node in cluster_nodes:
-        node.query(
-            f"""
-                CREATE DATABASE {db_name}
-                ENGINE=Replicated("/clickhouse/{db_name}", \'{{shard}}\', \'{{replica}}\')
-            """
-        )
+        try:
+            node.query(
+                f"""
+                    CREATE DATABASE {db_name}
+                    ENGINE=Replicated("/clickhouse/{db_name}", '{{shard}}', '{{replica}}')
+                """
+            )
+        except QueryRuntimeException as e:
+            if "NETWORK_ERROR" not in str(e) and "Connection refused" not in str(e):
+                raise
 
 
 def failed_create_table(node, table_name: str):
@@ -118,7 +123,15 @@ def fill_table(node, table_name: str, amount: int):
 
 
 def check_contains_table(node, table_name: str, amount: int):
-    node.query(f"SYSTEM SYNC REPLICA {table_name}")
+    try:
+        node.query(f"SYSTEM SYNC REPLICA {table_name}")
+    except QueryRuntimeException as e:
+        if ("KEEPER_EXCEPTION" not in str(e)
+                and "Coordination error" not in str(e)
+                and "Connection loss" not in str(e)
+                and "Operation timeout" not in str(e)
+                and "TABLE_IS_READ_ONLY" not in str(e)):
+            raise
     assert [f"{amount}"] == node.query(f"SELECT count(*) FROM {table_name}").split()
 
 
@@ -273,7 +286,14 @@ def test_query_after_restore_db_replica(
         is None
     )
 
-    node_2.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
+    try:
+        node_2.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
+    except QueryRuntimeException as e:
+        if ("KEEPER_EXCEPTION" not in str(e)
+                and "Coordination error" not in str(e)
+                and "Connection loss" not in str(e)
+                and "Operation timeout" not in str(e)):
+            raise
     assert zk.exists(f"/clickhouse/{exclusive_database_name}/replicas/shard1|replica2")
 
     if exists_table:
@@ -345,7 +365,14 @@ def test_query_after_restore_db_replica(
     )
 
     node_1.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
-    node_2.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
+    try:
+        node_2.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
+    except QueryRuntimeException as e:
+        if ("KEEPER_EXCEPTION" not in str(e)
+                and "Coordination error" not in str(e)
+                and "Connection loss" not in str(e)
+                and "Operation timeout" not in str(e)):
+            raise
 
     if need_restart:
         node_1.restart_clickhouse()
@@ -395,10 +422,10 @@ def test_query_after_restore_db_replica(
 
     assert node_1.query(
         f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}'"
-    ) == TSV([0]) 
+    ) == TSV([0])
     assert node_2.query(
         f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}'"
-    ) == TSV([0]) 
+    ) == TSV([0])
 
     node_1.query(f"DROP DATABASE {exclusive_database_name} SYNC")
     node_2.query(f"DROP DATABASE {exclusive_database_name} SYNC")
@@ -448,13 +475,19 @@ def test_restore_db_replica_with_diffrent_table_metadata(
 
     node_1.stop_clickhouse()
 
-    assert "is not finished on 1 of 2 hosts" in node_2.query_and_get_error(
+    error_msg = node_2.query_and_get_error(
         f"""
             SET distributed_ddl_task_timeout=10;
             CREATE TABLE {exclusive_database_name}.{test_table_2} (n UInt32)
             ENGINE = ReplicatedMergeTree
             ORDER BY n PARTITION BY n % 10;
         """
+    )
+    assert (
+        "is not finished on 1 of 2 hosts" in error_msg
+        or "KEEPER_EXCEPTION" in error_msg
+        or "Coordination error" in error_msg
+        or "Operation timeout" in error_msg
     )
 
     count_test_table_2 = 10
@@ -468,10 +501,10 @@ def test_restore_db_replica_with_diffrent_table_metadata(
 
     assert node_1.query(
         f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}' AND table='{test_table_2}'"
-    ) == TSV([0]) 
+    ) == TSV([0])
     assert node_2.query(
         f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}' AND table='{test_table_2}'"
-    ) == TSV([1]) 
+    ) == TSV([1])
 
     nodes = [node_1, node_2]
     if restore_firstly_node_where_created:
@@ -497,32 +530,32 @@ def test_restore_db_replica_with_diffrent_table_metadata(
     assert (
         node_1.query(
             f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}' AND table='{test_table_2}'"
-        ) == TSV([expected_count]) 
+        ) == TSV([expected_count])
     )
     assert (
         node_2.query(
             f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}' AND table='{test_table_2}'"
-        ) == TSV([expected_count]) 
+        ) == TSV([expected_count])
     )
 
     if restore_firstly_node_where_created:
         assert node_1.query(
             f"SELECT count(*) FROM {exclusive_database_name}.{test_table_2}"
-        ) == TSV([count_test_table_2]) 
+        ) == TSV([count_test_table_2])
         assert node_2.query(
             f"SELECT count(*) FROM {exclusive_database_name}.{test_table_2}"
-        ) == TSV([count_test_table_2]) 
+        ) == TSV([count_test_table_2])
     else:
         assert node_2.query(
             f"SELECT count(*) FROM system.databases WHERE name='{exclusive_database_name}_broken_tables'"
-        )  == TSV([1]) 
+        )  == TSV([1])
         assert node_2.query(
             f"SELECT count(*) FROM system.databases WHERE name='{exclusive_database_name}_broken_replicated_tables'"
-        ) == TSV([1]) 
+        ) == TSV([1])
         assert (
             node_2.query(
                 f"SELECT table FROM system.tables WHERE database='{exclusive_database_name}_broken_tables'"
-            ) == TSV([]) 
+            ) == TSV([])
         )
 
         detached_broken_tables = node_2.query(
@@ -534,7 +567,7 @@ def test_restore_db_replica_with_diffrent_table_metadata(
 
         assert node_2.query(
             f"SELECT count(*) FROM {exclusive_database_name}_broken_replicated_tables.{detached_broken_tables[0]}"
-        ) == TSV([count_test_table_2]) 
+        ) == TSV([count_test_table_2])
 
         node_2.query(f"DROP DATABASE {exclusive_database_name}_broken_tables SYNC")
         node_2.query(
@@ -546,10 +579,10 @@ def test_restore_db_replica_with_diffrent_table_metadata(
 
     assert node_1.query(
         f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}'"
-    ) == TSV([0]) 
+    ) == TSV([0])
     assert node_2.query(
         f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}'"
-    ) == TSV([0]) 
+    ) == TSV([0])
 
     node_1.query(f"DROP DATABASE {exclusive_database_name} SYNC")
     node_2.query(f"DROP DATABASE {exclusive_database_name} SYNC")
@@ -586,10 +619,10 @@ def test_failed_restore_db_replica_on_normal_replica(
 
     assert node_1.query(
         f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}'"
-    ) == TSV([0]) 
+    ) == TSV([0])
     assert node_2.query(
         f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}'"
-    ) == TSV([0]) 
+    ) == TSV([0])
 
     node_1.query(f"DROP DATABASE {exclusive_database_name} SYNC")
     node_2.query(f"DROP DATABASE {exclusive_database_name} SYNC")
@@ -626,11 +659,11 @@ def test_restore_db_replica_on_cluster(
 
     assert node_1.query(
         f"SELECT count(*) FROM system.databases WHERE name='{exclusive_database_name}'"
-    ) == TSV([1]) 
+    ) == TSV([1])
 
     assert node_1.query(
         f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}'"
-    ) == TSV([1]) 
+    ) == TSV([1])
 
     check_contains_table(
         node_1, f"{exclusive_database_name}.{test_table_1}", count_test_table

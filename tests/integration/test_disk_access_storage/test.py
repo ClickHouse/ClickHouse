@@ -62,7 +62,7 @@ def test_create():
             == "CREATE QUOTA q FOR INTERVAL 1 hour MAX queries = 100 TO ALL EXCEPT rx\n"
         )
         assert instance.query("SHOW GRANTS FOR u1") == ""
-        assert instance.query("SHOW GRANTS FOR u2") == "GRANT rx TO u2\n"
+        assert instance.query("SHOW GRANTS FOR u2") == "GRANT rx TO u2;\n"
         assert (
             instance.query("SHOW CREATE ROLE rx")
             == "CREATE ROLE rx SETTINGS PROFILE `s1`\n"
@@ -108,20 +108,20 @@ def test_alter():
         )
         assert (
             instance.query("SHOW GRANTS FOR u1")
-            == "GRANT SELECT ON mydb.mytable TO u1\n"
+            == "GRANT SELECT ON mydb.mytable TO u1;\n"
         )
-        assert instance.query("SHOW GRANTS FOR u2") == "GRANT rx, ry TO u2\n"
+        assert instance.query("SHOW GRANTS FOR u2") == "GRANT rx, ry TO u2;\n"
         assert (
             instance.query("SHOW CREATE ROLE rx")
             == "CREATE ROLE rx SETTINGS PROFILE `s2`\n"
         )
         assert instance.query("SHOW CREATE ROLE ry") == "CREATE ROLE ry\n"
         assert (
-            instance.query("SHOW GRANTS FOR rx")
-            == "GRANT SELECT ON mydb.* TO rx WITH GRANT OPTION\n"
+            instance.query("SHOW GRANTS FOR rx").rstrip(";\n")
+            == "GRANT SELECT ON mydb.* TO rx WITH GRANT OPTION"
         )
         assert (
-            instance.query("SHOW GRANTS FOR ry") == "GRANT rx TO ry WITH ADMIN OPTION\n"
+            instance.query("SHOW GRANTS FOR ry").rstrip(";\n") == "GRANT rx TO ry WITH ADMIN OPTION"
         )
         assert (
             instance.query("SHOW CREATE SETTINGS PROFILE s1")

@@ -7,7 +7,7 @@
         </users_xml>
         <local_directory>
             <!-- Path to folder where users created by SQL commands are stored. -->
-            <path>access/</path>
+            <path>/home/eh2sodn/clickhouse/access</path>
         </local_directory>
     </user_directories>
 </clickhouse>
