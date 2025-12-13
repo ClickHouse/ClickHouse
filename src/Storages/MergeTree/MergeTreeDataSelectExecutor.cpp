@@ -2004,7 +2004,11 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
             {
                 size_t row_begin = part->index_granularity->getMarkStartingRow(mark);
                 size_t row_end = part->index_granularity->getMarkStartingRow(mark + 1);
-                granule_text.setCurrentRange(RowsRange(row_begin, row_end));
+
+                if (row_begin == row_end)
+                    continue;
+
+                granule_text.setCurrentRange(RowsRange(row_begin, row_end - 1));
 
                 if (condition->mayBeTrueOnGranule(granule, nullptr))
                 {

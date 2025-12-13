@@ -46,7 +46,6 @@ private:
 
     PostingsMap readPostingsIfNeeded(size_t mark);
     std::vector<PostingListPtr> readPostingsForToken(std::string_view token, const TokenPostingsInfo & token_info, const RowsRange & range);
-    PostingListPtr readPostingsBlock(std::string_view token, const TokenPostingsInfo & token_info, size_t block_idx);
     void cleanupPostingsBlocks(const RowsRange & range);
 
     std::optional<RowsRange> getRowsRangeForMark(size_t mark) const;
@@ -70,9 +69,8 @@ private:
 
     std::unique_ptr<MergeTreeReaderStream> main_stream;
     std::unique_ptr<MergeTreeReaderStream> dictionary_stream;
-
-    absl::flat_hash_map<std::string_view, MergeTreeReaderStream *> posting_streams;
-    std::vector<std::unique_ptr<MergeTreeReaderStream>> posting_stream_holders;
+    std::unique_ptr<MergeTreeReaderStream> small_postings_stream;
+    absl::flat_hash_map<std::string_view, std::unique_ptr<MergeTreeReaderStream>> large_postings_streams;
 
     /// Current row position used when continuing reads across multiple calls.
     size_t current_row = 0;
@@ -84,6 +82,7 @@ private:
 
     std::vector<bool> is_always_true;
     absl::flat_hash_set<std::string_view> useful_tokens;
+    std::unique_ptr<MergeTreeIndexDeserializationState> deserialization_state;
 };
 
 }

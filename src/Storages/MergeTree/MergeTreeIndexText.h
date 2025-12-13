@@ -126,7 +126,7 @@ private:
 };
 
 /// Save BulkContext to optimize consecutive insertions into the posting list.
-using TokenToPostingsMap = StringHashMap<PostingListBuilder>;
+using TokenToPostingsBuilderMap = StringHashMap<PostingListBuilder>;
 using SortedTokensAndPostings = std::vector<std::pair<std::string_view, PostingListBuilder *>>;
 
 struct PostingsSerialization
@@ -228,6 +228,7 @@ struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
 {
 public:
     using TokenToPostingsInfosMap = absl::flat_hash_map<std::string_view, TokenPostingsInfo>;
+    using TokenToPostingsMap = absl::flat_hash_map<std::string_view, PostingListPtr>;
 
     explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_);
     ~MergeTreeIndexGranuleText() override = default;
@@ -245,12 +246,20 @@ public:
     bool hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const;
 
     const TokenToPostingsInfosMap & getRemainingTokens() const { return remaining_tokens; }
+    PostingListPtr getPostingsForToken(std::string_view token) const;
     void setCurrentRange(RowsRange range) { current_range = std::move(range); }
     void resetAfterAnalysis();
+
+    static PostingListPtr readPostingsBlock(
+        MergeTreeIndexReaderStream & stream,
+        MergeTreeIndexDeserializationState & state,
+        const TokenPostingsInfo & token_info,
+        size_t block_idx);
 
 private:
     /// Reads dictionary blocks and analyzes them for tokens.
     void analyzeDictionary(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
+    void readPostingsForRareTokens(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
 
     /// If adding significantly large members here make sure to add them to memoryUsageBytes()
     MergeTreeIndexTextParams params;
@@ -258,6 +267,8 @@ private:
     DictionarySparseIndexPtr sparse_index;
     /// Tokens that are in the index granule after analysis.
     TokenToPostingsInfosMap remaining_tokens;
+    /// Tokens with postings lists that have only one block.
+    TokenToPostingsMap rare_tokens_postings;
     /// TODO: comment
     std::optional<RowsRange> current_range;
 };
@@ -270,7 +281,7 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     MergeTreeIndexGranuleTextWritable(
         MergeTreeIndexTextParams params_,
         SortedTokensAndPostings && tokens_and_postings_,
-        TokenToPostingsMap && tokens_map_,
+        TokenToPostingsBuilderMap && tokens_map_,
         std::list<PostingList> && posting_lists_,
         std::unique_ptr<Arena> && arena_);
 
@@ -288,7 +299,7 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     /// Pointers to tokens and posting lists in the granule.
     SortedTokensAndPostings tokens_and_postings;
     /// tokens_and_postings has references to data held in the fields below.
-    TokenToPostingsMap tokens_map;
+    TokenToPostingsBuilderMap tokens_map;
     std::list<PostingList> posting_lists;
     std::unique_ptr<Arena> arena;
     LoggerPtr logger;
@@ -316,7 +327,7 @@ struct MergeTreeIndexTextGranuleBuilder
     UInt64 num_processed_tokens = 0;
     UInt64 num_processed_documents = 0;
     /// Pointers to posting lists for each token.
-    TokenToPostingsMap tokens_map;
+    TokenToPostingsBuilderMap tokens_map;
     /// Holder of posting lists. std::list is used to preserve the stability of pointers to posting lists.
     std::list<PostingList> posting_lists;
     /// Keys may be serialized into arena (see ArenaKeyHolder).

@@ -13,7 +13,6 @@
 namespace ProfileEvents
 {
     extern const Event TextIndexReaderTotalMicroseconds;
-    extern const Event TextIndexReadPostings;
     extern const Event TextIndexUseHint;
     extern const Event TextIndexDiscardHint;
 }
@@ -74,6 +73,20 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
 
     main_stream = make_stream(substreams[0]);
     dictionary_stream = make_stream(substreams[1]);
+    small_postings_stream = make_stream(substreams[2]);
+
+    auto index_format = index.index->getDeserializedFormat(data_part->checksums, index.index->getFileName());
+    chassert(index_format);
+
+    MergeTreeIndexDeserializationState state
+    {
+        .version = index_format.version,
+        .condition = index.condition.get(),
+        .part = *data_part,
+        .index = *index.index,
+    };
+
+    deserialization_state = std::make_unique<MergeTreeIndexDeserializationState>(std::move(state));
 }
 
 void MergeTreeReaderTextIndex::updateAllMarkRanges(const MarkRanges & ranges)
@@ -108,27 +121,16 @@ MergeTreeDataPartPtr MergeTreeReaderTextIndex::getDataPart() const
 
 void MergeTreeReaderTextIndex::readGranule()
 {
-    auto data_part = getDataPart();
-    auto index_format = index.index->getDeserializedFormat(data_part->checksums, index.index->getFileName());
-    chassert(index_format);
-
-    MergeTreeIndexDeserializationState state
-    {
-        .version = index_format.version,
-        .condition = index.condition.get(),
-        .part = *data_part,
-        .index = *index.index,
-    };
-
     main_stream->seekToStart();
     dictionary_stream->seekToStart();
 
     MergeTreeIndexInputStreams streams;
     streams[MergeTreeIndexSubstream::Type::Regular] = main_stream.get();
     streams[MergeTreeIndexSubstream::Type::TextIndexDictionary] = dictionary_stream.get();
+    streams[MergeTreeIndexSubstream::Type::TextIndexPostings] = small_postings_stream.get();
 
     granule = index.index->createIndexGranule();
-    granule->deserializeBinaryWithMultipleStreams(streams, state);
+    granule->deserializeBinaryWithMultipleStreams(streams, *deserialization_state);
 }
 
 void MergeTreeReaderTextIndex::analyzeTokensCardinality()
@@ -193,31 +195,13 @@ void MergeTreeReaderTextIndex::initializePostingStreams()
         return stream;
     };
 
-    std::unique_ptr<MergeTreeReaderStream> common_stream;
-
     for (const auto & [token, token_info] : remaining_tokens)
     {
-        if (!useful_tokens.contains(token))
-        {
+        if (granule_text.getPostingsForToken(token) || !useful_tokens.contains(token))
             continue;
-        }
 
-        if (token_info.offsets.size() == 1)
-        {
-            if (!common_stream)
-                common_stream = make_stream();
-
-            posting_streams.emplace(token, common_stream.get());
-        }
-        else
-        {
-            const auto & new_stream = posting_stream_holders.emplace_back(make_stream());
-            posting_streams.emplace(token, new_stream.get());
-        }
+        large_postings_streams.emplace(token, make_stream());
     }
-
-    if (common_stream)
-        posting_stream_holders.emplace_back(std::move(common_stream));
 }
 
 bool MergeTreeReaderTextIndex::canSkipMark(size_t mark, size_t)
@@ -459,8 +443,11 @@ PostingsMap MergeTreeReaderTextIndex::readPostingsIfNeeded(size_t mark)
 
 std::vector<PostingListPtr> MergeTreeReaderTextIndex::readPostingsForToken(std::string_view token, const TokenPostingsInfo & token_info, const RowsRange & range)
 {
-    if (token_info.embedded_postings)
-        return {token_info.embedded_postings};
+    auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
+    auto read_postings = granule_text.getPostingsForToken(token);
+
+    if (read_postings)
+        return {read_postings};
 
     auto blocks_to_read = token_info.getBlocksToRead(range);
     std::vector<PostingListPtr> token_postings;
@@ -471,32 +458,15 @@ std::vector<PostingListPtr> MergeTreeReaderTextIndex::readPostingsForToken(std::
         auto [it, inserted] = postings_blocks[token].try_emplace(block_idx);
 
         if (inserted)
-            it->second = readPostingsBlock(token, token_info, block_idx);
+        {
+            auto * postings_stream = large_postings_streams.at(token).get();
+            it->second = MergeTreeIndexGranuleText::readPostingsBlock(*postings_stream, *deserialization_state, token_info, block_idx);
+        }
 
         token_postings.push_back(it->second);
     }
 
     return token_postings;
-}
-
-PostingListPtr MergeTreeReaderTextIndex::readPostingsBlock(std::string_view token, const TokenPostingsInfo & token_info, size_t block_idx)
-{
-    auto * postings_stream = posting_streams.at(token);
-    auto * data_buffer = postings_stream->getDataBuffer();
-
-    const String & data_path = data_part_info_for_read->getDataPartStorage()->getFullPath();
-    const String & index_name = index.index->getFileName();
-    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
-
-    const auto load_postings = [&]() -> PostingListPtr
-    {
-        ProfileEvents::increment(ProfileEvents::TextIndexReadPostings);
-        postings_stream->seekToMark({token_info.offsets[block_idx], 0});
-        return PostingsSerialization::deserialize(*data_buffer, token_info.header, token_info.cardinality);
-    };
-
-    auto hash = TextIndexPostingsCache::hash(data_path, index_name, token_info.offsets[block_idx]);
-    return condition_text.postingsCache()->getOrSet(hash, load_postings);
 }
 
 void MergeTreeReaderTextIndex::cleanupPostingsBlocks(const RowsRange & range)
