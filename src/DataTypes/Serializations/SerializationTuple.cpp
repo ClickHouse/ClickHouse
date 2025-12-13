@@ -144,7 +144,7 @@ void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr, 
 
 void SerializationTuple::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (settings.pretty_format && settings.named_tuples_as_json && has_explicit_names)
+    if (settings.pretty_format && settings.pretty.named_tuples_as_json && has_explicit_names)
     {
         serializeTextJSONPretty(column, row_num, ostr, settings, 1);
     }
