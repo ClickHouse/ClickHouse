@@ -10,6 +10,8 @@ $CLICKHOUSE_CLIENT -q "drop dictionary if exists dict1;"
 $CLICKHOUSE_CLIENT -q "drop dictionary if exists dict2;"
 $CLICKHOUSE_CLIENT -q "drop table if exists join;"
 $CLICKHOUSE_CLIENT -q "drop table if exists t;"
+$CLICKHOUSE_CLIENT -q "drop table if exists t0"
+$CLICKHOUSE_CLIENT -q "drop table if exists t1"
 
 $CLICKHOUSE_CLIENT -q "create table dict_src (n int, m int, s String) engine=MergeTree order by n;"
 
@@ -110,3 +112,8 @@ LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT());"
 
 $CLICKHOUSE_CLIENT -q "create table ${CLICKHOUSE_DATABASE}_1.zjoin(n int, m int default dictGet('${CLICKHOUSE_DATABASE}_1.ydict1', 'm', 42::UInt64)) engine=Join(any, left, n);"
 $CLICKHOUSE_CLIENT -q "drop database ${CLICKHOUSE_DATABASE}_1"
+
+# These queries don't imply any loading dependencies but still must work correctly.
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t0 (c0 Int STATISTICS(MinMax((1 AS x) IN (*)))) ENGINE = Memory" --allow_experimental_statistics 1
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t1 (c0 Int) ENGINE = Distributed('default', 'd0', 't0', COLUMNS(''))" 2>&1 | grep -Fa "Unknown column" >/dev/null && echo "OK"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t0"

@@ -48,3 +48,4 @@ t	[]	['dict1','join','s']	[]
 dict1	[]	['dict_src']	['join']
 dict_src	[]	[]	['dict1']
 join	[]	['dict1']	[]
+OK
