@@ -24,6 +24,7 @@ if (SANITIZE)
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${MSAN_FLAGS}")
         set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} ${MSAN_FLAGS}")
 
+        # NOTE: See also libcxxabi cmake rules
     elseif (SANITIZE STREQUAL "thread")
         set (TSAN_FLAGS "-fsanitize=thread")
         set (TSAN_FLAGS "${TSAN_FLAGS} -fsanitize-ignorelist=${PROJECT_SOURCE_DIR}/tests/tsan_ignorelist.txt")
