@@ -25,7 +25,7 @@ perimeterCartesian(geom)
 
 **Example**
 CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
-INSERT INTO geo_dst SELECT readWkt('POLYGON((0 0,1 0,1 1,0 1,0 0))');
+INSERT INTO geo_dst SELECT readWKT('POLYGON((0 0,1 0,1 1,0 1,0 0))');
 SELECT perimeterCartesian(geom) FROM geo_dst;
 
 Result:
@@ -48,7 +48,7 @@ areaCartesian(geom)
 
 **Example**
 CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
-INSERT INTO geo_dst SELECT readWkt('POLYGON((0 0,1 0,1 1,0 1,0 0))');
+INSERT INTO geo_dst SELECT readWKT('POLYGON((0 0,1 0,1 1,0 1,0 0))');
 SELECT areaCartesian(geom) FROM geo_dst;
 
 Result:
@@ -71,7 +71,7 @@ perimeterSpherical(geom)
 
 **Example**
 CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
-INSERT INTO geo_dst SELECT readWkt('LINESTRING(0 0,1 0,1 1,0 1,0 0)');
+INSERT INTO geo_dst SELECT readWKT('LINESTRING(0 0,1 0,1 1,0 1,0 0)');
 SELECT perimeterSpherical(geom) FROM geo_dst;
 
 Result:
@@ -94,7 +94,7 @@ areaSpherical(geom)
 
 **Example**
 CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
-INSERT INTO geo_dst SELECT readWkt('POLYGON((0 0,1 0,1 1,0 1,0 0))');
+INSERT INTO geo_dst SELECT readWKT('POLYGON((0 0,1 0,1 1,0 1,0 0))');
 SELECT areaSpherical(geom) FROM geo_dst;
 
 Result:
