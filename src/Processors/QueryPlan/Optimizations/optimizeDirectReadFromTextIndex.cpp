@@ -182,6 +182,7 @@ public:
         NodesReplacementMap replacements;
         Names original_inputs = actions_dag.getRequiredColumnsNames();
         const auto * filter_node = &actions_dag.findInOutputs(filter_column_name);
+        NamesWithAliases add_aliases;
 
         for (ActionsDAG::Node & node : actions_dag.nodes)
         {
@@ -193,6 +194,8 @@ public:
 
                 for (const auto & [index_name, column_name] : replaced->index_name_to_virtual_column)
                     result.added_columns[index_name].emplace_back(column_name, std::make_shared<DataTypeUInt8>());
+                if (actions_dag.tryFindInOutputs(replaced->origin_result_name) != nullptr)
+                    add_aliases.push_back({replaced->node->result_name, replaced->origin_result_name});
             }
         }
 
@@ -207,6 +210,8 @@ public:
             if (is_filter_node)
                 filter_node = output;
         }
+        if (!add_aliases.empty())
+            actions_dag.addAliases(add_aliases);
 
         result.filter_node = filter_node;
         actions_dag.removeUnusedActions();
