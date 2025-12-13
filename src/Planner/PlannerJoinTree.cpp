@@ -1100,6 +1100,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             return true;
 
                         const auto & left_table_expr = join_node->getLeftTableExpression();
+
+                        if (const auto * table = typeid_cast<const TableNode *>(left_table_expr.get());
+                            table && table->getStorage()->isView())
+                            return false;
+
                         const auto join_kind = join_node->getKind();
                         const auto join_strictness = join_node->getStrictness();
                         if ((join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All) || join_kind == JoinKind::Left)
