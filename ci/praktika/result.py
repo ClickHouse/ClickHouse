@@ -312,6 +312,11 @@ class Result(MetaClasses.Serializable):
             self.ext["labels"] = []
         self.ext["labels"].append(label)
 
+    def has_label(self, label):
+        return label in self.ext.get("labels", []) or label in self.ext.get(
+            "hlabels", []
+        )
+
     def set_comment(self, comment):
         self.ext["comment"] = comment
 
