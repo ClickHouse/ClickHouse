@@ -367,3 +367,37 @@ SELECT
         toNullable(toInt128('9223372036854775807'))
     ) AS result,
     toTypeName(result) AS type;
+
+SELECT
+    midpoint(
+        toDecimal32('999999.999', 3),
+        toDecimal32('999999.999', 3),
+        toDecimal32('999999.999', 3)
+    ) AS r,
+    toTypeName(r) AS t;
+
+SELECT
+    midpoint(
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3)
+    ) AS r,
+    toTypeName(r) AS t;

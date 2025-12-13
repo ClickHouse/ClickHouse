@@ -428,3 +428,37 @@ SELECT
     ) AS result,
     toTypeName(result) AS type;
 9223372036854775807	Nullable(Int128)
+SELECT
+    midpoint(
+        toDecimal32('999999.999', 3),
+        toDecimal32('999999.999', 3),
+        toDecimal32('999999.999', 3)
+    ) AS r,
+    toTypeName(r) AS t;
+999999.999	Decimal(9, 3)
+SELECT
+    midpoint(
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3),
+        toDecimal64('999999999999999.999', 3)
+    ) AS r,
+    toTypeName(r) AS t;
+999999999999999.999	Decimal(18, 3)
