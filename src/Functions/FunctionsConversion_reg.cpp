@@ -2378,7 +2378,7 @@ SELECT toTimeOrZero('12:30:45'), toTimeOrZero('invalid')
     /// toTime64OrZero documentation
     FunctionDocumentation::Description description_toTime64OrZero = R"(
 Converts an input value to a value of type Time64 but returns `00:00:00.000` in case of an error.
-Like [`toTime64`](#toTime54) but returns `00:00:00.000` instead of throwing an exception on conversion errors.
+Like [`toTime64`](#toTime64) but returns `00:00:00.000` instead of throwing an exception on conversion errors.
 )";
     FunctionDocumentation::Syntax syntax_toTime64OrZero = "toTime64OrZero(x)";
     FunctionDocumentation::Arguments arguments_toTime64OrZero = {
@@ -2648,7 +2648,7 @@ SELECT toDecimal256OrZero('42.7', 2), toDecimal256OrZero('invalid', 2)
     /// toUUIDOrZero documentation
     FunctionDocumentation::Description description_toUUIDOrZero = R"(
 Converts an input value to a value of type [UUID](../data-types/uuid.md) but returns zero UUID in case of an error.
-Like [`toUUID`](#touuid) but returns zero UUID (`00000000-0000-0000-0000-000000000000`) instead of throwing an exception on conversion errors.
+Like [`toUUID`](/sql-reference/functions/uuid-functions#touuid) but returns zero UUID (`00000000-0000-0000-0000-000000000000`) instead of throwing an exception on conversion errors.
 
 Supported arguments:
 - String representations of UUID in standard format (8-4-4-4-12 hexadecimal digits).
@@ -3887,7 +3887,7 @@ SELECT toDecimal256OrNull('42.7', 2), toDecimal256OrNull('invalid', 2)
     /// toUUIDOrNull documentation
     FunctionDocumentation::Description description_toUUIDOrNull = R"(
 Converts an input value to a value of type `UUID` but returns `NULL` in case of an error.
-Like [`toUUID`](#touuid) but returns `NULL` instead of throwing an exception on conversion errors.
+Like [`toUUID`](/sql-reference/functions/uuid-functions#touuid) but returns `NULL` instead of throwing an exception on conversion errors.
 
 Supported arguments:
 - String representations of UUID in standard format (8-4-4-4-12 hexadecimal digits).

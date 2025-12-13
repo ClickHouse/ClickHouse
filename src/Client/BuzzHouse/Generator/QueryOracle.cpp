@@ -18,20 +18,7 @@ namespace BuzzHouse
 {
 
 const std::vector<std::vector<OutFormat>> QueryOracle::oracleFormats
-    = {{OutFormat::OUT_CSV},
-       {OutFormat::OUT_JSON,
-        OutFormat::OUT_JSONColumns,
-        OutFormat::OUT_JSONColumnsWithMetadata,
-        OutFormat::OUT_JSONCompact,
-        OutFormat::OUT_JSONCompactColumns,
-        OutFormat::OUT_JSONCompactEachRow,
-        OutFormat::OUT_JSONCompactStringsEachRow,
-        OutFormat::OUT_JSONEachRow,
-        OutFormat::OUT_JSONLines,
-        OutFormat::OUT_JSONObjectEachRow,
-        OutFormat::OUT_JSONStringsEachRow},
-       {OutFormat::OUT_TabSeparated, OutFormat::OUT_TabSeparatedRaw},
-       {OutFormat::OUT_Values}};
+    = {{OutFormat::OUT_CSV}, {OutFormat::OUT_TabSeparated}, {OutFormat::OUT_Values}};
 
 /// Correctness query oracle
 /// SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED>;
@@ -314,6 +301,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
             {
                 trunc->mutable_cluster()->set_cluster(cluster.value());
             }
+            trunc->set_sync(true);
             /// Import data again
             generateImportQuery(rg, gen, t2, next1, next3);
 
@@ -363,52 +351,87 @@ void QueryOracle::dumpOracleIntermediateSteps(
         break;
         case DumpOracleStrategy::BACKUP_RESTORE: {
             SQLQuery next1;
-            SQLQuery next2;
+            SQLQuery next3;
             std::optional<String> cluster;
             BackupRestore * bac = next1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_backup_restore();
-            BackupRestore * res = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_backup_restore();
-            SettingValues * bac_vals = nullptr;
-            SettingValues * res_vals = nullptr;
+            BackupRestore * res = next3.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_backup_restore();
+            SettingValues * bsett = nullptr;
+            SettingValues * rsett = nullptr;
+            BackupRestoreObject * baco = bac->mutable_backup_element()->mutable_bobject();
+            const String dname = t.getDatabaseName();
+            const String tname = t.getTableName();
+            const bool table_has_partitions = t.isMergeTreeFamily() && fc.tableHasPartitions(false, dname, tname);
 
             bac->set_command(BackupRestore_BackupCommand_BACKUP);
             res->set_command(BackupRestore_BackupCommand_RESTORE);
-            cluster = gen.backupOrRestoreObject(bac->mutable_backup_element()->mutable_bobject(), SQLObject::TABLE, t);
-            cluster = gen.backupOrRestoreObject(res->mutable_backup_element()->mutable_bobject(), SQLObject::TABLE, t);
+
+            t.setName(baco->mutable_object()->mutable_est(), false);
+            cluster = gen.backupOrRestoreObject(baco, SQLObject::TABLE, t);
             if (cluster.has_value())
             {
                 bac->mutable_cluster()->set_cluster(cluster.value());
                 res->mutable_cluster()->set_cluster(cluster.value());
+            }
+            if (table_has_partitions && rg.nextSmallNumber() < 4)
+            {
+                baco->add_partitions()->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname));
             }
 
             gen.setBackupDestination(rg, bac);
             res->set_backup_number(bac->backup_number());
             res->set_out(bac->out());
             res->mutable_params()->CopyFrom(bac->params());
+            res->mutable_backup_element()->mutable_bobject()->CopyFrom(bac->backup_element().bobject());
 
             bac->set_sync(BackupRestore_SyncOrAsync_SYNC);
             res->set_sync(BackupRestore_SyncOrAsync_SYNC);
             if (rg.nextSmallNumber() < 4)
             {
-                bac_vals = bac->mutable_setting_values();
-                gen.generateSettingValues(rg, backupSettings, bac_vals);
+                bsett = bac->mutable_setting_values();
+                gen.generateSettingValues(rg, backupSettings, bsett);
+                SetValue * sv = bsett->has_set_value() ? bsett->add_other_values() : bsett->mutable_set_value();
+
+                /// Make sure to backup everything
+                sv->set_property("structure_only");
+                sv->set_value("0");
             }
             if (rg.nextSmallNumber() < 4)
             {
-                bac_vals = bac_vals ? bac_vals : bac->mutable_setting_values();
-                gen.generateSettingValues(rg, formatSettings, bac_vals);
+                bsett = bsett ? bsett : bac->mutable_setting_values();
+                gen.generateSettingValues(rg, formatSettings, bsett);
             }
             if (rg.nextSmallNumber() < 4)
             {
-                res_vals = res->mutable_setting_values();
-                gen.generateSettingValues(rg, restoreSettings, res_vals);
+                rsett = res->mutable_setting_values();
+                gen.generateSettingValues(rg, restoreSettings, rsett);
+                SetValue * sv = rsett->has_set_value() ? rsett->add_other_values() : rsett->mutable_set_value();
+
+                /// Make sure to recover everything
+                sv->set_property("structure_only");
+                sv->set_value("0");
             }
             if (rg.nextSmallNumber() < 4)
             {
-                res_vals = res_vals ? res_vals : res->mutable_setting_values();
-                gen.generateSettingValues(rg, formatSettings, res_vals);
+                rsett = rsett ? rsett : res->mutable_setting_values();
+                gen.generateSettingValues(rg, formatSettings, rsett);
             }
+
             intermediate_queries.emplace_back(next1);
-            intermediate_queries.emplace_back(next2);
+            if (baco->partitions_size() == 0)
+            {
+                /// Truncate table, so it is restored into an empty one
+                SQLQuery next2;
+                Truncate * trunc = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_trunc();
+
+                t.setName(trunc->mutable_est(), false);
+                if (cluster.has_value())
+                {
+                    trunc->mutable_cluster()->set_cluster(cluster.value());
+                }
+                trunc->set_sync(true);
+                intermediate_queries.emplace_back(next2);
+            }
+            intermediate_queries.emplace_back(next3);
         }
         break;
     }
