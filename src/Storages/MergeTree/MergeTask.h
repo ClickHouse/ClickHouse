@@ -87,6 +87,7 @@ public:
         bool cleanup_,
         MergeTreeData::MergingParams merging_params_,
         bool need_prefix,
+        ProjectionDescriptionRawPtr projection_,
         IMergeTreeDataPart * parent_part_,
         MergedPartOffsetsPtr merged_part_offsets_,
         String suffix_,
@@ -112,6 +113,7 @@ public:
             global_ctx->deduplicate = std::move(deduplicate_);
             global_ctx->deduplicate_by_columns = std::move(deduplicate_by_columns_);
             global_ctx->cleanup = std::move(cleanup_);
+            global_ctx->projection = projection_;
             global_ctx->parent_part = std::move(parent_part_);
             global_ctx->merged_part_offsets = std::move(merged_part_offsets_);
             global_ctx->data = std::move(data_);
@@ -122,6 +124,8 @@ public:
             global_ctx->need_prefix = need_prefix;
             global_ctx->suffix = std::move(suffix_);
             global_ctx->merging_params = std::move(merging_params_);
+
+            global_ctx->data_settings = global_ctx->data->getSettings(global_ctx->projection);
 
             auto prepare_stage_ctx = std::make_shared<ExecuteAndFinalizeHorizontalPartRuntimeContext>();
             (*stages.begin())->setRuntimeContext(std::move(prepare_stage_ctx), global_ctx);
@@ -178,6 +182,7 @@ private:
         std::unique_ptr<MergeListElement> projection_merge_list_element;
         MergeListElement * merge_list_element_ptr{nullptr};
         MergeTreeData * data{nullptr};
+        MergeTreeSettingsPtr data_settings;
         MergeTreeDataMergerMutator * mutator{nullptr};
         PartitionActionBlocker * merges_blocker{nullptr};
         ActionBlocker * ttl_merges_blocker{nullptr};
@@ -185,6 +190,7 @@ private:
         StorageMetadataPtr metadata_snapshot{nullptr};
         FutureMergedMutatedPartPtr future_part{nullptr};
         std::vector<AlterConversionsPtr> alter_conversions;
+        ProjectionDescriptionRawPtr projection{nullptr};
         /// This will be either nullptr or new_data_part, so raw pointer is ok.
         IMergeTreeDataPart * parent_part{nullptr};
         MergedPartOffsetsPtr merged_part_offsets;

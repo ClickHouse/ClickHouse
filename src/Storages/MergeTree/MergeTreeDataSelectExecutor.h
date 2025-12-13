@@ -15,8 +15,9 @@ namespace DB
 {
 
 class KeyCondition;
-struct QueryIdHolder;
 class VectorSimilarityIndexCache;
+struct ProjectionDescription;
+using ProjectionDescriptionRawPtr = const ProjectionDescription *;
 
 /** Executes SELECT queries on data from the merge tree.
   */
@@ -25,7 +26,7 @@ class MergeTreeDataSelectExecutor
 public:
     using PartialDisjunctionResult = boost::dynamic_bitset<>;
 
-    explicit MergeTreeDataSelectExecutor(const MergeTreeData & data_);
+    explicit MergeTreeDataSelectExecutor(const MergeTreeData & data_, ProjectionDescriptionRawPtr projection_ = nullptr);
 
     /** When reading, selects a set of parts that covers the desired range of the index.
       * max_blocks_number_to_read - if not nullptr, do not read all the parts whose right border is greater than max_block in partition.
@@ -126,6 +127,7 @@ public:
 
 private:
     const MergeTreeData & data;
+    MergeTreeSettingsPtr data_settings;
     LoggerPtr log;
 
     /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
@@ -262,13 +264,6 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
         LoggerPtr log);
-
-    /// Check query limits: max_partitions_to_read, max_concurrent_queries.
-    /// Also, return QueryIdHolder. If not null, we should keep it until query finishes.
-    static std::shared_ptr<QueryIdHolder> checkLimits(
-        const MergeTreeData & data,
-        const ReadFromMergeTree::AnalysisResult & result,
-        const ContextPtr & context);
 
     struct RowLimits
     {
