@@ -1143,7 +1143,6 @@ bool DDLWorker::initializeMainThread()
             auto zookeeper = getAndSetZooKeeper();
             zookeeper->createAncestors(fs::path(queue_dir) / "");
             initializeReplication();
-            markReplicasActive(true);
             initialized = true;
             return true;
         }
@@ -1200,6 +1199,11 @@ void DDLWorker::runMainThread()
     DB::setThreadName(ThreadName::DDL_WORKER);
     LOG_DEBUG(log, "Starting DDLWorker thread");
 
+    /// Number of repeated calls of markReplicasActive on start
+    /// Required when seld DNS records created with delay
+    /// Possible when clickhouse is running in k8s pod
+    int initial_active_replica_recheck_iterations = 12;
+
     while (!stop_flag)
     {
         try
@@ -1207,7 +1211,7 @@ void DDLWorker::runMainThread()
             bool reinitialized = !initialized;
 
             /// Reinitialize DDLWorker state (including ZooKeeper connection) if required
-            if (!initialized)
+            if (reinitialized)
             {
                 /// Stopped
                 if (!initializeMainThread())
@@ -1216,6 +1220,19 @@ void DDLWorker::runMainThread()
             }
 
             cleanup_event->set();
+            if (reinitialized || initial_active_replica_recheck_iterations > 0)
+            {
+                if (initial_active_replica_recheck_iterations > 0)
+                    --initial_active_replica_recheck_iterations;
+                try
+                {
+                    markReplicasActive(reinitialized);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "An error occurred when markReplicasActive: ");
+                }
+            }
             scheduleTasks(reinitialized);
             subsequent_errors_count = 0;
 
@@ -1294,20 +1311,23 @@ void DDLWorker::createReplicaDirs(const ZooKeeperPtr & zookeeper, const NameSet 
         zookeeper->createAncestors(fs::path(replicas_dir) / host_id / "");
 }
 
-void DDLWorker::markReplicasActive(bool /*reinitialized*/)
+void DDLWorker::markReplicasActive(bool reinitialized)
 {
     auto zookeeper = getZooKeeper();
 
-    // Reset all active_node_holders
-    for (auto & it : active_node_holders)
+    if (reinitialized)
     {
-        auto & active_node_holder = it.second.second;
-        if (active_node_holder)
-            active_node_holder->setAlreadyRemoved();
-        active_node_holder.reset();
-    }
+        // Reset all active_node_holders
+        for (auto & it : active_node_holders)
+        {
+            auto & active_node_holder = it.second.second;
+            if (active_node_holder)
+                active_node_holder->setAlreadyRemoved();
+            active_node_holder.reset();
+        }
 
-    active_node_holders.clear();
+        active_node_holders.clear();
+    }
 
     const auto maybe_secure_port = context->getTCPPortSecure();
     const auto port = context->getTCPPort();
