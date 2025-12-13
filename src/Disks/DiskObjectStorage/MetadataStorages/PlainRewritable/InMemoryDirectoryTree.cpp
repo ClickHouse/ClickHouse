@@ -212,9 +212,6 @@ void InMemoryDirectoryTree::recordDirectoryPath(const std::string & path, Direct
     if (!inode->isVirtual())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' was already recorded", normalized_path.string());
 
-    if (!inode->subdirectories.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", normalized_path.string());
-
     remote_path_to_inode[info.remote_path] = inode;
     inode->remote_info = std::move(info);
     remote_layout_directories_count.add();
@@ -334,6 +331,18 @@ std::pair<bool, std::optional<DirectoryRemoteInfo>> InMemoryDirectoryTree::exist
         return {true, std::nullopt};
 
     return {true, inode->remote_info};
+}
+
+bool InMemoryDirectoryTree::existsVirtualDirectory(const std::string & path) const
+{
+    std::lock_guard guard(mutex);
+    const auto normalized_path = normalizePath(path);
+    const auto inode = walk(normalized_path);
+
+    if (!inode)
+        return false;
+
+    return inode->isVirtual();
 }
 
 bool InMemoryDirectoryTree::existsFile(const std::string & path) const

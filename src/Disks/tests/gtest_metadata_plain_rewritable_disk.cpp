@@ -1902,3 +1902,31 @@ TEST_F(MetadataPlainRewritableDiskTest, UncommittedDirectoryMoves)
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/B/C/X/Y/file").front().remote_path), "4");
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/B/C/X/file_3").front().remote_path), "5");
 }
+
+TEST_F(MetadataPlainRewritableDiskTest, CreateDirectoryFromVirtualNode)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("CreateDirectoryFromVirtualNode");
+    auto object_storage = getObjectStorage("CreateDirectoryFromVirtualNode");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectoryRecursive("/A/B/C");
+        tx->commit();
+
+        tx = metadata->createTransaction();
+        auto size_bytes = writeObject(object_storage, tx->generateObjectKeyForPath("/A/B/file").serialize(), "I'm real");
+        tx->createMetadataFile("/A/B/file", {StoredObject("/A/B/file", "file", size_bytes)});
+        tx->commit();
+    }
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/B/file").front().remote_path), "I'm real");
+
+    EXPECT_EQ(
+        listAllBlobs("CreateDirectoryFromVirtualNode"),
+        std::vector<std::string>({
+            "./CreateDirectoryFromVirtualNode/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",
+            "./CreateDirectoryFromVirtualNode/__meta/ykwvvchguqasvfnkikaqtiebknfzafwv/prefix.path",
+            "./CreateDirectoryFromVirtualNode/ykwvvchguqasvfnkikaqtiebknfzafwv/file",
+        }));
+}
