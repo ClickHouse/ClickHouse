@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 SET max_block_size = 10000;
 SET max_threads = 1;
 
