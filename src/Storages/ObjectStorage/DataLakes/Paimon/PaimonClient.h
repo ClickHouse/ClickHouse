@@ -304,7 +304,7 @@ public:
 
     Poco::JSON::Object::Ptr getTableSchemaJSON(const std::pair<Int32, String> & schema_meta_info);
     std::pair<Int32, String> getLastestTableSchemaInfo();
-    std::pair<Int64, String> getLastestTableSnapshotInfo();
+    std::optional<std::pair<Int64, String>> getLastestTableSnapshotInfo();
     PaimonSnapshot getSnapshot(const std::pair<Int64, String> & snapshot_meta_info);
     PaimonManifest getDataManifest(String manifest_path, const PaimonTableSchema & table_schema, const String & partition_default_name);
     std::vector<PaimonManifestFileMeta> getManifestMeta(String manifest_list_path);
