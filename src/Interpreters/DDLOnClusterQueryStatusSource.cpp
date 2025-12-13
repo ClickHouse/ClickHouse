@@ -23,7 +23,10 @@ extern const int TIMEOUT_EXCEEDED;
 }
 
 DDLOnClusterQueryStatusSource::DDLOnClusterQueryStatusSource(
-    const String & zk_node_path, const String & zk_replicas_path, ContextPtr context_, const Strings & hosts_to_wait)
+    const String & zk_node_path,
+    const String & zk_replicas_path,
+    ContextPtr context_,
+    const Strings & hosts_to_wait)
     : DistributedQueryStatusSource(
           zk_node_path,
           zk_replicas_path,
