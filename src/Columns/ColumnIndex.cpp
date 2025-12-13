@@ -359,7 +359,10 @@ void ColumnIndex::removeUnusedRowsInIndexedData(MutableColumnPtr & indexed_data)
         for (size_t i = 0; i != filter.size(); ++i)
         {
             if (filter[i])
-                indexes_remapping[i] = new_index++;
+            {
+                indexes_remapping[i] = new_index;
+                ++new_index;
+            }
         }
         auto & data = getIndexesData<CurIndexType>();
         for (size_t i = 0; i != data.size(); ++i)
