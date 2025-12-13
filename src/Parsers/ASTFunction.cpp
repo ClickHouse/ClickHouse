@@ -342,7 +342,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 /// We DO need parentheses around a single literal
                 /// For example, SELECT (NOT 0) + (NOT 0) cannot be transformed into SELECT NOT 0 + NOT 0, since
                 /// this is equal to SELECT NOT (0 + NOT 0)
-                bool outside_parens = frame.need_parens && !inside_parens;
+                /// We need it even if inside parentheses are eanbled
+                /// Otherwise SELECT (-(1)).1 becomes SELECT -(1).1 which is equal to SELECT -(1.1)
+                bool outside_parens = frame.need_parens;
 
                 /// Do not add extra parentheses for functions inside negate, i.e. -(-toUInt64(-(1)))
                 if (inside_parens)
@@ -513,7 +515,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 }
 
                 // It can be printed in a form of 'x.1' only if right hand side
-                // is an unsigned integer lineral. We also allow nonnegative
+                // is an unsigned integer literal. We also allow nonnegative
                 // signed integer literals, because the fuzzer sometimes inserts
                 // them, and we want to have consistent formatting.
                 if (tuple_arguments_valid && lit_right)
