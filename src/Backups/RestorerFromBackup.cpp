@@ -834,6 +834,11 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
         auto create_query_context = Context::createCopy(query_context);
         create_query_context->setSetting("allow_deprecated_database_ordinary", 1);
 
+        /// We shouldn't use the progress callback copied from the `query_context` because it was set in a protocol handler (e.g. HTTPHandler)
+        /// for the "RESTORE ASYNC" query which could have already finished (the restore process is working in the background).
+        /// TODO: Get rid of using `query_context` in class RestorerFromBackup.
+        create_query_context->setProgressCallback(nullptr);
+
 #if CLICKHOUSE_CLOUD
         if (shared_catalog && SharedDatabaseCatalog::instance().shouldRestoreDatabase(create_database_query))
         {
@@ -1075,6 +1080,11 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
         create_query_context->setSetting("keeper_max_backoff_ms", zookeeper_retries_info.max_backoff_ms);
 
         create_query_context->setUnderRestore(true);
+
+        /// We shouldn't use the progress callback copied from the `query_context` because it was set in a protocol handler (e.g. HTTPHandler)
+        /// for the "RESTORE ASYNC" query which could have already finished (the restore process is working in the background).
+        /// TODO: Get rid of using `query_context` in class RestorerFromBackup.
+        create_query_context->setProgressCallback(nullptr);
 
         /// Execute CREATE TABLE query (we call IDatabase::createTableRestoredFromBackup() to allow the database to do some
         /// database-specific things).
