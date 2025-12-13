@@ -316,6 +316,7 @@ public:
 
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
     void updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_read_info_value);
+    void addColumnsToRead(const NameSet & columns);
     bool isQueryWithSampling() const;
 
     /// Special stuff for vector search - replace vector column in read list with virtual "_distance" column
