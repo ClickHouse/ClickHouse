@@ -2418,10 +2418,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     if (ctx->need_remove_expired_values || !global_ctx->merging_columns_expired_by_ttl.empty())
     {
         auto ttl_step = std::make_unique<TTLStep>(
-<<<<<<< HEAD
-            merge_parts_query_plan.getCurrentHeader(), global_ctx->context, *global_ctx->data, global_ctx->metadata_snapshot, global_ctx->new_data_part, global_ctx->time_of_merge, ctx->force_ttl);
-
-=======
             merge_parts_query_plan.getCurrentHeader(),
             global_ctx->context,
             *global_ctx->data,
@@ -2430,7 +2426,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             global_ctx->merging_columns_expired_by_ttl,
             global_ctx->time_of_merge,
             ctx->force_ttl);
->>>>>>> upstream/master
+
         subqueries = ttl_step->getSubqueries();
         ttl_step->setStepDescription("TTL step");
         merge_parts_query_plan.addStep(std::move(ttl_step));
