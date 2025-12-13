@@ -86,20 +86,28 @@ class UserPrompt:
                 print("Invalid choice. Please enter 'y' or 'n'.")
 
     @staticmethod
-    def get_string(question, validator=lambda x: True):
+    def get_string(question, validator=lambda x: True, default=None):
         """
         Get a string input from user with optional validation.
 
         Args:
             question: The prompt question to display.
             validator: Optional function to validate the string.
+            default: Optional default value. If provided and user presses Enter, returns this value.
 
         Returns:
             The validated string, or None if cancelled.
         """
+        prompt = f"\n{question}"
+        if default is not None:
+            prompt += f" [{default}]"
+        prompt += ": "
+
         while True:
             try:
-                choice = input(f"\n{question}: ")
+                choice = input(prompt)
+                if choice == "" and default is not None:
+                    return default
                 if validator(choice):
                     break
                 else:

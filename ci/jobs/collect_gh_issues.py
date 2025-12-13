@@ -2,10 +2,12 @@
 
 import json
 import re
+import sys
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from ci.praktika.dataclasses import TestCaseIssueCatalog, TestingIssue
+sys.path.append("./")
+from ci.praktika.issue import TestCaseIssueCatalog, TestingIssue
 from ci.praktika.result import Result
 from ci.praktika.s3 import S3
 from ci.praktika.utils import Shell, Utils
@@ -17,6 +19,7 @@ def parse_issue_body_fields(body: str) -> dict:
     Parse structured fields from issue body.
 
     Expected format in body:
+    - Test name: <content>
     - Failure reason: <content>
     - Failure flags: <flag1>, <flag2>, ...
     - CI action: <content>
@@ -27,6 +30,7 @@ def parse_issue_body_fields(body: str) -> dict:
         Dictionary with parsed fields
     """
     fields = {
+        "test_name": "",
         "failure_reason": "",
         "failure_flags": [],
         "ci_action": "",
@@ -40,6 +44,7 @@ def parse_issue_body_fields(body: str) -> dict:
     # Parse each field with regex
     # Pattern: field name followed by colon, then content until end of line
     patterns = {
+        "test_name": r"Test name:\s*(.+?)(?:\n|$)",
         "failure_reason": r"Failure reason:\s*(.+?)(?:\n|$)",
         "ci_action": r"CI action:\s*(.+?)(?:\n|$)",
         "test_pattern": r"Test pattern:\s*(.+?)(?:\n|$)",
@@ -68,6 +73,7 @@ def extract_test_name(title: str, body: str) -> Optional[str]:
     Best-effort extraction of a test identifier from an issue title/body.
 
     Heuristics (in order):
+    - "Test name:" field in body (exact extraction)
     - A 5-digit test id followed by an underscore and non-space characters,
       e.g. "01234_test_name".
     - A pytest-style name starting with "test_" followed by any characters
@@ -76,12 +82,16 @@ def extract_test_name(title: str, body: str) -> Optional[str]:
     Returns the raw match with trailing quotes/punctuation stripped, or None if
     no pattern matches.
     """
-    # Combine title and body for searching
-    text = f"{title}\n{body}"
+    # First, try to extract from "Test name:" field in body
+    if body:
+        test_name_pattern = r"Test name:\s*(\S+)"
+        match = re.search(test_name_pattern, body)
+        if match:
+            return match.group(1).rstrip("`'\",.;:!?)")
 
     # Pattern 1: five digits + underscore + non-space chars (covers numbered tests)
     pattern1 = r"\b(\d{5}_\S+)"
-    match1 = re.search(pattern1, text)
+    match1 = re.search(pattern1, title)
     if match1:
         test_name = match1.group(1)
         # Strip trailing quotes, backticks, and other punctuation
@@ -90,7 +100,7 @@ def extract_test_name(title: str, body: str) -> Optional[str]:
     # Pattern 2: pytest-style names that start with test_, allowing rich suffixes
     # Use a negated class to stop at whitespace or closing punctuation/quotes.
     pattern2 = r"\b(test_[^\s`'\",]+)"
-    match2 = re.search(pattern2, text)
+    match2 = re.search(pattern2, title)
     if match2:
         test_name = match2.group(1)
         # Strip trailing quotes, backticks, and other punctuation
@@ -164,9 +174,7 @@ def fetch_github_issues(
         return []
 
 
-def process_issues(
-    issues: List[dict], is_closed: bool = False, is_test_issue: bool = False
-) -> List[TestingIssue]:
+def process_issues(issues: List[dict], is_closed: bool = False) -> List[TestingIssue]:
     """
     Process raw GitHub issues into TestCaseIssue objects.
 
@@ -177,7 +185,7 @@ def process_issues(
     Returns:
         List of TestCaseIssue objects
     """
-    test_case_issues = []
+    issues = []
 
     for issue in issues:
         number = issue.get("number", "")
@@ -189,7 +197,7 @@ def process_issues(
         # Parse structured fields from issue body
         body_fields = parse_issue_body_fields(body)
 
-        if is_test_issue:
+        if "flaky test" in labels:
             # Extract test name from title or body
             test_name = extract_test_name(title, body)
 
@@ -197,15 +205,15 @@ def process_issues(
                 print(
                     f"  Warning: Could not extract test name from issue #{number}: {title}"
                 )
-                test_name = "unknown"
+                continue
         else:
             test_name = title
 
         # Construct GitHub issue URL
         issue_url = f"https://github.com/ClickHouse/ClickHouse/issues/{number}"
 
-        test_case_issue = TestingIssue(
-            test_name=test_name,
+        issue = TestingIssue(
+            test_name=body_fields["test_name"] or test_name,
             closed_at=closed_at if closed_at else "",
             issue=int(number),
             issue_url=issue_url,
@@ -218,9 +226,10 @@ def process_issues(
             test_pattern=body_fields["test_pattern"],
             job_pattern=body_fields["job_pattern"],
         )
-        test_case_issues.append(test_case_issue)
+        if issue.validate():
+            issues.append(issue)
 
-    return test_case_issues
+    return issues
 
 
 def fetch_gh_ci_issues() -> TestCaseIssueCatalog:
@@ -235,16 +244,14 @@ def fetch_gh_ci_issues() -> TestCaseIssueCatalog:
     # Fetch open issues with label "testing" first
     print("\n--- Fetching active testing issues ---")
     testing_issues = fetch_github_issues(label="testing", state="open")
-    catalog.active_test_issues = process_issues(
-        testing_issues, is_closed=False, is_test_issue=True
-    )
+    catalog.active_test_issues = process_issues(testing_issues, is_closed=False)
     print(f"Processed {len(catalog.active_test_issues)} testing issues")
 
     # Then fetch "flaky test" and add only new issues not already present
     print("--- Fetching active flaky test issues ---")
     flaky_issues = fetch_github_issues(label="flaky test", state="open")
     existing_issue_numbers = {issue.issue for issue in catalog.active_test_issues}
-    new_flaky_issues = process_issues(flaky_issues, is_closed=False, is_test_issue=True)
+    new_flaky_issues = process_issues(flaky_issues, is_closed=False)
     added_count = 0
     for issue in new_flaky_issues:
         if issue.issue not in existing_issue_numbers:
@@ -260,9 +267,7 @@ def fetch_gh_ci_issues() -> TestCaseIssueCatalog:
     closed_testing_issues = fetch_github_issues(
         label="testing", state="closed", days_back=1
     )
-    catalog.resolved_test_issues = process_issues(
-        closed_testing_issues, is_closed=True, is_test_issue=True
-    )
+    catalog.resolved_test_issues = process_issues(closed_testing_issues, is_closed=True)
     print(f"Processed {len(catalog.resolved_test_issues)} resolved testing issues")
 
     # Then fetch closed "flaky test" and add only new issues not already present
@@ -271,9 +276,7 @@ def fetch_gh_ci_issues() -> TestCaseIssueCatalog:
         label="flaky test", state="closed", days_back=1
     )
     existing_closed_numbers = {issue.issue for issue in catalog.resolved_test_issues}
-    new_closed_flaky_issues = process_issues(
-        closed_flaky_issues, is_closed=True, is_test_issue=True
-    )
+    new_closed_flaky_issues = process_issues(closed_flaky_issues, is_closed=True)
     added_closed_count = 0
     for issue in new_closed_flaky_issues:
         if issue.issue not in existing_closed_numbers:

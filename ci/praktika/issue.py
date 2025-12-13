@@ -7,7 +7,7 @@ from .utils import MetaClasses, Utils
 
 @dataclass
 class TestingIssue:
-    """Represents a single flaky test issue from GitHub"""
+    """Represents a GitHub issue found/occurred in CI"""
 
     test_name: str
     closed_at: str
@@ -23,12 +23,47 @@ class TestingIssue:
     test_pattern: str = ""
     job_pattern: str = ""
 
+    def is_infrastructure(self):
+        return "infrastructure" in self.labels
+
+    def has_failure_reason(self):
+        return bool(self.failure_reason)
+
+    def has_failure_flags(self):
+        return bool(self.failure_flags)
+
+    def has_job_pattern(self):
+        return bool(self.job_pattern) and self.job_pattern != "%"
+
+    def has_test_pattern(self):
+        return bool(self.test_pattern) and self.test_pattern != "%"
+
+    def validate(self):
+        if not self.test_name or not self.issue_url or not self.title:
+            print(
+                f"WARNING: Invalid issue [{self.issue_url}] must have test_name, issue_url and title"
+            )
+            return False
+        if self.is_infrastructure():
+            if (
+                self.has_job_pattern()
+                or self.has_test_pattern()
+                or self.has_failure_reason()
+            ):
+                return True
+            else:
+                print(
+                    f"WARNING: Invalid infrastructure issue [{self.issue_url}] must have job_pattern, test_pattern or failure_reason"
+                )
+                return False
+        return True
+
 
 @dataclass
 class TestCaseIssueCatalog(MetaClasses.Serializable):
     """Catalog of all flaky test issues, both active and resolved"""
 
-    name: str = "flaky_test_catalog"
+    name: str = "issue_catalog"
     active_test_issues: List[TestingIssue] = field(default_factory=list)
     resolved_test_issues: List[TestingIssue] = field(default_factory=list)
 

@@ -534,7 +534,7 @@ def _mark_flaky_and_infrastructure_issues(result: Result, job_name: str) -> bool
     Returns:
         True if successful, False if catalog download failed
     """
-    from .dataclasses import TestCaseIssueCatalog
+    from .issue import TestCaseIssueCatalog
 
     if result.is_ok():
         print("Result succeeded, no flaky test check needed.")
@@ -570,9 +570,7 @@ def _mark_flaky_and_infrastructure_issues(result: Result, job_name: str) -> bool
 
     # Build a list of infrastructure issues
     infrastructure_issues = [
-        issue
-        for issue in flaky_catalog.active_test_issues
-        if any(l in issue.labels for l in ["infrastructure"])
+        issue for issue in flaky_catalog.active_test_issues if issue.is_infrastructure()
     ]
     print(f"  Loaded {len(infrastructure_issues)} infrastructure issues")
 
@@ -585,6 +583,7 @@ def _mark_flaky_and_infrastructure_issues(result: Result, job_name: str) -> bool
             for sub_result in res.results:
                 check_and_mark_flaky(sub_result)
         else:
+            print(f"  Checking result [{res.name}]")
             for test_name, issue in flaky_tests_map.items():
                 name_in_report = res.name
                 if ".py" in name_in_report:
@@ -632,8 +631,7 @@ def _mark_flaky_and_infrastructure_issues(result: Result, job_name: str) -> bool
 
                 # Check failure_flags with result.ext.get("labels", [])
                 if matched and issue.failure_flags:
-                    result_labels = res.ext.get("labels", [])
-                    if not any(flag in result_labels for flag in issue.failure_flags):
+                    if any(not res.has_label(flag) for flag in issue.failure_flags):
                         matched = False
 
                 # Check test_pattern (SQL style %name%) with result.name
@@ -675,7 +673,7 @@ def _check_and_mark_flaky_tests(workflow_result: Result):
     Args:
         workflow_result: The workflow result object containing all test results
     """
-    from .dataclasses import TestCaseIssueCatalog
+    from .issue import TestCaseIssueCatalog
 
     if workflow_result.is_ok():
         print("Workflow succeeded, no flaky test check needed.")

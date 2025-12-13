@@ -204,8 +204,8 @@ class CIFailure:
         print(f"- Body:\n{body}")
         print("-" * 100)
         body = (
-            "_Important: This issue was automatically created and is used by CI. "
-            "Do not modify the issue title. Do not remove issue labels._\n\n"
+            "_Important: This issue was automatically generated and is used by CI for matching failures. "
+            "DO NOT modify the body content. DO NOT remove labels._\n\n"
         ) + body
 
         if not UserPrompt.confirm("Proceed with issue creation?"):
@@ -239,8 +239,16 @@ class CIFailure:
             "It will be used to match and group similar failures",
             validator=lambda x: x in self.praktika_result.info,
         )
+        if self.test_name.startswith("test_"):
+            # pytest case
+            test_name = UserPrompt.get_string(
+                "Enter the test name. Must be full match with the failed test or omiting parameters or test function name for broader matching",
+                validator=lambda x: self.test_name.startswith(x),
+                default=self.test_name,
+            )
         title = f"Flaky test: {test_name}"
         body = f"""\
+Test name: {test_name}
 Failure reason: {failure_reason}
 CI report: [{self.job_name}]({self.get_job_report_url(pr_number, head_sha, self.job_name)})
 CIDB statistics: [cidb]({self.cidb_link})
@@ -260,6 +268,7 @@ Test output:
 
         title = self.test_name
         body = f"""\
+Test name: {self.test_name}
 CI report: [{self.job_name}]({self.get_job_report_url(pr_number, head_sha, self.job_name)})
 CIDB statistics: [cidb]({self.cidb_link})
 
@@ -449,14 +458,24 @@ Test output example:
         else:
             hours_since_start = 24  # Default fallback
 
-        print(f"Searching for issues with title: {search_in_title}")
+        print(f"Searching for issues with body substring: {search_in_title}")
         issues = GH.find_issue(
-            title=search_in_title,
+            search_substring=search_in_title,
             labels=labels,
             repo="ClickHouse/ClickHouse",
             verbose=True,
             include_closed_hours=hours_since_start,
+            in_body=True,
         )
+        if not issues:
+            print(f"Fallback: Searching for issues with title: {search_in_title}")
+            issues = GH.find_issue(
+                search_substring=search_in_title,
+                labels=labels,
+                repo="ClickHouse/ClickHouse",
+                verbose=True,
+                include_closed_hours=hours_since_start,
+            )
 
         if issues and len(issues) > 1:
             print("WARNING: Multiple issues found - check for duplicates")
