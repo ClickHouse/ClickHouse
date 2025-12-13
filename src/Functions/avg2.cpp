@@ -5,11 +5,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
-
 struct NameMidpoint
 {
     static constexpr auto name = "midpoint";
