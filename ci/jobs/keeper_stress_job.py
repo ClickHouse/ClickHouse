@@ -9,8 +9,15 @@ from praktika.utils import Shell, Utils
 
 
 def main():
-    # Ensure weekly selection for nightly runs unless explicitly overridden
-    os.environ.setdefault("KEEPER_RUN_WEEKLY", "1")
+    # Ensure weekly selection defaults depend on workflow: PR disables weekly, Nightly enables
+    wf = os.environ.get("WORKFLOW_NAME", "")
+    if wf == "PR":
+        os.environ.setdefault("KEEPER_RUN_WEEKLY", "0")
+    else:
+        os.environ.setdefault("KEEPER_RUN_WEEKLY", "1")
+    # Keep PR job fast/reliable by default; can be overridden via env
+    os.environ.setdefault("KEEPER_FAULTS", "off")
+    os.environ.setdefault("KEEPER_DURATION", "120")
 
     stop_watch = Utils.Stopwatch()
     results = []
@@ -37,7 +44,7 @@ def main():
     # Install Python dependencies required by Keeper stress framework (PyYAML, etc.)
     install_cmd = (
         "python3 -m pip install --no-cache-dir -r tests/stress/keeper/requirements.txt "
-        "|| python3 -m pip install --no-cache-dir pyyaml"
+        "|| python3 -m pip install --no-cache-dir pyyaml requests"
     )
     results.append(
         Result.from_commands_run(name="Install Keeper Python deps", command=install_cmd)
@@ -121,6 +128,7 @@ def main():
     env["CLICKHOUSE_BINARY"] = ch_path
     env["CLICKHOUSE_TESTS_CLIENT_BIN_PATH"] = ch_path
     env["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = server_bin_for_mount
+    env["CLICKHOUSE_BINARY"] = ch_path
     env.setdefault("CLICKHOUSE_TESTS_BASE_CONFIG_DIR", f"{repo_dir}/programs/server")
     env["PATH"] = f"/usr/local/bin:{env.get('PATH','')}"
 
@@ -171,6 +179,14 @@ def main():
                             files_to_attach.append(str(p))
                     except Exception:
                         pass
+    except Exception:
+        pass
+
+    # Also attach docker-in-docker logs if present
+    try:
+        dind_log = Path("./ci/tmp/docker-in-docker.log")
+        if dind_log.exists():
+            files_to_attach.append(str(dind_log))
     except Exception:
         pass
 
