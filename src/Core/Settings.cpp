@@ -2476,8 +2476,6 @@ Possible values:
 
 - 0 for turning off the timer.
 
-**Temporarily disabled in ClickHouse Cloud.**
-
 See also:
 
 - System table [trace_log](/operations/system-tables/trace_log)
@@ -2495,8 +2493,6 @@ Possible values:
             - 1000000000 (once a second) for cluster-wide profiling.
 
 - 0 for turning off the timer.
-
-**Temporarily disabled in ClickHouse Cloud.**
 
 See also:
 
