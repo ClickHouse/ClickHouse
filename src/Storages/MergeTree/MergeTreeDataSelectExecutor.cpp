@@ -776,6 +776,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     bool use_skip_indexes_for_disjunctions = use_skip_indexes_for_disjunctions_
                                 && !settings[Setting::use_skip_indexes_on_data_read] &&
                                 key_condition.getRPN().size() <= MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT;
+
     auto is_index_supported_on_data_read = [&](const MergeTreeIndexPtr & index) -> bool
     {
         /// Vector similarity indexes are not applicable on data reads.
@@ -1992,7 +1993,20 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     size_t ranges_size = ranges.size();
     RangesInDataPartReadHints read_hints = in_read_hints;
 
-    if (index_helper->isInvertedIndex() && !use_skip_indexes_for_disjunctions)
+    auto create_update_partial_disjunction_result_fn = [&](size_t range_begin) -> KeyCondition::UpdatePartialDisjunctionResultFn
+    {
+        if (use_skip_indexes_for_disjunctions && key_condition_rpn_template)
+        {
+            return [range_begin, &partial_disjunction_result](size_t position, bool element_result, bool is_unknown)
+            {
+                if (!is_unknown)
+                    partial_disjunction_result[(range_begin * MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT) + position] = element_result;
+            };
+        }
+        return nullptr;
+    };
+
+    if (index_helper->isInvertedIndex())
     {
         MergeTreeIndexGranulePtr granule;
         reader.read(0, condition.get(), granule);
@@ -2009,8 +2023,9 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     continue;
 
                 granule_text.setCurrentRange(RowsRange(row_begin, row_end - 1));
+                bool may_be_true = condition->mayBeTrueOnGranule(granule, create_update_partial_disjunction_result_fn(mark));
 
-                if (condition->mayBeTrueOnGranule(granule, nullptr))
+                if (may_be_true)
                 {
                     if (res.empty() || mark - res.back().end > min_marks_for_seek)
                         res.push_back(MarkRange(mark, mark + 1));
@@ -2125,24 +2140,10 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 }
                 else
                 {
-                    bool result = true;
-                    if (use_skip_indexes_for_disjunctions && key_condition_rpn_template)
-                    {
-                        auto range_begin = std::max(ranges[i].begin, index_mark * index_granularity);
+                    size_t range_begin = std::max(ranges[i].begin, index_mark * index_granularity);
+                    bool may_be_true = condition->mayBeTrueOnGranule(granule, create_update_partial_disjunction_result_fn(range_begin));
 
-                        auto update_partial_disjunction_result_fn = [&](size_t position, bool element_result, bool is_unknown)
-                        {
-                            if (!is_unknown)
-                                partial_disjunction_result[(range_begin * MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT) + position] = element_result;
-                        };
-                        result = condition->mayBeTrueOnGranule(granule, update_partial_disjunction_result_fn);
-                    }
-                    else
-                    {
-                        result = condition->mayBeTrueOnGranule(granule, nullptr);
-                    }
-
-                    if (!result)
+                    if (!may_be_true)
                         continue;
 
                     MarkRange data_range(

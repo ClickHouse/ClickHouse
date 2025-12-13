@@ -73,7 +73,7 @@ struct MergeTreeWriterStream
     void cancel() noexcept;
     void sync() const;
 
-    void addToChecksums(MergeTreeDataPartChecksums & checksums);
+    void addToChecksums(MergeTreeDataPartChecksums & checksums, bool is_compressed);
     MarkInCompressedFile getCurrentMark() const;
 };
 

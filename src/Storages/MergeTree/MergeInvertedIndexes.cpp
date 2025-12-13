@@ -465,8 +465,8 @@ void MergeInvertedIndexesTask::cancelImpl() noexcept
 
 void MergeInvertedIndexesTask::addToChecksums(MergeTreeDataPartChecksums & checksums)
 {
-    for (auto & stream : output_streams_holders)
-        stream->addToChecksums(checksums);
+    for (const auto & [type, stream] : output_streams)
+        stream->addToChecksums(checksums, MergeTreeIndexSubstream::isCompressed(type));
 }
 
 MutableDataPartStoragePtr createTemporaryInvertedIndexStorage(const DiskPtr & disk, const String & part_relative_path)
