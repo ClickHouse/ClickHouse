@@ -216,9 +216,14 @@ std::shared_ptr<TSystemLog> createSystemLog(
                             "If 'engine' is specified for system table, SETTINGS storage_policy = '...' should "
                             "be specified directly inside 'engine' and 'storage_policy' setting doesn't make sense");
         if (config.has(config_prefix + ".settings"))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "If 'engine' is specified for system table, SETTINGS parameters should "
-                            "be specified directly inside 'engine' and 'settings' setting doesn't make sense");
+        {
+            LOG_ERROR(
+                getLogger("SystemLog"),
+                "Ignoring '{}.settings' because a custom 'engine' is specified. This usually happens when configs merge with defaults. "
+                "Move settings into the 'engine' SETTINGS clause and add <settings remove=\"remove\" /> to drop inherited settings, "
+                "or omit <engine> and configure partition_by / ttl / order_by / storage_policy / settings sections instead.",
+                config_prefix);
+        }
 
         log_settings.engine = config.getString(config_prefix + ".engine");
     }
