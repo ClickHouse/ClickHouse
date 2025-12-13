@@ -125,6 +125,8 @@ DDLWorker::DDLWorker(
     {
         task_max_lifetime = config->getUInt64(prefix + ".task_max_lifetime", static_cast<UInt64>(task_max_lifetime));
         cleanup_delay_period = config->getUInt64(prefix + ".cleanup_delay_period", static_cast<UInt64>(cleanup_delay_period));
+        mark_replicas_active_interval_seconds = config->getUInt64(
+            prefix + ".mark_replicas_active_interval_seconds", static_cast<UInt64>(mark_replicas_active_interval_seconds));
         max_tasks_in_queue = std::max<UInt64>(1, config->getUInt64(prefix + ".max_tasks_in_queue", max_tasks_in_queue));
 
         if (config->has(prefix + ".host_name"))
@@ -1199,9 +1201,10 @@ void DDLWorker::runMainThread()
 
     DB::setThreadName(ThreadName::DDL_WORKER);
     LOG_DEBUG(log, "Starting DDLWorker thread");
-
+    Int64 last_mark_replicas_active_time_seconds = 0;
     while (!stop_flag)
     {
+        Int64 current_time_seconds = Poco::Timestamp().epochTime();
         try
         {
             bool reinitialized = !initialized;
@@ -1212,7 +1215,16 @@ void DDLWorker::runMainThread()
                 /// Stopped
                 if (!initializeMainThread())
                     break;
+
+                last_mark_replicas_active_time_seconds = current_time_seconds;
                 LOG_DEBUG(log, "Initialized DDLWorker thread");
+            }
+
+            if (last_mark_replicas_active_time_seconds
+                && current_time_seconds >= last_mark_replicas_active_time_seconds + mark_replicas_active_interval_seconds)
+            {
+                markReplicasActive(false);
+                last_mark_replicas_active_time_seconds = current_time_seconds;
             }
 
             cleanup_event->set();
@@ -1291,23 +1303,28 @@ void DDLWorker::initializeReplication()
 void DDLWorker::createReplicaDirs(const ZooKeeperPtr & zookeeper, const NameSet & host_ids)
 {
     for (const auto & host_id : host_ids)
+    {
+        LOG_DEBUG(log, "Creating replica dir for host id {}", host_id);
         zookeeper->createAncestors(fs::path(replicas_dir) / host_id / "");
+    }
 }
 
-void DDLWorker::markReplicasActive(bool /*reinitialized*/)
+void DDLWorker::markReplicasActive(bool reinitialized)
 {
     auto zookeeper = getZooKeeper();
 
-    // Reset all active_node_holders
-    for (auto & it : active_node_holders)
+    if (reinitialized)
     {
-        auto & active_node_holder = it.second.second;
-        if (active_node_holder)
-            active_node_holder->setAlreadyRemoved();
-        active_node_holder.reset();
+        // Reset all active_node_holders
+        for (auto & it : active_node_holders)
+        {
+            auto & active_node_holder = it.second.second;
+            if (active_node_holder)
+                active_node_holder->setAlreadyRemoved();
+            active_node_holder.reset();
+        }
+        active_node_holders.clear();
     }
-
-    active_node_holders.clear();
 
     const auto maybe_secure_port = context->getTCPPortSecure();
     const auto port = context->getTCPPort();
@@ -1320,8 +1337,12 @@ void DDLWorker::markReplicasActive(bool /*reinitialized*/)
         try
         {
             HostID host = HostID::fromString(host_id);
-            if (DDLTask::isSelfHostID(log, host, maybe_secure_port, port))
+            bool is_self_host = DDLTask::isSelfHostID(log, host, maybe_secure_port, port);
+            LOG_DEBUG(log, "Self host_id ({}) = {}", host_id, is_self_host);
+            if (is_self_host)
+            {
                 local_host_ids.emplace(host_id);
+            }
         }
         catch (const Exception & e)
         {
