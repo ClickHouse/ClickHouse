@@ -112,12 +112,12 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
 
     for (size_t i = 0; i < num_processes; ++i)
     {
-        if ((my_client.current_query_id == query_id_col.getDataAt(i).toString())
-            && (my_client.current_user == user_col.getDataAt(i).toString()))
+        if ((my_client.current_query_id == query_id_col.getDataAt(i))
+            && (my_client.current_user == user_col.getDataAt(i)))
             continue;
 
-        auto query_id = query_id_col.getDataAt(i).toString();
-        query_user = user_col.getDataAt(i).toString();
+        std::string query_id{query_id_col.getDataAt(i)};
+        query_user = user_col.getDataAt(i);
 
         if ((my_client.current_user != query_user) && !is_kill_query_granted())
             continue;
@@ -272,8 +272,8 @@ BlockIO InterpreterKillQueryQuery::execute()
 
         for (size_t i = 0; i < mutations_block.rows(); ++i)
         {
-            table_id = StorageID{database_col.getDataAt(i).toString(), table_col.getDataAt(i).toString()};
-            auto mutation_id = mutation_id_col.getDataAt(i).toString();
+            table_id = StorageID{std::string{database_col.getDataAt(i)}, std::string{table_col.getDataAt(i)}};
+            std::string mutation_id{mutation_id_col.getDataAt(i)};
 
             CancellationCode code = CancellationCode::Unknown;
             if (!query.test)
@@ -283,7 +283,7 @@ BlockIO InterpreterKillQueryQuery::execute()
                     code = CancellationCode::NotFound;
                 else
                 {
-                    const auto alter_command = command_col.getDataAt(i).toString();
+                    const std::string alter_command{command_col.getDataAt(i)};
                     const auto with_round_bracket = alter_command.front() == '(';
                     ParserAlterCommand parser{with_round_bracket};
                     auto command_ast = parseQuery(
@@ -341,7 +341,7 @@ BlockIO InterpreterKillQueryQuery::execute()
 
         for (size_t i = 0; i < moves_block.rows(); ++i)
         {
-            table_id = StorageID{database_col.getDataAt(i).toString(), table_col.getDataAt(i).toString()};
+            table_id = StorageID{std::string{database_col.getDataAt(i)}, std::string{table_col.getDataAt(i)}};
             auto task_uuid = task_uuid_col[i].safeGet<UUID>();
 
             CancellationCode code = CancellationCode::Unknown;

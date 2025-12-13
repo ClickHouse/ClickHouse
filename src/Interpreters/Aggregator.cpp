@@ -210,7 +210,8 @@ Aggregator::Params::Params(
     bool optimize_group_by_constant_keys_,
     float min_hit_rate_to_use_consecutive_keys_optimization_,
     const StatsCollectingParams & stats_collecting_params_,
-    bool enable_producing_buckets_out_of_order_in_aggregation_)
+    bool enable_producing_buckets_out_of_order_in_aggregation_,
+    bool serialize_string_with_zero_byte_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
@@ -234,6 +235,7 @@ Aggregator::Params::Params(
     , min_hit_rate_to_use_consecutive_keys_optimization(min_hit_rate_to_use_consecutive_keys_optimization_)
     , stats_collecting_params(stats_collecting_params_)
     , enable_producing_buckets_out_of_order_in_aggregation(enable_producing_buckets_out_of_order_in_aggregation_)
+    , serialize_string_with_zero_byte(serialize_string_with_zero_byte_)
 {
 }
 
@@ -278,7 +280,8 @@ Aggregator::Params::Params(
     bool overflow_row_,
     size_t max_threads_,
     size_t max_block_size_,
-    float min_hit_rate_to_use_consecutive_keys_optimization_)
+    float min_hit_rate_to_use_consecutive_keys_optimization_,
+    bool serialize_string_with_zero_byte_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
@@ -288,6 +291,7 @@ Aggregator::Params::Params(
     , max_block_size(max_block_size_)
     , only_merge(true)
     , min_hit_rate_to_use_consecutive_keys_optimization(min_hit_rate_to_use_consecutive_keys_optimization_)
+    , serialize_string_with_zero_byte(serialize_string_with_zero_byte_)
 {
 }
 
@@ -540,6 +544,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
 
     HashMethodContext::Settings cache_settings;
     cache_settings.max_threads = params.max_threads;
+    cache_settings.serialize_string_with_zero_byte = params.serialize_string_with_zero_byte;
     aggregation_state_cache = AggregatedDataVariants::createCache(method_chosen, cache_settings);
 
 #if USE_EMBEDDED_COMPILER
@@ -2142,7 +2147,9 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
                 init_out_cols();
 
             const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
-            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref);
+            IColumn::SerializationSettings serialization_settings{
+                .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
+            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref, &serialization_settings);
 
             if constexpr (is_final)
             {
@@ -2408,7 +2415,9 @@ Aggregator::ConvertToBlockResVariant Aggregator::convertToBlockImplFinal(
                 init_out_cols();
 
             const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
-            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref);
+            IColumn::SerializationSettings serialization_settings{
+                .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
+            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref, &serialization_settings);
             places.emplace_back(mapped);
 
             /// Mark the cell as destroyed so it will not be destroyed in destructor.
@@ -2481,7 +2490,9 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
                 init_out_cols();
 
             const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
-            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref);
+            IColumn::SerializationSettings serialization_settings{
+                .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
+            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref, &serialization_settings);
 
             /// reserved, so push_back does not throw exceptions
             for (size_t i = 0; i < params.aggregates_size; ++i)
