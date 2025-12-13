@@ -175,28 +175,8 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     }
 
     auto index = std::make_shared<ASTIndexDeclaration>(expr, type, name->as<ASTIdentifier &>().name());
-
-    if (granularity)
-    {
-        index->granularity = granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
-    }
-    else
-    {
-        index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
-
-        if (auto index_type = index->getType())
-        {
-            const std::string_view index_type_name = index_type->name;
-
-            if (index_type_name == "vector_similarity")
-                index->granularity = ASTIndexDeclaration::DEFAULT_VECTOR_SIMILARITY_INDEX_GRANULARITY;
-            else if (index_type_name == "text")
-                index->granularity = ASTIndexDeclaration::DEFAULT_TEXT_INDEX_GRANULARITY;
-        }
-    }
-
+    index->granularity = getSecondaryIndexGranularity(index->getType(), granularity);
     node = index;
-
     return true;
 }
 

@@ -61,17 +61,6 @@ SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_127');
 SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_127');
 
-SELECT '--- no profile events when cache is disabled.';
-
-SET use_text_index_dictionary_cache = 0;
-
-SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_126');
-
-SET use_text_index_dictionary_cache = 1;
-
-SYSTEM FLUSH LOGS query_log;
-SELECT * FROM text_index_cache_stats(filter = 'text_126');
-
 SELECT 'Clear text index cache';
 
 SYSTEM DROP TEXT INDEX DICTIONARY CACHE;

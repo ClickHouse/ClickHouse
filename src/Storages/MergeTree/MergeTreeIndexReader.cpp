@@ -5,28 +5,15 @@
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 
-namespace
+namespace DB
 {
 
-using namespace DB;
-
-MergeTreeReaderSettings patchSettings(MergeTreeReaderSettings settings, MergeTreeIndexSubstream::Type substream)
+namespace ErrorCodes
 {
-    using enum MergeTreeIndexSubstream::Type;
-
-    /// Adjust read buffer sizes for text index dictionaries and postings
-    /// because usually we read relatively small amounts of data from random places of
-    /// these substreams. So, it doesn't make sense to read more data in the buffer.
-    if (substream == TextIndexDictionary || substream == TextIndexPostings)
-    {
-        settings.read_settings.local_fs_buffer_size = 16 * 1024;
-        settings.read_settings.remote_fs_buffer_size = 16 * 1024;
-    }
-
-    return settings;
+    extern const int LOGICAL_ERROR;
 }
 
-std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
+static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
     const String & stream_name,
     const String & extension,
     MergeTreeData::DataPartPtr part,
@@ -55,23 +42,15 @@ std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
     return std::make_unique<MergeTreeReaderStreamSingleColumn>(
         part->getDataPartStoragePtr(),
         stream_name,
-        extension, marks_count,
+        extension,
+        marks_count,
         all_mark_ranges,
         std::move(settings),
         uncompressed_cache,
         part->getFileSizeOrZero(stream_name + extension),
         std::move(marks_loader),
-        ReadBufferFromFileBase::ProfileCallback{}, CLOCK_MONOTONIC_COARSE);
-}
-
-}
-
-namespace DB
-{
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
+        ReadBufferFromFileBase::ProfileCallback{},
+        CLOCK_MONOTONIC_COARSE);
 }
 
 MergeTreeIndexReader::MergeTreeIndexReader(
@@ -150,7 +129,6 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
             .condition = condition,
             .part = *part,
             .index = *index,
-            .index_mark = mark
         };
 
         res->deserializeBinaryWithMultipleStreams(streams, state);
@@ -200,17 +178,21 @@ void MergeTreeIndexReader::adjustRightMark(size_t right_mark)
         stream->adjustRightMark(right_mark);
 }
 
-void MergeTreeIndexReader::prefetchBeginOfRange(size_t from_mark, Priority priority)
+MergeTreeReaderSettings MergeTreeIndexReader::patchSettings(MergeTreeReaderSettings settings, MergeTreeIndexSubstream::Type substream)
 {
-    initStreamIfNeeded();
+    using enum MergeTreeIndexSubstream::Type;
+    settings.is_compressed = MergeTreeIndexSubstream::isCompressed(substream);
 
-    for (const auto & stream : stream_holders)
+    /// Adjust read buffer sizes for text index dictionaries and postings
+    /// because usually we read relatively small amounts of data from random places of
+    /// these substreams. So, it doesn't make sense to read more data in the buffer.
+    if (substream == TextIndexDictionary || substream == TextIndexPostings)
     {
-        stream->seekToMark(from_mark);
-        stream->getDataBuffer()->prefetch(priority);
+        settings.read_settings.local_fs_buffer_size = 16 * 1024;
+        settings.read_settings.remote_fs_buffer_size = 16 * 1024;
     }
 
-    stream_mark = from_mark;
+    return settings;
 }
 
 }

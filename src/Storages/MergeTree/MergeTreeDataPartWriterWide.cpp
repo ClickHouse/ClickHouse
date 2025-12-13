@@ -758,7 +758,7 @@ void MergeTreeDataPartWriterWide::fillDataChecksums(MergeTreeDataPartChecksums &
         }
 
         stream->preFinalize();
-        stream->addToChecksums(checksums);
+        stream->addToChecksums(checksums, true);
     }
 }
 

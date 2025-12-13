@@ -11,7 +11,7 @@ DROP TABLE IF EXISTS t_text_index_hint_events;
 CREATE TABLE t_text_index_hint_events
 (
     s String,
-    INDEX idx_s (s) TYPE text(tokenizer = ngrams(3)) GRANULARITY 4
+    INDEX idx_s (s) TYPE text(tokenizer = ngrams(3))
 )
 ENGINE = MergeTree ORDER BY tuple();
 
