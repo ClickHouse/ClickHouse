@@ -315,56 +315,86 @@ SELECT
     ) AS result,
     toTypeName(result) AS type;
 
-
 SELECT
-    midpoint(toInt128('-9223372036854775808'), toInt128('9223372036854775807')) AS result,
+    midpoint(
+        toInt128('-170141183460469231731687303715884105728'),
+        toInt128('170141183460469231731687303715884105727')
+    ) AS result,
     toTypeName(result) AS type;
 
 SELECT
-    midpoint(toInt128('9223372036854775807'), toInt128('9223372036854775807')) AS result,
+    midpoint(
+        toInt128('170141183460469231731687303715884105727'),
+        toInt128('170141183460469231731687303715884105727')
+    ) AS result,
     toTypeName(result) AS type;
 
 SELECT
-    midpoint(toInt128('-9223372036854775808'), toInt128('-9223372036854775808')) AS result,
+    midpoint(
+        toInt128('-170141183460469231731687303715884105728'),
+        toInt128('-170141183460469231731687303715884105728')
+    ) AS result,
     toTypeName(result) AS type;
 
 SELECT midpoint(toInt128('-1'), toInt128('0')) AS result, toTypeName(result) AS type;
 SELECT midpoint(toInt128('-1'), toInt128('-2')) AS result, toTypeName(result) AS type;
 
 SELECT
-    midpoint(toUInt128('0'), toUInt128('18446744073709551615')) AS result,
+    midpoint(
+        toUInt128('0'),
+        toUInt128('340282366920938463463374607431768211455')
+    ) AS result,
     toTypeName(result) AS type;
 
 SELECT
-    midpoint(toUInt128('18446744073709551615'), toUInt128('18446744073709551615')) AS result,
-    toTypeName(result) AS type;
-
-
-SELECT
-    midpoint(toNullable(toInt128('-9223372036854775808')), toInt128('9223372036854775807')) AS result,
-    toTypeName(result) AS type;
-
-SELECT
-    midpoint(CAST(NULL AS Nullable(Int128)), toInt128('9223372036854775807')) AS result,
+    midpoint(
+        toUInt128('340282366920938463463374607431768211455'),
+        toUInt128('340282366920938463463374607431768211455')
+    ) AS result,
     toTypeName(result) AS type;
 
 SELECT
-    midpoint(toNullable(toInt128('-1')), CAST(NULL AS Nullable(Int128))) AS result,
-    toTypeName(result) AS type;
-
-SELECT
-    midpoint(toInt128('9223372036854775807'), toInt128('9223372036854775807'), toInt128('9223372036854775807')) AS result,
-    toTypeName(result) AS type;
-
-SELECT
-    midpoint(toUInt128('18446744073709551615'), toUInt128('18446744073709551615'), toUInt128('18446744073709551615')) AS result,
+    midpoint(
+        toNullable(toInt128('-170141183460469231731687303715884105728')),
+        toInt128('170141183460469231731687303715884105727')
+    ) AS result,
     toTypeName(result) AS type;
 
 SELECT
     midpoint(
         CAST(NULL AS Nullable(Int128)),
-        toNullable(toInt128('9223372036854775807')),
-        toNullable(toInt128('9223372036854775807'))
+        toInt128('170141183460469231731687303715884105727')
+    ) AS result,
+    toTypeName(result) AS type;
+
+SELECT
+    midpoint(
+        toNullable(toInt128('-1')),
+        CAST(NULL AS Nullable(Int128))
+    ) AS result,
+    toTypeName(result) AS type;
+
+SELECT
+    midpoint(
+        toInt128('170141183460469231731687303715884105727'),
+        toInt128('170141183460469231731687303715884105727'),
+        toInt128('170141183460469231731687303715884105727')
+    ) AS result,
+    toTypeName(result) AS type;
+
+SELECT
+    midpoint(
+        toUInt128('340282366920938463463374607431768211455'),
+        toUInt128('340282366920938463463374607431768211455'),
+        toUInt128('340282366920938463463374607431768211455')
+    ) AS result,
+    toTypeName(result) AS type;
+
+SELECT
+    midpoint(
+        CAST(NULL AS Nullable(Int128)),
+        toNullable(toInt128('170141183460469231731687303715884105727')),
+        toNullable(toInt128('170141183460469231731687303715884105727'))
     ) AS result,
     toTypeName(result) AS type;
 
