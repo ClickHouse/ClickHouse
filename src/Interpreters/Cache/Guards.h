@@ -1,6 +1,17 @@
 #pragma once
 #include <mutex>
 #include <boost/noncopyable.hpp>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/SharedMutex.h>
+#include <Common/SharedLockGuard.h>
+#include <absl/synchronization/mutex.h>
+
+namespace ProfileEvents
+{
+    extern const Event FilesystemCacheStateLockMicroseconds;
+    extern const Event FilesystemCachePriorityWriteLockMicroseconds;
+    extern const Event FilesystemCachePriorityReadLockMicroseconds;
+}
 
 namespace DB
 {
@@ -10,9 +21,10 @@ namespace DB
  * 2. KeyGuard::Lock (hold till the end of the method)
  *
  * FileCache::tryReserve
- * 1. CachePriorityGuard::Lock
+ * 1. CachePriorityGuard::WriteLock, CachePriorityGuard::ReadLock
  * 2. KeyGuard::Lock (taken without metadata lock)
  * 3. any number of KeyGuard::Lock's for files which are going to be evicted (taken via metadata lock)
+ * 4. CacheStateGuard (to update state (total size/elements) after successful space reservation).
  *
  * FileCache::removeIfExists
  * 1. CachePriorityGuard::Lock
@@ -43,7 +55,7 @@ namespace DB
  * 2. If we take more than one key lock at a moment of time, we need to take CachePriorityGuard::Lock (example: tryReserve())
  *
  *
- *                                 _CachePriorityGuard_
+ *                                 _CachePriorityGuard_ / _CacheStateGuard
  *                                 1. FileCache::tryReserve
  *                                 2. FileCache::removeIfExists(key)
  *                                 3. FileCache::removeAllReleasable
@@ -58,24 +70,59 @@ namespace DB
 
 /**
  * Cache priority queue guard.
+ * "Write" lock is for priority queue structure modifications,
+ * like adding, moving and removing elements.
+ * "Read" lock is for read-only iteration of priority queue.
  */
 struct CachePriorityGuard : private boost::noncopyable
 {
-    using Mutex = std::timed_mutex;
     /// struct is used (not keyword `using`) to make CachePriorityGuard::Lock non-interchangable with other guards locks
     /// so, we wouldn't be able to pass CachePriorityGuard::Lock to a function which accepts KeyGuard::Lock, for example
+    using WriteLock = std::unique_lock<SharedMutex>;
+    using ReadLock = std::shared_lock<SharedMutex>;
+
+    ReadLock tryReadLock() { return ReadLock(mutex, std::try_to_lock); }
+    WriteLock tryWriteLock() { return WriteLock(mutex, std::try_to_lock); }
+
+    ReadLock readLock()
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCachePriorityReadLockMicroseconds);
+        return ReadLock(mutex);
+    }
+    WriteLock writeLock()
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCachePriorityWriteLockMicroseconds);
+        return WriteLock(mutex);
+    }
+
+private:
+    SharedMutex mutex;
+};
+
+/// State lock protects cache total size/elements counters.
+struct CacheStateGuard : private boost::noncopyable
+{
+    using Mutex = std::timed_mutex;
+
     struct Lock : public std::unique_lock<Mutex>
     {
         using Base = std::unique_lock<Mutex>;
         using Base::Base;
-    };
 
-    Lock lock() { return Lock(mutex); }
+        explicit Lock(Mutex & mutex_) : std::unique_lock<Mutex>(mutex_) {}
+    };
 
     Lock tryLock() { return Lock(mutex, std::try_to_lock); }
 
+    Lock lock()
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheStateLockMicroseconds);
+        return Lock(mutex);
+    }
+
     Lock tryLockFor(const std::chrono::milliseconds & acquire_timeout)
     {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheStateLockMicroseconds);
         return Lock(mutex, std::chrono::duration<double, std::milli>(acquire_timeout));
     }
 

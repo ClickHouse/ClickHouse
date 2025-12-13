@@ -18,7 +18,7 @@ static bool isQueryInitialized()
         && !CurrentThread::getQueryId().empty();
 }
 
-FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::tryGetQueryContext(const CachePriorityGuard::Lock &)
+FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::tryGetQueryContext(const CacheStateGuard::Lock &)
 {
     if (!isQueryInitialized())
         return nullptr;
@@ -27,7 +27,7 @@ FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::tryGetQueryContext(con
     return (query_iter == query_map.end()) ? nullptr : query_iter->second;
 }
 
-void FileCacheQueryLimit::removeQueryContext(const std::string & query_id, const CachePriorityGuard::Lock &)
+void FileCacheQueryLimit::removeQueryContext(const std::string & query_id, const CachePriorityGuard::WriteLock &)
 {
     auto query_iter = query_map.find(query_id);
     if (query_iter == query_map.end())
@@ -43,7 +43,7 @@ void FileCacheQueryLimit::removeQueryContext(const std::string & query_id, const
 FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::getOrSetQueryContext(
     const std::string & query_id,
     const ReadSettings & settings,
-    const CachePriorityGuard::Lock &)
+    const CachePriorityGuard::WriteLock &)
 {
     if (query_id.empty())
         return nullptr;
@@ -72,9 +72,9 @@ void FileCacheQueryLimit::QueryContext::add(
     size_t offset,
     size_t size,
     const FileCache::UserInfo & user,
-    const CachePriorityGuard::Lock & lock)
+    const CachePriorityGuard::WriteLock & lock)
 {
-    auto it = getPriority().add(key_metadata, offset, size, user, lock);
+    auto it = getPriority().add(key_metadata, offset, size, user, lock, /* state_lock */nullptr);
     auto [_, inserted] = records.emplace(FileCacheKeyAndOffset{key_metadata->key, offset}, it);
     if (!inserted)
     {
@@ -89,7 +89,7 @@ void FileCacheQueryLimit::QueryContext::add(
 void FileCacheQueryLimit::QueryContext::remove(
     const Key & key,
     size_t offset,
-    const CachePriorityGuard::Lock & lock)
+    const CachePriorityGuard::WriteLock & lock)
 {
     auto record = records.find({key, offset});
     if (record == records.end())
@@ -102,7 +102,7 @@ void FileCacheQueryLimit::QueryContext::remove(
 IFileCachePriority::IteratorPtr FileCacheQueryLimit::QueryContext::tryGet(
     const Key & key,
     size_t offset,
-    const CachePriorityGuard::Lock &)
+    const CachePriorityGuard::WriteLock &)
 {
     auto it = records.find({key, offset});
     if (it == records.end())
