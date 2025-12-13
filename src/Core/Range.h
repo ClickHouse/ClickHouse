@@ -59,6 +59,7 @@ public:
 
     static Range createWholeUniverse();
     static Range createWholeUniverseWithoutNull();
+    static Range createTypeAwareWholeUniverse(const DataTypePtr & type);
     static Range createRightBounded(const FieldRef & right_point, bool right_included, bool with_null = false);
     static Range createLeftBounded(const FieldRef & left_point, bool left_included, bool with_null = false);
 
