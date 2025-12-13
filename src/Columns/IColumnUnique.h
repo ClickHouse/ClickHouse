@@ -136,6 +136,11 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method filter is not supported for ColumnUnique.");
     }
 
+    void filter(const IColumn::Filter &) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method in-place filter is not supported for ColumnUnique.");
+    }
+
     void expand(const IColumn::Filter &, bool) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method expand is not supported for ColumnUnique.");
