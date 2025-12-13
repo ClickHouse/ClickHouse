@@ -388,9 +388,6 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
 {
     auto * state_sparse = checkAndGetState<DeserializeStateSparse>(state);
 
-    if (insertDataFromSubstreamsCacheIfAny(cache, settings, column))
-        return;
-
     /// Reading SparseOffsets first.
 
     size_t prev_size = column->size();
@@ -403,8 +400,6 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
 
     auto mutable_column = column->assumeMutable();
     auto & column_sparse = assert_cast<ColumnSparse &>(*mutable_column);
-    insertDataFromCachedColumn(settings, column_sparse.getOffsetsPtr(), state_sparse->column_offsets, num_read_offsets, cache);
-    auto & offsets_data = column_sparse.getOffsetsData();
     auto & values_column = column_sparse.getValuesPtr();
 
     settings.path.push_back(Substream::SparseElements);
@@ -412,19 +407,23 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
         values_column, skipped_values_rows, num_read_offsets, settings, state_sparse->nested, cache);
     settings.path.pop_back();
 
-    if (offsets_data.size() + 1 != values_column->size())
+    /// When reading from compact parts, there is not state cache, and offsets may be only partially read.
+    /// If we read fewer offsets than `values.size()`, append the newly read offsets to the previously accumulated ones.
+    if (column_sparse.getOffsetsData().size() + 1 < values_column->size())
+        insertDataFromCachedColumn(settings, column_sparse.getOffsetsPtr(), state_sparse->column_offsets, num_read_offsets, cache);
+
+    if (column_sparse.getOffsetsData().size() + 1 != values_column->size())
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Inconsistent sizes of values and offsets in SerializationSparse. Offsets size: {}, values size: {}",
-            offsets_data.size(),
+            column_sparse.getOffsetsData().size(),
             values_column->size());
     }
 
     /// 'insertManyDefaults' just increases size of column.
     column_sparse.insertManyDefaults(read_rows);
     column = std::move(mutable_column);
-    addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, column->size() - prev_size);
 }
 
 /// All methods below just wrap nested serialization.
