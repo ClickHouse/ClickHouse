@@ -18,6 +18,7 @@ struct TheilsUData : CrossTabData
         return "theilsU";
     }
 
+    /// Based on https://en.wikipedia.org/wiki/Uncertainty_coefficient.
     Float64 getResult() const
     {
         if (count < 2)
@@ -27,21 +28,25 @@ struct TheilsUData : CrossTabData
         for (const auto & [key, value] : count_a)
         {
             Float64 value_float = value;
-            h_a += (value_float / count) * log(value_float / count);
+            Float64 prob_a = value_float / count;
+            h_a += prob_a * log(prob_a);
         }
+
+        if (h_a == 0.0)
+            return 0.0;
 
         Float64 dep = 0.0;
         for (const auto & [key, value] : count_ab)
         {
             Float64 value_ab = value;
             Float64 value_b = count_b.at(key.items[UInt128::_impl::little(1)]);
-
-            dep += (value_ab / count) * log(value_ab / value_b);
+            Float64 prob_ab = value_ab / count;
+            Float64 prob_a_given_b = value_ab / value_b;
+            dep += prob_ab * log(prob_a_given_b);
         }
 
-        dep -= h_a;
-        dep /= h_a;
-        return dep;
+        Float64 coef = (h_a - dep) / h_a;
+        return coef;
     }
 };
 
