@@ -2,17 +2,15 @@
 
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/MergeTree/PostingsContainer.h>
 #include <Columns/IColumn.h>
 #include <Common/Logger.h>
-#include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/logger_useful.h>
-#include <Formats/MarkInCompressedFile.h>
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/ITokenExtractor.h>
 
 #include <absl/container/flat_hash_map.h>
-
 #include <vector>
 
 #include <roaring/roaring.hh>
@@ -20,7 +18,11 @@
 namespace DB
 {
 
-/**
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+    /**
   * Implementation of inverted index for text search.
   *
   * A text index is a skip index that can have arbitrary granularity.
@@ -78,10 +80,61 @@ struct MergeTreeIndexTextParams
     size_t bloom_filter_bits_per_row = 0;
     size_t bloom_filter_num_hashes = 0;
     String preprocessor;
+    bool enable_compressed_postings = false;
 };
 
 using PostingList = roaring::Roaring;
 using PostingListPtr = std::shared_ptr<PostingList>;
+
+using PostingListCodec = std::variant<PostingList, PostingsContainer32>;
+using PostingListCodecsHolder = std::list<PostingListCodec>;
+
+/// Decouple posting list encoding/decoding logic from PostingListBuilder,
+/// so that PostingListBuilder can support multiple encoding schemes for posting lists,
+/// including a SIMD-accelerated delta PFor codec implemented based on simdcomp.
+
+/// PostingListRoaringCodec stores the posting list in a Roaring bitmap
+/// and ultimately serializes it to a WriteBuffer using Roaring’s built-in serialization support.
+/// Deserialization is also implemented by leveraging Roaring bitmap’s APIs.
+struct PostingListRoaringCodec
+{
+    /// sizeof(PostingListWithContext) == 24 bytes.
+    /// Use small container of the same size to reuse this memory.
+    PostingListRoaringCodec() : small_size(0) {}
+    static constexpr size_t max_small_size = 6;
+    using SmallContainer = std::array<UInt32, max_small_size>;
+    using PostingListWithContext = std::pair<PostingList *, roaring::BulkContext>;
+    union
+    {
+        SmallContainer small;
+        PostingListWithContext large;
+    };
+    UInt8 small_size;
+    void add(UInt32 value, PostingListCodecsHolder &);
+    size_t size() const { return small_size < max_small_size ? small_size : large.first->cardinality(); }
+    size_t serialize(UInt64 header, WriteBuffer & ostr);
+};
+
+using PostingListRoaringCodecPtr = std::shared_ptr<PostingListRoaringCodec>;
+
+/// PostingListBlockCodec uses SIMD instructions to compress
+/// and decompress monotonically increasing integer posting lists.
+/// Document IDs are appended one by one into a PostingsContainer,
+/// and once they accumulate to kBlockSize (typically 128,
+/// depending on the instruction set supported by the machine),
+/// the block is compressed and written to the buffer.
+/// Decompression mirrors this process by decoding these
+/// fixed-size SIMD-compressed blocks back into the original sequence of document IDs.
+struct PostingListBlockCodec
+{
+    PostingsContainer32 * postings;
+    PostingListBlockCodec() : postings(nullptr) {}
+    void add(UInt32 value, PostingListCodecsHolder &);
+    size_t serialize(UInt64 header, WriteBuffer & ostr);
+    size_t size() const { return postings->size(); }
+};
+
+using PostingListBlockCodecPtr = std::shared_ptr<PostingListBlockCodec>;
 
 /// A struct for building a posting list with optimization for infrequent tokens.
 /// Tokens with cardinality less than max_small_size are stored in a raw array allocated on the stack.
@@ -89,34 +142,33 @@ using PostingListPtr = std::shared_ptr<PostingList>;
 struct PostingListBuilder
 {
 public:
-    using PostingListsHolder = std::list<PostingList>;
-    using PostingListWithContext = std::pair<PostingList *, roaring::BulkContext>;
+    PostingListBuilder() = default;
+    ALWAYS_INLINE void initialize(bool enable_compression)
+    {
+        chassert(std::holds_alternative<std::monostate>(codec));
+        if (!enable_compression)
+            codec = std::make_shared<PostingListRoaringCodec>();
+        else
+            codec = std::make_shared<PostingListBlockCodec>();
+    }
 
-    /// sizeof(PostingListWithContext) == 24 bytes.
-    /// Use small container of the same size to reuse this memory.
-    static constexpr size_t max_small_size = 6;
-    using SmallContainer = std::array<UInt32, max_small_size>;
-
-    PostingListBuilder() : small_size(0) {}
+    size_t size() const
+    {
+        if (std::holds_alternative<PostingListRoaringCodecPtr>(codec))
+            return std::get<PostingListRoaringCodecPtr>(codec)->size();
+        if (std::holds_alternative<PostingListBlockCodecPtr>(codec))
+            return std::get<PostingListBlockCodecPtr>(codec)->size();
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The codec is not initialized yet.");
+    }
 
     /// Adds a value to small array or to the large Roaring Bitmap.
     /// If small array is converted to Roaring Bitmap after adding a value,
     /// posting list is created in the postings_holder and reference to it is saved.
-    void add(UInt32 value, PostingListsHolder & postings_holder);
-
-    size_t size() const { return isSmall() ? small_size : large.first->cardinality(); }
-    bool isSmall() const { return small_size < max_small_size; }
-    SmallContainer & getSmall() { return small; }
-    PostingList & getLarge() const { return *large.first; }
-
+    void add(UInt32 value, PostingListCodecsHolder & postings_holder);
+    size_t serialize(UInt64 header, WriteBuffer & ostr);
+    auto & getCodec() const { return codec; }
 private:
-    union
-    {
-        SmallContainer small;
-        PostingListWithContext large;
-    };
-
-    UInt8 small_size;
+    std::variant<std::monostate, PostingListRoaringCodecPtr, PostingListBlockCodecPtr> codec;
 };
 
 struct PostingsSerialization
@@ -128,6 +180,7 @@ struct PostingsSerialization
         RawPostings = 1ULL << 0,
         /// If set, the posting list is embedded into the dictionary block to avoid additional random reads from disk.
         EmbeddedPostings = 1ULL << 1,
+        CompressedPostings = 1ULL << 2,
     };
 
     static UInt64 serialize(UInt64 header, PostingListBuilder && postings, WriteBuffer & ostr);
@@ -281,7 +334,7 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
         BloomFilter && bloom_filter_,
         SortedTokensAndPostings && tokens_and_postings_,
         TokenToPostingsMap && tokens_map_,
-        std::list<PostingList> && posting_lists_,
+        std::list<PostingListCodec> && posting_lists_,
         std::unique_ptr<Arena> && arena_);
 
     ~MergeTreeIndexGranuleTextWritable() override = default;
@@ -301,7 +354,7 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     SortedTokensAndPostings tokens_and_postings;
     /// tokens_and_postings has references to data held in the fields below.
     TokenToPostingsMap tokens_map;
-    std::list<PostingList> posting_lists;
+    std::list<PostingListCodec> posting_lists;
     std::unique_ptr<Arena> arena;
     LoggerPtr logger;
     /// ---------------------------------------
@@ -328,7 +381,7 @@ struct MergeTreeIndexTextGranuleBuilder
     /// Pointers to posting lists for each token.
     TokenToPostingsMap tokens_map;
     /// Holder of posting lists. std::list is used to preserve the stability of pointers to posting lists.
-    std::list<PostingList> posting_lists;
+    std::list<PostingListCodec> posting_lists;
     /// Keys may be serialized into arena (see ArenaKeyHolder).
     std::unique_ptr<Arena> arena;
 };
