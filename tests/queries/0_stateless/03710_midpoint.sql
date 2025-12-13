@@ -1,3 +1,5 @@
+-- { echoOn }
+
 DROP TABLE IF EXISTS midpoint_test;
 CREATE TABLE midpoint_test
 (
