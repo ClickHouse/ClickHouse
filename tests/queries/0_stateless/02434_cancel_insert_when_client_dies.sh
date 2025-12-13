@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-asan, no-msan, no-tsan, no-debug, no-fasttest, no-async-insert
+# Tags: no-random-settings, no-asan, no-msan, no-tsan, no-async-insert, no-debug, no-fasttest
 # no-fasttest: The test runs for 40 seconds
 # shellcheck disable=SC2009
 
@@ -10,12 +10,25 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 export DATA_FILE="$CLICKHOUSE_TMP/deduptest.tsv"
 export TEST_MARK="02434_insert_${CLICKHOUSE_DATABASE}_"
 
+# Distributed table inserts to the destination with the current default async_insert setting, and sometimes this is set to 1 and sometimes to 0,
+# that leads that some inserts are done asynchronously and some synchronously.
+# insert ... select is always synchronous.
+# insert with too much data is always asynchronous
+# the most inserts here are with too much data.
+# but the last block from distributed table can be small and inserted synchronously.
+# To have more uniform behaviour we set async_insert=0 globally for this test.
+
 $CLICKHOUSE_CLIENT -q 'select * from numbers(5000000) format TSV' > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "create table dedup_test(A Int64) Engine = MergeTree order by A settings non_replicated_deduplication_window=1000, merge_tree_clear_old_temporary_directories_interval_seconds = 1;"
+$CLICKHOUSE_CLIENT -q "create table dedup_test(A Int64) Engine = MergeTree order by A settings non_replicated_deduplication_window=1000, merge_tree_clear_old_temporary_directories_interval_seconds = 1"
 $CLICKHOUSE_CLIENT -q "create table dedup_dist(A Int64) Engine = Distributed('test_cluster_one_shard_two_replicas', currentDatabase(), dedup_test)"
+
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --async_insert=0"
+CLICKHOUSE_URL="${CLICKHOUSE_URL}&async_insert=0"
 
 function insert_data
 {
+    local ID=$1
+
     # send_logs_level: https://github.com/ClickHouse/ClickHouse/issues/67599
     SETTINGS="query_id=$ID&max_insert_block_size=110000&min_insert_block_size_rows=110000&send_logs_level=fatal"
     # max_block_size=10000, so external table will contain smaller blocks that will be squashed on insert-select (more chances to catch a bug on query cancellation)
@@ -34,14 +47,13 @@ function insert_data
     elif [[ "$TYPE" -eq 3 ]]; then
         $CLICKHOUSE_CURL -sS -X POST -H "Transfer-Encoding: chunked" --data-binary @- "$CLICKHOUSE_URL&$SETTINGS&query=insert+into+dedup_test+format+TSV" < $DATA_FILE
     else
-        $CLICKHOUSE_CURL -sS -F 'file=@-' "$CLICKHOUSE_URL&$TRASH_SETTINGS&file_format=TSV&file_types=UInt64" -X POST --form-string 'query=insert into dedup_test select * from file' < $DATA_FILE
+        $CLICKHOUSE_CURL -sS -F 'file=@-' "$CLICKHOUSE_URL&$TRASH_SETTINGS&file_format=TSV&file_types=UInt64" -X POST --form-string 'query=insert into dedup_test select * from file order by all' < $DATA_FILE
     fi
 }
 
 export -f insert_data
 
-ID="02434_insert_init_${CLICKHOUSE_DATABASE}_$RANDOM"
-insert_data
+insert_data ${TEST_MARK}-${RANDOM}_first_run
 $CLICKHOUSE_CLIENT -q "system flush distributed dedup_dist"
 $CLICKHOUSE_CLIENT -q 'select count() from dedup_test'
 
@@ -52,8 +64,7 @@ function thread_insert
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        export ID="$TEST_MARK$RANDOM-$RANDOM-$i"
-        bash -c insert_data 2>&1| grep -Fav "Killed"
+        bash -c "insert_data ${TEST_MARK}-${RANDOM}-${RANDOM}-$i" 2>&1| grep -Fav "Killed"
         i=$((i + 1))
     done
 }
@@ -77,7 +88,8 @@ function thread_cancel
         if (( RANDOM % 2 )); then
             SIGNAL="KILL"
         fi
-        PID=$(grep -Fa "$TEST_MARK" /proc/*/cmdline | grep -Fav grep | grep -Eoa "/proc/[0-9]*/cmdline:" | grep -Eo "[0-9]*" | head -1)
+
+        PID=$(grep -Fa "query_id=$TEST_MARK" /proc/*/cmdline | grep -Fav grep | grep -Fav insert_data | grep -Eoa "/proc/[0-9]*/cmdline:" | grep -Eo "[0-9]*" | head -1)
         if [ ! -z "$PID" ]; then kill -s "$SIGNAL" "$PID"; fi
         sleep 0.$RANDOM;
         sleep 0.$RANDOM;
