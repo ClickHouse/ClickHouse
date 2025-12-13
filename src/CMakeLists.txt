@@ -109,6 +109,7 @@ list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/Allocati
 
 
 add_headers_and_sources(clickhouse_compression Compression)
+add_headers_and_sources(clickhouse_compression Compression/ALP)
 add_library(clickhouse_compression ${clickhouse_compression_headers} ${clickhouse_compression_sources})
 
 add_headers_and_sources(dbms Disks/IO)

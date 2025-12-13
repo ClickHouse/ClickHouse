@@ -913,8 +913,10 @@ INSTANTIATE_TEST_SUITE_P(SameValueFloat,
         ::testing::Values(
             Codec("Gorilla"),
             Codec("Gorilla, LZ4"),
+            Codec("Gorilla, ZSTD"),
             Codec("ALP"),
-            Codec("ALP, LZ4")
+            Codec("ALP, LZ4"),
+            Codec("ALP, ZSTD")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SameValueGenerator(M_E))),
@@ -929,8 +931,10 @@ INSTANTIATE_TEST_SUITE_P(SameNegativeValueFloat,
         ::testing::Values(
             Codec("Gorilla"),
             Codec("Gorilla, LZ4"),
+            Codec("Gorilla, ZSTD"),
             Codec("ALP"),
-            Codec("ALP, LZ4")
+            Codec("ALP, LZ4"),
+            Codec("ALP, ZSTD")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SameValueGenerator(-1 * M_E))),
@@ -981,8 +985,10 @@ INSTANTIATE_TEST_SUITE_P(SequentialFloat,
         ::testing::Values(
             Codec("Gorilla"),
             Codec("Gorilla, LZ4"),
+            Codec("Gorilla, ZSTD"),
             Codec("ALP"),
-            Codec("ALP, LZ4")
+            Codec("ALP, LZ4"),
+            Codec("ALP, ZSTD")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SequentialGenerator(M_E))),
@@ -997,8 +1003,10 @@ INSTANTIATE_TEST_SUITE_P(SequentialReverseFloat,
         ::testing::Values(
             Codec("Gorilla"),
             Codec("Gorilla, LZ4"),
+            Codec("Gorilla, ZSTD"),
             Codec("ALP"),
-            Codec("ALP, LZ4")
+            Codec("ALP, LZ4"),
+            Codec("ALP, ZSTD")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SequentialGenerator(-1 * M_E))),
@@ -1131,8 +1139,10 @@ INSTANTIATE_TEST_SUITE_P(OverflowFloat,
         ::testing::Values(
             Codec("Gorilla", 1.1),
             Codec("Gorilla, LZ4", 1.0),
+            Codec("Gorilla, ZSTD", 1.0),
             Codec("ALP", 1.1),
-            Codec("ALP, LZ4", 1.0)
+            Codec("ALP, LZ4", 1.0),
+            Codec("ALP, ZSTD", 1.0)
         ),
         ::testing::Values(
             generateSeq<Float32>(G(MinMaxGenerator())),

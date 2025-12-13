@@ -2,16 +2,16 @@ Test Data integrity
 0
 0
 Compare compression ratio with Gorilla codec (higher is better)
-alp64	58394	100000	1.7125
-alp32	54883	60000	1.0932
+alp64	51214	100000	1.9526
+alp32	55218	60000	1.0866
 gorilla64	102563	100000	0.975
 gorilla32	62559	60000	0.9591
 Test incompressible data compression ratio
 0
 0
-alp32	21452	60000	2.7969
+alp32	20184	60000	2.9727
 base64	100050	100000	0.9995
-alp64	100072	100000	0.9993
+alp64	100064	100000	0.9994
 base32	60050	60000	0.9992
 Test different precisions in one data series compression ratio
-alp64	50054	81920	1.6366
+alp64	44538	81920	1.8393
