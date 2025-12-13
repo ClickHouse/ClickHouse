@@ -585,6 +585,7 @@ def _mark_flaky_and_infrastructure_issues(result: Result, job_name: str) -> bool
             for sub_result in res.results:
                 check_and_mark_flaky(sub_result)
         else:
+            print(f"  Checking result [{res.name}]")
             for test_name, issue in flaky_tests_map.items():
                 name_in_report = res.name
                 if ".py" in name_in_report:

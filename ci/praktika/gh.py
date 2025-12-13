@@ -496,12 +496,13 @@ class GH:
     @classmethod
     def find_issue(
         cls,
-        title,
+        search_substring,
         labels: List[str] = None,
         repo="",
         verbose=False,
         include_closed_hours: int = 0,
-    ) -> Optional["GH.GHIssue"]:
+        in_body: bool = False,
+    ) -> Optional[List["GH.GHIssue"]]:
         if not repo:
             repo = _Environment.get().REPOSITORY
         if labels is None:
@@ -509,10 +510,10 @@ class GH:
         label_cmd = "".join([f" --label '{label}'" for label in labels])
 
         # GitHub search API doesn't handle special characters well in the query,
-        # even with 'in:title'. Remove special chars to create a keyword search,
-        # then do exact title matching on the results.
+        # even with 'in:title' or 'in:body'. Remove special chars to create a keyword search,
+        # then do exact matching on the results.
         search_query = (
-            title.replace("'", "")
+            search_substring.replace("'", "")
             .replace('"', "")
             .replace("(", " ")
             .replace(")", " ")
@@ -543,9 +544,10 @@ class GH:
         if len(search_query) > 200:
             search_query = search_query[:200]
 
-        # Construct the full search query with 'in:title' qualifier
+        # Construct the full search query with 'in:title' or 'in:body' qualifier
         # Wrap search query in quotes for exact phrase matching to avoid partial matches
-        full_search_query = f'in:title "{search_query}"'
+        search_location = "body" if in_body else "title"
+        full_search_query = f'in:{search_location} "{search_query}"'
 
         # Add state filter based on whether we want to include closed issues
         state_filter = "--state all" if include_closed_hours > 0 else "--state open"
@@ -578,33 +580,28 @@ class GH:
             # Convert to GHIssue objects
             gh_issues = [cls.GHIssue.from_gh_json(issue) for issue in issues]
 
-            # Filter results to find exact or close matches with the original title
-            # First try exact match (case-insensitive)
+            # Filter by substring match (case-insensitive)
+            matching_issues = []
+            search_substring_lower = search_substring.lower()
             for gh_issue in gh_issues:
-                if gh_issue.title.lower() == title.lower():
-                    return [gh_issue]
+                if in_body:
+                    if (
+                        gh_issue.body
+                        and search_substring_lower in gh_issue.body.lower()
+                    ):
+                        matching_issues.append(gh_issue)
+                else:
+                    if (
+                        gh_issue.title
+                        and search_substring_lower in gh_issue.title.lower()
+                    ):
+                        matching_issues.append(gh_issue)
 
-            # If no exact match and multiple results, try prefix matching
-            if len(gh_issues) > 1:
-                best_matches = []
-                for gh_issue in gh_issues:
-                    # Check if the issue title starts with the original title (or vice versa)
-                    if len(title) > 20:
-                        # For longer queries, check if at least the first 30 chars match
-                        if gh_issue.title.lower().startswith(
-                            title.lower()[:30]
-                        ) or title.lower().startswith(gh_issue.title.lower()[:30]):
-                            best_matches.append(gh_issue)
+            if not matching_issues:
+                return None
 
-                if len(best_matches) == 1:
-                    return best_matches
-                elif len(best_matches) > 1:
-                    # Return the most recently updated one
-                    return sorted(
-                        best_matches, key=lambda x: x.updated_at, reverse=True
-                    )[:1]
-
-            return gh_issues
+            # Return sorted by most recently updated
+            return sorted(matching_issues, key=lambda x: x.updated_at, reverse=True)
         except Exception:
             print("ERROR: Failed to get issue data")
             traceback.print_exc()
