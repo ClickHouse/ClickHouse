@@ -10,7 +10,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT --query "CREATE VIEW one_proxy AS SELECT * FROM system.one"
 $CLICKHOUSE_CLIENT --query "
 CREATE MATERIALIZED VIEW rmv_test
-REFRESH EVERY 1 HOUR
+REFRESH AFTER 1 HOUR
 (
     dummy UInt8
 )
