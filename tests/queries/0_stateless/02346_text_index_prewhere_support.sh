@@ -18,8 +18,8 @@ $MY_CLICKHOUSE_CLIENT --query "
         a Int32,
         text1 String,
         text2 String,
-        INDEX inv_idx1 text1 TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 4,
-        INDEX inv_idx2 text2 TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 4
+        INDEX inv_idx1 text1 TYPE text(tokenizer = 'splitByNonAlpha'),
+        INDEX inv_idx2 text2 TYPE text(tokenizer = 'splitByNonAlpha')
     )
     ENGINE = MergeTree
     ORDER BY id
@@ -161,7 +161,9 @@ function run()
 {
     query="$1"
     echo "$query"
-    $MY_CLICKHOUSE_CLIENT --query "$query"
+    $MY_CLICKHOUSE_CLIENT --use_skip_indexes 0 --query "$query"
+    $MY_CLICKHOUSE_CLIENT --use_skip_indexes 1 --query "$query"
+
     $MY_CLICKHOUSE_CLIENT --query "
         SELECT trim(explain) FROM
         (

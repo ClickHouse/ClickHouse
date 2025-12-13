@@ -35,6 +35,7 @@ namespace ProfileEvents
     extern const Event TextIndexReadSparseIndexBlocks;
     extern const Event TextIndexReadGranulesMicroseconds;
     extern const Event TextIndexReadPostings;
+    extern const Event TextIndexUsedEmbeddedPostings;
 }
 
 namespace DB
@@ -466,6 +467,7 @@ void MergeTreeIndexGranuleText::readPostingsForRareTokens(MergeTreeIndexReaderSt
         if (token_info.embedded_postings)
         {
             rare_tokens_postings.emplace(token, token_info.embedded_postings);
+            ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
         }
         else if (token_info.offsets.size() == 1)
         {
