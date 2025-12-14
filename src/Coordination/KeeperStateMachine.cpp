@@ -989,7 +989,7 @@ KeeperDigest KeeperStateMachine<Storage>::getNodesDigest() const
 }
 
 template<typename Storage>
-int64_t KeeperStateMachine<Storage>::getLastProcessedZxid() const
+uint64_t KeeperStateMachine<Storage>::getLastProcessedZxid() const
 {
     return storage->getZXID();
 }
