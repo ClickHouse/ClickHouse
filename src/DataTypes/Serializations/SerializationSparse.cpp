@@ -213,7 +213,10 @@ size_t readOrGetCachedSparseOffsets(
     }
 
     settings.path.pop_back();
-    return state_sparse.column_offsets->size() - old_size;
+    if (state_sparse.column_offsets)
+        return state_sparse.column_offsets->size() - old_size;
+    else
+        return 0;
 }
 
 }
@@ -395,6 +398,9 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
     size_t skipped_values_rows = 0;
     size_t num_read_offsets
         = readOrGetCachedSparseOffsets(settings, cache, *state_sparse, prev_size, rows_offset, limit, read_rows, skipped_values_rows);
+
+    if (read_rows == 0)
+        return;
 
     /// Reading SparseValues and constructing ColumnSparse.
 
