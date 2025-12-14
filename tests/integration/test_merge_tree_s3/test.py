@@ -95,6 +95,9 @@ def create_table(node, table_name, **additional_settings):
         "index_granularity": 512,
         "temporary_directories_lifetime": 1,
         "write_marks_for_substreams_in_compact_parts": 1,
+        "cleanup_delay_period": 1,
+        "cleanup_delay_period_random_add": 0,
+        "cleanup_thread_preferred_points_per_iteration": 0,
     }
     settings.update(additional_settings)
 
