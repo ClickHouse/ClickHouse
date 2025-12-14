@@ -3227,7 +3227,7 @@ std::optional<ActionsDAG> ActionsDAG::buildFilterActionsDAG(
     std::unordered_map<std::string, const ActionsDAG::Node *> result_inputs;
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> node_to_result_node;
 
-    size_t filter_nodes_size = filter_nodes.size();
+    const size_t filter_nodes_size = filter_nodes.size();
 
     std::vector<Frame> nodes_to_process;
     nodes_to_process.reserve(filter_nodes_size);
