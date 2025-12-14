@@ -494,122 +494,14 @@ class GH:
         return output == "CONFLICTING"
 
     @classmethod
-    def find_issue(
+    def create_issue(
         cls,
-        search_substring,
+        title,
+        body,
         labels: List[str] = None,
         repo="",
         verbose=False,
-        include_closed_hours: int = 0,
-        in_body: bool = False,
-    ) -> Optional[List["GH.GHIssue"]]:
-        if not repo:
-            repo = _Environment.get().REPOSITORY
-        if labels is None:
-            labels = []
-        label_cmd = "".join([f" --label '{label}'" for label in labels])
-
-        # GitHub search API doesn't handle special characters well in the query,
-        # even with 'in:title' or 'in:body'. Remove special chars to create a keyword search,
-        # then do exact matching on the results.
-        search_query = (
-            search_substring.replace("'", "")
-            .replace('"', "")
-            .replace("(", " ")
-            .replace(")", " ")
-            .replace("[", " ")
-            .replace("]", " ")
-            .replace("{", " ")
-            .replace("}", " ")
-            .replace(",", " ")
-            # .replace(":", " ") pytest test_file.py::test_function has ::
-            .replace(";", " ")
-            .replace("?", " ")
-            .replace("!", " ")
-            .replace("*", " ")
-            .replace("&", " ")
-            .replace("|", " ")
-            .replace("=", " ")
-            .replace("<", " ")
-            .replace(">", " ")
-            # .replace(".", " ") pytest test_file.py::test_function has .
-        )
-
-        # Clean up multiple consecutive spaces
-        import re
-
-        search_query = re.sub(r"\s+", " ", search_query).strip()
-
-        # Use a generous length limit for better matching
-        if len(search_query) > 200:
-            search_query = search_query[:200]
-
-        # Construct the full search query with 'in:title' or 'in:body' qualifier
-        # Wrap search query in quotes for exact phrase matching to avoid partial matches
-        search_location = "body" if in_body else "title"
-        full_search_query = f'in:{search_location} "{search_query}"'
-
-        # Add state filter based on whether we want to include closed issues
-        state_filter = "--state all" if include_closed_hours > 0 else "--state open"
-
-        # Add state qualifier to search query
-        # For recent closed issues: use OR logic to get (all open) OR (recently closed)
-        if include_closed_hours > 0:
-            from datetime import datetime, timedelta, timezone
-
-            cutoff_time = datetime.now(timezone.utc) - timedelta(
-                hours=include_closed_hours
-            )
-            # GitHub search date format: YYYY-MM-DDTHH:MM:SS
-            date_filter = cutoff_time.strftime("%Y-%m-%dT%H:%M:%S")
-            # Use OR to include all open issues plus recently closed ones
-            full_search_query = (
-                f"{full_search_query} (is:open OR closed:>={date_filter})"
-            )
-        else:
-            full_search_query = f"{full_search_query} is:open"
-
-        safe_search_query = shlex.quote(full_search_query)
-        cmd = f"gh issue list --json title,body,labels,author,url,updatedAt,createdAt,number,state --repo {repo} {state_filter} --search {safe_search_query} {label_cmd}"
-        output = Shell.get_output(cmd, verbose=verbose)
-        try:
-            issues = json.loads(output)
-            if not issues:
-                return None
-
-            # Convert to GHIssue objects
-            gh_issues = [cls.GHIssue.from_gh_json(issue) for issue in issues]
-
-            # Filter by substring match (case-insensitive)
-            matching_issues = []
-            search_substring_lower = search_substring.lower()
-            for gh_issue in gh_issues:
-                if in_body:
-                    if (
-                        gh_issue.body
-                        and search_substring_lower in gh_issue.body.lower()
-                    ):
-                        matching_issues.append(gh_issue)
-                else:
-                    if (
-                        gh_issue.title
-                        and search_substring_lower in gh_issue.title.lower()
-                    ):
-                        matching_issues.append(gh_issue)
-
-            if not matching_issues:
-                return None
-
-            # Return sorted by most recently updated
-            return sorted(matching_issues, key=lambda x: x.updated_at, reverse=True)
-        except Exception:
-            print("ERROR: Failed to get issue data")
-            traceback.print_exc()
-            return None
-
-    @classmethod
-    def create_issue(
-        cls, title, body, labels: List[str] = None, repo="", verbose=False
+        no_strict=False,
     ) -> Optional[str]:
         """
         Create a GitHub issue and return its URL.
@@ -631,19 +523,27 @@ class GH:
                 temp_file.write(body)
                 temp_file_path = temp_file.name
 
-            label_cmd = "".join([f" --label {shlex.quote(label)}" for label in labels])
+            safe_repo = shlex.quote(repo)
             safe_title = shlex.quote(title)
-            cmd = f"gh issue create --repo {repo} --title {safe_title} --body-file {temp_file_path} {label_cmd}"
-            issue_url = Shell.get_output(cmd, verbose=verbose)
-            return issue_url.strip() if issue_url else None
+            safe_body_file = shlex.quote(temp_file_path)
+            label_cmd = "".join(f" --label {shlex.quote(label)}" for label in labels)
+            cmd = (
+                f"gh issue create --repo {safe_repo} --title {safe_title} "
+                f"--body-file {safe_body_file}{label_cmd}"
+            )
+            issue_url = Shell.get_output_or_raise(cmd, verbose=verbose)
+            assert issue_url, "Failed to create issue"
+            return issue_url
         except Exception:
             if verbose:
                 print("ERROR: Failed to create issue")
                 traceback.print_exc()
-            return None
+            if not no_strict:
+                assert False, "Failed to create issue"
         finally:
             if temp_file_path and os.path.exists(temp_file_path):
                 os.unlink(temp_file_path)
+        return None
 
     @classmethod
     def convert_to_gh_status(cls, status):

@@ -8,7 +8,7 @@ from urllib.parse import quote
 from ._environment import _Environment
 from .settings import Settings
 from .usage import StorageUsage
-from .utils import MetaClasses, Shell, Utils
+from .utils import Shell, Utils
 
 try:
     import boto3
@@ -19,79 +19,6 @@ except ImportError:
     BOTO3_AVAILABLE = False
     ClientError = None
     NoCredentialsError = None
-
-
-@dataclasses.dataclass
-class StorageUsage(MetaClasses.SerializableSingleton):
-    downloaded: int = 0
-    uploaded: int = 0
-    downloaded_details: Dict[str, int] = dataclasses.field(default_factory=dict)
-    uploaded_details: Dict[str, int] = dataclasses.field(default_factory=dict)
-    ext: Dict[str, Any] = dataclasses.field(default_factory=dict)
-
-    def merge_with(self, storage_usage: "StorageUsage"):
-        self.downloaded += storage_usage.downloaded
-        self.uploaded += storage_usage.uploaded
-        for k, v in storage_usage.downloaded_details.items():
-            if k in self.downloaded_details:
-                self.downloaded_details[k] += v
-            else:
-                self.downloaded_details[k] = v
-        for k, v in storage_usage.uploaded_details.items():
-            if k in self.uploaded_details:
-                self.uploaded_details[k] += v
-            else:
-                self.uploaded_details[k] = v
-        return self
-
-    @classmethod
-    def file_name_static(cls):
-        return f"{Settings.TEMP_DIR}/storage_usage.json"
-
-    @classmethod
-    def _init(cls):
-        if not StorageUsage.exist():
-            print("NOTE: UsageStorage data will be initialized")
-            StorageUsage(
-                downloaded=0, uploaded=0, downloaded_details={}, uploaded_details={}
-            ).dump()
-
-    @classmethod
-    def add_downloaded(cls, file_path):
-        cls._init()
-        if not Path(file_path).exists():
-            return
-        file_name = str(file_path).split("/")[-1]
-        usage = cls.from_fs()
-        file_zize = cls.get_size_bytes(file_path)
-        usage.downloaded += file_zize
-        if file_name in usage.downloaded_details:
-            print(f"WARNING: Duplicated download for filename [{file_name}]")
-            usage.downloaded_details[file_name] += file_zize
-        else:
-            usage.downloaded_details[file_name] = file_zize
-        usage.dump()
-
-    @classmethod
-    def add_uploaded(cls, file_path):
-        cls._init()
-        if not Path(file_path).exists():
-            return
-        file_name = str(file_path).split("/")[-1]
-        usage = cls.from_fs()
-        file_zize = cls.get_size_bytes(file_path)
-        usage.uploaded += file_zize
-        if file_name in usage.uploaded_details:
-            if not file_name.startswith("result_"):
-                print(f"WARNING: Duplicated upload for filename [{file_name}]")
-            usage.uploaded_details[file_name] += file_zize
-        else:
-            usage.uploaded_details[file_name] = file_zize
-        usage.dump()
-
-    @classmethod
-    def get_size_bytes(cls, file_path):
-        return os.path.getsize(file_path)
 
 
 class S3:
@@ -165,7 +92,10 @@ class S3:
         if content_encoding:
             cmd += f" --content-encoding {content_encoding}"
         _ = cls.run_command_with_retries(cmd, no_strict=no_strict)
-        StorageUsage.add_uploaded(local_path)
+        try:
+            StorageUsage.add_uploaded(local_path)
+        except Exception as e:
+            pass
         bucket = s3_path.split("/")[0]
         endpoint = Settings.S3_BUCKET_TO_HTTP_ENDPOINT[bucket]
         assert endpoint
@@ -307,6 +237,7 @@ class S3:
                         raise
                     return False
                 except Exception as e:
+                    print(f"ERROR: Failed to download S3 object [{s3_path}]: {e}")
                     if not no_strict:
                         raise
                     return False
