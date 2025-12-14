@@ -17,7 +17,7 @@ class ParserSetQuery : public IParserBase
 public:
     using Parameter = std::pair<std::string, std::string>;
 
-    explicit ParserSetQuery(bool parse_only_internals_ = false, bool shorthand_syntax_ = true, bool allow_expressions_ = true)
+    explicit ParserSetQuery(bool parse_only_internals_ = false, bool shorthand_syntax_ = true, bool allow_expressions_ = false)
         : parse_only_internals(parse_only_internals_), shorthand_syntax(shorthand_syntax_), allow_expressions(allow_expressions_) {}
 
     static bool parseNameValuePair(SettingChange & change, IParser::Pos & pos, Expected & expected);
