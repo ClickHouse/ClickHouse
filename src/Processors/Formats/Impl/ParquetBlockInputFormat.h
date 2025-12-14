@@ -4,7 +4,6 @@
 
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
-#include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Formats/FormatFilterInfo.h>
@@ -83,8 +82,7 @@ public:
         const FormatSettings & format_settings_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
         FormatFilterInfoPtr format_filter_info_,
-        size_t min_bytes_for_seek_,
-        ParquetMetadataCachePtr metadata_cache_ = nullptr);
+        size_t min_bytes_for_seek_);
 
     ~ParquetBlockInputFormat() override;
 
@@ -323,7 +321,6 @@ private:
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
     size_t min_bytes_for_seek;
-    ParquetMetadataCachePtr metadata_cache;
     const size_t max_pending_chunks_per_row_group_batch = 2;
 
     /// RandomAccessFile is thread safe, so we share it among threads.
@@ -370,7 +367,7 @@ private:
 class ArrowParquetSchemaReader : public ISchemaReader
 {
 public:
-    ArrowParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, ParquetMetadataCachePtr metadata_cache_);
+    ArrowParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
     NamesAndTypesList readSchema() override;
     std::optional<size_t> readNumberOrRows() override;
@@ -381,7 +378,6 @@ private:
     const FormatSettings format_settings;
     std::shared_ptr<arrow::io::RandomAccessFile> arrow_file;
     std::shared_ptr<parquet::FileMetaData> metadata;
-    ParquetMetadataCachePtr metadata_cache;
 };
 
 }

@@ -420,7 +420,6 @@ BlockIO InterpreterSystemQuery::execute()
 # if USE_PARQUET
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PARQUET_METADATA_CACHE);
             system_context->clearParquetMetadataCache();
-            system_context->clearParquetV3MetadataCache();
             break;
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for Parquet");

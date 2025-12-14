@@ -22,7 +22,7 @@ public:
         FormatParserSharedResourcesPtr parser_shared_resources_,
         FormatFilterInfoPtr format_filter_info_,
         size_t min_bytes_for_seek,
-        ParquetV3MetadataCachePtr metadata_cache_ = nullptr);
+        ParquetMetadataCachePtr metadata_cache_ = nullptr);
 
     void resetParser() override;
 
@@ -46,7 +46,7 @@ private:
     Parquet::ReadOptions read_options;
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
-    ParquetV3MetadataCachePtr metadata_cache;
+    ParquetMetadataCachePtr metadata_cache;
 
     std::optional<Parquet::ReadManager> reader;
     bool reported_count = false; // if need_only_count
@@ -64,7 +64,7 @@ public:
     NativeParquetSchemaReader(
         ReadBuffer & in_,
         const FormatSettings & format_settings,
-        ParquetV3MetadataCachePtr metadata_cache_);
+        ParquetMetadataCachePtr metadata_cache_);
 
     NamesAndTypesList readSchema() override;
     std::optional<size_t> readNumberOrRows() override;
@@ -75,7 +75,7 @@ private:
     Parquet::ReadOptions read_options;
     parquet::format::FileMetaData file_metadata;
     bool initialized = false;
-    ParquetV3MetadataCachePtr metadata_cache;
+    ParquetMetadataCachePtr metadata_cache;
 };
 
 }

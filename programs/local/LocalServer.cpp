@@ -962,7 +962,6 @@ void LocalServer::processConfig()
         LOG_INFO(log, "Lowered Parquet metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(parquet_metadata_cache_size));
     }
     global_context->setParquetMetadataCache(parquet_metadata_cache_policy, parquet_metadata_cache_size, parquet_metadata_cache_max_entries, parquet_metadata_cache_size_ratio);
-    global_context->setParquetV3MetadataCache(parquet_metadata_cache_policy, parquet_metadata_cache_size, parquet_metadata_cache_max_entries, parquet_metadata_cache_size_ratio);
 #endif
 
     Names allowed_disks_table_engines;

@@ -38,7 +38,7 @@ ParquetV3BlockInputFormat::ParquetV3BlockInputFormat(
     FormatParserSharedResourcesPtr parser_shared_resources_,
     FormatFilterInfoPtr format_filter_info_,
     size_t min_bytes_for_seek,
-    ParquetV3MetadataCachePtr metadata_cache_)
+    ParquetMetadataCachePtr metadata_cache_)
     : IInputFormat(header_, &buf)
     , format_settings(format_settings_)
     , read_options(convertReadOptions(format_settings))
@@ -176,7 +176,7 @@ void ParquetV3BlockInputFormat::resetParser()
 NativeParquetSchemaReader::NativeParquetSchemaReader(
     ReadBuffer & in_,
     const FormatSettings & format_settings,
-    ParquetV3MetadataCachePtr metadata_cache_)
+    ParquetMetadataCachePtr metadata_cache_)
     : ISchemaReader(in_)
     , read_options(convertReadOptions(format_settings))
     , metadata_cache(metadata_cache_)
