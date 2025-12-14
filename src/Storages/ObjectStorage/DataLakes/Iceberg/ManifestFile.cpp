@@ -470,7 +470,7 @@ ManifestFileContent::ManifestFileContent(
                     file_format,
                     reference_file_path,
                     /*equality_ids*/ std::nullopt,
-                    sort_order_id));
+                    /*sort_order_id = */ std::nullopt));
                 break;
             }
             case FileContentType::EQUALITY_DELETE:
