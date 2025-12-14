@@ -3,8 +3,15 @@
 #include <bit>
 #include <cstring>
 #include <iterator>
+
 #include "types.h"
 
+#include <Common/TargetSpecific.h>
+
+#if USE_MULTITARGET_CODE
+#define FAST_HEX_AVX 1
+#define FAST_HEX_AVX2 1
+#endif
 #define FAST_HEX_USE_NAMESPACE
 #include <fast_hex/fast_hex_inline.hpp>
 
@@ -15,6 +22,85 @@ namespace wide
     template <size_t Bits, typename Signed>
     class integer;
 }
+
+DECLARE_DEFAULT_CODE(
+template<typename TUInt, typename Case>
+inline void encode_integral8(uint8_t* dst, TUInt integral, Case c)
+{
+    heks::encode_integral_naive(dst, integral, c);
+})
+
+DECLARE_AVX_SPECIFIC_CODE(
+template<typename TUInt, typename Case>
+inline void encode_integral8(uint8_t* dst, TUInt integral, Case c)
+{
+    heks::encode_integral8(dst, integral, c);
+})
+
+DECLARE_DEFAULT_CODE(
+template<typename TUInt, typename Case>
+inline void encode_integral16(uint8_t* dst, TUInt integral, Case c)
+{
+    heks::encode_integral_naive(dst, integral, c);
+})
+
+DECLARE_AVX2_SPECIFIC_CODE(
+template<typename TUInt, typename Case>
+inline void encode_integral16(uint8_t* dst, TUInt integral, Case c)
+{
+    heks::encode_integral16(dst, integral, c);
+})
+
+DECLARE_DEFAULT_CODE(
+template<typename TUInt, typename Case>
+inline void encode_integral32(uint8_t* dst, TUInt integral, Case c)
+{
+    heks::encode_integral_naive(dst, integral, c);
+})
+
+DECLARE_AVX2_SPECIFIC_CODE(
+template<typename TUInt, typename Case>
+inline void encode_integral32(uint8_t* dst, TUInt integral, Case)
+{
+    const auto* src = reinterpret_cast<const uint8_t *>(&integral);
+    heks::heks_detail::encodeHex16Fast<Case::value, heks::heks_detail::Reverse::Yes128>(dst, src + 16);
+    heks::heks_detail::encodeHex16Fast<Case::value, heks::heks_detail::Reverse::Yes128>(dst + 32, src);
+})
+
+DECLARE_DEFAULT_CODE(
+template<typename TUInt>
+inline TUInt decode_integral8(const uint8_t* src)
+{
+    return heks::decode_integral_naive<TUInt>(src);
+})
+
+DECLARE_AVX_SPECIFIC_CODE(
+template<typename TUInt>
+inline TUInt decode_integral8(const uint8_t* src)
+{
+    return heks::decode_integral8(src);
+})
+
+
+DECLARE_DEFAULT_CODE(
+template <class Case>
+inline void encode_hex_string(uint8_t* dst, const uint8_t* src, size_t size, Case)
+{
+    heks::heks_detail::encodeHexImpl<Case::value>(dst, src, heks::RawLength{size});
+})
+DECLARE_AVX2_SPECIFIC_CODE(
+template <class Case>
+inline void encode_hex_string(uint8_t* dst, const uint8_t* src, size_t size, Case)
+{
+    heks::heks_detail::encodeHexVecImpl<Case::value>(dst, src, heks::RawLength{size});
+})
+DECLARE_AVX2_SPECIFIC_CODE(
+template <class Case>
+inline void encode_hex_16le(uint8_t* dst, const uint8_t* src, Case)
+{
+    heks::heks_detail::encodeHex16Fast<Case::value, heks::heks_detail::Reverse::Yes128>(dst, src);
+})
+
 
 namespace impl
 {
@@ -138,34 +224,27 @@ namespace impl
             }
             else if constexpr (num_bytes == 8)
             {
-                #if defined(__AVX__)
-                heks::encode_integral8(dst, uint_, c);
-                #elif defined(__aarch64__) && defined(__ARM_NEON)
-                if constexpr (std::endian::native == std::endian::little)
-                    heks::encode_integral8(dst, uint_, c);
-                else
-                    heks::encode_integral_naive(dst, uint_, c);
-                #else
-                heks::encode_integral_naive(dst, uint_, c);
+                #if USE_MULTITARGET_CODE
+                if (DB::isArchSupported(DB::TargetArch::AVX))
+                    return TargetSpecific::AVX::encode_integral8(dst, uint_, c);
                 #endif
+                return TargetSpecific::Default::encode_integral8(dst, uint_, c);
             }
             else if constexpr (num_bytes == 16)
             {
-                #if defined (__AVX2__)
-                heks::encode_integral16(dst, uint_, c);
-                #else
-                heks::encode_integral_naive(dst, uint_, c);
+                #if USE_MULTITARGET_CODE
+                if (DB::isArchSupported(DB::TargetArch::AVX2))
+                    return TargetSpecific::AVX2::encode_integral16(dst, uint_, c);
                 #endif
+                return TargetSpecific::Default::encode_integral16(dst, uint_, c);
             }
             else if constexpr (num_bytes == 32)
             {
-                #if defined (__AVX2__)
-                const auto* src = reinterpret_cast<const uint8_t *>(&uint_);
-                heks::heks_detail::encodeHex16Fast<Case::value, heks::heks_detail::Reverse::Yes128>(dst, src + 16);
-                heks::heks_detail::encodeHex16Fast<Case::value, heks::heks_detail::Reverse::Yes128>(dst + 32, src);
-                #else
-                heks::encode_integral_naive(dst, uint_, c);
+                #if USE_MULTITARGET_CODE
+                if (DB::isArchSupported(DB::TargetArch::AVX2))
+                    return TargetSpecific::AVX2::encode_integral32(dst, uint_, c);
                 #endif
+                return TargetSpecific::Default::encode_integral32(dst, uint_, c);
             }
             else
             {
@@ -185,11 +264,11 @@ namespace impl
             else if constexpr (num_bytes == 8)
             {
                 const auto * src = reinterpret_cast<const uint8_t *>(data);
-                #if defined(__AVX__)
-                res = heks::decode_integral8(src);
-                #else
-                res = heks::decode_integral_naive<TUInt>(src);
+                #if USE_MULTITARGET_CODE
+                if (DB::isArchSupported(DB::TargetArch::AVX))
+                    return TargetSpecific::AVX::decode_integral8<TUInt>(src);
                 #endif
+                return TargetSpecific::Default::decode_integral8<TUInt>(src);
             }
             else if constexpr ((num_bytes % 8) == 0)
             {
@@ -228,14 +307,17 @@ namespace impl
         template<typename Case>
         static void hex(const CityHashUInt128 & uint_, char * out, Case c [[maybe_unused]])
         {
-            #if defined (__AVX2__)
-            auto* dst = reinterpret_cast<uint8_t *>(out);
-            const auto * input = reinterpret_cast<const uint8_t *>(&uint_);
-            heks::heks_detail::encodeHex16Fast<Case::value, heks::heks_detail::Reverse::Yes128>(dst, input);
-            #else
+            #if USE_MULTITARGET_CODE
+            if (DB::isArchSupported(DB::TargetArch::AVX2))
+            {
+                auto* dst = reinterpret_cast<uint8_t *>(out);
+                const auto * input = reinterpret_cast<const uint8_t *>(&uint_);
+                TargetSpecific::AVX2::encode_hex_16le(dst, input, c);
+                return;
+            }
+            #endif
             HexConversion<UInt64>::hex(uint_.high64, out, c);
             HexConversion<UInt64>::hex(uint_.low64, out + 16, c);
-            #endif
         }
 
         static CityHashUInt128 unhex(const char * data)
@@ -338,6 +420,13 @@ inline std::string hexString(const void * data, size_t size)
     const auto * p = reinterpret_cast<const uint8_t *>(data);
     std::string s(size * 2, '\0');
     auto * dst = reinterpret_cast<uint8_t *>(s.data());
-    heks::encode_auto(dst, p, heks::RawLength{size}, heks::lower);
+    #if USE_MULTITARGET_CODE
+    if (DB::isArchSupported(DB::TargetArch::AVX2))
+    {
+        TargetSpecific::AVX2::encode_hex_string(dst, p, size, heks::lower);
+        return s;
+    }
+    #endif
+    TargetSpecific::Default::encode_hex_string(dst, p, size, heks::lower);
     return s;
 }
