@@ -292,3 +292,51 @@ def test_yt_range_hashed(started_cluster, primary_key_value, layout, dict_key):
 
     instance.query("DROP DICTIONARY yt_dict")
     yt.remove_table(path)
+
+
+def test_dictionary_xml_config(started_cluster):
+    yt = YTsaurusCLI(started_cluster, instance, yt_uri_helper.host, yt_uri_helper.port)
+    path = "//tmp/table"
+
+    yt.create_table(
+        path,
+        '{"id":1,"value":20}{"id":2,"value":40}{"id":3}',
+        schema={"id": "uint64", "value": "int32"},
+        dynamic=False,
+        strict_schema=False,
+    )
+    dict_config = f"""
+<dictionaries>
+    <dictionary>
+        <name>yt_dict_xml</name>
+        <source>
+            <ytsaurus>
+                <http_proxy_urls>{yt_uri_helper.uri}</http_proxy_urls>
+                <cypress_path>{path}</cypress_path>
+                <oauth_token>{yt_uri_helper.token}</oauth_token>
+                <check_table_schema>1</check_table_schema>
+            </ytsaurus>
+        </source>
+        <lifetime>0</lifetime>
+        <layout>
+            <hashed/>
+        </layout>
+        <structure>
+            <id>
+                <name>id</name>
+            </id>
+            <attribute>
+                <name>value</name>
+                <type>Int32</type>
+                <null_value>0</null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+</dictionaries>
+"""
+    instance.replace_config(
+        "/etc/clickhouse-server/dictionaries/yt_config_dict.xml", dict_config
+    )
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert instance.query(f"SELECT dictGet('yt_dict_xml', 'value', 3)") == "0\n"
+    yt.remove_table(path)

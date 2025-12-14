@@ -65,21 +65,8 @@ HostID HostID::fromString(const String & host_port_str)
 
 bool HostID::isLocalAddress(UInt16 clickhouse_port) const
 {
-    try
-    {
-        auto address = DNSResolver::instance().resolveAddress(host_name, port);
-        return DB::isLocalAddress(address, clickhouse_port);
-    }
-    catch (const DB::NetException &)
-    {
-        /// Avoid "Host not found" exceptions
-        return false;
-    }
-    catch (const Poco::Net::NetException &)
-    {
-        /// Avoid "Host not found" exceptions
-        return false;
-    }
+    auto address = DNSResolver::instance().resolveAddress(host_name, port);
+    return DB::isLocalAddress(address, clickhouse_port);
 }
 
 bool HostID::isLoopbackHost() const
@@ -340,7 +327,7 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const 
 
     if (config_host_name)
     {
-        if (!IsSelfHostname(*config_host_name, maybe_secure_port, port))
+        if (!isSelfHostname(log, *config_host_name, maybe_secure_port, port))
             throw Exception(
                 ErrorCodes::DNS_ERROR,
                 "{} is not a local address. Check parameter 'host_name' in the configuration",
@@ -365,7 +352,7 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const 
 
         try
         {
-            if (!IsSelfHostID(host, maybe_secure_port, port))
+            if (!isSelfHostID(log, host, maybe_secure_port, port))
                 continue;
 
             if (host.isLoopbackHost())
@@ -589,18 +576,47 @@ String DDLTask::getShardID() const
     return res;
 }
 
-bool DDLTask::IsSelfHostID(const HostID & checking_host_id, std::optional<UInt16> maybe_self_secure_port, UInt16 self_port)
+bool DDLTask::isSelfHostID(LoggerPtr log, const HostID & checking_host_id, std::optional<UInt16> maybe_self_secure_port, UInt16 self_port)
 {
-    // If the checking_host_id has a loopback address, it is not considered as the self host_id.
-    // Because all replicas will try to claim it as their own hosts.
-    return (maybe_self_secure_port && checking_host_id.isLocalAddress(*maybe_self_secure_port))
-        || checking_host_id.isLocalAddress(self_port);
+    try
+    {
+        return (maybe_self_secure_port && checking_host_id.isLocalAddress(*maybe_self_secure_port))
+            || checking_host_id.isLocalAddress(self_port);
+    }
+    catch (const DB::NetException & e)
+    {
+        /// Avoid "Host not found" exceptions
+        LOG_WARNING(log, "Unable to check if host {} is a local address, exception: {}", checking_host_id.host_name, e.displayText());
+        return false;
+    }
+    catch (const Poco::Net::NetException & e)
+    {
+        /// Avoid "Host not found" exceptions
+        LOG_WARNING(log, "Unable to check if host {} is a local address, exception: {}", checking_host_id.host_name, e.displayText());
+        return false;
+    }
 }
 
-bool DDLTask::IsSelfHostname(const String & checking_host_name, std::optional<UInt16> maybe_self_secure_port, UInt16 self_port)
+bool DDLTask::isSelfHostname(
+    LoggerPtr log, const String & checking_host_name, std::optional<UInt16> maybe_self_secure_port, UInt16 self_port)
 {
-    return (maybe_self_secure_port && HostID(checking_host_name, *maybe_self_secure_port).isLocalAddress(*maybe_self_secure_port))
-        || HostID(checking_host_name, self_port).isLocalAddress(self_port);
+    try
+    {
+        return (maybe_self_secure_port && HostID(checking_host_name, *maybe_self_secure_port).isLocalAddress(*maybe_self_secure_port))
+            || HostID(checking_host_name, self_port).isLocalAddress(self_port);
+    }
+    catch (const DB::NetException & e)
+    {
+        /// Avoid "Host not found" exceptions
+        LOG_WARNING(log, "Unable to check if host {} is a local address, exception: {}", checking_host_name, e.displayText());
+        return false;
+    }
+    catch (const Poco::Net::NetException & e)
+    {
+        /// Avoid "Host not found" exceptions
+        LOG_WARNING(log, "Unable to check if host {} is a local address, exception: {}", checking_host_name, e.displayText());
+        return false;
+    }
 }
 
 DatabaseReplicatedTask::DatabaseReplicatedTask(const String & name, const String & path, DatabaseReplicated * database_)

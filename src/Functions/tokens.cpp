@@ -14,7 +14,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
 }
 
@@ -23,71 +22,49 @@ namespace
 
 constexpr size_t arg_value = 0;
 constexpr size_t arg_tokenizer = 1;
-constexpr size_t arg_ngrams = 2;
-constexpr size_t arg_separators = 2;
 
-std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & arguments, std::string_view name)
+std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & arguments, std::string_view function_name)
 {
-    const auto tokenizer_arg = arguments.size() < 2 ? DefaultTokenExtractor::getExternalName()
-                                                        : arguments[arg_tokenizer].column->getDataAt(0).toView();
+    const auto tokenizer = arguments.size() < 2 ? SplitByNonAlphaTokenExtractor::getExternalName()
+                                                : arguments[arg_tokenizer].column->getDataAt(0);
 
-    if (tokenizer_arg == DefaultTokenExtractor::getExternalName())
+    FieldVector params;
+    for (size_t i = 2; i < arguments.size(); ++i)
     {
-        return std::make_unique<DefaultTokenExtractor>();
-    }
-    if (tokenizer_arg == SplitTokenExtractor::getExternalName())
-    {
-        std::vector<String> separators;
-        if (arguments.size() < 3)
+        const auto & col = arguments[i].column;
+        WhichDataType which_type(arguments[i].type);
+        if (which_type.isUInt())
         {
-            separators = {" "};
+            params.push_back(col->getUInt(0));
         }
         else
         {
-            const ColumnArray * col_separators = checkAndGetColumn<ColumnArray>(arguments[arg_separators].column.get());
-            const ColumnArray * col_separators_const = checkAndGetColumnConstData<ColumnArray>(arguments[arg_separators].column.get());
+            const ColumnArray * col_separators = checkAndGetColumn<ColumnArray>(col.get());
+            const ColumnArray * col_separators_const = checkAndGetColumnConstData<ColumnArray>(col.get());
 
-            if (!col_separators_const && !col_separators)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "3rd argument of function {} should be Array(String), got: {}", name, arguments[arg_separators].column->getFamilyName());
+            if (!col_separators && !col_separators_const)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Argument {} of function {} should be Array(String), got: {}",
+                    i + 1 /*1-based*/,
+                    function_name,
+                    col->getFamilyName());
 
             if (col_separators_const)
                 col_separators = col_separators_const;
 
-            Field separator_field = (*col_separators)[0];
-            const Array & separator_array = separator_field.safeGet<Array>();
-
-            for (const auto & separator : separator_array)
-                separators.emplace_back(separator.safeGet<String>());
+            params.push_back((*col_separators)[0]);
         }
-
-        return std::make_unique<SplitTokenExtractor>(separators);
-    }
-    if (tokenizer_arg == NoOpTokenExtractor::getExternalName())
-    {
-        return std::make_unique<NoOpTokenExtractor>();
-    }
-    if (tokenizer_arg == NgramTokenExtractor::getExternalName())
-    {
-        auto ngrams = (arguments.size() < 3) ? 3 : arguments[arg_ngrams].column->getUInt(0);
-        if (ngrams < 2 || ngrams > 8)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Ngrams argument of function {} should be between 2 and 8, got: {}", name, ngrams);
-        return std::make_unique<NgramTokenExtractor>(ngrams);
-    }
-    if (tokenizer_arg == SparseGramTokenExtractor::getExternalName())
-    {
-        auto min_length = arguments.size() < 3 ? 3
-            : arguments[2].column->getUInt(0);
-        auto max_length = arguments.size() < 4 ? 100
-            : arguments[3].column->getUInt(0);
-        auto min_cutoff_length = arguments.size() < 5 ? std::nullopt
-            : std::optional(arguments[4].column->getUInt(0));
-
-        return std::make_unique<SparseGramTokenExtractor>(min_length, max_length, min_cutoff_length);
     }
 
-    throw Exception(
-        ErrorCodes::BAD_ARGUMENTS,
-        "Function '{}' supports only tokenizers 'splitByNonAlpha', 'ngrams', 'splitByString', 'array', and 'sparseGrams'", name);
+    std::vector<String> allowed_tokenizers
+        = {NgramsTokenExtractor::getExternalName(),
+           SplitByNonAlphaTokenExtractor::getExternalName(),
+           SplitByStringTokenExtractor::getExternalName(),
+           ArrayTokenExtractor::getExternalName(),
+           SparseGramsTokenExtractor::getExternalName()};
+
+    return TokenizerFactory::createTokenizer(tokenizer, params, allowed_tokenizers, function_name);
 }
 
 class ExecutableFunctionTokens : public IExecutableFunction
@@ -112,7 +89,7 @@ public:
         if (input_rows_count == 0)
             return ColumnArray::create(std::move(col_result), std::move(col_offsets));
 
-        if (token_extractor->getType() == ITokenExtractor::Type::SparseGram)
+        if (token_extractor->getType() == ITokenExtractor::Type::SparseGrams)
         {
             /// The sparse gram token extractor stores an internal state which modified during the execution.
             /// This leads to an error while executing this function multi-threaded because that state is not protected.
@@ -156,7 +133,7 @@ private:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            std::string_view input = column_input.getDataAt(i).toView();
+            std::string_view input = column_input.getDataAt(i);
 
             forEachTokenPadded(extractor, input.data(), input.size(), [&](const char * token_start, size_t token_len)
             {
@@ -229,19 +206,18 @@ public:
 
             if (arguments.size() == 3)
             {
-                const auto tokenizer = arguments[arg_tokenizer].column->getDataAt(0).toString();
+                const std::string tokenizer{arguments[arg_tokenizer].column->getDataAt(0)};
 
-                if (tokenizer == NgramTokenExtractor::getExternalName())
+                if (tokenizer == NgramsTokenExtractor::getExternalName())
                     optional_args.emplace_back("ngrams", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
-                else if (tokenizer == SplitTokenExtractor::getExternalName())
+                else if (tokenizer == SplitByStringTokenExtractor::getExternalName())
                     optional_args.emplace_back("separators", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), isColumnConst, "const Array");
             }
-
-            if (arguments.size() == 4 || arguments.size() == 5)
+            else if (arguments.size() == 4 || arguments.size() == 5)
             {
-                const auto tokenizer = arguments[arg_tokenizer].column->getDataAt(0).toString();
+                const auto tokenizer = arguments[arg_tokenizer].column->getDataAt(0);
 
-                if (tokenizer == SparseGramTokenExtractor::getExternalName())
+                if (tokenizer == SparseGramsTokenExtractor::getExternalName())
                 {
                     optional_args.emplace_back("min_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "UInt8");
                     optional_args.emplace_back("max_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "UInt8");
@@ -279,7 +255,7 @@ For example, with separators = `['%21', '%']` string `%21abc` would be tokenized
     FunctionDocumentation::Arguments arguments = {
         {"value", "The input string.", {"String", "FixedString"}},
         {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `ngrams`, `splitByString`, `array`, and `sparseGrams`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
-        {"ngrams", "Only relevant if argument `tokenizer` is `ngrams`: An optional parameter which defines the length of the ngrams. If not set explicitly, defaults to `3`.", {"const UInt8"}},
+        {"ngrams", "Only relevant if argument `tokenizer` is `ngrams`: An optional parameter which defines the length of the ngrams. Must be between 1 and 8. If not set explicitly, defaults to `3`.", {"const UInt8"}},
         {"separators", "Only relevant if argument `tokenizer` is `split`: An optional parameter which defines the separator strings. If not set explicitly, defaults to `[' ']`.", {"const Array(String)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the resulting array of tokens from input string.", {"Array"}};
