@@ -392,3 +392,40 @@ def test_executable_function_query_cache(started_cluster):
     assert node.query("SELECT count(*) FROM system.query_cache") == "1\n"
 
     node.query("SYSTEM DROP QUERY CACHE");
+
+def test_executable_function_python_exception_in_query_log(started_cluster):
+    '''Test that Python exceptions with tracebacks appear in query_log when stderr_reaction defaults to throw'''
+    skip_test_msan(node)
+    
+    # Clear query log
+    node.query("SYSTEM FLUSH LOGS")
+    
+    # Generate a unique query_id for tracking
+    query_id = uuid.uuid4().hex
+    
+    # Try to execute UDF that will raise Python exception
+    try:
+        node.query("SELECT test_function_python_exception_default(1)", query_id=query_id)
+        assert False, "Exception should have been thrown"
+    except Exception as ex:
+        # Verify exception is thrown
+        assert "DB::Exception" in str(ex)
+        assert "Executable generates stderr" in str(ex)
+    
+    # Flush logs to ensure query_log is updated
+    node.query("SYSTEM FLUSH LOGS")
+    
+    # Check query_log for the exception
+    result = node.query(f"""
+        SELECT exception 
+        FROM system.query_log 
+        WHERE query_id = '{query_id}' 
+          AND type = 'ExceptionWhileProcessing'
+        FORMAT TabSeparated
+    """)
+    
+    # Verify Python traceback appears in exception field
+    assert "Traceback" in result, f"Expected 'Traceback' in exception, got: {result}"
+    assert "ZeroDivisionError" in result, f"Expected 'ZeroDivisionError' in exception, got: {result}"
+    assert "division by zero" in result, f"Expected 'division by zero' in exception, got: {result}"
+    assert "process_data" in result, f"Expected function name 'process_data' in traceback, got: {result}"
