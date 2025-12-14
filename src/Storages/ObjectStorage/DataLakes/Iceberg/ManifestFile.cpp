@@ -500,7 +500,7 @@ ManifestFileContent::ManifestFileContent(
                     file_format,
                     /*reference_data_file = */ std::nullopt,
                     equality_ids,
-                    sort_order_id));
+                    /*sort_order_id = */ std::nullopt));
                 break;
             }
         }
