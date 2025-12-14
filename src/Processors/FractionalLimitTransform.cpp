@@ -119,9 +119,7 @@ IProcessor::Status FractionalLimitTransform::prepare(const PortNumbers & updated
         limit = static_cast<UInt64>(std::ceil(rows_cnt * limit_fraction));
         offset += static_cast<UInt64>(std::ceil(rows_cnt * offset_fraction));
         if (with_ties && rows_read_from_cache < limit + offset)
-        {
             previous_row_chunk = {};
-        }
     }
 
     /// If we reached here all input ports are finished.
