@@ -108,7 +108,7 @@ Result:
 └─────────────────────┴───────────────────┴─────────────────────┘
 ```
 
-Also see the [`toUnixTimestamp`](#toUnixTimestamp) function.
+Also see the [`toUnixTimestamp`](/sql-reference/functions/type-conversion-functions#toUnixTimestamp) function.
 
 <!-- 
 The inner content of the tags below are replaced at doc framework build time with 
