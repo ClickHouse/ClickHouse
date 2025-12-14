@@ -35,7 +35,7 @@ namespace Iceberg
 
 class SingleThreadIcebergKeysIterator
 {
-    using FilesGenerator = std::function<std::vector<ManifestFileEntry>(const Iceberg::ManifestFilePtr & manifest_file)>;
+    using FilesGenerator = std::function<std::vector<ManifestFileEntryPtr>(const Iceberg::ManifestFilePtr & manifest_file)>;
 public:
     SingleThreadIcebergKeysIterator(
         ObjectStoragePtr object_storage_,
@@ -47,7 +47,7 @@ public:
         IcebergDataSnapshotPtr data_snapshot_,
         PersistentTableComponents persistent_components);
 
-    std::optional<DB::Iceberg::ManifestFileEntry> next();
+    std::optional<DB::Iceberg::ManifestFileEntryPtr> next();
 
     ~SingleThreadIcebergKeysIterator();
 
@@ -102,11 +102,11 @@ private:
     Iceberg::PersistentTableComponents persistent_components;
     Iceberg::SingleThreadIcebergKeysIterator data_files_iterator;
     Iceberg::SingleThreadIcebergKeysIterator deletes_iterator;
-    ConcurrentBoundedQueue<Iceberg::ManifestFileEntry> blocking_queue;
+    ConcurrentBoundedQueue<Iceberg::ManifestFileEntryPtr> blocking_queue;
     std::optional<ThreadFromGlobalPool> producer_task;
     IDataLakeMetadata::FileProgressCallback callback;
-    std::vector<Iceberg::ManifestFileEntry> position_deletes_files;
-    std::vector<Iceberg::ManifestFileEntry> equality_deletes_files;
+    std::vector<Iceberg::ManifestFileEntryPtr> position_deletes_files;
+    std::vector<Iceberg::ManifestFileEntryPtr> equality_deletes_files;
     std::exception_ptr exception;
     std::mutex exception_mutex;
 };
