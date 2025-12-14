@@ -19,6 +19,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
+#include <Interpreters/QueryMetadataCache.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/IStorage_fwd.h>
@@ -591,13 +592,7 @@ protected:
     mutable SampleBlockCache sample_block_cache;
     mutable std::mutex sample_block_cache_mutex;
 
-    using StorageMetadataCache = std::unordered_map<const IStorage *, StorageMetadataPtr>;
-    mutable StorageMetadataCache storage_metadata_cache;
-    mutable std::mutex storage_metadata_cache_mutex;
-
-    using StorageSnapshotCache = std::unordered_map<const IStorage *, StorageSnapshotPtr>;
-    mutable StorageSnapshotCache storage_snapshot_cache;
-    mutable std::mutex storage_snapshot_cache_mutex;
+    QueryMetadataCacheWeakPtr query_metadata_cache;
 
     PartUUIDsPtr part_uuids; /// set of parts' uuids, is used for query parts deduplication
     PartUUIDsPtr ignored_part_uuids; /// set of parts' uuids are meant to be excluded from query processing
@@ -1534,8 +1529,8 @@ public:
     void setGoogleProtosPath(const String & path);
 
     std::pair<Context::SampleBlockCache *, std::unique_lock<std::mutex>> getSampleBlockCache() const;
-    std::pair<Context::StorageMetadataCache *, std::unique_lock<std::mutex>> getStorageMetadataCache() const;
-    std::pair<Context::StorageSnapshotCache *, std::unique_lock<std::mutex>> getStorageSnapshotCache() const;
+    QueryMetadataCachePtr getQueryMetadataCache() const;
+    void setQueryMetadataCache(const QueryMetadataCachePtr & query_metadata_cache_);
 
     /// Query parameters for prepared statements.
     bool hasQueryParameters() const;

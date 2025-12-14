@@ -185,6 +185,7 @@ namespace Setting
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
     extern const SettingsFloatAuto promql_evaluation_time;
+    extern const SettingsBool enable_shared_storage_snapshot_in_query;
 }
 
 namespace ServerSetting
@@ -1671,6 +1672,12 @@ static BlockIO executeQueryImpl(
                         e.addMessage("while starting a transaction with 'implicit_transaction'");
                         throw;
                     }
+                }
+
+                if (settings[Setting::enable_shared_storage_snapshot_in_query])
+                {
+                    res.query_metadata_cache = std::make_shared<QueryMetadataCache>();
+                    context->setQueryMetadataCache(res.query_metadata_cache);
                 }
 
                 if (out_ast)
