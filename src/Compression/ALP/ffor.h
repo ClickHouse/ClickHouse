@@ -12,8 +12,8 @@
 #include <cassert>
 #include <cstdint>
 
-namespace DB::ALP::FFOR {
-
+namespace DB::ALP::FFOR
+{
 void ffor(const uint64_t* __restrict in, uint64_t* __restrict out, uint8_t bw, const uint64_t* __restrict a_base_p);
 void unffor(const uint64_t* __restrict a_in_p, uint64_t* __restrict a_out_p, uint8_t bw, const uint64_t* __restrict a_base_p);
 
@@ -22,5 +22,4 @@ inline uint32_t calculateBitpackedSize(uint8_t bit_width)
     assert(bit_width <= 64);
     return bit_width * 1024 / 8;
 }
-
 }
