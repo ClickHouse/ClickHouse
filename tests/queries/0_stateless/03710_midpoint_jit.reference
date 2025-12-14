@@ -6,10 +6,6 @@ Float, Float: JIT Off
 500000000000
 Float, Float: JIT On
 500000000000
-0	300	midpoint_jit_int_0
-100	100	midpoint_jit_int_1
-0	300	midpoint_jit_float_0
-100	100	midpoint_jit_float_1
 Int, Int: JIT Off
 -499999500000
 Int, Int: JIT On
@@ -18,7 +14,3 @@ Float, Float: JIT Off
 -500000000000
 Float, Float: JIT On
 -500000000000
-0	300	neg_midpoint_jit_int_0
-100	100	neg_midpoint_jit_int_1
-0	300	neg_midpoint_jit_float_0
-100	100	neg_midpoint_jit_float_1

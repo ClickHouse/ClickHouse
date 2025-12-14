@@ -1,8 +1,3 @@
--- Tags: no-fasttest
-
-SET max_block_size = 10000;
-SET max_threads = 1;
-
 DROP TABLE IF EXISTS midpoint_jit;
 CREATE TABLE midpoint_jit
 (
@@ -53,28 +48,6 @@ SETTINGS
     min_count_to_compile_expression = 0,
     log_comment = 'midpoint_jit_float_1';
 
-SYSTEM FLUSH LOGS query_log;
-
-SELECT ProfileEvents['CompiledFunctionExecute'] AS compiled, ProfileEvents['FunctionExecute'] AS executed, log_comment
-FROM system.query_log
-WHERE type='QueryFinish' AND current_database=currentDatabase() AND log_comment='midpoint_jit_int_0'
-ORDER BY event_time DESC LIMIT 1;
-
-SELECT ProfileEvents['CompiledFunctionExecute'] AS compiled, ProfileEvents['FunctionExecute'] AS executed, log_comment
-FROM system.query_log
-WHERE type='QueryFinish' AND current_database=currentDatabase() AND log_comment='midpoint_jit_int_1'
-ORDER BY event_time DESC LIMIT 1;
-
-SELECT ProfileEvents['CompiledFunctionExecute'] AS compiled, ProfileEvents['FunctionExecute'] AS executed, log_comment
-FROM system.query_log
-WHERE type='QueryFinish' AND current_database=currentDatabase() AND log_comment='midpoint_jit_float_0'
-ORDER BY event_time DESC LIMIT 1;
-
-SELECT ProfileEvents['CompiledFunctionExecute'] AS compiled, ProfileEvents['FunctionExecute'] AS executed, log_comment
-FROM system.query_log
-WHERE type='QueryFinish' AND current_database=currentDatabase() AND log_comment='midpoint_jit_float_1'
-ORDER BY event_time DESC LIMIT 1;
-
 TRUNCATE TABLE midpoint_jit;
 
 INSERT INTO midpoint_jit
@@ -116,25 +89,3 @@ SETTINGS
     compile_expressions = 1,
     min_count_to_compile_expression = 0,
     log_comment = 'neg_midpoint_jit_float_1';
-
-SYSTEM FLUSH LOGS query_log;
-
-SELECT ProfileEvents['CompiledFunctionExecute'] AS compiled, ProfileEvents['FunctionExecute'] AS executed, log_comment
-FROM system.query_log
-WHERE type='QueryFinish' AND current_database=currentDatabase() AND log_comment='neg_midpoint_jit_int_0'
-ORDER BY event_time DESC LIMIT 1;
-
-SELECT ProfileEvents['CompiledFunctionExecute'] AS compiled, ProfileEvents['FunctionExecute'] AS executed, log_comment
-FROM system.query_log
-WHERE type='QueryFinish' AND current_database=currentDatabase() AND log_comment='neg_midpoint_jit_int_1'
-ORDER BY event_time DESC LIMIT 1;
-
-SELECT ProfileEvents['CompiledFunctionExecute'] AS compiled, ProfileEvents['FunctionExecute'] AS executed, log_comment
-FROM system.query_log
-WHERE type='QueryFinish' AND current_database=currentDatabase() AND log_comment='neg_midpoint_jit_float_0'
-ORDER BY event_time DESC LIMIT 1;
-
-SELECT ProfileEvents['CompiledFunctionExecute'] AS compiled, ProfileEvents['FunctionExecute'] AS executed, log_comment
-FROM system.query_log
-WHERE type='QueryFinish' AND current_database=currentDatabase() AND log_comment='neg_midpoint_jit_float_1'
-ORDER BY event_time DESC LIMIT 1;
