@@ -238,7 +238,7 @@ toUInt64('64'):  64
 
     /// toUInt128 documentation
     FunctionDocumentation::Description toUInt128_description = R"(
-Converts an input value to a value of type [`UInt128`](/sql-reference/functions/type-conversion-functions#touint128).
+Converts an input value to a value of type [`UInt128`](/sql-reference/functions/type-conversion-functions#toUInt128).
 Throws an exception in case of an error.
 The function uses rounding towards zero, meaning it truncates fractional digits of numbers.
 
@@ -2118,7 +2118,7 @@ SELECT toInt128OrZero('abc')
 
     FunctionDocumentation::Description description_toInt256OrZero = R"(
 Converts an input value to type [Int256](/sql-reference/data-types/int-uint) but returns `0` in case of an error.
-Like [`toInt256`](#toint256) but returns `0` instead of throwing an exception.
+Like [`toInt256`](#toInt256) but returns `0` instead of throwing an exception.
 
 See also:
 - [`toInt256`](#toInt256).
@@ -2281,7 +2281,7 @@ toFloat64OrZero('abc'):  0
     /// toDateOrZero documentation
     FunctionDocumentation::Description description_toDateOrZero = R"(
 Converts an input value to a value of type [`Date`](../data-types/date.md) but returns the lower boundary of [`Date`](../data-types/date.md) if an invalid argument is received.
-The same as [toDate](#todate) but returns lower boundary of [`Date`](../data-types/date.md) if an invalid argument is received.
+The same as [toDate](#toDate) but returns lower boundary of [`Date`](../data-types/date.md) if an invalid argument is received.
 
 See also:
 - [`toDate`](#toDate)
@@ -2436,7 +2436,7 @@ SELECT toDateTimeOrZero('2025-12-30 13:44:17'), toDateTimeOrZero('invalid')
     /// toDateTime64OrZero documentation
     FunctionDocumentation::Description description_toDateTime64OrZero = R"(
 Converts an input value to a value of type [DateTime64](../data-types/datetime64.md) but returns the lower boundary of [DateTime64](../data-types/datetime64.md) if an invalid argument is received.
-The same as [toDateTime64](#todatetime64) but returns lower boundary of [DateTime64](../data-types/datetime64.md) if an invalid argument is received.
+The same as [toDateTime64](#toDateTime64) but returns lower boundary of [DateTime64](../data-types/datetime64.md) if an invalid argument is received.
 
 See also:
 - [toDateTime64](#toDateTime64).
@@ -3753,7 +3753,7 @@ SELECT toDecimal32OrNull('42.7', 2), toDecimal32OrNull('invalid', 2)
     /// toDecimal64OrNull documentation
     FunctionDocumentation::Description description_toDecimal64OrNull = R"(
 Converts an input value to a value of type [Decimal(18, S)](../data-types/decimal.md) but returns `NULL` in case of an error.
-Like [`toDecimal64`](#todecimal64) but returns `NULL` instead of throwing an exception on conversion errors.
+Like [`toDecimal64`](#toDecimal64) but returns `NULL` instead of throwing an exception on conversion errors.
 
 Supported arguments:
 - Values or string representations of type (U)Int*.
@@ -4391,7 +4391,7 @@ SELECT
 
     /// parseDateTime64BestEffort documentation
     FunctionDocumentation::Description description_parseDateTime64BestEffort = R"(
-Same as [`parseDateTimeBestEffort`](#parsedatetimebesteffort) function but also parse milliseconds and microseconds and returns [`DateTime64`](../../sql-reference/data-types/datetime64.md) data type.
+Same as [`parseDateTimeBestEffort`](#parseDateTimeBestEffort) function but also parse milliseconds and microseconds and returns [`DateTime64`](../../sql-reference/data-types/datetime64.md) data type.
     )";
     FunctionDocumentation::Syntax syntax_parseDateTime64BestEffort = "parseDateTime64BestEffort(time_string[, precision[, time_zone]])";
     FunctionDocumentation::Arguments arguments_parseDateTime64BestEffort =
@@ -4565,7 +4565,7 @@ SELECT parseDateTime64BestEffortUSOrZero('02/10/2025 12:30:45.123') AS valid_us,
 
     /// parseDateTime64BestEffortUSOrNull documentation
     FunctionDocumentation::Description description_parseDateTime64BestEffortUSOrNull = R"(
-Same as [`parseDateTime64BestEffort`](#parsedatetime64besteffort), except that this function prefers US date format (`MM/DD/YYYY` etc.) in case of ambiguity and returns `NULL` when it encounters a date format that cannot be processed.
+Same as [`parseDateTime64BestEffort`](#parseDateTime64BestEffort), except that this function prefers US date format (`MM/DD/YYYY` etc.) in case of ambiguity and returns `NULL` when it encounters a date format that cannot be processed.
     )";
     FunctionDocumentation::Syntax syntax_parseDateTime64BestEffortUSOrNull = "parseDateTime64BestEffortUSOrNull(time_string[, precision[, time_zone]])";
     FunctionDocumentation::Arguments arguments_parseDateTime64BestEffortUSOrNull =
