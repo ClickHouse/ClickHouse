@@ -57,7 +57,7 @@ void AllocationQueue::insertAllocation(ResourceAllocation & allocation, Resource
 
     if (initial_size > 0) // Enqueue as a pending new allocation
     {
-        allocation.increase.prepare(initial_size, true);
+        allocation.increase.prepare(initial_size, IncreaseRequest::Kind::Pending);
         pending_allocations.push_back(allocation);
         pending_allocations_size += initial_size;
         if (&allocation == &*pending_allocations.begin() && increasing_allocations.empty()) // Only if it should be processed next
@@ -85,7 +85,7 @@ void AllocationQueue::increaseAllocation(ResourceAllocation & allocation, Resour
     running_allocations.insert(allocation);
 
     // Enqueue increase request
-    allocation.increase.prepare(increase_size, false);
+    allocation.increase.prepare(increase_size, allocation.allocated == 0 ? IncreaseRequest::Kind::Initial : IncreaseRequest::Kind::Regular);
     increasing_allocations.insert(allocation);
     if (!skip_activation && &allocation == &*increasing_allocations.begin()) // Only if it should be processed next
         scheduleActivation();
@@ -151,7 +151,7 @@ void AllocationQueue::approveIncrease()
     std::lock_guard lock(mutex);
     chassert(increase);
     ResourceAllocation & allocation = increase->allocation;
-    if (allocation.allocated == 0)
+    if (allocation.increase.kind == IncreaseRequest::Kind::Pending)
     {
         pending_allocations.erase(pending_allocations.iterator_to(allocation));
         pending_allocations_size -= allocation.increase.size;
@@ -217,7 +217,7 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
     UNUSED(limit);
 
     // It is important not to kill allocation due to pending allocation in the same queue
-    if (killer.pending_allocation && &killer.allocation.queue == this)
+    if (killer.kind == IncreaseRequest::Kind::Pending && &killer.allocation.queue == this)
         return nullptr;
 
     std::lock_guard lock(mutex);

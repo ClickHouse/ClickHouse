@@ -135,8 +135,10 @@ public:
     {
         allocated += request.size;
         ++increases;
-        if (request.pending_allocation)
+        if (request.kind == IncreaseRequest::Kind::Initial || request.kind == IncreaseRequest::Kind::Pending)
         {
+            // Note this results in a lag for Kind::Initial.
+            // They are admitted earlier, but we count them here to avoid unnecessary complexity.
             ++allocations;
             ++admits;
         }

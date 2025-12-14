@@ -82,12 +82,12 @@ ResourceAllocation * FairAllocation::selectAllocationToKill(IncreaseRequest & ki
 
     // Case 2b. Different children pending allocation never kill each other to avoid thrashing.
     // Keep it simple for now. Otherwise, allocations from different children may keep killing each other.
-    // More sophisticated handling and tolerance rules preventing thrashing are required.
-    // This rules should take into account:
+    // TODO(serxa): More sophisticated handling and tolerance rules preventing thrashing are required.
+    // These rules should take into account:
     // - fair shares based on `limit` (expensive to compute in a hierarchy);
     // - and accumulated unfairness in term of ResourceCost * Time (requires tracking time).
     // - tolerance thresholds limiting the unfairness.
-    if (killer.pending_allocation && &killer == increase && victim_child.increase != &killer)
+    if (killer.kind == IncreaseRequest::Kind::Pending && &killer == increase && victim_child.increase != &killer)
         return nullptr;
 
     /// Kill the allocation from the largest child. It is the last as the set is ordered by usage.
@@ -176,7 +176,7 @@ void FairAllocation::updateKey(ISpaceSharedNode & from_child, IncreaseRequest * 
     // - Isolation: We take into account increase request size to make sure huge increase request will kill itself, not allocations from other workloads.
     // - Weights: We normalize by weight to achieve fair division according to weights.
     // - Pending: We only take into account increase requests of non-pending allocations, because pending allocations do not consume resources yet.
-    ResourceCost increase_size = new_increase && !new_increase->pending_allocation ? new_increase->size : 0;
+    ResourceCost increase_size = new_increase && new_increase->kind != IncreaseRequest::Kind::Pending ? new_increase->size : 0;
     double new_key = double(from_child.allocated + increase_size) / from_child.info.weight;
     if (!from_child.usageKeyEquals(new_key))
     {
@@ -197,7 +197,7 @@ void FairAllocation::updateKey(ISpaceSharedNode & from_child, IncreaseRequest * 
         // Reinsert into intrusive sets
         if (new_increase)
         {
-            if (new_increase->pending_allocation)
+            if (new_increase->kind == IncreaseRequest::Kind::Pending)
                 pending_children.insert(from_child);
             else
                 increasing_children.insert(from_child);
@@ -209,18 +209,18 @@ void FairAllocation::updateKey(ISpaceSharedNode & from_child, IncreaseRequest * 
     {
         if (!from_child.isIncreasing())
         {
-            if (new_increase && !new_increase->pending_allocation)
+            if (new_increase && new_increase->kind != IncreaseRequest::Kind::Pending)
                 increasing_children.insert(from_child);
         }
-        else if (!(new_increase && !new_increase->pending_allocation))
+        else if (!(new_increase && new_increase->kind != IncreaseRequest::Kind::Pending))
             increasing_children.erase(increasing_children.iterator_to(from_child));
 
         if (!from_child.isPending())
         {
-            if (new_increase && new_increase->pending_allocation)
+            if (new_increase && new_increase->kind == IncreaseRequest::Kind::Pending)
                 pending_children.insert(from_child);
         }
-        else if (!(new_increase && new_increase->pending_allocation))
+        else if (!(new_increase && new_increase->kind == IncreaseRequest::Kind::Pending))
             pending_children.erase(pending_children.iterator_to(from_child));
 
         if (!from_child.isRunning())

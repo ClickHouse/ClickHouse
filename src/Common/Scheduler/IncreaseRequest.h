@@ -26,6 +26,12 @@ class ResourceAllocation;
 class IncreaseRequest final
 {
 public:
+    enum class Kind {
+        Regular, /// Regular increase request of running allocation
+        Initial, /// The first increase request of a running allocation with zero size (e.g. due to `reserve_memory = 0`)
+        Pending, /// The first increase request of a pending allocation (often handled differently than previous because query is not running yet)
+    };
+
     /// Allocation associated with this request.
     ResourceAllocation & allocation;
 
@@ -35,16 +41,16 @@ public:
 
     /// When allocation is inserted into a queue, allocation should be increased from zero to its initial size.
     /// During this period allocation is pending (i.e. not yet running).
-    bool pending_allocation = false;
+    Kind kind = Kind::Regular;
 
     explicit IncreaseRequest(ResourceAllocation & allocation_)
         : allocation(allocation_)
     {}
 
-    void prepare(ResourceCost size_, bool pending_allocation_)
+    void prepare(ResourceCost size_, Kind kind_)
     {
         size = size_;
-        pending_allocation = pending_allocation_;
+        kind = kind_;
     }
 };
 

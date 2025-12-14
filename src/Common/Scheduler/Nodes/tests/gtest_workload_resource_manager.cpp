@@ -1922,36 +1922,6 @@ private: // interaction with the scheduler thread
     ResourceCost real_size = 0; // real size of the resource used by the allocation
 };
 
-TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseDecrease)
-{
-    ResourceTest t;
-
-    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
-    t.query("CREATE WORKLOAD all SETTINGS max_memory = '1Ti'");
-
-    ClassifierPtr c = t.manager->acquire("all");
-
-    for (int i = 0; i < 3; i++)
-    {
-        ResourceLink link = c->get("memory");
-        TestAllocation a1(link, "A1", 10);
-        TestAllocation a2(link, "A2", 20);
-        TestAllocation a3(link, "A3", 30);
-
-        a1.waitSync();
-        a2.waitSync();
-        a3.waitSync();
-
-        a1.setSize(20);
-        a2.setSize(30);
-        a3.setSize(10);
-
-        a1.waitSync();
-        a2.waitSync();
-        a3.waitSync();
-    }
-}
-
 static constexpr ResourceCost SKIP = -1;
 
 template <size_t count>
@@ -2123,6 +2093,66 @@ struct TestAllocationArray
 };
 
 // ---------- AllocationQueue ---------- //
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseDecrease)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = '1Ti'");
+
+    ClassifierPtr c = t.manager->acquire("all");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ResourceLink link = c->get("memory");
+        TestAllocation a1(link, "A1", 10);
+        TestAllocation a2(link, "A2", 20);
+        TestAllocation a3(link, "A3", 30);
+
+        a1.waitSync();
+        a2.waitSync();
+        a3.waitSync();
+
+        a1.setSize(20);
+        a2.setSize(30);
+        a3.setSize(10);
+
+        a1.waitSync();
+        a2.waitSync();
+        a3.waitSync();
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationZeroSize)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = '1Ti'");
+
+    ClassifierPtr c = t.manager->acquire("all");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ResourceLink link = c->get("memory");
+        TestAllocation a1(link, "A1", 0);
+        TestAllocation a2(link, "A2", 10);
+        TestAllocation a3(link, "A3", 0);
+
+        a1.waitSync();
+        a2.waitSync();
+        a3.waitSync();
+
+        a1.setSize(20);
+        a2.setSize(30);
+        a3.setSize(10);
+
+        a1.waitSync();
+        a2.waitSync();
+        a3.waitSync();
+    }
+}
 
 TEST(SchedulerWorkloadResourceManager, MemoryReservationPendingFifoOrder)
 {
