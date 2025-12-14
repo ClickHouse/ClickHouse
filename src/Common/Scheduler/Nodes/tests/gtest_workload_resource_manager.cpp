@@ -1744,12 +1744,6 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingThrottlingAndFairn
 
 struct TestAllocation : public ResourceAllocation
 {
-private:
-    struct TestIncreaseRequest;
-    friend struct TestIncreaseRequest;
-    struct TestDecreaseRequest;
-    friend struct TestDecreaseRequest;
-
 public:
     TestAllocation(ResourceLink link, const String & name_, ResourceCost initial_size, std::function<void()> approved_callback_ = {})
         : ResourceAllocation(*link.allocation_queue, name_)
