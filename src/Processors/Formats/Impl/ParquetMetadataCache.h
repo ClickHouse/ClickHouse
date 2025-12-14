@@ -57,9 +57,9 @@ struct ParquetMetadataCacheKeyHash
 /// Cache cell containing Parquet metadata
 struct ParquetMetadataCacheCell : private boost::noncopyable
 {
-    std::shared_ptr<parquet::FileMetaData> metadata;
+    parquet::format::FileMetaData metadata;
     Int64 memory_bytes;
-    explicit ParquetMetadataCacheCell(std::shared_ptr<parquet::FileMetaData> metadata_)
+    explicit ParquetMetadataCacheCell(parquet::format::FileMetaData metadata_)
         : metadata(std::move(metadata_))
         , memory_bytes(calculateMemorySize() + SIZE_IN_MEMORY_OVERHEAD)
     {
@@ -70,29 +70,13 @@ private:
 
     size_t calculateMemorySize() const
     {
-        if (!metadata)
-            return 0;
-        size_t size = sizeof(parquet::FileMetaData);
-        /// Add schema size estimation
-        if (metadata->schema())
-        {
-            size += metadata->schema()->ToString().size();
-        }
-        /// Add row group metadata size estimation
-        for (int i = 0; i < metadata->num_row_groups(); ++i)
-        {
-            size += sizeof(parquet::RowGroupMetaData);
-            auto rg = metadata->RowGroup(i);
-            for (int j = 0; j < rg->num_columns(); ++j)
-            {
-                size += sizeof(parquet::ColumnChunkMetaData);
-            }
-        }
-        return size;
+        /// Estimate memory usage of native metadata
+        /// This is simpler than Arrow metadata since it's not a shared_ptr
+        return sizeof(metadata) + metadata.schema.size() * 100; // Rough estimate
     }
 };
 
-/// Weight function for cache eviction
+/// Weight function for metadata cache
 struct ParquetMetadataCacheWeightFunction
 {
     size_t operator()(const ParquetMetadataCacheCell & cell) const
@@ -119,101 +103,15 @@ public:
 
     /// Get or load Parquet metadata with caching
     template <typename LoadFunc>
-    std::shared_ptr<parquet::FileMetaData> getOrSetMetadata(const ParquetMetadataCacheKey & key, LoadFunc && load_fn)
-    {
-        auto load_fn_wrapper = [&]()
-        {
-            auto metadata = load_fn();
-            LOG_DEBUG(log, "got metadata from cache {} | {}", key.file_path, key.file_attr);
-            return std::make_shared<ParquetMetadataCacheCell>(metadata);
-        };
-        auto result = Base::getOrSet(key, load_fn_wrapper);
-        if (result.second)
-        {
-            LOG_DEBUG(log, "cache miss {} | {}", key.file_path, key.file_attr);
-            ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheMisses);
-        }
-        else
-        {
-            LOG_DEBUG(log, "cache hit {} | {}", key.file_path, key.file_attr);
-            ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheHits);
-        }
-        return result.first->metadata;
-    }
-
-private:
-    LoggerPtr log;
-    /// Called for each individual entry being evicted from cache
-    void onEntryRemoval(const size_t weight_loss, const MappedPtr &) override
-    {
-        LOG_DEBUG(log, "cache eviction");
-        ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheWeightLost, weight_loss);
-    }
-};
-
-/* Cache cell containing V3 native Parquet metadata
-we store the native metadata here instead of a shared pointer
-wrapping the metadata
-*/
-struct ParquetV3MetadataCacheCell : private boost::noncopyable
-{
-    parquet::format::FileMetaData metadata;
-    Int64 memory_bytes;
-    explicit ParquetV3MetadataCacheCell(parquet::format::FileMetaData metadata_)
-        : metadata(std::move(metadata_))
-        , memory_bytes(calculateMemorySize() + SIZE_IN_MEMORY_OVERHEAD)
-    {
-    }
-
-private:
-    static constexpr size_t SIZE_IN_MEMORY_OVERHEAD = 200;
-
-    size_t calculateMemorySize() const
-    {
-        /// Estimate memory usage of native metadata
-        /// This is simpler than Arrow metadata since it's not a shared_ptr
-        return sizeof(metadata) + metadata.schema.size() * 100; // Rough estimate
-    }
-};
-
-/// Weight function for V3 metadata cache
-struct ParquetV3MetadataCacheWeightFunction
-{
-    size_t operator()(const ParquetV3MetadataCacheCell & cell) const
-    {
-        return cell.memory_bytes;
-    }
-};
-
-/// V3 Parquet metadata cache - reuses same key and hash as V2 cache
-class ParquetV3MetadataCache : public CacheBase<ParquetMetadataCacheKey, ParquetV3MetadataCacheCell, ParquetMetadataCacheKeyHash, ParquetV3MetadataCacheWeightFunction>
-{
-public:
-    using Base = CacheBase<ParquetMetadataCacheKey, ParquetV3MetadataCacheCell, ParquetMetadataCacheKeyHash, ParquetV3MetadataCacheWeightFunction>;
-
-    ParquetV3MetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
-        : Base(cache_policy, CurrentMetrics::ParquetMetadataCacheBytes, CurrentMetrics::ParquetMetadataCacheFiles, max_size_in_bytes, max_count, size_ratio)
-        , log(getLogger("ParquetV3MetadataCache"))
-    {}
-
-    /// Same factory method as V2 - reuse the key creation logic
-    static ParquetMetadataCacheKey createKey(const String & file_path, const String & file_attr)
-    {
-        return ParquetMetadataCacheKey{file_path, file_attr};
-    }
-
-    /// Get or load V3 Parquet metadata with caching
-    template <typename LoadFunc>
     parquet::format::FileMetaData getOrSetMetadata(const ParquetMetadataCacheKey & key, LoadFunc && load_fn)
     {
         auto load_fn_wrapper = [&]()
         {
             auto metadata = load_fn();
             LOG_DEBUG(log, "got metadata from cache {} | {}", key.file_path, key.file_attr);
-            return std::make_shared<ParquetV3MetadataCacheCell>(std::move(metadata));
+            return std::make_shared<ParquetMetadataCacheCell>(std::move(metadata));
         };
         auto result = Base::getOrSet(key, load_fn_wrapper);
-        /// Reuse same ProfileEvents as V2 cache
         if (result.second)
         {
             LOG_DEBUG(log, "cache miss {} | {}", key.file_path, key.file_attr);
@@ -238,7 +136,6 @@ private:
 };
 
 using ParquetMetadataCachePtr = std::shared_ptr<ParquetMetadataCache>;
-using ParquetV3MetadataCachePtr = std::shared_ptr<ParquetV3MetadataCache>;
 
 std::pair<String, String> extractObjectAttributes(ReadBuffer & in);
 std::optional<ObjectMetadata> tryGetObjectMetadata(ReadBuffer & in);

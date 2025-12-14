@@ -126,7 +126,7 @@ Chunk ParquetV3BlockInputFormat::read()
         if (metadata_cache)
         {
             auto [file_path, file_attr] = extractObjectAttributes(*in);
-            ParquetMetadataCacheKey cache_key = ParquetV3MetadataCache::createKey(file_path, file_attr);
+            ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_path, file_attr);
             file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() { return Parquet::Reader::readFileMetaData(temp_prefetcher); });
         }
         else
@@ -192,7 +192,7 @@ void NativeParquetSchemaReader::initializeIfNeeded()
     if (metadata_cache)
     {
         auto [file_path, file_attr] = extractObjectAttributes(in);
-        ParquetMetadataCacheKey cache_key = ParquetV3MetadataCache::createKey(file_path, file_attr);
+        ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_path, file_attr);
         file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() { return Parquet::Reader::readFileMetaData(prefetcher); });
     }
     else
