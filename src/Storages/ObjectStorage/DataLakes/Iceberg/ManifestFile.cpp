@@ -655,10 +655,10 @@ bool operator<(const DB::Row & lhs, const DB::Row & rhs)
     return less(lhs, rhs);
 }
 
-std::weak_ordering operator<=>(const ManifestFileEntry & lhs, const ManifestFileEntry & rhs)
+std::weak_ordering operator<=>(const ManifestFileEntryPtr & lhs, const ManifestFileEntryPtr & rhs)
 {
-    return std::tie(lhs.common_partition_specification, lhs.partition_key_value, lhs.added_sequence_number)
-        <=> std::tie(rhs.common_partition_specification, rhs.partition_key_value, rhs.added_sequence_number);
+    return std::tie(lhs->common_partition_specification, lhs->partition_key_value, lhs->added_sequence_number)
+        <=> std::tie(rhs->common_partition_specification, rhs->partition_key_value, rhs->added_sequence_number);
 }
 }
 
