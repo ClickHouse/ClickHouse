@@ -69,7 +69,7 @@ void registerDataTypeDomainGeo(DataTypeFactory & factory)
             std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeGeometryName>()));
     });
 
-    factory.registerAlias("GEOMETRY", "Geometry"); //mysql
+    factory.registerAlias("GEOMETRY", "Geometry"); /// For MySQL
 
 }
 

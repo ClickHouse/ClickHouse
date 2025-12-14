@@ -10,6 +10,15 @@ from .settings import Settings
 from .usage import StorageUsage
 from .utils import MetaClasses, Shell, Utils
 
+try:
+    import boto3
+    from botocore.exceptions import ClientError, NoCredentialsError
+    BOTO3_AVAILABLE = True
+except ImportError:
+    BOTO3_AVAILABLE = False
+    ClientError = None
+    NoCredentialsError = None
+
 
 @dataclasses.dataclass
 class StorageUsage(MetaClasses.SerializableSingleton):
@@ -85,6 +94,20 @@ class StorageUsage(MetaClasses.SerializableSingleton):
 
 
 class S3:
+    _boto3_client = None
+
+    @classmethod
+    def _get_boto3_client(cls):
+        if not BOTO3_AVAILABLE:
+            return None
+        if cls._boto3_client is None:
+            try:
+                cls._boto3_client = boto3.client('s3')
+            except Exception as e:
+                print(f"WARNING: Failed to initialize boto3 client: {e}")
+                return None
+        return cls._boto3_client
+
     @dataclasses.dataclass
     class Object:
         AcceptRanges: str
@@ -247,6 +270,44 @@ class S3:
         no_strict=False,
     ):
         assert Path(s3_path), f"Invalid S3 Path [{s3_path}]"
+
+        if BOTO3_AVAILABLE and not recursive and not include_pattern:
+            client = cls._get_boto3_client()
+            if client:
+                try:
+                    s3_path_clean = str(s3_path).removeprefix("s3://")
+                    bucket, key = s3_path_clean.split("/", maxsplit=1)
+
+                    if Path(local_path).is_dir():
+                        local_file = Path(local_path) / Path(key).name
+                    else:
+                        local_file = Path(local_path)
+                        if not local_file.parent.is_dir():
+                            assert False, f"Parent path for [{local_path}] does not exist"
+
+                    local_file.parent.mkdir(parents=True, exist_ok=True)
+
+                    client.download_file(bucket, key, str(local_file))
+
+                    if not _skip_download_counter:
+                        StorageUsage.add_downloaded(local_file)
+
+                    return True
+
+                except ClientError as e:
+                    error_code = e.response.get('Error', {}).get('Code', '')
+                    if error_code in ['404', 'NoSuchKey']:
+                        if not no_strict:
+                            print(f"ERROR: S3 object not found: {s3_path}")
+                        return False
+                    if not no_strict:
+                        raise
+                    return False
+                except Exception as e:
+                    if not no_strict:
+                        raise
+                    return False
+
         if Path(local_path).is_dir():
             pass
         else:
