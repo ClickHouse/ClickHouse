@@ -118,6 +118,10 @@ IProcessor::Status FractionalLimitTransform::prepare(const PortNumbers & updated
         /// Calculate integral limit and offset values.
         limit = static_cast<UInt64>(std::ceil(rows_cnt * limit_fraction));
         offset += static_cast<UInt64>(std::ceil(rows_cnt * offset_fraction));
+        if (with_ties && rows_read_from_cache < limit + offset)
+        {
+            previous_row_chunk = {};
+        }
     }
 
     /// If we reached here all input ports are finished.
@@ -214,7 +218,8 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
         if (rows_read_from_cache < offset)
             remaining_offset = offset - rows_read_from_cache;
 
-        if (std::ceil(rows_cnt * limit_fraction) - outputed_rows_cnt >= num_rows - remaining_offset)
+        auto curr_limit = std::ceil(rows_cnt * limit_fraction);
+        if (curr_limit - outputed_rows_cnt >= num_rows - remaining_offset)
         {
             /// If we still have an integral offset that didn't cause the chunk
             /// to be dropped entirely above then its offset in part of the chunk => split it
@@ -233,7 +238,7 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
 
             rows_read_from_cache += num_rows;
             outputed_rows_cnt += num_rows;
-            if (with_ties)
+            if (with_ties && rows_read_from_cache == curr_limit + offset)
                 previous_row_chunk = makeChunkWithPreviousRow(chunks_cache.front().chunk, num_rows - 1);
 
             output.push(std::move(chunks_cache.front().chunk));
