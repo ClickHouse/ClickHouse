@@ -1416,10 +1416,13 @@ void registerInputFormatParquet(FormatFactory & factory)
            const ReadSettings & read_settings,
            bool is_remote_fs,
            FormatParserSharedResourcesPtr parser_shared_resources,
-           FormatFilterInfoPtr format_filter_info) -> InputFormatPtr
+           FormatFilterInfoPtr) -> InputFormatPtr
         {
             size_t min_bytes_for_seek
                 = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
+            auto ptr = std::make_shared<ParquetBlockInputFormat>(
+                buf, std::make_shared<const Block>(sample), settings, std::move(parser_shared_resources), min_bytes_for_seek);
+            return ptr;
         });
     factory.markFormatSupportsSubsetOfColumns("Parquet");
     factory.registerPrewhereSupportChecker("Parquet", [](const FormatSettings & settings)
@@ -1442,6 +1445,10 @@ void registerParquetSchemaReader(FormatFactory & factory)
             {
                 auto metadata_cache = CurrentThread::getQueryContext()->getParquetMetadataCache();
                 return std::make_shared<NativeParquetSchemaReader>(buf, settings, metadata_cache);
+            }
+            else
+            {
+                return std::make_shared<ArrowParquetSchemaReader>(buf, settings);
             }
         }
         );
