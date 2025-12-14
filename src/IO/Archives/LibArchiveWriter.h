@@ -18,7 +18,11 @@ class LibArchiveWriter : public IArchiveWriter
 {
 public:
     /// Constructs an archive that will be written as a file in the local filesystem.
-    explicit LibArchiveWriter(const String & path_to_archive_, std::unique_ptr<WriteBuffer> archive_write_buffer_);
+    explicit LibArchiveWriter(
+        const String & path_to_archive_,
+        std::unique_ptr<WriteBuffer> archive_write_buffer_,
+        size_t buf_size_,
+        size_t adaptive_buffer_max_size_);
 
     /// Call finalize() before destructing IArchiveWriter.
     ~LibArchiveWriter() override;
@@ -65,6 +69,9 @@ protected:
 private:
     class WriteBufferFromLibArchive;
     class StreamInfo;
+
+    const size_t buf_size;
+    const size_t adaptive_buffer_max_size;
 
     Archive getArchive();
     void startWritingFile();
