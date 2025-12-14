@@ -200,9 +200,6 @@ using ManifestFilePtr = std::shared_ptr<ManifestFileContent>;
 bool operator<(const PartitionSpecification & lhs, const PartitionSpecification & rhs);
 bool operator<(const DB::Row & lhs, const DB::Row & rhs);
 
-
-std::weak_ordering operator<=>(const ManifestFileEntry & lhs, const ManifestFileEntry & rhs);
-
 std::weak_ordering operator<=>(const ManifestFileEntryPtr & lhs, const ManifestFileEntryPtr & rhs);
 }
 
