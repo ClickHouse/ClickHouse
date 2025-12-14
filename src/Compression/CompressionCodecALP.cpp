@@ -1,18 +1,15 @@
+#include <Compression/ALP/ffor.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/ICompressionCodec.h>
 
-#include <Parsers/IAST.h>
 #include <DataTypes/IDataType.h>
-
+#include <IO/BitHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Parsers/IAST.h>
 #include <base/unaligned.h>
 
-#include <IO/WriteHelpers.h>
-#include <IO/BitHelpers.h>
-
 #include <array>
-
-#include "ALP/ffor.h"
 
 namespace DB
 {

@@ -1,3 +1,5 @@
+#pragma once
+
 // Copyright (c) 2024 Azim Afroozeh, CWI Database Architectures Group
 // Licensed under the MIT License.
 // See LICENSE file in the original project for details.
@@ -7,8 +9,7 @@
 //
 // Modifications: refactoring to be compliant with the CH codebase and style.
 
-#pragma once
-
+#include <cassert>
 #include <cstdint>
 
 namespace DB::ALP::FFOR {
