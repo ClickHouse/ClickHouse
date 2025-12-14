@@ -107,6 +107,7 @@ OPTIONS_TO_INSTALL_ARGUMENTS = {
     "AsyncInsert": " --async-insert",
     "BugfixValidation": " --bugfix-validation",
     "db disk": "--remote-database-disk",
+    "compatibility": "--compatibility-setting",
 }
 
 OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {

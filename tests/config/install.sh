@@ -29,6 +29,7 @@ while [[ "$#" -gt 0 ]]; do
         --parallel-rep) USE_PARALLEL_REPLICAS=1 ;;
         --db-replicated) USE_DATABASE_REPLICATED=1 ;;
         --distributed-plan) USE_DISTRIBUTED_PLAN=1 ;;
+        --compatibility-setting) USE_COMPATIBILITY=1 ;;
 
         --wide-parts) USE_POLYMORPHIC_PARTS=1 ;;
         --db-ordinary) USE_DATABASE_ORDINARY=1 ;;
@@ -350,6 +351,10 @@ fi
 
 if [[ "$USE_ASYNC_INSERT" == "1" ]]; then
     ln -sf $SRC_PATH/users.d/enable_async_inserts.xml $DEST_SERVER_PATH/users.d/
+fi
+
+if [[ "$USE_COMPATIBILITY" == "1" ]]; then
+    ln -sf $SRC_PATH/users.d/compatibility_setting.xml $DEST_SERVER_PATH/users.d/
 fi
 
 if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
