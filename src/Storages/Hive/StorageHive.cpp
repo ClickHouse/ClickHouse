@@ -313,7 +313,7 @@ public:
             }
 
             reader.reset();
-            pipeline = nullptr;
+            pipeline.reset();
             read_buf.reset();
         }
     }
