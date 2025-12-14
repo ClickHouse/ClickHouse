@@ -26,8 +26,6 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
     bool isVariadic() const override { return false; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & types) const override { return getLeastSupertype(types); }
 };
 
 REGISTER_FUNCTION(Avg2)
