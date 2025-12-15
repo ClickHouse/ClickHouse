@@ -126,8 +126,42 @@ FUNCTIONS_CONTEXT_PTR_EXCEPTIONS=(
     -e /FunctionNaiveBayesClassifier.cpp
     -e /FunctionBinaryArithmetic.h
     -e /ITupleFunction.h
+
+    -e /FunctionJoinGet.cpp
+    -e /FunctionsExternalDictionaries.cpp
+    -e /FunctionsExternalDictionaries.h
+    -e /FunctionDictGetKeys.cpp
+
+    -e /TimeSeries/timeSeriesIdToTagsGroup.cpp
+    -e /TimeSeries/timeSeriesIdToTags.cpp
+    -e /TimeSeries/timeSeriesTagsGroupToTags.cpp
+    -e /TimeSeries/timeSeriesStoreTags.cpp
 )
 find $ROOT_PATH/src/Functions -type f | xargs grep -l 'ContextPtr [a-z_]*;' | grep -v "${FUNCTIONS_CONTEXT_PTR_EXCEPTIONS[@]}" | grep -P '.' && echo "Avoid holding a copy of ContextPtr in Functions"
+
+# Ensure that functions do not use WithContext, since this may lead to expired context (when it is used in MergeTree).
+FUNCTIONS_WITH_CONTEXT_EXCEPTIONS=(
+    # It is OK to have WithContext for derived classes from IFunctionOverloadResolver
+    -e /FunctionJoinGet.cpp
+    # Store global context
+    -e /ExternalUserDefinedExecutableFunctionsLoader.cpp
+    # Used only in getReturnTypeImpl()
+    -e /array/arrayReduce.cpp
+    -e /array/arrayReduceInRanges.cpp
+    # Global context
+    -e /catboostEvaluate.cpp
+    # Always constant
+    -e /connectionId.cpp
+    # Do not leak HTTP headers to MergeTree
+    -e /getClientHTTPHeader.cpp
+    # Avoid leaking
+    -e /getMergeTreeSetting.cpp
+    -e /getScalar.cpp
+    -e /getSetting.cpp
+    -e /hasColumnInTable.cpp
+    -e /initializeAggregation.cpp
+)
+find $ROOT_PATH/src/Functions -type f | xargs grep -l 'WithContext(' | grep -v "${FUNCTIONS_WITH_CONTEXT_EXCEPTIONS[@]}" | grep -P '.' && echo "Avoid using WithContext in Functions"
 
 # Conflict markers
 find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' |
