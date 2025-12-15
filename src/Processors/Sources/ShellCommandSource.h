@@ -1,6 +1,9 @@
 #pragma once
 
 #include <memory>
+#include <optional>
+#include <string>
+#include <vector>
 
 #include <base/BorrowedObjectPool.h>
 
@@ -24,6 +27,9 @@ using ShellCommandHolderPtr = std::unique_ptr<ShellCommandHolder>;
 
 using ProcessPool = BorrowedObjectPool<ShellCommandHolderPtr>;
 
+/// Dedicated descriptor for passing query metadata to the executable.
+inline constexpr int EXECUTABLE_METADATA_FD = 64;
+
 struct ShellCommandSourceConfiguration
 {
     /// Read fixed number of rows from command output
@@ -34,6 +40,11 @@ struct ShellCommandSourceConfiguration
     size_t number_of_rows_to_read = 0;
     /// Max block size
     size_t max_block_size = DEFAULT_BLOCK_SIZE;
+};
+
+struct QueryMetadata
+{
+    std::string query_str;
 };
 
 class ShellCommandSourceCoordinator
@@ -79,6 +90,9 @@ public:
         /// Execute script direct or with /bin/bash.
         bool execute_direct = true;
 
+        /// Send query metadata (query, columns, filters) to the executable via EXECUTABLE_METADATA_FD as JSON.
+        bool send_query_metadata = false;
+
     };
 
     explicit ShellCommandSourceCoordinator(const Configuration & configuration_);
@@ -94,7 +108,8 @@ public:
         std::vector<Pipe> && input_pipes,
         Block sample_block,
         ContextPtr context,
-        const ShellCommandSourceConfiguration & source_configuration = {});
+        const ShellCommandSourceConfiguration & source_configuration = {},
+        const std::optional<QueryMetadata> & query_metadata = std::nullopt);
 
     Pipe createPipe(
         const std::string & command,
