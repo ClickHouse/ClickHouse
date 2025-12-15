@@ -470,8 +470,8 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         const Settings & settings = query_context->getSettingsRef();
         auto max_insert_block_size_rows_setting = settings[Setting::max_insert_block_size];
         auto max_insert_block_size_bytes_setting = settings[Setting::max_insert_block_size_bytes];
-        UInt64 min_insert_block_size_rows_setting = settings[Setting::min_insert_block_size_rows];
-        UInt64 min_insert_block_size_bytes_setting = settings[Setting::min_insert_block_size_bytes];
+        auto min_insert_block_size_rows_setting = settings[Setting::min_insert_block_size_rows];
+        auto min_insert_block_size_bytes_setting = settings[Setting::min_insert_block_size_bytes];
 
         message_transport->send(PostgreSQLProtocol::Messaging::CopyInResponse(), true);
         executor->start();

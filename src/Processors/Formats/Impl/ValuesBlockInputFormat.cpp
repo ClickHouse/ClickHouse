@@ -123,18 +123,18 @@ Chunk ValuesBlockInputFormat::read()
     const size_t min_block_size_rows = params.min_block_size_rows;
     const size_t min_block_size_bytes = params.min_block_size_bytes;
 
-    auto larger_min_threshold_exists = [&](size_t rows, size_t bytes)-> bool
+    auto larger_min_block_size_exists = [&](size_t rows, size_t bytes)-> bool
     {
         return (!min_block_size_rows && !min_block_size_bytes) || rows < min_block_size_rows || bytes < min_block_size_bytes;
     };
 
-    auto smaller_than_any_max_threshold = [&](size_t rows, size_t bytes)-> bool
+    auto smaller_max_block_size_each = [&](size_t rows, size_t bytes)-> bool
     {
-        return (!max_block_size_rows || rows < max_block_size_rows) && (!max_block_size_rows || bytes < max_block_size_bytes);
+        return (!max_block_size_rows || rows < max_block_size_rows) && (!max_block_size_bytes || bytes < max_block_size_bytes);
     };
     
-    for (; larger_min_threshold_exists(rows_in_block, bytes_in_block) &&
-            smaller_than_any_max_threshold(rows_in_block, bytes_in_block)
+    for (; larger_min_block_size_exists(rows_in_block, bytes_in_block) &&
+           smaller_max_block_size_each(rows_in_block, bytes_in_block)
          ; ++rows_in_block)
     {
         try

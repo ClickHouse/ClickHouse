@@ -244,15 +244,11 @@ void LocalConnection::sendQuery(
 
         chassert(in, "ReadBuffer should be initialized");
 
-        UInt64 max_insert_block_size_rows_setting = settings[Setting::max_insert_block_size];
-        UInt64 max_insert_block_size_bytes_setting = settings[Setting::max_insert_block_size_bytes];
-        UInt64 min_insert_block_size_rows_setting = settings[Setting::min_insert_block_size_rows];
-        UInt64 min_insert_block_size_bytes_setting = settings[Setting::min_insert_block_size_bytes];
         auto source = context->getInputFormat(current_format, *in, sample, 
-                                               max_insert_block_size_rows_setting, std::nullopt, 
-                                         max_insert_block_size_bytes_setting,
-                                          min_insert_block_size_rows_setting,
-                                         min_insert_block_size_bytes_setting);
+                                              settings[Setting::max_insert_block_size], std::nullopt, 
+                                        settings[Setting::max_insert_block_size_bytes],
+                                         settings[Setting::min_insert_block_size_rows],
+                                        settings[Setting::min_insert_block_size_bytes]);
         Pipe pipe(source);
 
         auto columns_description = metadata_snapshot->getColumns();

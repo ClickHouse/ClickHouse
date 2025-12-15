@@ -187,9 +187,9 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoColl
 
 bool Squashing::isEnoughSize(size_t rows, size_t bytes) const
 {
-    bool larger_eq_than_all_min = min_block_size_rows <= rows && min_block_size_bytes <= bytes; 
-    bool larger_eq_than_one_max = max_block_size_rows <= rows || max_block_size_bytes <= bytes;
-    return larger_eq_than_all_min || larger_eq_than_one_max;
+    bool larger_or_eq_than_all_min = min_block_size_rows <= rows && min_block_size_bytes <= bytes; 
+    bool larger_or_eq_than_one_max = (max_block_size_rows && max_block_size_rows <= rows) || (max_block_size_bytes && max_block_size_bytes <= bytes);
+    return larger_or_eq_than_all_min || larger_or_eq_than_one_max;
 }
 
 bool Squashing::isEnoughSize() const

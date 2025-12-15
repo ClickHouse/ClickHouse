@@ -432,8 +432,9 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     BuildQueryPipelineSettings build_pipeline_settings(mutable_context);
     auto builder = query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings);
 
-    size_t min_block_size_rows = mutable_context->getSettingsRef()[Setting::min_external_table_block_size_rows];
-    size_t min_block_size_bytes = mutable_context->getSettingsRef()[Setting::min_external_table_block_size_bytes];
+    const auto & settings = mutable_context->getSettingsRef();
+    size_t min_block_size_rows = settings[Setting::min_external_table_block_size_rows];
+    size_t min_block_size_bytes = settings[Setting::min_external_table_block_size_bytes];
     auto squashing = std::make_shared<SimpleSquashingChunksTransform>(builder->getSharedHeader(), min_block_size_rows, min_block_size_bytes);
 
     builder->resize(1);

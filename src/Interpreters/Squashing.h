@@ -43,8 +43,8 @@ public:
     explicit Squashing(SharedHeader header_, 
                        size_t min_block_size_rows_, 
                        size_t min_block_size_bytes_,
-                       size_t max_block_size_rows_,
-                       size_t max_block_size_bytes_
+                       size_t max_block_size_rows_ = 0,
+                       size_t max_block_size_bytes_ = 0
                     );
     Squashing(Squashing && other) = default;
 

@@ -76,6 +76,9 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size_bytes;
+    
     extern const SettingsBool use_concurrency_control;
     extern const SettingsSeconds wait_for_window_view_fire_signal_timeout;
     extern const SettingsSeconds window_view_clean_interval;
@@ -650,10 +653,13 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     builder.addSimpleTransform(
         [&](const SharedHeader & current_header)
         {
+            const auto & settings = getContext()->getSettingsRef();
             return std::make_shared<SquashingTransform>(
                 current_header,
-                getContext()->getSettingsRef()[Setting::min_insert_block_size_rows],
-                getContext()->getSettingsRef()[Setting::min_insert_block_size_bytes]);
+                settings[Setting::min_insert_block_size_rows],
+                settings[Setting::min_insert_block_size_bytes],
+                settings[Setting::max_insert_block_size],
+                settings[Setting::max_insert_block_size_bytes]);
         });
 
     auto header = builder.getHeader();
@@ -1622,10 +1628,13 @@ void StorageWindowView::writeIntoWindowView(
     builder.addSimpleTransform(
         [&](const SharedHeader & current_header)
         {
+            const auto & settings = local_context->getSettingsRef();
             return std::make_shared<SquashingTransform>(
                 current_header,
-                local_context->getSettingsRef()[Setting::min_insert_block_size_rows],
-                local_context->getSettingsRef()[Setting::min_insert_block_size_bytes]);
+                settings[Setting::min_insert_block_size_rows],
+                settings[Setting::min_insert_block_size_bytes],
+                settings[Setting::max_insert_block_size],
+                settings[Setting::max_insert_block_size_bytes]);
         });
 
     if (!window_view.is_proctime)

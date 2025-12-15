@@ -41,6 +41,9 @@ namespace Setting
 {
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size_bytes;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsMilliseconds stream_poll_timeout_ms;
     extern const SettingsBool use_concurrency_control;
 }
@@ -49,6 +52,9 @@ namespace FileLogSetting
 {
     extern const FileLogSettingsStreamingHandleErrorMode handle_error_mode;
     extern const FileLogSettingsUInt64 max_block_size;
+    extern const FileLogSettingsUInt64 max_block_size_bytes;
+    extern const FileLogSettingsUInt64 min_block_size_rows;
+    extern const FileLogSettingsUInt64 min_block_size_bytes;
     extern const FileLogSettingsMaxThreads max_threads;
     extern const FileLogSettingsUInt64 poll_directory_watch_events_backoff_factor;
     extern const FileLogSettingsMilliseconds poll_directory_watch_events_backoff_init;
@@ -149,6 +155,9 @@ private:
                 modified_context,
                 column_names,
                 file_log.getMaxBlockSize(),
+                file_log.getMaxBlockSizeBytes(),
+                file_log.getMinBlockSizeRows(),
+                file_log.getMinBlockSizeBytes(),
                 file_log.getPollTimeoutMillisecond(),
                 stream_number,
                 max_streams_number,
@@ -619,6 +628,24 @@ size_t StorageFileLog::getMaxBlockSize() const
 {
     return (*filelog_settings)[FileLogSetting::max_block_size].changed ? (*filelog_settings)[FileLogSetting::max_block_size].value
                                                     : getContext()->getSettingsRef()[Setting::max_insert_block_size].value;
+}
+
+size_t StorageFileLog::getMaxBlockSizeBytes() const
+{
+    return (*filelog_settings)[FileLogSetting::max_block_size_bytes].changed ? (*filelog_settings)[FileLogSetting::max_block_size].value
+                                                                             : getContext()->getSettingsRef()[Setting::max_insert_block_size_bytes].value;
+}
+
+size_t StorageFileLog::getMinBlockSizeRows() const
+{
+    return (*filelog_settings)[FileLogSetting::min_block_size_rows].changed ? (*filelog_settings)[FileLogSetting::min_block_size_rows].value
+                                                                             : getContext()->getSettingsRef()[Setting::min_insert_block_size_rows].value;
+}
+
+size_t StorageFileLog::getMinBlockSizeBytes() const
+{
+    return (*filelog_settings)[FileLogSetting::min_block_size_bytes].changed ? (*filelog_settings)[FileLogSetting::min_block_size_bytes].value
+                                                                             : getContext()->getSettingsRef()[Setting::min_insert_block_size_bytes].value;
 }
 
 size_t StorageFileLog::getPollMaxBatchSize() const

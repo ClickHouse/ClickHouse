@@ -21,6 +21,9 @@ namespace ErrorCodes
     DECLARE(Milliseconds, poll_timeout_ms, 0, "Timeout for single poll from StorageFileLog.", 0) \
     DECLARE(UInt64, poll_max_batch_size, 0, "Maximum amount of messages to be polled in a single StorageFileLog poll.", 0) \
     DECLARE(UInt64, max_block_size, 0, "Number of row collected by poll(s) for flushing data from StorageFileLog.", 0) \
+    DECLARE(UInt64, max_block_size_bytes, 0, "Maximum size in bytes of the data block formed from polled records before flushing.", 0) \
+    DECLARE(UInt64, min_block_size_rows, 0, "Minimum number of records of the data block formed from polled records before flushing.", 0) \
+    DECLARE(UInt64, min_block_size_bytes, 0, "Minimum size in bytes of the data block formed from polled records before flushing.", 0) \
     DECLARE(MaxThreads, max_threads, 0, "Number of max threads to parse files, default is 0, which means the number will be max(1, physical_cpu_cores / 4)", 0) \
     DECLARE(Milliseconds, poll_directory_watch_events_backoff_init, 500, "The initial sleep value for watch directory thread.", 0) \
     DECLARE(Milliseconds, poll_directory_watch_events_backoff_max, 32000, "The max sleep value for watch directory thread.", 0) \

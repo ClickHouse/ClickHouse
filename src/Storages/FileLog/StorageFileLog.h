@@ -188,6 +188,10 @@ private:
 
     size_t getPollMaxBatchSize() const;
     size_t getMaxBlockSize() const;
+    size_t getMaxBlockSizeBytes() const;
+    size_t getMinBlockSizeRows() const;
+    size_t getMinBlockSizeBytes() const;
+
     size_t getPollTimeoutMillisecond() const;
 
     bool streamToViews();

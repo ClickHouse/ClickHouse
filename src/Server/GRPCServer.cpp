@@ -1143,17 +1143,13 @@ namespace
         assert(!pipeline);
         
         const Settings & settings = query_context->getSettingsRef();
-        UInt64 max_insert_block_size_rows_setting = settings[Setting::max_insert_block_size];
-        UInt64 max_insert_block_size_bytes_setting = settings[Setting::max_insert_block_size_bytes];
-        UInt64 min_insert_block_size_rows_setting = settings[Setting::min_insert_block_size_rows];
-        UInt64 min_insert_block_size_bytes_setting = settings[Setting::min_insert_block_size_bytes];
 
         auto source
             = query_context->getInputFormat(input_format, *read_buffer, header, 
-                                            max_insert_block_size_rows_setting, std::nullopt,
-                                            max_insert_block_size_bytes_setting,
-                                            min_insert_block_size_rows_setting,
-                                            min_insert_block_size_bytes_setting);
+                             settings[Setting::max_insert_block_size], std::nullopt,
+                       settings[Setting::max_insert_block_size_bytes],
+                        settings[Setting::min_insert_block_size_rows],
+                       settings[Setting::min_insert_block_size_bytes]);
 
         pipeline = std::make_unique<QueryPipeline>(std::move(source));
         pipeline_executor = std::make_unique<PullingPipelineExecutor>(*pipeline);
@@ -1223,9 +1219,14 @@ namespace
                     const Settings & settings = external_table_context->getSettingsRef();
                     UInt64 max_insert_block_size_rows_setting = settings[Setting::max_insert_block_size];
                     UInt64 max_insert_block_size_bytes_setting = settings[Setting::max_insert_block_size_bytes];
-
+                    UInt64 min_insert_block_size_rows_setting = settings[Setting::min_insert_block_size_rows];
+                    UInt64 min_insert_block_size_bytes_setting = settings[Setting::min_insert_block_size_bytes];
+                    
                     auto in = external_table_context->getInputFormat(
-                        format, *buf, metadata_snapshot->getSampleBlock(), max_insert_block_size_rows_setting, std::nullopt, max_insert_block_size_bytes_setting);
+                        format, *buf, metadata_snapshot->getSampleBlock(), 
+                        max_insert_block_size_rows_setting, std::nullopt, 
+                        max_insert_block_size_bytes_setting, min_insert_block_size_rows_setting,
+                        min_insert_block_size_bytes_setting);
 
                     QueryPipelineBuilder cur_pipeline;
                     cur_pipeline.init(Pipe(std::move(in)));

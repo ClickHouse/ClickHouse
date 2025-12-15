@@ -17,7 +17,10 @@ FileLogSource::FileLogSource(
     const StorageSnapshotPtr & storage_snapshot_,
     const ContextPtr & context_,
     const Names & columns,
-    size_t max_block_size_,
+    size_t max_block_size_rows_,
+    size_t max_block_size_bytes_,
+    size_t min_block_size_rows_,
+    size_t min_block_size_bytes_,
     size_t poll_time_out_,
     size_t stream_number_,
     size_t max_streams_number_,
@@ -27,7 +30,10 @@ FileLogSource::FileLogSource(
     , storage_snapshot(storage_snapshot_)
     , context(context_)
     , column_names(columns)
-    , max_block_size(max_block_size_)
+    , max_block_size_rows(max_block_size_rows_)
+    , max_block_size_bytes(max_block_size_bytes_)
+    , min_block_size_rows(min_block_size_rows_)
+    , min_block_size_bytes(min_block_size_bytes_)
     , poll_time_out(poll_time_out_)
     , stream_number(stream_number_)
     , max_streams_number(max_streams_number_)
@@ -35,7 +41,7 @@ FileLogSource::FileLogSource(
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
     , virtual_header(storage_snapshot->virtual_columns->getSampleBlock())
 {
-    consumer = std::make_unique<FileLogConsumer>(storage, max_block_size, poll_time_out, context, stream_number_, max_streams_number_);
+    consumer = std::make_unique<FileLogConsumer>(storage, max_block_size_rows, poll_time_out, context, stream_number_, max_streams_number_);
 
     const auto & file_infos = storage.getFileInfos();
 
@@ -87,12 +93,18 @@ Chunk FileLogSource::generate()
         empty_buf,
         non_virtual_header,
         context,
-        max_block_size,
+        max_block_size_rows,
         std::nullopt,
-        FormatParserSharedResources::singleThreaded(context->getSettingsRef()));
+        FormatParserSharedResources::singleThreaded(context->getSettingsRef()),
+        nullptr, 
+        false, 
+        CompressionMethod::None, 
+        false,
+        max_block_size_bytes,
+        min_block_size_rows,
+        min_block_size_bytes);
 
     std::optional<String> exception_message;
-    size_t total_rows = 0;
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
     {
@@ -118,7 +130,21 @@ Chunk FileLogSource::generate()
 
     size_t failed_poll_attempts = 0;
 
+    auto below_some_min_thresholds = [&](size_t rows, size_t bytes)-> bool
+    {
+        return (!min_block_size_rows && !min_block_size_bytes) || rows < min_block_size_rows || bytes < min_block_size_bytes;
+    };
+
+    auto below_any_max_thresholds = [&](size_t rows, size_t bytes)-> bool
+    {
+        return (!max_block_size_rows || rows < max_block_size_rows) && (!max_block_size_bytes || bytes < max_block_size_bytes);
+    };
+
     Stopwatch watch;
+
+    size_t total_rows = 0;
+    size_t total_bytes = 0;
+
     while (true)
     {
         exception_message.reset();
@@ -128,12 +154,16 @@ Chunk FileLogSource::generate()
 
         if (new_rows)
         {
+            size_t bytes_added = 0;
             auto file_name = consumer->getFileName();
             auto offset = consumer->getOffset();
+
             for (size_t i = 0; i < new_rows; ++i)
             {
                 virtual_columns[0]->insert(file_name);
                 virtual_columns[1]->insert(offset);
+
+                bytes_added += file_name.size() + sizeof(offset);
                 if (handle_error_mode == StreamingHandleErrorMode::STREAM)
                 {
                     if (exception_message)
@@ -141,15 +171,18 @@ Chunk FileLogSource::generate()
                         const auto & current_record = consumer->getCurrentRecord();
                         virtual_columns[2]->insertData(current_record.data(), current_record.size());
                         virtual_columns[3]->insertData(exception_message->data(), exception_message->size());
+                        bytes_added += current_record.size() + exception_message.size();
                     }
                     else
                     {
                         virtual_columns[2]->insertDefault();
                         virtual_columns[3]->insertDefault();
+                        bytes_added += 2;
                     }
                 }
             }
             total_rows = total_rows + new_rows;
+            total_bytes += bytes_added; 
         }
         else /// poll succeed, but parse failed
         {
@@ -157,7 +190,7 @@ Chunk FileLogSource::generate()
         }
 
         if (!consumer->hasMorePolledRecords()
-            && ((total_rows >= max_block_size) || watch.elapsedMilliseconds() > poll_time_out
+            && ((!below_some_min_thresholds(total_rows, total_bytes) || !below_any_max_thresholds(total_rows, total_bytes)) || watch.elapsedMilliseconds() > poll_time_out
                 || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS))
         {
             break;

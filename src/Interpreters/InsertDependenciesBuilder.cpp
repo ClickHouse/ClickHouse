@@ -114,6 +114,8 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 min_insert_block_size_rows_for_materialized_views;
@@ -702,10 +704,13 @@ private:
         /// Squashing is needed here because the materialized view query can generate a lot of blocks
         /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
         /// and two-level aggregation is triggered).
+        const auto & settings = context->getSettingsRef();
         pipeline.addTransform(std::make_shared<SquashingTransform>(
             pipeline.getSharedHeader(),
-            context->getSettingsRef()[Setting::min_insert_block_size_rows],
-            context->getSettingsRef()[Setting::min_insert_block_size_bytes]));
+            settings[Setting::min_insert_block_size_rows],
+            settings[Setting::min_insert_block_size_bytes],
+            settings[Setting::max_insert_block_size],
+            settings[Setting::max_insert_block_size_bytes]));
 
         pipeline.addTransform(std::make_shared<RestoreChunkInfosTransform>(std::move(chunk_infos), pipeline.getSharedHeader()));
 

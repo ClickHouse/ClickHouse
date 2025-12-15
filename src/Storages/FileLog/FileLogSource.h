@@ -19,7 +19,10 @@ public:
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
         const Names & columns,
-        size_t max_block_size_,
+        size_t max_block_size_rows_,
+        size_t max_block_size_bytes_,
+        size_t min_block_size_rows_,
+        size_t min_block_size_bytes_,
         size_t poll_time_out_,
         size_t stream_number_,
         size_t max_streams_number_,
@@ -41,7 +44,10 @@ private:
     StorageSnapshotPtr storage_snapshot;
     ContextPtr context;
     Names column_names;
-    UInt64 max_block_size;
+    UInt64 max_block_size_rows;
+    UInt64 max_block_size_bytes;
+    UInt64 min_block_size_rows;
+    UInt64 min_block_size_bytes;
 
     size_t poll_time_out;
 

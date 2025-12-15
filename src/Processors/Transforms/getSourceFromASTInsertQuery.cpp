@@ -63,16 +63,12 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
 
     const Settings & settings = context->getSettingsRef();
 
-    UInt64 max_insert_block_size_rows_setting = settings[Setting::max_insert_block_size];
-    UInt64 max_insert_block_size_bytes_setting = settings[Setting::max_insert_block_size_bytes];
-    UInt64 min_insert_block_size_rows_setting = settings[Setting::min_insert_block_size_rows];
-    UInt64 min_insert_block_size_bytes_setting = settings[Setting::min_insert_block_size_bytes];
     /// Create a source from input buffer using format from query
     auto format = context->getInputFormat(ast_insert_query->format, *input_buffer, header,
-                                           max_insert_block_size_rows_setting, std::nullopt,
-                                           max_insert_block_size_bytes_setting,
-                                           min_insert_block_size_rows_setting,
-                                           min_insert_block_size_bytes_setting);
+                                           settings[Setting::max_insert_block_size], std::nullopt,
+                                     settings[Setting::max_insert_block_size_bytes],
+                                      settings[Setting::min_insert_block_size_rows],
+                                     settings[Setting::min_insert_block_size_bytes]);
     format->addBuffer(std::move(input_buffer));
     return format;
 }
