@@ -1070,6 +1070,18 @@ Result:
 └─────┴─────┴───────┘
 ```
 )", 0) \
+    DECLARE(Bool, enable_positional_arguments_for_projections, false, R"(
+Enables or disables supporting positional arguments in PROJECTION definitions. See also [enable_positional_arguments](#enable_positional_arguments) setting.
+
+:::note
+This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
+:::
+
+Possible values:
+
+- 0 — Positional arguments aren't supported.
+- 1 — Positional arguments are supported: column numbers can use instead of column names.
+)", 0) \
     DECLARE(Bool, enable_extended_results_for_datetime_functions, false, R"(
 Enables or disables returning results of type `Date32` with extended range (compared to type `Date`)
 or `DateTime64` with extended range (compared to type `DateTime`).
@@ -2464,8 +2476,6 @@ Possible values:
 
 - 0 for turning off the timer.
 
-**Temporarily disabled in ClickHouse Cloud.**
-
 See also:
 
 - System table [trace_log](/operations/system-tables/trace_log)
@@ -2483,8 +2493,6 @@ Possible values:
             - 1000000000 (once a second) for cluster-wide profiling.
 
 - 0 for turning off the timer.
-
-**Temporarily disabled in ClickHouse Cloud.**
 
 See also:
 
@@ -5929,6 +5937,9 @@ Max attempts to read with backoff
     DECLARE(Bool, cluster_function_process_archive_on_multiple_nodes, true, R"(
 If set to `true`, increases performance of processing archives in cluster functions. Should be set to `false` for compatibility and to avoid errors during upgrade to 25.7+ if using cluster functions with archives on earlier versions.
 )", 0) \
+    DECLARE(UInt64, max_streams_for_files_processing_in_cluster_functions, 0, R"(
+If is not zero, limit the number of threads reading data from files in *Cluster table functions.
+)", 0) \
     DECLARE(Bool, enable_filesystem_cache, true, R"(
 Use cache for remote filesystem. This setting does not turn on/off cache for disks (must be done via disk config), but allows to bypass cache for some queries if intended
 )", 0) \
@@ -6769,6 +6780,14 @@ Replace external dictionary sources to Null on restore. Useful for testing purpo
     DECLARE_WITH_ALIAS(UInt64, allow_experimental_parallel_reading_from_replicas, 0, R"(
 Use up to `max_parallel_replicas` the number of replicas from each shard for SELECT query execution. Reading is parallelized and coordinated dynamically. 0 - disabled, 1 - enabled, silently disable them in case of failure, 2 - enabled, throw an exception in case of failure
 )", BETA, enable_parallel_replicas) \
+    DECLARE(UInt64, automatic_parallel_replicas_mode, 0, R"(
+🚨 HIGHLY EXPERIMENTAL 🚨
+Enable automatic switching to execution with parallel replicas based on collected statistics. Requires enabling `parallel_replicas_local_plan` and providing `cluster_for_parallel_replicas`.
+0 - disabled, 1 - enabled, 2 - only statistics collection is enabled (switching to execution with parallel replicas is disabled).
+)", 0) \
+    DECLARE(UInt64, automatic_parallel_replicas_min_bytes_per_replica, 0, R"(
+Threshold of bytes to read per replica to enable parallel replicas automatically (applies only when `automatic_parallel_replicas_mode`=1). 0 means no threshold.
+)", 0) \
     DECLARE(NonZeroUInt64, max_parallel_replicas, 1000, R"(
 The maximum number of replicas for each shard when executing a query.
 
@@ -6867,6 +6886,9 @@ The timeout in milliseconds for connecting to a remote replica during query exec
 )", BETA) \
     DECLARE(Bool, parallel_replicas_for_cluster_engines, true, R"(
 Replace table function engines with their -Cluster alternatives
+)", 0) \
+    DECLARE(Bool, parallel_replicas_allow_materialized_views, true, R"(
+Allow usage of materialized views with parallel replicas
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, allow_experimental_database_iceberg, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'iceberg'
