@@ -31,7 +31,7 @@ instance = cluster.add_instance(
 
 class RabbitMQMonitor:
     # The RabbitMQMonitor class aims to trace all published and delivered events of RabbitMQ
-    # It servers as an additional check to see whether the error happens in ClickHouse or
+    # It serves as an additional check to see whether the error happens in ClickHouse or
     # in the RabbitMQ server itself.
 
     published = set()

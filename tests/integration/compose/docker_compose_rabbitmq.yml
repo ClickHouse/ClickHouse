@@ -1,6 +1,6 @@
 services:
     rabbitmq1:
-        image: rabbitmq:4.0.4-alpine
+        image: rabbitmq:4.2.1-management-alpine
         stop_grace_period: 5s
         hostname: rabbitmq1
         environment:
