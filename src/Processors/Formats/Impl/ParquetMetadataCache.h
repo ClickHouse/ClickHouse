@@ -138,7 +138,6 @@ private:
 using ParquetMetadataCachePtr = std::shared_ptr<ParquetMetadataCache>;
 
 std::pair<String, String> extractObjectAttributes(ReadBuffer & in);
-std::optional<ObjectMetadata> tryGetObjectMetadata(ReadBuffer & in);
 
 }
 

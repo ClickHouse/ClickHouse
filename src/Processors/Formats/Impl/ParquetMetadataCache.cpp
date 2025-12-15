@@ -11,7 +11,7 @@
 namespace DB
 {
 
-std::optional<ObjectMetadata> tryGetObjectMetadata(ReadBuffer & in)
+static std::optional<ObjectMetadata> tryGetObjectMetadata(ReadBuffer & in)
 {
     auto extract_metadata = [](auto * buffer) -> std::optional<ObjectMetadata> {
         if (!buffer)
