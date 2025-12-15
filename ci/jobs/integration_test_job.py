@@ -80,6 +80,15 @@ def parse_args():
         default=None,
         type=int,
     )
+    parser.add_argument(
+        "--param",
+        help=(
+            "Optional. Comma-separated KEY=VALUE pairs to inject as environment "
+            "variables for pytest (e.g. --param PYTEST_ADDOPTS=-vv,CUSTOM_FLAG=1)"
+        ),
+        type=str,
+        default="",
+    )
     return parser.parse_args()
 
 
@@ -150,6 +159,16 @@ def main():
     is_parallel = False
     is_sequential = False
     is_targeted_check = False
+
+    if args.param:
+        for item in args.param.split(","):
+            print(f"Setting env variable: {item}")
+            key, _, value = item.partition("=")
+            key = key.strip()
+            if not key:
+                continue
+            os.environ[key] = value.strip()
+
     java_path = Shell.get_output(
         "update-alternatives --config java | sed -n 's/.*(providing \/usr\/bin\/java): //p'",
         verbose=True,
@@ -395,7 +414,7 @@ def main():
             error_info.append(test_result_sequential.info)
 
     # Collect logs before rerun
-    files = []
+    attached_files = []
     if not info.is_local_run:
         failed_suits = []
         # Collect docker compose configs used in tests
@@ -411,14 +430,14 @@ def main():
             failed_tests_files.append(f"tests/integration/{failed_suit}")
 
         if failed_suits:
-            files.append(
+            attached_files.append(
                 Utils.compress_files_gz(failed_tests_files, f"{temp_path}/logs.tar.gz")
             )
-            files.append(
+            attached_files.append(
                 Utils.compress_files_gz(config_files, f"{temp_path}/configs.tar.gz")
             )
             if Path("./ci/tmp/docker-in-docker.log").exists():
-                files.append("./ci/tmp/docker-in-docker.log")
+                attached_files.append("./ci/tmp/docker-in-docker.log")
 
     # Rerun failed tests if any to check if failure is reproducible
     if 0 < len(failed_test_cases) < 10 and not (
@@ -445,7 +464,6 @@ def main():
     if not info.is_local_run:
         print("Dumping dmesg")
         Shell.check("dmesg -T > dmesg.log", verbose=True, strict=True)
-        failed_tests_files.append("dmesg.log")
         with open("dmesg.log", "rb") as dmesg:
             dmesg = dmesg.read()
             if (
@@ -458,8 +476,9 @@ def main():
                         name=OOM_IN_DMESG_TEST_NAME, status=Result.StatusExtended.FAIL
                     )
                 )
+                attached_files.append("dmesg.log")
 
-    R = Result.create_from(results=test_results, stopwatch=sw, files=files)
+    R = Result.create_from(results=test_results, stopwatch=sw, files=attached_files)
 
     if has_error:
         R.set_error().set_info("\n".join(error_info))
