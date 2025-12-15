@@ -302,12 +302,20 @@ public:
     };
 
     using Ephemerals = std::unordered_map<int64_t, std::unordered_set<std::string>>;
+
+    enum class WatchType : uint8_t
+    {
+        WATCH,
+        LIST_WATCH,
+        EXIST_WATCH,
+        PERSISTENT_WATCH,
+        PERSISTENT_RECURSIVE_WATCH,
+    };
+
     struct WatchInfo
     {
-        String path;
-        bool is_list_watch;
-        bool is_persistent;
-        bool trigger_on_exists;
+        std::string_view path;
+        WatchType type;
 
         bool operator==(const WatchInfo &) const = default;
     };
