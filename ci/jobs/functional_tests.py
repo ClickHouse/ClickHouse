@@ -211,7 +211,7 @@ def main():
         rerun_count = args.count
     elif is_flaky_check:
         print(f"Rerun count set to 50 for flaky check")
-        rerun_count = 5000  # PMO: bring it back to 50 before merging
+        rerun_count = 50
     elif is_targeted_check:
         print(f"Rerun count set to 5 for targeted check")
         rerun_count = 5
