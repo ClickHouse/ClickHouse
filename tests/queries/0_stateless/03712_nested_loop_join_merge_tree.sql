@@ -11,15 +11,13 @@ CREATE TABLE events
     `Idlc` LowCardinality(UInt64) MATERIALIZED Id,
     `Payload` String,
     `Time` DateTime
-)
-ENGINE = Memory
-;
+) ENGINE = Memory;
 
 INSERT INTO events
 SELECT number, concat('Payload_', toString(number)), toDateTime('2024-01-01 00:00:00') + INTERVAL number MINUTES FROM numbers(500)
 UNION ALL
 SELECT 32, 'Payload_Dup', toDateTime('2024-01-01 00:10:00');
-;
+
 -- Separate inserts to have several blocks in left table to perform multiple lookups
 INSERT INTO events SELECT number, concat('Payload_', toString(number)), toDateTime('2024-01-01 00:00:00') + INTERVAL number MINUTES FROM numbers(500, 500);
 
@@ -70,7 +68,7 @@ SELECT count() + sum(ignore(a + 1)) FROM (
     SELECT 1 as a FROM events AS t0 INNER JOIN attributes AS t1 ON t1.EventId = t0.Id
 );
 
--- Differet key
+-- Different key
 SELECT count(), countIf(t1.Attribute != ''), sum(sipHash64(t1.Attribute))
 FROM events AS t0 INNER JOIN attributes AS t1 ON t1.EventId = t0.Idu32;
 

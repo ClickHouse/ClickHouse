@@ -2,7 +2,6 @@
 
 DROP TABLE IF EXISTS events;
 
-DROP TABLE IF EXISTS events;
 CREATE TABLE events
 (
     `Id` Nullable(UInt64),

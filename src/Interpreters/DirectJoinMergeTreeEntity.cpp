@@ -230,14 +230,10 @@ Chunk DirectJoinMergeTreeEntity::getByKeys(
 
     const auto & found_columns = found_chunk.mutateColumns();
 
-    for (const auto & col : found_columns)
-        col->insertDefault();
+    auto selector = ColumnUInt64::create();
+    auto & selector_data = selector->getData();
+    selector_data.reserve(num_keys);
 
-    auto result_index = ColumnUInt64::create();
-    auto & result_index_data = result_index->getData();
-    result_index_data.reserve(num_keys);
-
-    size_t cumulative_offset = 0;
     for (size_t i = 0; i < num_keys; ++i)
     {
         auto find_result = key_getter.findKey(key_to_rows, i, pool);
@@ -248,26 +244,30 @@ Chunk DirectJoinMergeTreeEntity::getByKeys(
             const auto & matching_rows = find_result.getMapped();
             for (size_t row_idx : matching_rows)
             {
-                result_index_data.push_back(row_idx);
+                selector_data.push_back(row_idx);
                 out_null_map.push_back(1);
-                cumulative_offset += 1;
             }
         }
         else
         {
-            result_index_data.push_back(num_found_rows);
+            /// Key not found: use sentinel index pointing to default values appended below
+            selector_data.push_back(num_found_rows);
             out_null_map.push_back(0);
-            cumulative_offset += 1;
         }
 
-        out_offsets.push_back(cumulative_offset);
+        out_offsets.push_back(selector_data.size());
     }
+
+    /// Append default values to each result column to handle not found keys.
+    /// These serve as the target for the sentinel index (num_found_rows) used when keys are not found.
+    for (const auto & col : found_columns)
+        col->insertDefault();
 
     MutableColumns result_columns;
     for (auto && col : found_columns)
-        result_columns.push_back(IColumn::mutate(col->index(*result_index, 0)));
+        result_columns.push_back(IColumn::mutate(col->index(*selector, 0)));
 
-    return Chunk(std::move(result_columns), cumulative_offset);
+    return Chunk(std::move(result_columns), out_offsets[out_offsets.size() - 1]);
 }
 
 }

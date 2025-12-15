@@ -1640,7 +1640,7 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
             set_used_column_with_duplicates(columns_from_right_table, JoinTableSide::Right);
     }
 
-    trySetStorageInTableJoin(right_table_expression, table_join, planner_context->getQueryContext());
+    trySetStorageInTableJoin(right_table_expression, table_join);
     auto prepared_join_storage = tryGetStorageInTableJoin(right_table_expression, planner_context);
     auto hash_table_stat_cache_key = preCalculateCacheKey(right_table_expression, select_query_info);
     JoinAlgorithmParams params(*planner_context->getQueryContext());
@@ -2352,8 +2352,6 @@ void tryMakeDirectJoinWithMergeTree(const JoinOperator & join_operator,
         /// initializePipeline is done multiple times concurrently, so not to remove parts snapshot
         lookup_reading_step->disableMergeTreePartsSnapshotRemoval();
     }
-    // lookup_read_step = std::make_unique<ReadFromTableStep>(
-    //     lookup_read_step->getOutputHeader(), reading_step->getStorageID().getFullTableName(), TableExpressionModifiers{});
 
     for (const auto & column_name : lookup_plan.getCurrentHeader()->getNames())
         prepared_join.column_mapping[column_name] = column_name;

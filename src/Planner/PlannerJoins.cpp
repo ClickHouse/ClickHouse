@@ -1012,7 +1012,7 @@ std::optional<bool> tryExtractConstantFromJoinNode(const QueryTreeNodePtr & join
     return tryExtractConstantFromConditionNode(join_node_typed.getJoinExpression());
 }
 
-void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::shared_ptr<TableJoin> & table_join, const ContextPtr &)
+void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::shared_ptr<TableJoin> & table_join)
 {
     StoragePtr storage;
 

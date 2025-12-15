@@ -117,6 +117,28 @@ void DirectKeyValueJoin::checkTypesOfKeys(const Block & block) const
     }
 }
 
+static void selectFirstMatchForEachKey(const IColumn::Offsets & offsets, MutableColumns & columns, NullMap & null_map)
+{
+    size_t total_rows = offsets.back();
+    IColumn::Filter filter(total_rows, 0);
+    NullMap filtered_null_map(offsets.size(), 0);
+
+    size_t offset = 0;
+    for (size_t i = 0; i < offsets.size(); ++i)
+    {
+        size_t n = offsets[i] - offsets[i - 1];
+        if (n == 0)
+            continue;
+        filtered_null_map[i] = null_map[offset];
+        filter[offset] = 1;
+        offset += n;
+    }
+
+    for (auto && col : columns)
+        col = IColumn::mutate(col->filter(filter, offsets.size()));
+    null_map = std::move(filtered_null_map);
+}
+
 JoinResultPtr DirectKeyValueJoin::joinBlock(Block block)
 {
     const String & key_name = table_join->getOnlyClause().key_names_left[0];
@@ -152,26 +174,9 @@ JoinResultPtr DirectKeyValueJoin::joinBlock(Block block)
         }
         else
         {
-            /// For ANY semantics with offsets, right columns are replicated
+            /// For ANY/ANTI/SEMI semantics right columns are not replicated
             /// We need to 'unreplicate' them by keeping only the first match
-            size_t total_rows = offsets.back();
-            IColumn::Filter filter(total_rows, 0);
-            NullMap filtered_null_map(offsets.size(), 0);
-
-            size_t offset = 0;
-            for (size_t i = 0; i < offsets.size(); ++i)
-            {
-                size_t n = offsets[i] - offsets[i - 1];
-                if (n == 0)
-                    continue;
-                filtered_null_map[i] = null_map[offset];
-                filter[offset] = 1;
-                offset += n;
-            }
-
-            for (auto && col : result_columns)
-                col = IColumn::mutate(col->filter(filter, offsets.size()));
-            null_map = std::move(filtered_null_map);
+            selectFirstMatchForEachKey(offsets, result_columns, null_map);
         }
     }
 
