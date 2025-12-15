@@ -1210,6 +1210,13 @@ void SerializationVariant::deserializeWholeText(IColumn & column, ReadBuffer & i
 {
     String field;
     readStringUntilEOF(field, istr);
+    /// Treat empty string as NULL for Variant types (since Variant can contain NULL)
+    if (field.empty())
+    {
+        auto & column_variant = assert_cast<ColumnVariant &>(column);
+        column_variant.insertDefault();
+        return;
+    }
     if (!tryDeserializeWholeTextImpl(column, field, settings))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse text value of type {} here: {}", variant_name, field);
 }

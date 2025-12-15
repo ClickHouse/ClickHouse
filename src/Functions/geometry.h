@@ -150,6 +150,10 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// Geometry functions work with the Geometry type directly which is a Variant with custom name,
+    /// and not with individual variant alternatives. So, don't use default implementation.
+    bool useDefaultImplementationForVariant() const override { return false; }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         auto res_column = ColumnFloat64::create();
