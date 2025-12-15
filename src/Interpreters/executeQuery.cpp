@@ -1721,14 +1721,6 @@ static BlockIO executeQueryImpl(
                         limits.size_limits = SizeLimits(settings[Setting::max_result_rows], settings[Setting::max_result_bytes], settings[Setting::result_overflow_mode]);
                     }
 
-                    if (auto * insert_interpreter = typeid_cast<InterpreterInsertQuery *>(interpreter.get()))
-                    {
-                        /// Save insertion table (not table function). TODO: support remote() table function.
-                        auto table_id = insert_interpreter->getDatabaseTable();
-                        if (!table_id.empty())
-                            context->setInsertionTable(std::move(table_id), insert_interpreter->getInsertColumnNames());
-                    }
-
                     if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(interpreter.get()))
                     {
                         create_interpreter->setIsRestoreFromBackup(flags.distributed_backup_restore);
@@ -2101,9 +2093,8 @@ void executeQuery(
 
                     fiu_do_on(FailPoints::execute_query_calling_empty_set_result_func_on_exception,
                     {
-                        // it will throw std::bad_function_call
-                        set_result_details = {};
-                        set_result_details(result_details);
+                        // emulate calling empty set_result_details() callback
+                        throw std::bad_function_call{};
                     });
 
                     if (set_result_details)

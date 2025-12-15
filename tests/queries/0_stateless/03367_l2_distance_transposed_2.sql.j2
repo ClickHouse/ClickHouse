@@ -109,6 +109,20 @@ SELECT round(L2DistanceTransposed([1.0, 2.0, 3.0]::QBit(Float32, 3), range(rand(
 SELECT round(L2DistanceTransposed([1.0, 2.0, 3.0]::QBit(Float32, 3), materialize([1, 2, 3])::Array(Float32), 32), 5);
 
 
+-- Constant QBit query vector and non-constant reference vector
+-- https://github.com/ClickHouse/ClickHouse/issues/91517
+SELECT
+    number,
+    round(L2DistanceTransposed([0,0,0]::QBit(Float64, 3), [toFloat64(number), toFloat64(number), toFloat64(number)], 64), 5) AS dist
+FROM numbers(3);
+
+DROP TABLE IF EXISTS vectors;
+CREATE TABLE vectors (id UInt32, ref Array(Float64)) ENGINE = Memory;
+INSERT INTO vectors VALUES (0, [0, 1, 2, 3, 4, 5, 6, 7]), (1, [1, 2, 3, 4, 5, 6, 7, 8]);
+SELECT id, round(L2DistanceTransposed([0,0,0,0,0,0,0,0]::QBit(Float64, 8), ref, 64), 2) AS dist FROM vectors ORDER BY dist LIMIT 5;
+DROP TABLE vectors;
+
+
 -- Others
 SELECT round(L2DistanceTransposed(CAST([0.0, 0.1], 'QBit(Float64, 2)'), [0.1, 0.2], 64), 5) AS distance;
 SELECT round(L2DistanceTransposed(CAST([0.0, 0.1], 'QBit(Float32, 2)'), [0.1, 0.2], 32), 5) AS distance; -- { serverError TYPE_MISMATCH }
