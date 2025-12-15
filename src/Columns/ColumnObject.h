@@ -284,7 +284,8 @@ public:
 
     /// Due to previous bugs we can have an invalid state where we have some path
     /// both in shared data and in dynamic paths and only one value is not NULL.
-    /// This methods repairs the column and removes this duplicate.
+    /// This methods repairs the column and removes this duplicate by removing path
+    /// and value from shared data and keeping only dynamic path containing non-Null value.
     /// offset argument - is the offset from which we should check for duplicates.
     void repairDuplicatesInDynamicPathsAndSharedData(size_t offset = 0);
 
