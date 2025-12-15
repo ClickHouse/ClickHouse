@@ -143,7 +143,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_receive_timeout_ms", 3000, 3000, "New setting"},
             {"distributed_cache_send_timeout_ms", 3000, 3000, "New setting"},
             {"distributed_cache_tcp_keep_alive_timeout_ms", 2900, 2900, "New setting"},
-            {"distributed_shard_retry_count", 0, 1, "New setting to enable retries in distributed queries on different replicas when encountering retryable errors."},
             {"enable_positional_arguments_for_projections", true, false, "New setting to control positional arguments in projections."},
         });
         addSettingsChanges(settings_changes_history, "25.9",
