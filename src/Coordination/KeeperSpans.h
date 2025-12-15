@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/HistogramMetrics.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/thread_local_rng.h>
@@ -9,6 +10,19 @@
 #include <string>
 #include <chrono>
 #include <optional>
+
+namespace HistogramMetrics
+{
+    extern Metric & KeeperClientQueueDuration;
+    extern Metric & KeeperReceiveRequestTime;
+    extern Metric & KeeperDispatcherRequestsQueueTime;
+    extern Metric & KeeperWritePreCommitTime;
+    extern Metric & KeeperWriteCommitTime;
+    extern Metric & KeeperDispatcherResponsesQueueTime;
+    extern Metric & KeeperSendResponseTime;
+    extern Metric & KeeperReadWaitForWriteTime;
+    extern Metric & KeeperReadProcessTime;
+}
 
 namespace Coordination
 {
@@ -23,25 +37,27 @@ struct MaybeSpan
     const char * operation_name;
     const OpenTelemetry::SpanKind kind;
     std::optional<OpenTelemetry::Span> span;
+    UInt64 start_time_us = 0;
+    HistogramMetrics::Metric & histogram;
 
-    MaybeSpan(const char * name, OpenTelemetry::SpanKind k)
-        : operation_name(name), kind(k) {}
+    MaybeSpan(const char * name, OpenTelemetry::SpanKind k, HistogramMetrics::Metric & hist)
+        : operation_name(name), kind(k), histogram(hist) {}
 };
 
 struct ZooKeeperOpentelemetrySpans
 {
     // Keeper client spans
-    MaybeSpan client_requests_queue{"zookeeper.client.requests_queue", OpenTelemetry::SpanKind::INTERNAL};
+    MaybeSpan client_requests_queue{"zookeeper.client.requests_queue", OpenTelemetry::SpanKind::INTERNAL, HistogramMetrics::KeeperClientQueueDuration};
 
     // Keeper server spans
-    MaybeSpan receive_request{"keeper.receive_request", OpenTelemetry::SpanKind::SERVER};
-    MaybeSpan dispatcher_requests_queue{"keeper.dispatcher.requests_queue", OpenTelemetry::SpanKind::INTERNAL};
-    MaybeSpan dispatcher_responses_queue{"keeper.dispatcher.responses_queue", OpenTelemetry::SpanKind::INTERNAL};
-    MaybeSpan send_response{"keeper.send_response", OpenTelemetry::SpanKind::SERVER};
-    MaybeSpan read_wait_for_write{"keeper.read.wait_for_write", OpenTelemetry::SpanKind::INTERNAL};
-    MaybeSpan read_process{"keeper.read.process", OpenTelemetry::SpanKind::INTERNAL};
-    MaybeSpan pre_commit{"keeper.write.pre_commit", OpenTelemetry::SpanKind::INTERNAL};
-    MaybeSpan commit{"keeper.write.commit", OpenTelemetry::SpanKind::INTERNAL};
+    MaybeSpan receive_request{"keeper.receive_request", OpenTelemetry::SpanKind::SERVER, HistogramMetrics::KeeperReceiveRequestTime};
+    MaybeSpan dispatcher_requests_queue{"keeper.dispatcher.requests_queue", OpenTelemetry::SpanKind::INTERNAL, HistogramMetrics::KeeperDispatcherRequestsQueueTime};
+    MaybeSpan dispatcher_responses_queue{"keeper.dispatcher.responses_queue", OpenTelemetry::SpanKind::INTERNAL, HistogramMetrics::KeeperDispatcherResponsesQueueTime};
+    MaybeSpan send_response{"keeper.send_response", OpenTelemetry::SpanKind::SERVER, HistogramMetrics::KeeperSendResponseTime};
+    MaybeSpan read_wait_for_write{"keeper.read.wait_for_write", OpenTelemetry::SpanKind::INTERNAL, HistogramMetrics::KeeperReadWaitForWriteTime};
+    MaybeSpan read_process{"keeper.read.process", OpenTelemetry::SpanKind::INTERNAL, HistogramMetrics::KeeperReadProcessTime};
+    MaybeSpan pre_commit{"keeper.write.pre_commit", OpenTelemetry::SpanKind::INTERNAL, HistogramMetrics::KeeperWritePreCommitTime};
+    MaybeSpan commit{"keeper.write.commit", OpenTelemetry::SpanKind::INTERNAL, HistogramMetrics::KeeperWriteCommitTime};
 
     static UInt64 now()
     {

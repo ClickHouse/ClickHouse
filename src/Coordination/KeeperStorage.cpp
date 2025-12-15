@@ -6,7 +6,6 @@
 #include <boost/algorithm/string.hpp>
 #include <Poco/SHA1Engine.h>
 
-#include <Common/HistogramMetrics.h>
 #include <Common/Base64.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -48,11 +47,6 @@ namespace ProfileEvents
     extern const Event KeeperProcessElapsedMicroseconds;
 }
 
-namespace HistogramMetrics
-{
-    extern Metric & KeeperServerPreprocessRequestDuration;
-    extern MetricFamily & KeeperServerProcessRequestDuration;
-}
 
 namespace DB
 {
@@ -3136,8 +3130,6 @@ KeeperDigest KeeperStorage<Container>::preprocessRequest(
         }
 
         ProfileEvents::increment(ProfileEvents::KeeperPreprocessElapsedMicroseconds, elapsed_us);
-
-        HistogramMetrics::observe(HistogramMetrics::KeeperServerPreprocessRequestDuration, elapsed_ms);
     });
 
     if (!initialized)
@@ -3352,11 +3344,6 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
         }
 
         ProfileEvents::increment(ProfileEvents::KeeperProcessElapsedMicroseconds, elapsed_us);
-
-        HistogramMetrics::observe(
-            HistogramMetrics::KeeperServerProcessRequestDuration,
-            {toOperationTypeMetricLabel(zk_request->getOpNum())},
-            elapsed_ms);
     });
 
     if (!initialized)

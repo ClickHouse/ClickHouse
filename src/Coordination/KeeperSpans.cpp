@@ -44,6 +44,8 @@ void ZooKeeperOpentelemetrySpans::maybeInitialize(
 {
     chassert(maybe_span.span == std::nullopt);
 
+    maybe_span.start_time_us = start_time_us;
+
     if (!parent_context)
         return;
 
@@ -64,6 +66,10 @@ void ZooKeeperOpentelemetrySpans::maybeFinalize(
     const String & error_message,
     UInt64 finish_time_us)
 {
+    chassert(maybe_span.start_time_us != 0);
+
+    maybe_span.histogram.observe((finish_time_us - maybe_span.start_time_us) / 1000);
+
     if (!maybe_span.span)
         return;
 

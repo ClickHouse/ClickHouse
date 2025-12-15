@@ -22,7 +22,6 @@
 #include <Common/EventNotifier.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
-#include <Common/HistogramMetrics.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
@@ -92,8 +91,6 @@ namespace HistogramMetrics
     extern Metric & KeeperResponseTimeReadonly;
     extern Metric & KeeperResponseTimeWrite;
     extern Metric & KeeperResponseTimeMulti;
-    extern Metric & KeeperClientQueueDuration;
-    extern MetricFamily & KeeperClientRoundtripDuration;
 }
 
 namespace
@@ -820,23 +817,15 @@ void ZooKeeper::sendThread()
                     /// After we popped element from the queue, we must register callbacks (even in the case when expired == true right now),
                     ///  because they must not be lost (callbacks must be called because the user will wait for them).
 
-                    auto dequeue_ts = clock::now();
-
                     ZooKeeperOpentelemetrySpans::maybeFinalize(
                         info.request->spans.client_requests_queue,
                         {
                             {"zookeeper_client.requests_queue.size", std::to_string(requests_queue.size())},
                         });
 
-                    chassert(info.request->enqueue_ts != std::chrono::steady_clock::time_point{});
-                    HistogramMetrics::observe(
-                        HistogramMetrics::KeeperClientQueueDuration,
-                        std::chrono::duration_cast<std::chrono::milliseconds>(dequeue_ts - info.request->enqueue_ts).count());
-
                     if (info.request->xid != close_xid)
                     {
                         CurrentMetrics::add(CurrentMetrics::ZooKeeperRequest);
-                        info.request->send_ts = clock::now();
                         std::lock_guard lock(operations_mutex);
                         operations[info.request->xid] = info;
                     }
@@ -1056,12 +1045,6 @@ void ZooKeeper::receiveEvent()
         chassert(request_info.request->create_ts != std::chrono::steady_clock::time_point{});
         elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(receive_ts - request_info.request->create_ts).count();
         ProfileEvents::increment(ProfileEvents::ZooKeeperWaitMicroseconds, elapsed_microseconds);
-
-        chassert(request_info.request->send_ts != std::chrono::steady_clock::time_point{});
-        HistogramMetrics::observe(
-            HistogramMetrics::KeeperClientRoundtripDuration,
-            {toOperationTypeMetricLabel(request_info.request->getOpNum())},
-            std::chrono::duration_cast<std::chrono::milliseconds>(receive_ts - request_info.request->send_ts).count());
     }
 
     try
@@ -1424,8 +1407,6 @@ void ZooKeeper::pushRequest(RequestInfo && info)
         {
             info.request->tracing_context = current_trace_context;
         }
-
-        info.request->enqueue_ts = clock::now();
 
         ZooKeeperOpentelemetrySpans::maybeInitialize(info.request->spans.client_requests_queue, info.request->tracing_context);
 
@@ -1850,8 +1831,6 @@ void ZooKeeper::close()
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperCloseRequest>(std::move(request));
-
-    request_info.request->enqueue_ts = clock::now();
 
     if (!requests_queue.tryPush(std::move(request_info), args.operation_timeout_ms))
         throw Exception(Error::ZOPERATIONTIMEOUT, "Cannot push close request to queue within operation timeout of {} ms", args.operation_timeout_ms);
