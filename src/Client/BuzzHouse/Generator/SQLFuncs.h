@@ -1248,6 +1248,7 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCreadWKTMultiLineString, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCreadWKTRing, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCpolygonsWithinSpherical, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCreadWKB, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCreadWKBMultiPolygon, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCreadWKBPolygon, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCreadWKBPoint, 0, 0, 1, 1),
