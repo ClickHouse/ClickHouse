@@ -805,7 +805,10 @@ def test_nats_overloaded_insert(nats_cluster):
             values.append("({i}, {i})".format(i=i))
         values = ",".join(values)
 
-        instance.query_with_retry("INSERT INTO test.nats_overload VALUES {}".format(values))
+        instance.query_with_retry(
+            "INSERT INTO test.nats_overload VALUES {}".format(values),
+            settings={"receive_timeout": 600},
+        )
 
     threads = []
     threads_num = 5
