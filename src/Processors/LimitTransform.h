@@ -9,6 +9,9 @@
 namespace DB
 {
 
+class RuntimeDataflowStatisticsCacheUpdater;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
+
 /// Implementation for LIMIT N OFFSET M
 /// This processor support multiple inputs and outputs (the same number).
 /// Each pair of input and output port works independently.
@@ -53,15 +56,22 @@ private:
     std::vector<PortsData> ports_data;
     size_t num_finished_port_pairs = 0;
 
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
+
     Chunk makeChunkWithPreviousRow(const Chunk & current_chunk, UInt64 row_num) const;
     ColumnRawPtrs extractSortColumns(const Columns & columns) const;
     bool sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort_columns, UInt64 current_chunk_row_num) const;
 
 public:
     LimitTransform(
-        SharedHeader header_, UInt64 limit_, UInt64 offset_, size_t num_streams = 1,
-        bool always_read_till_end_ = false, bool with_ties_ = false,
-        SortDescription description_ = {});
+        SharedHeader header_,
+        UInt64 limit_,
+        UInt64 offset_,
+        size_t num_streams = 1,
+        bool always_read_till_end_ = false,
+        bool with_ties_ = false,
+        SortDescription description_ = {},
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
 
     String getName() const override { return "Limit"; }
 
