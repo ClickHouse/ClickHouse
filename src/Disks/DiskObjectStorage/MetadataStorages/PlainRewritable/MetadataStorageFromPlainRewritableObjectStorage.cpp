@@ -1,9 +1,10 @@
-#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/FlatDirectoryStructureKeyGenerator.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/InMemoryDirectoryTree.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/NormalizedPath.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StaticDirectoryIterator.h>
 
 #include <cstddef>
@@ -14,9 +15,11 @@
 #include <IO/SharedThreadPools.h>
 #include <Storages/PartitionCommands.h>
 #include <Poco/Timestamp.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
+#include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
@@ -36,6 +39,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace FailPoints
@@ -45,10 +49,6 @@ namespace FailPoints
 
 namespace
 {
-
-constexpr auto PREFIX_PATH_FILE_NAME = "prefix.path";
-constexpr auto METADATA_PATH_TOKEN = "__meta/";
-constexpr auto ROOT_FOLDER_TOKEN = "__root";
 
 fs::path normalizeDirectoryPath(const fs::path & path)
 {
@@ -89,11 +89,11 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
     /// 3. Checking if the value of `prefix.path` changed for any already existing directory
     ///    and apply the corresponding rename.
 
-    bool has_metadata = object_storage->existsOrHasAnyChild(metadata_key_prefix);
+    bool has_metadata = object_storage->existsOrHasAnyChild(layout->constructMetadataDirectoryKey());
 
     std::mutex remote_layout_mutex;
     std::unordered_map<std::string, DirectoryRemoteInfo> remote_layout;
-    remote_layout[""] = DirectoryRemoteInfo{ROOT_FOLDER_TOKEN, "fake_etag", 0, {}};
+    remote_layout[""] = DirectoryRemoteInfo{PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, "fake_etag", 0, {}};
 
     if (is_initial_load)
     {
@@ -121,38 +121,25 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
     try
     {
         /// Root folder is a special case. Files are stored as /__root/{file-name}.
-        for (auto iterator = object_storage->iterate(fs::path(object_storage->getCommonKeyPrefix()) / ROOT_FOLDER_TOKEN, 0, /*with_tags=*/ false); iterator->isValid(); iterator->next())
+        for (auto iterator = object_storage->iterate(layout->constructRootFilesDirectoryKey(), 0, /*with_tags=*/ false); iterator->isValid(); iterator->next())
         {
             auto remote_file = iterator->current();
-            remote_layout[""].files.emplace(fs::path(remote_file->getPath()).filename(), FileRemoteInfo{
+            remote_layout[""].files.emplace(remote_file->getFileName(), FileRemoteInfo{
                 .bytes_size = remote_file->metadata->size_bytes,
                 .last_modified = remote_file->metadata->last_modified.epochTime(),
             });
         }
 
-        for (auto iterator = object_storage->iterate(metadata_key_prefix, 0, /*with_tags=*/ false); iterator->isValid(); iterator->next())
+        for (auto iterator = object_storage->iterate(layout->constructMetadataDirectoryKey(), 0, /*with_tags=*/ false); iterator->isValid(); iterator->next())
         {
-            auto file = iterator->current();
-            String path = file->getPath();
-
-            /// __meta/randomlygenerated/prefix.path
-            auto remote_metadata_path = fs::path(path);
-            if (remote_metadata_path.filename() != PREFIX_PATH_FILE_NAME)
+            const auto file = iterator->current();
+            const auto remote_path = layout->parseDirectoryObjectKey(file->getPath());
+            if (!remote_path.has_value())
                 continue;
-
-            chassert(remote_metadata_path.has_parent_path());
-            chassert(remote_metadata_path.string().starts_with(metadata_key_prefix));
-
-            /// randomlygenerated/prefix.path
-            auto suffix = remote_metadata_path.string().substr(metadata_key_prefix.size());
-            auto rel_path = fs::path(std::move(suffix));
-
-            /// randomlygenerated
-            auto remote_path = rel_path.parent_path();
 
             if (do_not_load_unchanged_directories)
             {
-                if (auto directory_info = fs_tree->lookupDirectoryIfNotChanged(remote_path, file->metadata->etag))
+                if (auto directory_info = fs_tree->lookupDirectoryIfNotChanged(remote_path.value(), file->metadata->etag))
                 {
                     /// Already loaded.
                     std::lock_guard guard(remote_layout_mutex);
@@ -162,11 +149,11 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                 }
             }
 
-            runner([remote_metadata_path, remote_path, path, metadata = file->metadata, &log, &settings, this, &remote_layout, &remote_layout_mutex]
+            runner([remote_path, object_path = file->getPath(), metadata = file->metadata, &log, &settings, this, &remote_layout, &remote_layout_mutex]
             {
                 DB::setThreadName(ThreadName::PLAIN_REWRITABLE_META_LOAD);
 
-                StoredObject object{path};
+                StoredObject object{object_path};
                 String local_path;
                 /// Assuming that local and the object storage clocks are synchronized.
                 Poco::Timestamp last_modified = metadata->last_modified;
@@ -175,7 +162,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                 try
                 {
                     if (metadata->size_bytes == 0)
-                        LOG_TRACE(log, "The object with the key '{}' has size 0, skipping the read", remote_metadata_path);
+                        LOG_TRACE(log, "The object with the key '{}' has size 0, skipping the read", object_path);
                     else
                     {
                         auto read_buf = object_storage->readObject(object, settings);
@@ -183,30 +170,23 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                     }
 
                     /// Load the list of files inside the directory.
-                    fs::path full_remote_path = object_storage->getCommonKeyPrefix() / remote_path;
-                    size_t full_prefix_length = full_remote_path.string().size() + 1; /// common/key/prefix/randomlygenerated/
-                    for (auto dir_iterator = object_storage->iterate(full_remote_path, 0, /*with_tags=*/ false); dir_iterator->isValid(); dir_iterator->next())
+                    for (auto dir_iterator = object_storage->iterate(layout->constructFilesDirectoryKey(remote_path.value()), 0, /*with_tags=*/ false); dir_iterator->isValid(); dir_iterator->next())
                     {
-                        auto remote_file = dir_iterator->current();
-                        String remote_file_path = remote_file->getPath();
-                        chassert(remote_file_path.starts_with(full_remote_path.string()));
-                        auto filename = fs::path(remote_file_path).filename();
-                        /// Skip metadata files.
-                        if (filename == PREFIX_PATH_FILE_NAME)
+                        const auto remote_file = dir_iterator->current();
+                        const auto unpacked_remote_file_path = layout->parseFileObjectKey(remote_file->getPath());
+                        if (!unpacked_remote_file_path.has_value())
                         {
-                            LOG_WARNING(log, "Legacy layout is in use, ignoring '{}'", remote_file_path);
+                            LOG_WARNING(log, "Legacy layout is in use, ignoring '{}'", remote_file->getPath());
                             continue;
                         }
 
-                        /// Check that the file is a direct child.
-                        chassert(full_prefix_length < remote_file_path.size());
-                        if (std::string_view(remote_file_path.data() + full_prefix_length) == filename)
-                        {
-                            files.emplace(std::move(filename), FileRemoteInfo{
-                                .bytes_size = remote_file->metadata->size_bytes,
-                                .last_modified = remote_file->metadata->last_modified.epochTime(),
-                            });
-                        }
+                        const auto & [directory_remote_path, filename] = unpacked_remote_file_path.value();
+                        chassert(directory_remote_path == remote_path);
+
+                        files.emplace(filename, FileRemoteInfo{
+                            .bytes_size = remote_file->metadata->size_bytes,
+                            .last_modified = remote_file->metadata->last_modified.epochTime(),
+                        });
                     }
 
 #if USE_AZURE_BLOB_STORAGE
@@ -244,7 +224,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                 }
 
                 std::lock_guard guard(remote_layout_mutex);
-                remote_layout[local_path] = DirectoryRemoteInfo{remote_path, metadata->etag, last_modified.epochTime(), std::move(files)};
+                remote_layout[local_path] = DirectoryRemoteInfo{remote_path.value(), metadata->etag, last_modified.epochTime(), std::move(files)};
             });
         }
     }
@@ -266,9 +246,8 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
     , metrics(createPlainRewritableMetrics(object_storage->getType()))
     , storage_path_prefix(std::move(storage_path_prefix_))
     , storage_path_full(fs::path(object_storage->getRootPrefix()) / storage_path_prefix)
-    , metadata_key_prefix(fs::path(object_storage->getCommonKeyPrefix()) / METADATA_PATH_TOKEN)
     , fs_tree(std::make_shared<InMemoryDirectoryTree>(metrics->directory_map_size, metrics->file_count))
-    , key_generator(std::make_shared<FlatDirectoryStructureKeyGenerator>(object_storage->getCommonKeyPrefix(), fs_tree))
+    , layout(std::make_shared<PlainRewritableLayout>(object_storage->getCommonKeyPrefix()))
 {
     load(/*is_initial_load=*/true, /*do_not_load_unchanged_directories=*/false);
 }
@@ -351,13 +330,17 @@ StoredObjects MetadataStorageFromPlainRewritableObjectStorage::getStorageObjects
 
 std::optional<StoredObjects> MetadataStorageFromPlainRewritableObjectStorage::getStorageObjectsIfExist(const std::string & path) const
 {
-    if (auto object_size = getFileSizeIfExists(path))
-    {
-        auto object_key = key_generator->generate(path);
-        return StoredObjects{StoredObject(object_key.serialize(), path, *object_size)};
-    }
+    const auto object_size = getFileSizeIfExists(path);
+    if (!object_size)
+        return std::nullopt;
 
-    return std::nullopt;
+    const auto normalized_path = normalizePath(path);
+    const auto directory_remote_info = fs_tree->getDirectoryRemoteInfo(normalized_path.parent_path());
+    if (!directory_remote_info)
+        return std::nullopt;
+
+    auto object_key = layout->constructFileObjectKey(directory_remote_info->remote_path, normalized_path.filename());
+    return StoredObjects{StoredObject(object_key, path, object_size.value())};
 }
 
 Poco::Timestamp MetadataStorageFromPlainRewritableObjectStorage::getLastModified(const std::string & path) const
@@ -387,6 +370,7 @@ std::optional<Poco::Timestamp> MetadataStorageFromPlainRewritableObjectStorage::
 
 MetadataStorageFromPlainRewritableObjectStorageTransaction::MetadataStorageFromPlainRewritableObjectStorageTransaction(MetadataStorageFromPlainRewritableObjectStorage & metadata_storage_)
     : metadata_storage(metadata_storage_)
+    , uncommitted_fs_tree(std::make_shared<InMemoryDirectoryTree>(CurrentMetrics::end(), CurrentMetrics::end()))
 {
 }
 
@@ -408,10 +392,9 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createMetadataF
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageWriteFileOperation>(
         path,
         objects.front(),
-        metadata_storage.metadata_key_prefix,
-        metadata_storage.fs_tree,
-        metadata_storage.key_generator,
         metadata_storage.object_storage,
+        metadata_storage.fs_tree,
+        metadata_storage.layout,
         metadata_storage.metrics));
 }
 
@@ -424,13 +407,16 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectory
         return;
     }
 
+    if (!uncommitted_fs_tree->getDirectoryRemoteInfo(path))
+        uncommitted_fs_tree->recordDirectoryPath(path, DirectoryRemoteInfo{ .remote_path = getRandomASCIIString(32), .etag = "", .files = {}});
+
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>(
         /*recursive=*/false,
         std::move(normalized_path),
-        metadata_storage.metadata_key_prefix,
-        metadata_storage.fs_tree,
-        metadata_storage.key_generator,
+        uncommitted_fs_tree->getDirectoryRemoteInfo(path)->remote_path,
         metadata_storage.object_storage,
+        metadata_storage.fs_tree,
+        metadata_storage.layout,
         metadata_storage.metrics));
 }
 
@@ -443,25 +429,30 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectory
         return;
     }
 
+    if (!uncommitted_fs_tree->getDirectoryRemoteInfo(path))
+        uncommitted_fs_tree->recordDirectoryPath(path, DirectoryRemoteInfo{ .remote_path = getRandomASCIIString(32), .etag = "", .files = {}});
+
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>(
         /*recursive=*/true,
         std::move(normalized_path),
-        metadata_storage.metadata_key_prefix,
-        metadata_storage.fs_tree,
-        metadata_storage.key_generator,
+        uncommitted_fs_tree->getDirectoryRemoteInfo(path)->remote_path,
         metadata_storage.object_storage,
+        metadata_storage.fs_tree,
+        metadata_storage.layout,
         metadata_storage.metrics));
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveDirectory(const std::string & path_from, const std::string & path_to)
 {
+    if (uncommitted_fs_tree->existsDirectory(path_from).first)
+        uncommitted_fs_tree->moveDirectory(path_from, path_to);
+
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation>(
         normalizeDirectoryPath(path_from),
         normalizeDirectoryPath(path_to),
-        metadata_storage.metadata_key_prefix,
-        metadata_storage.fs_tree,
-        metadata_storage.key_generator,
         metadata_storage.object_storage,
+        metadata_storage.fs_tree,
+        metadata_storage.layout,
         metadata_storage.metrics));
 }
 
@@ -469,10 +460,9 @@ UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromPlainRewritableObjectSt
 {
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation>(
         path,
-        metadata_storage.metadata_key_prefix,
-        metadata_storage.fs_tree,
-        metadata_storage.key_generator,
         metadata_storage.object_storage,
+        metadata_storage.fs_tree,
+        metadata_storage.layout,
         metadata_storage.metrics));
 
     return std::make_shared<UnlinkMetadataFileOperationOutcome>(UnlinkMetadataFileOperationOutcome{0});
@@ -480,23 +470,29 @@ UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromPlainRewritableObjectSt
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeDirectory(const std::string & path)
 {
+    if (!normalizePath(path).empty())
+        if (uncommitted_fs_tree->existsDirectory(path).first)
+            uncommitted_fs_tree->unlinkTree(path);
+
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation>(
         normalizeDirectoryPath(path),
-        metadata_storage.metadata_key_prefix,
-        metadata_storage.fs_tree,
-        metadata_storage.key_generator,
         metadata_storage.object_storage,
+        metadata_storage.fs_tree,
+        metadata_storage.layout,
         metadata_storage.metrics));
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeRecursive(const std::string & path)
 {
+    if (!normalizePath(path).empty())
+        if (uncommitted_fs_tree->existsDirectory(path).first)
+            uncommitted_fs_tree->unlinkTree(path);
+
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation>(
         path,
-        metadata_storage.metadata_key_prefix,
-        metadata_storage.fs_tree,
-        metadata_storage.key_generator,
         metadata_storage.object_storage,
+        metadata_storage.fs_tree,
+        metadata_storage.layout,
         metadata_storage.metrics));
 }
 
@@ -505,10 +501,9 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCopyFileOperation>(
         path_from,
         path_to,
-        metadata_storage.metadata_key_prefix,
-        metadata_storage.fs_tree,
-        metadata_storage.key_generator,
         metadata_storage.object_storage,
+        metadata_storage.fs_tree,
+        metadata_storage.layout,
         metadata_storage.metrics));
 }
 
@@ -518,10 +513,9 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveFile(const 
         /*replaceable=*/false,
         path_from,
         path_to,
-        metadata_storage.metadata_key_prefix,
-        metadata_storage.fs_tree,
-        metadata_storage.key_generator,
         metadata_storage.object_storage,
+        metadata_storage.fs_tree,
+        metadata_storage.layout,
         metadata_storage.metrics));
 }
 
@@ -531,10 +525,9 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::replaceFile(con
         /*replaceable=*/true,
         path_from,
         path_to,
-        metadata_storage.metadata_key_prefix,
-        metadata_storage.fs_tree,
-        metadata_storage.key_generator,
         metadata_storage.object_storage,
+        metadata_storage.fs_tree,
+        metadata_storage.layout,
         metadata_storage.metrics));
 }
 
@@ -548,9 +541,24 @@ std::optional<StoredObjects> MetadataStorageFromPlainRewritableObjectStorageTran
     return metadata_storage.getStorageObjectsIfExist(path);
 }
 
-ObjectStorageKey MetadataStorageFromPlainRewritableObjectStorageTransaction::generateObjectKeyForPath(const std::string & path) const
+ObjectStorageKey MetadataStorageFromPlainRewritableObjectStorageTransaction::generateObjectKeyForPath(const std::string & path)
 {
-    return metadata_storage.key_generator->generate(path);
+    const auto normalized_path = normalizePath(path);
+    if (normalized_path.filename().empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "File name is empty for path '{}'", path);
+
+    /// Materialize virtual parent.
+    const auto parent_path = normalized_path.parent_path();
+    if (uncommitted_fs_tree->existsVirtualDirectory(parent_path) || metadata_storage.fs_tree->existsVirtualDirectory(parent_path))
+        createDirectoryRecursive(parent_path);
+
+    if (const auto directory_remote_info = uncommitted_fs_tree->getDirectoryRemoteInfo(parent_path))
+        return ObjectStorageKey::createAsAbsolute(metadata_storage.layout->constructFileObjectKey(directory_remote_info->remote_path, normalized_path.filename()));
+
+    if (const auto directory_remote_info = metadata_storage.fs_tree->getDirectoryRemoteInfo(parent_path))
+        return ObjectStorageKey::createAsAbsolute(metadata_storage.layout->constructFileObjectKey(directory_remote_info->remote_path, normalized_path.filename()));
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' does not exist", parent_path.string());
 }
 
 }

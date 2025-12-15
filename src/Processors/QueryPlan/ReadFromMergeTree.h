@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/PartitionPruner.h>
+#include <Processors/TopKThresholdTracker.h>
 
 namespace DB
 {
@@ -46,11 +47,13 @@ struct UsefulSkipIndexes
         }
     };
 
-    bool empty() const { return useful_indices.empty() && merged_indices.empty(); }
+    bool empty() const { return useful_indices.empty() && merged_indices.empty() && !skip_index_for_top_k_filtering; }
 
     std::vector<MergeTreeIndexWithCondition> useful_indices;
     std::vector<MergedDataSkippingIndexAndCondition> merged_indices;
     std::vector<std::vector<size_t>> per_part_index_orders;
+    MergeTreeIndexPtr skip_index_for_top_k_filtering{nullptr};
+    TopKThresholdTrackerPtr threshold_tracker{nullptr};
 };
 
 /// Contains parts each from different projection index
@@ -71,6 +74,16 @@ struct ProjectionIndexReadDescription
 
 struct MergeTreeIndexBuildContext;
 using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;
+
+struct TopKFilterInfo
+{
+    String column_name;
+    DataTypePtr data_type;
+    size_t limit_n;
+    int direction; /// 1 = ASC, -1 = DESC
+    bool where_clause;
+    TopKThresholdTrackerPtr threshold_tracker;
+};
 
 /// This step is created to read from MergeTree* table.
 /// For now, it takes a list of parts and creates source from it.
@@ -265,6 +278,7 @@ public:
         const RangesInDataParts & parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const std::optional<VectorSearchParameters> & vector_search_parameters,
+        const std::optional<TopKFilterInfo> & top_k_filter_info,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
@@ -324,6 +338,8 @@ public:
     void clearParallelReadingExtension();
     std::shared_ptr<ParallelReadingExtension> getParallelReadingExtension();
 
+    bool supportsDataflowStatisticsCollection() const override { return true; }
+
     /// Adds virtual columns for reading from text index.
     /// Removes physical text columns that were eliminated by direct read from text index.
     void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final);
@@ -331,8 +347,12 @@ public:
     const std::optional<Indexes> & getIndexes() const { return indexes; }
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator() const;
 
+    void setTopKColumn(const TopKFilterInfo & top_k_filter_info_);
+    bool isSkipIndexAvailableForTopK(const String & sort_column) const;
     const ProjectionIndexReadDescription & getProjectionIndexReadDescription() const { return projection_index_read_desc; }
     ProjectionIndexReadDescription & getProjectionIndexReadDescription() { return projection_index_read_desc; }
+
+    bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
 
 private:
     MergeTreeReaderSettings reader_settings;
@@ -466,6 +486,7 @@ private:
 
     std::optional<size_t> number_of_current_replica;
 
+    std::optional<TopKFilterInfo> top_k_filter_info;
     ProjectionIndexReadDescription projection_index_read_desc;
 };
 
