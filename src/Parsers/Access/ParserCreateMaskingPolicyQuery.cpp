@@ -203,6 +203,9 @@ bool ParserCreateMaskingPolicy::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         roles->all = true;
     }
 
+    if (!update_assignments && !alter)
+        return false;
+
     auto query = std::make_shared<ASTCreateMaskingPolicyQuery>();
     node = query;
 
