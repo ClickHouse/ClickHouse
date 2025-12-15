@@ -577,6 +577,7 @@ TEST(TarArchiveReaderAndWriterTest, BufferSizeLimitExceededUnknownContentsSize)
             auto out = writer->writeFile(file_path);
             EXPECT_THROW(writeString(contents, *out), DB::Exception);
         }
+        writer->finalize();
     }
 }
 
