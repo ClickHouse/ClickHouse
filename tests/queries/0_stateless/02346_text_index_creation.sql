@@ -57,7 +57,7 @@ CREATE TABLE tab
     INDEX idx str TYPE text(tokenizer = 'invalid')
 )
 ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- tokenizer can be identifier or function.';
 
@@ -149,10 +149,10 @@ SELECT '-- ngram size must be between 2 and 8.';
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = ngrams(1))
+    INDEX idx str TYPE text(tokenizer = ngrams(0))
 )
 ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE tab
 (
@@ -160,7 +160,7 @@ CREATE TABLE tab
     INDEX idx str TYPE text(tokenizer = ngrams(9))
 )
 ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
 SELECT 'Test separators argument.';
 
