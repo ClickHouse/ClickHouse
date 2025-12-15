@@ -20,12 +20,16 @@ SerializationObjectDistinctPaths::SerializationObjectDistinctPaths(const std::ve
 
 struct DeserializeBinaryBulkStateObjectDistinctPaths : public ISerialization::DeserializeBinaryBulkState
 {
+    /// State of the whole Object column structure.
     ISerialization::DeserializeBinaryBulkStatePtr object_structure_state;
+    /// State of the shared data in MAP serialization.
     ISerialization::DeserializeBinaryBulkStatePtr shared_data_paths_state;
+    /// States of the bucketed shared data in MAP_WITH_BUCKETS serialization.
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> bucket_shared_data_paths_state;
+    /// States of the bucketed shared data in ADVANCED serialization.
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> bucket_shared_data_structure_states;
 
-    ColumnPtr shared_data_paths_column;
+    /// We want to insert dynamic and typed paths only once per deserialization.
     bool insert_dynamic_and_typed_paths = true;
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
@@ -168,6 +172,7 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkStatePrefix(
                 settings.path.back().object_shared_data_bucket = bucket;
                 object_distinct_paths_state->bucket_shared_data_structure_states[bucket] = SerializationObjectSharedData::deserializeStructureStatePrefix(settings, cache);
                 auto * shared_data_structure_state_concrete = checkAndGetState<SerializationObjectSharedData::DeserializeBinaryBulkStateObjectSharedDataStructure>(object_distinct_paths_state->bucket_shared_data_structure_states[bucket]);
+                /// Specify that we need the list of all paths.
                 shared_data_structure_state_concrete->need_all_paths = true;
                 settings.path.pop_back();
             }
@@ -178,21 +183,6 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkStatePrefix(
     settings.path.pop_back();
     settings.path.pop_back();
     state = std::move(object_distinct_paths_state);
-}
-
-namespace
-{
-
-void appendNewSharedDataPats(ColumnString & result, const ColumnPtr & shared_data_paths, size_t prev_size)
-{
-    const auto & shared_data_paths_array_column = assert_cast<const ColumnArray &>(*shared_data_paths);
-    const auto & shared_data_paths_data =shared_data_paths_array_column.getData();
-
-    size_t start = shared_data_paths_array_column.getOffsets()[prev_size - 1];
-    size_t length = shared_data_paths_data.size() - start;
-    result.insertRangeFrom(shared_data_paths_data, start, length);
-}
-
 }
 
 void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
@@ -229,20 +219,20 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
     {
         case SerializationObjectSharedData::SerializationVersion::MAP:
         {
-            if (!object_distinct_paths_state->shared_data_paths_column || column->empty())
-                object_distinct_paths_state->shared_data_paths_column = column->cloneEmpty();
-
-            size_t prev_size = object_distinct_paths_state->shared_data_paths_column->size();
+            ColumnPtr shared_data_paths_column = column->cloneEmpty();
+            auto settings_copy = settings;
+            settings_copy.insert_only_rows_in_current_range_from_substreams_cache = true;
             shared_data_paths_serialization->deserializeBinaryBulkWithMultipleStreams(
-                object_distinct_paths_state->shared_data_paths_column,
+                shared_data_paths_column,
                 rows_offset,
                 limit,
-                settings,
+                settings_copy,
                 object_distinct_paths_state->shared_data_paths_state,
                 cache);
 
-            appendNewSharedDataPats(paths_column, object_distinct_paths_state->shared_data_paths_column, prev_size);
-            num_new_rows = object_distinct_paths_state->shared_data_paths_column->size() - prev_size;
+            const auto & shared_data_paths_array_column = assert_cast<const ColumnArray &>(*shared_data_paths_column);
+            paths_column.insertRangeFrom(shared_data_paths_array_column.getData(), 0, shared_data_paths_array_column.getData().size());
+            num_new_rows = shared_data_paths_column->size();
             break;
         }
         case SerializationObjectSharedData::SerializationVersion::MAP_WITH_BUCKETS:
@@ -261,7 +251,8 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
                     cache);
                 settings.path.pop_back();
 
-                appendNewSharedDataPats(paths_column, bucket_shared_data_paths_column, 0);
+                const auto & shared_data_paths_array_column = assert_cast<const ColumnArray &>(*bucket_shared_data_paths_column);
+                paths_column.insertRangeFrom(shared_data_paths_array_column.getData(), 0, shared_data_paths_array_column.getData().size());
 
                 if (bucket == 0)
                     num_new_rows = bucket_shared_data_paths_column->size();

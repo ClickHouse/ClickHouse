@@ -29,7 +29,6 @@
 #include <Core/Settings.h>
 
 #include <stack>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -231,7 +230,6 @@ void optimizeDistinctJSONPaths(QueryTreeNodePtr & node, FunctionNode &, ColumnCo
     function_array_sort_node->getArguments().getNodes().push_back(std::move(function_group_array_distinct_node));
     resolveOrdinaryFunctionNodeByName(*function_array_sort_node, "arraySort", ctx.context);
 
-    LOG_DEBUG(getLogger("FunctionToSubcolumns"), "Replace {} to {}", node->dumpTree(), function_array_sort_node->dumpTree());
     node = std::move(function_array_sort_node);
 }
 
@@ -567,8 +565,6 @@ private:
         const auto & column = first_argument_column_node.getColumn();
         auto table_name = table_node.getStorage()->getStorageID().getFullTableName();
         Identifier qualified_name({table_name, column.name});
-
-        LOG_DEBUG(getLogger("FunctionToSubcolumns"), "Visit function {}", function_node.getFunctionName());
 
         if (node_transformers.contains({column.type->getTypeId(), function_node.getFunctionName()}))
             ++optimized_identifiers_count[qualified_name];
