@@ -245,6 +245,14 @@ namespace impl
                 #if USE_MULTITARGET_CODE
                 if (DB::isArchSupported(DB::TargetArch::AVX2))
                     return TargetSpecific::AVX2::encode_integral16(dst, uint_, c);
+                if (DB::isArchSupported(DB::TargetArch::AVX))
+                {
+                    UInt64 parts[2];
+                    memcpy(parts, &uint_, sizeof(uint_));
+                    hex(parts[1], out, c);
+                    hex(parts[0], out + 16, c);
+                    return;
+                }
                 #endif
                 return TargetSpecific::Default::encode_integral16(dst, uint_, c);
             }
@@ -253,6 +261,16 @@ namespace impl
                 #if USE_MULTITARGET_CODE
                 if (DB::isArchSupported(DB::TargetArch::AVX2))
                     return TargetSpecific::AVX2::encode_integral32(dst, uint_, c);
+                if (DB::isArchSupported(DB::TargetArch::AVX))
+                {
+                    UInt64 parts[4];
+                    memcpy(parts, &uint_, sizeof(uint_));
+                    hex(parts[3], out, c);
+                    hex(parts[2], out + 16, c);
+                    hex(parts[1], out + 32, c);
+                    hex(parts[0], out + 48, c);
+                    return;
+                }
                 #endif
                 return TargetSpecific::Default::encode_integral32(dst, uint_, c);
             }
