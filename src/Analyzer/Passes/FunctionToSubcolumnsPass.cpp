@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeQBit.h>
+#include <DataTypes/DataTypeObject.h>
 
 #include <Storages/IStorage.h>
 
@@ -28,8 +29,11 @@
 #include <Core/Settings.h>
 
 #include <stack>
+#include <Common/logger_useful.h>
+
 namespace DB
 {
+
 namespace Setting
 {
     extern const SettingsBool group_by_use_nulls;
@@ -209,6 +213,28 @@ void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & funct
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
 
+void optimizeDistinctJSONPaths(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
+{
+    /// Replace distinctJSONPaths(json) to arraySort(groupArrayDistinct(arrayJoin(json.__special_subcolumn_name_for_distinct_paths_calculation)))
+    NameAndTypePair column{ctx.column.name + "." + DataTypeObject::SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION, std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())};
+
+    auto new_column_node = std::make_shared<ColumnNode>(column, ctx.column_source);
+    auto function_array_join_node = std::make_shared<FunctionNode>("arrayJoin");
+    function_array_join_node->getArguments().getNodes().push_back(std::move(new_column_node));
+    resolveOrdinaryFunctionNodeByName(*function_array_join_node, "arrayJoin", ctx.context);
+
+    auto function_group_array_distinct_node = std::make_shared<FunctionNode>("groupArrayDistinct");
+    function_group_array_distinct_node->getArguments().getNodes().push_back(std::move(function_array_join_node));
+    resolveAggregateFunctionNodeByName(*function_group_array_distinct_node, "groupArrayDistinct");
+
+    auto function_array_sort_node = std::make_shared<FunctionNode>("arraySort");
+    function_array_sort_node->getArguments().getNodes().push_back(std::move(function_group_array_distinct_node));
+    resolveOrdinaryFunctionNodeByName(*function_array_sort_node, "arraySort", ctx.context);
+
+    LOG_DEBUG(getLogger("FunctionToSubcolumns"), "Replace {} to {}", node->dumpTree(), function_array_sort_node->dumpTree());
+    node = std::move(function_array_sort_node);
+}
+
 std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transformers =
 {
     {
@@ -338,6 +364,9 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
     },
     {
         {TypeIndex::QBit, "tupleElement"}, optimizeTupleOrVariantElement<DataTypeQBit>, /// QBit uses tupleElement for subcolumns
+    },
+    {
+        {TypeIndex::Object, "distinctJSONPaths"}, optimizeDistinctJSONPaths,
     },
 };
 
@@ -538,6 +567,8 @@ private:
         const auto & column = first_argument_column_node.getColumn();
         auto table_name = table_node.getStorage()->getStorageID().getFullTableName();
         Identifier qualified_name({table_name, column.name});
+
+        LOG_DEBUG(getLogger("FunctionToSubcolumns"), "Visit function {}", function_node.getFunctionName());
 
         if (node_transformers.contains({column.type->getTypeId(), function_node.getFunctionName()}))
             ++optimized_identifiers_count[qualified_name];
