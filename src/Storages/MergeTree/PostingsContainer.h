@@ -59,22 +59,24 @@ class PostingsContainerImpl
     static constexpr size_t kBlockSize = CodecTraits<T>::kBlockSize;
     struct BlockHeader
     {
+        BlockHeader() = default;
+        explicit  BlockHeader(uint16_t count_, uint16_t max_bits_, uint32_t bytes_) : count(count_), max_bits(max_bits_), bytes(bytes_) {}
         uint16_t count = 0;
         uint16_t max_bits = 0;
         uint32_t bytes = 0;
     };
     struct ContainerHeader
     {
+        ContainerHeader() = default;
+        explicit ContainerHeader(T base_value_, uint32_t block_count_) : base_value(base_value_), block_count(block_count_) {}
         T base_value {};
         uint32_t block_count = 0;
-        uint32_t bytes = 0;
-        uint32_t size = 0;
     };
 public:
     explicit PostingsContainerImpl() = default;
 
-    size_t size() const { return header.size; }
-    bool empty() const { return header.size == 0; }
+    size_t size() const { return total; }
+    bool empty() const { return total == 0; }
 
     void add(T value)
     {
@@ -87,7 +89,7 @@ public:
         /// Delta computation is intentionally deferred
         /// and will be applied later as part of the block compression step.
         current.emplace_back(value);
-        ++header.size;
+        ++total;
     }
 
     /// Serializes posting list to a WriteBuffer-like output.
@@ -96,7 +98,6 @@ public:
     {
         if (!current.empty())
             compressBlock(current, temp_compression_data_buffer);
-        header.bytes = compressed_data.size();
         return serializeTo(out);
     }
 
@@ -108,10 +109,9 @@ public:
         prev_value = header.base_value;
         std::string temp_buffer;
         std::vector<T> temp_compress_buffer;
-        temp_compress_buffer.reserve(PostingsContainerImpl<T>::kBlockSize);
-        ReadBufferFromMemory data_buffer(compressed_data);
+        temp_compress_buffer.reserve(kBlockSize);
         for (size_t i = 0; i < static_cast<size_t>(header.block_count); ++i)
-            decompressBlock(data_buffer, temp_buffer, temp_compress_buffer, [&out] (std::vector<int32_t> & temp) { out.addMany(temp.size(), temp.data()); });
+            decompressBlock(in, temp_buffer, temp_compress_buffer, [&out] (auto & temp) { out.addMany(temp.size(), temp.data()); });
     }
 
     size_t getSizeInBytes() const { return compressed_data.size(); }
@@ -129,8 +129,6 @@ private:
     void deserializeFrom(In & in)
     {
         readContainerHeader(header, in);
-        compressed_data.resize(header.bytes);
-        in.readStrict(compressed_data.data(), header.bytes);
     }
 
     void compressBlock(std::vector<T> & segment, std::string & temp_compression_data)
@@ -184,8 +182,6 @@ private:
     static void writeContainerHeader(ContainerHeader header, Out & out)
     {
         writeVarUInt(header.block_count, out);
-        writeVarUInt(header.bytes, out);
-        writeVarUInt(header.size, out);
         writeVarUInt(header.base_value, out);
     }
 
@@ -193,8 +189,6 @@ private:
     static void readContainerHeader(ContainerHeader & header, In & in)
     {
        readOneField(header.block_count, in);
-       readOneField(header.bytes, in);
-       readOneField(header.size, in);
        readOneField(header.base_value, in);
     }
 
@@ -228,7 +222,8 @@ private:
     ContainerHeader header;
     std::string compressed_data;
     std::string temp_compression_data_buffer;
-    T prev_value;
+    T prev_value = {};
+    size_t total = 0;
     std::vector<T> current;
 };
 
