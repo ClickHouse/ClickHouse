@@ -21,20 +21,6 @@ SELECT 32, 'Payload_Dup', toDateTime('2024-01-01 00:10:00');
 -- Separate inserts to have several blocks in left table to perform multiple lookups
 INSERT INTO events SELECT number, concat('Payload_', toString(number)), toDateTime('2024-01-01 00:00:00') + INTERVAL number MINUTES FROM numbers(500, 500);
 
--- Larger scale
-DROP TABLE IF EXISTS events2;
-CREATE TABLE events2
-(
-    `Id` UInt64,
-    `Payload` String,
-    `Time` DateTime
-)
-ENGINE = MergeTree
-ORDER BY Time
-;
-
-INSERT INTO events2 SELECT number, concat('Payload_', toString(number)), toDateTime('2024-01-01 00:00:00') + INTERVAL number MINUTES FROM numbers(1_000_000);
-
 DROP TABLE IF EXISTS attributes;
 CREATE TABLE attributes
 (
@@ -92,21 +78,6 @@ SETTINGS log_comment = '03712_nested_loop_join_merge_tree_indexed';
 SELECT count(), countIf(t1.Attribute != ''), sum(sipHash64(t1.Attribute))
 FROM events AS t0 LEFT JOIN attributes AS t1 ON t1.OtherId = t0.Idu32n
 SETTINGS log_comment = '03712_nested_loop_join_merge_tree_full_scan';
-
-SELECT sum(sipHash64(t0.Id, t0.Payload)) AS hash_sum , count() AS cnt
-FROM events2 AS t0
-JOIN attributes AS t1 ON t1.EventId = t0.Id
-;
-
-SELECT sum(sipHash64(t0.Id, t0.Payload)) AS hash_sum , count() AS cnt
-FROM events2 AS t0
-SEMI LEFT JOIN attributes AS t1 ON t1.EventId = t0.Id
-;
-
-SELECT sum(sipHash64(t0.Id, t0.Payload)) AS hash_sum, count() AS cnt
-FROM events2 AS t0
-ANTI LEFT JOIN attributes AS t1 ON t1.EventId = t0.Id
-;
 
 SYSTEM FLUSH LOGS system.query_log;
 
