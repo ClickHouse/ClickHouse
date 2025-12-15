@@ -2261,6 +2261,10 @@ protected:
     }
 };
 
+
+/// We use Layers to parse elements consisting of other elements.
+/// In some cases, we are interested in the first element that is an identifier
+/// e.g. for a table function it would be the name of the function
 bool isFirstIdentifier(ParserExpressionImpl::Layers & layers)
 {
     return layers.size() == 1 && dynamic_cast<ExpressionLayer *>(layers.front().get()) != nullptr;
@@ -2336,8 +2340,11 @@ std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_functio
     if (function_name_lowercase == "grouping")
         return std::make_unique<FunctionLayer>(function_name_lowercase, allow_function_parameters_);
 
-    /// NOT is always parsed as an operator, because there is no difference between
+    /// NOT is parsed as an operator because there is no difference between
     /// the operator form: NOT (1 + 2), and the functional form: not(1 + 2), when the operand has to be in parentheses.
+    /// If it's in a table function and it's the first identifier in the Layer we are constructing,
+    /// it means `not` represents name of the table function and we should parse it as a function.
+    /// This is the only case where we cannot parse it as operator.
     if (function_name_lowercase == "not" && (!is_table_function || !is_first_identifier))
         return std::make_unique<FunctionLayer>(function_name_lowercase, allow_function_parameters_, false, true);
 
