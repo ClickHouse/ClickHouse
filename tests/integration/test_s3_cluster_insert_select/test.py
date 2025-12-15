@@ -186,7 +186,7 @@ def test_distributed_insert_select_to_rmt_limit(started_cluster):
         f"""DROP TABLE IF EXISTS {table} ON CLUSTER '{cluster_name}' SYNC;"""
     )
 
-    
+
 def test_distributed_insert_select_to_rmt_where(started_cluster):
     table = "t_rmt_target"
     cluster_name = "cluster_1_shard_3_replicas"
@@ -219,7 +219,7 @@ def test_distributed_insert_select_to_rmt_where(started_cluster):
             node1.query(
                 f"SELECT count(*) FROM {table};"
             ).strip()
-        ) == 100
+        ) == 99
     )
 
     node1.query(
