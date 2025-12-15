@@ -36,4 +36,4 @@ SELECT
     ) AS my_named_tuple
 FROM data
 ORDER BY top_int
-FORMAT Pretty;
+FORMAT PrettyMonoBlock;
