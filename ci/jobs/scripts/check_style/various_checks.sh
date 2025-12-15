@@ -86,6 +86,49 @@ find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -nam
 find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xFF\xFE' | grep -P '.' && echo "Files should not have UTF-16LE BOM"
 find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xFE\xFF' | grep -P '.' && echo "Files should not have UTF-16BE BOM"
 
+# Ensure that functions do not hold copy of ContextPtr
+#
+# ContextPtr holds lots of different stuff, including some caches, so prefer to
+# use weak_ptr or copy relevant info from Context, to avoid extending lifetime
+# of other objects.
+#
+# NOTE: most of the excludes here needs context to call another function, which
+# is easy to fix.
+FUNCTIONS_CONTEXT_PTR_EXCEPTIONS=(
+    -e /trap.cpp
+    -e /toInterval.cpp
+    -e /structureToFormatSchema.cpp
+    -e /splitByRegexp.cpp
+    -e /reverse.cpp
+    -e /nullIf.cpp
+    -e /midpoint.h
+    -e /ifNull.cpp
+    -e /ifNotFinite.cpp
+    -e /generateSerialID.cpp
+    -e /formatRow.cpp
+    -e /filesystem.cpp
+    -e /evalMLMethod.cpp
+    -e /date_trunc.cpp
+    -e /currentRoles.cpp
+    -e /currentProfiles.cpp
+    -e /concat.cpp
+    -e /caseWithExpression.cpp
+    -e /CastOverloadResolver.cpp
+    -e /array/arrayRemove.h
+    -e /array/arrayJaccardIndex.cpp
+    -e /array/arrayIntersect.cpp
+    -e /array/arrayElement.cpp
+    -e /UserDefined/
+    -e /LeastGreatestGeneric.h
+    -e /Kusto/KqlArraySort.cpp
+    -e /FunctionsOpDate.cpp
+    -e /FunctionUnaryArithmetic.h
+    -e /FunctionNaiveBayesClassifier.cpp
+    -e /FunctionBinaryArithmetic.h
+    -e /ITupleFunction.h
+)
+find $ROOT_PATH/src/Functions -type f | xargs grep -l 'ContextPtr [a-z_]*;' | grep -v "${FUNCTIONS_CONTEXT_PTR_EXCEPTIONS[@]}" | grep -P '.' && echo "Avoid holding a copy of ContextPtr in Functions"
+
 # Conflict markers
 find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' |
     xargs grep -P '^(<<<<<<<|=======|>>>>>>>)$' | grep -P '.' && echo "Conflict markers are found in files"
