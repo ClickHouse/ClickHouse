@@ -203,80 +203,91 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
                 std::map <String, String> mntr_responses_map = getTokens(mntr_output, '\t');
 
                 /// /* 6 */{"version", std::make_shared<DataTypeString>(), "The ZooKeeper version."},
-                res_columns[6]->insert(mntr_responses_map["zk_version"]);
+                if (const auto & it = mntr_responses_map.find("zk_version"); it != mntr_responses_map.end())
+                    res_columns[6]->insert(parse<int>(it->second));
 
                 // /* 7 */ {"avg_latency", std::make_shared<DataTypeUInt64>(), "The average latency."},
-                res_columns[7]->insert(parse<int>(mntr_responses_map["zk_avg_latency"]));
+                if (const auto & it = mntr_responses_map.find("zk_avg_latency"); it != mntr_responses_map.end())
+                    res_columns[7]->insert(parse<int>(it->second));
 
                 // /* 8 */ {"max_latency", std::make_shared<DataTypeUInt64>(), "The max latency."},
-                res_columns[8]->insert(parse<int>(mntr_responses_map["zk_max_latency"]));
+                if (const auto & it = mntr_responses_map.find("zk_max_latency"); it != mntr_responses_map.end())
+                    res_columns[8]->insert(parse<int>(it->second));
 
                 //  /* 9 */ {"min_latency", std::make_shared<DataTypeUInt64>(), "The min latency."},
-                res_columns[9]->insert(parse<int>(mntr_responses_map["zk_min_latency"]));
+                if (const auto & it = mntr_responses_map.find("zk_min_latency"); it != mntr_responses_map.end())
+                    res_columns[9]->insert(parse<int>(it->second));
 
                 // /* 10 */ {"packets_received", std::make_shared<DataTypeUInt64>(), "The number of packets received."},
-                res_columns[10]->insert(parse<int>(mntr_responses_map["zk_packets_received"]));
+                if (const auto & it = mntr_responses_map.find("zk_packets_received"); it != mntr_responses_map.end())
+                    res_columns[10]->insert(parse<int>(it->second));
 
                 // /* 11 */ {"packets_sent", std::make_shared<DataTypeUInt64>(), "The number of packets sent."},
-                res_columns[11]->insert(parse<int>(mntr_responses_map["zk_packets_sent"]));
+                if (const auto & it = mntr_responses_map.find("zk_packets_sent"); it != mntr_responses_map.end())
+                    res_columns[11]->insert(parse<int>(it->second));
 
                 // /* 12 */ {"outstanding_requests", std::make_shared<DataTypeUInt64>(), "The number of outstanding requests."},
-                res_columns[12]->insert(parse<int>(mntr_responses_map["zk_outstanding_requests"]));
+                if (const auto & it = mntr_responses_map.find("zk_outstanding_requests"); it != mntr_responses_map.end())
+                    res_columns[12]->insert(parse<int>(it->second));
 
                 // /* 13 */ {"server_state", std::make_shared<DataTypeString>(), "Server state."},
-                res_columns[13]->insert(mntr_responses_map["zk_server_state"]);
-
-                auto followers_in_string = mntr_responses_map["zk_followers"];
-                int followers = 0;
-                if (!followers_in_string.empty())
-                {
-                    followers = parse<int>(followers_in_string);
-                }
-
-                ///* 14 */ {"is_leader", std::make_shared<DataTypeUInt8>(), "Is this zookeeper leader."},
-                if (followers)
-                    res_columns[14]->insert(true);
-                else
-                    res_columns[14]->insert(false);
+                if (const auto & it = mntr_responses_map.find("zk_server_state"); it != mntr_responses_map.end())
+                    res_columns[13]->insert(it->second);
 
                 ///* 15 */ {"znode_count", std::make_shared<DataTypeUInt64>(), "The znode count."},
-                res_columns[15]->insert(parse<int>(mntr_responses_map["zk_znode_count"]));
+                int followers = 0;
+                if (const auto & it = mntr_responses_map.find("zk_followers"); it != mntr_responses_map.end())
+                {
+                    auto followers_in_string = mntr_responses_map["zk_followers"];
+                    if (!followers_in_string.empty())
+                    {
+                        followers = parse<int>(followers_in_string);
+                    }
+
+                    ///* 14 */ {"is_leader", std::make_shared<DataTypeUInt8>(), "Is this zookeeper leader."},
+                    if (followers)
+                        res_columns[14]->insert(true);
+                    else
+                        res_columns[14]->insert(false);
+                }
+
+                if (const auto & it = mntr_responses_map.find("zk_znode_count"); it != mntr_responses_map.end())
+                    res_columns[15]->insert(parse<int>(it->second));
 
                 // /* 16 */ {"watch_count", std::make_shared<DataTypeUInt64>(), "The watch count."},
-                res_columns[16]->insert(parse<int>(mntr_responses_map["zk_watch_count"]));
+                if (const auto & it = mntr_responses_map.find("zk_watch_count"); it != mntr_responses_map.end())
+                    res_columns[16]->insert(parse<int>(it->second));
 
                 // /* 17 */ {"ephemerals_count", std::make_shared<DataTypeUInt64>(), "The ephemerals count."},
-                res_columns[17]->insert(parse<int>(mntr_responses_map["zk_ephemerals_count"]));
+                if (const auto & it = mntr_responses_map.find("zk_ephemerals_count"); it != mntr_responses_map.end())
+                    res_columns[17]->insert(parse<int>(it->second));
 
                 // /* 18 */ {"approximate_data_size", std::make_shared<DataTypeUInt64>(), "The approximate data size."},
-                res_columns[18]->insert(parse<int>(mntr_responses_map["zk_approximate_data_size"]));
+                if (const auto & it = mntr_responses_map.find("zk_approximate_data_size"); it != mntr_responses_map.end())
+                    res_columns[18]->insert(parse<int>(it->second));
 
                 // /* 19 */ {"followers", std::make_shared<DataTypeUInt64>(), "The followers of the leader. This field is only exposed by the leader."},
-                if (!mntr_responses_map["zk_followers"].empty())
-                    res_columns[19]->insert(parse<int>(mntr_responses_map["zk_followers"]));
+                if (const auto & it = mntr_responses_map.find("zk_followers"); it != mntr_responses_map.end())
+                    res_columns[19]->insert(parse<int>(it->second));
                 else
                     res_columns[19]->insert(0);
 
                 // /* 20 */ {"synced_followers", std::make_shared<DataTypeUInt64>(), "The synced followers of the leader. This field is only exposed by the leader."},
-                int synced_followers = 0;
-                if (!mntr_responses_map["zk_synced_followers"].empty())
-                    synced_followers = parse<int>(mntr_responses_map["zk_synced_followers"]);
-                res_columns[20]->insert(synced_followers);
-
                 // /* 21 */ {"pending_syncs", std::make_shared<DataTypeUInt64>(), "The pending syncs of the leader. This field is only exposed by the leader."},
-                res_columns[21]->insert(followers - synced_followers);
+                if (const auto & it = mntr_responses_map.find("zk_synced_followers"); it != mntr_responses_map.end())
+                {
+                    int synced_followers = parse<int>(it->second);
+                    res_columns[20]->insert(synced_followers);
+                    res_columns[21]->insert(followers - synced_followers);
+                }
 
                 // /* 22 */ {"open_file_descriptor_count", std::make_shared<DataTypeUInt64>(), "The open file descriptor count. Only available on Unix platforms."},
-                if (!mntr_responses_map["zk_open_file_descriptor_count"].empty())
-                    res_columns[22]->insert(parse<int>(mntr_responses_map["zk_open_file_descriptor_count"]));
-                else
-                    res_columns[22]->insert(0);
+                if (const auto & it = mntr_responses_map.find("zk_open_file_descriptor_count"); it != mntr_responses_map.end())
+                    res_columns[22]->insert(parse<int>(it->second));
 
                 // /* 23 */ {"max_file_descriptor_count", std::make_shared<DataTypeUInt64>(), "The max file descriptor count. Only available on Unix platforms."},
-                if (!mntr_responses_map["zk_max_file_descriptor_count"].empty())
-                    res_columns[23]->insert(parse<int>(mntr_responses_map["zk_max_file_descriptor_count"]));
-                else
-                    res_columns[23]->insert(0);
+                if (const auto & it = mntr_responses_map.find("zk_max_file_descriptor_count"); it != mntr_responses_map.end())
+                    res_columns[23]->insert(parse<int>(it->second));
             }
 
             /// srvr command
@@ -287,16 +298,20 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
                 std::map <String, String> srvr_responses_map = getTokens(srvr_output, ':');
 
                 ///* 24 */ {"connections", std::make_shared<DataTypeUInt64>(), "The ZooKeeper connections."},
-                res_columns[24]->insert(parse<int>(srvr_responses_map["Connections"]));
+                if (const auto & it = srvr_responses_map.find("Connections"); it != srvr_responses_map.end())
+                    res_columns[24]->insert(parse<int>(it->second));
 
                 ///* 25 */ {"outstanding", std::make_shared<DataTypeUInt64>(), "The ZooKeeper outstanding."},
-                res_columns[25]->insert(parse<int>(srvr_responses_map["Outstanding"]));
+                if (const auto & it = srvr_responses_map.find("Outstanding"); it != srvr_responses_map.end())
+                    res_columns[25]->insert(parse<int>(it->second));
 
                 //* 26 */ {"zxid", std::make_shared<DataTypeInt64>(), "The ZooKeeper zxid."},
-                res_columns[26]->insert(parse<int>(srvr_responses_map["Zxid"]));
+                if (const auto & it = srvr_responses_map.find("Zxid"); it != srvr_responses_map.end())
+                    res_columns[26]->insert(parse<int>(it->second));
 
                 //* 27 */ {"node_count", std::make_shared<DataTypeUInt64>(), "The ZooKeeper node count."},
-                res_columns[27]->insert(parse<int>(srvr_responses_map["Node count"]));
+                if (const auto & it = srvr_responses_map.find("Node count"); it != srvr_responses_map.end())
+                    res_columns[27]->insert(parse<int>(it->second));
             }
 
 
@@ -308,10 +323,12 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
                 std::map <String, String> dirs_responses_map = getTokens(dirs_output, ':');
 
                 //* 28 */ {"snapshot_dir_size", std::make_shared<DataTypeUInt64>(), "The ZooKeeper snapshot directory size."},
-                res_columns[28]->insert(parse<int>(dirs_responses_map["snapshot_dir_size"]));
+                if (const auto & it = dirs_responses_map.find("snapshot_dir_size"); it != dirs_responses_map.end())
+                    res_columns[28]->insert(parse<int>(it->second));
 
                 //* 29 */ {"log_dir_size", std::make_shared<DataTypeUInt64>(), "The ZooKeeper log directory size."},
-                res_columns[29]->insert(parse<int>(dirs_responses_map["log_dir_size"]));
+                if (const auto & it = dirs_responses_map.find("log_dir_size"); it != dirs_responses_map.end())
+                    res_columns[29]->insert(parse<int>(it->second));
             }
 
             /// lgif command
@@ -322,28 +339,36 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
                 std::map <String, String> lgif_responses_map = getTokens(lgif_output, '\t');
 
                 // /* 30 */ {"first_log_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper first log index."},
-                res_columns[30]->insert(parse<int>(lgif_responses_map["first_log_idx"]));
+                if (const auto & it = lgif_responses_map.find("snapshot_dir_size"); it != lgif_responses_map.end())
+                    res_columns[30]->insert(parse<int>(it->second));
 
                 // /* 31 */ {"first_log_term", std::make_shared<DataTypeUInt64>(), "The ZooKeeper first log term."},
-                res_columns[31]->insert(parse<int>(lgif_responses_map["first_log_term"]));
+                if (const auto & it = lgif_responses_map.find("first_log_term"); it != lgif_responses_map.end())
+                    res_columns[31]->insert(parse<int>(it->second));
 
                 // /* 32 */ {"last_log_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper last log index."},
-                res_columns[32]->insert(parse<int>(lgif_responses_map["last_log_idx"]));
+                if (const auto & it = lgif_responses_map.find("last_log_idx"); it != lgif_responses_map.end())
+                    res_columns[32]->insert(parse<int>(it->second));
 
                 // /* 33 */ {"last_log_term", std::make_shared<DataTypeUInt64>(), "The ZooKeeper last log term."},
-                res_columns[33]->insert(parse<int>(lgif_responses_map["last_log_term"]));
+                if (const auto & it = lgif_responses_map.find("last_log_term"); it != lgif_responses_map.end())
+                    res_columns[33]->insert(parse<int>(it->second));
 
                 // /* 34 */ {"last_committed_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper last committed index."},
-                res_columns[34]->insert(parse<int>(lgif_responses_map["last_committed_log_idx"]));
+                if (const auto & it = lgif_responses_map.find("last_committed_log_idx"); it != lgif_responses_map.end())
+                    res_columns[34]->insert(parse<int>(it->second));
 
                 // /* 35 */ {"leader_committed_log_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper leader committed log index."},
-                res_columns[35]->insert(parse<int>(lgif_responses_map["leader_committed_log_idx"]));
+                if (const auto & it = lgif_responses_map.find("leader_committed_log_idx"); it != lgif_responses_map.end())
+                    res_columns[35]->insert(parse<int>(it->second));
 
                 // /* 36 */ {"target_committed_log_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper target committed log index."},
-                res_columns[36]->insert(parse<int>(lgif_responses_map["target_committed_log_idx"]));
+                if (const auto & it = lgif_responses_map.find("target_committed_log_idx"); it != lgif_responses_map.end())
+                    res_columns[36]->insert(parse<int>(it->second));
 
                 // /* 37 */ {"last_snapshot_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper last snapshot index."},
-                res_columns[37]->insert(parse<int>(lgif_responses_map["last_snapshot_idx"]));
+                if (const auto & it = lgif_responses_map.find("last_snapshot_idx"); it != lgif_responses_map.end())
+                    res_columns[37]->insert(parse<int>(it->second));
             }
 
         }
