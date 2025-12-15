@@ -78,22 +78,15 @@ public:
 
     void add(T value)
     {
-        if (!has_prev_value)
-        {
-            header.base_value = value;
-            prev_value = value;
-            has_prev_value = true;
-            current.reserve(kBlockSize);
-        }
         if (current.size() == kBlockSize)
         {
-            std::span<const T> segment(current.begin(), current.end());
-            compressBlock(segment, temp_compression_data_buffer);
+            compressBlock(current, temp_compression_data_buffer);
             current.reserve(kBlockSize);
             current.clear();
         }
-        current.emplace_back(value - prev_value);
-        prev_value = value;
+        /// Delta computation is intentionally deferred
+        /// and will be applied later as part of the block compression step.
+        current.emplace_back(value);
         ++header.size;
     }
 
@@ -102,25 +95,7 @@ public:
     size_t serialize(Out & out)
     {
         if (!current.empty())
-            compressBlock(std::span<const T> (current.begin(), current.end()), temp_compression_data_buffer);
-        header.bytes = compressed_data.size();
-        return serializeTo(out);
-    }
-
-    /// Serializes the container to a WriteBuffer-like output.
-    template<typename Container, typename Out>
-    size_t serialize(Container & in, Out & out)
-    {
-        chassert(std::is_sorted(in.begin(), in.end()));
-        std::span<const T> container(in.data(), in.size());
-        header.size = container.size();
-        while (!container.empty())
-        {
-            size_t segment_length = std::min<size_t>(container.size(), kBlockSize);
-            std::span<const T> segment = container.first(segment_length);
-            compressBlock(segment, temp_compression_data_buffer);
-            container = container.subspan(segment_length);
-        }
+            compressBlock(current, temp_compression_data_buffer);
         header.bytes = compressed_data.size();
         return serializeTo(out);
     }
@@ -136,7 +111,7 @@ public:
         temp_compress_buffer.reserve(PostingsContainerImpl<T>::kBlockSize);
         ReadBufferFromMemory data_buffer(compressed_data);
         for (size_t i = 0; i < static_cast<size_t>(header.block_count); ++i)
-            decompressBlock(data_buffer, temp_buffer, temp_compress_buffer, [&out] (std::vector<uint32_t> & temp) { out.addMany(temp.size(), temp.data()); });
+            decompressBlock(data_buffer, temp_buffer, temp_compress_buffer, [&out] (std::vector<int32_t> & temp) { out.addMany(temp.size(), temp.data()); });
     }
 
     size_t getSizeInBytes() const { return compressed_data.size(); }
@@ -158,8 +133,19 @@ private:
         in.readStrict(compressed_data.data(), header.bytes);
     }
 
-    void compressBlock(std::span<const T> segment, std::string & temp_compression_data)
+    void compressBlock(std::vector<T> & segment, std::string & temp_compression_data)
     {
+        if (header.block_count == 0)
+        {
+            header.base_value = segment.front();
+            prev_value = header.base_value;
+        }
+        ++header.block_count;
+        /// delta[0] = v[0] - prev_value
+        /// delta[i] = v[i] - v[i-1]（i>=1）
+        std::adjacent_difference(segment.begin(), segment.end(), segment.begin());
+        segment.front() -= prev_value;
+        prev_value = segment.back();
         auto [cap, bits] = CodecTraits<T>::evaluateSizeAndMaxBits(segment.data(), segment.size());
         temp_compression_data.resize(cap);
         auto bytes = CodecTraits<T>::encode(segment.data(), segment.size(), bits, reinterpret_cast<unsigned char*>(temp_compression_data.data()));
@@ -168,7 +154,6 @@ private:
         writeBlockHeader(block_header, compressed_buffer);
         compressed_buffer.write(temp_compression_data.data(), bytes);
         compressed_buffer.finalize();
-        ++header.block_count;
     }
 
     template<typename Out>
@@ -236,18 +221,14 @@ private:
         if (used != block_header.bytes)
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Compressed and decompressed byte counts do not match. compressed = {}, decompressed = {}", block_header.bytes, used);
         chassert(block_header.count == temp.size());
-        for (auto & e : temp)
-        {
-           e += prev_value;
-           prev_value = e;
-        }
+        std::inclusive_scan(temp.begin(), temp.end(), temp.begin(), std::plus<T>{}, prev_value);
+        prev_value = temp.empty() ? prev_value : temp.back();
         consumer(temp);
     }
     ContainerHeader header;
     std::string compressed_data;
     std::string temp_compression_data_buffer;
     T prev_value;
-    bool has_prev_value = false;
     std::vector<T> current;
 };
 
