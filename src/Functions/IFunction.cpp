@@ -676,9 +676,10 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
     {
         checkNumberOfArguments(arguments.size());
 
-        /// If ALL arguments are Variants, don't use VariantAdaptor.
-        /// This allows functions (especially comparisons) to work directly on ColumnVariant objects,
-        /// which have built in logic for cross-variant comparisons using discriminator ordering.
+        /// Special case: if there are MULTIPLE arguments and ALL of them are Variants,
+        /// don't use VariantAdaptor. This allows functions (especially comparisons) to work
+        /// directly on ColumnVariant objects, which have built-in logic for cross-variant
+        /// comparisons using discriminator ordering.
         bool has_variant = false;
         bool all_variants = true;
         for (const auto & arg : arguments)
@@ -689,7 +690,10 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
                 all_variants = false;
         }
 
-        if (has_variant && !all_variants)
+        /// Only skip VariantAdaptor if:
+        /// 1. We have Variant arguments
+        /// 2. Either not all are Variants, OR there's only one argument (single Variant needs unwrapping)
+        if (has_variant && (!all_variants || arguments.size() == 1))
         {
             DataTypes data_types(arguments.size());
             for (size_t i = 0; i < arguments.size(); ++i)
