@@ -1,10 +1,7 @@
-#include <cstdio>
-
-#include <Common/checkStackSize.h>
-
 #include <Client/BuzzHouse/Generator/QueryOracle.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
+#include <Common/checkStackSize.h>
 
 namespace DB
 {
@@ -20,6 +17,25 @@ namespace BuzzHouse
 const std::vector<std::vector<OutFormat>> QueryOracle::oracleFormats
     = {{OutFormat::OUT_CSV}, {OutFormat::OUT_TabSeparated}, {OutFormat::OUT_Values}};
 
+static void finishSettings(SettingValues * svs)
+{
+    /// Wait for mutations to finish
+    static const std::unordered_map<String, String> & toSet
+        = {{"alter_sync", "2"},
+           {"apply_deleted_mask", "1"},
+           {"apply_patch_parts", "1"},
+           {"lightweight_deletes_sync", "2"},
+           {"mutations_sync", "2"},
+           {"wait_for_async_insert", "2"}};
+    for (const auto & [key, val] : toSet)
+    {
+        SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+
+        sv->set_property(key);
+        sv->set_value(val);
+    }
+}
+
 /// Correctness query oracle
 /// SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED>;
 /// or
@@ -28,7 +44,8 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
 {
     TopSelect * ts = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
-    SelectStatementCore * ssc = ts->mutable_sel()->mutable_select_core();
+    Select * sel = ts->mutable_sel();
+    SelectStatementCore * ssc = sel->mutable_select_core();
     /// TODO fix this 0 WHERE, 1 HAVING, 2 WHERE + HAVING
     const uint32_t combination = 0;
 
@@ -68,6 +85,7 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
     gen.enforceFinal(false);
     gen.setAllowEngineUDF(true);
 
+    finishSettings(sel->mutable_setting_values());
     ts->set_format(OutFormat::OUT_CSV);
     /// If the file fails to be removed due to a legitimate way, the oracle will fail anyway
     const auto err = std::filesystem::remove(qcfile);
@@ -83,8 +101,10 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
 {
     TopSelect * ts = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
-    SelectStatementCore & ssc1 = const_cast<SelectStatementCore &>(sq1.single_query().explain().inner_query().select().sel().select_core());
-    SelectStatementCore * ssc2 = ts->mutable_sel()->mutable_select_core();
+    Select & sel1 = const_cast<Select &>(sq1.single_query().explain().inner_query().select().sel());
+    SelectStatementCore & ssc1 = const_cast<SelectStatementCore &>(sel1.select_core());
+    Select * sel2 = ts->mutable_sel();
+    SelectStatementCore * ssc2 = sel2->mutable_select_core();
     SQLFuncCall * sfc1 = ssc2->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
     SQLFuncCall * sfc2 = sfc1->add_args()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
 
@@ -109,6 +129,7 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
 
         sfc2->add_args()->set_allocated_expr(expr.release_expr());
     }
+    sel2->set_allocated_setting_values(sel1.release_setting_values());
     ts->set_format(sq1.single_query().explain().inner_query().select().format());
     const auto err = std::filesystem::remove(qcfile);
     UNUSED(err);
@@ -202,17 +223,12 @@ void QueryOracle::dumpTableContent(
     }
     if (test_content)
     {
-        /// Don't write statistics
         if (!sel->has_setting_values())
         {
             const auto * news = sel->mutable_setting_values();
             UNUSED(news);
         }
-        SettingValues & svs = const_cast<SettingValues &>(sel->setting_values());
-        SetValue * sv = svs.has_set_value() ? svs.add_other_values() : svs.mutable_set_value();
-
-        sv->set_property("output_format_write_statistics");
-        sv->set_value("0");
+        finishSettings(&const_cast<SettingValues &>(sel->setting_values()));
     }
     ts->set_format(rg.pickRandomly(rg.pickRandomly(QueryOracle::oracleFormats)));
     const auto err = std::filesystem::remove(qcfile);
@@ -305,7 +321,6 @@ void QueryOracle::dumpOracleIntermediateSteps(
     std::vector<SQLQuery> & intermediate_queries)
 {
     SQLQuery next;
-    SettingValues * set = nullptr;
     const std::optional<String> & cluster = t.getCluster();
 
     intermediate_queries.clear();
@@ -327,12 +342,6 @@ void QueryOracle::dumpOracleIntermediateSteps(
             {
                 trunc->mutable_cluster()->set_cluster(cluster.value());
             }
-            set = trunc->mutable_setting_values();
-            SetValue * sv = set->mutable_set_value();
-
-            /// Wait for mutation to finish
-            sv->set_property("alter_sync");
-            sv->set_value("2");
             /// Import data again
             generateImportQuery(rg, gen, t2, next, next3);
 
@@ -347,15 +356,8 @@ void QueryOracle::dumpOracleIntermediateSteps(
             gen.generateNextOptimizeTableInternal(rg, t, true, ot);
             if (rg.nextSmallNumber() < 3)
             {
-                set = ot->mutable_setting_values();
                 gen.generateSettingValues(rg, serverSettings, ot->mutable_setting_values());
             }
-            set = set ? set : ot->mutable_setting_values();
-            SetValue * sv = set->has_set_value() ? set->add_other_values() : set->mutable_set_value();
-
-            /// Wait for mutation to finish
-            sv->set_property("alter_sync");
-            sv->set_value("2");
             intermediate_queries.emplace_back(next);
         }
         break;
@@ -466,12 +468,6 @@ void QueryOracle::dumpOracleIntermediateSteps(
                 {
                     trunc->mutable_cluster()->set_cluster(cluster.value());
                 }
-                set = trunc->mutable_setting_values();
-                SetValue * sv = set->mutable_set_value();
-
-                /// Wait for mutation to finish
-                sv->set_property("alter_sync");
-                sv->set_value("2");
                 intermediate_queries.emplace_back(next2);
             }
             intermediate_queries.emplace_back(next3);
@@ -490,18 +486,8 @@ void QueryOracle::dumpOracleIntermediateSteps(
                 }
                 if (rg.nextSmallNumber() < 3)
                 {
-                    set = at->mutable_setting_values();
-                    gen.generateSettingValues(rg, serverSettings, set);
+                    gen.generateSettingValues(rg, serverSettings, at->mutable_setting_values());
                 }
-                set = set ? set : at->mutable_setting_values();
-                SetValue * sv = set->has_set_value() ? set->add_other_values() : set->mutable_set_value();
-                SetValue * sv2 = set->add_other_values();
-
-                /// Wait for mutation to finish
-                sv->set_property("alter_sync");
-                sv->set_value("2");
-                sv2->set_property("mutations_sync");
-                sv2->set_value("3");
             }
             else
             {
@@ -784,35 +770,32 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         nsel->mutable_orderby()->set_oall(true);
     }
 
-    /// Don't write statistics
     if (!sel->has_setting_values())
     {
         const auto * news = sel->mutable_setting_values();
         UNUSED(news);
     }
     SettingValues & svs = const_cast<SettingValues &>(sel->setting_values());
-    SetValue * sv = svs.has_set_value() ? svs.add_other_values() : svs.mutable_set_value();
 
-    sv->set_property("output_format_write_statistics");
-    sv->set_value("0");
+    finishSettings(&svs);
     if (measure_performance)
     {
         /// Add tag to find query later on
-        SetValue * sv2 = svs.add_other_values();
+        SetValue * sv = svs.add_other_values();
 
-        sv2->set_property("log_comment");
-        sv2->set_value("'measure_performance'");
+        sv->set_property("log_comment");
+        sv->set_value("'measure_performance'");
     }
     else if (indexes)
     {
         /// These settings are relevant to show index information
-        SetValue * sv2 = svs.add_other_values();
-        SetValue * sv3 = svs.add_other_values();
+        SetValue * sv4 = svs.add_other_values();
+        SetValue * sv5 = svs.add_other_values();
 
-        sv2->set_property("use_query_condition_cache");
-        sv2->set_value("0");
-        sv3->set_property("use_skip_indexes_on_data_read");
-        sv3->set_value("0");
+        sv4->set_property("use_query_condition_cache");
+        sv4->set_value("0");
+        sv5->set_property("use_skip_indexes_on_data_read");
+        sv5->set_value("0");
     }
 }
 
@@ -1200,9 +1183,6 @@ void QueryOracle::replaceQueryWithTablePeers(
                 alter->mutable_cluster()->set_cluster(cluster.value());
             }
             alter->mutable_alter()->mutable_delete_mask();
-            SetValue * sv = alter->mutable_setting_values()->mutable_set_value();
-            sv->set_property("mutations_sync");
-            sv->set_value("2");
             peer_queries.emplace_back(next);
         }
         /// Then insert the data

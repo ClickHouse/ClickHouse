@@ -309,6 +309,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"allow_unrestricted_reads_from_keeper", trueOrFalseSettingNoOracle},
     {"analyze_index_with_space_filling_curves", trueOrFalseSetting},
     {"analyzer_compatibility_join_using_top_level_identifier", trueOrFalseSetting},
+    {"apply_deleted_mask", trueOrFalseSettingNoOracle},
     {"apply_mutations_on_fly", trueOrFalseSettingNoOracle},
     {"apply_patch_parts", trueOrFalseSetting},
     {"apply_settings_from_server", trueOrFalseSettingNoOracle},
@@ -740,6 +741,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
          },
          {},
          false)},
+    {"lightweight_deletes_sync", CHSetting(zeroToThree, {}, false)},
     {"load_balancing",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
@@ -1183,6 +1185,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          },
          {},
          false)},
+    {"wait_for_async_insert", trueOrFalseSettingNoOracle},
     {"write_full_path_in_iceberg_metadata", trueOrFalseSettingNoOracle},
     /// ClickHouse cloud setting
     {"write_through_distributed_cache", trueOrFalseSettingNoOracle},
@@ -1337,22 +1340,19 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     if (!fc.allow_query_oracles)
     {
         serverSettings.insert(
-            {{"apply_deleted_mask", trueOrFalseSettingNoOracle}, /// gives issue with dump table oracle
-             {"deduplicate_blocks_in_dependent_materialized_views", trueOrFalseSettingNoOracle},
+            {{"deduplicate_blocks_in_dependent_materialized_views", trueOrFalseSettingNoOracle},
              {"describe_compact_output", trueOrFalseSettingNoOracle},
              {"empty_result_for_aggregation_by_empty_set", trueOrFalseSettingNoOracle}, /// the oracle doesn't get output
              {"external_table_functions_use_nulls", trueOrFalseSettingNoOracle},
              {"external_table_strict_query", trueOrFalseSettingNoOracle},
              {"ignore_data_skipping_indices", trueOrFalseSettingNoOracle},
-             {"lightweight_deletes_sync", CHSetting(zeroToThree, {}, false)},
              {"optimize_using_constraints", trueOrFalseSettingNoOracle},
              {"parallel_replica_offset",
               CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.nextSmallNumber() - 1); }, {}, false)},
              {"parallel_replicas_count",
               CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.nextSmallNumber() - 1); }, {}, false)},
              {"remote_filesystem_read_method",
-              CHSetting([](RandomGenerator & rg, FuzzConfig &) { return rg.nextBool() ? "'read'" : "'threadpool'"; }, {}, false)},
-             {"wait_for_async_insert", trueOrFalseSettingNoOracle}});
+              CHSetting([](RandomGenerator & rg, FuzzConfig &) { return rg.nextBool() ? "'read'" : "'threadpool'"; }, {}, false)}});
         max_bytes_values.insert(
             max_bytes_values.end(),
             {"max_bytes_in_distinct",
