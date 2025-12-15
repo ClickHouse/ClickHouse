@@ -16,6 +16,8 @@ The arguments are not evaluated.
 But during index analysis, the argument of this function is assumed to be not wrapped in `indexHint`.
 This allows to select data in index ranges by the corresponding condition but without further filtering by this condition.
 The index in ClickHouse is sparse and using `indexHint` will yield more data than specifying the same condition directly.
+
+Note: It is not possible to optimize a query with the `indexHint` function. The `indexHint` function does not optimize the query, as it does not provide any additional information for the query analysis. Having an expression inside the `indexHint` function is not anyhow better than without the `indexHint` function. The `indexHint` function can be used only for introspection and debugging purposes and it does not improve performance. If you see the usage of `indexHint` by anyone other than ClickHouse contributors, it is likely a mistake and you should remove it.
     )";
     FunctionDocumentation::Syntax syntax_indexHint = "indexHint(expression)";
     FunctionDocumentation::Arguments arguments_indexHint = {
