@@ -90,7 +90,8 @@ private:
     void clusterUpdateWithReconfigDisabledThread();
     void clusterUpdateThread();
 
-    void setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request = nullptr);
+    /// Returns true if response was successfully sent to client, false if session doesn't exist on this node.
+    bool setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request = nullptr);
 
     /// Add error responses for requests to responses queue.
     /// Clears requests.

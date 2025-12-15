@@ -781,6 +781,13 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
             request->tracing_context->deserialize(read_buffer);
 
             ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.receive_request, request->tracing_context, receive_start_time);
+            ZooKeeperOpentelemetrySpans::maybeFinalize(
+                request->spans.receive_request,
+                {
+                    {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
+                    {"keeper.xid", std::to_string(request->xid)},
+                }
+            );
         }
     }
 

@@ -1,4 +1,5 @@
 #include <Coordination/KeeperSpans.h>
+#include <Coordination/KeeperDispatcher.h>
 #include <Interpreters/Context.h>
 #include <optional>
 
@@ -25,6 +26,13 @@ namespace
             }
         }
 
+        return nullptr;
+    }
+
+    std::shared_ptr<KeeperDispatcher> getKeeperDispatcher()
+    {
+        if (const auto global_context = Context::getGlobalContextInstance())
+            return global_context->tryGetKeeperDispatcher();
         return nullptr;
     }
 }
@@ -73,6 +81,11 @@ void ZooKeeperOpentelemetrySpans::maybeFinalize(
     maybe_span.span->finish_time_us = finish_time_us;
     maybe_span.span->status_code = status;
     maybe_span.span->status_message = error_message;
+
+    static const auto keeper_dispatcher = getKeeperDispatcher();
+    if (keeper_dispatcher)
+        extra_attributes["raft.role"] = keeper_dispatcher->getRoleString();
+
     maybe_span.span->attributes.merge(extra_attributes);
 
     span_log->add(OpenTelemetrySpanLogElement(std::move(*maybe_span.span)));

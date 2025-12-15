@@ -147,10 +147,15 @@ void KeeperDispatcher::requestThread()
 
     while (!shutdown_called)
     {
-        const auto handle_opentelemetery_spans = [](const Coordination::ZooKeeperRequestPtr & request)
+        const auto handle_opentelemetery_spans = [](const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
         {
-
-            ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.process_request, request->tracing_context);
+            ZooKeeperOpentelemetrySpans::maybeFinalize(
+                request->spans.dispatcher_requests_queue,
+                {
+                    {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
+                    {"keeper.session_id", std::to_string(session_id)},
+                    {"keeper.xid", std::to_string(request->xid)},
+                });
         };
 
         KeeperRequestForSession request;
@@ -175,7 +180,7 @@ void KeeperDispatcher::requestThread()
                 if (shutdown_called)
                     break;
 
-                handle_opentelemetery_spans(request.request);
+                handle_opentelemetery_spans(request.request, request.session_id);
 
                 Int64 mem_soft_limit = keeper_context->getKeeperMemorySoftLimit();
                 if (configuration_and_settings->standalone_keeper && isExceedingMemorySoftLimit() && checkIfRequestIncreaseMem(request.request))
@@ -215,7 +220,7 @@ void KeeperDispatcher::requestThread()
                         {
                             CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequests);
 
-                            handle_opentelemetery_spans(request.request);
+                            handle_opentelemetery_spans(request.request, request.session_id);
 
                             /// Don't append read request into batch, we have to process them separately
                             if (!coordination_settings[CoordinationSetting::quorum_reads] && request.request->isReadRequest())
@@ -365,33 +370,30 @@ void KeeperDispatcher::responseThread()
             if (shutdown_called)
                 break;
 
-            if (auto request = response_for_session.request; request)
-            {
-                ZooKeeperOpentelemetrySpans::maybeFinalize(
-                    request->spans.dispatcher_responses_queue,
-                    {
-                        {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
-                        {"keeper.session_id", std::to_string(response_for_session.session_id)},
-                        {"keeper.xid", std::to_string(request->xid)},
-                    });
+            const UInt64 dequeue_time_us = ZooKeeperOpentelemetrySpans::now();
 
-                ZooKeeperOpentelemetrySpans::maybeFinalize(
-                    request->spans.process_request,
-                    {
-                        {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
-                        {"keeper.session_id", std::to_string(response_for_session.session_id)},
-                        {"keeper.xid", std::to_string(request->xid)},
-                        {"raft.role", getRoleString()},
-                    });
-            }
-
+            bool response_was_sent = false;
             try
             {
-                setResponse(response_for_session.session_id, response_for_session.response, response_for_session.request);
+                response_was_sent = setResponse(response_for_session.session_id, response_for_session.response, response_for_session.request);
             }
             catch (...)
             {
                 tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+
+            if (response_was_sent && response_for_session.request)
+            {
+                ZooKeeperOpentelemetrySpans::maybeFinalize(
+                    response_for_session.request->spans.dispatcher_responses_queue,
+                    {
+                        {"keeper.operation", Coordination::opNumToString(response_for_session.request->getOpNum())},
+                        {"keeper.session_id", std::to_string(response_for_session.session_id)},
+                        {"keeper.xid", std::to_string(response_for_session.request->xid)},
+                    },
+                    OpenTelemetry::SpanStatus::OK,
+                    "",
+                    dequeue_time_us);
             }
         }
     }
@@ -423,7 +425,7 @@ void KeeperDispatcher::snapshotThread()
     }
 }
 
-void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)
+bool KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)
 {
     std::lock_guard lock(session_to_response_callback_mutex);
 
@@ -434,11 +436,12 @@ void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKe
 
         /// Nobody waits for this session id
         if (session_id_resp.server_id != server->getServerID() || !new_session_id_response_callback.contains(session_id_resp.internal_id))
-            return;
+            return false;
 
         auto callback = new_session_id_response_callback[session_id_resp.internal_id];
         callback(response, request);
         new_session_id_response_callback.erase(session_id_resp.internal_id);
+        return true;
     }
     else /// Normal response, just write to client
     {
@@ -446,7 +449,7 @@ void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKe
 
         /// Session was disconnected, just skip this response
         if (session_response_callback == session_to_response_callback.end())
-            return;
+            return false;
 
         session_response_callback->second(response, request);
 
@@ -456,6 +459,8 @@ void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKe
             session_to_response_callback.erase(session_response_callback);
             CurrentMetrics::sub(CurrentMetrics::KeeperAliveConnections);
         }
+
+        return true;
     }
 }
 
@@ -477,6 +482,8 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
 
     if (keeper_context->isShutdownCalled())
         return false;
+
+    ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context);
 
     /// Put close requests without timeouts
     if (request->getOpNum() == Coordination::OpNum::Close)

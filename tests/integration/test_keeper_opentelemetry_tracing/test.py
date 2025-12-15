@@ -13,6 +13,9 @@ clickhouse = cluster.add_instance(
         "configs/server/use_keeper.xml",
         "configs/server/enable_span_log.xml",
     ],
+    user_configs=[
+        "configs/server/users.xml",
+    ],
 )
 
 # we're running keepers as standalone ClickHouse servers as we need to collect span log from them
@@ -59,18 +62,14 @@ def test_keeper_opentelemetry_tracing(started_cluster):
     db = f"test_keeper_opentelemetry_tracing_{uuid.uuid4()}_database"
     t = f"test_keeper_opentelemetry_tracing_{uuid.uuid4()}_table"
 
-    ddl_query_id = uuid.uuid4()
+    ddl_query_id = str(uuid.uuid4())
 
     # run DDL query
     clickhouse.query(
         f"CREATE DATABASE `{db}` ENGINE=Replicated('/test/{db}', 'shard1', 'replica1')",
     )
     clickhouse.query(
-        f"CREATE TABLE `{db}.{t}` (`s` String) ENGINE = MergeTree('/test/{t}', 'replica1') ORDER BY tuple()",
-        settings={
-            "opentelemetry_start_trace_probability": 1.0,
-            "opentelemetry_keeper_spans_probability": 1.0,
-        },
+        f"CREATE TABLE `{db}.{t}` (`s` String) ENGINE = ReplicatedMergeTree('/test/{t}', 'r1') ORDER BY tuple()",
         query_id=ddl_query_id,
     )
     
@@ -84,8 +83,8 @@ def test_keeper_opentelemetry_tracing(started_cluster):
         SELECT trace_id
         FROM system.opentelemetry_span_log
         WHERE 1
-            AND operation_name LIKE '%DB::DDLWorker::processTask%'
-            AND attribute['clickhouse.ddl_entry.initial_query_id'] = '{ddl_query_id}'
+            AND operation_name = 'query'
+            AND attribute['clickhouse.query_id'] = '{ddl_query_id}'
         """
     ).strip()
     assert ddl_trace_id != ""
@@ -99,10 +98,10 @@ def test_keeper_opentelemetry_tracing(started_cluster):
         WHERE 1
             AND trace_id = '{ddl_trace_id}'
             AND operation_name IN ('zookeeper.create', 'zookeeper.set', 'zookeeper.multi')
-        FORMAT TabSeparatedRaw
+        FORMAT TSV
         """
     ).strip().split('\n')
-    assert len(zookeeper_write_operations_spans_on_client) > 0
+    assert zookeeper_write_operations_spans_on_client
 
     # for each span id, verify that the replica serving it and the leader had the right sequence of spans
     for span_id in zookeeper_write_operations_spans_on_client:
@@ -111,26 +110,26 @@ def test_keeper_opentelemetry_tracing(started_cluster):
             FROM system.opentelemetry_span_log
             WHERE 1
                 AND trace_id = '{ddl_trace_id}'
-                AND parent_span_id = '{span_id}'
+                AND parent_span_id = {span_id}
             ORDER BY start_time_us ASC
-            FORMAT TabSeparatedRaw
+            FORMAT TSV
         """
 
-        # replica (follower) that we have the session with
-        assert keeper2.query(query).strip().split('\n') == [
+        follower_result = keeper2.query(query).strip().split('\n')
+        assert follower_result == [
             "keeper.receive_request",
-            "keeper.process_request",
+            "keeper.dispatcher.requests_queue",
             "keeper.write.pre_commit",
             "keeper.write.commit",
             "keeper.dispatcher.responses_queue",
             "keeper.send_response",
-        ]
+        ], follower_result
 
-        # leader
-        assert keeper1.query(query).strip().split('\n') == [
+        leader_result = keeper1.query(query).strip().split('\n')
+        assert leader_result == [
             "keeper.write.pre_commit",
             "keeper.write.commit",
-        ]
+        ], leader_result
 
     # find all span ids for the zookeeper.<read-operation> spans that pertain to the DDL query
     # each span id is a separate zookeeper query that we ran as part of the DDL query
@@ -141,12 +140,12 @@ def test_keeper_opentelemetry_tracing(started_cluster):
         WHERE 1
             AND trace_id = '{ddl_trace_id}'
             AND operation_name IN ('zookeeper.get', 'zookeeper.list', 'zookeeper.exists')
-        FORMAT TabSeparatedRaw
+        FORMAT TSV
         """
     ).strip().split('\n')
-    assert len(zookeeper_read_operations_spans_on_client) > 0
+    assert zookeeper_read_operations_spans_on_client
     
-    for span_id in zookeeper_write_operations_spans_on_client:
+    for span_id in zookeeper_read_operations_spans_on_client:
         query = f"""
             SELECT operation_name
             FROM system.opentelemetry_span_log
@@ -154,15 +153,16 @@ def test_keeper_opentelemetry_tracing(started_cluster):
                 AND trace_id = '{ddl_trace_id}'
                 AND parent_span_id = '{span_id}'
             ORDER BY start_time_us ASC
-            FORMAT TabSeparatedRaw
+            FORMAT TSV
         """
 
         # replica (follower) that we have session with
-        assert keeper2.query(query).strip().split('\n') in (
+        follower_result = keeper2.query(query).strip().split('\n')
+        assert follower_result in (
             # case 1: the read had to wait for the write it depends on to complete
             [
                 "keeper.receive_request",
-                "keeper.process_request",
+                "keeper.dispatcher.requests_queue",
                 "keeper.read.wait_for_write",
                 "keeper.read.process",
                 "keeper.dispatcher.responses_queue",
@@ -171,12 +171,12 @@ def test_keeper_opentelemetry_tracing(started_cluster):
             # case 2: the read did not have to wait for any writes
             [
                 "keeper.receive_request",
-                "keeper.process_request",
+                "keeper.dispatcher.requests_queue",
                 "keeper.read.process",
                 "keeper.dispatcher.responses_queue",
                 "keeper.send_response",
             ],
-        )
+        ), follower_result
 
         # other replicas
         assert keeper1.query(query) == ""

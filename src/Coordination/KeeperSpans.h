@@ -35,7 +35,7 @@ struct ZooKeeperOpentelemetrySpans
 
     // Keeper server spans
     MaybeSpan receive_request{"keeper.receive_request", OpenTelemetry::SpanKind::SERVER};
-    MaybeSpan process_request{"keeper.process_request", OpenTelemetry::SpanKind::SERVER};
+    MaybeSpan dispatcher_requests_queue{"keeper.dispatcher.requests_queue", OpenTelemetry::SpanKind::INTERNAL};
     MaybeSpan dispatcher_responses_queue{"keeper.dispatcher.responses_queue", OpenTelemetry::SpanKind::INTERNAL};
     MaybeSpan send_response{"keeper.send_response", OpenTelemetry::SpanKind::SERVER};
     MaybeSpan read_wait_for_write{"keeper.read.wait_for_write", OpenTelemetry::SpanKind::INTERNAL};
