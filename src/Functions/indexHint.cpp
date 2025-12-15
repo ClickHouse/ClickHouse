@@ -23,7 +23,7 @@ The index in ClickHouse is sparse and using `indexHint` will yield more data tha
 When you run:
 
 ```sql
-SELECT * FROM test WHERE key = 123;    
+SELECT * FROM test WHERE key = 123;
 ```
 
 ClickHouse does two things:
@@ -36,7 +36,7 @@ So even if it reads 8,192 rows from disk, it only returns the 1 row that actuall
 With `indexHint`, when you run:
 
 ```sql
-SELECT * FROM test WHERE indexHint(key = 123);    
+SELECT * FROM test WHERE indexHint(key = 123);
 ```
 
 ClickHouse does only one thing:
