@@ -13,30 +13,21 @@ namespace DB
 
 std::optional<ObjectMetadata> tryGetObjectMetadata(ReadBuffer & in)
 {
-    /// first try s3
+    auto extract_metadata = [](auto * buffer) -> std::optional<ObjectMetadata> {
+        if (!buffer)
+            return std::nullopt;
+        try {
+            ObjectMetadata metadata = buffer->getObjectMetadataFromTheLastRequest();
+            return metadata;
+        }
+        catch (...) {
+            return std::nullopt;
+        }
+    };
     if (auto * s3_buffer = dynamic_cast<ReadBufferFromS3*>(&in))
-    {
-        try {
-            ObjectMetadata metadata = s3_buffer->getObjectMetadataFromTheLastRequest();
-            return metadata;
-        }
-        catch (...)
-        {
-            return std::nullopt;
-        }
-    }
-    /// next try gcs/azure
+        return extract_metadata(s3_buffer);
     if (auto * azure_buffer = dynamic_cast<ReadBufferFromAzureBlobStorage*>(&in))
-    {
-        try {
-            ObjectMetadata metadata = azure_buffer->getObjectMetadataFromTheLastRequest();
-            return metadata;
-        }
-        catch (...)
-        {
-            return std::nullopt;
-        }
-    }
+        return extract_metadata(azure_buffer);
     return std::nullopt;
 }
     
