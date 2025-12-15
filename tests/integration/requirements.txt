@@ -1,0 +1,2 @@
+# tests/integration/requirements.txt
+flightsql-dbapi==0.2.2
