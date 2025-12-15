@@ -130,6 +130,11 @@ std::string getChineseZodiac()
     return zodiacs[offset];
 }
 
+bool isCloudEndpoint(const std::string & host)
+{
+    return endsWith(host, ".clickhouse.cloud") || endsWith(host, ".clickhouse-staging.com") || endsWith(host, ".clickhouse-dev.com");
+}
+
 #if USE_REPLXX
 /// Issue: https://github.com/ClickHouse/ClickHouse/issues/83987
 /// countCodePointsWithSeqLength calculates utf-8 code point position consistently with
