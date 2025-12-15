@@ -353,7 +353,7 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {TypeIndex::QBit, "tupleElement"}, optimizeTupleOrVariantElement<DataTypeQBit>, /// QBit uses tupleElement for subcolumns
     },
     {
-        {TypeIndex::QBit, "tupleElement"}, optimizeTupleOrVariantElement<DataTypeObject>,
+        {TypeIndex::Object, "tupleElement"}, optimizeTupleOrVariantElement<DataTypeObject>,
     },
 };
 

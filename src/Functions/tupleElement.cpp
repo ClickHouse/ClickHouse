@@ -98,7 +98,7 @@ public:
 
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "First argument for function {} must be Tuple, array of Tuple, QBit or array of QBit. Actual {}",
+            "First argument for function {} must be Tuple, QBit, JSON or array of Tuple, QBit, JSON. Actual {}",
             getName(),
             arguments[0].type->getName());
     }
@@ -160,7 +160,7 @@ public:
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument for function {} must be Tuple, array of Tuple, QBit or array of QBit. Actual {}",
+                "First argument for function {} must be Tuple, QBit, JSON or array of Tuple, QBit, JSON. Actual {}",
                 getName(),
                 input_arg.type->getName());
         }
