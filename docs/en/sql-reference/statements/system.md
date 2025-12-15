@@ -273,7 +273,8 @@ SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` SLEEP ENTRY 0 1
 #### PROFILE {#instrument-add-profile}
 
 Measures the time spent between `ENTRY` and `EXIT` of a function.
-The result of the profiling is stored in [`system.trace_log`](../../operations/system-tables/trace_log.md).
+The result of the profiling is stored in [`system.trace_log`](../../operations/system-tables/trace_log.md) and can be converted
+to [Chrome Event Trace Format](../../operations/system-tables/trace_log.md#chrome-event-trace-format).
 
 ```sql
 SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` PROFILE

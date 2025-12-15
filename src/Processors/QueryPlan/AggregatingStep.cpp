@@ -513,7 +513,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     new_merge_threads,
                     new_temporary_data_merge_threads,
                     should_produce_results_in_order_of_bucket_number,
-                    skip_merging);
+                    skip_merging,
+                    dataflow_cache_updater);
             });
 
         pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads, false, settings.min_outstreams_per_resize_after_split);
@@ -752,7 +753,7 @@ void AggregatingStep::serialize(Serialization & ctx) const
     /// Overall, the rule is not strict.
 
     UInt8 flags = 0;
-    if (final)
+    if (final && !ctx.skip_final_flag)
         flags |= 1;
     if (params.overflow_row)
         flags |= 2;
@@ -788,7 +789,7 @@ void AggregatingStep::serialize(Serialization & ctx) const
 
     serializeAggregateDescriptions(params.aggregates, ctx.out);
 
-    if (params.stats_collecting_params.isCollectionAndUseEnabled())
+    if (params.stats_collecting_params.isCollectionAndUseEnabled() && !ctx.skip_cache_key)
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
 }
 
