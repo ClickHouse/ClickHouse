@@ -938,6 +938,16 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNChop, 0, 0, 3, 4),
     CHFunction(SQLFunc::FUNChopStart, 0, 0, 3, 4),
     CHFunction(SQLFunc::FUNChopEnd, 0, 0, 3, 4),
+    ///Time series
+    CHFunction(SQLFunc::FUNCtimeSeriesRange, 0, 0, 3, 3),
+    CHFunction(SQLFunc::FUNCtimeSeriesFromGrid, 0, 0, 4, 4),
+    CHFunction(SQLFunc::FUNCseriesDecomposeSTL, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCseriesOutliersDetectTukey, 0, 0, 1, 4),
+    CHFunction(SQLFunc::FUNCseriesPeriodDetectFFT, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCtimeSeriesIdToTags, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCtimeSeriesIdToTagsGroup, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCtimeSeriesStoreTags, 0, 0, 2, ulimited_params),
+    CHFunction(SQLFunc::FUNCtimeSeriesTagsGroupToTags, 0, 0, 1, 1),
     /// Tuples
     CHFunction(SQLFunc::FUNCtuple, 0, 0, 2, ulimited_params),
     CHFunction(SQLFunc::FUNCtupleElement, 0, 0, 2, 3),
