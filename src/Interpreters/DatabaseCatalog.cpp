@@ -842,6 +842,34 @@ Databases DatabaseCatalog::getDatabases(GetDatabasesOptions options) const
     return databases_without_datalake_catalogs;
 }
 
+Strings DatabaseCatalog::getDatabasesCaseInsensitive(const String & database_name) const
+{
+    assert(!database_name.empty());
+    Strings result;
+    // ASCII-only lowercase conversion for both sides
+    auto to_lower_ascii = [](const String & s) {
+        String out;
+        out.reserve(s.size());
+        for (char c : s)
+        {
+            if (c >= 'A' && c <= 'Z')
+                out.push_back(static_cast<char>(c + ('a' - 'A')));
+            else
+                out.push_back(c);
+        }
+        return out;
+    };
+
+    const String target = to_lower_ascii(database_name);
+    std::lock_guard lock{databases_mutex};
+    for (const auto & [name, _] : databases)
+    {
+        if (to_lower_ascii(name) == target)
+            result.push_back(name);
+    }
+    return result;
+}
+
 bool DatabaseCatalog::isTableExist(const DB::StorageID & table_id, ContextPtr context_) const
 {
     if (table_id.hasUUID())

@@ -6975,6 +6975,30 @@ Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting
     DECLARE(Bool, enforce_strict_identifier_format, false, R"(
 If enabled, only allow identifiers containing alphanumeric characters and underscores.
 )", 0) \
+    DECLARE(Bool, enable_case_insensitive_columns, false, R"(
+Enable case-insensitive matching for column identifiers in SELECT queries when identifiers are not quoted.
+
+Behavior:
+- Applied only if there is no exact match
+- A match is used only if the lowercase form matches a single column unambiguously
+- If ambiguous, an error is thrown listing all candidates
+)", 0) \
+    DECLARE(Bool, enable_case_insensitive_tables, false, R"(
+Enable case-insensitive matching for table identifiers in SELECT queries when identifiers are not quoted.
+
+Behavior:
+- Applied only if there is no exact match.
+- A match is used only if the lowercase form matches a single table unambiguously within the target database (current database if unspecified)
+- If ambiguous, an error is thrown listing all candidates
+)", 0) \
+    DECLARE(Bool, enable_case_insensitive_databases, false, R"(
+Enable case-insensitive matching for database identifiers in SELECT queries when identifiers are not quoted.
+
+Behavior:
+- Applied only if there is no exact match
+- A match is used only if the lowercase form matches a single database unambiguously
+- If ambiguous, an error is thrown listing all candidates
+)", 0) \
     DECLARE(UInt64, max_limit_for_vector_search_queries, 1'000, R"(
 SELECT queries with LIMIT bigger than this setting cannot use vector similarity indices. Helps to prevent memory overflows in vector similarity indices.
 )", 0) \

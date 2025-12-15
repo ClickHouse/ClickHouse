@@ -42,11 +42,16 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool single_join_prefer_left_table;
     extern const SettingsBool analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested;
+    extern const SettingsBool enable_case_insensitive_columns;
+    extern const SettingsBool enable_case_insensitive_tables;
+    extern const SettingsBool enable_case_insensitive_databases;
 }
 
 namespace ErrorCodes
 {
     extern const int UNKNOWN_IDENTIFIER;
+    extern const int UNKNOWN_TABLE;
+    extern const int UNKNOWN_DATABASE;
     extern const int AMBIGUOUS_IDENTIFIER;
     extern const int INVALID_IDENTIFIER;
     extern const int UNSUPPORTED_METHOD;
@@ -146,6 +151,161 @@ QueryTreeNodePtr IdentifierResolver::wrapExpressionNodeInTupleElement(QueryTreeN
     return expression_node;
 }
 
+namespace
+{
+struct QualifiedTable
+{
+    String database;
+    String table;
+
+    String toString() const { return database + "." + table; }
+
+    bool operator<(const QualifiedTable & other) const
+    {
+        return database < other.database || (database == other.database && table < other.table);
+    }
+};
+
+using QualifiedTables = std::vector<QualifiedTable>;
+
+static IdentifierResolveResult tryResolveTableIdentifierFallback(
+    const Identifier & table_identifier,
+    const ContextPtr & context,
+    const std::exception_ptr & swallowed_exception)
+{
+    const auto & settings = context->getSettingsRef();
+
+    auto parts = table_identifier.getParts();
+    QualifiedTable requested_table;
+    if (parts.size() == 1)
+    {
+        requested_table.database = context->getCurrentDatabase();
+        requested_table.table = parts[0];
+    }
+    else if (parts.size() == 2)
+    {
+        requested_table.database = parts[0];
+        requested_table.table = parts[1];
+    }
+    else
+    {
+        return {};
+    }
+
+    String db_candidate;
+
+    if (parts.size() == 2)
+    {
+        /// Prefer exact database name if it exists
+        if (DatabaseCatalog::instance().isDatabaseExist(requested_table.database))
+        {
+            db_candidate = requested_table.database;
+        }
+        else
+        {
+            /// If database CI is disabled, don't attempt CI lookup here
+            // * ci -- case insensitivity *
+            if (!settings[Setting::enable_case_insensitive_databases])
+            {
+                if (swallowed_exception)
+                    std::rethrow_exception(swallowed_exception);
+                return {};
+            }
+            /// Ask catalog for case-insensitive matches
+            auto ci_candidates = DatabaseCatalog::instance().getDatabasesCaseInsensitive(requested_table.database);
+
+            if (ci_candidates.empty())
+            {
+                if (swallowed_exception)
+                    std::rethrow_exception(swallowed_exception);
+                return {};
+            }
+
+            if (ci_candidates.size() > 1)
+            {
+                std::sort(ci_candidates.begin(), ci_candidates.end());
+                throw Exception(
+                    ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                    "Database '{}' does not have a case-sensitive match. But it case-insensitively matches multiple databases: {}",
+                    requested_table.database,
+                    fmt::join(ci_candidates, ", "));
+            }
+
+            db_candidate = ci_candidates.front();
+            // matched DB via case-insensitiveness
+        }
+    }
+    else
+    {
+        /// work within current database only
+        db_candidate = requested_table.database;
+    }
+
+    /// in selected DB collect case-insensitive table candidates
+    QualifiedTables ci_table_candidates;
+
+    auto db_ptr = DatabaseCatalog::instance().tryGetDatabase(db_candidate);
+    if (!db_ptr)
+        return {};
+
+    const bool ci_tables_on = settings[Setting::enable_case_insensitive_tables];
+
+    std::string requested_table_lower = "";
+    if (ci_tables_on)
+        requested_table_lower = Poco::toLower(requested_table.table);
+
+    for (const auto & name : db_ptr->getAllTableNames(context))
+    {
+        if (name == requested_table.table) /// -- we found the *case-sensitive* table name match
+        {
+            Identifier canonical{{ db_candidate, name }};
+            if (auto resolved = IdentifierResolver::tryResolveTableIdentifier(canonical, context))
+                return { .resolved_identifier = std::move(resolved), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
+            return {};
+        }
+        if (ci_tables_on && Poco::toLower(name) == requested_table_lower) /// -- we found the *case-insensitive* match
+            ci_table_candidates.push_back({ db_candidate, name });
+    }
+
+    if (ci_table_candidates.empty())
+    {
+        /// If we have resolved database via CI but table CI is OFF
+        /// we delegate to catalog to get the UNKNOWN_TABLE
+        if (!ci_tables_on && db_ptr)
+        {
+            StorageID storage_id(db_candidate, requested_table.table);
+            (void)DatabaseCatalog::instance().getTable(storage_id, context); // throw UNKNOWN_TABLE with standard message
+            return {};
+        }
+        if (swallowed_exception)
+            std::rethrow_exception(swallowed_exception);
+        return {};
+    }
+
+    /// no exact matches -> consider CI matches in exception
+    if (ci_table_candidates.size() > 1)
+    {
+        std::sort(ci_table_candidates.begin(), ci_table_candidates.end());
+
+        std::vector<String> ci_str;
+        ci_str.reserve(ci_table_candidates.size());
+        for (const auto & qt : ci_table_candidates)
+            ci_str.push_back(qt.toString());
+
+        throw Exception(
+            ErrorCodes::AMBIGUOUS_IDENTIFIER,
+            "Table identifier '{}' does not have a case-sensitive match. But it case-insensitively matches multiple tables: {}",
+            table_identifier.getFullName(),
+            fmt::join(ci_str, ", "));
+    }
+
+    Identifier canonical{{ ci_table_candidates.front().database, ci_table_candidates.front().table }};
+    if (auto resolved = IdentifierResolver::tryResolveTableIdentifier(canonical, context))
+        return { .resolved_identifier = std::move(resolved), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
+    return {};
+}
+}
+
 /// Resolve identifier functions implementation
 
 /// Try resolve table identifier from database catalog
@@ -213,10 +373,27 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
 
 IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, const ContextPtr & context)
 {
-    if (auto result = tryResolveTableIdentifier(table_identifier, context))
-        return { .resolved_identifier = std::move(result), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
+    const auto & settings = context->getSettingsRef();
+    std::exception_ptr swallowed_exception; /// to preserve original message/hints
+    /// try exact resolution first, only swallow 'not found' cases to allow CI fallback
+    try
+    {
+        if (auto result = tryResolveTableIdentifier(table_identifier, context))
+            return { .resolved_identifier = std::move(result), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
+    }
+    catch (const Exception & e)
+    {
+        bool do_fallback = 
+            (e.code() == ErrorCodes::UNKNOWN_DATABASE && settings[Setting::enable_case_insensitive_databases]) ||
+            (e.code() == ErrorCodes::UNKNOWN_TABLE && settings[Setting::enable_case_insensitive_tables]);
 
-    return {};
+        if (!do_fallback)
+            throw;
+
+        swallowed_exception = std::current_exception();
+    }
+
+    return tryResolveTableIdentifierFallback(table_identifier, context, swallowed_exception);
 }
 
 /// Resolve identifier from compound expression
@@ -613,22 +790,74 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
     if (!result_expression)
     {
-        if (can_be_not_found)
-            return {};
-        std::unordered_set<Identifier> valid_identifiers;
-        TypoCorrection::collectTableExpressionValidIdentifiers(
-            identifier,
-            table_expression_node,
-            table_expression_data,
-            valid_identifiers);
+        /// case-insensitive fallback for columns, only for unquoted identifiers
+        const auto & settings = scope.context->getSettingsRef();
+        bool ci_columns_enabled = settings[Setting::enable_case_insensitive_columns];
 
-        auto hints = TypoCorrection::collectIdentifierTypoHints(identifier, valid_identifiers);
+        Strings ci_col_name_matches;
+        ColumnNodePtr ci_match_column;
+        if (ci_columns_enabled && !table_expression_data.column_name_to_column_node.empty())
+        {
+            String wanted_full_l = Poco::toLower(identifier_without_column_qualifier.getFullName());
+            for (const auto & [col_name, col_node] : table_expression_data.column_name_to_column_node)
+            {
+                if (Poco::toLower(col_name) == wanted_full_l)
+                {
+                    ci_col_name_matches.push_back(col_name);
+                    if (!ci_match_column)
+                        ci_match_column = col_node;
+                }
+            }
 
-        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Identifier '{}' cannot be resolved from {}. In scope {}{}",
-            identifier.getFullName(),
-            table_expression_source,
-            scope.scope_node->formatASTForErrorMessage(),
-            getHintsErrorMessageSuffix(hints));
+            if (!ci_col_name_matches.empty())
+            {
+                if (ci_col_name_matches.size() == 1)
+                {
+                    /// use the single unambiguous match
+                    result_expression = ci_match_column;
+                    /// If nested path exists (like a.b), resolve it via compound if needed
+                    if (!identifier_without_column_qualifier.isShort())
+                    {
+                        size_t identifier_bind_size = identifier_column_qualifier_parts + 1;
+                        result_expression = tryResolveIdentifierFromCompoundExpression(
+                            identifier, identifier_bind_size, result_expression, table_expression_source, scope, can_be_not_found);
+                        if (can_be_not_found && !result_expression)
+                            return {};
+                        clone_is_needed = false;
+                    }
+                }
+                else if (ci_col_name_matches.size() > 1)
+                {
+                    std::sort(ci_col_name_matches.begin(), ci_col_name_matches.end());
+                    throw Exception(
+                        ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                        "Identifier '{}' does not match any column case-sensitively, but it case-insensitively matches multiple columns: {}. In scope {}",
+                        identifier.getFullName(),
+                        fmt::join(ci_col_name_matches, ", "),
+                        scope.scope_node->formatASTForErrorMessage());
+                }
+            }
+        }
+
+        if (!result_expression)
+        {
+            if (can_be_not_found)
+                return {};
+            std::unordered_set<Identifier> valid_identifiers;
+            TypoCorrection::collectTableExpressionValidIdentifiers(
+                identifier,
+                table_expression_node,
+                table_expression_data,
+                valid_identifiers);
+
+            auto hints = TypoCorrection::collectIdentifierTypoHints(identifier, valid_identifiers);
+
+            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Identifier '{}' cannot be resolved from {}. In scope {}{}",
+                identifier.getFullName(),
+                table_expression_source,
+                scope.scope_node->formatASTForErrorMessage(),
+                getHintsErrorMessageSuffix(hints));
+        }
     }
 
     if (clone_is_needed)
@@ -733,7 +962,38 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     }
 
     if (identifier.getPartsSize() == 1)
+    {
+        /// case-insensitive fallback for single-part identifiers against this table expression
+        const auto & settings = scope.context->getSettingsRef();
+        bool ci_enabled = settings[Setting::enable_case_insensitive_columns];
+        std::vector<std::string> matches;
+        ColumnNodePtr match_column;
+        for (const auto & [col_name, col_node] : table_expression_data.column_name_to_column_node)
+        {
+            if (Poco::toLower(col_name) == Poco::toLower(identifier.getParts().front()))
+            {
+                matches.push_back(col_name);
+                match_column = col_node;
+            }
+        }
+
+        if (ci_enabled && matches.size() == 1)
+        {
+            auto result = std::static_pointer_cast<IQueryTreeNode>(match_column);
+            return { .resolved_identifier = std::move(result), .resolve_place = IdentifierResolvePlace::JOIN_TREE };
+        }
+        else if (ci_enabled && matches.size() > 1)
+        {
+            std::sort(matches.begin(), matches.end());
+            throw Exception(
+                ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                "Identifier '{}' does not match any column case-sensitively, but it case-insensitively matches multiple columns: {}. In scope {}",
+                identifier.getFullName(),
+                fmt::join(matches, ", "),
+                scope.scope_node->formatASTForErrorMessage());
+        }
         return {};
+    }
 
     const auto & table_name = table_expression_data.table_name;
     if ((!table_name.empty() && path_start == table_name) || (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias()))
