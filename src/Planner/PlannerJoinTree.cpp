@@ -85,6 +85,7 @@
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 
+#include <ios>
 #include <ranges>
 
 namespace DB
@@ -1060,10 +1061,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                 }
 
-                auto parallel_replicas_enabled_for_storage = [](const StoragePtr & table, const Settings & query_settings)
+                auto parallel_replicas_enabled_for_storage = [](const StoragePtr & current_storage, const Settings & query_settings)
                 {
-                    const auto * mv = typeid_cast<const StorageMaterializedView *>(table.get());
-                    const auto * table_ptr = table.get();
+                    const auto * mv = typeid_cast<const StorageMaterializedView *>(current_storage.get());
+                    const auto * table_ptr = current_storage.get();
                     if (mv)
                     {
                         if (!query_settings[Setting::parallel_replicas_allow_materialized_views])
@@ -1089,8 +1090,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (query_plan.isInitialized() && !select_query_options.build_logical_plan
                     && parallel_replicas_enabled_for_storage(storage, settings))
                 {
-                    auto allow_parallel_replicas_for_table_expression
-                        = [](const QueryTreeNodePtr current_table_expression, const QueryTreeNodePtr & join_tree_node)
+                    auto allow_parallel_replicas_for_table_expression = [&parallel_replicas_enabled_for_storage](
+                                                                            const QueryTreeNodePtr current_table_expression,
+                                                                            const QueryTreeNodePtr & join_tree_node,
+                                                                            const Settings & query_settings)
                     {
                         if (join_tree_node->as<CrossJoinNode>())
                             return false;
@@ -1100,15 +1103,24 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             return true;
 
                         const auto & left_table_expr = join_node->getLeftTableExpression();
+
+                        const auto * left_table = typeid_cast<const TableNode *>(left_table_expr.get());
+
                         const auto join_kind = join_node->getKind();
                         const auto join_strictness = join_node->getStrictness();
                         if ((join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All) || join_kind == JoinKind::Left)
                         {
                             if (current_table_expression.get() == left_table_expr.get())
                                 // here current table expression is table or table function
+                                // we've already checked that it's supported storage for parallel replicas
                                 return true;
 
                             // current table expression is right one
+
+                            // check that left table expression can be used for parallel replicas
+                            if (left_table && parallel_replicas_enabled_for_storage(left_table->getStorage(), query_settings))
+                                return true;
+
                             // check if left one is not subquery
                             return left_table_expr->getNodeType() != QueryTreeNodeType::QUERY
                                 && left_table_expr->getNodeType() != QueryTreeNodeType::UNION
@@ -1129,7 +1141,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                                 && right_table_expr->getNodeType() != QueryTreeNodeType::TABLE_FUNCTION)
                                 return false;
 
-                            return true;
+                            if (current_table_expression.get() == left_table_expr.get())
+                                return false;
+
+                            const auto * right_table = typeid_cast<const TableNode *>(join_node->getRightTableExpression().get());
+                            if (!right_table)
+                                return false;
+
+                            return parallel_replicas_enabled_for_storage(right_table->getStorage(), query_settings);
                         }
 
                         return false;
@@ -1159,7 +1178,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                     else if (
                         ClusterProxy::canUseParallelReplicasOnInitiator(query_context)
-                        && allow_parallel_replicas_for_table_expression(table_expression, parent_join_tree))
+                        && allow_parallel_replicas_for_table_expression(table_expression, parent_join_tree, settings))
                     {
                         // (1) find read step
                         QueryPlan::Node * node = query_plan.getRootNode();
