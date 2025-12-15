@@ -875,13 +875,14 @@ void StatementGenerator::generateNextCheckTable(RandomGenerator & rg, CheckTable
     ct->set_single_result(rg.nextSmallNumber() < 4);
 }
 
-bool StatementGenerator::tableOrFunctionRef(RandomGenerator & rg, const SQLTable & t, TableOrFunction * tof)
+bool StatementGenerator::tableOrFunctionRef(
+    RandomGenerator & rg, const SQLTable & t, const bool allow_remote_cluster, TableOrFunction * tof)
 {
     bool is_url = false;
     bool cluster_or_remote = false;
     const std::optional<String> & cluster = t.getCluster();
-    const uint32_t cluster_func = 5 * static_cast<uint32_t>(cluster.has_value() || !fc.clusters.empty());
-    const uint32_t remote_func = 5;
+    const uint32_t cluster_func = 5 * static_cast<uint32_t>(allow_remote_cluster && (cluster.has_value() || !fc.clusters.empty()));
+    const uint32_t remote_func = 5 * static_cast<uint32_t>(allow_remote_cluster);
     const uint32_t no_remote_or_cluster = 90;
     const uint32_t prob_space = cluster_func + remote_func + no_remote_or_cluster;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
@@ -981,7 +982,7 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescribeSta
 
     if (desc_table && nopt < (desc_table + 1))
     {
-        const auto is_url = tableOrFunctionRef(rg, rg.pickRandomly(filterCollection<SQLTable>(attached_tables)), dt->mutable_tof());
+        const auto is_url = tableOrFunctionRef(rg, rg.pickRandomly(filterCollection<SQLTable>(attached_tables)), true, dt->mutable_tof());
         UNUSED(is_url);
     }
     else if (desc_view && nopt < (desc_table + desc_view + 1))
@@ -1046,23 +1047,24 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescribeSta
     }
 }
 
-void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_parallel, Insert * ins)
+void StatementGenerator::generateInsertToTable(
+    RandomGenerator & rg, const SQLTable & t, const bool in_parallel, std::optional<uint64_t> rows, Insert * ins)
 {
     String buf;
-    const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
     const uint32_t hardcoded_insert = 70 * static_cast<uint32_t>(fc.allow_hardcoded_inserts && !in_parallel);
-    const uint32_t random_values = 5 * static_cast<uint32_t>(!in_parallel);
+    const uint32_t random_values = 5 * static_cast<uint32_t>(!rows.has_value() && !in_parallel);
     const uint32_t generate_random = 30;
     const uint32_t number_func = 30;
-    const uint32_t insert_select = 10;
+    const uint32_t insert_select = 10 * static_cast<uint32_t>(!rows.has_value());
     const uint32_t prob_space = hardcoded_insert + random_values + generate_random + number_func + insert_select;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
     std::uniform_int_distribution<uint64_t> rows_dist(fc.min_insert_rows, fc.max_insert_rows);
     std::uniform_int_distribution<uint64_t> string_length_dist(fc.min_string_length, fc.max_string_length);
     std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
-    const bool is_url = tableOrFunctionRef(rg, t, ins->mutable_tof());
+    const bool is_url = tableOrFunctionRef(rg, t, !rows.has_value(), ins->mutable_tof());
     const bool allCols = rg.nextMediumNumber() < 4;
+    const uint64_t nrows = rows.has_value() ? rows.value() : rows_dist(rg.generator);
 
     flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [&](const SQLColumn & c) { return allCols || c.canBeInserted(); });
     std::shuffle(this->entries.begin(), this->entries.end(), rg.generator);
@@ -1075,7 +1077,6 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
     }
     if (hardcoded_insert && (nopt < hardcoded_insert + 1))
     {
-        const uint64_t nrows = rows_dist(rg.generator);
         const bool allow_cast = rg.nextSmallNumber() < 3;
 
         for (uint64_t i = 0; i < nrows; i++)
@@ -1124,10 +1125,10 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
     }
     else if (random_values && nopt < (hardcoded_insert + random_values + 1))
     {
-        const uint32_t nrows = rg.randomInt<uint32_t>(1, 3);
+        const uint32_t vrows = rg.randomInt<uint32_t>(1, 3);
         ValuesStatement * vs = ins->mutable_values();
 
-        for (uint32_t i = 0; i < nrows; i++)
+        for (uint32_t i = 0; i < vrows; i++)
         {
             bool first = true;
             ExprList * elist = i == 0 ? vs->mutable_expr_list() : vs->add_extra_expr_lists();
@@ -1193,7 +1194,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
             grf->set_random_seed(rg.nextInFullRange());
             grf->set_max_string_length(string_length_dist(rg.generator));
             grf->set_max_array_length(nested_rows_dist(rg.generator));
-            ssc->mutable_limit()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rows_dist(rg.generator));
+            ssc->mutable_limit()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(nrows);
         }
         else if (number_func && nopt < (hardcoded_insert + random_values + generate_random + number_func + 1))
         {
@@ -1227,7 +1228,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
             }
             ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_lit_val()->set_no_quote_str(std::move(buf));
             gsf->set_fname(GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_numbers);
-            gsf->mutable_expr1()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rows_dist(rg.generator));
+            gsf->mutable_expr1()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(nrows);
             if (has_aggr || rg.nextMediumNumber() < 21)
             {
                 /// Add GROUP BY for AggregateFunction type
@@ -1266,6 +1267,11 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
     {
         generateSettingValues(rg, formatSettings, ins->mutable_setting_values());
     }
+}
+
+void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_parallel, Insert * ins)
+{
+    generateInsertToTable(rg, rg.pickRandomly(filterCollection<SQLTable>(attached_tables)), in_parallel, std::nullopt, ins);
 }
 
 void StatementGenerator::generateUptDelWhere(RandomGenerator & rg, const SQLTable & t, Expr * expr)

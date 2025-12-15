@@ -26,7 +26,7 @@ static void finishSettings(SettingValues * svs)
            {"apply_patch_parts", "1"},
            {"lightweight_deletes_sync", "2"},
            {"mutations_sync", "2"},
-           {"wait_for_async_insert", "2"}};
+           {"wait_for_async_insert", "1"}};
     for (const auto & [key, val] : toSet)
     {
         SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
@@ -168,7 +168,8 @@ void QueryOracle::dumpTableContent(
     const DumpOracleStrategy strategy,
     const bool test_content,
     const SQLTable & t,
-    SQLQuery & sq1)
+    SQLQuery & sq1,
+    SQLQuery & sq2)
 {
     TopSelect * ts = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
@@ -220,6 +221,16 @@ void QueryOracle::dumpTableContent(
                 ->mutable_func()
                 ->set_catalog_func(FUNCcount);
             break;
+        case DumpOracleStrategy::INSERT_COUNT: {
+            /// On the first step get the current count plus the rows to be inserted
+            BinaryExpr * bexpr = ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_binary_expr();
+
+            nrows = rows_dist(rg.generator);
+            bexpr->set_op(BinaryOperator::BINOP_PLUS);
+            bexpr->mutable_lhs()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func(FUNCcount);
+            bexpr->mutable_rhs()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(nrows);
+        }
+        break;
     }
     if (test_content)
     {
@@ -235,6 +246,33 @@ void QueryOracle::dumpTableContent(
     UNUSED(err);
     sif->set_path(qcfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
+    /// Prepare second query
+    switch (strategy)
+    {
+        case DumpOracleStrategy::DUMP_TABLE:
+        case DumpOracleStrategy::OPTIMIZE:
+        case DumpOracleStrategy::REATTACH:
+        case DumpOracleStrategy::BACKUP_RESTORE:
+        case DumpOracleStrategy::ALTER_UPDATE:
+            /// Second step equal as the first one
+            sq2.CopyFrom(sq1);
+            break;
+        case DumpOracleStrategy::INSERT_COUNT: {
+            /// In the second step, just get the total count
+            sq2.CopyFrom(sq1);
+            SelectStatementCore & scc
+                = const_cast<SelectStatementCore &>(sq2.single_query().explain().inner_query().select().sel().select_core());
+            scc.clear_result_columns();
+            scc.add_result_columns()
+                ->mutable_eca()
+                ->mutable_expr()
+                ->mutable_comp_expr()
+                ->mutable_func_call()
+                ->mutable_func()
+                ->set_catalog_func(FUNCcount);
+        }
+        break;
+    }
 }
 
 void QueryOracle::generateExportQuery(
@@ -498,6 +536,13 @@ void QueryOracle::dumpOracleIntermediateSteps(
             intermediate_queries.emplace_back(next);
         }
         break;
+        case DumpOracleStrategy::INSERT_COUNT: {
+            Insert * ins = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
+
+            chassert(nrows);
+            gen.generateInsertToTable(rg, t, false, nrows, ins);
+            intermediate_queries.emplace_back(next);
+        }
     }
 }
 
@@ -1210,6 +1255,7 @@ void QueryOracle::resetOracleValues()
     first_errcode = 0;
     other_steps_sucess = true;
     can_test_oracle_result = fc.compare_success_results;
+    nrows = 0;
     res1 = PerformanceResult();
     res2 = PerformanceResult();
 }

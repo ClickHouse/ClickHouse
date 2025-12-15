@@ -213,6 +213,11 @@ bool SQLBase::isRocksEngine() const
     return teng == TableEngineValues::EmbeddedRocksDB;
 }
 
+bool SQLBase::isMemoryEngine() const
+{
+    return teng == TableEngineValues::Memory;
+}
+
 bool SQLBase::isMySQLEngine() const
 {
     return teng == TableEngineValues::MySQL || (isExternalDistributedEngine() && sub == TableEngineValues::MySQL);
@@ -786,6 +791,13 @@ bool SQLTable::hasSignColumn() const
 bool SQLTable::hasVersionColumn() const
 {
     return teng == TableEngineValues::VersionedCollapsingMergeTree;
+}
+
+bool SQLTable::areInsertsAppends() const
+{
+    return teng == TableEngineValues::MergeTree || isLogFamily() || isMemoryEngine() || isRocksEngine() || isMySQLEngine()
+        || isPostgreSQLEngine() || isSQLiteEngine() || isMongoDBEngine() || isRedisEngine() || isHudiEngine() || isAnyDeltaLakeEngine()
+        || isAnyIcebergEngine() || isDictionaryEngine() || isKeeperMapEngine();
 }
 
 bool SQLView::supportsFinal() const

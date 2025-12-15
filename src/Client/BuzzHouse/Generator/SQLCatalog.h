@@ -254,6 +254,8 @@ public:
 
     bool isRocksEngine() const;
 
+    bool isMemoryEngine() const;
+
     bool isMySQLEngine() const;
 
     bool isPostgreSQLEngine() const;
@@ -395,6 +397,8 @@ public:
     bool hasSignColumn() const;
 
     bool hasVersionColumn() const;
+
+    bool areInsertsAppends() const;
 };
 
 struct SQLView : SQLBase
