@@ -2358,7 +2358,9 @@ struct ConvertImpl
                             }
                         }
                     }
-#if defined(__aarch64__) && defined(NDEBUG)
+#if defined(__aarch64__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wpass-failed"
                     else if constexpr (std::is_same_v<FromFieldType, UInt64> && std::is_same_v<ToFieldType, BFloat16>)
                     {
                         const UInt64* __restrict s = &vec_from[i];
@@ -2392,6 +2394,7 @@ struct ConvertImpl
 
                         i += remaining - 1;
                     }
+#pragma clang diagnostic pop
 #endif
                     else
                     {
