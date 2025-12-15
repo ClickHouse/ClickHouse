@@ -25,8 +25,7 @@ static void finishSettings(SettingValues * svs)
            {"apply_deleted_mask", "1"},
            {"apply_patch_parts", "1"},
            {"lightweight_deletes_sync", "2"},
-           {"mutations_sync", "2"},
-           {"wait_for_async_insert", "1"}};
+           {"mutations_sync", "2"}};
     for (const auto & [key, val] : toSet)
     {
         SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
@@ -537,11 +536,14 @@ void QueryOracle::dumpOracleIntermediateSteps(
         }
         break;
         case DumpOracleStrategy::INSERT_COUNT: {
-            Insert * ins = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
+            SQLQuery next2;
+            Insert * ins = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
 
             chassert(nrows);
+            next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_system_cmd()->set_flush_async_insert_queue(true);
             gen.generateInsertToTable(rg, t, false, nrows, ins);
             intermediate_queries.emplace_back(next);
+            intermediate_queries.emplace_back(next2);
         }
     }
 }
