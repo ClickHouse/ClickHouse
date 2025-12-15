@@ -432,12 +432,14 @@ void HTTPHandler::processQuery(
     bool is_in_post_compressed = false;
     if (params.getParsedLast<bool>("decompress", false))
     {
+        LOG_DEBUG(getLogger("HTTPServerRequest"), "wrapping in_post id {} with CompressedReadBuffer", size_t(in_post.get()));
         in_post_maybe_compressed = std::make_unique<CompressedReadBuffer>(std::move(in_post), /* allow_different_codecs_ = */ false, /* external_data_ = */ true);
         is_in_post_compressed = true;
     }
     else
     {
         in_post_maybe_compressed = std::move(in_post);
+        LOG_DEBUG(getLogger("HTTPServerRequest"), "creating in_post_maybe_compressed id {}", size_t(in_post_maybe_compressed.get()));
     }
 
     /// NOTE: this may create pretty huge allocations that will not be accounted in trace_log,
@@ -495,12 +497,25 @@ void HTTPHandler::processQuery(
     std::unique_ptr<ReadBuffer> in;
     if (has_external_data)
     {
+        LOG_DEBUG(getLogger("HTTPServerRequest"), "Processing external data for the HTTP request");
         in = std::move(in_param);
         in_post_maybe_compressed.reset();
     }
     else
     {
+        LOG_DEBUG(
+            getLogger("HTTPServerRequest"),
+            "Concatenating in_param and in_post_maybe_compressed for the HTTP request, in_post_maybe_compressed id {}",
+            size_t(in_post_maybe_compressed.get()));
+
         in = std::make_unique<ConcatReadBuffer>(std::move(in_param), std::move(in_post_maybe_compressed));
+
+        LOG_DEBUG(
+            getLogger("HTTPServerRequest"),
+            "ConcatReadBuffer created for the HTTP request has data {}",
+            in->hasPendingData());
+
+        in_post_maybe_compressed.reset();
     }
 
     applyHTTPResponseHeaders(response, http_response_headers_override);
