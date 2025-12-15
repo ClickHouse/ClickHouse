@@ -94,6 +94,16 @@ inline void encode_hex_string(uint8_t* dst, const uint8_t* src, size_t size, Cas
 {
     heks::heks_detail::encodeHexVecImpl<Case::value>(dst, src, heks::RawLength{size});
 })
+DECLARE_DEFAULT_CODE(
+inline void decode_hex_string(uint8_t* dst, const uint8_t* src, size_t size)
+{
+    heks::decodeHexLUT4(dst, src, heks::RawLength{size});
+})
+DECLARE_AVX2_SPECIFIC_CODE(
+inline void decode_hex_string(uint8_t* dst, const uint8_t* src, size_t size)
+{
+    heks::decodeHexVec(dst, src, heks::RawLength{size});
+})
 DECLARE_AVX2_SPECIFIC_CODE(
 template <class Case>
 inline void encode_hex_16le(uint8_t* dst, const uint8_t* src, Case)
@@ -429,4 +439,34 @@ inline std::string hexString(const void * data, size_t size)
     #endif
     TargetSpecific::Default::encode_hex_string(dst, p, size, heks::lower);
     return s;
+}
+
+/// Similar to the one above, but writes into the supplied output
+inline void hexString(UInt8* output, const void * data, size_t size)
+{
+    const auto * p = reinterpret_cast<const uint8_t *>(data);
+    auto * dst = reinterpret_cast<uint8_t *>(output);
+    #if USE_MULTITARGET_CODE
+    if (DB::isArchSupported(DB::TargetArch::AVX2))
+    {
+        TargetSpecific::AVX2::encode_hex_string(dst, p, size, heks::lower);
+        return;
+    }
+    #endif
+    TargetSpecific::Default::encode_hex_string(dst, p, size, heks::lower);
+}
+
+/// Converts an even sized hex string into binary representation
+inline void unHexString(UInt8* output, const UInt8* input, size_t raw_size)
+{
+    auto* dst = reinterpret_cast<uint8_t*>(output);
+    const auto* src = reinterpret_cast<const uint8_t*>(input);
+    #if USE_MULTITARGET_CODE
+    if (DB::isArchSupported(DB::TargetArch::AVX2))
+    {
+        TargetSpecific::AVX2::decode_hex_string(dst, src, raw_size);
+        return;
+    }
+    #endif
+    TargetSpecific::Default::decode_hex_string(dst, src, raw_size);
 }
