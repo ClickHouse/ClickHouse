@@ -130,8 +130,6 @@ def test_rollback_unfinished_on_restart1(start_cluster):
         node.query("select *, _part from mt order by n")
         == "2\t20\t0_2_2_0\n3\t30\t1_3_3_0\n4\t40\t0_4_4_0\n9\t90\t1_5_5_0\n"
     )
-    data_0_2_2_0 = node.query("SELECT * FROM mt WHERE _part='0_2_2_0'")
-    print(f"data_0_2_2_0\n{data_0_2_2_0}\n")
 
     replace_map = {
         tid0: "tid0",
@@ -242,7 +240,7 @@ def test_rollback_unfinished_on_restart1(start_cluster):
         table_name="mt",
         part_name="1_5_5_0",
         is_active=1,
-        creation_tid="tid6",  # Created by INSERT_2 in tid6
+        creation_tid="tid6",  # Created by INSERT_3 in tid6
         creation_csn="csn_6",  # tid6 was commited with csn_6
         removal_tid="(0,0,'00000000-0000-0000-0000-000000000000')",  # No transaction attempted to remove this part
         removal_csn="csn0_",  # No transaction attempted to remove this part

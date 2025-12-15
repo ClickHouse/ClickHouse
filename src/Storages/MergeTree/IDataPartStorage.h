@@ -4,10 +4,10 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteSettings.h>
-#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <base/types.h>
+#include <Common/TransactionID.h>
 
 #include <memory>
 #include <optional>

@@ -1,4 +1,5 @@
 #include <Interpreters/MergeTreeTransaction.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>

@@ -78,7 +78,7 @@ try
             LOG_DEBUG(log, "Object {}, load metadata content\n{}", getObjectName(), content);
         }
         auto buf = openForReading(data_part_storage, TXN_VERSION_METADATA_FILE_NAME);
-        readFromBuffer(*buf);
+        readFromBuffer(*buf, /*one_line=*/false);
 
         if (!merge_tree_data_part->isStoredOnReadonlyDisk() && data_part_storage.existsFile(TMP_TXN_VERSION_METADATA_FILE_NAME))
             remove_tmp_file();
@@ -121,7 +121,7 @@ catch (Exception & e)
     throw;
 }
 
-void VersionMetadataOnDisk::storeMetadata(bool force) const
+void VersionMetadataOnDisk::storeMetadata(bool force)
 {
     LOG_DEBUG(log, "Object {}, store metadata", getObjectName());
     bool involved_in_transaction = wasInvolvedInTransaction();
@@ -147,9 +147,9 @@ void VersionMetadataOnDisk::storeMetadata(bool force) const
         storage.log,
         "Writing version for {} (creation: {}, removal {}, creation csn {})",
         merge_tree_data_part->name,
-        creation_tid,
-        removal_tid,
-        creation_csn.load());
+        getCreationTID(),
+        getRemovalTID(),
+        getCreationCSN());
 
     static constexpr auto filename = TXN_VERSION_METADATA_FILE_NAME;
     static constexpr auto tmp_filename = "txn_version.txt.tmp";
@@ -164,7 +164,7 @@ void VersionMetadataOnDisk::storeMetadata(bool force) const
             data_part_storage.createFile(tmp_filename);
             auto write_settings = storage.getContext()->getWriteSettings();
             auto buf = data_part_storage.writeFile(tmp_filename, 256, write_settings);
-            writeToBuffer(*buf);
+            writeToBuffer(*buf, /*one_line=*/false);
             buf->finalize();
             buf->sync();
         }
@@ -191,11 +191,10 @@ void VersionMetadataOnDisk::storeMetadata(bool force) const
     }
 }
 
-
 bool VersionMetadataOnDisk::tryLockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context, TIDHash * locked_by_id)
 {
     chassert(!tid.isEmpty());
-    chassert(!creation_tid.isEmpty());
+    chassert(!getCreationTID().isEmpty());
     TIDHash removal_lock_value = tid.getHash();
     TIDHash expected_removal_lock_value = 0;
     bool locked = removal_tid_lock.compare_exchange_strong(expected_removal_lock_value, removal_lock_value);
@@ -244,7 +243,7 @@ void VersionMetadataOnDisk::unlockRemovalTID(const TransactionID & tid, const Tr
 }
 
 
-bool VersionMetadataOnDisk::isRemovalTIDLocked() const
+bool VersionMetadataOnDisk::isRemovalTIDLocked()
 {
     return removal_tid_lock.load() != 0;
 }
@@ -256,12 +255,6 @@ bool VersionMetadataOnDisk::hasStoredMetadata() const
         return true;
 
     return merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME);
-}
-
-void VersionMetadataOnDisk::setRemovalTIDLock(TIDHash removal_tid_lock_hash)
-{
-    LOG_DEBUG(merge_tree_data_part->storage.log, "Object {}, setRemovalTIDLock removal_tid_hash {}", getObjectName(), getCreationCSN());
-    removal_tid_lock = removal_tid_lock_hash;
 }
 
 void VersionMetadataOnDisk::storeMetadataHelper(std::function<void(WriteBuffer & buf)> write_func, bool sync)
@@ -301,7 +294,8 @@ void VersionMetadataOnDisk::storeCreationCSNToStoredMetadataImpl()
     if (!merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Store creation CSN to non-existing metadata file");
 
-    auto write_func = [this](WriteBuffer & buf) { writeCreationCSNToBuffer(buf); };
+    auto write_func = [creation_csn_val = getCreationCSN()](WriteBuffer & buf)
+    { VersionInfo::writeCreationCSNToBuffer(VersionInfo::MULTI_LINE_SEPARATOR, buf, creation_csn_val); };
     storeMetadataHelper(write_func, false);
 }
 
@@ -327,20 +321,22 @@ void VersionMetadataOnDisk::storeRemovalCSNToStoredMetadataImpl()
     if (!merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Store removal CSN to non-existing metadata file");
 
-    auto write_func = [this](WriteBuffer & buf) { writeRemovalCSNToBuffer(buf); };
+    auto write_func = [removal_csn_val = getRemovalCSN()](WriteBuffer & buf)
+    { VersionInfo::writeRemovalCSNToBuffer(VersionInfo::MULTI_LINE_SEPARATOR, buf, removal_csn_val); };
     storeMetadataHelper(write_func, false);
 }
 
 void VersionMetadataOnDisk::storeRemovalTIDToStoredMetadataImpl()
 {
+    auto removal_tid_val = getRemovalTID();
     LOG_DEBUG(
         merge_tree_data_part->storage.log,
         "Storing removal TID for {} (creation: {}, removal {})",
         merge_tree_data_part->name,
-        creation_tid,
-        removal_tid);
+        getCreationTID(),
+        removal_tid_val);
 
-    assert(removal_tid.isEmpty() || removal_tid.getHash() == getRemovalTIDLock());
+    assert(removal_tid_val.isEmpty() || removal_tid_val.getHash() == getRemovalTIDLock());
 
     if (!merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Store removal TID to non-existing metadata file");
@@ -359,14 +355,15 @@ void VersionMetadataOnDisk::storeRemovalTIDToStoredMetadataImpl()
         return;
     }
 
-    auto write_func = [this](WriteBuffer & buf) { writeRemovalTIDToBuffer(buf, removal_tid); };
+    auto write_func = [removal_tid_val](WriteBuffer & buf)
+    { VersionInfo::writeRemovalTIDToBuffer(VersionInfo::MULTI_LINE_SEPARATOR, buf, removal_tid_val); };
     /// fsync is not required when we clearing removal TID, because after hard restart we will fix metadata
-    auto sync = removal_tid != Tx::EmptyTID;
+    auto sync = removal_tid_val != Tx::EmptyTID;
     storeMetadataHelper(write_func, sync);
 }
 
 
-VersionMetadata::Info VersionMetadataOnDisk::readStoredMetadata(String & content) const
+VersionInfo VersionMetadataOnDisk::readStoredMetadata(String & content)
 {
     if (pending_store_metadata)
         storeMetadata(true);
@@ -380,7 +377,8 @@ VersionMetadata::Info VersionMetadataOnDisk::readStoredMetadata(String & content
         throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Unable to open file {}", TXN_VERSION_METADATA_FILE_NAME);
 
     readStringUntilEOF(content, *buf);
-    ReadBufferFromString str_buf{content};
-    return readFromBufferHelper(str_buf);
+    VersionInfo info;
+    info.fromString(content, /*one_line=*/false);
+    return info;
 }
 }

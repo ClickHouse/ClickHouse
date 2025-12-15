@@ -5,7 +5,6 @@
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <IO/WriteSettings.h>
-#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Storages/ColumnSize.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage_fwd.h>
@@ -55,6 +54,7 @@ using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
 class PrimaryIndexCache;
 using PrimaryIndexCachePtr = std::shared_ptr<PrimaryIndexCache>;
 
+class VersionMetadata;
 enum class DataPartRemovalState : uint8_t
 {
     NOT_ATTEMPTED,
@@ -377,7 +377,7 @@ public:
 
     CompressionCodecPtr default_codec;
 
-    mutable VersionMetadataPtr version;
+    mutable std::unique_ptr<VersionMetadata> version;
 
     /// Version of part metadata (columns, pk and so on). Managed properly only for replicated merge tree.
     int32_t metadata_version;

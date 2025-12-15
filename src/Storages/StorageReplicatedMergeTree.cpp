@@ -104,6 +104,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/JoinedTables.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/SelectQueryOptions.h>
 

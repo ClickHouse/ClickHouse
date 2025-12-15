@@ -1,10 +1,11 @@
 #pragma once
-#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
 #include <base/scope_guard.h>
 #include <boost/noncopyable.hpp>
 #include <Common/Stopwatch.h>
+#include <Common/TransactionID.h>
+#include <Common/ZooKeeper/IKeeper.h>
 
 #include <list>
 #include <unordered_set>
@@ -13,6 +14,7 @@ namespace DB
 {
 
 class IMergeTreeDataPart;
+struct TransactionInfoContext;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 using DataPartsVector = std::vector<DataPartPtr>;
 
@@ -61,6 +63,18 @@ public:
 
     CSN getCSN() const { return csn; }
 
+    void setRequestOnCommit(Coordination::Requests && requests)
+    {
+        std::lock_guard lock{mutex};
+        requests_on_commit = std::move(requests);
+    }
+
+    void takeRequestOnCommit(Coordination::Requests & requests)
+    {
+        std::lock_guard lock{mutex};
+        requests = std::move(requests_on_commit);
+    }
+
 private:
     scope_guard beforeCommit();
     void afterCommit(CSN assigned_csn) noexcept;
@@ -87,6 +101,8 @@ private:
     DataPartsVector removing_parts TSA_GUARDED_BY(mutex);
     using RunningMutationsList = std::vector<std::pair<StoragePtr, String>>;
     RunningMutationsList mutations TSA_GUARDED_BY(mutex);
+
+    Coordination::Requests requests_on_commit TSA_GUARDED_BY(mutex);
 
     std::atomic<CSN> csn;
 };

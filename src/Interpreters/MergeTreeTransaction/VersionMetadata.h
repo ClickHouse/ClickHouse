@@ -1,5 +1,6 @@
 #pragma once
 #include <atomic>
+#include <Interpreters/MergeTreeTransaction/VersionInfo.h>
 #include <Interpreters/StorageID.h>
 #include <Common/TransactionID.h>
 
@@ -76,7 +77,7 @@ public:
     */
     void setRemovalTID(const TransactionID & tid);
 
-    TransactionID getRemovalTID() const { return removal_tid; }
+    TransactionID getRemovalTID() const;
     TransactionID getRemovalTIDForLogging() const;
 
     /**
@@ -90,9 +91,9 @@ public:
     */
     void lockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context);
 
-    TransactionID getCreationTID() const { return creation_tid; }
     /// It can be called only from MergeTreeTransaction or on server startup
     void setCreationTID(const TransactionID & tid, TransactionInfoContext * context);
+    TransactionID getCreationTID() const;
 
     /**
     * @brief check if the object is safe to removed
@@ -109,17 +110,17 @@ public:
     */
     void loadAndVerifyMetadata(LoggerPtr logger);
 
-    bool wasInvolvedInTransaction() const;
+    bool wasInvolvedInTransaction();
 
     /**
     * @brief Validate if the info stored on persistent storage matches the info stored in this object.
     */
-    bool assertHasValidMetadata() const;
+    bool assertHasValidMetadata();
 
     /**
     * @brief Stores the metadata to persistent storage.
     */
-    virtual void storeMetadata(bool force) const = 0;
+    virtual void storeMetadata(bool force) = 0;
 
     /**
     * @brief Locks the object for removal. Return true if successfully locked, otherwise, return false.
@@ -145,16 +146,27 @@ public:
     /**
     * @brief Check if the object is currently locked for removal
     */
-    virtual bool isRemovalTIDLocked() const = 0;
+    virtual bool isRemovalTIDLocked() = 0;
     /**
     * @brief Retrieves the TIDHash of the transaction that locked the object for removal.
     */
-    virtual TIDHash getRemovalTIDLock() const = 0;
+    virtual TIDHash getRemovalTIDLock() = 0;
 
     /**
     * @brief Check if the object has metadata stored in storage.
     */
     virtual bool hasStoredMetadata() const = 0;
+
+    VersionInfo getInfo() const
+    {
+        return VersionInfo{
+            .creation_tid = getCreationTID(),
+            .removal_tid = getRemovalTID(),
+            .creation_csn = getCreationCSN(),
+            .removal_csn = getRemovalCSN(),
+            .removal_tid_lock = removal_tid_lock,
+        };
+    }
 
     inline static constexpr auto TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt";
 
@@ -188,65 +200,33 @@ protected:
     /**
     * @brief Get the current removal TID hash.
     * If the object is locked, return the locking transaction.
-    * If unlocked, return the `removal_tid_hash`.
+    * If unlocked, return the has of `removal_tid`.
     * Return 0 if no removal TID
     */
-    TIDHash getCurrentRemovalTIDHash() const;
+    TIDHash getCurrentRemovalTIDHash();
 
     String getObjectName() const;
 
     bool canBeRemovedImpl(CSN oldest_snapshot_version);
 
     /**
-    * @brief Verify information from metadata
+    * @brief Adjust information from metadata
     *
     * @param logger For trace logging
     * @return true Version info is updated, need to re-store metadata in storage
     * @return false Version info is not updated.
     */
-    bool verifyMetadata(LoggerPtr logger);
+    bool adjustMetadata(LoggerPtr logger);
 
     /**
-    * @brief Write the metadata to a buffer
-    * @param buf The writing buffer
+    * @brief Verify information from metadata
     */
-    void writeToBuffer(WriteBuffer & buf) const;
+    void verifyMetadata() const;
 
-    struct Info
-    {
-        TransactionID creation_tid = Tx::EmptyTID;
-        TransactionID removal_tid = Tx::EmptyTID;
-        CSN creation_csn = Tx::UnknownCSN;
-        CSN removal_csn = Tx::UnknownCSN;
-    };
-    static Info readFromBufferHelper(ReadBuffer & buf);
+    static void verifyMetadata(const String & object_name, const VersionInfo & info);
 
-    /**
-    * @brief Read the metadata from a buffer
-    * @param buf The reading buffer
-    */
-    void readFromBuffer(ReadBuffer & buf);
-
-    /**
-    * @brief Write `creation_csn` to `buf`.
-    * @param buf The writing buffer
-    * @param throw_if_csn_unknown If true, it throws an exception if `creation_csn` is `UnknownCSN`
-    */
-    void writeCreationCSNToBuffer(WriteBuffer & buf, bool throw_if_csn_unknown = false) const;
-
-    /**
-    * @brief Write `removal_csn` to `buf`.
-    * @param buf The writing buffer
-    * @param throw_if_csn_unknown If true, it throws an exception if `removal_csn` is `UnknownCSN`
-    */
-    void writeRemovalCSNToBuffer(WriteBuffer & buf, bool throw_if_csn_unknown = false) const;
-
-    /**
-    * @brief Write `removal_csn` to `Tx::EmptyTID` to `buf`.
-    *
-    * @param tid The target transaction ID
-    */
-    void writeRemovalTIDToBuffer(WriteBuffer & buf, const TransactionID & tid) const;
+    void writeToBuffer(WriteBuffer & buf, bool one_line) const;
+    void readFromBuffer(ReadBuffer & buf, bool one_line);
 
     /**
     * @brief Load metadata from persistent storage.
@@ -258,7 +238,7 @@ protected:
     *
     * @param removal_tid_lock_hash The target TID hash
     */
-    virtual void setRemovalTIDLock(TIDHash removal_tid_lock_hash) = 0;
+    void setRemovalTIDLock(TIDHash removal_tid_lock_hash);
 
     /**
     * @brief The implementation to store `creation_csn` to the stored metadata. Called by `storeCreationCSNToStoredMetadata`
@@ -279,40 +259,27 @@ protected:
     /**
     * @brief Read info from the stored metadata
     */
-    virtual Info readStoredMetadata(String & content) const = 0;
-
-    static inline constexpr char CREATION_TID_STR[] = "creation_tid: ";
-    static inline constexpr char CREATION_CSN_STR[] = "creation_csn: ";
-    static inline constexpr char REMOVAL_TID_STR[] = "removal_tid:  ";
-    static inline constexpr char REMOVAL_CSN_STR[] = "removal_csn:  ";
+    virtual VersionInfo readStoredMetadata(String & content) = 0;
 
     IMergeTreeDataPart * merge_tree_data_part;
 
+    mutable std::mutex creation_and_removal_tid_mutex;
     /// ID of transaction that has created/is trying to create this object stored in the storage.
-    TransactionID creation_tid = Tx::EmptyTID;
+    TransactionID creation_tid TSA_GUARDED_BY(creation_and_removal_tid_mutex) = Tx::EmptyTID;
     /// ID of transaction that has removed/is trying to remove this object stored in the storage.
-    TransactionID removal_tid = Tx::EmptyTID;
-    /// The hash of `removal_tid`. If `removal_tid` is Tx::EmptyTID, then removal_tid_hash is 0.
-    std::atomic<TIDHash> removal_tid_hash{0};
+    TransactionID removal_tid TSA_GUARDED_BY(creation_and_removal_tid_mutex) = Tx::EmptyTID;
 
     /// CSN of transaction that has created this object stored in the storage.
     std::atomic<CSN> creation_csn = Tx::UnknownCSN;
     /// CSN of transaction that has removed this object stored in the storage.
     std::atomic<CSN> removal_csn = Tx::UnknownCSN;
 
-    LoggerPtr log;
+    /// Hash of the TID locking the object for removal
+    /// Zero if unlocked
+    std::atomic<TIDHash> removal_tid_lock = 0;
 
-private:
-    /**
-    * @brief  removal_tid `removal_tid` and `removal_tid_hash`
-    *
-    * @param tid `Tx::EmptyTID` indicates that the transaction is rolled back, and removal_tid_hash will be reset to 0.
-    */
-    void setRemovalTIDAndHash(const TransactionID & tid);
+    LoggerPtr log;
 };
 
 DataTypePtr getTransactionIDDataType();
-
-using VersionMetadataPtr = std::unique_ptr<VersionMetadata>;
-
 }
