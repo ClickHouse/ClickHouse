@@ -72,8 +72,8 @@ public:
     void dumpTableContent(
         RandomGenerator & rg,
         StatementGenerator & gen,
-        const DumpOracleStrategy strategy,
-        const bool test_content,
+        DumpOracleStrategy strategy,
+        bool test_content,
         const SQLTable & t,
         SQLQuery & sq1,
         SQLQuery & sq2);

@@ -357,8 +357,7 @@ private:
     void generateNextCreateView(RandomGenerator & rg, CreateView * cv);
     void generateNextCreateDictionary(RandomGenerator & rg, CreateDictionary * cd);
     void generateNextDrop(RandomGenerator & rg, Drop * dp);
-    void
-    generateInsertToTable(RandomGenerator & rg, const SQLTable & t, const bool in_parallel, std::optional<uint64_t> rows, Insert * ins);
+    void generateInsertToTable(RandomGenerator & rg, const SQLTable & t, bool in_parallel, std::optional<uint64_t> rows, Insert * ins);
     void generateNextInsert(RandomGenerator & rg, bool in_parallel, Insert * ins);
     void generateNextUpdate(RandomGenerator & rg, const SQLTable & t, Update * upt);
     void generateNextDelete(RandomGenerator & rg, const SQLTable & t, Delete * del);
@@ -370,13 +369,13 @@ private:
     void generateNextOptimizeTableInternal(RandomGenerator & rg, const SQLTable & t, bool strict, OptimizeTable * ot);
     void generateNextOptimizeTable(RandomGenerator & rg, OptimizeTable * ot);
     void generateNextCheckTable(RandomGenerator & rg, CheckTable * ct);
-    bool tableOrFunctionRef(RandomGenerator & rg, const SQLTable & t, const bool allow_remote_cluster, TableOrFunction * tof);
+    bool tableOrFunctionRef(RandomGenerator & rg, const SQLTable & t, bool allow_remote_cluster, TableOrFunction * tof);
     void generateNextDescTable(RandomGenerator & rg, DescribeStatement * dt);
     void generateNextRename(RandomGenerator & rg, Rename * ren);
     void generateNextExchange(RandomGenerator & rg, Exchange * exc);
     void generateNextKill(RandomGenerator & rg, Kill * kil);
     void generateUptDelWhere(RandomGenerator & rg, const SQLTable & t, Expr * expr);
-    std::optional<String> alterSingleTable(RandomGenerator & rg, SQLTable & t, const uint32_t nalters, const bool no_oracle, Alter * at);
+    std::optional<String> alterSingleTable(RandomGenerator & rg, SQLTable & t, const uint32_t nalters, bool no_oracle, Alter * at);
     void generateAlter(RandomGenerator & rg, Alter * at);
     void generateHotTableSettingsValues(RandomGenerator & rg, bool create, SettingValues * vals);
     void generateSettingValues(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SettingValues * vals);

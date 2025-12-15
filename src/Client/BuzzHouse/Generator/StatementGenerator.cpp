@@ -924,9 +924,10 @@ bool StatementGenerator::tableOrFunctionRef(
         String buf;
         bool first = true;
         URLFunc * ufunc = tof->mutable_tfunc()->mutable_url();
-        const OutFormat outf = rg.nextBool() ? rg.pickRandomly(rg.pickRandomly(outFormats))
-                                             : static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1);
-        const InFormat iinf = (outIn.contains(outf)) && rg.nextBool()
+        const OutFormat outf = (!this->allow_not_deterministic || rg.nextBool())
+            ? rg.pickRandomly(rg.pickRandomly(outFormats))
+            : static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1);
+        const InFormat iinf = (outIn.contains(outf) && (!this->allow_not_deterministic || rg.nextBool()))
             ? outIn.at(outf)
             : static_cast<InFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(InFormat_MAX)) + 1);
 

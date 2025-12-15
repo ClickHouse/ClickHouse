@@ -228,7 +228,7 @@ public:
 
     static void setDeterministic(const FuzzConfig & fc, RandomGenerator & rg, SQLBase & b);
 
-    static bool supportsFinal(const TableEngineValues teng);
+    static bool supportsFinal(TableEngineValues teng);
 
     bool isMergeTreeFamily() const;
 
@@ -368,10 +368,9 @@ public:
 
     LakeFormat getPossibleLakeFormat() const;
 
-    static void
-    setName(ExprSchemaTable * est, const String & prefix, const bool setdbname, std::shared_ptr<SQLDatabase> database, const uint32_t name);
+    static void setName(ExprSchemaTable * est, const String & prefix, bool setdbname, std::shared_ptr<SQLDatabase> database, uint32_t name);
 
-    void setName(ExprSchemaTable * est, const bool setdbname) const;
+    void setName(ExprSchemaTable * est, bool setdbname) const;
 
     void setName(TableEngine * te) const;
 };
