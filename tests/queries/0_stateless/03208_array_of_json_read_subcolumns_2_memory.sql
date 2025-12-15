@@ -1,3 +1,5 @@
+-- Tags: no-msan
+-- no-msan: too slow for memory sanitizer
 
 SET enable_json_type = 1;
 set allow_experimental_variant_type = 1;
