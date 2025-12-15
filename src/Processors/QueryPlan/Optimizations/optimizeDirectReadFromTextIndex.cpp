@@ -195,8 +195,8 @@ public:
 
                 for (const auto & [index_name, column_name] : replaced->added_virtual_columns)
                     result.added_columns[index_name].emplace_back(column_name, std::make_shared<DataTypeUInt8>());
-                if (actions_dag.tryFindInOutputs(replaced->origin_result_name) != nullptr)
-                    add_aliases.push_back({replaced->node->result_name, replaced->origin_result_name});
+                if (actions_dag.tryFindInOutputs(origin_result_name) != nullptr)
+                    add_aliases.push_back({replaced->node->result_name, origin_result_name});
             }
         }
 
