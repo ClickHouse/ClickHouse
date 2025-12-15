@@ -188,7 +188,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     : query(normalizeAndValidateQuery(query_))
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
-    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/, std::move(column_names)))
+    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/, column_names))
     , planner(query_tree, select_query_options)
     , query_plan_with_parallel_replicas_builder(
           [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names]()
