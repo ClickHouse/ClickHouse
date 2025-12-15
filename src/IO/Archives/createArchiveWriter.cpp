@@ -20,7 +20,7 @@ std::shared_ptr<IArchiveWriter> createArchiveWriter(
     const String & path_to_archive,
     [[maybe_unused]] std::unique_ptr<WriteBuffer> archive_write_buffer,
     [[maybe_unused]] size_t buf_size,
-    size_t adaptive_buffer_max_size)
+    [[maybe_unused]] size_t adaptive_buffer_max_size)
 {
     if (hasSupportedZipExtension(path_to_archive))
     {

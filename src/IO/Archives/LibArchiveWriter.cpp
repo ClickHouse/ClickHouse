@@ -100,7 +100,7 @@ private:
         if (!available() && use_adaptive_buffer_size)
         {
             if (memory.size() >= adaptive_max_buffer_size)
-                throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Adaptive buffer size limit of {} bytes is exceeded", adaptive_max_buffer_size);
+                throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Adaptive buffer size limit of {} bytes is exceeded for the file {}", adaptive_max_buffer_size, filename);
 
             /// Prevents overwriting the beginning of the chunk.
             nextimpl_working_buffer_offset = offset();
