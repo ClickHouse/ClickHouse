@@ -168,7 +168,6 @@ namespace
             if (token.empty())
                 return arrow::Status::IOError("Expected Basic auth scheme");
 
-
             std::string user = "default";
             std::string password;
 
@@ -358,8 +357,8 @@ namespace
         }
         else if (const auto * insert = dynamic_cast<const ASTInsertQuery *>(ast.get()))
         {
-            if (!insert->format.empty() && insert->format != "Arrow")
-                return arrow::Status::ExecutionError("Invalid format, only 'Arrow' format is supported");
+            if (!insert->format.empty() && insert->format != "Values" && insert->format != "Arrow")
+                return arrow::Status::ExecutionError("Invalid format (", insert->format, "), only 'Arrow' format is supported");
         }
         return arrow::Status::OK();
     }
@@ -2025,6 +2024,14 @@ arrow::Status ArrowFlightHandler::DoAction(
         /// Close session (if any) after processing the request
         bool close_session = auth.sessionClose() && server.config().getBool("enable_arrow_close_session", true);
         SCOPE_EXIT_SAFE({ releaseOrCloseSession(session, auth.sessionId(), close_session); });
+
+        if (action.type == arrow::flight::ActionType::kCancelFlightInfo.type)
+        {
+//            auto request = arrow::flight::CancelFlightInfoRequest::Deserialize({action.body->data_as<char>(), static_cast<size_t>(action.body->size())}).ValueOrDie();
+//            auto& process_list = server.context()->getProcessList();
+//            process_list.sendCancelToQuery(query_id, "", true);
+            return arrow::Status::OK();
+        }
 
         return arrow::Status::NotImplemented(action.type, " is not supported");
     };
