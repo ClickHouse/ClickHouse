@@ -108,7 +108,32 @@ public:
 
 REGISTER_FUNCTION(H3GetFaces)
 {
-    factory.registerFunction<FunctionH3GetFaces>();
+    FunctionDocumentation::Description description = R"(
+Returns [icosahedron](https://en.wikipedia.org/wiki/Icosahedron) faces intersected by a given [H3](#h3-index) index.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3GetFaces(index)";
+    FunctionDocumentation::Arguments arguments = {
+        {"index", "Hexagon index number.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns an array containing the indices (0-19) of the icosahedron faces that the H3 index intersects with.",
+        {"Array(UInt8)"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get icosahedron faces for an H3 index",
+            "SELECT h3GetFaces(599686042433355775) AS faces",
+            R"(
+┌─faces─┐
+│ [7]   │
+└───────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3GetFaces>(documentation);
 }
 
 }

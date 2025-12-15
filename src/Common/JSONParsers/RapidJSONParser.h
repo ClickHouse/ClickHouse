@@ -117,9 +117,12 @@ struct RapidJSONParser
         ALWAYS_INLINE Iterator end() const { return ptr->MemberEnd(); }
         ALWAYS_INLINE size_t size() const { return ptr->MemberCount(); }
 
-        bool find(std::string_view key, Element & result) const
+        bool find(std::string_view key_, Element & result) const
         {
-            auto it = ptr->FindMember(rapidjson::StringRef(key.data(), key.length()));
+            /// Here we have to create a temporary std::string, because it has to be 0-terminated.
+            std::string key{key_};
+
+            auto it = ptr->FindMember(rapidjson::StringRef(key.c_str(), key.length()));
             if (it == ptr->MemberEnd())
                 return false;
 

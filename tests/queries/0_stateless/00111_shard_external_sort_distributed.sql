@@ -1,4 +1,4 @@
--- Tags: distributed, long, no-msan, no-tsan, no-asan
+-- Tags: distributed, long, no-msan, no-tsan, no-asan, no-ubsan
 -- ^ slow
 
 SET max_memory_usage = 150000000;

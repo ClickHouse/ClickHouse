@@ -39,7 +39,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_variant_type;
     extern const SettingsBool use_variant_as_common_type;
 }
 
@@ -143,10 +142,19 @@ inline void fillConstantConstant(const ArrayCond & cond, A a, B b, ArrayResult &
     /// We manually optimize the loop for types like (U)Int128|256 or Decimal128/256 to avoid branches
     if constexpr (is_over_big_int<ResultType>)
     {
-        alignas(64) const ResultType ab[2] = {static_cast<ResultType>(a), static_cast<ResultType>(b)};
+        auto new_a = static_cast<ResultType>(a);
+        auto new_b = static_cast<ResultType>(b);
+
         for (size_t i = 0; i < size; ++i)
         {
-            res[i] = ab[!cond[i]];
+            // produces cmpb + sete
+            // results in less uops than ResultType{static_cast<MaskType>(cond[i]) - 1};
+            uint8_t flag = (cond[i] != 0);
+
+            ResultType mask{};
+            std::memset(&mask, flag ? 0xFF : 0x00, sizeof(ResultType));
+
+            res[i] = (mask & new_a) | (~mask & new_b);
         }
     }
     else if constexpr (std::is_same_v<ResultType, Decimal32> || std::is_same_v<ResultType, Decimal64>)
@@ -269,7 +277,7 @@ public:
     static constexpr auto name = "if";
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionIf>(context->getSettingsRef()[Setting::allow_experimental_variant_type] && context->getSettingsRef()[Setting::use_variant_as_common_type]);
+        return std::make_shared<FunctionIf>(context->getSettingsRef()[Setting::use_variant_as_common_type]);
     }
 
     explicit FunctionIf(bool use_variant_when_no_common_type_ = false) : FunctionIfBase(), use_variant_when_no_common_type(use_variant_when_no_common_type_) {}
@@ -1368,9 +1376,9 @@ SELECT if(1, 2 + 2, 2 + 6) AS res;
     factory.registerFunction<FunctionIf>(documentation, FunctionFactory::Case::Insensitive);
 }
 
-FunctionOverloadResolverPtr createInternalFunctionIfOverloadResolver(bool allow_experimental_variant_type, bool use_variant_as_common_type)
+FunctionOverloadResolverPtr createInternalFunctionIfOverloadResolver(bool use_variant_as_common_type)
 {
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIf>(allow_experimental_variant_type && use_variant_as_common_type));
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIf>(use_variant_as_common_type));
 }
 
 }

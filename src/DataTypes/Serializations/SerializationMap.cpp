@@ -57,13 +57,13 @@ void SerializationMap::deserializeBinary(Field & field, ReadBuffer & istr, const
 {
     size_t size;
     readVarUInt(size, istr);
-    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
+    if (settings.binary.max_binary_array_size && size > settings.binary.max_binary_array_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_ARRAY_SIZE,
             "Too large map size: {}. The maximum is: {}. To increase the maximum, use setting "
             "format_binary_max_array_size",
             size,
-            settings.binary.max_binary_string_size);
+            settings.binary.max_binary_array_size);
     field = Map();
     Map & map = field.safeGet<Map>();
     map.reserve(size);
@@ -84,6 +84,11 @@ void SerializationMap::serializeBinary(const IColumn & column, size_t row_num, W
 void SerializationMap::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     nested->deserializeBinary(extractNestedColumn(column), istr, settings);
+}
+
+void SerializationMap::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+    nested->serializeForHashCalculation(extractNestedColumn(column), row_num, ostr);
 }
 
 
@@ -492,8 +497,9 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    auto & column_map = assert_cast<ColumnMap &>(*column->assumeMutable());
-    nested->deserializeBinaryBulkWithMultipleStreams(column_map.getNestedColumnPtr(), rows_offset, limit, settings, state, cache);
+    const auto & column_map = assert_cast<const ColumnMap &>(*column);
+    ColumnPtr nested_ptr = column_map.getNestedColumnPtr();
+    nested->deserializeBinaryBulkWithMultipleStreams(nested_ptr, rows_offset, limit, settings, state, cache);
 }
 
 }

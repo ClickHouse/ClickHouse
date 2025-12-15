@@ -4,6 +4,7 @@ sidebar_label: 'VIEW'
 sidebar_position: 37
 slug: /sql-reference/statements/create/view
 title: 'CREATE VIEW'
+doc_type: 'reference'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -103,7 +104,7 @@ Instead a separate `INSERT ... SELECT` can be used.
 
 A `SELECT` query can contain `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`. Note that the corresponding conversions are performed independently on each block of inserted data. For example, if `GROUP BY` is set, data is aggregated during insertion, but only within a single packet of inserted data. The data won't be further aggregated. The exception is when using an `ENGINE` that independently performs data aggregation, such as `SummingMergeTree`.
 
-The execution of [ALTER](/sql-reference/statements/alter/view.md) queries on materialized views has limitations, for example, you can not update the `SELECT` query, so this might be inconvenient. If the materialized view uses the construction `TO [db.]name`, you can `DETACH` the view, run `ALTER` for the target table, and then `ATTACH` the previously detached (`DETACH`) view.
+If the materialized view uses the construction `TO [db.]name`, you can `DETACH` the view, run `ALTER` for the target table, and then `ATTACH` the previously detached (`DETACH`) view.
 
 Note that materialized view is influenced by [optimize_on_insert](/operations/settings/settings#optimize_on_insert) setting. The data is merged before the insertion into a view.
 
@@ -370,7 +371,7 @@ WATCH [db.]window_view
 [FORMAT format]
 ```
 
-`WATCH` query acts similar as in `LIVE VIEW`. A `LIMIT` can be specified to set the number of updates to receive before terminating the query. The `EVENTS` clause can be used to obtain a short form of the `WATCH` query where instead of the query result you will just get the latest query watermark.
+A `LIMIT` can be specified to set the number of updates to receive before terminating the query. The `EVENTS` clause can be used to obtain a short form of the `WATCH` query where instead of the query result you will just get the latest query watermark.
 
 ### Settings {#settings-1}
 
@@ -431,3 +432,101 @@ The window view is useful in the following scenarios:
 
 - Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 - Blog: [Building an Observability Solution with ClickHouse - Part 2 - Traces](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)
+
+## Temporary Views {#temporary-views}
+
+ClickHouse supports **temporary views** with the following characteristics (matching temporary tables where applicable):
+
+* **Session-lifetime**
+  A temporary view exists only for the duration of the current session. It is dropped automatically when the session ends.
+
+* **No database**
+  You **cannot** qualify a temporary view with a database name. It lives outside databases (session namespace).
+
+* **Not replicated / no ON CLUSTER**
+  Temporary objects are local to the session and **cannot** be created with `ON CLUSTER`.
+
+* **Name resolution**
+  If a temporary object (table or view) has the same name as a persistent object and a query references the name **without** a database, the **temporary** object is used.
+
+* **Logical object (no storage)**
+  A temporary view stores only its `SELECT` text (uses the `View` storage internally). It does not persist data and cannot accept `INSERT`.
+
+* **Engine clause**
+  You do **not** need to specify `ENGINE`; if provided as `ENGINE = View`, it’s ignored/treated as the same logical view.
+
+* **Security / privileges**
+  Creating a temporary view requires the privilege `CREATE TEMPORARY VIEW` which is implicitly granted by `CREATE VIEW`.
+
+* **SHOW CREATE**
+  Use `SHOW CREATE TEMPORARY VIEW view_name;` to print the DDL of a temporary view.
+
+### Syntax {#temporary-views-syntax}
+
+```sql
+CREATE TEMPORARY VIEW [IF NOT EXISTS] view_name AS <select_query>
+```
+
+`OR REPLACE` is **not** supported for temporary views (to match temporary tables). If you need to “replace” a temporary view, drop it and create it again.
+
+### Examples {#temporary-views-examples}
+
+Create a temporary source table and a temporary view on top:
+
+```sql
+CREATE TEMPORARY TABLE t_src (id UInt32, val String);
+INSERT INTO t_src VALUES (1, 'a'), (2, 'b');
+
+CREATE TEMPORARY VIEW tview AS
+SELECT id, upper(val) AS u
+FROM t_src
+WHERE id <= 2;
+
+SELECT * FROM tview ORDER BY id;
+```
+
+Show its DDL:
+
+```sql
+SHOW CREATE TEMPORARY VIEW tview;
+```
+
+Drop it:
+
+```sql
+DROP TEMPORARY VIEW IF EXISTS tview;  -- temporary views are dropped with TEMPORARY TABLE syntax
+```
+
+### Disallowed / limitations {#temporary-views-limitations}
+
+* `CREATE OR REPLACE TEMPORARY VIEW ...` → **not allowed** (use `DROP` + `CREATE`).
+* `CREATE TEMPORARY MATERIALIZED VIEW ...` / `WINDOW VIEW` → **not allowed**.
+* `CREATE TEMPORARY VIEW db.view AS ...` → **not allowed** (no database qualifier).
+* `CREATE TEMPORARY VIEW view ON CLUSTER 'name' AS ...` → **not allowed** (temporary objects are session-local).
+* `POPULATE`, `REFRESH`, `TO [db.table]`, inner engines, and all MV-specific clauses → **not applicable** to temporary views.
+
+### Notes on distributed queries {#temporary-views-distributed-notes}
+
+A temporary **view** is just a definition; there’s no data to pass around. If your temporary view references temporary **tables** (e.g., `Memory`), their data can be shipped to remote servers during distributed query execution the same way temporary tables work.
+
+#### Example {#temporary-views-distributed-example}
+
+```sql
+-- A session-scoped, in-memory table
+CREATE TEMPORARY TABLE temp_ids (id UInt64) ENGINE = Memory;
+
+INSERT INTO temp_ids VALUES (1), (5), (42);
+
+-- A session-scoped view over the temp table (purely logical)
+CREATE TEMPORARY VIEW v_ids AS
+SELECT id FROM temp_ids;
+
+-- Replace 'test' with your cluster name.
+-- GLOBAL JOIN forces ClickHouse to *ship* the small join-side (temp_ids via v_ids)
+-- to every remote server that executes the left side.
+SELECT count()
+FROM cluster('test', system.numbers) AS n
+GLOBAL ANY INNER JOIN v_ids USING (id)
+WHERE n.number < 100;
+
+```

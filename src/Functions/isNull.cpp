@@ -29,6 +29,11 @@ ColumnPtr FunctionIsNull::getConstantResultForNonConstArguments(const ColumnsWit
     if (!use_analyzer)
         return nullptr;
 
+    /// SELECT arrayFilter(x -> (x IS NULL), []) can trigger `defaultImplementationForNothing()`
+    /// which will give return type Nothing. We cannot create constant column of type Nothing so return nullptr.
+    if (isNothing(result_type))
+        return nullptr;
+
     const ColumnWithTypeAndName & elem = arguments[0];
     if (elem.type->onlyNull())
         return result_type->createColumnConst(1, UInt8(1));
@@ -80,7 +85,44 @@ ColumnPtr FunctionIsNull::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
 REGISTER_FUNCTION(IsNull)
 {
-    factory.registerFunction<FunctionIsNull>({}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description = R"(
+Checks if the argument is `NULL`.
+
+Also see: operator [`IS NULL`](/sql-reference/operators#is_null).
+    )";
+    FunctionDocumentation::Syntax syntax = "isNull(x)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "A value of non-compound data type.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if `x` is `NULL`, otherwise `0`.", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE t_null
+(
+  x Int32,
+  y Nullable(Int32)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO t_null VALUES (1, NULL), (2, 3);
+
+SELECT x FROM t_null WHERE isNull(y);
+        )",
+        R"(
+┌─x─┐
+│ 1 │
+└───┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Null;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionIsNull>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

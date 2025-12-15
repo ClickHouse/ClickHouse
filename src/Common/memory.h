@@ -3,9 +3,12 @@
 #include <new>
 #include <base/defines.h>
 
+#include <Common/AllocationInterceptors.h>
 #include <Common/Concepts.h>
 #include <Common/CurrentMemoryTracker.h>
+#include <Common/MemoryTrackerDebugBlockerInThread.h>
 #include <Common/ProfileEvents.h>
+
 #include "config.h"
 
 #if USE_JEMALLOC
@@ -51,9 +54,9 @@ inline ALWAYS_INLINE void * newImpl(std::size_t size, TAlign... align)
 {
     void * ptr = nullptr;
     if constexpr (sizeof...(TAlign) == 1)
-        ptr = aligned_alloc(alignToSizeT(align...), alignUp(size, alignToSizeT(align...)));
+        ptr = __real_aligned_alloc(alignToSizeT(align...), alignUp(size, alignToSizeT(align...)));
     else
-        ptr = malloc(size);
+        ptr = __real_malloc(size);
 
     if (likely(ptr != nullptr))
         return ptr;
@@ -64,17 +67,17 @@ inline ALWAYS_INLINE void * newImpl(std::size_t size, TAlign... align)
 
 inline ALWAYS_INLINE void * newNoExcept(std::size_t size) noexcept
 {
-    return malloc(size);
+    return __real_malloc(size);
 }
 
 inline ALWAYS_INLINE void * newNoExcept(std::size_t size, std::align_val_t align) noexcept
 {
-    return aligned_alloc(static_cast<size_t>(align), size);
+    return __real_aligned_alloc(static_cast<size_t>(align), size);
 }
 
 inline ALWAYS_INLINE void deleteImpl(void * ptr) noexcept
 {
-    free(ptr);
+    __real_free(ptr);
 }
 
 #if USE_JEMALLOC
@@ -98,7 +101,7 @@ template <std::same_as<std::align_val_t>... TAlign>
 requires DB::OptionalArgument<TAlign...>
 inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size [[maybe_unused]], TAlign... /* align */) noexcept
 {
-    free(ptr);
+    __real_free(ptr);
 }
 
 #endif
@@ -128,6 +131,17 @@ template <std::same_as<std::align_val_t>... TAlign>
 requires DB::OptionalArgument<TAlign...>
 inline ALWAYS_INLINE size_t trackMemory(std::size_t size, AllocationTrace & trace, TAlign... align)
 {
+    std::size_t actual_size = getActualAllocationSize(size, align...);
+    trace = CurrentMemoryTracker::allocNoThrow(actual_size);
+    return actual_size;
+}
+
+/// We cannot throw from C API
+template <std::same_as<std::align_val_t>... TAlign>
+requires DB::OptionalArgument<TAlign...>
+inline ALWAYS_INLINE size_t trackMemoryFromC(std::size_t size, AllocationTrace & trace, TAlign... align)
+{
+    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
     std::size_t actual_size = getActualAllocationSize(size, align...);
     trace = CurrentMemoryTracker::allocNoThrow(actual_size);
     return actual_size;

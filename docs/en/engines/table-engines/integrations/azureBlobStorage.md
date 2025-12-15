@@ -3,7 +3,8 @@ description: 'This engine provides an integration with Azure Blob Storage ecosys
 sidebar_label: 'Azure Blob Storage'
 sidebar_position: 10
 slug: /engines/table-engines/integrations/azureBlobStorage
-title: 'AzureBlobStorage Table Engine'
+title: 'AzureBlobStorage table engine'
+doc_type: 'reference'
 ---
 
 # AzureBlobStorage table engine
@@ -14,7 +15,7 @@ This engine provides an integration with [Azure Blob Storage](https://azure.micr
 
 ```sql
 CREATE TABLE azure_blob_storage_table (name String, value UInt32)
-    ENGINE = AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file])
+    ENGINE = AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file, extra_credentials(client_id=, tenant_id=)])
     [PARTITION BY expr]
     [SETTINGS ...]
 ```
@@ -32,6 +33,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 - `compression` — Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension. (same as setting to `auto`).
 - `partition_strategy` – Options: `WILDCARD` or `HIVE`. `WILDCARD` requires a `{_partition_id}` in the path, which is replaced with the partition key. `HIVE` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Defaults to `WILDCARD`
 - `partition_columns_in_data_file` - Only used with `HIVE` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.
+- `extra_credentials` - Use `client_id` and `tenant_id` for authentication. If extra_credentials are provided, they are given priority over `account_name` and `account_key`.
 
 **Example**
 

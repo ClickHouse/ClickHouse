@@ -22,6 +22,9 @@ cargo generate-lockfile
 # Clean the vendor repo
 rm -rf "${CH_TOP_DIR:?}"/contrib/rust_vendor/*
 
+cd "$CH_TOP_DIR"/rust/chcache || exit 1
+cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
+
 cd "$CH_TOP_DIR"/rust/workspace || exit 1
 cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
 

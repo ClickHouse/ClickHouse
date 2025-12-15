@@ -46,4 +46,25 @@ size_t FormatParserSharedResources::getIOThreadsPerReader() const
     return (max_io_threads + n - 1) / n;
 }
 
+void FormatParserSharedResources::initOnce(std::function<void()> f)
+{
+    std::call_once(
+        init_flag,
+        [&]
+        {
+            if (init_exception)
+                std::rethrow_exception(init_exception);
+
+            try
+            {
+                f();
+            }
+            catch (...)
+            {
+                init_exception = std::current_exception();
+                throw;
+            }
+        });
+}
+
 }

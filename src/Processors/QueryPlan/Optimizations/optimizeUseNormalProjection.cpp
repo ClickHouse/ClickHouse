@@ -74,7 +74,11 @@ static std::optional<ActionsDAG> makeMaterializingDAG(const Block & proj_header,
     return dag;
 }
 
-std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
+std::optional<String> optimizeUseNormalProjections(
+    Stack & stack,
+    QueryPlan::Nodes & nodes,
+    bool is_parallel_replicas_initiator_with_projection_support,
+    size_t max_step_description_length)
 {
     const auto & frame = stack.back();
 
@@ -187,6 +191,29 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
     if (!parent_reading_select_result)
         parent_reading_select_result = reading->selectRangesToRead();
 
+    /// parent parts (non-projection result) exceeded limits
+    /// construct a base AnalysisResult with all parts to analyze projection candidates
+    if (!parent_reading_select_result->isUsable())
+    {
+        const auto & parts = reading->getParts();
+
+        parent_reading_select_result = std::make_shared<ReadFromMergeTree::AnalysisResult>();
+        parent_reading_select_result->parts_with_ranges = parts;
+        parent_reading_select_result->selected_parts = parts.size();
+        parent_reading_select_result->exceeded_row_limits = true;
+
+        size_t total_marks = 0;
+        size_t total_rows = 0;
+        for (const auto & part : parts)
+        {
+            total_marks += part.data_part->getMarksCount();
+            total_rows += part.data_part->rows_count;
+        }
+        parent_reading_select_result->selected_marks = total_marks;
+        parent_reading_select_result->selected_rows = total_rows;
+        parent_reading_select_result->selected_ranges = parts.size();
+    }
+
     if (!force_optimize_projection)
     {
         /// /// Nothing to read. Ignore projections.
@@ -220,11 +247,18 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
     {
         if (!has_all_required_columns(projection))
         {
-            /// Check if projection can be used to filter parts
+            /// Check if projection can be used to filter parts or building projection index filters
             if (query.filter_node && optimize_use_projection_filtering)
             {
-                filterPartsUsingProjection(
-                    *projection, reader, empty_mutations_snapshot, *parent_reading_select_result, projection_query_info, context);
+                filterPartsAndCollectProjectionCandidates(
+                    *reading,
+                    *projection,
+                    reader,
+                    empty_mutations_snapshot,
+                    *parent_reading_select_result,
+                    projection_query_info,
+                    query.filter_node,
+                    context);
             }
 
             continue;
@@ -344,9 +378,17 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         reading->getNumStreams(),
         max_added_blocks,
         best_candidate->merge_tree_projection_select_result_ptr,
-        reading->isParallelReadingEnabled());
+        reading->isParallelReadingEnabled(),
+        reading->getParallelReadingExtension());
 
-    if (!projection_reading)
+    /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
+    filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
+
+    /// Only the initiator should read the projection to avoid potential data duplication.
+    bool has_parent_parts = !parent_reading_select_result->parts_with_ranges.empty();
+    bool should_skip_projection_reading_on_remote_replicas = reading->isParallelReadingEnabled() && !is_parallel_replicas_initiator_with_projection_support
+        && has_parent_parts;
+    if (!projection_reading || should_skip_projection_reading_on_remote_replicas)
     {
         Pipe pipe(std::make_shared<NullSource>(std::make_shared<const Block>(proj_snapshot->getSampleBlockForColumns(required_columns))));
         if (projection_query_info.prewhere_info)
@@ -365,8 +407,8 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
     }
 
-    /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
-    filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
+    if (has_parent_parts && is_parallel_replicas_initiator_with_projection_support)
+        fallbackToLocalProjectionReading(projection_reading);
 
     if (!query_info.is_internal && context->hasQueryContext())
     {
@@ -377,7 +419,7 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         });
     }
 
-    projection_reading->setStepDescription(best_candidate->projection->name);
+    projection_reading->setStepDescription(best_candidate->projection->name, max_step_description_length);
 
     auto & projection_reading_node = nodes.emplace_back(QueryPlan::Node{.step = std::move(projection_reading)});
     auto * next_node = &projection_reading_node;

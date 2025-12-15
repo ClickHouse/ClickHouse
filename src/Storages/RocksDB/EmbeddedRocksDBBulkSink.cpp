@@ -72,7 +72,7 @@ static rocksdb::Status buildSSTFile(const String & path, const ColumnString & ke
             ++next_idx;
 
         auto row = perm[next_idx - 1];
-        status = sst_file_writer.Put(keys.getDataAt(row).toView(), values.getDataAt(row).toView());
+        status = sst_file_writer.Put(keys.getDataAt(row), values.getDataAt(row));
         if (!status.ok())
             return status;
 
@@ -213,9 +213,6 @@ std::pair<ColumnString::Ptr, ColumnString::Ptr> EmbeddedRocksDBBulkSink::seriali
                     writeString(ts_string, writer_value);
                 }
 
-                /// String in ColumnString must be null-terminated
-                writeChar('\0', writer_key);
-                writeChar('\0', writer_value);
                 serialized_key_offsets.emplace_back(writer_key.count());
                 serialized_value_offsets.emplace_back(writer_value.count());
             }

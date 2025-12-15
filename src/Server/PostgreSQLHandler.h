@@ -31,7 +31,7 @@ public:
     PostgreSQLHandler(
         const Poco::Net::StreamSocket & socket_,
 #if USE_SSL
-        const std::string & prefix_,
+        const String & prefix_,
 #endif
         IServer & server_,
         TCPServer & tcp_server_,
@@ -56,7 +56,7 @@ private:
     bool extended_verification = false;
     bool prefer_server_ciphers = false;
     const Poco::Util::LayeredConfiguration & config [[maybe_unused]];
-    std::string prefix [[maybe_unused]];
+    String prefix [[maybe_unused]];
 #endif
 
     IServer & server;
@@ -100,6 +100,7 @@ private:
     bool processPrepareStatement(const String & query);
     bool processExecute(const String & query, ContextMutablePtr query_context);
     bool processDeallocate(const String & query);
+    bool processCopyQuery(const String & query);
 
     void processParseQuery();
     void processDescribeQuery();
@@ -108,7 +109,18 @@ private:
     void processCloseQuery();
     void processSyncQuery();
 
+    std::function<void(const Progress&)> createProgressCallback(
+        ContextMutablePtr query_context,
+        std::atomic<UInt64>& result_rows,
+        std::atomic<UInt64>& written_rows);
+
+    UInt64 executeQueryWithTracking(
+        String && sql_query,
+        ContextMutablePtr query_context,
+        PostgreSQLProtocol::Messaging::CommandComplete::Command command);
+
     static bool isEmptyQuery(const String & query);
+    static Int32 parseNumberColumns(const std::vector<char> & output);
 };
 
 }

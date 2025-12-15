@@ -82,4 +82,47 @@ void ReadBuffer::cancel()
 
     canceled = true;
 }
+
+bool ReadBuffer::next()
+{
+    chassert(!hasPendingData());
+    chassert(position() <= working_buffer.end());
+    chassert(!isCanceled(), "ReadBuffer is canceled. Can't read from it.");
+
+    bytes += offset();
+    bool res = false;
+    try
+    {
+        res = nextImpl();
+    }
+    catch (...)
+    {
+        cancel();
+        throw;
+    }
+
+    if (!res)
+    {
+        working_buffer = Buffer(pos, pos);
+    }
+    else
+    {
+        /// It might happen that we need to skip all data in the buffer,
+        /// in this case we should call next() one more time to load new data.
+        if (nextimpl_working_buffer_offset == working_buffer.size())
+        {
+            pos = working_buffer.end();
+            nextimpl_working_buffer_offset = 0;
+            return next();
+        }
+
+        pos = working_buffer.begin() + std::min(nextimpl_working_buffer_offset, working_buffer.size());
+        chassert(position() < working_buffer.end());
+    }
+    nextimpl_working_buffer_offset = 0;
+
+    chassert(position() <= working_buffer.end());
+
+    return res;
+}
 }

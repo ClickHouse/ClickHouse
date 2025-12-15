@@ -106,7 +106,8 @@ void registerOutputFormatJSONColumnsWithMetadata(FormatFactory & factory)
     factory.registerOutputFormat("JSONColumnsWithMetadata", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & format_settings)
+        const FormatSettings & format_settings,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
         return std::make_shared<JSONColumnsWithMetadataBlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings);
     });

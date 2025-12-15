@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 
+#include <Core/ProtocolDefines.h>
+
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 
@@ -29,32 +31,46 @@ namespace ErrorCodes
 }
 
 
-void RangesInDataPartDescription::serialize(WriteBuffer & out) const
+void RangesInDataPartDescription::serialize(WriteBuffer & out, UInt64 parallel_protocol_version) const
 {
     info.serialize(out);
     ranges.serialize(out);
     writeVarUInt(rows, out);
+
+    if (parallel_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PROJECTION)
+        writeBinary(projection_name, out);
 }
 
 String RangesInDataPartDescription::describe() const
 {
     String result;
-    result += fmt::format("{}[{}]", info.getPartNameV1(), fmt::join(ranges, ","));
+    result += fmt::format("{}[{}]", getPartOrProjectionName(), fmt::join(ranges, ","));
     return result;
 }
 
-void RangesInDataPartDescription::deserialize(ReadBuffer & in)
+String RangesInDataPartDescription::getPartOrProjectionName() const
+{
+    if (projection_name.empty())
+        return info.getPartNameV1();
+
+    return info.getPartNameV1() + "." + projection_name;
+}
+
+void RangesInDataPartDescription::deserialize(ReadBuffer & in, UInt64 parallel_protocol_version)
 {
     info.deserialize(in);
     ranges.deserialize(in);
     readVarUInt(rows, in);
+
+    if (parallel_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PROJECTION)
+        readBinary(projection_name, in);
 }
 
-void RangesInDataPartsDescription::serialize(WriteBuffer & out) const
+void RangesInDataPartsDescription::serialize(WriteBuffer & out, UInt64 parallel_protocol_version) const
 {
     writeVarUInt(this->size(), out);
     for (const auto & desc : *this)
-        desc.serialize(out);
+        desc.serialize(out, parallel_protocol_version);
 }
 
 String RangesInDataPartsDescription::describe() const
@@ -62,7 +78,7 @@ String RangesInDataPartsDescription::describe() const
     return fmt::format("{} parts: [{}]", this->size(), fmt::join(*this, ", "));
 }
 
-void RangesInDataPartsDescription::deserialize(ReadBuffer & in)
+void RangesInDataPartsDescription::deserialize(ReadBuffer & in, UInt64 parallel_protocol_version)
 {
     size_t new_size = 0;
     readVarUInt(new_size, in);
@@ -71,7 +87,7 @@ void RangesInDataPartsDescription::deserialize(ReadBuffer & in)
 
     this->resize(new_size);
     for (auto & desc : *this)
-        desc.deserialize(in);
+        desc.deserialize(in, parallel_protocol_version);
 }
 
 void RangesInDataPartsDescription::merge(const RangesInDataPartsDescription & other)
@@ -108,10 +124,12 @@ RangesInDataPart::RangesInDataPart(
 
 RangesInDataPartDescription RangesInDataPart::getDescription() const
 {
+    chassert(!data_part->isProjectionPart() || parent_part);
     return RangesInDataPartDescription{
-        .info = data_part->info,
+        .info = data_part->isProjectionPart() ? parent_part->info : data_part->info,
         .ranges = ranges,
         .rows = getRowsCount(),
+        .projection_name = data_part->isProjectionPart() ? data_part->name : "",
     };
 }
 

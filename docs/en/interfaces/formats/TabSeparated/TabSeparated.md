@@ -6,6 +6,7 @@ keywords: ['TabSeparated', 'TSV']
 output_format: true
 slug: /interfaces/formats/TabSeparated
 title: 'TabSeparated'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias  |

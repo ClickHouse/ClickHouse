@@ -34,7 +34,7 @@ function select_func {
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        $CLICKHOUSE_CLIENT --query "SELECT * FROM ${table_name} FORMAT Null"
+        $CLICKHOUSE_CLIENT --query "SELECT * FROM ${table_name} FORMAT Null SETTINGS filesystem_cache_segments_batch_size=1, max_read_buffer_size_remote_fs=50000"
     done
 }
 

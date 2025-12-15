@@ -143,7 +143,27 @@ public:
 
 REGISTER_FUNCTION(ShowCertificate)
 {
-    factory.registerFunction<FunctionShowCertificate>();
+    FunctionDocumentation::Description description = R"(
+Shows information about the current server's Secure Sockets Layer (SSL) certificate if it has been configured.
+See [Configuring SSL-TLS](/guides/sre/configuring-ssl) for more information on how to configure ClickHouse to use OpenSSL certificates to validate connections.
+    )";
+    FunctionDocumentation::Syntax syntax = "showCertificate()";
+    FunctionDocumentation::Arguments arguments = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns map of key-value pairs relating to the configured SSL certificate.", {"Map(String, String)"}};
+    FunctionDocumentation::Examples examples = {{"Usage example",
+        R"(
+SELECT showCertificate() FORMAT LineAsString;
+        )",
+        R"(
+{'version':'1','serial_number':'2D9071D64530052D48308473922C7ADAFA85D6C5','signature_algo':'sha256WithRSAEncryption','issuer':'/CN=marsnet.local CA','not_before':'May  7 17:01:21 2024 GMT','not_after':'May  7 17:01:21 2025 GMT','subject':'/CN=chnode1','pkey_algo':'rsaEncryption'}
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionShowCertificate>(documentation);
 }
 
 }

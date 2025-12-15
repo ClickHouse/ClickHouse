@@ -125,13 +125,8 @@ fi
 
 export CLICKHOUSE_URL=${CLICKHOUSE_URL:="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/"}
 export CLICKHOUSE_URL_HTTPS=${CLICKHOUSE_URL_HTTPS:="https://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTPS}/"}
-
-# Add url params to url
-if [ -n "${CLICKHOUSE_URL_PARAMS:-}" ]
-then
-  export CLICKHOUSE_URL="${CLICKHOUSE_URL}?${CLICKHOUSE_URL_PARAMS}"
-  export CLICKHOUSE_URL_HTTPS="${CLICKHOUSE_URL_HTTPS}?${CLICKHOUSE_URL_PARAMS}"
-fi
+export CLICKHOUSE_URL="${CLICKHOUSE_URL}?${CLICKHOUSE_URL_PARAMS}"
+export CLICKHOUSE_URL_HTTPS="${CLICKHOUSE_URL_HTTPS}?${CLICKHOUSE_URL_PARAMS}"
 
 export CLICKHOUSE_URL_PROMETHEUS=${CLICKHOUSE_URL_PROMETHEUS:="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_PROMTHEUS_PORT}/metrics"}
 
@@ -223,6 +218,12 @@ function run_with_error()
     echo "${retval}" "${stdout_tmp}" "${stderr_tmp}"
 
     return 0
+}
+
+function with_lock()
+{
+    local lock_file="${CLICKHOUSE_TMP}/lock_${CLICKHOUSE_TEST_UNIQUE_NAME}_$1.lock"; shift
+    flock "$lock_file" "$@"
 }
 
 # BASH_XTRACEFD is supported only since 4.1

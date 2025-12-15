@@ -26,7 +26,7 @@ void JSONObjectEachRowRowOutputFormat::writeField(const IColumn & column, const 
 void JSONObjectEachRowRowOutputFormat::write(const Columns & columns, size_t row)
 {
     if (field_index_for_object_name)
-        object_name = columns[*field_index_for_object_name]->getDataAt(row).toString();
+        object_name = columns[*field_index_for_object_name]->getDataAt(row);
     else
         object_name = "row_" + std::to_string(getRowsReadBefore() + rows + 1);
 
@@ -81,7 +81,8 @@ void registerOutputFormatJSONObjectEachRow(FormatFactory & factory)
     factory.registerOutputFormat("JSONObjectEachRow", [](
                        WriteBuffer & buf,
                        const Block & sample,
-                       const FormatSettings & _format_settings)
+                       const FormatSettings & _format_settings,
+                       FormatFilterInfoPtr /*format_filter_info*/)
     {
         FormatSettings settings = _format_settings;
         settings.json.serialize_as_strings = false;

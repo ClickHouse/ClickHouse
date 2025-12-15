@@ -10,6 +10,7 @@
 #include <Processors/Chunk.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
+#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Functions/IFunction.h>
 
@@ -29,7 +30,7 @@ namespace ErrorCodes
 
 bool FilterTransform::canUseType(const DataTypePtr & filter_type)
 {
-    return filter_type->onlyNull() || isUInt8(removeLowCardinalityAndNullable(filter_type));
+    return filter_type->canBeUsedInBooleanContext();
 }
 
 auto incrementProfileEvents = [](size_t num_rows, const Columns & columns)
@@ -168,7 +169,7 @@ void FilterTransform::doTransform(Chunk & chunk)
     ColumnPtr filter_column = columns[filter_column_position];
     ConstantFilterDescription constant_filter_description(*filter_column);
 
-    if (constant_filter_description.always_true || on_totals)
+    if (constant_filter_description.always_true || on_totals || isVirtualRow(chunk))
     {
         incrementProfileEvents(num_rows_before_filtration, columns);
         removeFilterIfNeed(columns);

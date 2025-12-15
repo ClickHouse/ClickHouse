@@ -96,6 +96,7 @@ struct FixedStringUnaryOperationImpl
         ColumnFixedString::Chars & c)
     {
         size_t size = a.size();
+
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::apply(a[i]);
     }))
@@ -401,7 +402,7 @@ public:
                             for (size_t i = 0; i < size; ++i)
                             {
                                 vec_res[i] = StringUnaryOperationReduceImpl<Op<UInt8>>::vector(
-                                    chars.data() + offsets[i - 1], chars.data() + offsets[i] - 1);
+                                    chars.data() + offsets[i - 1], chars.data() + offsets[i]);
                             }
                             result_column = std::move(col_res);
                             return true;
@@ -420,10 +421,6 @@ public:
                             memcpy(offset_res.data(), offset_col.data(), offset_res.size() * sizeof(UInt64));
 
                             FixedStringUnaryOperationImpl<Op<UInt8>>::vector(vec_col, vec_res);
-                            /// Restore zero terminator for strings rows
-                            /// (since FixedStringUnaryOperationImpl works on the whole chars array, ignoring the row boundaries)
-                            for (const auto & offset : offset_res)
-                                vec_res[offset - 1] = 0;
                             result_column = std::move(col_res);
                             return true;
                         }

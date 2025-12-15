@@ -18,14 +18,14 @@ extern const int BAD_ARGUMENTS;
 namespace
 {
 
-class FunctionWkb : public IFunction
+class FunctionWKB : public IFunction
 {
 public:
     static inline const char * name = "wkb";
 
-    explicit FunctionWkb() = default;
+    explicit FunctionWKB() = default;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionWkb>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionWKB>(); }
 
     String getName() const override { return name; }
 
@@ -69,7 +69,7 @@ public:
             Field field;
             arguments[0].column->get(i, field);
             std::string serialized = transform->dumpObject(field);
-            res_column->insertData(serialized.c_str(), serialized.size());
+            res_column->insertData(serialized.data(), serialized.size());
         }
 
         return res_column;
@@ -80,9 +80,9 @@ public:
 
 }
 
-REGISTER_FUNCTION(Wkb)
+REGISTER_FUNCTION(WKB)
 {
-    factory.registerFunction<FunctionWkb>(FunctionDocumentation{
+    factory.registerFunction<FunctionWKB>(FunctionDocumentation{
         .description = R"(
     Parses a Well-Known Binary (WKB) representation of a Point geometry and returns it in the internal ClickHouse format.
     )",
@@ -102,6 +102,8 @@ REGISTER_FUNCTION(Wkb)
         .introduced_in = {25, 7},
         .category = FunctionDocumentation::Category::Geo,
     });
+
+    factory.registerAlias("WKB", "wkb");
 }
 
 }

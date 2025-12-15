@@ -4,6 +4,7 @@ sidebar_label: 'List of data types'
 sidebar_position: 1
 slug: /sql-reference/data-types/
 title: 'Data Types in ClickHouse'
+doc_type: 'reference'
 ---
 
 # Data Types in ClickHouse

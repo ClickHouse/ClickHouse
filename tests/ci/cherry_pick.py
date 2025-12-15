@@ -31,6 +31,7 @@ from pathlib import Path
 from subprocess import CalledProcessError
 from typing import Iterable, List, Optional
 
+from cache_utils import GitHubCache
 from ci_buddy import CIBuddy
 from ci_config import Labels
 from ci_utils import Shell
@@ -45,6 +46,7 @@ from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, git_runner, is_shallow, stash
 from github_helper import GitHub, PullRequest, PullRequests, Repository
 from report import GITHUB_JOB_URL
+from s3_helper import S3Helper
 from ssh import SSHKey
 from synchronizer_utils import SYNC_PR_PREFIX
 
@@ -505,9 +507,15 @@ class BackportPRs:
         # To not have a possible TZ issues
         tomorrow = date.today() + timedelta(days=1)
 
+        # The search API struggles to serve the heavy queries, so we limit the
+        # updated date to 90 days ago. It improves the response quality by an order of
+        # magnitude
+        updated = (date.today() - timedelta(days=90)).isoformat() + "..*"
+
         query_args = {
             "query": f"type:pr repo:{repo_name} -label:{backport_created_label}",
             "label": ",".join(labels_to_backport),
+            "updated": updated,
             "merged": [since_date, tomorrow],
         }
         logging.info("Query to find the backport PRs:\n %s", query_args)
@@ -609,7 +617,9 @@ class CherryPickPRs:
         self.repo = gh.get_repo(repo)
         self.dry_run = dry_run
         self.error = None  # type: Optional[Exception]
+
         self.release_prs = gh.get_release_pulls(repo)
+        logging.info(f"Release PRs: {self.release_prs}")
 
     def get_open_cherry_pick_prs(self) -> PullRequests:
         """
@@ -768,7 +778,10 @@ def main():
         logging.getLogger("git_helper").setLevel(logging.DEBUG)
     token = args.token or get_best_robot_token()
 
-    gh = GitHub(token, create_cache_dir=False)
+    gh = GitHub(token)
+    temp_path = Path(TEMP_PATH)
+    gh_cache = GitHubCache(gh.cache_path, temp_path, S3Helper())
+    gh_cache.download()
 
     # First, check if some cherry-pick PRs are reopened and original PRs are mared as
     # done
@@ -782,17 +795,11 @@ def main():
     bpp.update_local_release_branches()
     bpp.receive_prs_for_backport()
     bpp.process_backports()
+    gh_cache.upload()
+
     errors = [e for e in (bpp.error, cpp.error) if e is not None]
     if any(errors):
         logging.error("Finished successfully, but errors occurred!")
-        if IS_CI:
-            ci_buddy = CIBuddy()
-            ci_buddy.post_job_error(
-                f"The backport process finished with errors: {errors[0]}",
-                with_instance_info=True,
-                with_wf_link=True,
-                critical=True,
-            )
         raise errors[0]
 
 
@@ -800,9 +807,20 @@ if __name__ == "__main__":
     logging.getLogger().setLevel(level=logging.INFO)
 
     assert not is_shallow()
-    with stash():
-        if os.getenv("ROBOT_CLICKHOUSE_SSH_KEY", ""):
-            with SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
+    try:
+        with stash():
+            if os.getenv("ROBOT_CLICKHOUSE_SSH_KEY", ""):
+                with SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
+                    main()
+            else:
                 main()
-        else:
-            main()
+
+    except Exception as e:
+        if IS_CI:
+            ci_buddy = CIBuddy()
+            ci_buddy.post_job_error(
+                f"The backport process finished with errors: {e}",
+                with_instance_info=True,
+                with_wf_link=True,
+                critical=True,
+            )

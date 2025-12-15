@@ -30,11 +30,17 @@ public:
     void shutdown();
 
 private:
+    const LoggerPtr log = getLogger("ObjectStorageQueueFactory");
     bool shutdown_called = false;
     std::mutex mutex;
     std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> storages;
 };
 
+/*
+ * A class which storages objects of ObjectStorageQueueMetadata
+ * because they can be shared between different Queue tables on the same server
+ * in case they share the same keeper path.
+ */
 class ObjectStorageQueueMetadataFactory final : private boost::noncopyable
 {
 public:
@@ -42,12 +48,22 @@ public:
 
     static ObjectStorageQueueMetadataFactory & instance();
 
+    /// Get a metadata instance if exists, otherwise create a new one.
+    /// Registers table in keeper in persistent node.
     FilesMetadataPtr getOrCreate(
         const std::string & zookeeper_path,
         ObjectStorageQueueMetadataPtr metadata,
-        const StorageID & storage_id);
+        const StorageID & storage_id,
+        bool & created_new_metadata);
 
-    void remove(const std::string & zookeeper_path, const StorageID & storage_id, bool remove_metadata_if_no_registered);
+    /// Reduce ref count for the metadata instance.
+    /// Metadata will be removed when ref count becomes zero.
+    /// Unregisters table in keeper from persistent node.
+    void remove(
+        const std::string & zookeeper_path,
+        const StorageID & storage_id,
+        bool is_drop,
+        bool keep_data_in_keeper);
 
     std::unordered_map<std::string, FilesMetadataPtr> getAll();
 

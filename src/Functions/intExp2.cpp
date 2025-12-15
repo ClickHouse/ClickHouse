@@ -77,7 +77,20 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameIntExp2>
 
 REGISTER_FUNCTION(IntExp2)
 {
-    factory.registerFunction<FunctionIntExp2>();
+    FunctionDocumentation::Description description = R"(
+Like [exp2](#exp2) but returns a `UInt64` number.
+)";
+    FunctionDocumentation::Syntax syntax = "intExp2(x)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "The exponent.", {"Int*", "UInt*", "Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns 2^x.", {"UInt64"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT intExp2(3);", "8"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionIntExp2>(documentation);
 }
 
 }

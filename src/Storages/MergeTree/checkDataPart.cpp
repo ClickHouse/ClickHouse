@@ -3,7 +3,6 @@
 
 #include <Poco/DirectoryIterator.h>
 
-#include <Storages/MergeTree/GinIndexStore.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
@@ -33,6 +32,7 @@ namespace DB
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
+    extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
 }
 
 namespace ErrorCodes
@@ -167,7 +167,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     NamesAndTypesList columns_txt;
 
     {
-        auto buf = data_part_storage.readFile("columns.txt", read_settings, std::nullopt, std::nullopt);
+        auto buf = data_part_storage.readFile("columns.txt", read_settings, std::nullopt);
         columns_txt.readText(*buf);
         assertEOF(*buf);
     }
@@ -182,7 +182,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     /// This function calculates checksum for both compressed and decompressed contents of compressed file.
     auto checksum_compressed_file = [&read_settings](const IDataPartStorage & data_part_storage_, const String & file_path)
     {
-        auto file_buf = data_part_storage_.readFile(file_path, read_settings, std::nullopt, std::nullopt);
+        auto file_buf = data_part_storage_.readFile(file_path, read_settings, std::nullopt);
         HashingReadBuffer compressed_hashing_buf(*file_buf);
         CompressedReadBuffer uncompressing_buf(compressed_hashing_buf);
         HashingReadBuffer uncompressed_hashing_buf(uncompressing_buf);
@@ -195,20 +195,22 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         };
     };
 
-    auto ratio_of_defaults = (*data_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization];
-    SerializationInfoByName serialization_infos;
-
+    SerializationInfoByName serialization_infos({});
     if (data_part_storage.existsFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME))
     {
         try
         {
-            auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, read_settings, std::nullopt, std::nullopt);
-            SerializationInfo::Settings settings{ratio_of_defaults, false};
-            serialization_infos = SerializationInfoByName::readJSON(columns_txt, settings, *serialization_file);
+            auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, read_settings, std::nullopt);
+            serialization_infos = SerializationInfoByName::readJSON(columns_txt, *serialization_file);
         }
         catch (...)
         {
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Failed to load file {} of data part {}, with error {}", IMergeTreeDataPart::SERIALIZATION_FILE_NAME, data_part->name, getCurrentExceptionMessage(true));
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Failed to load file {} of data part {}, with error {}",
+                IMergeTreeDataPart::SERIALIZATION_FILE_NAME,
+                data_part->name,
+                getCurrentExceptionMessage(true));
         }
     }
 
@@ -216,14 +218,14 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     {
         auto it = serialization_infos.find(column.name);
         return it == serialization_infos.end()
-            ? column.type->getDefaultSerialization()
+            ? column.type->getSerialization(serialization_infos.getSettings())
             : column.type->getSerialization(*it->second);
     };
 
     /// This function calculates only checksum of file content (compressed or uncompressed).
     auto checksum_file = [&](const String & file_name)
     {
-        auto file_buf = data_part_storage.readFile(file_name, read_settings, std::nullopt, std::nullopt);
+        auto file_buf = data_part_storage.readFile(file_name, read_settings, std::nullopt);
         HashingReadBuffer hashing_buf(*file_buf);
         hashing_buf.ignoreAll();
         checksums_data.files[file_name] = IMergeTreeDataPart::Checksums::Checksum(hashing_buf.count(), hashing_buf.getHash());
@@ -250,7 +252,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
                 if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
                     return;
 
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", data_part_storage);
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", data_part_storage, data_part->storage.getSettings());
 
                 if (!stream_name)
                     throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
@@ -272,7 +274,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
     if (require_checksums || data_part_storage.existsFile("checksums.txt"))
     {
-        auto buf = data_part_storage.readFile("checksums.txt", read_settings, std::nullopt, std::nullopt);
+        auto buf = data_part_storage.readFile("checksums.txt", read_settings, std::nullopt);
         checksums_txt.read(*buf);
         assertEOF(*buf);
     }
@@ -289,10 +291,6 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             projections_on_disk.insert(file_name);
             continue;
         }
-
-        /// Exclude files written by text index from check. No correct checksums are available for them currently.
-        if (isGinFile(file_name))
-            continue;
 
         auto checksum_it = checksums_data.files.find(file_name);
         /// Skip files that we already calculated. Also skip metadata files that are not checksummed.
@@ -434,7 +432,6 @@ IMergeTreeDataPart::Checksums checkDataPart(
         read_settings.enable_filesystem_cache_log = false;
         read_settings.enable_filesystem_read_prefetches_log = false;
         read_settings.page_cache = nullptr;
-        read_settings.load_marks_asynchronously = false;
         read_settings.remote_fs_prefetch = false;
         read_settings.page_cache_inject_eviction = false;
         read_settings.use_page_cache_for_disks_without_file_cache = false;

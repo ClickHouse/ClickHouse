@@ -13,6 +13,7 @@
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Common/re2.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Logger.h>
@@ -122,6 +123,11 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
         if ((level == 0) && (max_flags_with_children & create_table))
             res |= create_arbitrary_temporary_table;
 
+        /// CREATE VIEW (on any database/table) => CREATE_TEMPORARY_VIEW (global)
+        static const AccessFlags create_temporary_view = AccessType::CREATE_TEMPORARY_VIEW;
+        if ((level == 0) && (max_flags_with_children & create_view))
+            res |= create_temporary_view;
+
         /// ALTER_TTL => ALTER_MATERIALIZE_TTL
         static const AccessFlags alter_ttl = AccessType::ALTER_TTL;
         static const AccessFlags alter_materialize_ttl = AccessType::ALTER_MATERIALIZE_TTL;
@@ -201,6 +207,7 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
             "table_engines",
             "table_functions",
             "aggregate_function_combinators",
+            "completions",
 
             "functions", /// Can contain user-defined functions
 
@@ -969,6 +976,26 @@ void ContextAccess::checkGranteesAreAllowed(const std::vector<UUID> & grantee_id
             checkGranteeIsAllowed(id, *user_entity);
     }
 }
+
+void ContextAccess::checkAccessWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view to_check_by_filter) const
+{
+    if (isGranted(context, flags, parameter))
+        return;
+
+    if (!to_check_by_filter.empty())
+    {
+        auto access_rights = getAccessRights();
+        auto filters = access_rights->getFilters(parameter);
+        for (const auto & filter : filters)
+        {
+            if (re2::RE2::FullMatch(to_check_by_filter, filter.path) && filter.access_flags.contains(flags))
+                return;
+        }
+    }
+
+    checkAccess(context, flags, parameter);
+}
+
 
 std::shared_ptr<const ContextAccessWrapper> ContextAccessWrapper::fromContext(const ContextPtr & context)
 {

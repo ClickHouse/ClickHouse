@@ -1,6 +1,7 @@
--- Tags: no-random-merge-tree-settings, no-parallel-replicas
+-- Tags: no-random-merge-tree-settings
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 10;
+SET parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1, optimize_aggregation_in_order = 0;
 SET enable_analyzer=1;
 
 DROP TABLE IF EXISTS tt0;

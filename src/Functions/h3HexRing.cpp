@@ -145,7 +145,34 @@ public:
 
 REGISTER_FUNCTION(H3HexRing)
 {
-    factory.registerFunction<FunctionH3HexRing>();
+    FunctionDocumentation::Description description = R"(
+Returns the indexes of the hexagonal ring centered at the provided origin [H3](#h3-index) and length k.
+The ring is hollow when k > 0.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3HexRing(index, k)";
+    FunctionDocumentation::Arguments arguments = {
+        {"index", "Hexagon index number that represents the origin.", {"UInt64"}},
+        {"k", "Distance from the origin (ring size).", {"UInt16"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns an array of H3 indices forming a hexagonal ring around the origin, or `0` if a pentagonal distortion is encountered.",
+        {"Array(UInt64)"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get hexagonal ring of distance 1",
+            "SELECT h3HexRing(590080540275638271, toUInt16(1)) AS hexRing",
+            R"(
+┌─hexRing─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [590080815153545215,590080471556161535,590080677714591743,590077585338138623,590077447899185151,590079509483487231] │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3HexRing>(documentation);
 }
 
 }

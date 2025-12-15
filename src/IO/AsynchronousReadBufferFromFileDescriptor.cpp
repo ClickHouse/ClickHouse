@@ -10,6 +10,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/getRandomASCIIString.h>
 #include <IO/AsynchronousReadBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <base/getThreadId.h>
 
@@ -51,13 +52,8 @@ std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromFileDescripto
     request.offset = file_offset_of_buffer_end;
     request.priority = Priority{base_priority.value + priority.value};
     request.ignore = bytes_to_ignore;
+    request.direct_io = direct_io;
     bytes_to_ignore = 0;
-
-    /// This is a workaround of a read pass EOF bug in linux kernel with pread()
-    if (file_size.has_value() && file_offset_of_buffer_end >= *file_size)
-    {
-        return std::async(std::launch::deferred, [] { return IAsynchronousReader::Result{.size = 0, .offset = 0}; });
-    }
 
     return reader.submit(request);
 }
@@ -162,6 +158,7 @@ AsynchronousReadBufferFromFileDescriptor::AsynchronousReadBufferFromFileDescript
     Priority priority_,
     int fd_,
     size_t buf_size,
+    int flags,
     char * existing_memory,
     size_t alignment,
     std::optional<size_t> file_size_,
@@ -185,6 +182,8 @@ AsynchronousReadBufferFromFileDescriptor::AsynchronousReadBufferFromFileDescript
             buf_size);
 
     prefetch_buffer.alignment = alignment;
+
+    direct_io = (flags != -1) && (flags & O_DIRECT);
 }
 
 AsynchronousReadBufferFromFileDescriptor::~AsynchronousReadBufferFromFileDescriptor()

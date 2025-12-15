@@ -602,7 +602,14 @@ def test_cmd_csnp(started_cluster):
     try:
         wait_nodes()
         zk = get_fake_zk(node1.name, timeout=30.0)
-        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="csnp")
+        for i in range(20):
+            data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="csnp")
+
+            if "Failed to schedule snapshot creation task" not in data:
+                break
+            time.sleep(1)
+        else:
+            assert False, "Failed to schedule snapshot after multiple retries"
 
         print("csnp output -------------------------------------")
         print(data)
@@ -640,7 +647,7 @@ def test_cmd_lgif(started_cluster):
         assert int(result["first_log_idx"]) == 1
         assert int(result["first_log_term"]) == 1
         assert int(result["last_log_idx"]) >= 1
-        assert int(result["last_log_term"]) == 1
+        assert int(result["last_log_term"]) >= 1
         assert int(result["last_committed_log_idx"]) >= 1
         assert int(result["leader_committed_log_idx"]) >= 1
         assert int(result["target_committed_log_idx"]) >= 1
@@ -740,3 +747,31 @@ def test_cmd_ydld(started_cluster):
                     + " did not become follower after 30s of yielding leadership, maybe there is something wrong."
                 )
         assert keeper_utils.is_follower(cluster, node)
+
+def test_cmd_lgrq(started_cluster):
+    zk = None
+    try:
+        wait_nodes()
+        clear_znodes()
+        reset_conn_stats()
+
+        zk = get_fake_zk(node1.name, timeout=30.0)
+        if not zk.exists('/test_lgrq'):
+            zk.create('/test_lgrq', ephemeral=True)
+
+        assert not node1.contains_in_log('Received request:')
+
+        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="lgrq")
+        assert data == 'enabled'
+
+        zk.set('/test_lgrq', 'newdata'.encode())
+        assert node1.contains_in_log('Received request:')
+
+        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="lgrq")
+        assert data == 'disabled'
+        node1.rotate_logs()
+
+        zk.set('/test_lgrq', 'newdata'.encode())
+        assert not node1.contains_in_log('Received request:')
+    finally:
+        destroy_zk_client(zk)

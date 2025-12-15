@@ -8,7 +8,7 @@
 
 /** NOTE HashMap could only be used for memmoveable (position independent) types.
   * Example: std::string is not position independent in libstdc++ with C++11 ABI or in libc++.
-  * Also, key in hash table must be of type, that zero bytes is compared equals to zero key.
+  * Also, key in hash table must be of a type, such as that zero bytes are compared equals to zero key.
   *
   * Please keep in sync with PackedHashMap.h
   */
@@ -265,7 +265,17 @@ public:
     void forEachMapped(Func && func)
     {
         for (auto & v : *this)
-            func(v.getMapped());
+        {
+            if constexpr (std::is_same_v<decltype(func(v.getMapped())), bool>)
+            {
+                if (!func(v.getMapped()))
+                    break;
+            }
+            else
+            {
+                func(v.getMapped());
+            }
+        }
     }
 
     typename Cell::Mapped & ALWAYS_INLINE operator[](const Key & x)
@@ -300,6 +310,18 @@ public:
         LookupResult it;
         bool inserted;
         this->emplace(x, it, inserted);
+        if (inserted)
+        {
+            new (&it->getMapped()) typename Cell::Mapped();
+            it->getMapped() = value;
+        }
+    }
+
+    void ALWAYS_INLINE insertIfNotPresent(const Key & x, size_t hash, const typename Cell::Mapped & value)
+    {
+        LookupResult it;
+        bool inserted;
+        this->emplace(x, it, inserted, hash);
         if (inserted)
         {
             new (&it->getMapped()) typename Cell::Mapped();

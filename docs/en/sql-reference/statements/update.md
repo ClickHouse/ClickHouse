@@ -5,15 +5,15 @@ sidebar_label: 'UPDATE'
 sidebar_position: 39
 slug: /sql-reference/statements/update
 title: 'The Lightweight UPDATE Statement'
+doc_type: 'reference'
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import BetaBadge from '@theme/badges/BetaBadge';
 
-<ExperimentalBadge/>
+<BetaBadge/>
 
 :::note
-Lightweight updates are currently experimental.
-To enable them, please first run `SET allow_experimental_lightweight_update = 1`.
+Lightweight updates are currently beta.
 If you run into problems, kindly open an issue in the [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
 :::
 
@@ -22,7 +22,7 @@ It is called "lightweight update" to contrast it to the [`ALTER TABLE ... UPDATE
 It is only available for the [`MergeTree`](/engines/table-engines/mergetree-family/mergetree) table engine family.
 
 ```sql
-UPDATE [db.]table SET column1 = expr1 [, ...] [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE filter_expr;
+UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr;
 ```
 
 The `filter_expr` must be of type `UInt8`. This query updates values of the specified columns to the values of the corresponding expressions in rows for which the `filter_expr` takes a non-zero value.
