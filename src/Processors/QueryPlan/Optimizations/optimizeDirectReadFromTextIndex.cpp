@@ -186,6 +186,7 @@ public:
 
         for (ActionsDAG::Node & node : actions_dag.nodes)
         {
+            auto origin_result_name = node.result_name;
             auto replaced = tryReplaceFunctionNode(node, context);
 
             if (replaced.has_value())
@@ -194,8 +195,8 @@ public:
 
                 for (const auto & [index_name, column_name] : replaced->index_name_to_virtual_column)
                     result.added_columns[index_name].emplace_back(column_name, std::make_shared<DataTypeUInt8>());
-                if (actions_dag.tryFindInOutputs(replaced->origin_result_name) != nullptr)
-                    add_aliases.push_back({replaced->node->result_name, replaced->origin_result_name});
+                if (actions_dag.tryFindInOutputs(origin_result_name) != nullptr)
+                    add_aliases.push_back({replaced->node->result_name, origin_result_name});
             }
         }
 
