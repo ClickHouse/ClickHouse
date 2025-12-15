@@ -135,7 +135,7 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
 {
     auto zk = context->getZooKeeper();
     auto zookeepers = context->getAuxiliaryZooKeepers();
-    
+
     zookeepers["default"] = zk;
 
     LOG_INFO(getLogger("StorageSystemZooKeeperInfo"), "fillData size zk  {} ", zookeepers.size());
