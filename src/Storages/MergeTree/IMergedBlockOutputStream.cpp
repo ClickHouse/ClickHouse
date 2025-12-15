@@ -12,6 +12,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
+    extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
 }
 
 IMergedBlockOutputStream::IMergedBlockOutputStream(
@@ -30,6 +31,7 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
         false,
         (*storage_settings)[MergeTreeSetting::serialization_info_version],
         (*storage_settings)[MergeTreeSetting::string_serialization_version],
+        (*storage_settings)[MergeTreeSetting::nullable_serialization_version],
     }
     , new_serialization_infos(info_settings)
 {
@@ -40,11 +42,10 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
 NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     const MergeTreeDataPartPtr & data_part,
     NamesAndTypesList & columns,
+    const NameSet & empty_columns,
     SerializationInfoByName & serialization_infos,
     MergeTreeData::DataPart::Checksums & checksums)
 {
-    const NameSet & empty_columns = data_part->expired_columns;
-
     /// For compact part we have to override whole file with data, it's not
     /// worth it
     if (empty_columns.empty() || isCompactPart(data_part))

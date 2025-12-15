@@ -54,7 +54,7 @@ ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(Storage
     const auto storage_settings = storage.getSettings();
     check_period_ms = (*storage_settings)[MergeTreeSetting::zookeeper_session_expiration_check_period].totalSeconds() * 1000;
 
-    task = storage.getContext()->getSchedulePool().createTask(log_name, [this]{ run(); });
+    task = storage.getContext()->getSchedulePool().createTask(storage.getStorageID(), log_name, [this]{ run(); });
 }
 
 void ReplicatedMergeTreeRestartingThread::start(bool schedule)

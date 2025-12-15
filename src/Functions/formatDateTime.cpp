@@ -1136,8 +1136,8 @@ public:
         {
             if (!const_time_zone_column && arguments.size() > 2)
             {
-                if (!arguments[2].column.get()->getDataAt(i).toString().empty())
-                    time_zone = &DateLUT::instance(arguments[2].column.get()->getDataAt(i).toString());
+                if (!arguments[2].column.get()->getDataAt(i).empty())
+                    time_zone = &DateLUT::instance(arguments[2].column.get()->getDataAt(i));
                 else
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
             }

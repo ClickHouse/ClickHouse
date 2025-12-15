@@ -109,11 +109,20 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     else
         added_columns.reserve(join_features.need_replication);
 
-    switchJoinRightColumns(maps_, added_columns, block.getSelector(), join.data->type, *join.used_flags);
+    size_t processed_rows = switchJoinRightColumns(maps_, added_columns, block.getSelector(), join.data->type, *join.used_flags);
     /// Do not hold memory for join_on_keys anymore
     added_columns.join_on_keys.clear();
 
-    return std::make_unique<HashJoinResult>(
+    std::optional<ScatteredBlock> next_scattered_block;
+    if (0 < processed_rows && processed_rows < block.rows())
+    {
+        auto [raw_block, raw_selector] = std::move(block).detachData();
+        auto split_selector = raw_selector.split(processed_rows);
+        block = ScatteredBlock(raw_block, std::move(split_selector.first));
+        next_scattered_block = ScatteredBlock(std::move(raw_block), std::move(split_selector.second));
+    }
+
+    auto join_result = std::make_unique<HashJoinResult>(
         std::move(added_columns.lazy_output),
         std::move(added_columns.columns),
         std::move(added_columns.offsets_to_replicate),
@@ -132,6 +141,10 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
             join.joined_block_split_single_row,
             join.enable_lazy_columns_replication,
         });
+
+    if (next_scattered_block)
+        join_result->setNextBlock(std::move(next_scattered_block.value()));
+    return join_result;
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
@@ -215,7 +228,7 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 template <typename AddedColumns>
-void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::switchJoinRightColumns(
+size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::switchJoinRightColumns(
     const std::vector<const MapsTemplate *> & mapv,
     AddedColumns & added_columns,
     const ScatteredBlock::Selector & selector,
@@ -265,7 +278,7 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::switchJoinRightColumns(
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 template <typename KeyGetter, typename Map, typename AddedColumns>
-void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchNullability(
+size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchNullability(
     std::vector<KeyGetter> && key_getter_vector,
     const std::vector<const Map *> & mapv,
     AddedColumns & added_columns,
@@ -273,16 +286,16 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchNull
     JoinStuff::JoinUsedFlags & used_flags)
 {
     if (added_columns.need_filter)
-        joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, true>(
+        return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, true>(
             std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, selector, used_flags);
     else
-        joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, false>(
+        return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, false>(
             std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, selector, used_flags);
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 template <typename KeyGetter, typename Map, bool need_filter, typename AddedColumns>
-void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMultipleDisjuncts(
+size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMultipleDisjuncts(
     std::vector<KeyGetter> && key_getter_vector,
     const std::vector<const Map *> & mapv,
     AddedColumns & added_columns,
@@ -295,7 +308,7 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMult
         if (added_columns.additional_filter_expression)
         {
             const bool mark_per_row_used = join_features.right || join_features.full || mapv.size() > 1;
-            joinRightColumnsWithAddtitionalFilter<KeyGetter, Map>(
+            return joinRightColumnsWithAddtitionalFilter<KeyGetter, Map>(
                 std::forward<std::vector<KeyGetter>>(key_getter_vector),
                 mapv,
                 added_columns,
@@ -303,8 +316,6 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMult
                 selector,
                 need_filter,
                 mark_per_row_used);
-
-            return;
         }
     }
 
@@ -316,20 +327,20 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMult
         if (mapv.size() > 1 || added_columns.join_on_keys.empty())
         {
             if (std::ranges::any_of(added_columns.join_on_keys, [](const auto & elem) { return elem.null_map; }))
-                joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/true>(
+                return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/true>(
                     std::move(key_getter_vector), mapv, added_columns, used_flags, selector.getRange());
             else
-                joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/false>(
+                return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/false>(
                     std::move(key_getter_vector), mapv, added_columns, used_flags, selector.getRange());
         }
         else
         {
             chassert(key_getter_vector.size() == 1);
             if (added_columns.join_on_keys.at(0).null_map)
-                joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/true>(
+                return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/true>(
                     key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, selector.getRange());
             else
-                joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/false>(
+                return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/false>(
                     key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, selector.getRange());
         }
     }
@@ -338,20 +349,20 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMult
         if (mapv.size() > 1 || added_columns.join_on_keys.empty())
         {
             if (std::ranges::any_of(added_columns.join_on_keys, [](const auto & elem) { return elem.null_map; }))
-                joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/true>(
+                return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/true>(
                     std::move(key_getter_vector), mapv, added_columns, used_flags, selector.getIndexes());
             else
-                joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/false>(
+                return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/false>(
                     std::move(key_getter_vector), mapv, added_columns, used_flags, selector.getIndexes());
         }
         else
         {
             chassert(key_getter_vector.size() == 1);
             if (added_columns.join_on_keys.at(0).null_map)
-                joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/true>(
+                return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/true>(
                     key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, selector.getIndexes());
             else
-                joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/false>(
+                return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/false>(
                     key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, selector.getIndexes());
         }
     }
@@ -461,7 +472,7 @@ template <
     JoinCommon::JoinMask::Kind join_mask_kind,
     typename AddedColumns,
     typename Selector>
-void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
+size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     KeyGetter & key_getter, const Map * map, AddedColumns & added_columns, JoinStuff::JoinUsedFlags & used_flags, const Selector & selector)
 {
     static constexpr bool flag_per_row = false; // Always false in single map case
@@ -534,11 +545,12 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     }
 
     added_columns.applyLazyDefaults();
+    return 0;
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 template <typename KeyGetter, typename Map, bool need_filter, bool check_null_map, typename AddedColumns, typename Selector>
-void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchJoinMaskKind(
+size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchJoinMaskKind(
     KeyGetter & key_getter, const Map * map, AddedColumns & added_columns, JoinStuff::JoinUsedFlags & used_flags, const Selector & selector)
 {
     switch (added_columns.join_on_keys.at(0).join_mask_column.getKind())
@@ -566,7 +578,7 @@ template <
     JoinCommon::JoinMask::Kind join_mask_kind,
     typename AddedColumns,
     typename Selector>
-void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
+size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     std::vector<KeyGetter> && key_getter_vector,
     const std::vector<const Map *> & mapv,
     AddedColumns & added_columns,
@@ -589,10 +601,16 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     Arena pool;
 
     if constexpr (join_features.need_replication)
-        added_columns.offsets_to_replicate = IColumn::Offsets(rows);
+    {
+        added_columns.offsets_to_replicate.clear();
+        added_columns.offsets_to_replicate.reserve(rows);
+    }
+
+    size_t max_joined_rows = added_columns.max_joined_block_rows > 0 ? added_columns.max_joined_block_rows : std::numeric_limits<size_t>::max();
 
     IColumn::Offset current_offset = 0;
-    for (size_t i = 0; i < rows; ++i)
+    size_t i = 0;
+    for (; i < rows && current_offset < max_joined_rows; ++i)
     {
         size_t ind = 0;
         if constexpr (std::is_same_v<std::decay_t<Selector>, ScatteredBlock::Indexes>)
@@ -642,12 +660,11 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         }
 
         if constexpr (join_features.need_replication)
-        {
-            added_columns.offsets_to_replicate[i] = current_offset;
-        }
+            added_columns.offsets_to_replicate.push_back(current_offset);
     }
 
     added_columns.applyLazyDefaults();
+    return i;
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
@@ -658,7 +675,7 @@ template <
     bool check_null_map,
     typename AddedColumns,
     typename Selector>
-void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchJoinMaskKind(
+size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchJoinMaskKind(
     std::vector<KeyGetter> && key_getter_vector,
     const std::vector<const Map *> & mapv,
     AddedColumns & added_columns,
@@ -668,28 +685,27 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchJoin
     using Kind = JoinCommon::JoinMask::Kind;
     if (std::ranges::all_of(added_columns.join_on_keys, [](const auto & elem) { return elem.join_mask_column.getKind() == Kind::AllTrue; }))
     {
-        joinRightColumns<KeyGetter, Map, need_filter, check_null_map, Kind::AllTrue>(
+        return joinRightColumns<KeyGetter, Map, need_filter, check_null_map, Kind::AllTrue>(
             std::move(key_getter_vector), mapv, added_columns, used_flags, selector);
     }
     else if (std::ranges::all_of(added_columns.join_on_keys, [](const auto & elem) { return elem.join_mask_column.getKind() == Kind::AllFalse; }))
     {
-        joinRightColumns<KeyGetter, Map, need_filter, check_null_map, Kind::AllFalse>(
+        return joinRightColumns<KeyGetter, Map, need_filter, check_null_map, Kind::AllFalse>(
             std::move(key_getter_vector), mapv, added_columns, used_flags, selector);
     }
     else
     {
-        joinRightColumns<KeyGetter, Map, need_filter, check_null_map, Kind::Unknown>(
+        return joinRightColumns<KeyGetter, Map, need_filter, check_null_map, Kind::Unknown>(
             std::move(key_getter_vector), mapv, added_columns, used_flags, selector);
     }
 }
 
-template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 template <typename AddedColumns, typename Selector>
-ColumnPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::buildAdditionalFilter(
+static ColumnPtr buildAdditionalFilter(
     const Selector & selector,
-    const std::vector<const RowRef *> & selected_rows,
-    const std::vector<size_t> & row_replicate_offset,
-    AddedColumns & added_columns)
+    const PODArray<const RowRef *> & selected_rows,
+    const IColumn::Offsets & row_replicate_offset,
+    const AddedColumns & added_columns)
 {
     ColumnPtr result_column;
     do
@@ -725,15 +741,14 @@ ColumnPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::buildAdditionalFilter
         {
             if (rhs_pos_it != added_columns.additional_filter_required_rhs_pos.end() && pos == rhs_pos_it->first)
             {
-
                 const auto & req_col = *req_cols_it;
                 required_columns.emplace_back(nullptr, req_col.type, req_col.name);
 
                 auto col = req_col.type->createColumn();
                 for (const auto & selected_row : selected_rows)
                 {
-                    const auto [src_col, row_num] = getBlockColumnAndRow(selected_row, rhs_pos_it->second);
-                    col->insertFrom(*src_col, row_num);
+                    const auto [src_col, row_pos] = getBlockColumnAndRow(selected_row, rhs_pos_it->second);
+                    col->insertFrom(*src_col, row_pos);
                 }
                 required_columns[pos].column = std::move(col);
                 ++rhs_pos_it;
@@ -751,14 +766,13 @@ ColumnPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::buildAdditionalFilter
                         col_name);
 
                 auto new_col = src_col->column->cloneEmpty();
-                size_t prev_left_offset = 0;
                 for (size_t i = 0; i < row_replicate_offset.size(); ++i)
                 {
-                    const size_t & left_offset = row_replicate_offset[i];
-                    size_t rows = left_offset - prev_left_offset;
+                    size_t rows = row_replicate_offset[i] - row_replicate_offset[i - 1];
                     if (rows)
+                    {
                         new_col->insertManyFrom(*src_col->column, selector[i], rows);
-                    prev_left_offset = left_offset;
+                    }
                 }
                 required_columns.push_back({std::move(new_col), src_col->type, col_name});
             }
@@ -803,7 +817,7 @@ ColumnPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::buildAdditionalFilter
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 template <typename KeyGetter, typename Map, typename AddedColumns>
-void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtitionalFilter(
+size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtitionalFilter(
     std::vector<KeyGetter> && key_getter_vector,
     const std::vector<const Map *> & mapv,
     AddedColumns & added_columns,
@@ -813,7 +827,7 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtit
     bool flag_per_row [[maybe_unused]])
 {
     constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
-    const size_t left_block_rows = selector.size();
+    size_t left_block_rows = selector.size();
     if (need_filter)
     {
         added_columns.filter = IColumn::Filter(left_block_rows, 0);
@@ -825,21 +839,38 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtit
     if constexpr (join_features.need_replication)
         added_columns.offsets_to_replicate = IColumn::Offsets(left_block_rows);
 
-    std::vector<size_t> row_replicate_offset;
-    row_replicate_offset.reserve(left_block_rows);
-
     using FindResult = typename KeyGetter::FindResult;
-    PreSelectedRows selected_rows;
+
+    /// Adapter class to pass into addFoundRowAll
+    /// We don't want to add rows directly into AddedColumns, because they need to be filtered by additional_filter_expression.
+    class PreSelectedRows
+    {
+    public:
+        explicit PreSelectedRows(PODArray<const RowRef *> & container_) : container(container_) {}
+        void appendFromBlock(const RowRef * row_ref, bool /* has_default */) { container.push_back(row_ref); }
+        static constexpr bool isLazy() { return false; }
+
+        PODArray<const RowRef *> & container;
+    };
+
+    PODArray<const RowRef *> selected_rows;
     selected_rows.reserve(left_block_rows);
     std::vector<FindResult> find_results;
     find_results.reserve(left_block_rows);
     IColumn::Offset total_added_rows = 0;
-    IColumn::Offset current_added_rows = 0;
+
+    IColumn::Offsets row_replicate_offset;
+    row_replicate_offset.reserve(left_block_rows);
+
+    size_t max_joined_rows = added_columns.max_joined_block_rows;
+    if (max_joined_rows == 0)
+        max_joined_rows = std::numeric_limits<size_t>::max();
 
     {
         pool = std::make_unique<Arena>();
-        current_added_rows = 0;
-        for (size_t ind : selector)
+        IColumn::Offset current_added_rows = 0;
+
+        for (auto ind : selector)
         {
             KnownRowsHolder<true> all_flag_known_rows;
             KnownRowsHolder<false> single_flag_know_rows;
@@ -859,31 +890,39 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtit
                     find_results.push_back(find_result);
                     /// We don't add missing in addFoundRowAll here. we will add it after filter is applied.
                     /// it's different from `joinRightColumns`.
+                    PreSelectedRows selected_rows_view{selected_rows};
                     if (flag_per_row)
-                        addFoundRowAll<Map, false, true>(mapped, selected_rows, current_added_rows, all_flag_known_rows, nullptr);
+                        addFoundRowAll<Map, false, true>(mapped, selected_rows_view, current_added_rows, all_flag_known_rows, nullptr);
                     else
-                        addFoundRowAll<Map, false, false>(mapped, selected_rows, current_added_rows, single_flag_know_rows, nullptr);
+                        addFoundRowAll<Map, false, false>(mapped, selected_rows_view, current_added_rows, single_flag_know_rows, nullptr);
                 }
+
             }
             row_replicate_offset.push_back(current_added_rows);
+
+
+            if (current_added_rows >= max_joined_rows)
+                break;
         }
+
+        if (selected_rows.size() != current_added_rows)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Sizes are mismatched. selected_rows.size:{}, current_added_rows:{}, row_replicate_offset.size:{}",
+                selected_rows.size(),
+                current_added_rows,
+                row_replicate_offset.size());
     }
 
-    if (selected_rows.size() != current_added_rows)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Sizes are mismatched. selected_rows.size:{}, current_added_rows:{}, row_replicate_offset.size:{}",
-            selected_rows.size(),
-            current_added_rows,
-            row_replicate_offset.size());
-
-    auto filter_col = buildAdditionalFilter(selector, selected_rows, row_replicate_offset, added_columns);
+    left_block_rows = row_replicate_offset.size();
 
     {
+        auto filter_col = buildAdditionalFilter(selector, selected_rows, row_replicate_offset, added_columns);
+
         const PaddedPODArray<UInt8> & filter_flags = assert_cast<const ColumnUInt8 &>(*filter_col).getData();
 
         size_t prev_replicated_row = 0;
-        auto selected_right_row_it = selected_rows.begin();
+        auto * selected_right_row_it = selected_rows.begin();
         size_t find_result_index = 0;
         for (size_t i = 0, n = row_replicate_offset.size(); i < n; ++i)
         {
@@ -1015,10 +1054,11 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtit
 
     if constexpr (join_features.need_replication)
     {
-        added_columns.offsets_to_replicate.resize_assume_reserved(left_block_rows);
-        added_columns.filter.resize_assume_reserved(left_block_rows);
+        added_columns.offsets_to_replicate.resize(left_block_rows);
+        added_columns.filter.resize(left_block_rows);
     }
     added_columns.applyLazyDefaults();
+    return left_block_rows;
 }
 
 }

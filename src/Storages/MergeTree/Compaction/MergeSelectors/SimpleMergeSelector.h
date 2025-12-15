@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/Compaction/MergeSelectors/IMergeSelector.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/PartitionStatistics.h>
 
 /**
 We have a set of data parts that is dynamically changing - new data parts are added and there is background merging process.
@@ -166,6 +167,13 @@ public:
           */
         bool enable_heuristic_to_remove_small_parts_at_right = true;
         double heuristic_to_remove_small_parts_at_right_max_ratio = 0.01;
+
+        /** Heuristic:
+          * Lower max_parts_to_merge_at_once automatically when number of parts in partition approaching parts_to_throw_insert
+          */
+        bool enable_heuristic_to_lower_max_parts_to_merge_at_once = false;
+        size_t heuristic_to_lower_max_parts_to_merge_at_once_exponent = 5;
+        const PartitionsStatistics * partitions_stats = nullptr;
     };
 
     explicit SimpleMergeSelector(const Settings & settings_) : settings(settings_) {}

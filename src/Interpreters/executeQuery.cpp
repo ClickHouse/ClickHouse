@@ -82,6 +82,7 @@
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Poco/Net/SocketAddress.h>
@@ -101,6 +102,8 @@ namespace ProfileEvents
     extern const Event FailedInternalQuery;
     extern const Event FailedInternalInsertQuery;
     extern const Event FailedInternalSelectQuery;
+    extern const Event FailedInitialQuery;
+    extern const Event FailedInitialSelectQuery;
     extern const Event QueryTimeMicroseconds;
     extern const Event SelectQueryTimeMicroseconds;
     extern const Event InsertQueryTimeMicroseconds;
@@ -716,6 +719,8 @@ void logQueryFinishImpl(
                 ReadableSize(elem.read_bytes / elapsed_seconds));
         }
 
+        context->getRuntimeFilterLookup()->logStats();
+
         elem.query_result_cache_usage = query_result_cache_usage;
 
         elem.is_internal = internal;
@@ -809,6 +814,13 @@ void logQueryException(
         ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
     else if (query_ast->as<ASTInsertQuery>())
         ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
+
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    {
+        ProfileEvents::increment(ProfileEvents::FailedInitialQuery);
+        if (!query_ast || query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
+            ProfileEvents::increment(ProfileEvents::FailedInitialSelectQuery);
+    }
 
     if (internal)
     {
@@ -936,6 +948,13 @@ void logExceptionBeforeStart(
         ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
     else if (ast->as<ASTInsertQuery>())
         ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
+
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    {
+        ProfileEvents::increment(ProfileEvents::FailedInitialQuery);
+        if (!ast || ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
+            ProfileEvents::increment(ProfileEvents::FailedInitialSelectQuery);
+    }
 
     QueryStatusInfoPtr info;
     if (QueryStatusPtr process_list_elem = context->getProcessListElementSafe())
@@ -1192,13 +1211,18 @@ static BlockIO executeQueryImpl(
                 /// If you format AST, parse it back, and format it again, you get the same string.
                 std::string_view original_query{begin, static_cast<size_t>(end - begin)};
 
-                String formatted1 = out_ast->formatWithPossiblyHidingSensitiveData(
-                    /*max_length=*/0,
-                    /*one_line=*/true,
-                    /*show_secrets=*/true,
-                    /*print_pretty_type_names=*/false,
-                    /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
-                    /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+                auto format_ast = [](ASTPtr ast)
+                {
+                    return ast->formatWithPossiblyHidingSensitiveData(
+                        /*max_length=*/0,
+                        /*one_line=*/true,
+                        /*show_secrets=*/true,
+                        /*print_pretty_type_names=*/false,
+                        /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+                        /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+                };
+
+                String formatted1 = format_ast(out_ast);
 
                 /// The query can become more verbose after formatting, so:
                 size_t new_max_query_size = max_query_size > 0 ? (1000 + 2 * max_query_size) : 0;
@@ -1227,18 +1251,40 @@ static BlockIO executeQueryImpl(
 
                 chassert(ast2);
 
-                String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(
-                    /*max_length=*/0,
-                    /*one_line=*/true,
-                    /*show_secrets=*/true,
-                    /*print_pretty_type_names=*/false,
-                    /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
-                    /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+                String formatted2 = format_ast(ast2);
 
                 if (formatted1 != formatted2)
+                {
+                    /// Try to find the problematic part of the AST (it's not guaranteed to find it correctly though)
+                    auto bad_ast = out_ast;
+                    bool found_bad_ast;
+                    do
+                    {
+                        found_bad_ast = false;
+                        for (const auto & child : bad_ast->children)
+                        {
+                            auto formatted_child = format_ast(child);
+                            if (formatted1.find(formatted_child) == std::string::npos)
+                            {
+                                /// This shouldn't happen
+                                LOG_FATAL(getLogger("executeQuery"), "Cannot find formatted child in the formatted query: {}", formatted_child);
+                                break;
+                            }
+                            if (formatted2.find(formatted_child) == std::string::npos)
+                            {
+                                /// We didn't find it - so it was formatted in a different way
+                                LOG_FATAL(getLogger("executeQuery"), "Suspicious part of the AST: {}: {}", child->getID(), formatted_child);
+                                bad_ast = child;
+                                found_bad_ast = true;
+                                break;
+                            }
+                        }
+                    } while (found_bad_ast);
+
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Inconsistent AST formatting: the query:\n{}\nFormatted as:\n{}\nWas parsed and formatted back as:\n{}",
-                        original_query, formatted1, formatted2);
+                        "Inconsistent AST formatting in {}: the query:\n{}\nFormatted as:\n{}\nWas parsed and formatted back as:\n{}",
+                        bad_ast->getID(), original_query, formatted1, formatted2);
+                }
             }
             catch (const Exception & e)
             {
@@ -1675,14 +1721,6 @@ static BlockIO executeQueryImpl(
                         limits.size_limits = SizeLimits(settings[Setting::max_result_rows], settings[Setting::max_result_bytes], settings[Setting::result_overflow_mode]);
                     }
 
-                    if (auto * insert_interpreter = typeid_cast<InterpreterInsertQuery *>(interpreter.get()))
-                    {
-                        /// Save insertion table (not table function). TODO: support remote() table function.
-                        auto table_id = insert_interpreter->getDatabaseTable();
-                        if (!table_id.empty())
-                            context->setInsertionTable(std::move(table_id), insert_interpreter->getInsertColumnNames());
-                    }
-
                     if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(interpreter.get()))
                     {
                         create_interpreter->setIsRestoreFromBackup(flags.distributed_backup_restore);
@@ -2055,9 +2093,8 @@ void executeQuery(
 
                     fiu_do_on(FailPoints::execute_query_calling_empty_set_result_func_on_exception,
                     {
-                        // it will throw std::bad_function_call
-                        set_result_details = {};
-                        set_result_details(result_details);
+                        // emulate calling empty set_result_details() callback
+                        throw std::bad_function_call{};
                     });
 
                     if (set_result_details)

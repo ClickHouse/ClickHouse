@@ -77,7 +77,7 @@ namespace
             const auto * time_zone_const_col = checkAndGetColumnConstData<ColumnString>(arg2.column.get());
             if (!time_zone_const_col)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of 2nd argument of function {}. Excepted const(String).", arg2.column->getName(), name);
-            String time_zone_val = time_zone_const_col->getDataAt(0).toString();
+            String time_zone_val{time_zone_const_col->getDataAt(0)};
             const DateLUTImpl & time_zone = DateLUT::instance(time_zone_val);
             if (WhichDataType(arg1.type).isDateTime())
             {

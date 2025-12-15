@@ -274,7 +274,7 @@ private:
                 }
                 case MoveType::Key:
                 {
-                    key = arguments[j + 1].column->getDataAt(row).toView();
+                    key = arguments[j + 1].column->getDataAt(row);
                     if constexpr (case_insensitive)
                     {
                         if (!moveToElementByKeyCaseInsensitive<JSONParser>(res_element, key))
@@ -1280,9 +1280,9 @@ Parses JSON and extracts a value of Int type.
 SELECT JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1) AS res;
             )",
             R"(
-┌─res─┐
-│ 200 │
-└─────┘
+┌──res─┐
+│ -100 │
+└──────┘
             )"
         }
         };

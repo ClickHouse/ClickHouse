@@ -119,7 +119,7 @@ void ColumnFixedString::insertData(const char * pos, size_t length)
     memset(chars.data() + old_size + length, 0, n - length);
 }
 
-void ColumnFixedString::deserializeAndInsertFromArena(ReadBuffer & in)
+void ColumnFixedString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings *)
 {
     size_t old_size = chars.size();
     chars.resize(old_size + n);
@@ -218,7 +218,7 @@ size_t ColumnFixedString::estimateCardinalityInPermutedRange(const Permutation &
     for (size_t i = equal_range.from; i < equal_range.to; ++i)
     {
         size_t permuted_i = permutation[i];
-        StringRef value = getDataAt(permuted_i);
+        auto value = getDataAt(permuted_i);
         elements.emplace(value, inserted);
     }
     return elements.size();

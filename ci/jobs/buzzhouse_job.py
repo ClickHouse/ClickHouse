@@ -117,13 +117,16 @@ def main():
 
     # Generate configuration file
     # No PARALLEL WITH with slow sanitizers
+    # If hardcoded inserts are allowed, reduce insert size, so logs don't grow as much
+    allow_hardcoded_inserts = random.choice([True, False])
     min_nested_rows = random.randint(0, 5)
     min_insert_rows = random.randint(1, 100)
+    max_insert_rows = min_insert_rows + (10 if allow_hardcoded_inserts else 1000)
     min_string_length = random.randint(0, 100)
     buzz_config = {
         "seed": random.randint(1, 18446744073709551615),
-        "max_depth": random.randint(2, 5),
-        "max_width": random.randint(2, 5),
+        "max_depth": random.randint(2, 6),
+        "max_width": random.randint(2, 8),
         "max_databases": random.randint(2, 5),
         "max_tables": random.randint(3, 10),
         "max_views": random.randint(0, 10),
@@ -132,7 +135,7 @@ def main():
         "min_nested_rows": min_nested_rows,
         "max_nested_rows": random.randint(min_nested_rows, min_nested_rows + 5),
         "min_insert_rows": min_insert_rows,
-        "max_insert_rows": random.randint(min_insert_rows, min_insert_rows + 400),
+        "max_insert_rows": random.randint(min_insert_rows, max_insert_rows),
         "min_string_length": min_string_length,
         "max_string_length": random.randint(min_string_length, min_string_length + 500),
         "max_parallel_queries": (
@@ -152,22 +155,29 @@ def main():
         "test_with_fill": False,  # Creating too many issues
         "compare_success_results": False,  # This can give false positives, so disable it
         "allow_infinite_tables": False,  # Creating too many issues
-        "allow_hardcoded_inserts": random.choice([True, False]),
+        "allow_health_check": False, # I have to test this first
+        "allow_hardcoded_inserts": allow_hardcoded_inserts,
         "client_file_path": "/var/lib/clickhouse/user_files",
         "server_file_path": "/var/lib/clickhouse/user_files",
         "log_path": "/workspace/fuzzerout.sql",
         "read_log": False,
         "allow_memory_tables": random.choice([True, False]),
         "allow_client_restarts": random.choice([True, False]),
+        # Sometimes use a small range of integer values
+        "random_limited_values": random.choice([True, False]),
         "max_reconnection_attempts": 3,
         "time_to_sleep_between_reconnects": 5000,
         "keeper_map_path_prefix": "/keeper_map_tables",
+        # Oracles don't run check correctness on CI, so set deterministic probability low
+        "deterministic_prob": random.randint(0, 20),
         "disabled_types": disabled_types_str,
         "disabled_engines": disabled_engines_str,
         # Make CI logs less verbose
         "truncate_output": True,
         # Don't always run transactions, makes many statements fail
         "allow_transactions": random.randint(1, 5) == 1,
+        # Run query oracles sometimes
+        "allow_query_oracles": random.randint(1, 4) == 1,
         "remote_servers": ["localhost:9000"],
         "remote_secure_servers": ["localhost:9440"],
         "http_servers": ["localhost:8123"],
@@ -206,7 +216,7 @@ def main():
             "add_minmax_index_for_numeric_columns",
             "add_minmax_index_for_string_columns",
             "allow_coalescing_columns_in_partition_or_order_key",
-            "allow_experimental_replacing_merge_with_cleanup",
+            # "allow_experimental_replacing_merge_with_cleanup",
             "allow_experimental_reverse_key",
             "allow_floating_point_partition_key",
             "allow_nullable_key",
@@ -217,11 +227,16 @@ def main():
             "enable_block_offset_column",
             "enable_vertical_merge_algorithm",
             "index_granularity",
+            "merge_max_block_size",
             "min_bytes_for_full_part_storage",
             "min_bytes_for_wide_part",
+            "min_rows_for_full_part_storage",
+            "min_rows_for_wide_part",
+            "remove_empty_parts",
             "ttl_only_drop_parts",
-            "vertical_merge_algorithm_min_bytes_to_activate",
             "use_const_adaptive_granularity",
+            "vertical_merge_algorithm_min_bytes_to_activate",
+            "vertical_merge_algorithm_min_rows_to_activate",
         ],
     }
     with open(buzz_config_file, "w") as outfile:

@@ -239,7 +239,6 @@ void MergeTreeDataPartWide::loadMarksToCache(const Names & column_names, MarkCac
 
     auto context = storage.getContext();
     auto read_settings = context->getReadSettings();
-    auto * load_marks_threadpool = read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
     auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), std::make_shared<AlterConversions>());
 
     LOG_TEST(getLogger("MergeTreeDataPartWide"), "Loading marks into mark cache for columns {} of part {}", toString(column_names), name);
@@ -264,7 +263,7 @@ void MergeTreeDataPartWide::loadMarksToCache(const Names & column_names, MarkCac
                 index_granularity_info,
                 /*save_marks_in_cache=*/ true,
                 read_settings,
-                load_marks_threadpool,
+                /*load_marks_threadpool=*/ nullptr,
                 /*num_columns_in_mark=*/ 1));
 
             loaders.back()->startAsyncLoad();
@@ -404,6 +403,10 @@ bool MergeTreeDataPartWide::hasColumnFiles(const NameAndTypePair & column) const
     bool res = true;
     serialization->enumerateStreams([&](const auto & substream_path)
     {
+        /// Don't check streams for ephemeral subcolumns that don't store any real data.
+        if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+            return;
+
         auto stream_name = getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, checksums, storage.getSettings());
         if (!stream_name || !checksums.files.contains(*stream_name + marks_file_extension))
             res = false;

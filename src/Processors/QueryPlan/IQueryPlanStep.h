@@ -17,6 +17,9 @@ class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::vector<ProcessorPtr>;
 
+class RuntimeDataflowStatisticsCacheUpdater;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
+
 namespace JSONBuilder { class JSONMap; }
 
 class QueryPlan;
@@ -118,6 +121,11 @@ public:
 
     virtual bool hasCorrelatedExpressions() const;
 
+    virtual bool supportsDataflowStatisticsCollection() const { return false; }
+    void setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowStatisticsCacheUpdaterPtr updater)
+    {
+        dataflow_cache_updater = std::move(updater);
+    }
 
     /// Returns true if the step has implemented removeUnusedColumns.
     virtual bool canRemoveUnusedColumns() const { return false; }
@@ -154,6 +162,8 @@ protected:
     /// This field is used to store added processors from this step.
     /// It is used only for introspection (EXPLAIN PIPELINE).
     Processors processors;
+
+    RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater;
 
     static void describePipeline(const Processors & processors, FormatSettings & settings);
 

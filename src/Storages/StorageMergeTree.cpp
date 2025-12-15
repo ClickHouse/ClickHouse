@@ -412,7 +412,7 @@ void StorageMergeTree::alter(
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
 
     if (!query_settings[Setting::allow_suspicious_primary_key])
-        MergeTreeData::verifySortingKey(new_metadata.sorting_key);
+        MergeTreeData::verifySortingKey(new_metadata.sorting_key, merging_params);
 
     /// This alter can be performed at new_metadata level only
     if (commands.isSettingsAlter())

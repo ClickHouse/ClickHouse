@@ -265,7 +265,17 @@ public:
     void forEachMapped(Func && func)
     {
         for (auto & v : *this)
-            func(v.getMapped());
+        {
+            if constexpr (std::is_same_v<decltype(func(v.getMapped())), bool>)
+            {
+                if (!func(v.getMapped()))
+                    break;
+            }
+            else
+            {
+                func(v.getMapped());
+            }
+        }
     }
 
     typename Cell::Mapped & ALWAYS_INLINE operator[](const Key & x)
@@ -300,6 +310,18 @@ public:
         LookupResult it;
         bool inserted;
         this->emplace(x, it, inserted);
+        if (inserted)
+        {
+            new (&it->getMapped()) typename Cell::Mapped();
+            it->getMapped() = value;
+        }
+    }
+
+    void ALWAYS_INLINE insertIfNotPresent(const Key & x, size_t hash, const typename Cell::Mapped & value)
+    {
+        LookupResult it;
+        bool inserted;
+        this->emplace(x, it, inserted, hash);
         if (inserted)
         {
             new (&it->getMapped()) typename Cell::Mapped();

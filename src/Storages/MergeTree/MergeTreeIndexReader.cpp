@@ -37,7 +37,7 @@ std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
     MergeTreeReaderSettings settings)
 {
     auto context = part->storage.getContext();
-    auto * load_marks_threadpool = settings.read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
+    auto * load_marks_threadpool = settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
 
     auto marks_loader = std::make_shared<MergeTreeMarksLoader>(
         std::make_shared<LoadedMergeTreeDataPartInfoForReader>(part, std::make_shared<AlterConversions>()),
@@ -165,10 +165,9 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
     /// would create too much lock contention in the cache (this was learned the hard way).
     if (index->isVectorSimilarityIndex())
     {
-        UInt128 key = VectorSimilarityIndexCache::hash(
-            part->getDataPartStorage().getFullPath(),
-            index->getFileName(),
-            mark);
+        VectorSimilarityIndexCacheKey key{part->getDataPartStorage().getFullPath(),
+                                          index->getFileName(),
+                                          mark};
 
         granule = vector_similarity_index_cache->getOrSet(key, load_func);
     }

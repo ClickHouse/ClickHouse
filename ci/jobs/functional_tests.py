@@ -117,6 +117,8 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "azure": " --azure-blob-storage --no-random-settings --no-random-merge-tree-settings",  # azurite is slow, with randomization it can be super slow
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
+    "flaky check": "--flaky-check",
+    "targeted": "--flaky-check",  # to disable tests not compatible with the thread fuzzer
 }
 
 
@@ -146,12 +148,7 @@ def main():
         elif to in OPTIONS_TO_INSTALL_ARGUMENTS:
             print(f"NOTE: Enabled config option [{OPTIONS_TO_INSTALL_ARGUMENTS[to]}]")
             config_installs_args += f" {OPTIONS_TO_INSTALL_ARGUMENTS[to]}"
-        elif (
-            to.startswith("amd_")
-            or to.startswith("arm_")
-            or "flaky" in to
-            or "targeted" in to
-        ):
+        elif to.startswith("amd_") or to.startswith("arm_"):
             pass
         elif to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
             print(
@@ -217,7 +214,7 @@ def main():
         rerun_count = 50
     elif is_targeted_check:
         print(f"Rerun count set to 5 for targeted check")
-        rerun_count = 10
+        rerun_count = 5
 
     if not info.is_local_run:
         # TODO: find a way to work with Azure secret so it's ok for local tests as well, for now keep azure disabled
@@ -441,11 +438,11 @@ def main():
         # Mode (2): N consequent runs for chosen tests
         #   - Drawback: Might eliminate mode (1) issues but potentially catches fewer problems
         #
-        # Currently using Mode (1):
-        run_sets_cnt = 1
-        # To use Mode (2), uncomment:
-        # run_sets_cnt = rerun_count if is_targeted_check else 1
-        # rerun_count = 1 if is_targeted_check else rerun_count
+        # Mode (1):
+        # run_sets_cnt = 1
+        # Mode (2):
+        run_sets_cnt = rerun_count if is_targeted_check else 1
+        rerun_count = 1 if is_targeted_check else rerun_count
 
         ft_res_processor = FTResultsProcessor(wd=temp_dir)
 

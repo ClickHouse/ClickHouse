@@ -53,6 +53,9 @@ struct GroupingSetsParams
 
 using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
 
+class RuntimeDataflowStatisticsCacheUpdater;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
+
 /** How are "total" values calculated with WITH TOTALS?
   * (For more details, see TotalsHavingTransform.)
   *
@@ -119,6 +122,8 @@ public:
 
         bool enable_producing_buckets_out_of_order_in_aggregation = true;
 
+        bool serialize_string_with_zero_byte = false;
+
         static size_t getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by);
 
         Params(
@@ -142,7 +147,8 @@ public:
             bool optimize_group_by_constant_keys_,
             float min_hit_rate_to_use_consecutive_keys_optimization_,
             const StatsCollectingParams & stats_collecting_params_,
-            bool enable_producing_buckets_out_of_order_in_aggregation_);
+            bool enable_producing_buckets_out_of_order_in_aggregation_,
+            bool serialize_string_with_zero_byte_);
 
         /// Only parameters that matter during merge.
         Params(
@@ -151,7 +157,8 @@ public:
             bool overflow_row_,
             size_t max_threads_,
             size_t max_block_size_,
-            float min_hit_rate_to_use_consecutive_keys_optimization_);
+            float min_hit_rate_to_use_consecutive_keys_optimization_,
+            bool serialize_string_with_zero_byte_);
 
         Params cloneWithKeys(const Names & keys_, bool only_merge_ = false)
         {
@@ -177,6 +184,8 @@ public:
     };
 
     explicit Aggregator(const Block & header_, const Params & params_);
+
+    const Params & getParams() const { return params; }
 
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
     bool executeOnBlock(const Block & block,
@@ -281,6 +290,9 @@ public:
 
     /// Get data structure of the result.
     Block getHeader(bool final) const;
+
+    /// Part of automatic parallel replicas implementation.
+    size_t estimateSizeOfCompressedState(AggregatedDataVariants & result, ssize_t bucket) const;
 
 private:
 
@@ -552,7 +564,8 @@ private:
         Arena * arena,
         bool final,
         Int32 bucket,
-        std::atomic<bool> & is_cancelled) const;
+        std::atomic<bool> & is_cancelled,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater) const;
 
     Block prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
     BlocksList prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final) const;

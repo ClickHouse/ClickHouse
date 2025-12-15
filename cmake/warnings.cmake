@@ -45,3 +45,9 @@ no_warning(unsafe-buffer-usage) # too aggressive
 no_warning(switch-default) # conflicts with "defaults in a switch covering all enum values"
 no_warning(nrvo) # not eliding copy on return - too aggressive
 no_warning(missing-noreturn) # too aggressive with no clear benefit, see https://github.com/ClickHouse/ClickHouse/pull/86416
+if (ARCH_E2K)
+    # disable "__builtin_ia32_pcmpestric128 / __builtin_ia32_pcmpestri128 is deprecated: The function may be slow due to inefficient implementation" warning
+    no_warning(deprecated-declarations)
+    # disable "use of GNU statement expression extension from macro expansion" warning
+    no_warning(gnu-statement-expression-from-macro-expansion)
+endif ()

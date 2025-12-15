@@ -228,9 +228,9 @@ private:
                     if constexpr (std::is_same_v<KeyType, String>)
                     {
                         if (const auto * col_fixed = checkAndGetColumn<ColumnFixedString>(arg.key_column.get()))
-                            key = col_fixed->getDataAt(offset + j).toString();
+                            key = col_fixed->getDataAt(offset + j);
                         else if (const auto * col_str = checkAndGetColumn<ColumnString>(arg.key_column.get()))
-                            key = col_str->getDataAt(offset + j).toString();
+                            key = col_str->getDataAt(offset + j);
                         else // should not happen
                             throw Exception(ErrorCodes::LOGICAL_ERROR,
                                 "Expected String or FixedString, got {} in {}",

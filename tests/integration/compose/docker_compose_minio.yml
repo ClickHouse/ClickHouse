@@ -22,7 +22,7 @@ services:
   # HTTP proxies for Minio.
   proxy1:
     stop_grace_period: 5s
-    image: clickhouse/s3-proxy
+    image: clickhouse/s3-proxy:${DOCKER_S3_PROXY_TAG:-latest}
     expose:
       - "8080" # Redirect proxy port
       - "80"   # Reverse proxy port
@@ -30,7 +30,7 @@ services:
 
   proxy2:
     stop_grace_period: 5s
-    image: clickhouse/s3-proxy
+    image: clickhouse/s3-proxy:${DOCKER_S3_PROXY_TAG:-latest}
     expose:
       - "8080"
       - "80"

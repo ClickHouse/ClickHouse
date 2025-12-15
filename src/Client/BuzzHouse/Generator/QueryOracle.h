@@ -19,7 +19,7 @@ class QueryOracle
 {
 private:
     static const std::vector<std::vector<OutFormat>> oracleFormats;
-    const FuzzConfig & fc;
+    FuzzConfig & fc;
     const std::filesystem::path qcfile, qsfile, qfile_peer;
 
     MD5Impl md5_hash1, md5_hash2;
@@ -42,7 +42,7 @@ private:
     generateImportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4) const;
 
 public:
-    explicit QueryOracle(const FuzzConfig & ffc)
+    explicit QueryOracle(FuzzConfig & ffc)
         : fc(ffc)
         , qcfile(ffc.client_file_path / "query.data")
         , qsfile(ffc.server_file_path / "query.data")

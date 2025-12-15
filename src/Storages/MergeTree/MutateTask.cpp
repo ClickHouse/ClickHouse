@@ -81,6 +81,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
+    extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
 }
 
 namespace FailPoints
@@ -208,6 +209,7 @@ static void splitAndModifyMutationCommands(
         NameSet mutated_columns;
         NameSet dropped_columns;
         NameSet ignored_columns;
+        NameSet extra_columns_for_indices_and_projections;
 
         for (const auto & command : commands)
         {
@@ -256,6 +258,40 @@ static void splitAndModifyMutationCommands(
                     {
                         if (!mutated_columns.contains(col.name))
                             ignored_columns.emplace(col.name);
+                    }
+                }
+                if (command.type == MutationCommand::Type::MATERIALIZE_INDEX)
+                {
+                    const auto & all_indices = metadata_snapshot->getSecondaryIndices();
+                    for (const auto & index : all_indices)
+                    {
+                        if (index.name == command.index_name)
+                        {
+                            auto required_columns = index.expression->getRequiredColumns();
+                            for (const auto & column : required_columns)
+                            {
+                                if (!part_columns.has(column))
+                                    extra_columns_for_indices_and_projections.insert(column);
+                            }
+                            break;
+                        }
+                    }
+                }
+
+                if (command.type == MutationCommand::Type::MATERIALIZE_PROJECTION)
+                {
+                    const auto & all_projections = metadata_snapshot->getProjections();
+                    for (const auto & projection : all_projections)
+                    {
+                        if (projection.name == command.projection_name)
+                        {
+                            for (const auto & column : projection.required_columns)
+                            {
+                                if (!part_columns.has(column))
+                                    extra_columns_for_indices_and_projections.insert(column);
+                            }
+                            break;
+                        }
                     }
                 }
             }
@@ -358,6 +394,27 @@ static void splitAndModifyMutationCommands(
                      .column_name = column.name,
                 });
             }
+        }
+        for (const auto & column_name : extra_columns_for_indices_and_projections)
+        {
+            if (mutated_columns.contains(column_name))
+                continue;
+
+            if (column_name == "_part_offset")
+                continue;
+
+            auto data_type = metadata_snapshot->getColumns().getColumn(
+                GetColumnsOptions::AllPhysical,
+                column_name).type;
+
+            for_interpreter.push_back(
+                MutationCommand
+                {
+                    .type = MutationCommand::Type::READ_COLUMN,
+                    .column_name = column_name,
+                    .data_type = std::move(data_type),
+                }
+            );
         }
     }
     else
@@ -532,6 +589,7 @@ getColumnsForNewDataPart(
         false,
         (*source_part->storage.getSettings())[MergeTreeSetting::serialization_info_version],
         (*source_part->storage.getSettings())[MergeTreeSetting::string_serialization_version],
+        (*source_part->storage.getSettings())[MergeTreeSetting::nullable_serialization_version],
     };
 
     SerializationInfoByName new_serialization_infos(settings);
@@ -556,7 +614,7 @@ getColumnsForNewDataPart(
         auto old_type = part_columns.getPhysical(name).type;
         auto new_type = updated_header.getByName(new_name).type;
 
-        if (!new_type->supportsSparseSerialization() || settings.isAlwaysDefault())
+        if (settings.isAlwaysDefault() || !settings.canUseSparseSerialization(*new_type))
             continue;
 
         auto new_info = new_type->createSerializationInfo(settings);
@@ -1561,7 +1619,8 @@ private:
             }
         }
 
-        bool is_full_part_storage = isFullPartStorage(ctx->new_data_part->getDataPartStorage());
+        bool is_full_part_storage = isFullPartStorage(ctx->source_part->getDataPartStorage());
+        bool is_full_wide_part = is_full_part_storage && isWidePart(ctx->new_data_part);
         const auto & indices = ctx->metadata_snapshot->getSecondaryIndices();
 
         MergeTreeIndices skip_indices;
@@ -1573,9 +1632,12 @@ private:
             if (ctx->indices_to_drop_names.contains(idx.name))
                 continue;
 
+            /// For packed part we need to recalculate all indices because they are stored inside packed parts format
+            /// For compact parts we need to recalculate indices because rewrite of compact part may produce a little bit different data part
+            /// with different number of marks.
             bool need_recalculate =
                 ctx->materialized_indices.contains(idx.name)
-                || (!is_full_part_storage && ctx->source_part->hasSecondaryIndex(idx.name));
+                || (!is_full_wide_part && ctx->source_part->hasSecondaryIndex(idx.name));
 
             if (need_recalculate)
             {
@@ -1727,7 +1789,15 @@ private:
 
         if (ctx->execute_ttl_type == ExecuteTTLType::NORMAL)
         {
-            auto transform = std::make_shared<TTLTransform>(ctx->context, builder->getSharedHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
+            auto transform = std::make_shared<TTLTransform>(
+                ctx->context,
+                builder->getSharedHeader(),
+                *ctx->data,
+                ctx->metadata_snapshot,
+                ctx->new_data_part,
+                NamesAndTypesList{} /*expired_columns*/,
+                ctx->time_of_mutation,
+                true);
             subqueries = transform->getSubqueries();
             builder->addTransform(std::move(transform));
         }
@@ -2003,7 +2073,15 @@ private:
 
             if (ctx->execute_ttl_type == ExecuteTTLType::NORMAL)
             {
-                auto transform = std::make_shared<TTLTransform>(ctx->context, builder->getSharedHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
+                auto transform = std::make_shared<TTLTransform>(
+                    ctx->context,
+                    builder->getSharedHeader(),
+                    *ctx->data,
+                    ctx->metadata_snapshot,
+                    ctx->new_data_part,
+                    NamesAndTypesList{} /*expired_columns*/,
+                    ctx->time_of_mutation,
+                    true);
                 subqueries = transform->getSubqueries();
                 builder->addTransform(std::move(transform));
             }

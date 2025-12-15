@@ -1,14 +1,17 @@
-#include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <IO/Operators.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <Storages/MergeTree/MergeTreeReaderIndex.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Storages/MergeTree/MergeTreeReaderIndex.h>
 #include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
+#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
-#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Common/Exception.h>
-#include <IO/Operators.h>
+
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 namespace DB
 {
@@ -69,18 +72,20 @@ MergeTreeReadTask::MergeTreeReadTask(
     MarkRanges mark_ranges_,
     std::vector<MarkRanges> patches_mark_ranges_,
     const BlockSizeParams & block_size_params_,
-    MergeTreeBlockSizePredictorPtr size_predictor_)
+    MergeTreeBlockSizePredictorPtr size_predictor_,
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
     : info(std::move(info_))
     , readers(std::move(readers_))
     , mark_ranges(std::move(mark_ranges_))
     , patches_mark_ranges(std::move(patches_mark_ranges_))
     , block_size_params(block_size_params_)
     , size_predictor(std::move(size_predictor_))
+    , updater(std::move(updater_))
 {
 }
 
 /// Returns pointer to the index if all columns in the read step belongs to the read step for that index.
-static const MergeTreeIndexWithCondition * getIndexForReadStep(const IndexReadTasks & index_read_tasks, const NamesAndTypesList & columns_to_read)
+static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & index_read_tasks, const NamesAndTypesList & columns_to_read)
 {
     if (index_read_tasks.empty())
         return nullptr;
@@ -117,7 +122,7 @@ static const MergeTreeIndexWithCondition * getIndexForReadStep(const IndexReadTa
     if (!index_for_step.empty() && !non_index_column.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Found non-index column {} in read step for index {}", non_index_column, index_for_step);
 
-    return index_for_step.empty() ? nullptr : &index_read_tasks.at(index_for_step).index;
+    return index_for_step.empty() ? nullptr : &index_read_tasks.at(index_for_step);
 }
 
 MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
@@ -147,6 +152,23 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             extras.profile_callback);
     };
 
+    auto can_skip_mark = [&](const DataPartPtr & data_part)
+    {
+        switch (data_part->storage.merging_params.mode)
+        {
+            case MergeTreeData::MergingParams::Replacing:
+            case MergeTreeData::MergingParams::Coalescing:
+                /**
+                 * When a text index created on a table with the ReplacingMergeTree or CoalescingMergeTree engine, marks cannot
+                 * be directly skipped due to search terms might exist only on the old parts but does not exist in new parts.
+                 * Replacing and Coalescing merge strategies would handle such cases but it still needs the range marks to operate.
+                 */
+                return false;
+            default:
+                return true;
+        }
+    };
+
     new_readers.main = create_reader(read_info->task_columns.columns, false);
 
     bool is_vector_search = read_info->read_hints.vector_search_results.has_value();
@@ -155,8 +177,12 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 
     for (const auto & pre_columns_per_step : read_info->task_columns.pre_columns)
     {
-        if (const auto * index = getIndexForReadStep(read_info->index_read_tasks, pre_columns_per_step))
-            new_readers.prewhere.push_back(createMergeTreeReaderIndex(new_readers.main.get(), *index, pre_columns_per_step));
+        if (const auto * index_read_task = getIndexReadTaskForReadStep(read_info->index_read_tasks, pre_columns_per_step))
+            new_readers.prewhere.push_back(createMergeTreeReaderIndex(
+                new_readers.main.get(),
+                index_read_task->index,
+                pre_columns_per_step,
+                index_read_task->is_final && can_skip_mark(read_info->data_part) /* this condition only applies to a FINAL query. */));
         else
             new_readers.prewhere.push_back(create_reader(pre_columns_per_step, true));
 
@@ -361,6 +387,9 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
         }
         block = sample_block.cloneWithColumns(read_result.columns);
     }
+
+    if (updater)
+        updater->recordInputColumns(block.getColumnsWithTypeAndName(), info->data_part->getColumnSizes(), num_read_bytes);
 
     BlockAndProgress res = {
         .block = std::move(block),

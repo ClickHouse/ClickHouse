@@ -240,7 +240,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
         }
         else
         {
-            loaded_marks = mark_cache->get(key);
+            loaded_marks = mark_cache->getWithoutMetrics(key);
             if (!loaded_marks)
                 loaded_marks = loadMarksImpl();
         }
@@ -264,7 +264,7 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
     /// Avoid queueing jobs into thread pool if marks are in cache
     auto data_part_storage = data_part_reader->getDataPartStorage();
     auto key = MarkCache::hash(fs::path(data_part_storage->getFullPath()) / mrk_path);
-    if (MarkCache::MappedPtr loaded_marks = mark_cache->get(key))
+    if (MarkCache::MappedPtr loaded_marks = mark_cache->getForAsyncLoading(key))
     {
         ProfileEvents::increment(ProfileEvents::MarksTasksFromCache);
         auto promise = std::promise<MarkCache::MappedPtr>();

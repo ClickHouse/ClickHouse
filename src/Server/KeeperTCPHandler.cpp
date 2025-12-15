@@ -80,6 +80,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LIMIT_EXCEEDED;
     extern const int AUTHENTICATION_FAILED;
+    extern const int SESSION_REFUSED;
 }
 
 struct PollResult
@@ -331,6 +332,17 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool
     }
 
     Coordination::read(last_zxid_seen, *in);
+    const int64_t last_processed_zxid = keeper_dispatcher->getStateMachine().getLastProcessedZxid();
+    if (last_zxid_seen > last_processed_zxid)
+    {
+        throw Exception(
+            ErrorCodes::SESSION_REFUSED,
+            "Refusing session as the client has seen zxid {} while our last processed zxid is {}. The client should try another server.",
+            last_zxid_seen,
+            last_processed_zxid
+        );
+    }
+
     Coordination::read(timeout_ms, *in);
 
     Coordination::read(previous_session_id, *in);

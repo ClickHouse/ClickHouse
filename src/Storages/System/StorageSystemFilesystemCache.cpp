@@ -149,7 +149,7 @@ protected:
             if (!current_cache_iterator)
                 current_cache_iterator = cache->getCacheIterator(user_id);
 
-            if (!current_cache_iterator->next(on_file_segment))
+            if (!current_cache_iterator->nextBatch(on_file_segment))
             {
                 ++current_cache;
                 current_cache_iterator = nullptr;

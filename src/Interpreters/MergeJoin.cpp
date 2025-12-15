@@ -722,12 +722,12 @@ public:
         if (!not_processed)
         {
             merge_join.joinBlock(block, not_processed);
-            return {std::move(block), !not_processed.has_value()};
+            return {std::move(block), nullptr, !not_processed.has_value()};
         }
 
         block = not_processed->block;
         merge_join.joinBlock(block, not_processed);
-        return {std::move(block), !not_processed.has_value()};
+        return {std::move(block), nullptr, !not_processed.has_value()};
     }
 };
 

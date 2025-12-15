@@ -18,11 +18,15 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_DATABASE;
+}
+
 namespace Setting
 {
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
 }
-
 
 ColumnsDescription StorageSystemDatabases::getColumnsDescription()
 {
@@ -126,7 +130,7 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
 
     for (size_t i = 0; i < filtered_databases_column->size(); ++i)
     {
-        auto database_name = filtered_databases_column->getDataAt(i).toString();
+        auto database_name = filtered_databases_column->getDataAt(i);
 
         if (need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_DATABASES, database_name))
             continue;
@@ -134,7 +138,10 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
             continue; /// filter out the internal database for temporary tables in system.databases, asynchronous metric "NumberOfDatabases" behaves the same way
 
-        const auto & database = databases.at(database_name);
+        auto database_it = databases.find(database_name);
+        if (database_it == databases.end())
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", database_name);
+        const auto & database = database_it->second;
 
         size_t src_index = 0;
         size_t res_index = 0;

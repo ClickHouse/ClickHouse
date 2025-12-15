@@ -556,6 +556,10 @@ Total amount of rows (records) stored in all tables of MergeTree family.
 
 The server uptime in seconds. It includes the time spent for server initialization before accepting connections.
 
+### ZooKeeperClientLastZXIDSeen {#zookeeperclientlastzxidseen}
+
+The last ZXID seen by the current ZooKeeper client session. This value increases monotonically as the client observes transactions from ZooKeeper.
+
 ### jemalloc.active {#jemallocactive}
 
 An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html

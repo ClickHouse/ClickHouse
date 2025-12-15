@@ -27,7 +27,7 @@ struct BitShiftLeftImpl
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftLeft is not implemented for big integers as second argument");
         else if (b < 0)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a non-negative value");
-        else if (static_cast<UInt256>(b) > 8 * sizeof(A))
+        else if (static_cast<UInt256>(b) >= 8 * sizeof(A))
             return static_cast<Result>(0);
         else if constexpr (is_big_int_v<A>)
             return static_cast<Result>(a) << static_cast<UInt32>(b);
@@ -48,7 +48,7 @@ struct BitShiftLeftImpl
             if (b < 0)
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a non-negative value");
 
-            if (b == bit_limit || static_cast<decltype(bit_limit)>(b) > bit_limit)
+            if (static_cast<decltype(bit_limit)>(b) >= bit_limit)
             {
                 // insert default value
                 out_offsets.push_back(out_offsets.back());
@@ -115,7 +115,7 @@ struct BitShiftLeftImpl
             if (b < 0)
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a non-negative value");
 
-            if (b == bit_limit || static_cast<decltype(bit_limit)>(b) > bit_limit)
+            if (static_cast<decltype(bit_limit)>(b) >= bit_limit)
             {
                 // insert default value
                 out_vec.resize_fill(out_vec.size() + n);

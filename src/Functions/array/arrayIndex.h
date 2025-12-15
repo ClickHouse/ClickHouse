@@ -808,7 +808,7 @@ private:
             if (right->isNullable())
                 right = checkAndGetColumn<ColumnNullable>(*right).getNestedColumnPtr();
 
-            StringRef elem = right->getDataAt(0);
+            std::string_view elem = right->getDataAt(0);
             const auto & left_dict = left_lc->getDictionary();
 
             if (std::optional<UInt64> maybe_index = left_dict.getOrFindValueIndex(elem); maybe_index)
@@ -893,7 +893,7 @@ private:
                     array->getOffsets(),
                     left->getOffsets(),
                     item_const_string->getChars(),
-                    item_const_string->getDataAt(0).size,
+                    item_const_string->getDataAt(0).size(),
                     result->getData(),
                     null_map_data,
                     null_map_item);

@@ -11,13 +11,11 @@ workflow = Workflow.Config(
     branches=[BASE_BRANCH],
     jobs=[
         *[
-            j.set_provides([ArtifactNames.FUZZERS, ArtifactNames.FUZZERS_CORPUS])
+            j.set_provides([ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS])
             for j in JobConfigs.special_build_jobs
             if "fuzzers" in j.name
         ],
-        JobConfigs.coverage_build_jobs[0],
         JobConfigs.libfuzzer_job,
-        *JobConfigs.functional_tests_jobs_coverage,
     ],
     dockers=DOCKERS,
     secrets=SECRETS,

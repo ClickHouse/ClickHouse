@@ -355,6 +355,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
          [&](const JSONObjectType & value) { max_parallel_queries = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
         {"max_number_alters",
          [&](const JSONObjectType & value) { max_number_alters = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
+        {"deterministic_prob", [&](const JSONObjectType & value) { deterministic_prob = static_cast<uint32_t>(value.getUInt64()); }},
         {"query_time", [&](const JSONObjectType & value) { metrics.insert({{"query_time", loadPerformanceMetric(value, 10, 2000)}}); }},
         {"query_memory", [&](const JSONObjectType & value) { metrics.insert({{"query_memory", loadPerformanceMetric(value, 10, 2000)}}); }},
         {"query_bytes_read",
@@ -371,6 +372,9 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"allow_async_requests", [&](const JSONObjectType & value) { allow_async_requests = value.getBool(); }},
         {"allow_memory_tables", [&](const JSONObjectType & value) { allow_memory_tables = value.getBool(); }},
         {"allow_client_restarts", [&](const JSONObjectType & value) { allow_client_restarts = value.getBool(); }},
+        {"set_smt_disk", [&](const JSONObjectType & value) { set_smt_disk = value.getBool(); }},
+        {"allow_query_oracles", [&](const JSONObjectType & value) { allow_query_oracles = value.getBool(); }},
+        {"allow_health_check", [&](const JSONObjectType & value) { allow_health_check = value.getBool(); }},
         {"max_reconnection_attempts",
          [&](const JSONObjectType & value)
          { max_reconnection_attempts = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
@@ -380,6 +384,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"enable_fault_injection_settings", [&](const JSONObjectType & value) { enable_fault_injection_settings = value.getBool(); }},
         {"enable_force_settings", [&](const JSONObjectType & value) { enable_force_settings = value.getBool(); }},
         {"enable_overflow_settings", [&](const JSONObjectType & value) { enable_overflow_settings = value.getBool(); }},
+        {"random_limited_values", [&](const JSONObjectType & value) { random_limited_values = value.getBool(); }},
         {"truncate_output", [&](const JSONObjectType & value) { truncate_output = value.getBool(); }},
         {"allow_transactions", [&](const JSONObjectType & value) { allow_transactions = value.getBool(); }},
         {"clickhouse", [&](const JSONObjectType & value) { clickhouse_server = loadServerCredentials(value, "clickhouse", 9004, 9005); }},
@@ -442,6 +447,10 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
     if (max_columns == 0)
     {
         throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "max_columns must be at least 1");
+    }
+    if (deterministic_prob > 100)
+    {
+        throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Deterministic table probability must be 100 at most");
     }
     for (const auto & entry : std::views::values(metrics))
     {
@@ -663,9 +672,7 @@ String FuzzConfig::tableGetRandomPartitionOrPart(
             fmt::format(
                 "SELECT z.y FROM (SELECT (row_number() OVER () - 1) AS x, \"{}\" AS y FROM \"system\".\"{}\" WHERE {}\"table\" = '{}' AND "
                 "\"partition_id\" != 'all') AS z WHERE z.x = (SELECT {} % max2(count(), 1) FROM \"system\".\"{}\" WHERE "
-                "{}\"table\" "
-                "= "
-                "'{}') INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
+                "{}\"table\" = '{}') INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
                 partition ? "partition_id" : "name",
                 detached_tbl,
                 db_clause,
@@ -680,6 +687,34 @@ String FuzzConfig::tableGetRandomPartitionOrPart(
         std::getline(infile, res);
     }
     return res;
+}
+
+void FuzzConfig::validateClickHouseHealth()
+{
+    if (processServerQuery(
+            false,
+            fmt::format(
+                "(SELECT count() FROM \"system\".\"detached_parts\" WHERE startsWith(\"name\", 'broken')) UNION ALL (SELECT "
+                "ifNull(sum(\"lost_part_count\"), 0) FROM \"system\".\"replicas\") INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
+                fuzz_server_out.generic_string())))
+    {
+        String buf;
+        uint32_t i = 0;
+        std::ifstream infile(fuzz_client_out, std::ios::in);
+
+        while (std::getline(infile, buf) && !buf.empty() && i < 2)
+        {
+            buf.erase(std::find_if(buf.rbegin(), buf.rend(), [](unsigned char c) { return !std::isspace(c); }).base(), buf.end());
+            const uint32_t val = static_cast<uint32_t>(std::stoul(buf));
+            if (val != 0)
+            {
+                static const DB::Strings & health_errors = {"broken detached parts", "broken replicas"};
+                throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "ClickHouse health check: found {} {}", val, health_errors[i]);
+            }
+            i++;
+            buf.resize(0);
+        }
+    }
 }
 
 void FuzzConfig::comparePerformanceResults(const String & oracle_name, PerformanceResult & server, PerformanceResult & peer) const
