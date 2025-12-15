@@ -166,6 +166,14 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     new_context->applySettingsChanges(changed_settings);
     new_context->setSetting("allow_ddl", 1);
 
+    // parallel replicas related
+    if (context->canUseTaskBasedParallelReplicas() && context->hasMergeTreeAllRangesCallback())
+    {
+        new_context->setMergeTreeAllRangesCallback(context->getMergeTreeAllRangesCallback());
+        new_context->setMergeTreeReadTaskCallback(context->getMergeTreeReadTaskCallback());
+        new_context->setBlockMarshallingCallback(context->getBlockMarshallingCallback());
+    }
+
     return new_context;
 }
 

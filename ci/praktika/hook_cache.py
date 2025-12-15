@@ -64,23 +64,77 @@ class CacheRunnerHooks:
             return None
 
         # implement algorithm to skip dependee jobs if dependency is not in the cache
-        # Step 1: Fetch records concurrently
+        # Step 1: Separate jobs into two groups based on digest prefix relationships
         fetched_records = []
         if os.environ.get("DISABLE_CI_CACHE", "0") == "1":
             print("NOTE: CI Cache disabled via GH Variable DISABLE_CI_CACHE=1")
         else:
+            # Filter eligible jobs (exclude null digests and filtered jobs)
+            eligible_jobs = {
+                job_name: job_digest
+                for job_name, job_digest in workflow_config.digest_jobs.items()
+                if job_digest != cache.digest.get_null_digest()
+                and job_name not in workflow_config.filtered_jobs
+            }
+            
+            # Group 1: Jobs whose digest is NOT a prefix of any other digest
+            # (these are independent or leaf jobs)
+            root_jobs = {}
+            # Group 2: Jobs whose digest starts with a digest from Group 1
+            # (these are dependent jobs)
+            dependent_jobs = {}
+            
+            for job_name, job_digest in eligible_jobs.items():
+                # Check if this digest is a prefix of any other digest
+                has_prefix = False
+                for other_digest in eligible_jobs.values():
+                    if other_digest != job_digest and other_digest.startswith(job_digest + "-"):
+                        has_prefix = True
+                        break
+                
+                if not has_prefix:
+                    root_jobs[job_name] = job_digest
+                else:
+                    dependent_jobs[job_name] = job_digest
+            
+            print(f"Cache fetch: {len(root_jobs)} root jobs, {len(dependent_jobs)} dependent jobs")
+            
+            # Step 2: Fetch records for root jobs
+            successfully_fetched_digests = set()
             with ThreadPoolExecutor(max_workers=200) as executor:
                 futures = {
                     executor.submit(fetch_record, job_name, job_digest, cache): job_name
-                    for job_name, job_digest in workflow_config.digest_jobs.items()
-                    if job_digest != cache.digest.get_null_digest()  # not being cached
-                    and job_name
-                    not in workflow_config.filtered_jobs  # skipped by user's hook
+                    for job_name, job_digest in root_jobs.items()
                 }
-
+                
                 for future in futures:
                     result = future.result()
-                    if result:  # If a record was found, add it to the fetched list
+                    if result:
+                        job_name, record = result
+                        fetched_records.append(result)
+                        successfully_fetched_digests.add(root_jobs[job_name])
+            
+            # Step 3: Filter dependent jobs - only fetch if their prefix was successfully fetched
+            filtered_dependent_jobs = {}
+            for job_name, job_digest in dependent_jobs.items():
+                # Check if any successfully fetched digest is a prefix of this digest
+                for fetched_digest in successfully_fetched_digests:
+                    if job_digest.startswith(fetched_digest + "-"):
+                        filtered_dependent_jobs[job_name] = job_digest
+                        break
+            
+            print(f"Cache fetch: {len(filtered_dependent_jobs)}/{len(dependent_jobs)} dependent jobs have cached prefixes")
+            
+            # Step 4: Fetch records for filtered dependent jobs
+            with ThreadPoolExecutor(max_workers=200) as executor:
+                futures = {
+                    executor.submit(fetch_record, job_name, job_digest, cache): job_name
+                    for job_name, job_digest in filtered_dependent_jobs.items()
+                }
+                
+                for future in futures:
+                    result = future.result()
+                    if result:
                         fetched_records.append(result)
 
         env = _Environment.get()
