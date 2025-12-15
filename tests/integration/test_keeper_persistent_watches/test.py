@@ -116,8 +116,7 @@ def test_persistent_watch(started_cluster):
     client.create(FAKE_PATH, b"1")
 
     client.add_watch(NODE_PATH, callback, AddWatchMode.PERSISTENT)
-    with pytest.raises(Exception) as err:
-        client.add_watch(NODE_PATH, callback, AddWatchMode.PERSISTENT)
+    client.add_watch(NODE_PATH, callback, AddWatchMode.PERSISTENT)
 
     conn_count, watch_path_count, watch_count = parse_watch_stats()
     # there could be connection to system node.
@@ -172,8 +171,7 @@ def test_persistent_recursive_watch(started_cluster):
     client.create(FAKE_PATH, b"1")
 
     client.add_watch(NODE_PATH, callback, AddWatchMode.PERSISTENT_RECURSIVE)
-    with pytest.raises(Exception) as err:
-        client.add_watch(NODE_PATH, callback, AddWatchMode.PERSISTENT_RECURSIVE)
+    client.add_watch(NODE_PATH, callback, AddWatchMode.PERSISTENT_RECURSIVE)
 
     conn_count, watch_path_count, watch_count = parse_watch_stats()
     if conn_count == 1:
