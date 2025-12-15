@@ -431,7 +431,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     /// (when doing so for protected queue),
     /// because we cannot know how much space we will need to downgrade
     /// (because downgraded space >= space to reserve in protected).
-    auto evict_info = probationary_queue.collectEvictionInfo(
+    auto probationary_eviction_info = probationary_queue.collectEvictionInfo(
         stat.total_stat.releasable_size,
         stat.total_stat.releasable_count,
         /* reservee */nullptr,
@@ -440,9 +440,10 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
         user,
         state_guard.lock());
 
-    if (evict_info->requiresEviction())
+    const bool requires_eviction = probationary_eviction_info->requiresEviction();
+    const_cast<EvictionInfo &>(eviction_info).add(std::move(probationary_eviction_info));
+    if (requires_eviction)
     {
-        const_cast<EvictionInfo &>(eviction_info).add(std::move(evict_info));
         /// If not enough space - we need to "downgrade" lowest priority entries
         /// from protected queue to probationary queue,
         /// so collect eviction candidates in probationary now.
