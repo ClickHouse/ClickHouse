@@ -2358,40 +2358,6 @@ struct ConvertImpl
                             }
                         }
                     }
-#if defined(__aarch64__) && !defined(OS_DARWIN)
-                    else if constexpr (std::is_same_v<FromFieldType, UInt64> && std::is_same_v<ToFieldType, BFloat16>)
-                    {
-                        const UInt64* __restrict s = &vec_from[i];
-                        BFloat16* __restrict d = &vec_to[i];
-
-                        size_t remaining = input_rows_count - i;
-
-                        _Pragma("clang loop vectorize_width(4) interleave_count(2)")
-                        for (size_t j = 0; j < remaining; ++j)
-                        {
-                            double tmp = static_cast<double>(s[j]);
-                            float f = static_cast<float>(tmp);
-                            d[j] = BFloat16(f);
-                        }
-
-                        i += remaining - 1;
-                    }
-                    else if constexpr (std::is_same_v<FromFieldType, UInt64> && std::is_same_v<ToFieldType, Float32>)
-                    {
-                        const UInt64* __restrict s = &vec_from[i];
-                        Float32* __restrict d = &vec_to[i];
-
-                        size_t remaining = input_rows_count - i;
-
-                        _Pragma("clang loop vectorize_width(4) interleave_count(2)")
-                        for (size_t j = 0; j < remaining; ++j)
-                        {
-                            double tmp = static_cast<double>(s[j]);
-                            d[j] = Float32(tmp);
-                        }
-
-                        i += remaining - 1;
-                    }
 #if defined(__aarch64__)
                     else if constexpr (std::is_same_v<FromFieldType, UInt64> && std::is_same_v<ToFieldType, BFloat16>)
                     {
