@@ -393,12 +393,6 @@ set_source_files_properties(
         Columns/ColumnString.cpp
         PROPERTIES COMPILE_FLAGS "${X86_INTRINSICS_FLAGS}")
 
-if (ENABLE_QPL)
-    set_source_files_properties(
-            Compression/CompressionCodecDeflateQpl.cpp
-            PROPERTIES COMPILE_FLAGS "-mwaitpkg")
-endif ()
-
 target_link_libraries(clickhouse_common_io
         PUBLIC
             boost::program_options
@@ -640,18 +634,6 @@ if (TARGET ch_contrib::datasketches)
 endif ()
 
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::lz4)
-
-if (TARGET ch_contrib::qpl)
-    target_link_libraries(dbms PUBLIC ch_contrib::qpl)
-    target_link_libraries (clickhouse_compression PUBLIC ch_contrib::qpl)
-    target_link_libraries (clickhouse_compression PUBLIC ch_contrib::accel-config)
-endif ()
-
-if (TARGET ch_contrib::accel-config AND TARGET ch_contrib::qatzstd_plugin)
-    target_link_libraries(dbms PUBLIC ch_contrib::qatzstd_plugin)
-    target_link_libraries(dbms PUBLIC ch_contrib::accel-config)
-    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::qatzstd_plugin)
-endif ()
 
 target_link_libraries(clickhouse_common_io PUBLIC boost::context)
 target_link_libraries(dbms PUBLIC boost::context)

@@ -2456,12 +2456,6 @@ If it is set to true, then a user is allowed to executed distributed DDL queries
     DECLARE(Bool, allow_suspicious_codecs, false, R"(
 If it is set to true, allow to specify meaningless compression codecs.
 )", 0) \
-    DECLARE(Bool, enable_zstd_qat_codec, false, R"(
-If turned on, the ZSTD_QAT codec may be used to compress columns.
-)", 0) \
-    DECLARE(Bool, enable_deflate_qpl_codec, false, R"(
-If turned on, the DEFLATE_QPL codec may be used to compress columns.
-)", 0) \
     DECLARE(UInt64, query_profiler_real_time_period_ns, QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS, R"(
 Sets the period for a real clock timer of the [query profiler](../../operations/optimizing-performance/sampling-query-profiler.md). Real clock timer counts wall-clock time.
 
@@ -7486,6 +7480,8 @@ Multiple algorithms can be specified, e.g. 'dpsize,greedy'.
     MAKE_OBSOLETE(M, Bool, azure_sdk_use_native_client, true) \
     MAKE_OBSOLETE(M, Bool, allow_not_comparable_types_in_order_by, false) \
     MAKE_OBSOLETE(M, Bool, allow_not_comparable_types_in_comparison_functions, false) \
+    MAKE_OBSOLETE(M, Bool, enable_zstd_qat_codec, false) \
+    MAKE_OBSOLETE(M, Bool, enable_deflate_qpl_codec, false) \
 \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
