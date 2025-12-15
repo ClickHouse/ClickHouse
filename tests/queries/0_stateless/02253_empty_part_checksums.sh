@@ -15,7 +15,7 @@ cleanup_thread_preferred_points_per_iteration=0, min_bytes_for_wide_part=0, remo
 
 $CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 -q "INSERT INTO rmt SELECT rand(1), 0, 1 / rand(3), toString(rand(4)), [rand(5), rand(6)], rand(7) % 2 ? NULL : generateUUIDv4(), (rand(8), rand(9)) FROM numbers(1000);"
 
-$CLICKHOUSE_CLIENT -q "check table rmt"
+$CLICKHOUSE_CLIENT -q "check table rmt settings check_query_single_value_result = 1"
 $CLICKHOUSE_CLIENT -q "select count() from rmt"
 
 path=$($CLICKHOUSE_CLIENT -q "select path from system.parts where database='$CLICKHOUSE_DATABASE' and table='rmt' and name='0_0_0_0'")
@@ -24,13 +24,13 @@ $CLICKHOUSE_CLIENT -q "select throwIf(substring('$path', 1, 1) != '/', 'Path is 
 rm -rf "$path"
 
 # detach the broken part, replace it with empty one
-$CLICKHOUSE_CLIENT -q "check table rmt" 2>/dev/null
+$CLICKHOUSE_CLIENT -q "check table rmt settings check_query_single_value_result = 1" 2>/dev/null
 $CLICKHOUSE_CLIENT -q "select count() from rmt"
 
 $CLICKHOUSE_CLIENT --receive_timeout=60 -q "system sync replica rmt"
 
 # the empty part should pass the check
-$CLICKHOUSE_CLIENT -q "check table rmt"
+$CLICKHOUSE_CLIENT -q "check table rmt settings check_query_single_value_result = 1"
 $CLICKHOUSE_CLIENT -q "select count() from rmt"
 
 $CLICKHOUSE_CLIENT -q "select name, part_type, hash_of_all_files, hash_of_uncompressed_files, uncompressed_hash_of_compressed_files from system.parts where database=currentDatabase()"
