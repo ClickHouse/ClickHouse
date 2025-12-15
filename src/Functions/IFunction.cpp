@@ -675,15 +675,26 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
     if (useDefaultImplementationForVariant())
     {
         checkNumberOfArguments(arguments.size());
+
+        /// If ALL arguments are Variants, don't use VariantAdaptor.
+        /// This allows functions (especially comparisons) to work directly on ColumnVariant objects,
+        /// which have built in logic for cross-variant comparisons using discriminator ordering.
+        bool has_variant = false;
+        bool all_variants = true;
         for (const auto & arg : arguments)
         {
             if (isVariant(arg.type))
-            {
-                DataTypes data_types(arguments.size());
-                for (size_t i = 0; i < arguments.size(); ++i)
-                    data_types[i] = arguments[i].type;
-                return std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(data_types));
-            }
+                has_variant = true;
+            else
+                all_variants = false;
+        }
+
+        if (has_variant && !all_variants)
+        {
+            DataTypes data_types(arguments.size());
+            for (size_t i = 0; i < arguments.size(); ++i)
+                data_types[i] = arguments[i].type;
+            return std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(data_types));
         }
     }
 

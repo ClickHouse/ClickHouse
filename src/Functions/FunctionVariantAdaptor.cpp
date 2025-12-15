@@ -13,6 +13,10 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int TYPE_MISMATCH;
+extern const int CANNOT_CONVERT_TYPE;
+extern const int NO_COMMON_TYPE;
 }
 
 ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
@@ -437,9 +441,6 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
 
     for (size_t i = 1; i != variants_arguments.size(); ++i)
     {
-        /// Try to build and execute function for this variant type.
-        /// If it fails due to type incompatibility (e.g., comparing UInt64 with String),
-        /// treat those rows as NULL/not matching.
         try
         {
             auto func_base = function_overload_resolver->build(variants_arguments[i]);
@@ -489,12 +490,23 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
             variants_results.push_back(nested_result);
         }
         }
-        catch (...)
+        catch (const Exception & e)
         {
-            /// If function execution fails for this variant type (e.g., type mismatch),
-            /// treat those rows as NULL/not matching.
-            variants_result_types.push_back(nullptr);
-            variants_results.emplace_back();
+            /// If function execution fails for this variant type due to type mismatch,
+            /// treat those rows as NULL/not matching. Only catch type-related errors.
+            if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT ||
+                e.code() == ErrorCodes::TYPE_MISMATCH ||
+                e.code() == ErrorCodes::CANNOT_CONVERT_TYPE ||
+                e.code() == ErrorCodes::NO_COMMON_TYPE)
+            {
+                variants_result_types.push_back(nullptr);
+                variants_results.emplace_back();
+            }
+            else
+            {
+                /// Re-throw other exceptions
+                throw;
+            }
         }
     }
 
@@ -668,18 +680,47 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
         /// Get the return type for this alternative.
         /// If there are other Variant arguments, use build() to handle them recursively.
         /// Otherwise use getReturnType() for stricter type checking.
+        /// Wrap in try-catch to handle incompatible type combinations gracefully.
         DataTypePtr alt_return_type;
-        if (has_other_variants)
+        try
         {
-            auto func_base = function_overload_resolver->build(alt_columns_with_type);
-            alt_return_type = func_base->getResultType();
+            if (has_other_variants)
+            {
+                auto func_base = function_overload_resolver->build(alt_columns_with_type);
+                alt_return_type = func_base->getResultType();
+            }
+            else
+            {
+                alt_return_type = function_overload_resolver->getReturnType(alt_columns_with_type);
+            }
+            result_types.push_back(alt_return_type);
         }
-        else
+        catch (const Exception & e)
         {
-            alt_return_type = function_overload_resolver->getReturnType(alt_columns_with_type);
+            /// If this combination of types is incompatible (e.g., Array(UInt32) vs UInt64),
+            /// skip this alternative and treat it as if it doesn't participate in the result type.
+            /// Only catch type-related errors.
+            if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT ||
+                e.code() == ErrorCodes::TYPE_MISMATCH ||
+                e.code() == ErrorCodes::CANNOT_CONVERT_TYPE ||
+                e.code() == ErrorCodes::NO_COMMON_TYPE)
+            {
+                /// Don't add this result type - it will be skipped
+                continue;
+            }
+            else
+            {
+                /// Re-throw other exceptions
+                throw;
+            }
         }
-        result_types.push_back(alt_return_type);
     }
+
+    /// If no valid result types were found, all alternatives are incompatible
+    if (result_types.empty())
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Cannot build function {} - all variant alternatives are incompatible with other arguments",
+            function_overload_resolver->getName());
 
     /// If all result types are the same (ignoring Nullable), return Nullable(common).
     /// Otherwise, return Variant(R0, R1, ...) in the same order.
