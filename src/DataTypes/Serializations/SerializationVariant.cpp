@@ -608,9 +608,9 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
             settings, variant_state->variant_states[i], cache);
         settings.path.pop_back();
 
-        /// Verify deserialized variant size
-        if (col.getVariantPtrByLocalDiscriminator(i)->size() != variant_limits[i])
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of variant {}: {}. Expected size: {}", variant_names[i], col.getVariantPtrByLocalDiscriminator(i)->size(), variant_limits[i]);
+        /// Verify that we deserialized data of this variant.
+        if (variant_limits[i] && col.getVariantPtrByLocalDiscriminator(i)->empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Variant {} is empty, but expected to be read {} values", variant_names[i], variant_limits[i]);
     }
     settings.path.pop_back();
 
