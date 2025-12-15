@@ -650,6 +650,8 @@ def test_table_without_metadata_location(started_cluster):
     test_ref = f"test_no_metadata_location_{uuid.uuid4()}"
     table_name = f"{test_ref}_table"
     root_namespace = f"{test_ref}_namespace"
+    # Use unique database name to avoid interference with other tests (as we are playing with Glue metadata here)
+    db_name = f"db_{test_ref.replace('-', '_')}"
 
     catalog = load_catalog_impl(started_cluster)
     catalog.create_namespace(root_namespace)
@@ -658,7 +660,7 @@ def test_table_without_metadata_location(started_cluster):
         NestedField(field_id=1, name="id", field_type=StringType(), required=False),
         NestedField(field_id=2, name="value", field_type=DoubleType(), required=False),
     )
-    table = create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), DEFAULT_SORT_ORDER)
+    table = create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), DEFAULT_SORT_ORDER, dir=table_name)
 
     data = [
         {"id": "row1", "value": 1.5},
@@ -698,12 +700,14 @@ def test_table_without_metadata_location(started_cluster):
     assert "metadata_location" not in updated_table["Table"].get("Parameters", {}), "Failed to remove metadata_location"
     assert updated_table["Table"]["StorageDescriptor"]["Location"], "Location should still be present"
 
-    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_database(started_cluster, node, db_name)
 
     # Query should work even without metadata_location in Glue
-    result = node.query(f"SELECT id, value FROM {CATALOG_NAME}.`{root_namespace}.{table_name}` ORDER BY id")
+    result = node.query(f"SELECT id, value FROM {db_name}.`{root_namespace}.{table_name}` ORDER BY id")
     assert result == "row1\t1.5\nrow2\t2.5\nrow3\t3.5\n", f"Unexpected result: {result}"
 
     # Also verify SHOW CREATE TABLE works
-    create_table_result = node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`")
+    create_table_result = node.query(f"SHOW CREATE TABLE {db_name}.`{root_namespace}.{table_name}`")
     assert "Iceberg" in create_table_result, f"Expected Iceberg engine in: {create_table_result}"
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")

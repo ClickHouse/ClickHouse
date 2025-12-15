@@ -352,8 +352,9 @@ bool GlueCatalog::tryGetTableMetadata(
             }
             else
             {
-                result.setTableIsNotReadable(fmt::format("Cannot read table `{}` because it has no metadata_location. " \
-                    "It means that it's unreadable with Glue catalog in ClickHouse, readable tables must have 'metadata_location' in table parameters",
+                result.setTableIsNotReadable(fmt::format("Cannot read table `{}` because it has no metadata_location and Location. " \
+                    "It means that it's unreadable with Glue catalog in ClickHouse, " \
+                    "readable tables must have 'metadata_location' or `Location` in table metadata",
                     database_name + "." + table_name));
             }
         };
