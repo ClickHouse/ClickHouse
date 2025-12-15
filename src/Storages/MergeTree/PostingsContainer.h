@@ -55,12 +55,17 @@ namespace ErrorCodes
 template<typename T>
 class PostingsContainerImpl
 {
-    static_assert(std::is_same_v<T, uint32_t>, "PostingsContainer only supports uint32_t");
+    static_assert(std::is_same_v<T, uint32_t> || std::is_same_v<T, uint64_t>, "PostingsContainer only supports uint32_t and uint64_t");
     static constexpr size_t kBlockSize = CodecTraits<T>::kBlockSize;
     struct BlockHeader
     {
         BlockHeader() = default;
-        explicit  BlockHeader(uint16_t count_, uint16_t max_bits_, uint32_t bytes_) : count(count_), max_bits(max_bits_), bytes(bytes_) {}
+        explicit  BlockHeader(uint16_t count_, uint16_t max_bits_, uint32_t bytes_)
+            : count(count_)
+            , max_bits(max_bits_)
+            , bytes(bytes_)
+        {
+        }
         uint16_t count = 0;
         uint16_t max_bits = 0;
         uint32_t bytes = 0;
@@ -68,22 +73,28 @@ class PostingsContainerImpl
     struct ContainerHeader
     {
         ContainerHeader() = default;
-        explicit ContainerHeader(T base_value_, uint32_t block_count_) : base_value(base_value_), block_count(block_count_) {}
+        explicit ContainerHeader(T base_value_, uint32_t block_count_)
+            : base_value(base_value_)
+            , block_count(block_count_)
+        {
+        }
         T base_value {};
         uint32_t block_count = 0;
     };
 public:
-    explicit PostingsContainerImpl() = default;
+    explicit PostingsContainerImpl()
+    {
+        current.reserve(kBlockSize);
+    }
 
     size_t size() const { return total; }
     bool empty() const { return total == 0; }
 
-    void add(T value)
+    ALWAYS_INLINE void add(T value)
     {
         if (current.size() == kBlockSize)
         {
             compressBlock(current, temp_compression_data_buffer);
-            current.reserve(kBlockSize);
             current.clear();
         }
         /// Delta computation is intentionally deferred
@@ -139,14 +150,17 @@ private:
             prev_value = header.base_value;
         }
         ++header.block_count;
-        /// delta[0] = v[0] - prev_value
-        /// delta[i] = v[i] - v[i-1]（i>=1）
+
+        /// Delta-encode this segment with a running base (prev_value),
+        /// so it can be compressed efficiently and chained across segments.
         std::adjacent_difference(segment.begin(), segment.end(), segment.begin());
         segment.front() -= prev_value;
         prev_value = segment.back();
         auto [cap, bits] = CodecTraits<T>::evaluateSizeAndMaxBits(segment.data(), segment.size());
         temp_compression_data.resize(cap);
         auto bytes = CodecTraits<T>::encode(segment.data(), segment.size(), bits, reinterpret_cast<unsigned char*>(temp_compression_data.data()));
+
+        ///	Write the BlockHeader followed by the compressed posting list data.
         BlockHeader block_header { static_cast<uint16_t>(segment.size()), static_cast<uint16_t>(bits), static_cast<uint32_t>(bytes) };
         WriteBufferFromString compressed_buffer(compressed_data, AppendModeTag {});
         writeBlockHeader(block_header, compressed_buffer);
@@ -203,18 +217,21 @@ private:
     template<typename In, typename Consumer>
     void decompressBlock(In & in, std::string & temp_buffer, std::vector<T> & temp, Consumer &&consumer)
     {
-        /// Decode block header.
+        /// Decode block header and read the compressed posting list data.
         BlockHeader block_header;
         readBlockHeader(block_header, in);
         temp.resize(block_header.count);
         temp_buffer.resize(block_header.bytes);
         in.readStrict(temp_buffer.data(), block_header.bytes);
-        /// Decode postings
+
+        /// Decode postings to buffer named temp.
         unsigned char * p = reinterpret_cast<unsigned char *>(temp_buffer.data());
         auto used = CodecTraits<T>::decode(p, block_header.count, block_header.max_bits, temp.data());
         if (used != block_header.bytes)
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Compressed and decompressed byte counts do not match. compressed = {}, decompressed = {}", block_header.bytes, used);
         chassert(block_header.count == temp.size());
+
+        /// Restore the original array from the decompressed delta values.
         std::inclusive_scan(temp.begin(), temp.end(), temp.begin(), std::plus<T>{}, prev_value);
         prev_value = temp.empty() ? prev_value : temp.back();
         consumer(temp);
