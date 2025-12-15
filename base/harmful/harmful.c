@@ -3,8 +3,20 @@
   * (by terminating the program immediately).
   */
 
-/// It is only enabled in debug build (its intended use is for CI checks).
-#if !defined(NDEBUG)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+#    if !defined(NDEBUG) || defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER) || defined(UNDEFINED_BEHAVIOR_SANITIZER)
+#        define DEBUG_OR_SANITIZER_BUILD
+#    elif defined(__has_feature)
+#        if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) || __has_feature(memory_sanitizer) || __has_feature(undefined_behavior_sanitizer)
+#            define DEBUG_OR_SANITIZER_BUILD
+#        endif
+#    elif defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__) || defined(__MEMORY_SANITIZER__) || defined(__UNDEFINED_BEHAVIOR_SANITIZER__)
+#        define DEBUG_OR_SANITIZER_BUILD
+#    endif
+#endif
+
+/// We check for "harmful" functions if it's a debug build or with a sanitizer.
+#if defined(DEBUG_OR_SANITIZER_BUILD)
 
 #pragma clang diagnostic ignored "-Wincompatible-library-redeclaration"
 
