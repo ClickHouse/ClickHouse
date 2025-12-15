@@ -3,7 +3,11 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", user_configs=["configs/users.xml"])
+node = cluster.add_instance(
+    "node",
+    user_configs=["configs/users.xml"],
+    stay_alive=True
+)
 
 
 @pytest.fixture(scope="module")
