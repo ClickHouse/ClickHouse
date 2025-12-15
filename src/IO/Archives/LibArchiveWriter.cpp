@@ -236,6 +236,7 @@ std::unique_ptr<WriteBufferFromFileBase> LibArchiveWriter::writeFile(const Strin
 }
 
 std::unique_ptr<WriteBufferFromFileBase> LibArchiveWriter::writeFile(const String & filename)
+{
     /// Size is not known in advance. If it exceeds the buffer, archive_entry_set_size() cannot be used
     /// so an adaptive buffer is used instead of writing in chunks.
     return std::make_unique<WriteBufferFromLibArchive>(
