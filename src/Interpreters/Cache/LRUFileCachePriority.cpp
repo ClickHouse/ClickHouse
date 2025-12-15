@@ -323,7 +323,7 @@ EvictionInfoPtr LRUFileCachePriority::collectEvictionInfo(
     size_t elements,
     IFileCachePriority::Iterator *,
     bool is_total_space_cleanup,
-    bool /* is_dynamic_resize */,
+    bool is_dynamic_resize,
     const IFileCachePriority::UserInfo &,
     const CacheStateGuard::Lock & lock)
 {
@@ -332,7 +332,7 @@ EvictionInfoPtr LRUFileCachePriority::collectEvictionInfo(
         return std::make_unique<EvictionInfo>(queue_id, std::move(info));
 
     /// Total space cleanup is for keep_free_space_size(elements)_ratio feature.
-    if (is_total_space_cleanup)
+    if (is_total_space_cleanup || is_dynamic_resize)
     {
         info->size_to_evict = std::min(size, getSize(lock));
         info->elements_to_evict = std::min(elements, getElementsCount(lock));
