@@ -437,12 +437,17 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
 
     for (size_t i = 1; i != variants_arguments.size(); ++i)
     {
-        auto func_base = function_overload_resolver->build(variants_arguments[i]);
-        auto nested_result_type = func_base->getResultType();
-        auto nested_result = func_base->execute(variants_arguments[i], nested_result_type, variants_arguments[i][0].column->size(), dry_run)
-                                 ->convertToFullColumnIfConst();
+        /// Try to build and execute function for this variant type.
+        /// If it fails due to type incompatibility (e.g., comparing UInt64 with String),
+        /// treat those rows as NULL/not matching.
+        try
+        {
+            auto func_base = function_overload_resolver->build(variants_arguments[i]);
+            auto nested_result_type = func_base->getResultType();
+            auto nested_result = func_base->execute(variants_arguments[i], nested_result_type, variants_arguments[i][0].column->size(), dry_run)
+                                     ->convertToFullColumnIfConst();
 
-        variants_result_types.push_back(nested_result_type);
+            variants_result_types.push_back(nested_result_type);
 
         /// Append nullptr in case of only NULL values, we will insert NULL for rows of this selector.
         if (nested_result_type->onlyNull())
@@ -482,6 +487,14 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         else
         {
             variants_results.push_back(nested_result);
+        }
+        }
+        catch (...)
+        {
+            /// If function execution fails for this variant type (e.g., type mismatch),
+            /// treat those rows as NULL/not matching.
+            variants_result_types.push_back(nullptr);
+            variants_results.emplace_back();
         }
     }
 
@@ -629,6 +642,17 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
     DataTypes result_types;
     result_types.reserve(variant_alternatives.size());
 
+    /// Check if there are other Variant arguments besides the one at variant_argument_index
+    bool has_other_variants = false;
+    for (size_t i = 0; i < arguments.size(); ++i)
+    {
+        if (i != variant_argument_index && isVariant(arguments[i]))
+        {
+            has_other_variants = true;
+            break;
+        }
+    }
+
     for (const auto & alternative : variant_alternatives)
     {
         /// Create arguments with this alternative instead of the Variant.
@@ -642,7 +666,18 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
             alt_columns_with_type.push_back({nullptr, arg, ""});
 
         /// Get the return type for this alternative.
-        DataTypePtr alt_return_type = function_overload_resolver->getReturnType(alt_columns_with_type);
+        /// If there are other Variant arguments, use build() to handle them recursively.
+        /// Otherwise use getReturnType() for stricter type checking.
+        DataTypePtr alt_return_type;
+        if (has_other_variants)
+        {
+            auto func_base = function_overload_resolver->build(alt_columns_with_type);
+            alt_return_type = func_base->getResultType();
+        }
+        else
+        {
+            alt_return_type = function_overload_resolver->getReturnType(alt_columns_with_type);
+        }
         result_types.push_back(alt_return_type);
     }
 
