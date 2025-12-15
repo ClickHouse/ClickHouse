@@ -928,7 +928,7 @@ def test_alter_move(start_cluster, name, engine):
         node1.query("INSERT INTO {} VALUES(toDate('2019-03-16'), 66)".format(name))
         node1.query("INSERT INTO {} VALUES(toDate('2019-04-10'), 42)".format(name))
         node1.query("INSERT INTO {} VALUES(toDate('2019-04-11'), 43)".format(name))
-        assert node1.query("CHECK TABLE " + name) == "1\n"
+        assert node1.query("CHECK TABLE " + name + " SETTINGS check_query_single_value_result = 1") == "1\n"
 
         used_disks = get_used_disks_for_table(node1, name)
         assert all(
@@ -947,7 +947,7 @@ def test_alter_move(start_cluster, name, engine):
                 name, first_part
             )
         )
-        assert node1.query("CHECK TABLE " + name) == "1\n"
+        assert node1.query("CHECK TABLE " + name + " SETTINGS check_query_single_value_result = 1") == "1\n"
         disk = node1.query(
             "SELECT disk_name FROM system.parts WHERE table = '{}' and name = '{}' and active = 1".format(
                 name, first_part
@@ -962,7 +962,7 @@ def test_alter_move(start_cluster, name, engine):
         node1.query(
             "ALTER TABLE {} MOVE PART '{}' TO DISK 'jbod1'".format(name, first_part)
         )
-        assert node1.query("CHECK TABLE " + name) == "1\n"
+        assert node1.query("CHECK TABLE " + name + " SETTINGS check_query_single_value_result = 1") == "1\n"
         disk = node1.query(
             "SELECT disk_name FROM system.parts WHERE table = '{}' and name = '{}' and active = 1".format(
                 name, first_part
@@ -977,7 +977,7 @@ def test_alter_move(start_cluster, name, engine):
         node1.query(
             "ALTER TABLE {} MOVE PARTITION 201904 TO VOLUME 'external'".format(name)
         )
-        assert node1.query("CHECK TABLE " + name) == "1\n"
+        assert node1.query("CHECK TABLE " + name + " SETTINGS check_query_single_value_result = 1") == "1\n"
         disks = (
             node1.query(
                 "SELECT disk_name FROM system.parts WHERE table = '{}' and partition = '201904' and active = 1".format(
@@ -996,7 +996,7 @@ def test_alter_move(start_cluster, name, engine):
 
         time.sleep(1)
         node1.query("ALTER TABLE {} MOVE PARTITION 201904 TO DISK 'jbod2'".format(name))
-        assert node1.query("CHECK TABLE " + name) == "1\n"
+        assert node1.query("CHECK TABLE " + name + " SETTINGS check_query_single_value_result = 1") == "1\n"
         disks = (
             node1.query(
                 "SELECT disk_name FROM system.parts WHERE table = '{}' and partition = '201904' and active = 1".format(
