@@ -509,7 +509,8 @@ Pipe ReadFromMergeTree::readFromPool(
             required_columns,
             pool_settings,
             block_size,
-            context);
+            context,
+            dataflow_cache_updater);
     }
     else
     {
@@ -526,7 +527,8 @@ Pipe ReadFromMergeTree::readFromPool(
             required_columns,
             pool_settings,
             block_size,
-            context);
+            context,
+            dataflow_cache_updater);
     }
 
     LOG_DEBUG(log, "Reading approx. {} rows with {} streams", total_rows, pool_settings.threads);
