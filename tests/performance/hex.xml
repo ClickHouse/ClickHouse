@@ -1,0 +1,21 @@
+<test>
+    <substitutions>
+        <substitution>
+           <name>string</name>
+           <values>
+               <value>materialize('Hello, world!')</value>
+               <value>materialize('This is a long string to test hex and unhex functions impl..')</value>
+               <value>toString(number)</value>
+           </values>
+        </substitution>
+        <substitution>
+           <name>table</name>
+           <values>
+               <value>numbers(100_000_000)</value>
+           </values>
+        </substitution>
+    </substitutions>
+
+    <query>SELECT count() FROM {table} WHERE NOT ignore(hex({string}))</query>
+    <query>SELECT count() FROM {table} WHERE unhex(hex({string})) != {string}</query>
+</test>
