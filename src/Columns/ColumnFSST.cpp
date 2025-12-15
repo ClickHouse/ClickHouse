@@ -158,7 +158,8 @@ void ColumnFSST::popBack(size_t n)
 
 void ColumnFSST::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
 {
-    for(size_t ind = from; ind < std::min(limit, string_column->size()); ind++) {
+    for (size_t ind = from; ind < std::min(limit, string_column->size()); ind++)
+    {
         indices[ind] = ind - from;
     }
 }
