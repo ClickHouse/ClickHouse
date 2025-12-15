@@ -107,7 +107,7 @@ struct FixedHashTableCalculatedSize
   *
   * TODO: Deprecate the cell API so that end users don't rely on the structure
   *  of cell. Instead iterator should be used for operations such as cell
-  *  transfer, key updates (f.g. StringRef) and serde. This will allow
+  *  transfer, key updates (f.g. std::string_view) and serde. This will allow
   *  TwoLevelHashSet(Map) to contain different type of sets(maps).
   */
 template <typename Key, typename Cell, typename Size, typename Allocator>

@@ -490,6 +490,17 @@ void JoinStepLogical::updateOutputHeader()
     if (!header.columns())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is empty, actions_dag: {}", actions_dag->dumpDAG());
 
+    /// Materialize constant columns because we need a non-constant dummy column as result
+    const auto & outputs = actions_dag->getOutputs();
+    for (const auto * node : outputs)
+    {
+        if (isDummyColumnOfThisStep(node))
+        {
+            materializeBlockInplace(header);
+            break;
+        }
+    }
+
     output_header = std::make_shared<const Block>(std::move(header));
 }
 
@@ -867,6 +878,7 @@ static void constructPhysicalStep(
     makeExpressionNodeOnTopOf(*join_left_node, std::move(left_pre_join_actions), nodes, makeDescription("Left Join Actions"));
 
     node.step = std::make_unique<FilledJoinStep>(join_left_node->step->getOutputHeader(), join_ptr, join_settings.max_block_size);
+    node.step->setStepDescription("Filled JOIN");
 
     post_join_actions.appendInputsForUnusedColumns(*node.step->getOutputHeader());
     makeFilterNodeOnTopOf(
@@ -916,6 +928,7 @@ static void constructPhysicalStep(
         NameSet(required_output_from_join.begin(), required_output_from_join.end()),
         false /*optimize_read_in_order*/,
         true /*use_new_analyzer*/);
+    join_step->setStepDescription(fmt::format("JOIN {}", join_ptr->pipelineType()), optimization_settings.max_step_description_length);
     join_step->setOptimized();
     node.step = std::move(join_step);
 
@@ -981,6 +994,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
         rhs.setSourceRelations(BitSet().set(1));
 
         join_expression.push_back(JoinActionRef::transform({lhs, rhs}, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
+
+        table_join->setIsJoinWithConstant(true);
     }
 
     std::vector<JoinActionRef> used_expressions;

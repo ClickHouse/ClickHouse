@@ -84,6 +84,7 @@ extern const int SAMPLING_NOT_SUPPORTED;
 extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 extern const int STORAGE_REQUIRES_PARAMETER;
+extern const int UNKNOWN_DATABASE;
 }
 
 namespace
@@ -1628,7 +1629,7 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_)
     auto request_read_in_order = [order_info_](ReadFromMergeTree & read_from_merge_tree)
     {
         return read_from_merge_tree.requestReadingInOrder(
-            order_info_->used_prefix_of_sorting_key_size, order_info_->direction, order_info_->limit, {});
+            order_info_->used_prefix_of_sorting_key_size, order_info_->direction, order_info_->limit);
     };
 
     bool ok = true;
@@ -1677,6 +1678,20 @@ IStorage::ColumnSizeByName StorageMerge::getColumnSizes() const
     });
 
     return column_sizes;
+}
+
+std::optional<IStorage::ColumnSizeByName> StorageMerge::tryGetColumnSizes() const
+{
+    try
+    {
+        return getColumnSizes();
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::UNKNOWN_DATABASE)
+            return std::nullopt;
+        throw;
+    }
 }
 
 
