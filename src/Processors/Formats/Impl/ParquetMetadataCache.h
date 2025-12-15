@@ -39,19 +39,13 @@ struct ParquetMetadataCacheKey
 {
     String file_path;
     String file_attr;
-    bool operator==(const ParquetMetadataCacheKey & other) const
-    {
-        return file_path == other.file_path && file_attr == other.file_attr;
-    }
+    bool operator==(const ParquetMetadataCacheKey & other) const;
 };
 
 /// Hash function for ParquetMetadataCacheKey
 struct ParquetMetadataCacheKeyHash
 {
-    size_t operator()(const ParquetMetadataCacheKey & key) const
-    {
-        return std::hash<String>{}(key.file_path + key.file_attr);
-    }
+    size_t operator()(const ParquetMetadataCacheKey & key) const;
 };
 
 /// Cache cell containing Parquet metadata
@@ -59,30 +53,16 @@ struct ParquetMetadataCacheCell : private boost::noncopyable
 {
     parquet::format::FileMetaData metadata;
     Int64 memory_bytes;
-    explicit ParquetMetadataCacheCell(parquet::format::FileMetaData metadata_)
-        : metadata(std::move(metadata_))
-        , memory_bytes(calculateMemorySize() + SIZE_IN_MEMORY_OVERHEAD)
-    {
-    }
-
+    explicit ParquetMetadataCacheCell(parquet::format::FileMetaData metadata_);
 private:
     static constexpr size_t SIZE_IN_MEMORY_OVERHEAD = 200;
-
-    size_t calculateMemorySize() const
-    {
-        /// Estimate memory usage of native metadata
-        /// This is simpler than Arrow metadata since it's not a shared_ptr
-        return sizeof(metadata) + metadata.schema.size() * 100; // Rough estimate
-    }
+    size_t calculateMemorySize() const;
 };
 
 /// Weight function for metadata cache
 struct ParquetMetadataCacheWeightFunction
 {
-    size_t operator()(const ParquetMetadataCacheCell & cell) const
-    {
-        return cell.memory_bytes;
-    }
+    size_t operator()(const ParquetMetadataCacheCell & cell) const;
 };
 
 /// Parquet metadata cache
@@ -90,17 +70,8 @@ class ParquetMetadataCache : public CacheBase<ParquetMetadataCacheKey, ParquetMe
 {
 public:
     using Base = CacheBase<ParquetMetadataCacheKey, ParquetMetadataCacheCell, ParquetMetadataCacheKeyHash, ParquetMetadataCacheWeightFunction>;
-
-    ParquetMetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
-        : Base(cache_policy, CurrentMetrics::ParquetMetadataCacheBytes, CurrentMetrics::ParquetMetadataCacheFiles, max_size_in_bytes, max_count, size_ratio)
-        , log(getLogger("ParquetMetadataCache"))
-    {}
-
-    static ParquetMetadataCacheKey createKey(const String & file_path, const String & file_attr)
-    {
-        return ParquetMetadataCacheKey{file_path, file_attr};
-    }
-
+    ParquetMetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio);
+    static ParquetMetadataCacheKey createKey(const String & file_path, const String & file_attr);
     /// Get or load Parquet metadata with caching
     template <typename LoadFunc>
     parquet::format::FileMetaData getOrSetMetadata(const ParquetMetadataCacheKey & key, LoadFunc && load_fn)
@@ -128,11 +99,7 @@ public:
 private:
     LoggerPtr log;
     /// Called for each individual entry being evicted from cache
-    void onEntryRemoval(const size_t weight_loss, const MappedPtr &) override
-    {
-        LOG_DEBUG(log, "cache eviction");
-        ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheWeightLost, weight_loss);
-    }
+    void onEntryRemoval(size_t weight_loss, const MappedPtr &) override;
 };
 
 using ParquetMetadataCachePtr = std::shared_ptr<ParquetMetadataCache>;
