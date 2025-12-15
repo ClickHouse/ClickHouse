@@ -342,6 +342,17 @@ void JoinStepLogical::updateOutputHeader()
     if (!header.columns())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is empty, actions_dag: {}", actions_dag->dumpDAG());
 
+    /// Materialize constant columns because we need a non-constant dummy column as result
+    const auto & outputs = actions_dag->getOutputs();
+    for (const auto * node : outputs)
+    {
+        if (isDummyColumnOfThisStep(node))
+        {
+            materializeBlockInplace(header);
+            break;
+        }
+    }
+
     output_header = std::make_shared<const Block>(std::move(header));
 }
 
@@ -813,6 +824,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
         rhs.setSourceRelations(BitSet().set(1));
 
         join_expression.push_back(JoinActionRef::transform({lhs, rhs}, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
+
+        table_join->setIsJoinWithConstant(true);
     }
 
     std::vector<JoinActionRef> used_expressions;
