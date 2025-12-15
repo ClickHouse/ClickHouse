@@ -3568,3 +3568,7 @@ znodes
 zookeeperSessionUptime
 zstd
 zxid
+readWKT
+readWKB
+WKT
+WKB
