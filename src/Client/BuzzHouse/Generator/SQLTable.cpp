@@ -1814,7 +1814,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             buf += has_paren ? "(" : "";
             if (has_paren && next_tokenizer == "ngrams" && rg.nextBool())
             {
-                buf += std::to_string(rg.randomInt<uint32_t>(2, 8));
+                buf += std::to_string(rg.randomInt<uint32_t>(1, 8));
             }
             else if (has_paren && next_tokenizer == "splitByString" && rg.nextBool())
             {
