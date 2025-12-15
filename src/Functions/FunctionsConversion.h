@@ -2358,7 +2358,7 @@ struct ConvertImpl
                             }
                         }
                     }
-#if defined(__aarch64__)
+#if defined(__aarch64__) && defined(NDEBUG)
                     else if constexpr (std::is_same_v<FromFieldType, UInt64> && std::is_same_v<ToFieldType, BFloat16>)
                     {
                         const UInt64* __restrict s = &vec_from[i];
