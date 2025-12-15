@@ -29,10 +29,6 @@ if (EXISTS "${LLVM_LIBC_DIR}")
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -llibllvmlibc")
 endif()
 
-if (NOT EXISTS "${BUILTINS_LIBRARY}")
-    set (BUILTINS_LIBRARY "-lgcc")
-endif ()
-
 if (OS_ANDROID)
     # pthread and rt are included in libc
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -ldl")
