@@ -573,13 +573,8 @@ void generateManifestList(
                                         relative_path_with_metadata.getPath(),
                                         Iceberg::f_added_snapshot_id);
                                 }
-                                else
-                                    new_entry.field(f_added_snapshot_id) = old_added_snapshot_id_entry.value<long>();
                             }
-                            else
-                            {
-                                new_entry.field(f_added_snapshot_id) = old_added_snapshot_id_entry.value<long>();
-                            }
+                            new_entry.field(f_added_snapshot_id) = old_added_snapshot_id_entry.value<Int64>();
                         }
                         else
                             throw Exception(
