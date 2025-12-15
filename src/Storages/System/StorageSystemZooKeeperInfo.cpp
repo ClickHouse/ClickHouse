@@ -119,18 +119,13 @@ static std::map<String,String> getTokens(String response, char separator)
     std::map<String,String> responses_map;
     for (auto & line : result_split)
     {
-        if (line.empty())
-            break;
-
-        String key;
-        String value;
-
         auto pos = line.rfind(separator);
-        chassert(pos != std::string::npos);
-        key = line.substr(0, pos-1);
-        value = line.substr(pos+1);
-
-        responses_map[key] = value;
+        if (pos != std::string::npos)
+        {
+            String key = line.substr(0, pos - 1);
+            String value = line.substr(pos + 1);
+            responses_map[key] = value;
+        }
     }
     return responses_map;
 }
@@ -140,9 +135,7 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
 {
     auto zk = context->getZooKeeper();
     auto zookeepers = context->getAuxiliaryZooKeepers();
-
-
-//    zookeeper->getArgs();
+    
     zookeepers["default"] = zk;
 
     LOG_INFO(getLogger("StorageSystemZooKeeperInfo"), "fillData size zk  {} ", zookeepers.size());
