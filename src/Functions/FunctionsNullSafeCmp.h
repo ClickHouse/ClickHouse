@@ -1,4 +1,5 @@
 #pragma once
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsComparison.h>
@@ -31,6 +32,23 @@ class FunctionsNullSafeCmp : public IFunction
 {
 private:
     const ComparisonParams params;
+
+    static bool containsNothing(const DataTypePtr & type)
+    {
+        if (isNothing(type))
+            return true;
+
+        if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+        {
+            for (const auto & elem : tuple_type->getElements())
+            {
+                if (containsNothing(elem))
+                    return true;
+            }
+        }
+        return false;
+    }
+
 public:
     explicit FunctionsNullSafeCmp(ComparisonParams params_) : params(std::move(params_)) {}
 
@@ -51,7 +69,7 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return true; }
 
     bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -67,6 +85,9 @@ public:
 
         const DataTypePtr & left_ele_type = arguments[0];
         const DataTypePtr & right_ele_type = arguments[1];
+
+        if (containsNothing(left_ele_type) || containsNothing(right_ele_type))
+            return std::make_shared<DataTypeNothing>();
 
         if ((isMap(left_ele_type) && right_ele_type->onlyNull())
                 || (left_ele_type->onlyNull() && isMap(right_ele_type))
@@ -150,21 +171,6 @@ public:
                 isVariant(type_and_name_left_col.type) || isDynamic(type_and_name_left_col.type)
                     ? type_and_name_left_col
                     : type_and_name_right_col);
-        }
-
-        // To address: Nothing type comparison
-        // Nothing represents an absence of any value, similar to NULL.
-        // Nothing <=> Nothing should return true (both represent absence)
-        // Nothing <=> X (where X is not Nothing) should return false
-        bool left_is_nothing = isNothing(type_and_name_left_col.type);
-        bool right_is_nothing = isNothing(type_and_name_right_col.type);
-        if (left_is_nothing || right_is_nothing)
-        {
-            // Both Nothing -> true (equal) / false (not equal)
-            // One Nothing, one not -> false (equal) / true (not equal)
-            bool both_nothing = left_is_nothing && right_is_nothing;
-            UInt8 result_value = both_nothing ? (is_equal_mode ? 1 : 0) : (is_equal_mode ? 0 : 1);
-            return result_type->createColumnConst(input_rows_count, result_value);
         }
 
         // get common type for null-safe comparison
