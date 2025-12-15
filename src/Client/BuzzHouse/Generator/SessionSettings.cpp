@@ -24,6 +24,33 @@ static const auto setSetting = CHSetting(
 
 std::unordered_map<String, CHSetting> hotSettings;
 
+static String settingCombinations(RandomGenerator & rg, DB::Strings && choices)
+{
+    String res;
+
+    if (rg.nextBool())
+    {
+        /// Pick just one
+        res = rg.pickRandomly(choices);
+    }
+    else
+    {
+        /// Pick a combination of some or none
+        const uint32_t nalgo = rg.randomInt<uint32_t>(0, static_cast<uint32_t>(choices.size()));
+
+        std::shuffle(choices.begin(), choices.end(), rg.generator);
+        for (uint32_t i = 0; i < nalgo; i++)
+        {
+            if (i != 0)
+            {
+                res += ",";
+            }
+            res += choices[i];
+        }
+    }
+    return "'" + res + "'";
+}
+
 std::unordered_map<String, CHSetting> performanceSettings
     = {{"allow_aggregate_partitions_independently", trueOrFalseSetting},
        {"allow_execute_multiif_columnar", trueOrFalseSetting},
@@ -65,37 +92,17 @@ std::unordered_map<String, CHSetting> performanceSettings
         CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)
             {
-                String res;
-                DB::Strings choices
-                    = {"auto",
-                       "default",
-                       "direct",
-                       "full_sorting_merge",
-                       "grace_hash",
-                       "hash",
-                       "parallel_hash",
-                       "partial_merge",
-                       "prefer_partial_merge"};
-
-                if (rg.nextBool())
-                {
-                    res = rg.pickRandomly(choices);
-                }
-                else
-                {
-                    const uint32_t nalgo = rg.randomInt<uint32_t>(0, static_cast<uint32_t>(choices.size()));
-
-                    std::shuffle(choices.begin(), choices.end(), rg.generator);
-                    for (uint32_t i = 0; i < nalgo; i++)
-                    {
-                        if (i != 0)
-                        {
-                            res += ",";
-                        }
-                        res += choices[i];
-                    }
-                }
-                return "'" + res + "'";
+                return settingCombinations(
+                    rg,
+                    {"auto",
+                     "default",
+                     "direct",
+                     "full_sorting_merge",
+                     "grace_hash",
+                     "hash",
+                     "parallel_hash",
+                     "partial_merge",
+                     "prefer_partial_merge"});
             },
             {"'default'",
              "'grace_hash'",
@@ -197,6 +204,11 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"query_plan_merge_expressions", trueOrFalseSetting},
        {"query_plan_merge_filter_into_join_condition", trueOrFalseSetting},
        {"query_plan_merge_filters", trueOrFalseSetting},
+       {"query_plan_optimize_join_order_algorithm",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"greedy", "dpsize"}); },
+            {"'greedy'", "'dpsize'"},
+            false)},
        {"query_plan_optimize_lazy_materialization", trueOrFalseSetting},
        {"query_plan_optimize_prewhere", trueOrFalseSetting},
        {"query_plan_push_down_limit", trueOrFalseSetting},
@@ -415,16 +427,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
          {},
          false)},
     /// ClickHouse cloud setting
-    {"distributed_cache_pool_behaviour_on_limit",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &)
-         {
-             static const DB::Strings & choices = {"'wait'", "'allocate_bypassing_pool'"};
-             return rg.pickRandomly(choices);
-         },
-         {},
-         false)},
-    /// ClickHouse cloud setting
     {"distributed_cache_prefer_bigger_buffer_size", trueOrFalseSettingNoOracle},
     /// ClickHouse cloud setting
     {"distributed_cache_read_only_from_current_az", trueOrFalseSettingNoOracle},
@@ -497,27 +499,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     /// {"exact_rows_before_limit", trueOrFalseSetting}, cannot use with generateRandom
     {"except_default_mode", setSetting},
     {"exclude_materialize_skip_indexes_on_insert",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &)
-         {
-             String res;
-             std::vector<uint32_t> choices = {0, 1, 2, 3, 4};
-             const uint32_t nchoices = rg.randomInt<uint32_t>(0, static_cast<uint32_t>(choices.size()));
-
-             std::shuffle(choices.begin(), choices.end(), rg.generator);
-             for (uint32_t i = 0; i < nchoices; i++)
-             {
-                 if (i != 0)
-                 {
-                     res += ",";
-                 }
-                 res += "i";
-                 res += std::to_string(choices[i]);
-             }
-             return "'" + res + "'";
-         },
-         {},
-         false)},
+     CHSetting([](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"i0", "i1", "i2", "i3"}); }, {}, false)},
     {"extremes", trueOrFalseSettingNoOracle},
     {"fallback_to_stale_replicas_for_distributed_queries", trueOrFalseSetting},
     {"filesystem_cache_allow_background_download", trueOrFalseSettingNoOracle},

@@ -377,7 +377,7 @@ SELECT accurateCastOrDefault('abc', 'UInt32')
     factory.registerFunction<FunctionCastOrDefault>(accurateCastOrDefault_documentation);
 
     FunctionDocumentation::Description toUInt8OrDefault_description = R"(
-Like [`toUInt8`](#toUint8), this function converts an input value to a value of type [UInt8](../data-types/int-uint.md) but returns the default value in case of an error.
+Like [`toUInt8`](#toUInt8), this function converts an input value to a value of type [UInt8](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toUInt8OrDefault_syntax = "toUInt8OrDefault(expr[, default])";
