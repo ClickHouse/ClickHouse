@@ -1,6 +1,8 @@
 #pragma once
 
+#include <memory>
 #include "DataTypes/Serializations/ISerialization.h"
+#include "base/types.h"
 
 namespace DB
 {
@@ -11,11 +13,19 @@ extern const int NOT_IMPLEMENTED;
 extern const int INCORRECT_DATA;
 }
 
+struct SerializeFsstState : public ISerialization::SerializeBinaryBulkState
+{
+    PaddedPODArray<UInt8> chars;
+    PaddedPODArray<UInt64> offsets;
+};
+
 class SerializationStringFsst final : public ISerialization
 {
 private:
     SerializationPtr nested;
+    constexpr static size_t kCompressSize = 16 << 10; // 16KB
 
+    void serializeState(SerializeBinaryBulkSettings & settings, std::shared_ptr<SerializeFsstState> state) const;
 public:
     explicit SerializationStringFsst(SerializationPtr _nested)
         : nested(_nested)
