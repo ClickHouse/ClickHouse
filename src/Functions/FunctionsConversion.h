@@ -4892,20 +4892,23 @@ private:
     template <typename T>
     WrapperType createArrayToQBitWrapper(const DataTypeArray & from_array_type, const DataTypeQBit & to_qbit_type) const
     {
-        /// Extract values from reference parameters to avoid dangling references in the lambda
-        const DataTypePtr from_nested_type = from_array_type.getNestedType(); /// NOLINT
-        const DataTypePtr to_nested_type = to_qbit_type.getElementType(); /// NOLINT
+        const DataTypePtr & from_nested_type = from_array_type.getNestedType();
+        const DataTypePtr & to_nested_type = to_qbit_type.getElementType();
         const size_t dimension = to_qbit_type.getDimension();
         const size_t element_size = to_qbit_type.getElementSize();
 
-        return [this, from_nested_type, to_nested_type, dimension, element_size]
-            (ColumnsWithTypeAndName & arguments,
-             const DataTypePtr & result_type,
-             const ColumnNullable * nullable_source,
-             size_t /* input_rows_count */) -> ColumnPtr
+        return [nested_function = prepareUnpackDictionaries(from_nested_type, to_nested_type),
+                from_nested_type,
+                to_nested_type,
+                to_array_type = std::make_shared<DataTypeArray>(to_nested_type),
+                dimension,
+                element_size](
+                   ColumnsWithTypeAndName & arguments,
+                   const DataTypePtr & result_type,
+                   const ColumnNullable * nullable_source,
+                   size_t /* input_rows_count */) -> ColumnPtr
         {
-            const auto nested_function = prepareUnpackDictionaries(from_nested_type, to_nested_type);
-            const auto & col_array = assert_cast<const ColumnArray &>(*arguments.front().column.get());
+            const auto & col_array = assert_cast<const ColumnArray &>(*arguments.front().column);
 
             ColumnsWithTypeAndName nested_columns{{col_array.getDataPtr(), from_nested_type, ""}};
             auto converted_nested = nested_function(nested_columns, to_nested_type, nullable_source, nested_columns.front().column->size());
