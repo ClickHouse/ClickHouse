@@ -1366,6 +1366,7 @@ static BlockIO executeQueryImpl(
 
     /// Avoid early destruction of process_list_entry if it was not saved to `res` yet (in case of exception)
     ProcessList::EntryPtr process_list_entry;
+    QueryMetadataCachePtr query_metadata_cache;
     BlockIO res;
     String query_database;
     String query_table;
@@ -1676,8 +1677,8 @@ static BlockIO executeQueryImpl(
 
                 if (settings[Setting::enable_shared_storage_snapshot_in_query])
                 {
-                    res.query_metadata_cache = std::make_shared<QueryMetadataCache>();
-                    context->setQueryMetadataCache(res.query_metadata_cache);
+                    query_metadata_cache = std::make_shared<QueryMetadataCache>();
+                    context->setQueryMetadataCache(query_metadata_cache);
                 }
 
                 if (out_ast)
@@ -1821,6 +1822,9 @@ static BlockIO executeQueryImpl(
 
         /// Hold element of process list till end of query execution.
         res.process_list_entries.push_back(process_list_entry);
+
+        /// Hold query metadata cache till end of query execution.
+        res.query_metadata_cache = std::move(query_metadata_cache);
 
         if (query_plan)
         {
