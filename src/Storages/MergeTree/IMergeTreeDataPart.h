@@ -102,7 +102,7 @@ public:
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// Otherwise return information about column size on disk.
     ColumnSize getColumnSize(const String & column_name) const;
-    ColumnSizeByName getColumnSizes() const;
+    const ColumnSizeByName & getColumnSizes() const;
 
     virtual std::optional<time_t> getColumnModificationTime(const String & column_name) const = 0;
 

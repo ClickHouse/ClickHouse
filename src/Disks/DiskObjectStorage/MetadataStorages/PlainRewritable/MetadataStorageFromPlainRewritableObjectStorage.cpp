@@ -541,19 +541,24 @@ std::optional<StoredObjects> MetadataStorageFromPlainRewritableObjectStorageTran
     return metadata_storage.getStorageObjectsIfExist(path);
 }
 
-ObjectStorageKey MetadataStorageFromPlainRewritableObjectStorageTransaction::generateObjectKeyForPath(const std::string & path) const
+ObjectStorageKey MetadataStorageFromPlainRewritableObjectStorageTransaction::generateObjectKeyForPath(const std::string & path)
 {
     const auto normalized_path = normalizePath(path);
     if (normalized_path.filename().empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "File name is empty for path '{}'", path);
 
-    if (const auto directory_remote_info = uncommitted_fs_tree->getDirectoryRemoteInfo(normalized_path.parent_path()))
+    /// Materialize virtual parent.
+    const auto parent_path = normalized_path.parent_path();
+    if (uncommitted_fs_tree->existsVirtualDirectory(parent_path) || metadata_storage.fs_tree->existsVirtualDirectory(parent_path))
+        createDirectoryRecursive(parent_path);
+
+    if (const auto directory_remote_info = uncommitted_fs_tree->getDirectoryRemoteInfo(parent_path))
         return ObjectStorageKey::createAsAbsolute(metadata_storage.layout->constructFileObjectKey(directory_remote_info->remote_path, normalized_path.filename()));
 
-    if (const auto directory_remote_info = metadata_storage.fs_tree->getDirectoryRemoteInfo(normalized_path.parent_path()))
+    if (const auto directory_remote_info = metadata_storage.fs_tree->getDirectoryRemoteInfo(parent_path))
         return ObjectStorageKey::createAsAbsolute(metadata_storage.layout->constructFileObjectKey(directory_remote_info->remote_path, normalized_path.filename()));
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' does not exist", normalized_path.parent_path().string());
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' does not exist", parent_path.string());
 }
 
 }
