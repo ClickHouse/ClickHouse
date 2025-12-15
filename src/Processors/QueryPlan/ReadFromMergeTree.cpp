@@ -2644,7 +2644,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         all_column_names,
         data,
         query_info,
-        storage_snapshot->clone(storage_snapshot->data->clone()),
+        storage_snapshot,
         context,
         block_size.max_block_size_rows,
         requested_num_streams,
