@@ -179,7 +179,7 @@ close it.
                 )
                 return
             self.create_cherrypick()
-        assert self.cherrypick_pr, "BUG!"
+        assert self.cherrypick_pr, "Unable to create cherry-pick PR"
 
         if self.cherrypick_pr.mergeable and self.cherrypick_pr.state != "closed":
             if dry_run:
@@ -560,7 +560,7 @@ class BackportPRs:
                     if label in self.labels_to_backport
                 ]
             ]
-        assert branches, "BUG!"
+        assert branches, "Unable to determine branches for backport!"
 
         logging.info(
             "  PR #%s is supposed to be backported to %s",
@@ -580,7 +580,7 @@ class BackportPRs:
         )
         for br in branches:
             bp_cp_prs = br.pop_prs(bp_cp_prs)
-        assert not bp_cp_prs, "BUG!"
+        assert not bp_cp_prs, f"Some PRs are not assigned to any branch: {bp_cp_prs}"
 
         for br in branches:
             br.process(self.dry_run)
