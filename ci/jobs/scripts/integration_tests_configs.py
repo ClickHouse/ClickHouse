@@ -88,7 +88,6 @@ TEST_CONFIGS = [
     TC("test_server_reload/", True, "no idea why i'm sequential"),
     TC("test_storage_kafka/", True, "no idea why i'm sequential"),
     TC("test_storage_kerberized_kafka/", True, "no idea why i'm sequential"),
-    TC("test_storage_rabbitmq/", True, "no idea why i'm sequential"),
     TC("test_storage_s3_queue/", True, "no idea why i'm sequential"),
     TC("test_system_flush_logs/", True, "no idea why i'm sequential"),
     TC("test_system_logs/", True, "no idea why i'm sequential"),
@@ -153,7 +152,6 @@ test_storage_delta/test.py	776078
 test_storage_nats/test_nats_jet_stream.py	701045
 test_ttl_move/test.py	666451
 test_storage_s3/test.py	561548
-test_storage_rabbitmq/test.py	556081
 test_backup_restore_on_cluster/test_concurrency.py	417547
 test_executable_table_function/test.py	364426
 test_replicated_database/test.py	337507
@@ -316,7 +314,6 @@ test_storage_iceberg_with_spark/test_system_iceberg_metadata.py	40493
 test_parallel_replicas_over_distributed/test.py	40284
 test_system_logs_recreate/test.py	39442
 test_jbod_ha/test.py	39314
-test_storage_rabbitmq/test_failed_connection.py	39052
 test_system_metrics/test.py	38955
 test_keeper_nodes_add/test.py	38817
 test_keeper_force_recovery_single_node/test.py	38434
