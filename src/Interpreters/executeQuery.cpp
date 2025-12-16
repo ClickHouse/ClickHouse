@@ -1412,10 +1412,7 @@ static BlockIO executeQueryImpl(
             }
 
             if (auto * insert_query = out_ast->as<ASTInsertQuery>())
-            {
-                LOG_DEBUG(getLogger("executeQueryImpl"), "save insert query tail buffer for future use");
                 insert_query->tail = std::move(istr);
-            }
 
             if (const auto * query_with_table_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(out_ast.get()))
             {
@@ -2026,7 +2023,6 @@ void executeQuery(
 
     if (istr->available() > max_query_size || http_continue_callback)
     {
-        LOG_DEBUG(getLogger("executeQuery"), "Parsing query inplace from ReadBuffer");
         /// If remaining buffer space in 'istr' is enough to parse query up to 'max_query_size' bytes, then parse inplace.
         /// Also, if the HTTP 100 Continue response is deferred (which is the case if http_continue_callback is set),
         /// we should not attempt to read anything from the body. We expect the query (without insert data) to be present
@@ -2037,8 +2033,6 @@ void executeQuery(
     }
     else
     {
-        LOG_DEBUG(getLogger("executeQuery"), "Copying query into parse buffer from ReadBuffer");
-
         /// FIXME: this is an extra copy not required for async insertion.
 
         /// If not - copy enough data into 'parse_buf'.
@@ -2225,7 +2219,6 @@ void executeQuery(
         /// input stream might be consumed into some source proceccors/format readers
         /// that is the case with insert queries, but select quries could read from it but they do not take ownership of the input stream,
         /// here we reset it in order not to hold the reference to the input stream
-        LOG_DEBUG(getLogger("executeQuery"), "Resetting input stream after query execution");
         istr.reset();
 
         if (set_result_details)
