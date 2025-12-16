@@ -75,7 +75,7 @@ ColumnPtr IRuntimeFilter::find(const ColumnWithTypeAndName & values) const
     if (shouldSkip(rows_in_block))
         return DataTypeUInt8().createColumnConst(rows_in_block, true);
 
-    return doFind(values);
+    return findImpl(values);
 }
 
 static void mergeBloomFilters(BloomFilter & destination, const BloomFilter & source)
@@ -197,7 +197,7 @@ static size_t countPassedStats(ColumnPtr values)
 }
 
 template <bool negate>
-ColumnPtr RuntimeFilterBase<negate>::doFind(const ColumnWithTypeAndName & values) const
+ColumnPtr RuntimeFilterBase<negate>::findImpl(const ColumnWithTypeAndName & values) const
 {
     chassert(inserts_are_finished);
 
@@ -231,7 +231,7 @@ ColumnPtr RuntimeFilterBase<negate>::doFind(const ColumnWithTypeAndName & values
     UNREACHABLE();
 }
 
-ColumnPtr ApproximateRuntimeFilter::doFind(const ColumnWithTypeAndName & values) const
+ColumnPtr ApproximateRuntimeFilter::findImpl(const ColumnWithTypeAndName & values) const
 {
     chassert(inserts_are_finished);
 
@@ -256,7 +256,7 @@ ColumnPtr ApproximateRuntimeFilter::doFind(const ColumnWithTypeAndName & values)
     }
     else
     {
-        return Base::doFind(values);
+        return Base::findImpl(values);
     }
 }
 
