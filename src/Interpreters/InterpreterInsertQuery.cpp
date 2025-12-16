@@ -4,6 +4,8 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/EnabledQuota.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/QueryNode.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
@@ -37,6 +39,7 @@
 #include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/Transforms/ApplySquashingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -48,6 +51,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/ProfileEvents.h>
 #include <Common/quoteString.h>
+#include <Core/Field.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Storages/IStorageCluster.h>
@@ -64,6 +68,8 @@ namespace Setting
     extern const SettingsBool distributed_foreground_insert;
     extern const SettingsBool insert_null_as_default;
     extern const SettingsBool optimize_trivial_insert_select;
+    extern const SettingsBool insert_deduplicate;
+    extern const SettingsBoolAuto insert_select_deduplicate;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_insert_threads;
     extern const SettingsUInt64 min_insert_block_size_rows;
@@ -98,12 +104,14 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int DEDUPLICATION_IS_NOT_POSSIBLE;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int ILLEGAL_COLUMN;
     extern const int DUPLICATE_COLUMN;
     extern const int QUERY_IS_PROHIBITED;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
+    extern const int LOGICAL_ERROR;
 }
 
 InterpreterInsertQuery::InterpreterInsertQuery(
@@ -431,7 +439,9 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
         return counting;
     });
 
-    pipeline.resize(1);
+    auto select_streams = pipeline.getNumStreams();
+    if (select_streams != 1)
+        pipeline.resize(1);
 
     bool should_squash = shouldAddSquashingForStorage(table, context) && !no_squash && !async_insert;
     if (should_squash)
@@ -462,6 +472,36 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
         {
             return std::make_shared<DeduplicationToken::SetSourceBlockNumberTransform>(in_header);
         });
+    }
+
+    auto insert_select_deduplicate = [&] () -> bool
+    {
+        if (!settings[Setting::insert_select_deduplicate].is_auto)
+            return settings[Setting::insert_select_deduplicate].base;
+
+        if (select_query_sorted)
+            return settings[Setting::insert_deduplicate];
+
+        if (settings[Setting::insert_deduplicate])
+            LOG_INFO(logger, "INSERT SELECT deduplication is disabled because SELECT is not stable");
+
+        return false;
+    }();
+
+    if (!select_query_sorted && insert_select_deduplicate)
+        throw Exception(ErrorCodes::DEDUPLICATION_IS_NOT_POSSIBLE,
+            "Deduplication for INSERT SELECT with non-stable SELECT is not possible"
+            " (the SELECT part can return different results on each execution)."
+            " You can disable it by setting 'insert_deduplicate' or `async_insert_deduplicate` to 0."
+            " Or make SELECT query stable (for example, by adding ORDER BY all to the query)."
+            " select_query_sorted {} dedeplicate {} insert_select_deduplicate is auto {}",
+            select_query_sorted, insert_select_deduplicate, settings[Setting::insert_select_deduplicate].is_auto);
+
+    if (insert_select_deduplicate != bool(settings[Setting::insert_deduplicate]))
+    {
+        auto tmp_context = Context::createCopy(context);
+        tmp_context->setSetting("insert_deduplicate", Field{insert_select_deduplicate});
+        context = tmp_context;
     }
 
     auto insert_dependencies = InsertDependenciesBuilder::create(
@@ -546,14 +586,29 @@ static void applyTrivialInsertSelectOptimization(ASTInsertQuery & query, bool pr
     }
 }
 
+bool queryHasOrderByAll(const ASTPtr & select)
+{
+    if (auto * select_query = select->as<ASTSelectQuery>())
+    {
+        return select_query->order_by_all;
+    }
+    else if (auto * union_query = select->as<ASTSelectWithUnionQuery>())
+    {
+        if (union_query->list_of_selects->children.size() != 1)
+            return false;
+
+        if (auto * first_select_query = union_query->list_of_selects->children.front()->as<ASTSelectQuery>())
+            return first_select_query->order_by_all;
+    }
+    return false;
+}
 
 QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table)
 {
     ContextPtr select_context = getContext();
     applyTrivialInsertSelectOptimization(query, table->prefersLargeBlocks(), select_context);
 
-    QueryPipelineBuilder pipeline;
-
+    QueryPipelineBuilder pipeline = [&]()
     {
         auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
 
@@ -561,14 +616,22 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         if (settings[Setting::allow_experimental_analyzer])
         {
             InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, select_context, select_query_options);
-            pipeline = interpreter_select_analyzer.buildQueryPipeline();
+            return interpreter_select_analyzer.buildQueryPipeline();
         }
         else
         {
             InterpreterSelectWithUnionQuery interpreter_select(query.select, select_context, select_query_options);
-            pipeline = interpreter_select.buildQueryPipeline();
+            return interpreter_select.buildQueryPipeline();
         }
-    }
+    }();
+
+    select_query_sorted = queryHasOrderByAll(query.select);
+
+    if (select_query_sorted && pipeline.getNumStreams() > 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "INSERT SELECT expecting single stream for fully sorted SELECT query,"
+                " but got {} streams",
+                pipeline.getNumStreams());
 
     return addInsertToSelectPipeline(query, table, pipeline);
 }
