@@ -195,7 +195,7 @@ Test output:
             truncate_from_top=False, max_info_lines_cnt=20, max_line_length=200
         )
         res += f"\n - flags: {', '.join(result.get_labels()) or 'not flaged'}"
-        res += f"\n - cidb: {result.get_hlabel_link("cidb") or 'not found'}"
+        res += f"\n - cidb: {result.get_hlabel_link('cidb') or 'not found'}"
         return res
 
     @classmethod
@@ -600,7 +600,7 @@ def main():
         known_failures = []
         unknown_failures = []
 
-        for result in workflow_result.results:
+        for resut in workflow_result.results:
             if result.has_label("issue"):
                 known_failures.append((result.name, result))
                 result.set_comment("ISSUE EXISTS")
