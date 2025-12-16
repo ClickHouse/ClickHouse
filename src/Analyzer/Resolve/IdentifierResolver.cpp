@@ -211,7 +211,7 @@ static IdentifierResolveResult tryResolveTableIdentifierFallback(
                     std::rethrow_exception(swallowed_exception);
                 return {};
             }
-            /// Ask catalog for case-insensitive matches
+
             auto ci_candidates = DatabaseCatalog::instance().getDatabasesCaseInsensitive(requested_table.database);
 
             if (ci_candidates.empty())
@@ -250,20 +250,20 @@ static IdentifierResolveResult tryResolveTableIdentifierFallback(
 
     const bool ci_tables_on = settings[Setting::enable_case_insensitive_tables];
 
-    std::string requested_table_lower = "";
+    String requested_table_lower = "";
     if (ci_tables_on)
         requested_table_lower = Poco::toLower(requested_table.table);
 
     for (const auto & name : db_ptr->getAllTableNames(context))
     {
-        if (name == requested_table.table) /// -- we found the *case-sensitive* table name match
+        if (name == requested_table.table) /// -- we found the case-sensitive table name match
         {
             Identifier canonical{{ db_candidate, name }};
             if (auto resolved = IdentifierResolver::tryResolveTableIdentifier(canonical, context))
                 return { .resolved_identifier = std::move(resolved), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
             return {};
         }
-        if (ci_tables_on && Poco::toLower(name) == requested_table_lower) /// -- we found the *case-insensitive* match
+        if (ci_tables_on && Poco::toLower(name) == requested_table_lower) /// -- we found the case-insensitive match
             ci_table_candidates.push_back({ db_candidate, name });
     }
 
@@ -282,7 +282,7 @@ static IdentifierResolveResult tryResolveTableIdentifierFallback(
         return {};
     }
 
-    /// no exact matches -> consider CI matches in exception
+    /// no exact matches -> case-insensitive matches in exception
     if (ci_table_candidates.size() > 1)
     {
         std::sort(ci_table_candidates.begin(), ci_table_candidates.end());
@@ -790,7 +790,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
     if (!result_expression)
     {
-        /// case-insensitive fallback for columns, only for unquoted identifiers
+        /// case-insensitive fallback for columns
         const auto & settings = scope.context->getSettingsRef();
         bool ci_columns_enabled = settings[Setting::enable_case_insensitive_columns];
 
@@ -813,7 +813,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
             {
                 if (ci_col_name_matches.size() == 1)
                 {
-                    /// use the single unambiguous match
                     result_expression = ci_match_column;
                     /// If nested path exists (like a.b), resolve it via compound if needed
                     if (!identifier_without_column_qualifier.isShort())
