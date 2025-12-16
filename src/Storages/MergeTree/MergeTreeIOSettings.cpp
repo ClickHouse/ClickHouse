@@ -26,6 +26,7 @@ namespace Setting
     extern const SettingsUInt64 max_streams_for_merge_tree_reading;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool load_marks_asynchronously;
     extern const SettingsBool query_condition_cache_store_conditions_as_plaintext;
     extern const SettingsBool merge_tree_use_deserialization_prefixes_cache;
     extern const SettingsBool merge_tree_use_prefixes_deserialization_thread_pool;
@@ -90,29 +91,55 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
 {
 }
 
-MergeTreeReaderSettings MergeTreeReaderSettings::create(const ContextPtr & context, const MergeTreeSettings & /*storage_settings*/, const SelectQueryInfo & query_info)
+MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
-    return {
-        .read_settings = context->getReadSettings(),
-        .save_marks_in_cache = true,
-        .checksum_on_read = settings[Setting::checksum_on_read],
-        .read_in_order = query_info.input_order_info != nullptr,
-        .apply_deleted_mask = settings[Setting::apply_deleted_mask],
-        .use_asynchronous_read_from_pool = settings[Setting::allow_asynchronous_read_from_io_pool_for_merge_tree]
-            && (settings[Setting::max_streams_to_max_threads_ratio] > 1 || settings[Setting::max_streams_for_merge_tree_reading] > 1),
-        .enable_multiple_prewhere_read_steps = settings[Setting::enable_multiple_prewhere_read_steps],
-        .force_short_circuit_execution = settings[Setting::query_plan_merge_filters],
-        .use_query_condition_cache = settings[Setting::use_query_condition_cache] && settings[Setting::allow_experimental_analyzer],
-        .query_condition_cache_store_conditions_as_plaintext = settings[Setting::query_condition_cache_store_conditions_as_plaintext],
-        .use_deserialization_prefixes_cache = settings[Setting::merge_tree_use_deserialization_prefixes_cache],
-        .use_prefixes_deserialization_thread_pool = settings[Setting::merge_tree_use_prefixes_deserialization_thread_pool],
-        .secondary_indices_enable_bulk_filtering = settings[Setting::secondary_indices_enable_bulk_filtering],
-        .merge_tree_min_bytes_for_seek = settings[Setting::merge_tree_min_bytes_for_seek],
-        .merge_tree_min_rows_for_seek = settings[Setting::merge_tree_min_rows_for_seek],
-        .filesystem_prefetches_limit = settings[Setting::filesystem_prefetches_limit],
-        .enable_analyzer = settings[Setting::allow_experimental_analyzer],
-    };
+
+    MergeTreeReaderSettings result;
+    result.read_settings = context->getReadSettings();
+    result.save_marks_in_cache = true;
+    result.checksum_on_read = settings[Setting::checksum_on_read];
+    result.apply_deleted_mask = settings[Setting::apply_deleted_mask];
+    result.use_asynchronous_read_from_pool = settings[Setting::allow_asynchronous_read_from_io_pool_for_merge_tree]
+        && (settings[Setting::max_streams_to_max_threads_ratio] > 1 || settings[Setting::max_streams_for_merge_tree_reading] > 1);
+    result.enable_multiple_prewhere_read_steps = settings[Setting::enable_multiple_prewhere_read_steps];
+    result.force_short_circuit_execution = settings[Setting::query_plan_merge_filters];
+    result.use_query_condition_cache = settings[Setting::use_query_condition_cache] && settings[Setting::allow_experimental_analyzer];
+    result.query_condition_cache_store_conditions_as_plaintext = settings[Setting::query_condition_cache_store_conditions_as_plaintext];
+    result.use_deserialization_prefixes_cache = settings[Setting::merge_tree_use_deserialization_prefixes_cache];
+    result.use_prefixes_deserialization_thread_pool = settings[Setting::merge_tree_use_prefixes_deserialization_thread_pool];
+    result.secondary_indices_enable_bulk_filtering = settings[Setting::secondary_indices_enable_bulk_filtering];
+    result.merge_tree_min_bytes_for_seek = settings[Setting::merge_tree_min_bytes_for_seek];
+    result.merge_tree_min_rows_for_seek = settings[Setting::merge_tree_min_rows_for_seek];
+    result.filesystem_prefetches_limit = settings[Setting::filesystem_prefetches_limit];
+    result.enable_analyzer = settings[Setting::allow_experimental_analyzer];
+    result.load_marks_asynchronously = settings[Setting::load_marks_asynchronously];
+    return result;
+}
+
+MergeTreeReaderSettings MergeTreeReaderSettings::createForQuery(const ContextPtr & context, const MergeTreeSettings & /*storage_settings*/, const SelectQueryInfo & query_info)
+{
+    auto result = createFromContext(context);
+    result.read_in_order = query_info.input_order_info != nullptr;
+    return result;
+}
+
+MergeTreeReaderSettings MergeTreeReaderSettings::createForMergeMutation(ReadSettings read_settings)
+{
+    MergeTreeReaderSettings result;
+    result.read_settings = std::move(read_settings);
+    result.load_marks_asynchronously = false;
+    result.save_marks_in_cache = false;
+    result.can_read_part_without_marks = true;
+    return result;
+}
+
+MergeTreeReaderSettings MergeTreeReaderSettings::createFromSettings(ReadSettings read_settings)
+{
+    MergeTreeReaderSettings result;
+    result.read_settings = std::move(read_settings);
+    result.load_marks_asynchronously = false;
+    return result;
 }
 
 }

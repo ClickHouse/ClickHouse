@@ -102,7 +102,7 @@ def test_refreshable_mv_in_replicated_db(started_cluster, cleanup):
         # Stop the clocks.
         for node in nodes:
             node.query(
-                f"system test view re.{name} set fake time '2040-01-01 00:00:01'"
+                f"system sync database replica re; system test view re.{name} set fake time '2040-01-01 00:00:01'"
             )
         # Wait for quiescence.
         for node in nodes:
@@ -265,10 +265,10 @@ def test_refreshable_mv_in_read_only_node(started_cluster, cleanup):
     )
 
     # refresh the view manually
+    reading_node.query("system sync database replica re")
+    reading_node.query("system wait view re.a", ignore_error=True)
     reading_node.query("system refresh view re.a")
-
-    # slepp 3 seconds to make sure the view is refreshed
-    reading_node.query("select sleep(3)")
+    reading_node.query("system wait view re.a", ignore_error=True)
 
     # check if there's RefreshTask on read_only node
     reading_node.query("system flush logs")
@@ -312,47 +312,48 @@ def test_refreshable_mv_in_read_only_node_no_ddl(started_cluster, cleanup):
     reading_node.replace_in_config(
         "/etc/clickhouse-server/users.d/users.xml", "<allow_ddl>1", "<allow_ddl>0"
     )
-    reading_node.query("SYSTEM RELOAD CONFIG")
+    try:
+        reading_node.query("SYSTEM RELOAD CONFIG")
 
-    assert "DDL queries are prohibited" in reading_node.query_and_get_error(
-        "create table foo (x Int64) engine = Null;"
-    )
-
-    node1.query(
-        "create table re.foo (x Int64) engine = ReplicatedMergeTree order by x;"
-    )
-
-    node1.query("system stop view sync")
-
-    # this MV will be replicated to read_only node
-    node1.query(
-        "create materialized view re.a refresh every 1 second (x Int64) engine ReplicatedMergeTree order by x as select number*10 as x from numbers(2)",
-    )
-
-    reading_node.query("system refresh view re.a")
-
-    # slepp 3 seconds to make sure the view is refreshed
-    reading_node.query("select sleep(3)")
-
-    # check if there's RefreshTask on read_only node
-    assert (
-        reading_node.query(
-            "select count() from system.view_refreshes where exception != ''"
+        assert "DDL queries are prohibited" in reading_node.query_and_get_error(
+            "create table foo (x Int64) engine = Null;"
         )
-        == "0\n"
-    )
 
-    assert_eq_with_retry(
-        reading_node,
-        "select * from re.a order by x",
-        "0\n10\n",
-    )
+        node1.query(
+            "create table re.foo (x Int64) engine = ReplicatedMergeTree order by x;"
+        )
 
-    # for cleanup
-    reading_node.replace_in_config(
-        "/etc/clickhouse-server/users.d/users.xml", "<allow_ddl>0", "<allow_ddl>1"
-    )
-    reading_node.query("SYSTEM RELOAD CONFIG")
+        node1.query("system stop view sync")
+
+        # this MV will be replicated to read_only node
+        node1.query(
+            "create materialized view re.a refresh every 1 second (x Int64) engine ReplicatedMergeTree order by x as select number*10 as x from numbers(2)",
+        )
+
+        reading_node.query("system sync database replica re")
+        reading_node.query("system wait view re.a", ignore_error=True)
+        reading_node.query("system refresh view re.a")
+        reading_node.query("system wait view re.a", ignore_error=True)
+
+        # check if there's RefreshTask on read_only node
+        assert (
+            reading_node.query(
+                "select count() from system.view_refreshes where exception != ''"
+            )
+            == "0\n"
+        )
+
+        assert_eq_with_retry(
+            reading_node,
+            "select * from re.a order by x",
+            "0\n10\n",
+        )
+    finally:
+        # for cleanup
+        reading_node.replace_in_config(
+            "/etc/clickhouse-server/users.d/users.xml", "<allow_ddl>0", "<allow_ddl>1"
+        )
+        reading_node.query("SYSTEM RELOAD CONFIG")
 
 
 def test_refresh_vs_shutdown_smoke(started_cluster, cleanup):
@@ -568,49 +569,53 @@ def test_replicated_db_startup_race(started_cluster, cleanup):
         "<database_replicated_startup_pause>false</database_replicated_startup_pause>",
         "<database_replicated_startup_pause>true</database_replicated_startup_pause>",
     )
-    node1.restart_clickhouse()
-    node1.replace_in_config(
-        "/etc/clickhouse-server/config.d/config.xml",
-        "<database_replicated_startup_pause>true</database_replicated_startup_pause>",
-        "<database_replicated_startup_pause>false</database_replicated_startup_pause>",
-    )
-    drop_query_handle = node1.get_query_request(
-        "drop database re sync"
-    )  # this will get stuck until we unpause loading
-    time.sleep(2)
-    node1.query("system disable failpoint database_replicated_startup_pause")
-    _, err = drop_query_handle.get_answer_and_error()
-    assert err == ""
+    try:
+        node1.restart_clickhouse()
+        drop_query_handle = node1.get_query_request(
+            "drop database re sync"
+        )  # this will get stuck until we unpause loading
+        time.sleep(2)
+        node1.query("system disable failpoint database_replicated_startup_pause")
+        _, err = drop_query_handle.get_answer_and_error()
+        assert err == ""
+    finally:
+        node1.replace_in_config(
+            "/etc/clickhouse-server/config.d/config.xml",
+            "<database_replicated_startup_pause>true</database_replicated_startup_pause>",
+            "<database_replicated_startup_pause>false</database_replicated_startup_pause>",
+        )
+        node1.query("system disable failpoint database_replicated_startup_pause")
 
 
 def test_system_view_refreshes_on_not_running_replica(started_cluster):
-    for node in nodes:
-        node.query("DROP DATABASE IF EXISTS test SYNC")
-        node.query(
-            r"CREATE DATABASE test ENGINE = Replicated('/db/test', '{shard}', '{replica}')"
+    try:
+        for node in nodes:
+            node.query("DROP DATABASE IF EXISTS test SYNC")
+            node.query(
+                r"CREATE DATABASE test ENGINE = Replicated('/db/test', '{shard}', '{replica}')"
+            )
+
+        node1.query(
+            "CREATE MATERIALIZED VIEW test.rmv REFRESH EVERY 1 HOUR (x Int64) ENGINE ReplicatedMergeTree ORDER BY x AS SELECT number*10 AS x FROM numbers(2)"
         )
+        node1.query("SYSTEM REFRESH VIEW test.rmv")
 
-    node1.query(
-        "CREATE MATERIALIZED VIEW test.rmv REFRESH EVERY 1 HOUR (x Int64) ENGINE ReplicatedMergeTree ORDER BY x AS SELECT number*10 AS x FROM numbers(2)"
-    )
-    node1.query("SYSTEM REFRESH VIEW test.rmv")
+        def get_view_refresh_value(node, column_name: str):
+            return node.query(
+                f"SELECT {column_name} FROM system.view_refreshes WHERE view='rmv' SETTINGS format_tsv_null_representation='NULL'"
+            ).strip()
 
-    def get_view_refresh_value(node, column_name: str):
-        return node.query(
-            f"SELECT {column_name} FROM system.view_refreshes WHERE view='rmv' SETTINGS format_tsv_null_representation='NULL'"
-        ).strip()
+        assert get_view_refresh_value(node1, "read_rows") != "NULL"
+        assert get_view_refresh_value(node1, "read_bytes") != "NULL"
+        assert get_view_refresh_value(node1, "total_rows") != "NULL"
+        assert get_view_refresh_value(node1, "written_rows") != "NULL"
+        assert get_view_refresh_value(node1, "written_bytes") != "NULL"
 
-    assert get_view_refresh_value(node1, "read_rows") != "NULL"
-    assert get_view_refresh_value(node1, "read_bytes") != "NULL"
-    assert get_view_refresh_value(node1, "total_rows") != "NULL"
-    assert get_view_refresh_value(node1, "written_rows") != "NULL"
-    assert get_view_refresh_value(node1, "written_bytes") != "NULL"
-
-    assert get_view_refresh_value(node2, "read_rows") == "NULL"
-    assert get_view_refresh_value(node2, "read_bytes") == "NULL"
-    assert get_view_refresh_value(node2, "total_rows") == "NULL"
-    assert get_view_refresh_value(node2, "written_rows") == "NULL"
-    assert get_view_refresh_value(node2, "written_bytes") == "NULL"
-
-    for node in nodes:
-        node.query("DROP DATABASE IF EXISTS test SYNC")
+        assert get_view_refresh_value(node2, "read_rows") == "NULL"
+        assert get_view_refresh_value(node2, "read_bytes") == "NULL"
+        assert get_view_refresh_value(node2, "total_rows") == "NULL"
+        assert get_view_refresh_value(node2, "written_rows") == "NULL"
+        assert get_view_refresh_value(node2, "written_bytes") == "NULL"
+    finally:
+        for node in nodes:
+            node.query("DROP DATABASE IF EXISTS test SYNC")

@@ -1745,7 +1745,9 @@ class TestCase:
         ):
             return FailureReason.SKIP
 
-        if "no-flaky-check" in tags and args.test_runs > 1:
+        if "no-flaky-check" in tags and args.flaky_check:
+            # skip for flaky and targeted check
+            #  main reason for using this tag - a test is not compatible with the thread fuzzer which is used in both jobs
             return FailureReason.SKIP
         if "stateful" in tags and args.no_stateful:
             return FailureReason.NO_STATEFUL
@@ -1759,8 +1761,9 @@ class TestCase:
 
         if tags:
             for build_flag in args.build_flags:
-                # We ignore no-buildflag for flaky check
-                if "no-" + build_flag in tags and not args.flaky_check:
+                # We ignore no-buildflag for flaky check (args.flaky_check and args.test_runs > 1)
+                # and do not ignore for targeted check (args.flaky_check and args.test_runs == 1)
+                if "no-" + build_flag in tags and not (args.flaky_check and args.test_runs > 1):
                     return FailureReason.BUILD
             for tag in tags:
                 tag = tag.replace("-", "_")
