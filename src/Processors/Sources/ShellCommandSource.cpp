@@ -138,6 +138,7 @@ public:
         , stderr_fd(stderr_fd_)
         , timeout_milliseconds(timeout_milliseconds_)
         , stderr_reaction(stderr_reaction_)
+        , has_stderr_output(false)
     {
         makeFdNonBlocking(stdout_fd);
         makeFdNonBlocking(stderr_fd);
@@ -177,9 +178,19 @@ public:
                 {
                     std::string_view str(stderr_read_buf.get(), res);
                     if (stderr_reaction == ExternalCommandStderrReaction::THROW)
-                        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Executable generates stderr: {}", str);
-                    if (stderr_reaction == ExternalCommandStderrReaction::LOG)
+                    {
+                        /// Accumulate stderr up to safety limit
+                        if (stderr_full_output.size() < MAX_STDERR_SIZE)
+                        {
+                            size_t bytes_to_append = std::min(static_cast<size_t>(res), MAX_STDERR_SIZE - stderr_full_output.size());
+                            stderr_full_output.append(str.begin(), str.begin() + bytes_to_append);
+                        }
+                        has_stderr_output = true;
+                    }
+                    else if (stderr_reaction == ExternalCommandStderrReaction::LOG)
+                    {
                         LOG_WARNING(getLogger("TimeoutReadBufferFromFileDescriptor"), "Executable generates stderr: {}", str);
+                    }
                     else if (stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST)
                     {
                         res = std::min(ssize_t(stderr_result_buf.reserve()), res);
@@ -201,7 +212,44 @@ public:
                     throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from pipe");
 
                 if (res == 0)
+                {
+                    /// EOF on stdout - drain remaining stderr before throwing
+                    if (stderr_reaction == ExternalCommandStderrReaction::THROW)
+                    {
+                        static constexpr int STDERR_DRAIN_TIMEOUT_MS = 100;  /// Short timeout for remaining stderr after stdout EOF
+
+                        /// Continue reading stderr until EOF or timeout
+                        while (stderr_full_output.size() < MAX_STDERR_SIZE)
+                        {
+                            pfds[1].revents = 0;
+                            int stderr_events = pollWithTimeout(&pfds[1], 1, STDERR_DRAIN_TIMEOUT_MS);
+                            if (stderr_events <= 0)
+                                break;
+
+                            if (pfds[1].revents > 0)
+                            {
+                                if (stderr_read_buf == nullptr)
+                                    stderr_read_buf.reset(new char[BUFFER_SIZE]);
+                                ssize_t stderr_res = ::read(stderr_fd, stderr_read_buf.get(), BUFFER_SIZE);
+                                if (stderr_res <= 0)
+                                    break;
+
+                                std::string_view str(stderr_read_buf.get(), stderr_res);
+                                size_t bytes_to_append = std::min(static_cast<size_t>(stderr_res), MAX_STDERR_SIZE - stderr_full_output.size());
+                                stderr_full_output.append(str.begin(), str.begin() + bytes_to_append);
+                                has_stderr_output = true;
+                            }
+                            else
+                            {
+                                break;
+                            }
+                        }
+
+                        if (has_stderr_output)
+                            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Executable generates stderr: {}", stderr_full_output);
+                    }
                     break;
+                }
 
                 if (res > 0)
                     bytes_read += res;
@@ -226,16 +274,21 @@ public:
         tryMakeFdBlocking(stdout_fd);
         tryMakeFdBlocking(stderr_fd);
 
+        // Handle LOG_FIRST and LOG_LAST cases with circular buffer
         if (!stderr_result_buf.empty())
         {
             String stderr_result;
             stderr_result.reserve(stderr_result_buf.size());
             stderr_result.append(stderr_result_buf.begin(), stderr_result_buf.end());
-            LOG_WARNING(
-                getLogger("ShellCommandSource"),
-                "Executable generates stderr at the {}: {}",
-                stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST ? "beginning" : "end",
-                stderr_result);
+
+            if (stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST || stderr_reaction == ExternalCommandStderrReaction::LOG_LAST)
+            {
+                LOG_WARNING(
+                    getLogger("ShellCommandSource"),
+                    "Executable generates stderr at the {}: {}",
+                    stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST ? "beginning" : "end",
+                    stderr_result);
+            }
         }
     }
 
@@ -244,12 +297,15 @@ private:
     int stderr_fd;
     size_t timeout_milliseconds;
     ExternalCommandStderrReaction stderr_reaction;
+    bool has_stderr_output;
 
     static constexpr size_t BUFFER_SIZE = 4_KiB;
+    static constexpr size_t MAX_STDERR_SIZE = 1_MiB;  /// Safety limit for stderr accumulation
     pollfd pfds[2];
     size_t num_pfds;
     std::unique_ptr<char[]> stderr_read_buf;
     boost::circular_buffer_space_optimized<char> stderr_result_buf{BUFFER_SIZE};
+    String stderr_full_output;  /// For THROW mode: accumulate stderr up to MAX_STDERR_SIZE
 };
 
 class TimeoutWriteBufferFromFileDescriptor : public BufferWithOwnMemory<WriteBuffer>
