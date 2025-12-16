@@ -432,12 +432,12 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
             if (auto it = std::ranges::find(operators, name, &FunctionOperatorMapping::function_name); it != operators.end())
             {
-                /// IN operators need parentheses when used as function arguments (except as the first argument)
-                /// to avoid ambiguity with the comma separator. Example: position(1 IN (SELECT 1), 1)
-                /// should be formatted as position((1 IN (SELECT 1)), 1) to distinguish the IN's comma
-                /// from the position() function's comma separator.
+                /// IN operators need extra parentheses to avoid parsing ambiguity when used as function arguments.
+                /// The parser cannot handle IN inside multi-argument function calls without parentheses.
+                /// Example: position(1 IN (SELECT 1), 2) must be formatted as position((1 IN (SELECT 1)), 2)
                 bool is_in_operator = (name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn");
-                bool need_parens_around_in = frame.need_parens || (is_in_operator && frame.list_element_index > 0);
+                bool in_function_args = frame.current_function != nullptr;
+                bool need_parens_around_in = frame.need_parens || (is_in_operator && in_function_args);
                 if (need_parens_around_in)
                     ostr << '(';
                 arguments->children[0]->format(ostr, settings, state, nested_need_parens);
@@ -735,6 +735,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
             }
 
             nested_dont_need_parens.list_element_index = i;
+            /// Mark that we're formatting an argument of this function (needed for IN operator parentheses)
+            if (arguments->children.size() > 1)
+                nested_dont_need_parens.current_function = this;
             argument->format(ostr, settings, state, nested_dont_need_parens);
         }
     }
