@@ -21,6 +21,7 @@
 
 #include <Common/HashTable/HashTableAllocator.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
+#include <Common/HashTable/Prefetching.h>
 
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
     #include <iostream>
@@ -402,7 +403,6 @@ struct ZeroValueStorage<false, Cell>
     const Cell * zeroValue() const { return nullptr; }
 };
 
-
 // The HashTable
 template <typename Key, typename Cell, typename Hash, typename Grower, typename Allocator>
 class HashTable : private boost::noncopyable,
@@ -617,6 +617,127 @@ protected:
         }
     }
 
+    // Prefetching keys will reduce cache misses and improve performance.
+    // Maybe reusing iterator_base is better
+    template <typename Derived, bool is_const>
+    class prefetching_iterator_base
+    {
+
+        using Container = std::conditional_t<is_const, const Self, Self>;
+        using cell_type = std::conditional_t<is_const, const Cell, Cell>;
+        Container * container;
+        cell_type * ptr;
+        cell_type * prefetch_ptr = nullptr;
+        DB::PrefetchingHelper prefetching;
+        size_t prefetch_ahead = 2;
+        size_t prefetched_count = 0;
+        size_t iter_count = 0;
+
+        friend class HashTable;
+
+    public:
+        prefetching_iterator_base() {} /// NOLINT
+        prefetching_iterator_base(Container * container_, cell_type * ptr_) : container(container_), ptr(ptr_) {}
+
+        bool operator== (const prefetching_iterator_base & rhs) const { return ptr == rhs.ptr; }
+        bool operator!= (const prefetching_iterator_base & rhs) const { return ptr != rhs.ptr; }
+
+        Derived & operator++()
+        {
+            if constexpr (CouldPrefetchKey<cell_type>)
+            {
+                if (ptr->isZero(*container)) [[unlikely]]
+                {
+                    ptr = container->buf;
+                    prefetch_ptr = ptr;
+                }
+                else if (!prefetch_ptr) [[unlikely]]
+                {
+                    ++ptr;
+                    prefetch_ptr = ptr;
+                }
+                else
+                    ++ptr;
+
+                prefetch();
+
+                /// Skip empty cells in the main buffer.
+                auto * buf_end = container->buf + container->grower.bufSize();
+                while (ptr < buf_end && ptr->isZero(*container))
+                    ++ptr;
+
+                if (prefetched_count > 0)
+                    prefetched_count--;
+            }
+            else
+            {
+                /// If iterator was pointed to ZeroValueStorage, move it to the beginning of the main buffer.
+                if (unlikely(ptr->isZero(*container)))
+                    ptr = container->buf;
+                else
+                    ++ptr;
+
+                /// Skip empty cells in the main buffer.
+                auto * buf_end = container->buf + container->grower.bufSize();
+                while (ptr < buf_end && ptr->isZero(*container))
+                    ++ptr;
+            }
+            return static_cast<Derived &>(*this);
+        }
+
+        auto & operator* () const { return *ptr; }
+        auto * operator->() const { return ptr; }
+        operator Cell * () const { return nullptr; } /// NOLINT
+
+    private:
+
+        void prefetch()
+        {
+            if constexpr (CouldPrefetchKey<cell_type>)
+            {
+                auto * buf_end = container->buf + container->grower.bufSize();
+                iter_count++;
+                if (prefetch_ptr < buf_end && prefetched_count < prefetch_ahead) [[likely]]
+                {
+                    if (iter_count == DB::PrefetchingHelper::iterationsToMeasure()) [[unlikely]]
+                        prefetch_ahead = prefetching.calcPrefetchLookAhead();
+                    auto n = prefetch_ahead - prefetched_count;
+                    cell_type * last_ptr = nullptr;
+                    for (size_t i = 0; i < n; ++i)
+                    {
+                        while (prefetch_ptr < buf_end && prefetch_ptr->isZero(*container))
+                           ++prefetch_ptr;
+
+                        if (prefetch_ptr < buf_end) [[likely]]
+                        {
+                            last_ptr = prefetch_ptr;
+                            prefetch_ptr++;
+                            prefetched_count++;
+                        }
+                        else
+                            break;
+                    }
+
+                    if (last_ptr) [[likely]]
+                        keyPrefetch(last_ptr->getKey());
+                }
+            }
+        }
+    };
+
+    class const_prefetching_iterator
+        : public prefetching_iterator_base<const const_prefetching_iterator, true>
+    {
+    public:
+        using prefetching_iterator_base<const const_prefetching_iterator, true>::prefetching_iterator_base;
+    };
+
+    class prefetching_iterator
+        : public prefetching_iterator_base<prefetching_iterator, false>
+    {
+    public:
+        using prefetching_iterator_base<prefetching_iterator, false>::prefetching_iterator_base;
+    };
 
     template <typename Derived, bool is_const>
     class iterator_base /// NOLINT
@@ -648,7 +769,6 @@ protected:
             auto * buf_end = container->buf + container->grower.bufSize();
             while (ptr < buf_end && ptr->isZero(*container))
                 ++ptr;
-
             return static_cast<Derived &>(*this);
         }
 
@@ -822,7 +942,6 @@ public:
         bool is_initialized = false;
     };
 
-
     class iterator : public iterator_base<iterator, false> /// NOLINT
     {
     public:
@@ -836,54 +955,82 @@ public:
     };
 
 
-    const_iterator begin() const
+    template<bool prefetch = false>
+    auto begin() const
     {
         if (!buf)
-            return end();
+            return end<prefetch>();
 
         if (this->hasZero())
-            return iteratorToZero();
+        {
+            if constexpr (prefetch)
+                return const_prefetching_iterator(this, this->zeroValue());
+            else
+                return iteratorToZero();
+        }
 
         const Cell * ptr = buf;
         auto buf_end = buf + grower.bufSize();
         while (ptr < buf_end && ptr->isZero(*this))
             ++ptr;
 
-        return const_iterator(this, ptr);
+        if constexpr (prefetch)
+            return const_prefetching_iterator(this, ptr);
+        else
+            return const_iterator(this, ptr);
     }
 
-    const_iterator cbegin() const { return begin(); }
+    template<bool prefetch = false>
+    auto cbegin() const { return begin<prefetch>(); }
 
-    iterator begin()
+    template<bool prefetch = false>
+    auto begin()
     {
         if (!buf)
-            return end();
+            return end<prefetch>();
 
         if (this->hasZero())
-            return iteratorToZero();
+        {
+            if constexpr (prefetch)
+                return prefetching_iterator(this, this->zeroValue());
+            else
+                return iteratorToZero();
+        }
 
         Cell * ptr = buf;
         auto * buf_end = buf + grower.bufSize();
         while (ptr < buf_end && ptr->isZero(*this))
             ++ptr;
 
-        return iterator(this, ptr);
+        if constexpr (prefetch)
+            return prefetching_iterator(this, ptr);
+        else
+            return iterator(this, ptr);
     }
 
-    const_iterator end() const
+    template <bool prefetch = false>
+    auto end() const
     {
         /// Avoid UBSan warning about adding zero to nullptr. It is valid in C++20 (and earlier) but not valid in C.
-        return const_iterator(this, buf ? buf + grower.bufSize() : buf);
+        if constexpr (prefetch)
+            return const_prefetching_iterator(this, buf ? buf + grower.bufSize() : buf);
+        else
+            return const_iterator(this, buf ? buf + grower.bufSize() : buf);
     }
 
-    const_iterator cend() const
+    template<bool prefetch = false>
+    auto cend() const
     {
-        return end();
+        return end<prefetch>();
     }
 
-    iterator end()
+    template <bool prefetch = false>
+    auto end()
     {
-        return iterator(this, buf ? buf + grower.bufSize() : buf);
+        if constexpr (prefetch)
+            return prefetching_iterator(this, buf ? buf + grower.bufSize() : buf);
+        else
+            return iterator(this, buf ? buf + grower.bufSize() : buf);
     }
 
 
