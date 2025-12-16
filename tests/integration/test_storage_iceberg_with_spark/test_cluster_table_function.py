@@ -301,7 +301,6 @@ def test_bucket_split_single_node(started_cluster_iceberg_with_spark, storage_ty
     spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = (
         "test_bucket_split_single_node_"
-        + format_version
         + "_"
         + get_uuid_str()
     )
