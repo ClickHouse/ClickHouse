@@ -485,7 +485,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 if (frame.need_parens)
                     ostr << '(';
 
-                format_with_parens_for_unary_negate(arguments->children[0]->as<ASTFunction>(),  ostr, [&](){arguments->children[0]->format(ostr, settings, state, nested_dont_need_parens);});
+                format_with_parens_for_unary_negate(arguments->children[0]->as<ASTFunction>(), ostr, [&](){arguments->children[0]->format(ostr, settings, state, nested_dont_need_parens);});
                 ostr << '[';
                 arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
                 ostr << ']';
