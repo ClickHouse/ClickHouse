@@ -5,7 +5,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
-#include <Common/setThreadName.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -161,8 +160,8 @@ public:
         {
             pfds[0].revents = 0;
             pfds[1].revents = 0;
-            int num_events = pollWithTimeout(pfds, num_pfds, timeout_milliseconds);
-            if (num_events <= 0)
+            size_t num_events = pollWithTimeout(pfds, num_pfds, timeout_milliseconds);
+            if (0 == num_events)
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Pipe read timeout exceeded {} milliseconds", timeout_milliseconds);
 
             bool has_stdout = pfds[0].revents > 0;
@@ -383,7 +382,7 @@ namespace
                 {
                     send_data_threads.emplace_back([thread_group, task = std::move(send_data_task), this]() mutable
                     {
-                        ThreadGroupSwitcher switcher(thread_group, ThreadName::SEND_TO_SHELL_CMD);
+                        ThreadGroupSwitcher switcher(thread_group, "SendToShellCmd");
 
                         try
                         {
@@ -699,7 +698,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
             executor.execute();
 
             timeout_write_buffer->finalize();
-            (*timeout_write_buffer).reset();
+            timeout_write_buffer->reset();
 
             if (!is_executable_pool)
             {

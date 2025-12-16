@@ -4,7 +4,6 @@ description: 'System table useful for C++ experts and ClickHouse engineers conta
 keywords: ['system table', 'symbols']
 slug: /operations/system-tables/symbols
 title: 'system.symbols'
-doc_type: 'reference'
 ---
 
 Contains information for introspection of `clickhouse` binary. It requires the introspection privilege to access.

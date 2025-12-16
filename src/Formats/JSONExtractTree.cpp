@@ -768,13 +768,26 @@ public:
         return true;
     }
 
-    bool tryParse(time_t & value, std::string_view data, FormatSettings::DateTimeInputFormat /*time_input_format*/) const
+    bool tryParse(time_t & value, std::string_view data, FormatSettings::DateTimeInputFormat time_input_format) const
     {
         ReadBufferFromMemory buf(data.data(), data.size());
         const auto & date_lut = DateLUT::instance();
 
-        if (tryReadTimeText(value, buf, date_lut) && buf.eof())
-            return true;
+        switch (time_input_format)
+        {
+            case FormatSettings::DateTimeInputFormat::Basic:
+                if (tryReadTimeText(value, buf, date_lut) && buf.eof())
+                    return true;
+                break;
+            case FormatSettings::DateTimeInputFormat::BestEffort:
+                if (tryParseTimeBestEffort(value, buf, date_lut, date_lut) && buf.eof())
+                    return true;
+                break;
+            case FormatSettings::DateTimeInputFormat::BestEffortUS:
+                if (tryParseTimeBestEffortUS(value, buf, date_lut, date_lut) && buf.eof())
+                    return true;
+                break;
+        }
 
         return false;
     }
@@ -993,13 +1006,26 @@ public:
         return true;
     }
 
-    bool tryParse(Time64 & value, std::string_view data, FormatSettings::DateTimeInputFormat /*time_input_format*/) const
+    bool tryParse(Time64 & value, std::string_view data, FormatSettings::DateTimeInputFormat time_input_format) const
     {
         ReadBufferFromMemory buf(data.data(), data.size());
         const auto & date_lut = DateLUT::instance();
 
-        if (tryReadTime64Text(value, scale, buf, date_lut) && buf.eof())
-            return true;
+        switch (time_input_format)
+        {
+            case FormatSettings::DateTimeInputFormat::Basic:
+                if (tryReadTime64Text(value, scale, buf, date_lut) && buf.eof())
+                    return true;
+                break;
+            case FormatSettings::DateTimeInputFormat::BestEffort:
+                if (tryParseTime64BestEffort(value, scale, buf, date_lut, date_lut) && buf.eof())
+                    return true;
+                break;
+            case FormatSettings::DateTimeInputFormat::BestEffortUS:
+                if (tryParseTime64BestEffortUS(value, scale, buf, date_lut, date_lut) && buf.eof())
+                    return true;
+                break;
+        }
 
         return false;
     }

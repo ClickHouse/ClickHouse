@@ -227,8 +227,8 @@ MarkRanges RangesInPatchParts::getIntersectingRanges(const String & patch_name, 
 
     for (const auto & range : ranges)
     {
-        const auto * left = std::lower_bound(patch_ranges.begin(), patch_ranges.end(), range.begin, [](const MarkRange & r, UInt64 value) { return r.end < value; });
-        const auto * right = std::upper_bound(patch_ranges.begin(), patch_ranges.end(), range.end, [](UInt64 value, const MarkRange & r) { return value < r.begin; });
+        auto left = std::lower_bound(patch_ranges.begin(), patch_ranges.end(), range.begin, [](const MarkRange & r, UInt64 value) { return r.end < value; });
+        auto right = std::upper_bound(patch_ranges.begin(), patch_ranges.end(), range.end, [](UInt64 value, const MarkRange & r) { return value < r.begin; });
 
         res.insert(left, right);
     }
@@ -298,12 +298,12 @@ MaybeMinMaxStats getPatchMinMaxStats(const DataPartPtr & patch_part, const MarkR
         if (ranges[i].begin == last_mark)
             continue;
 
-        reader.read(ranges[i].begin, nullptr, granule);
+        reader.read(ranges[i].begin, granule);
         std::tie(stats.min, stats.max) = getMinMaxValues(*granule);
 
         for (size_t j = ranges[i].begin + 1; j < last_mark; ++j)
         {
-            reader.read(j, nullptr, granule);
+            reader.read(j, granule);
             auto [min, max] = getMinMaxValues(*granule);
 
             stats.min = std::min(stats.min, min);

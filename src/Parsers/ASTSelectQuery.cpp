@@ -49,7 +49,6 @@ void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     hash_state.update(group_by_with_rollup);
     hash_state.update(group_by_with_cube);
     hash_state.update(limit_with_ties);
-    hash_state.update(limit_by_all);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
@@ -212,15 +211,9 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         }
         limitByLength()->format(ostr, s, state, frame);
         ostr << " BY";
-        if (limit_by_all)
-        {
-            ostr << " ALL";
-        }
-        else if (limitBy())
-        {
+        if (limitBy())
             s.one_line ? limitBy()->format(ostr, s, state, frame)
                        : limitBy()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
-        }
     }
 
     if (limitLength())

@@ -4,7 +4,6 @@ sidebar_label: 'studentTTest'
 sidebar_position: 194
 slug: /sql-reference/aggregate-functions/reference/studentttest
 title: 'studentTTest'
-doc_type: 'reference'
 ---
 
 # studentTTest

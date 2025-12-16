@@ -4,7 +4,6 @@ description: 'Aggregate function that calculates the positions of the occurrence
 sidebar_position: 164
 slug: /sql-reference/aggregate-functions/reference/maxintersectionsposition
 title: 'maxIntersectionsPosition'
-doc_type: 'reference'
 ---
 
 # maxIntersectionsPosition

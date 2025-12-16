@@ -52,6 +52,7 @@ public:
     bool isComparable() const override;
     bool textCanContainOnlyValidUTF8() const override;
     bool haveMaximumSizeOfValue() const override;
+    bool hasDynamicSubcolumnsDeprecated() const override;
     size_t getMaximumSizeOfValueInMemory() const override;
     size_t getSizeOfValueInMemory() const override;
 
@@ -74,9 +75,6 @@ public:
     void updateHashImpl(SipHash & hash) const override;
 
     void forEachChild(const ChildCallback & callback) const override;
-
-private:
-    SerializationInfoMutablePtr getSerializationInfoImpl(const IColumn & column) const;
 };
 
 }

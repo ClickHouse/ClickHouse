@@ -6,7 +6,6 @@ keywords: ['JSONCompactStrings']
 output_format: true
 slug: /interfaces/formats/JSONCompactStrings
 title: 'JSONCompactStrings'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

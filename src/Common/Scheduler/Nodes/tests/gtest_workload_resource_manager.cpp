@@ -67,12 +67,7 @@ public:
         : WorkloadEntityStorageBase(Context::getGlobalContextInstance())
     {}
 
-    std::string_view getName() const override { return "test"; }
-
-    void loadEntities(const Poco::Util::AbstractConfiguration & config) override
-    {
-        WorkloadEntityStorageBase::loadEntities(config);
-    }
+    void loadEntities() override {}
 
     void executeQuery(const String & query)
     {
@@ -928,7 +923,7 @@ struct TestQuery {
             cpu_lease->startConsumption();
         metrics.start(thread_num);
 
-        DB::setThreadName(DB::ThreadName::TEST_SCHEDULER);
+        setThreadName(fmt::format("name.{}", name, thread_num).c_str());
         while (true)
         {
             if (!controlConcurrency(cpu_lease))
@@ -983,7 +978,7 @@ struct TestQuery {
         master_thread = t.async(workload, t.storage.getMasterThreadResourceName(), t.storage.getWorkerThreadResourceName(),
             [&, type, workload] (ResourceLink master_link, ResourceLink worker_link)
             {
-                setThreadName(ThreadName::TEST_SCHEDULER);
+                setThreadName(workload.c_str());
                 {
                     std::unique_lock in_thread_lock{slots_mutex};
                     slots = allocateCPUSlots(type, master_link, worker_link, workload);

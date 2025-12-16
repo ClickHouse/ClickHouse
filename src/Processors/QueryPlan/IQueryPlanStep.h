@@ -4,7 +4,6 @@
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <variant>
 
 namespace DB
 {
@@ -57,12 +56,8 @@ public:
     const SharedHeader & getOutputHeader() const;
 
     /// Methods to describe what this step is needed for.
-    std::string_view getStepDescription() const;
-    void setStepDescription(std::string description, size_t limit);
-    void setStepDescription(const IQueryPlanStep & step);
-
-    template <size_t size>
-    ALWAYS_INLINE void setStepDescription(const char (&description)[size]) { step_description = std::string_view(description, size - 1); }
+    const std::string & getStepDescription() const { return step_description; }
+    void setStepDescription(std::string description) { step_description = std::move(description); }
 
     struct Serialization;
     struct Deserialization;
@@ -125,9 +120,7 @@ protected:
     SharedHeader output_header;
 
     /// Text description about what current step does.
-    std::variant<std::string, std::string_view> step_description;
-
-    friend class DescriptionHolder;
+    std::string step_description;
 
     /// This field is used to store added processors from this step.
     /// It is used only for introspection (EXPLAIN PIPELINE).

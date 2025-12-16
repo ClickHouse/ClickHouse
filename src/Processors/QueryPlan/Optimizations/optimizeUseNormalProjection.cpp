@@ -77,8 +77,7 @@ static std::optional<ActionsDAG> makeMaterializingDAG(const Block & proj_header,
 std::optional<String> optimizeUseNormalProjections(
     Stack & stack,
     QueryPlan::Nodes & nodes,
-    bool is_parallel_replicas_initiator_with_projection_support,
-    size_t max_step_description_length)
+    bool is_parallel_replicas_initiator_with_projection_support)
 {
     const auto & frame = stack.back();
 
@@ -224,18 +223,11 @@ std::optional<String> optimizeUseNormalProjections(
     {
         if (!has_all_required_columns(projection))
         {
-            /// Check if projection can be used to filter parts or building projection index filters
+            /// Check if projection can be used to filter parts
             if (query.filter_node && optimize_use_projection_filtering)
             {
-                filterPartsAndCollectProjectionCandidates(
-                    *reading,
-                    *projection,
-                    reader,
-                    empty_mutations_snapshot,
-                    *parent_reading_select_result,
-                    projection_query_info,
-                    query.filter_node,
-                    context);
+                filterPartsUsingProjection(
+                    *projection, reader, empty_mutations_snapshot, *parent_reading_select_result, projection_query_info, context);
             }
 
             continue;
@@ -396,7 +388,7 @@ std::optional<String> optimizeUseNormalProjections(
         });
     }
 
-    projection_reading->setStepDescription(best_candidate->projection->name, max_step_description_length);
+    projection_reading->setStepDescription(best_candidate->projection->name);
 
     auto & projection_reading_node = nodes.emplace_back(QueryPlan::Node{.step = std::move(projection_reading)});
     auto * next_node = &projection_reading_node;

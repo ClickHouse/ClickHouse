@@ -100,10 +100,6 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         client_options.append("cluster_for_parallel_replicas='parallel_replicas'")
         client_options.append("parallel_replicas_for_non_replicated_merge_tree=1")
 
-    if random.random() < 0.2:
-        client_options.append(f"query_plan_join_swap_table={random.choice(['auto', 'false', 'true'])}")
-        client_options.append(f"query_plan_optimize_join_order_limit={random.randint(0, 64)}")
-
     if client_options:
         options.append(" --client-option " + " ".join(client_options))
 
@@ -209,7 +205,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     call_with_retry(make_query_command("SYSTEM START REPLICATION QUEUES"))
     call_with_retry(make_query_command("SYSTEM DROP MARK CACHE"))
 
-    # Issue #21004, window views are experimental, so let's just suppress it
+    # Issue #21004, live views are experimental, so let's just suppress it
     call_with_retry(make_query_command("KILL QUERY WHERE upper(query) LIKE 'WATCH %'"))
 
     # Kill other queries which known to be slow

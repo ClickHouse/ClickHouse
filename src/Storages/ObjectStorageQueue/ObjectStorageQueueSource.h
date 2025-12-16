@@ -87,15 +87,15 @@ public:
         ExpressionActionsPtr filter_expr;
         bool recursive{false};
 
-        ObjectInfos object_infos TSA_GUARDED_BY(next_mutex);
+        Source::ObjectInfos object_infos TSA_GUARDED_BY(next_mutex);
         std::vector<FileMetadataPtr> file_metadatas;
         bool is_finished = false;
         std::mutex next_mutex;
         size_t index = 0;
 
         std::pair<ObjectInfoPtr, FileMetadataPtr> next();
-        void filterProcessableFiles(ObjectInfos & objects);
-        void filterOutProcessedAndFailed(ObjectInfos & objects);
+        void filterProcessableFiles(Source::ObjectInfos & objects);
+        void filterOutProcessedAndFailed(Source::ObjectInfos & objects);
 
         std::atomic<bool> & shutdown_called;
         std::mutex mutex;

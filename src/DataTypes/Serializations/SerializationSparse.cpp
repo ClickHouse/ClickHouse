@@ -164,13 +164,6 @@ SerializationSparse::SerializationSparse(const SerializationPtr & nested_)
 {
 }
 
-ISerialization::KindStack SerializationSparse::getKindStack() const
-{
-    auto kind_stack = nested->getKindStack();
-    kind_stack.push_back(Kind::SPARSE);
-    return kind_stack;
-}
-
 SerializationPtr SerializationSparse::SubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
 {
     return std::make_shared<SerializationSparse>(prev);
@@ -312,44 +305,22 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
     size_t prev_size = column->size();
     auto mutable_column = column->assumeMutable();
     auto & column_sparse = assert_cast<ColumnSparse &>(*mutable_column);
+    auto & offsets_data = column_sparse.getOffsetsData();
 
-    size_t old_size = 0;
+    size_t old_size = offsets_data.size();
+
     size_t read_rows = 0;
     size_t skipped_values_rows = 0;
     settings.path.push_back(Substream::SparseOffsets);
+    if (auto * stream = settings.getter(settings.path))
+        read_rows = deserializeOffsets(offsets_data, *stream, column_sparse.size(), rows_offset, limit, skipped_values_rows, *state_sparse);
 
-    const auto * cached_element = getElementFromSubstreamsCache(cache, settings.path);
-    if (cached_element)
-    {
-        const auto & cached_offsets_element = assert_cast<const SubstreamsCacheSparseOffsetsElement &>(*cached_element);
-        column_sparse.getOffsetsPtr() = cached_offsets_element.offsets;
-        old_size = cached_offsets_element.old_size;
-        read_rows = cached_offsets_element.read_rows;
-        skipped_values_rows = cached_offsets_element.skipped_values_rows;
-    }
-    else
-    {
-        if (auto * stream = settings.getter(settings.path))
-        {
-            auto & offsets_data = column_sparse.getOffsetsData();
-            old_size = offsets_data.size();
-            read_rows = deserializeOffsets(
-                offsets_data, *stream, column_sparse.size(), rows_offset, limit, skipped_values_rows, *state_sparse);
-
-            addElementToSubstreamsCache(
-                cache,
-                settings.path,
-                std::make_unique<SubstreamsCacheSparseOffsetsElement>(
-                    column_sparse.getOffsetsPtr(), old_size, read_rows, skipped_values_rows));
-        }
-    }
-
-    auto & offsets_data = column_sparse.getOffsetsData();
     auto & values_column = column_sparse.getValuesPtr();
     size_t values_limit = offsets_data.size() - old_size;
 
     settings.path.back() = Substream::SparseElements;
-    nested->deserializeBinaryBulkWithMultipleStreams(values_column, skipped_values_rows, values_limit, settings, state_sparse->nested, cache);
+    /// Do not use substream cache while reading values column, because ColumnSparse can be cached only in a whole.
+    nested->deserializeBinaryBulkWithMultipleStreams(values_column, skipped_values_rows, values_limit, settings, state_sparse->nested, nullptr);
     settings.path.pop_back();
 
     if (offsets_data.size() + 1 != values_column->size())
