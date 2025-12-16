@@ -190,6 +190,24 @@ private:
                 throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with index '{}'", index);
             return std::nullopt;
         }
+
+        if (checkAndGetColumnConst<ColumnInt8>(index_column.get()) || checkAndGetColumnConst<ColumnInt16>(index_column.get())
+            || checkAndGetColumnConst<ColumnInt32>(index_column.get()) || checkAndGetColumnConst<ColumnInt64>(index_column.get()))
+        {
+            const ssize_t index = index_column->getInt(0);
+            const ssize_t size = tuple.getElements().size();
+
+            if (index > 0 && index <= size)
+                return {index - 1};
+
+            if (index < 0 && index >= -size)
+                return {index + size};
+
+            if (argument_size == 2)
+                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with index '{}'", index);
+            return std::nullopt;
+        }
+
         if (const auto * name_col = checkAndGetColumnConst<ColumnString>(index_column.get()))
         {
             std::optional<size_t> index = tuple.tryGetPositionByName(name_col->getValue<String>());
@@ -202,7 +220,7 @@ private:
                     ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with name '{}'", name_col->getValue<String>());
             return std::nullopt;
         }
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument to {} must be a constant UInt or String", getName());
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument to {} must be a constant Int, UInt or String", getName());
     }
 
     std::optional<size_t> getQBitElementIndex(const ColumnPtr & index_column, const DataTypeQBit & qbit, size_t argument_size) const
@@ -234,6 +252,8 @@ Extracts an element from a tuple by index or name.
 For access by index, an 1-based numeric index is expected.
 For access by name, the element name can be provided as a string (works only for named tuples).
 
+Negative indexes are supported. In this case, the corresponding element is selected, numbered from the end. For example, `tuple.-1` is the last element in the tuple.
+
 An optional third argument specifies a default value which is returned instead of throwing an exception when the accessed element does not exist.
 All arguments must be constants.
 
@@ -251,6 +271,11 @@ This function has zero runtime cost and implements the operators `x.index` and `
     {
          "Index access",
          "SELECT tupleElement((1, 'hello'), 2)",
+         "hello"
+    },
+    {
+         "Negative indexing",
+         "SELECT tupleElement((1, 'hello'), -1)",
          "hello"
     },
     {

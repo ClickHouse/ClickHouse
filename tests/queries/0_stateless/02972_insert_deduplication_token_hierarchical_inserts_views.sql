@@ -33,11 +33,11 @@ SELECT
 FROM landing
 GROUP BY t;
 
-INSERT INTO landing SELECT 1 as timestamp, 1 AS value FROM numbers(10);
+INSERT INTO landing SELECT 1 as timestamp, 1 AS value FROM numbers(10) ORDER BY ALL;
 
 SELECT sleep(3);
 
-INSERT INTO landing SELECT 1 as timestamp, 1 AS value FROM numbers(10);
+INSERT INTO landing SELECT 1 as timestamp, 1 AS value FROM numbers(10) ORDER BY ALL;
 
 SYSTEM FLUSH LOGS part_log;
 SELECT table, name, error FROM system.part_log

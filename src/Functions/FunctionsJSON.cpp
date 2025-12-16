@@ -1280,9 +1280,9 @@ Parses JSON and extracts a value of Int type.
 SELECT JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1) AS res;
             )",
             R"(
-┌─res─┐
-│ 200 │
-└─────┘
+┌──res─┐
+│ -100 │
+└──────┘
             )"
         }
         };

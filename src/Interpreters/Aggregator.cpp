@@ -1,8 +1,11 @@
 #include <algorithm>
 #include <optional>
 #include <Core/Settings.h>
+#include <IO/NullWriteBuffer.h>
 #include <base/defines.h>
 #include <Poco/Util/Application.h>
+
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 #ifdef OS_LINUX
 #    include <unistd.h>
@@ -183,6 +186,87 @@ UInt64 & getInlineCountState(DB::AggregateDataPtr & ptr)
 
 namespace DB
 {
+
+size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result, ssize_t bucket) const
+{
+    auto estimate_size_of_compressed_state = [&](auto & table)
+    {
+        size_t res = 0;
+        for (size_t j = 0; j < params.aggregates_size; ++j)
+        {
+            /// We only interested in the size of compressed state, not the serialized representation itself.
+            NullWriteBuffer wb;
+            CompressedWriteBuffer wbuf(wb);
+
+            /// In single-level case (bucket == -1) we need to choose smaller sampling periods, because we have only one hash table.
+            /// In two-level case we sample across 256 buckets, so we can use a larger period.
+            const auto period = bucket == -1 ? std::min<size_t>(std::max<size_t>(table.size() / 100, 1), 100) : 100;
+
+            size_t it = 0;
+            table.forEachMapped(
+                [&](AggregateDataPtr place)
+                {
+                    chassert(place);
+                    if (it++ % period == 0)
+                    {
+                        is_simple_count ? writeVarUInt(getInlineCountState(place), wb)
+                                        : aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], wb);
+                    }
+                    /// A hundred samples should be enough to get a good estimate.
+                    return it < 100 * period;
+                });
+
+            wbuf.finalize();
+            res += it ? static_cast<size_t>(table.size() * wb.count() / ((it + period - 1) / period)) : 0;
+        }
+        return res;
+    };
+
+    if (result.type == AggregatedDataVariants::Type::EMPTY)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty data passed to Aggregator::applyToAllStates");
+    }
+    else if (result.type == AggregatedDataVariants::Type::without_key)
+    {
+        if (!result.without_key)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty without_key data passed to Aggregator::applyToAllStates");
+
+        size_t res = 0;
+        for (size_t j = 0; j < params.aggregates_size; ++j)
+        {
+            NullWriteBuffer wb;
+            CompressedWriteBuffer wbuf(wb);
+            is_simple_count ? writeVarUInt(getCountState(result.without_key), wb)
+                            : aggregate_functions[j]->serialize(result.without_key + offsets_of_aggregate_states[j], wb);
+            wbuf.finalize();
+            res += wb.count();
+        }
+        return res;
+    }
+
+#define M(NAME) \
+    else if (result.type == AggregatedDataVariants::Type::NAME) \
+    { \
+        return estimate_size_of_compressed_state(result.NAME->data); \
+    }
+
+    APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
+#undef M
+
+#define M(NAME) \
+    else if (result.type == AggregatedDataVariants::Type::NAME) \
+    { \
+        if (bucket >= 0) \
+            return estimate_size_of_compressed_state(result.NAME->data.impls[bucket]); \
+        else \
+            return estimate_size_of_compressed_state(result.NAME->data); \
+    }
+
+    APPLY_FOR_VARIANTS_TWO_LEVEL(M)
+#undef M
+
+    UNREACHABLE();
+}
 
 Block Aggregator::getHeader(bool final) const
 {
@@ -1860,7 +1944,8 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
     Arena * arena,
     bool final,
     Int32 bucket,
-    std::atomic<bool> & is_cancelled) const
+    std::atomic<bool> & is_cancelled,
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater) const
 {
     auto & merged_data = *variants[0];
     auto method = merged_data.type;
@@ -1871,9 +1956,13 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
     else if (method == AggregatedDataVariants::Type::NAME) \
     { \
         mergeBucketImpl<decltype(merged_data.NAME)::element_type>(variants, bucket, arena, is_cancelled); \
+        if (updater) \
+            updater->recordAggregationStateSizes(merged_data, bucket); \
         if (is_cancelled.load(std::memory_order_seq_cst)) \
             return {}; \
         block = convertOneBucketToBlock(merged_data, *merged_data.NAME, arena, final, bucket); \
+        if (updater) \
+            updater->recordAggregationKeySizes(*this, block); \
     }
 
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
