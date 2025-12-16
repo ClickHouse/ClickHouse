@@ -31,6 +31,7 @@ public:
         size_t max_loading_retries_,
         std::atomic<size_t> & metadata_ref_count_,
         bool use_persistent_processing_nodes_,
+        const std::string & zookeeper_name_,
         LoggerPtr log_);
 
     struct BucketHolder;
@@ -43,19 +44,25 @@ public:
         const std::filesystem::path & zk_path,
         const Bucket & bucket,
         bool use_persistent_processing_nodes_,
+        const std::string & zookeeper_name_,
         LoggerPtr log_);
 
     static ObjectStorageQueueOrderedFileMetadata::Bucket getBucketForPath(const std::string & path, size_t buckets_num);
 
     static std::vector<std::string> getMetadataPaths(size_t buckets_num);
 
-    static void migrateToBuckets(const std::string & zk_path, size_t value, size_t prev_value);
+    static void migrateToBuckets(
+        const std::string & zk_path,
+        size_t value,
+        size_t prev_value,
+        const std::string & zookeeper_name_);
 
     /// Return vector of indexes of filtered paths.
     static void filterOutProcessedAndFailed(
         std::vector<std::string> & paths,
         const std::filesystem::path & zk_path_,
         size_t buckets_num,
+        const std::string & zookeeper_name_,
         LoggerPtr log);
 
     void prepareProcessedAtStartRequests(Coordination::Requests & requests) override;
@@ -64,6 +71,7 @@ private:
     const size_t buckets_num;
     const std::string zk_path;
     const BucketInfoPtr bucket_info;
+    const std::string zookeeper_name;
 
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
 
@@ -78,7 +86,8 @@ private:
         NodeMetadata & result,
         Coordination::Stat * stat,
         const std::string & processed_node_path_,
-        LoggerPtr log_);
+        LoggerPtr log_,
+        const std::string & zookeeper_name_);
 
     void doPrepareProcessedRequests(
         Coordination::Requests & requests,
@@ -92,7 +101,8 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
         const Bucket & bucket_,
         const std::string & bucket_lock_path_,
         const std::string & processor_info_,
-        LoggerPtr log_);
+        LoggerPtr log_,
+        const std::string & zookeeper_name_);
 
     ~BucketHolder();
 
@@ -111,6 +121,7 @@ private:
     bool released = false;
     bool finished = false;
     LoggerPtr log;
+    std::string zookeeper_name;
 };
 
 }

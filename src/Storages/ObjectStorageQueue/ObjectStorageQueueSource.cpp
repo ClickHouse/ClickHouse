@@ -265,7 +265,7 @@ ObjectStorageQueueSource::FileIterator::next()
                 Coordination::Error code;
                 zk_retry.retryLoop([&]
                 {
-                    auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+                    auto zk_client = metadata->getZooKeeper();
                     if (zk_retry.isRetry())
                     {
                         LOG_TEST(log, "Retrying set processing requests batch ({})", processing_paths.size());
@@ -274,7 +274,7 @@ ObjectStorageQueueSource::FileIterator::next()
                         bool is_multi_read_enabled = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ);
                         if (is_multi_read_enabled)
                         {
-                            auto processing_paths_responses = ObjectStorageQueueMetadata::getZooKeeper(log)->tryGet(processing_paths);
+                            auto processing_paths_responses = metadata->getZooKeeper()->tryGet(processing_paths);
                             for (size_t i = 0; i < processing_paths_responses.size(); ++i)
                             {
                                 LOG_TEST(log, "Path {} has processor: {}, current processor: {}",
@@ -427,10 +427,11 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
     if (enable_hash_ring_filtering && mode == ObjectStorageQueueMode::UNORDERED)
         metadata->filterOutForProcessor(paths, storage_id);
 
+    const auto & zookeeper_name = metadata->getZooKeeperName();
     if (mode == ObjectStorageQueueMode::UNORDERED)
-        ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), log);
+        ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), zookeeper_name, log);
     else
-        ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), metadata->getBucketsNum(), log);
+        ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), metadata->getBucketsNum(), zookeeper_name, log);
 
     std::unordered_set<std::string> paths_set;
     std::ranges::move(paths, std::inserter(paths_set, paths_set.end()));
@@ -1362,7 +1363,7 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
         postProcessor.process(successful_objects);
     }
 
-    auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+    auto zk_client = files_metadata->getZooKeeper();
     Coordination::Responses responses;
 
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
