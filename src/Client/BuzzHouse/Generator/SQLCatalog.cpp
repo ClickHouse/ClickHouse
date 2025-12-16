@@ -795,9 +795,9 @@ bool SQLTable::hasVersionColumn() const
 
 bool SQLTable::areInsertsAppends() const
 {
-    return teng == TableEngineValues::MergeTree || isLogFamily() || isMemoryEngine() || isRocksEngine() || isMySQLEngine()
-        || isPostgreSQLEngine() || isSQLiteEngine() || isMongoDBEngine() || isRedisEngine() || isHudiEngine() || isAnyDeltaLakeEngine()
-        || isAnyIcebergEngine() || isDictionaryEngine() || isKeeperMapEngine();
+    return teng == TableEngineValues::MergeTree || isLogFamily() || isMemoryEngine() || isMySQLEngine() || isPostgreSQLEngine()
+        || isSQLiteEngine() || isMongoDBEngine() || isRedisEngine() || isHudiEngine() || isAnyDeltaLakeEngine() || isAnyIcebergEngine()
+        || isDictionaryEngine() || isKeeperMapEngine();
 }
 
 bool SQLView::supportsFinal() const
