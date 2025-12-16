@@ -1770,7 +1770,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         log,
         indexes,
         find_exact_ranges,
-        is_parallel_reading_from_replicas);
+        is_parallel_reading_from_replicas,
+        allow_query_condition_cache);
 
     return analyzed_result_ptr;
 }
@@ -2007,7 +2008,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     LoggerPtr log,
     std::optional<Indexes> & indexes,
     bool find_exact_ranges,
-    bool is_parallel_reading_from_replicas_)
+    bool is_parallel_reading_from_replicas_,
+    bool allow_query_condition_cache_)
 {
     AnalysisResult result;
     RangesInDataParts res_parts;
@@ -2104,6 +2106,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, mutations_snapshot, context_, log);
 
         auto reader_settings = MergeTreeReaderSettings::createForQuery(context_, *data.getSettings(), query_info_);
+        if (!allow_query_condition_cache_)
+            reader_settings.use_query_condition_cache = false;
         result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
             res_parts,
             metadata_snapshot,
@@ -2634,7 +2638,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     if (analyzed_result_ptr)
         analysis_result_copy = std::make_shared<AnalysisResult>(*analyzed_result_ptr);
 
-    return std::make_unique<ReadFromMergeTree>(
+    auto cloned_step = std::make_unique<ReadFromMergeTree>(
         prepared_parts,
         mutations_snapshot,
         all_column_names,
@@ -2651,6 +2655,9 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         all_ranges_callback,
         read_task_callback,
         number_of_current_replica);
+    cloned_step->allow_query_condition_cache = allow_query_condition_cache;
+    cloned_step->enable_remove_parts_from_snapshot_optimization = enable_remove_parts_from_snapshot_optimization;
+    return cloned_step;
 }
 
 bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
@@ -2721,7 +2728,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     auto query_id_holder = MergeTreeDataSelectExecutor::checkLimits(data, result, context);
 
     /// If we have neither a WHERE nor a PREWHERE condition, the query condition cache doesn't save anything --> disable it.
-    if (reader_settings.use_query_condition_cache && !query_info.prewhere_info && !query_info.filter_actions_dag)
+    bool has_where_or_prewhere = query_info.prewhere_info || query_info.filter_actions_dag;
+    if (!allow_query_condition_cache || !has_where_or_prewhere)
         reader_settings.use_query_condition_cache = false;
 
     /// Initializing parallel replicas coordinator with empty ranges to read in case of

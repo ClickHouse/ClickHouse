@@ -3176,9 +3176,12 @@ Possible values:
 
 - direct
 
- This algorithm can be applied when the storage for the right table supports key-value requests.
+ The `direct` (also known as nested loop) algorithm performs a lookup in the right table using rows from the left table as keys.
+ It's supported by special storages such as [Dictionary](/engines/table-engines/special/dictionary), [EmbeddedRocksDB](../../engines/table-engines/integrations/embedded-rocksdb.md), and [MergeTree](/engines/table-engines/mergetree-family/mergetree) tables.
 
- The `direct` algorithm performs a lookup in the right table using rows from the left table as keys. It's supported only by special storage such as [Dictionary](/engines/table-engines/special/dictionary) or [EmbeddedRocksDB](../../engines/table-engines/integrations/embedded-rocksdb.md) and only the `LEFT` and `INNER` JOINs.
+ For MergeTree tables, the algorithm pushes join key filters directly to the storage layer. This can be more efficient when the key can use the table's primary key index for lookups, otherwise it performs full scans of the right table for each left table block.
+
+ Supports `INNER` and `LEFT` joins and only single-column equality join keys without other conditions.
 
 - auto
 
@@ -3186,7 +3189,7 @@ Possible values:
 
 - full_sorting_merge
 
- [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) with full sorting joined tables before joining.
+ [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) with full sorting of joined tables before joining.
 
 - prefer_partial_merge
 
@@ -3195,7 +3198,7 @@ Possible values:
 - default (deprecated)
 
  Legacy value, please don't use anymore.
- Same as `direct,hash`, i.e. try to use direct join and hash join join (in this order).
+ Same as `direct,hash`, i.e. try to use direct join and hash join (in this order).
 
 )", 0) \
     DECLARE(UInt64, cross_join_min_rows_to_compress, 10000000, R"(
