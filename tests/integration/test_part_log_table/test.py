@@ -54,7 +54,7 @@ def test_config_with_standard_part_log(start_cluster):
     )
     node2.query("INSERT INTO test_table VALUES ('name', 1)")
     node2.query("SYSTEM FLUSH LOGS")
-    assert node2.query("SELECT * FROM system.part_log") != ""
+    assert node2.query("SELECT * FROM system.part_log WHERE database = 'default' AND table = 'test_table'") != ""
 
 
 def test_part_log_contains_partition(start_cluster):
@@ -94,6 +94,14 @@ def test_config_disk_name_test(start_cluster):
     node4.query("INSERT INTO test_table2(*) VALUES ('test2', 3)")
     node4.query("SYSTEM FLUSH LOGS")
     assert (
-        node4.query("SELECT DISTINCT disk_name FROM system.part_log ORDER by disk_name")
+        node4.query("SELECT DISTINCT disk_name FROM system.part_log WHERE database = 'default' AND table IN ('test_table1', 'test_table2') ORDER by disk_name")
         == "test1\ntest2\n"
     )
+
+def test_system_log_tables_in_part_log(start_cluster):
+    node2.query("CREATE TABLE tmp_table(key Int) ENGINE=MergeTree() ORDER BY ()")
+    node2.query("INSERT INTO tmp_table VALUES (1)")
+    node2.query("SYSTEM FLUSH LOGS system.part_log")
+    node2.query("OPTIMIZE TABLE system.part_log FINAL")
+    node2.query("SYSTEM FLUSH LOGS system.part_log")
+    assert node2.query("SELECT DISTINCT event_type FROM system.part_log WHERE database = 'system' AND table = 'part_log' ORDER BY ALL") == "NewPart\nMergeParts\nMergePartsStart\n"
