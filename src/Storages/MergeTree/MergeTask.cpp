@@ -46,7 +46,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/InvertedIndexUtils.h>
+#include <Storages/MergeTree/TextIndexUtils.h>
 #include <Common/DimensionalMetrics.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
@@ -78,7 +78,7 @@ namespace ProfileEvents
     extern const Event MergeExecuteMilliseconds;
     extern const Event MergeHorizontalStageExecuteMilliseconds;
     extern const Event MergeVerticalStageExecuteMilliseconds;
-    extern const Event MergeInvertedIndexStageExecuteMilliseconds;
+    extern const Event MergeTextIndexStageExecuteMilliseconds;
     extern const Event MergeProjectionStageExecuteMilliseconds;
 }
 
@@ -334,7 +334,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
         /// stage and other indexes on horizonatal stage of merge.
         if (index.type == "text")
         {
-            global_ctx->inverted_indexes_to_merge.push_back(index);
+            global_ctx->text_indexes_to_merge.push_back(index);
         }
         else if (index_columns.size() == 1)
         {
@@ -686,7 +686,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             global_ctx->gathering_columns.clear();
             global_ctx->merging_skip_indexes.clear();
             global_ctx->skip_indexes_by_column.clear();
-            global_ctx->inverted_indexes_to_merge.clear();
+            global_ctx->text_indexes_to_merge.clear();
 
             auto all_skip_indexes = global_ctx->metadata_snapshot->getSecondaryIndices();
 
@@ -695,7 +695,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 if (!exclude_index_names.contains(index.name))
                 {
                     if (index.type == "text")
-                        global_ctx->inverted_indexes_to_merge.push_back(index);
+                        global_ctx->text_indexes_to_merge.push_back(index);
                     else
                         global_ctx->merging_skip_indexes.push_back(index);
                 }
@@ -864,7 +864,7 @@ MergeTask::StageRuntimeContextPtr MergeTask::VerticalMergeStage::getContextForNe
         ProfileEvents::increment(ProfileEvents::MergeVerticalStageExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
     }
 
-    auto new_ctx = std::make_shared<MergeInvertedIndexRuntimeContext>();
+    auto new_ctx = std::make_shared<MergeTextIndexRuntimeContext>();
     new_ctx->need_sync = ctx->need_sync;
     ctx.reset();
     return new_ctx;
@@ -1274,7 +1274,7 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
         /// If merge may reduce rows, we will rebuild index
         /// for the resulting part in the end of the pipeline.
         if (!global_ctx->merge_may_reduce_rows)
-            addBuildInvertedIndexesStep(*plan_for_part, *global_ctx->future_part->parts[part_num], global_ctx);
+            addBuildTextIndexesStep(*plan_for_part, *global_ctx->future_part->parts[part_num], global_ctx);
 
         plans.emplace_back(std::move(plan_for_part));
         part_starting_offset += global_ctx->future_part->parts[part_num]->rows_count;
@@ -1339,7 +1339,7 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
 
     /// If merge may reduce rows, rebuild text indexes for the resulting part.
     if (global_ctx->merge_may_reduce_rows)
-        addBuildInvertedIndexesStep(merge_column_query_plan, *global_ctx->new_data_part, global_ctx);
+        addBuildTextIndexesStep(merge_column_query_plan, *global_ctx->new_data_part, global_ctx);
 
     QueryPlanOptimizationSettings optimization_settings(global_ctx->context);
     auto pipeline_settings = BuildQueryPipelineSettings(global_ctx->context);
@@ -1656,13 +1656,13 @@ void MergeTask::VerticalMergeStage::cancel() noexcept
 
 }
 
-MergeTask::StageRuntimeContextPtr MergeTask::MergeInvertedIndexStage::getContextForNextStage()
+MergeTask::StageRuntimeContextPtr MergeTask::MergeTextIndexStage::getContextForNextStage()
 {
     /// Do not increment for projection stage because time is already accounted in main task.
     if (global_ctx->parent_part == nullptr)
     {
         ProfileEvents::increment(ProfileEvents::MergeExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
-        ProfileEvents::increment(ProfileEvents::MergeInvertedIndexStageExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+        ProfileEvents::increment(ProfileEvents::MergeTextIndexStageExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
     }
 
     auto new_ctx = std::make_shared<MergeProjectionsRuntimeContext>();
@@ -1671,7 +1671,7 @@ MergeTask::StageRuntimeContextPtr MergeTask::MergeInvertedIndexStage::getContext
     return new_ctx;
 }
 
-bool MergeTask::MergeInvertedIndexStage::execute()
+bool MergeTask::MergeTextIndexStage::execute()
 {
     chassert(subtasks_iterator != subtasks.end());
 
@@ -1687,18 +1687,18 @@ bool MergeTask::MergeInvertedIndexStage::execute()
     return subtasks_iterator != subtasks.end();
 }
 
-void MergeTask::MergeInvertedIndexStage::cancel() noexcept
+void MergeTask::MergeTextIndexStage::cancel() noexcept
 {
     for (auto & task : ctx->merge_tasks)
         task->cancel();
 }
 
-bool MergeTask::MergeInvertedIndexStage::prepare() const
+bool MergeTask::MergeTextIndexStage::prepare() const
 {
     if (global_ctx->parent_part)
         return false;
 
-    if (global_ctx->inverted_indexes_to_merge.empty())
+    if (global_ctx->text_indexes_to_merge.empty())
         return false;
 
     if (!global_ctx->merge_may_reduce_rows)
@@ -1710,23 +1710,23 @@ bool MergeTask::MergeInvertedIndexStage::prepare() const
         global_ctx->merged_part_offsets->flush();
     }
 
-    if (global_ctx->temporary_inverted_index_storage)
-        global_ctx->temporary_inverted_index_storage->commitTransaction();
+    if (global_ctx->temporary_text_index_storage)
+        global_ctx->temporary_text_index_storage->commitTransaction();
 
     auto reader_settings = MergeTreeReaderSettings::createForMergeMutation(global_ctx->context->getReadSettings());
 
-    for (size_t index_idx = 0; index_idx < global_ctx->inverted_indexes_to_merge.size(); ++index_idx)
+    for (size_t index_idx = 0; index_idx < global_ctx->text_indexes_to_merge.size(); ++index_idx)
     {
-        const auto & index = global_ctx->inverted_indexes_to_merge[index_idx];
+        const auto & index = global_ctx->text_indexes_to_merge[index_idx];
         auto index_ptr = MergeTreeIndexFactory::instance().get(index);
-        std::vector<InvertedIndexSegment> segments;
+        std::vector<TextIndexSegment> segments;
 
         if (global_ctx->merge_may_reduce_rows)
         {
             /// Text index was built for the resulting part.
-            auto it = global_ctx->build_inverted_index_transforms.find(global_ctx->new_data_part->name);
-            if (it == global_ctx->build_inverted_index_transforms.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Build inverted index transform not found for part {}", global_ctx->new_data_part->name);
+            auto it = global_ctx->build_text_index_transforms.find(global_ctx->new_data_part->name);
+            if (it == global_ctx->build_text_index_transforms.end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Build text index transform not found for part {}", global_ctx->new_data_part->name);
 
             segments = it->second->getSegments(index_idx, 0);
         }
@@ -1744,10 +1744,10 @@ bool MergeTask::MergeInvertedIndexStage::prepare() const
                 else
                 {
                     /// Otherwise, it should be materialized on merge.
-                    /// Take the segments from the build inverted index transform.
-                    auto it = global_ctx->build_inverted_index_transforms.find(part->name);
-                    if (it == global_ctx->build_inverted_index_transforms.end())
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Build inverted index transform not found for part {}", part->name);
+                    /// Take the segments from the build text index transform.
+                    auto it = global_ctx->build_text_index_transforms.find(part->name);
+                    if (it == global_ctx->build_text_index_transforms.end())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Build text index transform not found for part {}", part->name);
 
                     auto part_segments = it->second->getSegments(index_idx, part_idx);
                     std::move(part_segments.begin(), part_segments.end(), std::back_inserter(segments));
@@ -1755,7 +1755,7 @@ bool MergeTask::MergeInvertedIndexStage::prepare() const
             }
         }
 
-        auto task = std::make_unique<MergeInvertedIndexesTask>(
+        auto task = std::make_unique<MergeTextIndexesTask>(
             std::move(segments),
             global_ctx->new_data_part,
             index_ptr,
@@ -1769,7 +1769,7 @@ bool MergeTask::MergeInvertedIndexStage::prepare() const
     return false;
 }
 
-bool MergeTask::MergeInvertedIndexStage::execute() const
+bool MergeTask::MergeTextIndexStage::execute() const
 {
     if (global_ctx->parent_part)
         return false;
@@ -1786,7 +1786,7 @@ bool MergeTask::MergeInvertedIndexStage::execute() const
     return !ctx->merge_tasks.empty();
 }
 
-bool MergeTask::MergeInvertedIndexStage::finalize() const
+bool MergeTask::MergeTextIndexStage::finalize() const
 {
     if (global_ctx->parent_part)
         return false;
@@ -1794,8 +1794,8 @@ bool MergeTask::MergeInvertedIndexStage::finalize() const
     if (global_ctx->merged_part_offsets && global_ctx->projections_to_merge.empty())
         global_ctx->merged_part_offsets->clear();
 
-    if (global_ctx->temporary_inverted_index_storage)
-        global_ctx->temporary_inverted_index_storage->removeRecursive();
+    if (global_ctx->temporary_text_index_storage)
+        global_ctx->temporary_text_index_storage->removeRecursive();
 
     return false;
 }
@@ -2128,10 +2128,10 @@ private:
     PreparedSets::Subqueries subqueries_for_sets;
 };
 
-class BuildInvertedIndexStep : public ITransformingStep
+class BuildTextIndexStep : public ITransformingStep
 {
 public:
-    BuildInvertedIndexStep(SharedHeader header_, std::shared_ptr<BuildInvertedIndexTransform> transform_)
+    BuildTextIndexStep(SharedHeader header_, std::shared_ptr<BuildTextIndexTransform> transform_)
         : ITransformingStep(header_, header_, getTraits())
         , transform(std::move(transform_))
     {
@@ -2147,7 +2147,7 @@ public:
         output_header = input_headers.front();
     }
 
-    String getName() const override { return "BuildInvertedIndex"; }
+    String getName() const override { return "BuildTextIndex"; }
 
 private:
     static Traits getTraits()
@@ -2165,22 +2165,22 @@ private:
         };
     }
 
-    std::shared_ptr<BuildInvertedIndexTransform> transform;
+    std::shared_ptr<BuildTextIndexTransform> transform;
 };
 
-void MergeTask::addBuildInvertedIndexesStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx)
+void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx)
 {
     const auto & header = plan.getCurrentHeader();
     auto read_column_names = header->getNamesAndTypesList().getNameSet();
-    auto inverted_indexes_to_build = getInvertedIndexesToBuildMerge(global_ctx->inverted_indexes_to_merge, read_column_names, data_part, global_ctx->merge_may_reduce_rows);
+    auto text_indexes_to_build = getTextIndexesToBuildMerge(global_ctx->text_indexes_to_merge, read_column_names, data_part, global_ctx->merge_may_reduce_rows);
 
-    if (inverted_indexes_to_build.empty())
+    if (text_indexes_to_build.empty())
         return;
 
-    if (!global_ctx->temporary_inverted_index_storage)
+    if (!global_ctx->temporary_text_index_storage)
     {
         auto new_part_path = global_ctx->new_data_part->getDataPartStorage().getRelativePath();
-        global_ctx->temporary_inverted_index_storage = createTemporaryInvertedIndexStorage(global_ctx->disk, new_part_path);
+        global_ctx->temporary_text_index_storage = createTemporaryTextIndexStorage(global_ctx->disk, new_part_path);
     }
 
     MergeTreeWriterSettings writer_settings(
@@ -2194,19 +2194,19 @@ void MergeTask::addBuildInvertedIndexesStep(QueryPlan & plan, const IMergeTreeDa
         /*save_primary_index_in_memory=*/ false,
         /*blocks_are_granules_size=*/ false);
 
-    auto transform = std::make_shared<BuildInvertedIndexTransform>(
+    auto transform = std::make_shared<BuildTextIndexTransform>(
         header,
         "tmp_" + data_part.name,
-        std::move(inverted_indexes_to_build),
-        global_ctx->temporary_inverted_index_storage,
+        std::move(text_indexes_to_build),
+        global_ctx->temporary_text_index_storage,
         std::move(writer_settings),
         global_ctx->compression_codec,
         global_ctx->new_data_part->index_granularity_info.mark_type.getFileExtension());
 
-    auto build_inverted_index_step = std::make_unique<BuildInvertedIndexStep>(header, transform);
+    auto build_text_index_step = std::make_unique<BuildTextIndexStep>(header, transform);
     /// Save transform to the context to be able to take segments for merging from it later.
-    global_ctx->build_inverted_index_transforms.emplace(data_part.name, transform);
-    plan.addStep(std::move(build_inverted_index_step));
+    global_ctx->build_text_index_transforms.emplace(data_part.name, transform);
+    plan.addStep(std::move(build_text_index_step));
 }
 
 void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
@@ -2265,7 +2265,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     }
 
     if (!global_ctx->merge_may_reduce_rows
-        && !global_ctx->inverted_indexes_to_merge.empty()
+        && !global_ctx->text_indexes_to_merge.empty()
         && (!global_ctx->merged_part_offsets || !global_ctx->merged_part_offsets->isMappingEnabled()))
     {
         global_ctx->merged_part_offsets = std::make_shared<MergedPartOffsets>(global_ctx->future_part->parts.size(), MergedPartOffsets::MappingMode::Enabled);
@@ -2313,7 +2313,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         /// If merge may reduce rows, we will rebuild index
         /// for the resulting part in the end of the pipeline.
         if (!global_ctx->merge_may_reduce_rows)
-            addBuildInvertedIndexesStep(*plan_for_part, *part, global_ctx);
+            addBuildTextIndexesStep(*plan_for_part, *part, global_ctx);
 
         plans.emplace_back(std::move(plan_for_part));
         part_starting_offset += global_ctx->future_part->parts[i]->rows_count;
@@ -2466,7 +2466,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 
     /// If merge may reduce rows, rebuild text index for the resulting part.
     if (global_ctx->merge_may_reduce_rows)
-        addBuildInvertedIndexesStep(merge_parts_query_plan, *global_ctx->new_data_part, global_ctx);
+        addBuildTextIndexesStep(merge_parts_query_plan, *global_ctx->new_data_part, global_ctx);
 
     {
         QueryPlanOptimizationSettings optimization_settings(global_ctx->context);

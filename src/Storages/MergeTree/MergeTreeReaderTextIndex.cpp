@@ -4,7 +4,7 @@
 #include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
-#include <Storages/MergeTree/InvertedIndexUtils.h>
+#include <Storages/MergeTree/TextIndexUtils.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <Columns/ColumnsNumber.h>
@@ -64,7 +64,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
 
     auto make_stream = [&](const auto & substream)
     {
-        return makeInvertedIndexInputStream(
+        return makeTextIndexInputStream(
             data_part->getDataPartStoragePtr(),
             index.index->getFileName() + substream.suffix,
             substream.extension,
@@ -189,7 +189,7 @@ void MergeTreeReaderTextIndex::initializePostingStreams()
 
     auto make_stream = [&]
     {
-        auto stream = makeInvertedIndexInputStream(
+        auto stream = makeTextIndexInputStream(
             data_part->getDataPartStoragePtr(),
             index.index->getFileName() + substream.suffix,
             substream.extension,

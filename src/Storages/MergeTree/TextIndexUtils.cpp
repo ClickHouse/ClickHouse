@@ -1,5 +1,5 @@
 #include <Processors/Port.h>
-#include <Storages/MergeTree/InvertedIndexUtils.h>
+#include <Storages/MergeTree/TextIndexUtils.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Compression/CompressionFactory.h>
 #include <Parsers/parseQuery.h>
@@ -89,7 +89,7 @@ void writeMarks(MergeTreeIndexOutputStreams & streams)
 
 }
 
-BuildInvertedIndexTransform::BuildInvertedIndexTransform(
+BuildTextIndexTransform::BuildTextIndexTransform(
     SharedHeader header,
     String index_file_prefix_,
     std::vector<MergeTreeIndexPtr> indexes_,
@@ -113,13 +113,13 @@ BuildInvertedIndexTransform::BuildInvertedIndexTransform(
     }
 }
 
-void BuildInvertedIndexTransform::transform(Chunk & chunk)
+void BuildTextIndexTransform::transform(Chunk & chunk)
 {
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
     aggregate(block);
 }
 
-IProcessor::Status BuildInvertedIndexTransform::prepare()
+IProcessor::Status BuildTextIndexTransform::prepare()
 {
     auto status = ISimpleTransform::prepare();
     if (status == Status::Finished)
@@ -127,7 +127,7 @@ IProcessor::Status BuildInvertedIndexTransform::prepare()
     return status;
 }
 
-void BuildInvertedIndexTransform::aggregate(const Block & block)
+void BuildTextIndexTransform::aggregate(const Block & block)
 {
     /// Threshold for the number of processed tokens to flush the segment.
     /// Calculating used RAM or number of processed unique tokens adds significant overhead,
@@ -146,7 +146,7 @@ void BuildInvertedIndexTransform::aggregate(const Block & block)
     }
 }
 
-void BuildInvertedIndexTransform::finalize()
+void BuildTextIndexTransform::finalize()
 {
     for (size_t i = 0; i < indexes.size(); ++i)
     {
@@ -155,9 +155,9 @@ void BuildInvertedIndexTransform::finalize()
     }
 }
 
-std::vector<InvertedIndexSegment> BuildInvertedIndexTransform::getSegments(size_t index_idx, size_t part_idx) const
+std::vector<TextIndexSegment> BuildTextIndexTransform::getSegments(size_t index_idx, size_t part_idx) const
 {
-    std::vector<InvertedIndexSegment> segments;
+    std::vector<TextIndexSegment> segments;
 
     for (size_t i = 0; i < segment_numbers[index_idx]; ++i)
     {
@@ -168,7 +168,7 @@ std::vector<InvertedIndexSegment> BuildInvertedIndexTransform::getSegments(size_
     return segments;
 }
 
-void BuildInvertedIndexTransform::writeTemporarySegment(size_t i)
+void BuildTextIndexTransform::writeTemporarySegment(size_t i)
 {
     auto index_file_name = fmt::format("{}_{}_{}", index_file_prefix, segment_numbers[i]++, indexes[i]->getFileName());
     auto index_substreams = indexes[i]->getSubstreams();
@@ -192,8 +192,8 @@ void BuildInvertedIndexTransform::writeTemporarySegment(size_t i)
         stream->finalize();
 }
 
-MergeInvertedIndexesTask::MergeInvertedIndexesTask(
-    std::vector<InvertedIndexSegment> segments_,
+MergeTextIndexesTask::MergeTextIndexesTask(
+    std::vector<TextIndexSegment> segments_,
     MergeTreeMutableDataPartPtr new_data_part_,
     MergeTreeIndexPtr index_ptr_,
     std::shared_ptr<MergedPartOffsets> merged_part_offsets_,
@@ -229,7 +229,7 @@ MergeInvertedIndexesTask::MergeInvertedIndexesTask(
     {
         for (const auto & substream : substreams)
         {
-            auto stream = makeInvertedIndexInputStream(
+            auto stream = makeTextIndexInputStream(
                 segments[i].part_storage,
                 segments[i].index_file_name + substream.suffix,
                 substream.extension,
@@ -241,17 +241,17 @@ MergeInvertedIndexesTask::MergeInvertedIndexesTask(
     }
 }
 
-MergeInvertedIndexesTask::~MergeInvertedIndexesTask() noexcept
+MergeTextIndexesTask::~MergeTextIndexesTask() noexcept
 {
     cancelImpl();
 }
 
-Block MergeInvertedIndexesTask::getHeader() const
+Block MergeTextIndexesTask::getHeader() const
 {
     return Block{ColumnWithTypeAndName{ColumnString::create(), std::make_shared<DataTypeString>(), "token"}};
 }
 
-void MergeInvertedIndexesTask::initializeQueue()
+void MergeTextIndexesTask::initializeQueue()
 {
     SortDescription description;
     description.emplace_back("token");
@@ -263,7 +263,7 @@ void MergeInvertedIndexesTask::initializeQueue()
     }
 }
 
-void MergeInvertedIndexesTask::readDictionaryBlock(size_t source_num)
+void MergeTextIndexesTask::readDictionaryBlock(size_t source_num)
 {
     auto * stream = input_streams[source_num].at(MergeTreeIndexSubstream::Type::TextIndexDictionary);
     auto * data_buffer = stream->getDataBuffer();
@@ -277,7 +277,7 @@ void MergeInvertedIndexesTask::readDictionaryBlock(size_t source_num)
     queue.push(cursors[source_num]);
 }
 
-std::vector<PostingListPtr> MergeInvertedIndexesTask::readPostingLists(size_t source_num)
+std::vector<PostingListPtr> MergeTextIndexesTask::readPostingLists(size_t source_num)
 {
     const auto & token_info = inputs[source_num].token_infos[queue.current()->getRow()];
 
@@ -298,7 +298,7 @@ std::vector<PostingListPtr> MergeInvertedIndexesTask::readPostingLists(size_t so
     return postings;
 }
 
-PostingListPtr MergeInvertedIndexesTask::adjustPartOffsets(size_t source_num, PostingListPtr posting_list)
+PostingListPtr MergeTextIndexesTask::adjustPartOffsets(size_t source_num, PostingListPtr posting_list)
 {
     if (!merged_part_offsets)
         return posting_list;
@@ -313,7 +313,7 @@ PostingListPtr MergeInvertedIndexesTask::adjustPartOffsets(size_t source_num, Po
     return std::make_shared<PostingList>(offsets.size(), offsets.data());
 }
 
-void MergeInvertedIndexesTask::flushPostingList()
+void MergeTextIndexesTask::flushPostingList()
 {
     auto * postings_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPostings);
     PostingListBuilder builder(&output_postings);
@@ -326,7 +326,7 @@ void MergeInvertedIndexesTask::flushPostingList()
     output_postings.clear();
 }
 
-void MergeInvertedIndexesTask::flushDictionaryBlock()
+void MergeTextIndexesTask::flushDictionaryBlock()
 {
     if (output_tokens->size() != output_infos.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Tokens size ({}) doesn't match infos size ({})", output_tokens->size(), output_infos.size());
@@ -366,7 +366,7 @@ void MergeInvertedIndexesTask::flushDictionaryBlock()
     output_infos.clear();
 }
 
-bool MergeInvertedIndexesTask::isNewToken(const SortCursor & cursor) const
+bool MergeTextIndexesTask::isNewToken(const SortCursor & cursor) const
 {
     const auto & input_str = assert_cast<const ColumnString &>(*inputs[cursor->order].tokens);
     const auto & output_str = assert_cast<const ColumnString &>(*output_tokens);
@@ -374,7 +374,7 @@ bool MergeInvertedIndexesTask::isNewToken(const SortCursor & cursor) const
     return output_str.empty() || input_str.compareAt(cursor->getRow(), output_str.size() - 1, output_str, 1) != 0;
 }
 
-bool MergeInvertedIndexesTask::executeStep()
+bool MergeTextIndexesTask::executeStep()
 {
     if (!is_initialized)
     {
@@ -429,7 +429,7 @@ bool MergeInvertedIndexesTask::executeStep()
     return true;
 }
 
-void MergeInvertedIndexesTask::finalize()
+void MergeTextIndexesTask::finalize()
 {
     if (!output_postings.isEmpty())
         flushPostingList();
@@ -445,12 +445,12 @@ void MergeInvertedIndexesTask::finalize()
         stream->finalize();
 }
 
-void MergeInvertedIndexesTask::cancel() noexcept
+void MergeTextIndexesTask::cancel() noexcept
 {
     cancelImpl();
 }
 
-void MergeInvertedIndexesTask::cancelImpl() noexcept
+void MergeTextIndexesTask::cancelImpl() noexcept
 {
     try
     {
@@ -463,15 +463,15 @@ void MergeInvertedIndexesTask::cancelImpl() noexcept
     }
 }
 
-void MergeInvertedIndexesTask::addToChecksums(MergeTreeDataPartChecksums & checksums)
+void MergeTextIndexesTask::addToChecksums(MergeTreeDataPartChecksums & checksums)
 {
     for (const auto & [type, stream] : output_streams)
         stream->addToChecksums(checksums, MergeTreeIndexSubstream::isCompressed(type));
 }
 
-MutableDataPartStoragePtr createTemporaryInvertedIndexStorage(const DiskPtr & disk, const String & part_relative_path)
+MutableDataPartStoragePtr createTemporaryTextIndexStorage(const DiskPtr & disk, const String & part_relative_path)
 {
-    static constexpr const char * temp_part_dir = "inverted_index_tmp";
+    static constexpr const char * temp_part_dir = "text_index_tmp";
     auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_relative_path + "_" + temp_part_dir, disk, 0);
     auto storage = std::make_shared<DataPartStorageOnDiskFull>(volume, part_relative_path, temp_part_dir);
     storage->beginTransaction();
@@ -479,7 +479,7 @@ MutableDataPartStoragePtr createTemporaryInvertedIndexStorage(const DiskPtr & di
     return storage;
 }
 
-std::vector<MergeTreeIndexPtr> getInvertedIndexesToBuildMerge(
+std::vector<MergeTreeIndexPtr> getTextIndexesToBuildMerge(
     const IndicesDescription & indices_description,
     const NameSet & read_column_names,
     const IMergeTreeDataPart & data_part,
@@ -490,7 +490,7 @@ std::vector<MergeTreeIndexPtr> getInvertedIndexesToBuildMerge(
     for (const auto & index : indices_description)
     {
         if (index.column_names.size() != 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Inverted index must have one input column, got {}", index.column_names.size());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index must have one input column, got {}", index.column_names.size());
 
         if (!read_column_names.contains(index.column_names[0]))
             continue;
@@ -505,7 +505,7 @@ std::vector<MergeTreeIndexPtr> getInvertedIndexesToBuildMerge(
     return indexes;
 }
 
-std::unique_ptr<MergeTreeReaderStream> makeInvertedIndexInputStream(
+std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     DataPartStoragePtr data_part_storage,
     const String & stream_name,
     const String & extension,

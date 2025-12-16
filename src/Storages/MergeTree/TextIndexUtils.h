@@ -11,11 +11,11 @@
 namespace DB
 {
 
-/// A segment of inverted index.
+/// A segment of the text index.
 /// Created during materialization of text index.
-struct InvertedIndexSegment
+struct TextIndexSegment
 {
-    InvertedIndexSegment(DataPartStoragePtr part_storage_, String index_file_name_, size_t part_index_)
+    TextIndexSegment(DataPartStoragePtr part_storage_, String index_file_name_, size_t part_index_)
         : part_storage(std::move(part_storage_))
         , index_file_name(std::move(index_file_name_))
         , part_index(part_index_)
@@ -30,10 +30,10 @@ struct InvertedIndexSegment
 /// Transform that builds text indexes and periodically flushes their segments
 /// into temporary storage, when amount of accumulated data reaches some threshold.
 /// Used for materialization of text indexes.
-class BuildInvertedIndexTransform : public ISimpleTransform
+class BuildTextIndexTransform : public ISimpleTransform
 {
 public:
-    BuildInvertedIndexTransform(
+    BuildTextIndexTransform(
         SharedHeader header,
         String index_file_prefix_,
         std::vector<MergeTreeIndexPtr> indexes_,
@@ -42,7 +42,7 @@ public:
         CompressionCodecPtr default_codec_,
         String marks_file_extension_);
 
-    String getName() const override { return "BuildInvertedIndexTransform"; }
+    String getName() const override { return "BuildTextIndexTransform"; }
 
     IProcessor::Status prepare() override;
     void transform(Chunk & chunk) override;
@@ -51,7 +51,7 @@ public:
     void finalize();
 
     /// Returns all segments created by this transform for the given index and part.
-    std::vector<InvertedIndexSegment> getSegments(size_t index_idx, size_t part_idx) const;
+    std::vector<TextIndexSegment> getSegments(size_t index_idx, size_t part_idx) const;
     const std::vector<MergeTreeIndexPtr> & getIndexes() const { return indexes; }
 
 private:
@@ -81,18 +81,18 @@ private:
 /// during the merge of data parts and can be optionally passed to this task.
 /// Currently merges all segments in one stage
 /// TODO: Implement multi-stage merge to reduce the memory usage.
-class MergeInvertedIndexesTask : public MergeProjectionsIndexesTask
+class MergeTextIndexesTask : public MergeProjectionsIndexesTask
 {
 public:
-    MergeInvertedIndexesTask(
-        std::vector<InvertedIndexSegment> segments,
+    MergeTextIndexesTask(
+        std::vector<TextIndexSegment> segments,
         MergeTreeMutableDataPartPtr new_data_part_,
         MergeTreeIndexPtr index_ptr_,
         std::shared_ptr<MergedPartOffsets> merged_part_offsets_,
         const MergeTreeReaderSettings & reader_settings_,
         const MergeTreeWriterSettings & writer_settings_);
 
-    ~MergeInvertedIndexesTask() noexcept override;
+    ~MergeTextIndexesTask() noexcept override;
 
     bool executeStep() override;
     void cancel() noexcept override;
@@ -116,7 +116,7 @@ private:
     void flushPostingList();
     void flushDictionaryBlock();
 
-    std::vector<InvertedIndexSegment> segments;
+    std::vector<TextIndexSegment> segments;
     MergeTreeMutableDataPartPtr new_data_part;
     MergeTreeIndexPtr index_ptr;
     MergeTreeIndexTextParams params;
@@ -149,17 +149,17 @@ private:
     bool is_initialized = false;
 };
 
-using MergeInvertedIndexesTaskPtr = std::unique_ptr<MergeInvertedIndexesTask>;
+using MergeTextIndexesTaskPtr = std::unique_ptr<MergeTextIndexesTask>;
 
-MutableDataPartStoragePtr createTemporaryInvertedIndexStorage(const DiskPtr & disk, const String & part_relative_path);
+MutableDataPartStoragePtr createTemporaryTextIndexStorage(const DiskPtr & disk, const String & part_relative_path);
 
-std::vector<MergeTreeIndexPtr> getInvertedIndexesToBuildMerge(
+std::vector<MergeTreeIndexPtr> getTextIndexesToBuildMerge(
     const IndicesDescription & indices_description,
     const NameSet & read_column_names,
     const IMergeTreeDataPart & data_part,
     bool merge_may_reduce_rows);
 
-std::unique_ptr<MergeTreeReaderStream> makeInvertedIndexInputStream(
+std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     DataPartStoragePtr data_part_storage,
     const String & stream_name,
     const String & extension,

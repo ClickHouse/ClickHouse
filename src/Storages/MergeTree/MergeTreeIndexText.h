@@ -375,7 +375,7 @@ public:
 
     bool supportsReadingOnParallelReplicas() const override { return true; }
     MergeTreeIndexTextParams getParams() const { return params; }
-    bool isInvertedIndex() const override { return true; }
+    bool isTextIndex() const override { return true; }
 
     MergeTreeIndexSubstreams getSubstreams() const override;
     MergeTreeIndexFormat getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const override;

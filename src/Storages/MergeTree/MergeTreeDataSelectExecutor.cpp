@@ -2006,7 +2006,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         return nullptr;
     };
 
-    if (index_helper->isInvertedIndex())
+    if (index_helper->isTextIndex())
     {
         MergeTreeIndexGranulePtr granule;
         reader.read(0, condition.get(), granule);

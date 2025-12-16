@@ -34,7 +34,7 @@ namespace ProfileEvents
 {
     extern const Event MergeHorizontalStageTotalMilliseconds;
     extern const Event MergeVerticalStageTotalMilliseconds;
-    extern const Event MergeInvertedIndexStageTotalMilliseconds;
+    extern const Event MergeTextIndexStageTotalMilliseconds;
     extern const Event MergeProjectionStageTotalMilliseconds;
 }
 
@@ -48,11 +48,11 @@ class RowsSourcesTemporaryFile;
 class MergedPartOffsets;
 using MergedPartOffsetsPtr = std::shared_ptr<MergedPartOffsets>;
 
-class MergeInvertedIndexesTask;
-using MergeInvertedIndexesTaskPtr = std::unique_ptr<MergeInvertedIndexesTask>;
+class MergeTextIndexesTask;
+using MergeTextIndexesTaskPtr = std::unique_ptr<MergeTextIndexesTask>;
 
-class BuildInvertedIndexTransform;
-using BuildInvertedIndexTransformPtr = std::shared_ptr<BuildInvertedIndexTransform>;
+class BuildTextIndexTransform;
+using BuildTextIndexTransformPtr = std::shared_ptr<BuildTextIndexTransform>;
 
 /**
  * Overview of the merge algorithm
@@ -217,9 +217,9 @@ private:
         IndicesDescription merging_skip_indexes;
         std::unordered_map<String, IndicesDescription> skip_indexes_by_column;
 
-        IndicesDescription inverted_indexes_to_merge;
-        MutableDataPartStoragePtr temporary_inverted_index_storage;
-        std::unordered_map<String, BuildInvertedIndexTransformPtr> build_inverted_index_transforms;
+        IndicesDescription text_indexes_to_merge;
+        MutableDataPartStoragePtr temporary_text_index_storage;
+        std::unordered_map<String, BuildTextIndexTransformPtr> build_text_index_transforms;
 
         MergeAlgorithm chosen_merge_algorithm{MergeAlgorithm::Undecided};
 
@@ -431,45 +431,45 @@ private:
         GlobalRuntimeContextPtr global_ctx;
     };
 
-    struct MergeInvertedIndexRuntimeContext : IStageRuntimeContext
+    struct MergeTextIndexRuntimeContext : IStageRuntimeContext
     {
         bool need_sync{false};
         UInt64 elapsed_execute_ns{0};
-        std::vector<MergeInvertedIndexesTaskPtr> merge_tasks;
+        std::vector<MergeTextIndexesTaskPtr> merge_tasks;
     };
 
-    using MergeInvertedIndexRuntimeContextPtr = std::shared_ptr<MergeInvertedIndexRuntimeContext>;
+    using MergeTextIndexRuntimeContextPtr = std::shared_ptr<MergeTextIndexRuntimeContext>;
 
-    struct MergeInvertedIndexStage : IStage
+    struct MergeTextIndexStage : IStage
     {
         bool execute() override;
         void cancel() noexcept override;
 
         void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) override
         {
-            ctx = static_pointer_cast<MergeInvertedIndexRuntimeContext>(local);
+            ctx = static_pointer_cast<MergeTextIndexRuntimeContext>(local);
             global_ctx = static_pointer_cast<GlobalRuntimeContext>(global);
         }
 
         StageRuntimeContextPtr getContextForNextStage() override;
-        ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeInvertedIndexStageTotalMilliseconds; }
+        ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeTextIndexStageTotalMilliseconds; }
 
         bool prepare() const;
         bool execute() const;
         bool finalize() const;
 
         /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
-        using MergeInvertedIndexStageSubtasks = std::array<bool(MergeInvertedIndexStage::*)()const, 3>;
+        using MergeTextIndexStageSubtasks = std::array<bool(MergeTextIndexStage::*)()const, 3>;
 
-        const MergeInvertedIndexStageSubtasks subtasks
+        const MergeTextIndexStageSubtasks subtasks
         {
-            &MergeInvertedIndexStage::prepare,
-            &MergeInvertedIndexStage::execute,
-            &MergeInvertedIndexStage::finalize,
+            &MergeTextIndexStage::prepare,
+            &MergeTextIndexStage::execute,
+            &MergeTextIndexStage::finalize,
         };
 
-        MergeInvertedIndexStageSubtasks::const_iterator subtasks_iterator = subtasks.begin();
-        MergeInvertedIndexRuntimeContextPtr ctx;
+        MergeTextIndexStageSubtasks::const_iterator subtasks_iterator = subtasks.begin();
+        MergeTextIndexRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;
     };
 
@@ -534,7 +534,7 @@ private:
     {
         std::make_shared<ExecuteAndFinalizeHorizontalPart>(),
         std::make_shared<VerticalMergeStage>(),
-        std::make_shared<MergeInvertedIndexStage>(),
+        std::make_shared<MergeTextIndexStage>(),
         std::make_shared<MergeProjectionsStage>()
     };
 
@@ -544,7 +544,7 @@ private:
     static bool enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx);
     static void addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type);
     static bool isVerticalLightweightDelete(const GlobalRuntimeContext & global_ctx);
-    static void addBuildInvertedIndexesStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);
+    static void addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);
 };
 
 /// FIXME

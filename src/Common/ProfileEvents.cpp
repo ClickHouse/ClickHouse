@@ -396,8 +396,8 @@
     M(MergeHorizontalStageExecuteMilliseconds, "Total busy time spent for execution of horizontal stage of background merges", ValueType::Milliseconds) \
     M(MergeVerticalStageTotalMilliseconds, "Total time spent for vertical stage of background merges", ValueType::Milliseconds) \
     M(MergeVerticalStageExecuteMilliseconds, "Total busy time spent for execution of vertical stage of background merges", ValueType::Milliseconds) \
-    M(MergeInvertedIndexStageTotalMilliseconds, "Total time spent for inverted index stage of background merges", ValueType::Milliseconds) \
-    M(MergeInvertedIndexStageExecuteMilliseconds, "Total busy time spent for execution of inverted index stage of background merges", ValueType::Milliseconds) \
+    M(MergeTextIndexStageTotalMilliseconds, "Total time spent for text index stage of background merges", ValueType::Milliseconds) \
+    M(MergeTextIndexStageExecuteMilliseconds, "Total busy time spent for execution of text index stage of background merges", ValueType::Milliseconds) \
     M(MergeProjectionStageTotalMilliseconds, "Total time spent for projection stage of background merges", ValueType::Milliseconds) \
     M(MergeProjectionStageExecuteMilliseconds, "Total busy time spent for execution of projection stage of background merges", ValueType::Milliseconds) \
     M(MergePrewarmStageTotalMilliseconds, "Total time spent for prewarm stage of background merges", ValueType::Milliseconds) \
