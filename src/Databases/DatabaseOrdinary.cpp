@@ -37,7 +37,6 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
-#include <Common/AsyncLoader.h>
 #include <Interpreters/TransactionLog.h>
 
 #include <boost/algorithm/string/replace.hpp>

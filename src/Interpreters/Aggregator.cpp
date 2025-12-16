@@ -137,7 +137,7 @@ void updateStatistics(const DB::ManyAggregatedDataVariants & data_variants, cons
     for (size_t i = 0; i < data_variants.size(); ++i)
         sizes[i] = data_variants[i]->size();
     const auto median_size = sizes.begin() + sizes.size() / 2; // not precisely though...
-    ::nth_element(sizes.begin(), median_size, sizes.end());
+    std::nth_element(sizes.begin(), median_size, sizes.end());
     const auto sum_of_sizes = std::accumulate(sizes.begin(), sizes.end(), 0ull);
     DB::getHashTablesStatistics<DB::AggregationEntry>().update({.sum_of_sizes = sum_of_sizes, .median_size = *median_size}, params);
 }
@@ -210,7 +210,8 @@ Aggregator::Params::Params(
     bool optimize_group_by_constant_keys_,
     float min_hit_rate_to_use_consecutive_keys_optimization_,
     const StatsCollectingParams & stats_collecting_params_,
-    bool enable_producing_buckets_out_of_order_in_aggregation_)
+    bool enable_producing_buckets_out_of_order_in_aggregation_,
+    bool serialize_string_with_zero_byte_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
@@ -234,6 +235,7 @@ Aggregator::Params::Params(
     , min_hit_rate_to_use_consecutive_keys_optimization(min_hit_rate_to_use_consecutive_keys_optimization_)
     , stats_collecting_params(stats_collecting_params_)
     , enable_producing_buckets_out_of_order_in_aggregation(enable_producing_buckets_out_of_order_in_aggregation_)
+    , serialize_string_with_zero_byte(serialize_string_with_zero_byte_)
 {
 }
 
@@ -278,7 +280,8 @@ Aggregator::Params::Params(
     bool overflow_row_,
     size_t max_threads_,
     size_t max_block_size_,
-    float min_hit_rate_to_use_consecutive_keys_optimization_)
+    float min_hit_rate_to_use_consecutive_keys_optimization_,
+    bool serialize_string_with_zero_byte_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
@@ -288,6 +291,7 @@ Aggregator::Params::Params(
     , max_block_size(max_block_size_)
     , only_merge(true)
     , min_hit_rate_to_use_consecutive_keys_optimization(min_hit_rate_to_use_consecutive_keys_optimization_)
+    , serialize_string_with_zero_byte(serialize_string_with_zero_byte_)
 {
 }
 
@@ -540,6 +544,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
 
     HashMethodContext::Settings cache_settings;
     cache_settings.max_threads = params.max_threads;
+    cache_settings.serialize_string_with_zero_byte = params.serialize_string_with_zero_byte;
     aggregation_state_cache = AggregatedDataVariants::createCache(method_chosen, cache_settings);
 
 #if USE_EMBEDDED_COMPILER
@@ -721,9 +726,9 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
         {
             /// Pack if possible all the keys along with information about which key values are nulls
             /// into a fixed 16- or 32-byte blob.
-            if (std::tuple_size_v<KeysNullMap<UInt128>> + keys_bytes <= 16)
+            if (std::tuple_size<KeysNullMap<UInt128>>::value + keys_bytes <= 16)
                 return AggregatedDataVariants::Type::nullable_keys128;
-            if (std::tuple_size_v<KeysNullMap<UInt256>> + keys_bytes <= 32)
+            if (std::tuple_size<KeysNullMap<UInt256>>::value + keys_bytes <= 32)
                 return AggregatedDataVariants::Type::nullable_keys256;
         }
 
@@ -1877,45 +1882,6 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
     return block;
 }
 
-template <typename Method>
-void Aggregator::mergeSingleLevelDataImplFixedMap(
-    ManyAggregatedDataVariants & non_empty_data,
-    Arena * arena,
-    const UInt32 worker_id,
-    const UInt32 total_worker,
-    std::atomic<bool> & is_cancelled) const
-{
-    AggregatedDataVariantsPtr & res = non_empty_data[0];
-
-    /// We merge all aggregation results to the first.
-    for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
-    {
-        AggregatedDataVariants & current = *non_empty_data[result_num];
-        ParallelMergeWorker parallel_param{worker_id, total_worker};
-
-#if USE_EMBEDDED_COMPILER
-        if (compiled_aggregate_functions_holder)
-        {
-            mergeDataImpl<Method>(
-                getDataVariant<Method>(*res).data,
-                    getDataVariant<Method>(current).data,
-                    arena, true,
-                    false, /*prefetch*/
-                is_cancelled, &parallel_param);
-        }
-        else
-#endif
-        {
-            mergeDataImpl<Method>(
-                getDataVariant<Method>(*res).data,
-                    getDataVariant<Method>(current).data,
-                    arena, false,
-                    false, /*prefetch*/
-                is_cancelled, &parallel_param);
-        }
-    }
-}
-
 Block Aggregator::convertOneBucketToBlock(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const
 {
     const auto method = variants.type;
@@ -2014,52 +1980,6 @@ bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
 }
 
 
-void Aggregator::ensureLimitsFixedMapMerge(AggregatedDataVariantsPtr data) const
-{
-    if (!data || data->empty())
-        return;
-
-    bool no_more_keys = false;
-    /// We want to respect the limits of `max_rows_to_group_by`, depending on `group_by_overflow_mode`:
-    /// - throw mode: this is the same, exception would be thrown.
-    /// - break/any mode: do nothing for a few reasons.
-    /// `max_rows_to_group_by` is to limit the memory usage, however `execute` and `merge` we already
-    /// finishes the majority of the work. Additionally during execution phase, we already check the
-    /// limit. Last this is for fixed hashmap, the number of rows are bounded.
-    if (data->type == AggregatedDataVariants::Type::key8)
-        checkLimits(data->key8->data.size(), no_more_keys);
-    else if (data->type == AggregatedDataVariants::Type::key16)
-        checkLimits(data->key16->data.size(), no_more_keys);
-    else
-        throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "ensureLimitsFixedMapMerge only supports key8 and key16 variants.");
-}
-
-
-bool Aggregator::isTypeFixedSize(const ManyAggregatedDataVariants & data_variants) const
-{
-    if (data_variants.empty())
-        return false;
-
-    const auto & first = data_variants.at(0);
-    return first->type == AggregatedDataVariants::Type::key8 ||
-           first->type == AggregatedDataVariants::Type::key16;
-}
-
-
-void Aggregator::disableMinMaxOptimizationForFixedHashMaps(ManyAggregatedDataVariants & data_variants) const
-{
-    /// We have to disable min max optimization for the first variant because when emplace new values, multiple threads could
-    /// update the min and max values at the same time, causing race condition.
-    auto & first = data_variants.at(0);
-    if (first->type == AggregatedDataVariants::Type::key8)
-        first->key8->data.disableMinMaxOptimization();
-    else if (first->type == AggregatedDataVariants::Type::key16)
-        first->key16->data.disableMinMaxOptimization();
-    else
-        throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "disableMinMaxOptimizationForFixedHashMaps only supports key8 and key16 variants.");
-}
-
-
 template <typename Method, typename Table>
 Aggregator::ConvertToBlockResVariant
 Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final,size_t rows, bool return_single_block) const
@@ -2142,7 +2062,9 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
                 init_out_cols();
 
             const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
-            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref);
+            IColumn::SerializationSettings serialization_settings{
+                .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
+            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref, &serialization_settings);
 
             if constexpr (is_final)
             {
@@ -2408,7 +2330,9 @@ Aggregator::ConvertToBlockResVariant Aggregator::convertToBlockImplFinal(
                 init_out_cols();
 
             const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
-            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref);
+            IColumn::SerializationSettings serialization_settings{
+                .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
+            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref, &serialization_settings);
             places.emplace_back(mapped);
 
             /// Mark the cell as destroyed so it will not be destroyed in destructor.
@@ -2481,7 +2405,9 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
                 init_out_cols();
 
             const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
-            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref);
+            IColumn::SerializationSettings serialization_settings{
+                .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
+            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref, &serialization_settings);
 
             /// reserved, so push_back does not throw exceptions
             for (size_t i = 0; i < params.aggregates_size; ++i)
@@ -2676,7 +2602,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(AggregatedDataVariants &
         }
     };
 
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::AGGREGATOR_POOL);
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "AggregatorPool");
     try
     {
         for (size_t thread_id = 0; thread_id < max_threads; ++thread_id)
@@ -2808,8 +2734,7 @@ static void NO_INLINE mergeDataNullKeySimpleCount(Table & table_dst, Table & tab
 
 template <typename Method, typename Table>
 void NO_INLINE Aggregator::mergeDataImpl(
-    Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions [[maybe_unused]],
-    bool prefetch, std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker) const
+    Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions [[maybe_unused]], bool prefetch, std::atomic<bool> & is_cancelled) const
 {
     if (is_simple_count)
     {
@@ -2824,20 +2749,11 @@ void NO_INLINE Aggregator::mergeDataImpl(
                 getInlineCountState(dst) += getInlineCountState(src);
         };
 
-        if (parallel_worker)
-        {
-            if constexpr (std::is_same_v<Method, typename decltype(AggregatedDataVariants::key8)::element_type> ||
-                std::is_same_v<Method, typename decltype(AggregatedDataVariants::key16)::element_type>)
-                table_src.mergeToViaIndexFilter(table_dst, std::move(merge), parallel_worker->worker_id, parallel_worker->total_worker);
-        }
+        if (prefetch)
+            table_src.template mergeToViaEmplace<decltype(merge), true>(table_dst, std::move(merge));
         else
-        {
-            if (prefetch)
-                table_src.template mergeToViaEmplace<decltype(merge), true>(table_dst, std::move(merge));
-            else
-                table_src.template mergeToViaEmplace<decltype(merge), false>(table_dst, std::move(merge));
-            table_src.clearAndShrink();
-        }
+            table_src.template mergeToViaEmplace<decltype(merge), false>(table_dst, std::move(merge));
+        table_src.clearAndShrink();
         return;
     }
 
@@ -2862,20 +2778,11 @@ void NO_INLINE Aggregator::mergeDataImpl(
         src = nullptr;
     };
 
-    if (parallel_worker)
-    {
-        if constexpr (std::is_same_v<Method, typename decltype(AggregatedDataVariants::key8)::element_type> ||
-            std::is_same_v<Method, typename decltype(AggregatedDataVariants::key16)::element_type>)
-            table_src.mergeToViaIndexFilter(table_dst, std::move(merge), parallel_worker->worker_id, parallel_worker->total_worker);
-    }
+    if (prefetch)
+        table_src.template mergeToViaEmplace<decltype(merge), true>(table_dst, std::move(merge));
     else
-    {
-        if (prefetch)
-            table_src.template mergeToViaEmplace<decltype(merge), true>(table_dst, std::move(merge));
-        else
-            table_src.template mergeToViaEmplace<decltype(merge), false>(table_dst, std::move(merge));
-        table_src.clearAndShrink();
-    }
+        table_src.template mergeToViaEmplace<decltype(merge), false>(table_dst, std::move(merge));
+    table_src.clearAndShrink();
 
 #if USE_EMBEDDED_COMPILER
     if (use_compiled_functions)
@@ -3060,7 +2967,7 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     const bool prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
         && (getDataVariant<Method>(*res).data.getBufferSizeInBytes() > min_bytes_for_prefetch);
 
-    /// We merge all aggregation results to the first, need to ensure non_empty_data size is greater than 1.
+    /// We merge all aggregation results to the first.
     for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
     {
         if (!checkLimits(res->sizeWithoutOverflowRow(), no_more_keys))
@@ -3109,31 +3016,6 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
         ManyAggregatedDataVariants & non_empty_data, std::atomic<bool> & is_cancelled) const;
     APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
 #undef M
-
-void Aggregator::mergeSingleLevelDataImplFixedMap(
-    ManyAggregatedDataVariants & non_empty_data,
-    Arena * arena,
-    UInt32 worker_id,
-    UInt32 total_worker,
-    std::atomic<bool> & is_cancelled) const
-{
-    if (non_empty_data.empty())
-        return;
-
-    AggregatedDataVariantsPtr & first = non_empty_data[0];
-    if (first->type == AggregatedDataVariants::Type::key8)
-        mergeSingleLevelDataImplFixedMap<decltype(first->key8)::element_type>(non_empty_data, arena, worker_id, total_worker, is_cancelled);
-    else if (first->type == AggregatedDataVariants::Type::key16)
-        mergeSingleLevelDataImplFixedMap<decltype(first->key16)::element_type>(non_empty_data, arena, worker_id, total_worker, is_cancelled);
-    else
-        throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "mergeSingleLevelDataImplFixedMap only supports key8 and key16 variants.");
-}
-
-void Aggregator::resetAggregatorExceptFirst(ManyAggregatedDataVariants & data_variants) const
-{
-    for (size_t i = 1, size = data_variants.size(); i < size; ++i)
-        data_variants[i]->aggregator = nullptr;
-}
 
 template <typename Method>
 void NO_INLINE Aggregator::mergeBucketImpl(
@@ -3653,7 +3535,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
         if (use_thread_pool)
         {
-            ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::AGGREGATOR_POOL);
+            ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "AggregatorPool");
             try
             {
                 for (size_t i = 0; i < params.max_threads; ++i)

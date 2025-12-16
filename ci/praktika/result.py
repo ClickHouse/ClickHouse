@@ -425,11 +425,13 @@ class Result(MetaClasses.Serializable):
         assert self.results, "BUG?"
         for i, result_ in enumerate(self.results):
             if result_.name == result.name:
-                if result_.is_skipped() and result.is_dropped():
+                if result_.is_skipped():
                     # job was skipped in workflow configuration by a user' hook
                     print(
                         f"NOTE: Job [{result.name}] has completed status [{result_.status}] - do not switch status to [{result.status}]"
                     )
+                    if not result.is_dropped():
+                        print(f"ERROR: Unexpected new result status [{result.status}]")
                     continue
                 if drop_nested_results:
                     # self.results[i] = self._filter_out_ok_results(result)
@@ -525,14 +527,15 @@ class Result(MetaClasses.Serializable):
                 f"chmod +x {unit_tests_path}",
                 command,
             ],
+            with_log=with_log,
         )
         is_error = not result.is_ok()
         status, results, info = ResultTranslator.from_gtest()
         result.set_status(status).set_results(results).set_info(info)
-        if is_error and result.is_ok():
+        if is_error:
             # test cases can be OK but gtest binary run failed, for instance due to sanitizer error
             result.set_info("gtest binary run has non-zero exit code - see logs")
-            result.set_status(Result.Status.ERROR)
+            result.set_status(Result.Status.FAILED)
         return result
 
     @classmethod
@@ -596,25 +599,16 @@ class Result(MetaClasses.Serializable):
                     # If command is a Python function, call it with provided arguments
                     if with_info or with_info_on_failure:
                         buffer = io.StringIO()
-                    else:
-                        buffer = "stdout"
-                    try:
                         with Utils.Tee(stdout=buffer):
                             result = command_(*command_args, **command_kwargs)
-                    except Exception as e:
-                        result = False
-                        info_lines.extend(
-                            [
-                                f"Command [{command_}] failed with exception [{e}]:",
-                                *traceback.format_exc().splitlines(),
-                            ]
-                        )
+                    else:
+                        result = command_(*command_args, **command_kwargs)
                     res = result if isinstance(result, bool) else not bool(result)
                     if (with_info_on_failure and not res) or with_info:
                         if isinstance(result, bool):
-                            info_lines.extend(buffer.getvalue().splitlines())
+                            info_lines = buffer.getvalue().splitlines()
                         else:
-                            info_lines.extend(str(result).splitlines())
+                            info_lines = str(result).splitlines()
                 else:
                     # Run shell command in a specified directory with logging and verbosity
                     exit_code = Shell.run(
@@ -671,47 +665,33 @@ class Result(MetaClasses.Serializable):
         else:
             sys.exit(0)
 
-    def to_stdout_formatted(self, indent="", output=""):
-        """
-        Format the result and its sub-results as a human-readable string for stdout output.
-
-        Args:
-            indent: Current indentation level (used for nested results)
-            output: Accumulated output string (used for recursive calls)
-
-        Returns:
-            Formatted string representation of the result
-        """
-        add_frame = not output
+    def to_stdout_formatted(self, indent="", res=""):
+        add_frame = not res
         sub_indent = indent + "  "
-        MAX_INFO_LINES_CNT = 100
 
         if add_frame:
-            output = indent + "+" * 80 + "\n"
-
+            res = "+" * 80 + "\n"
         if add_frame or not self.is_ok():
-            output += f"{indent}{self.status} [{self.name}]\n"
+            res += f"{indent}{self.status} [{self.name}]\n"
             info_lines = self.info.splitlines()
-
-            # Truncate info lines if too many, showing only the last N lines
-            if len(info_lines) > MAX_INFO_LINES_CNT:
-                truncated_count = len(info_lines) - MAX_INFO_LINES_CNT
-                info_lines = [
-                    f"~~~~~ truncated {truncated_count} lines ~~~~~"
-                ] + info_lines[-MAX_INFO_LINES_CNT:]
-
+            if len(info_lines) > 30:
+                info_lines = (
+                    info_lines[:10]
+                    + [
+                        f"~~~~~ truncated {len(info_lines) - 20} lines ~~~~~",
+                    ]
+                    + info_lines[-10:]
+                )
             for line in info_lines:
-                output += f"{sub_indent}| {line}\n"
+                res += f"{sub_indent}| {line}\n"
 
-        # Recursively format sub-results if this result is not ok
         if not self.is_ok():
             for sub_result in self.results:
-                output = sub_result.to_stdout_formatted(sub_indent, output)
+                res = sub_result.to_stdout_formatted(sub_indent, res)
 
         if add_frame:
-            output += indent + "+" * 80 + "\n"
-
-        return output
+            res += "+" * 80 + "\n"
+        return res
 
     def get_sub_result_by_name(self, name, recursive=False) -> Optional["Result"]:
         if not name:

@@ -269,10 +269,10 @@ ColumnsDescription ColumnsDescription::fromNamesAndTypes(NamesAndTypes ordinary)
     return result;
 }
 
-ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary, bool with_subcolumns)
+ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary)
 {
     for (auto & elem : ordinary)
-        add(ColumnDescription(std::move(elem.name), std::move(elem.type)), String(), false, with_subcolumns);
+        add(ColumnDescription(std::move(elem.name), std::move(elem.type)));
 }
 
 ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary, NamesAndAliases aliases)

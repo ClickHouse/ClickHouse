@@ -53,22 +53,6 @@ struct UsefulSkipIndexes
     std::vector<std::vector<size_t>> per_part_index_orders;
 };
 
-/// Contains parts each from different projection index
-using ProjectionIndexReadRangesByIndex = std::unordered_map<size_t, RangesInDataParts>;
-
-struct ProjectionIndexReadInfo
-{
-    ProjectionDescriptionRawPtr projection;
-    PrewhereInfoPtr prewhere_info;
-};
-using ProjectionIndexReadInfos = std::vector<ProjectionIndexReadInfo>;
-
-struct ProjectionIndexReadDescription
-{
-    ProjectionIndexReadRangesByIndex read_ranges;
-    ProjectionIndexReadInfos read_infos;
-};
-
 struct MergeTreeIndexBuildContext;
 using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;
 
@@ -154,7 +138,7 @@ public:
     using AnalysisResultPtr = std::shared_ptr<AnalysisResult>;
 
     ReadFromMergeTree(
-        RangesInDataPartsPtr parts_,
+        RangesInDataParts parts_,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot_,
         Names all_column_names_,
         const MergeTreeData & data_,
@@ -221,7 +205,7 @@ public:
     };
 
     static AnalysisResultPtr selectRangesToRead(
-        const RangesInDataParts & parts,
+        RangesInDataParts parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const std::optional<VectorSearchParameters> & vector_search_parameters,
         const StorageMetadataPtr & metadata_snapshot,
@@ -262,7 +246,7 @@ public:
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
 
-    const RangesInDataParts & getParts() const { return analyzed_result_ptr ? analyzed_result_ptr->parts_with_ranges : *prepared_parts; }
+    const RangesInDataParts & getParts() const { return analyzed_result_ptr ? analyzed_result_ptr->parts_with_ranges : prepared_parts; }
     MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot() const { return mutations_snapshot; }
 
     const MergeTreeData & getMergeTreeData() const { return data; }
@@ -289,13 +273,10 @@ public:
     const std::optional<Indexes> & getIndexes() const { return indexes; }
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator() const;
 
-    const ProjectionIndexReadDescription & getProjectionIndexReadDescription() const { return projection_index_read_desc; }
-    ProjectionIndexReadDescription & getProjectionIndexReadDescription() { return projection_index_read_desc; }
-
 private:
     MergeTreeReaderSettings reader_settings;
 
-    RangesInDataPartsPtr prepared_parts;
+    RangesInDataParts prepared_parts;
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot;
 
     Names all_column_names;
@@ -423,8 +404,6 @@ private:
     ExpressionActionsPtr virtual_row_conversion;
 
     std::optional<size_t> number_of_current_replica;
-
-    ProjectionIndexReadDescription projection_index_read_desc;
 };
 
 }

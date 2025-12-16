@@ -40,7 +40,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <base/sleep.h>
-#include <Common/setThreadName.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -481,7 +480,7 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
         = {ColumnWithTypeAndName(part_offset_type->createColumn(), part_offset_type, "_part_offset"),
            ColumnWithTypeAndName(part_type->createColumn(), part_type, "_part")};
 
-    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context);
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample);
     if (!dag)
         return;
 
@@ -509,7 +508,7 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(
         = {ColumnWithTypeAndName(part_offset_type->createColumn(), part_offset_type, "_part_offset"),
            ColumnWithTypeAndName(part_offset_type->createColumn(), part_offset_type, "_part_starting_offset")};
 
-    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context);
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample);
     if (!dag)
         return;
 
@@ -556,7 +555,7 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
         return {};
 
     auto sample = data.getHeaderWithVirtualsForFilter(metadata_snapshot);
-    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context);
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample);
     if (!dag)
         return {};
 
@@ -565,8 +564,8 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
     return VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 }
 
-RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
-    const RangesInDataParts & parts,
+void MergeTreeDataSelectExecutor::filterPartsByPartition(
+    RangesInDataParts & parts,
     const std::optional<PartitionPruner> & partition_pruner,
     const std::optional<KeyCondition> & minmax_idx_condition,
     const std::optional<std::unordered_set<String>> & part_values,
@@ -577,7 +576,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     LoggerPtr log,
     ReadFromMergeTree::IndexStats & index_stats)
 {
-    RangesInDataParts res;
     const Settings & settings = context->getSettingsRef();
     DataTypes minmax_columns_types;
 
@@ -601,7 +599,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
 
     PartFilterCounters part_filter_counters;
     if (query_context->getSettingsRef()[Setting::allow_experimental_query_deduplication])
-        res = selectPartsToReadWithUUIDFilter(
+        selectPartsToReadWithUUIDFilter(
             parts,
             part_values,
             data.getPinnedPartUUIDs(),
@@ -613,7 +611,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
             part_filter_counters,
             log);
     else
-        res = selectPartsToRead(
+        selectPartsToRead(
             parts,
             part_values,
             minmax_idx_condition,
@@ -650,8 +648,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
             .num_parts_after = part_filter_counters.num_parts_after_partition_pruner,
             .num_granules_after = part_filter_counters.num_granules_after_partition_pruner});
     }
-
-    return res;
 }
 
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
@@ -973,7 +969,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 pool.scheduleOrThrow(
                     [&, part_index, thread_group = CurrentThread::getGroup()]
                     {
-                        ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_INDEX);
+                        ThreadGroupSwitcher switcher(thread_group, "MergeTreeIndex");
 
                         process_part(part_index);
                     },
@@ -1284,7 +1280,7 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
 
     std::optional<ReadFromMergeTree::Indexes> indexes;
     return ReadFromMergeTree::selectRangesToRead(
-        parts,
+        std::move(parts),
         mutations_snapshot,
         std::nullopt,
         metadata_snapshot,
@@ -1301,7 +1297,7 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
 }
 
 QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
-    RangesInDataPartsPtr parts,
+    RangesInDataParts parts,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const Names & column_names_to_return,
     const StorageSnapshotPtr & storage_snapshot,
@@ -1320,10 +1316,7 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
         if (merge_tree_select_result_ptr->parts_with_ranges.empty())
             return {};
     }
-    /// If merge_tree_enable_remove_parts_from_snapshot_optimization is true it nukes our list of parts
-    else if (!parts)
-        return {};
-    else if (parts->empty())
+    else if (parts.empty())
         return {};
 
     return std::make_unique<ReadFromMergeTree>(
@@ -1722,11 +1715,17 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                         if (check_in_range(result_exact_range, BoolMask::consider_only_can_be_false).can_be_false)
                         {
                             /// key_condition.matchesExactContinuousRange returned true, but the
-                            /// range doesn't seem to be continuous.
+                            /// range doesn't seem to be continuous. Something's broken.
+                            /// TODO: Remove the #ifndef and always throw after
+                            ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
+#ifndef NDEBUG
                             throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent KeyCondition behavior");
+#endif
                         }
-
-                        exact_ranges->emplace_back(std::move(result_exact_range));
+                        else
+                        {
+                            exact_ranges->emplace_back(std::move(result_exact_range));
+                        }
                     }
                 }
             }
@@ -2029,8 +2028,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
     return res;
 }
 
-RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
-    const RangesInDataParts & parts,
+void MergeTreeDataSelectExecutor::selectPartsToRead(
+    RangesInDataParts & parts,
     const std::optional<std::unordered_set<String>> & part_values,
     const std::optional<KeyCondition> & minmax_idx_condition,
     const DataTypes & minmax_columns_types,
@@ -2039,9 +2038,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
     PartFilterCounters & counters,
     QueryStatusPtr query_status)
 {
-    RangesInDataParts res_parts;
+    RangesInDataParts prev_parts;
+    std::swap(prev_parts, parts);
 
-    for (const auto & prev_part : parts)
+    for (const auto & prev_part : prev_parts)
     {
         const auto & part_or_projection = prev_part.data_part;
 
@@ -2083,13 +2083,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
         counters.num_parts_after_partition_pruner += 1;
         counters.num_granules_after_partition_pruner += num_granules;
 
-        res_parts.push_back(prev_part);
+        parts.push_back(prev_part);
     }
-    return res_parts;
 }
 
-RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
-    const RangesInDataParts & parts,
+void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
+    RangesInDataParts & parts,
     const std::optional<std::unordered_set<String>> & part_values,
     MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
     const std::optional<KeyCondition> & minmax_idx_condition,
@@ -2102,12 +2101,15 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
 {
     /// process_parts prepare parts that have to be read for the query,
     /// returns false if duplicated parts' UUID have been met
-    auto select_parts = [&](const RangesInDataParts & in_parts, RangesInDataParts & selected_parts) -> bool
+    auto select_parts = [&](RangesInDataParts & selected_parts) -> bool
     {
         auto ignored_part_uuids = query_context->getIgnoredPartUUIDs();
         std::unordered_set<UUID> temp_part_uuids;
 
-        for (const auto & prev_part : in_parts)
+        RangesInDataParts prev_parts;
+        std::swap(prev_parts, selected_parts);
+
+        for (const auto & prev_part : prev_parts)
         {
             const auto & part_or_projection = prev_part.data_part;
             const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
@@ -2177,8 +2179,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
     };
 
     /// Process parts that have to be read for a query.
-    RangesInDataParts filtered_parts = {};
-    auto needs_retry = !select_parts(parts, filtered_parts);
+    auto needs_retry = !select_parts(parts);
 
     /// If any duplicated part UUIDs met during the first step, try to ignore them in second pass.
     /// This may happen when `prefer_localhost_replica` is set and "distributed" stage runs in the same process with "remote" stage.
@@ -2188,15 +2189,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
 
         counters = PartFilterCounters();
 
-        auto initial_filtered_parts = filtered_parts;
-        filtered_parts = {};
-
         /// Second attempt didn't help, throw an exception
-        if (!select_parts(initial_filtered_parts, filtered_parts))
+        if (!select_parts(parts))
             throw Exception(ErrorCodes::DUPLICATED_PART_UUIDS, "Found duplicate UUIDs while processing query.");
     }
-
-    return filtered_parts;
 }
 
 }

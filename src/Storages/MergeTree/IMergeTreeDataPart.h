@@ -608,29 +608,25 @@ public:
         const String & column_name,
         const ISerialization::SubstreamPath & substream_path,
         const String & extension,
-        const Checksums & checksums_,
-        const MergeTreeSettingsPtr & settings);
+        const Checksums & checksums_);
 
     static std::optional<String> getStreamNameForColumn(
         const NameAndTypePair & column,
         const ISerialization::SubstreamPath & substream_path,
         const String & extension,
-        const Checksums & checksums_,
-        const MergeTreeSettingsPtr & settings);
+        const Checksums & checksums_);
 
     static std::optional<String> getStreamNameForColumn(
         const String & column_name,
         const ISerialization::SubstreamPath & substream_path,
         const String & extension,
-        const IDataPartStorage & storage_,
-        const MergeTreeSettingsPtr & settings);
+        const IDataPartStorage & storage_);
 
     static std::optional<String> getStreamNameForColumn(
         const NameAndTypePair & column,
         const ISerialization::SubstreamPath & substream_path,
         const String & extension,
-        const IDataPartStorage & storage_,
-        const MergeTreeSettingsPtr & settings);
+        const IDataPartStorage & storage_);
 
     mutable std::atomic<DataPartRemovalState> removal_state = DataPartRemovalState::NOT_ATTEMPTED;
 

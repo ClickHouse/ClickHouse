@@ -51,7 +51,7 @@ struct StorageInMemoryMetadata
     TTLTableDescription table_ttl;
     /// SETTINGS expression. Supported for MergeTree, Buffer, Kafka, RabbitMQ.
     ASTPtr settings_changes;
-    /// SELECT QUERY. Supported for MaterializedView and View.
+    /// SELECT QUERY. Supported for MaterializedView and View (have to support LiveView).
     SelectQueryDescription select;
     /// Materialized view REFRESH parameters.
     ASTPtr refresh;

@@ -11,8 +11,6 @@
 #include <Common/Allocator.h>
 #include <Common/NamePrompter.h>
 
-#include <Processors/Formats/IInputFormat.h>
-
 #include <boost/noncopyable.hpp>
 
 #include <functional>
@@ -98,10 +96,6 @@ private:
             const RowInputFormatParams & params,
             const FormatSettings & settings)>;
 
-    using FileBucketInfoCreator = std::function<FileBucketInfoPtr()>;
-
-    using BucketSplitterCreator = std::function<BucketSplitter()>;
-
     // Incompatible with FileSegmentationEngine.
     using RandomAccessInputCreator = std::function<InputFormatPtr(
         ReadBuffer & buf,
@@ -150,8 +144,6 @@ private:
     {
         String name;
         InputCreator input_creator;
-        FileBucketInfoCreator file_bucket_info_creator;
-        BucketSplitterCreator bucket_splitter_creator;
         RandomAccessInputCreator random_access_input_creator;
         OutputCreator output_creator;
         FileSegmentationEngineCreator file_segmentation_engine_creator;
@@ -295,11 +287,6 @@ public:
     /// Check that format with specified name exists and throw an exception otherwise.
     void checkFormatName(const String & name) const;
     bool exists(const String & name) const;
-
-    FileBucketInfoPtr getFileBucketInfo(const String & format);
-    void registerFileBucketInfo(const String & format, FileBucketInfoCreator bucket_info);
-    void registerSplitter(const String & format, BucketSplitterCreator splitter);
-    BucketSplitter getSplitter(const String & format);
 
 private:
     FormatsDictionary dict;

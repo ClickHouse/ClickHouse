@@ -31,7 +31,7 @@ MergeTreeDataPartsVector collectInitial(const MergeTreeData & data, const MergeT
     MergeTreeDataPartsVector outdated_parts;
 
     {
-        auto lock = data.readLockParts();
+        auto lock = data.lockParts();
         active_parts = data.getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Active}, affordable_kinds, lock);
         outdated_parts = data.getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Outdated}, affordable_kinds, lock);
     }

@@ -402,7 +402,7 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
         if (cache_ptr)
             read_settings.enable_filesystem_cache = false;
 
-        auto source_buf = createReadBuffer(object_info.relative_path_with_metadata, object_storage, local_context, log, read_settings);
+        auto source_buf = createReadBuffer(object_info, object_storage, local_context, log, read_settings);
 
         std::unique_ptr<ReadBuffer> buf;
         if (compression_method != CompressionMethod::None)
@@ -833,6 +833,22 @@ MetadataFileWithInfo getLatestMetadataFileAndVersion(
         {
             metadata_files_with_versions.emplace_back(version, 0, metadata_file_path);
         }
+    }
+
+    if (metadata_files_with_versions.empty())
+    {
+        if (table_uuid.has_value())
+        {
+            throw Exception(
+                ErrorCodes::FILE_DOESNT_EXIST,
+                "The metadata file for Iceberg table with path {} and table UUID {} doesn't exist",
+                configuration_ptr->getPathForRead().path,
+                table_uuid.value());
+        }
+        throw Exception(
+            ErrorCodes::FILE_DOESNT_EXIST,
+            "The metadata file for Iceberg table with path {} doesn't exist",
+            configuration_ptr->getPathForRead().path);
     }
 
     /// Get the latest version of metadata file: v<V>.metadata.json

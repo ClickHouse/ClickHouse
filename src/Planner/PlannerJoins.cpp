@@ -724,7 +724,6 @@ JoinClausesAndActions buildJoinClausesAndActions(
     const JoinNode & join_node,
     const PlannerContextPtr & planner_context)
 {
-    auto context = planner_context->getQueryContext();
     ActionsDAG left_join_actions(left_table_expression_columns);
     ActionsDAG right_join_actions(right_table_expression_columns);
     ColumnsWithTypeAndName result_relation_columns;
@@ -885,10 +884,10 @@ JoinClausesAndActions buildJoinClausesAndActions(
                 }
 
                 if (!left_key_node->result_type->equals(*common_type))
-                    left_key_node = &left_join_actions.addCast(*left_key_node, common_type, {}, context);
+                    left_key_node = &left_join_actions.addCast(*left_key_node, common_type, {});
 
                 if (!is_join_with_special_storage && !right_key_node->result_type->equals(*common_type))
-                    right_key_node = &right_join_actions.addCast(*right_key_node, common_type, {}, context);
+                    right_key_node = &right_join_actions.addCast(*right_key_node, common_type, {});
             }
 
             if (join_clause.isNullsafeCompareKey(i) && isNullableOrLowCardinalityNullable(left_key_node->result_type) && isNullableOrLowCardinalityNullable(right_key_node->result_type))

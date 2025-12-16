@@ -138,24 +138,6 @@ def started_cluster():
             ],
             stay_alive=True,
         )
-        cluster.add_instance(
-            "readonly_instance",
-            with_minio=True,
-            with_azurite=True,
-            with_zookeeper=True,
-            main_configs=[
-                "configs/zookeeper.xml",
-                "configs/s3queue_log.xml",
-                "configs/remote_servers.xml",
-                "configs/disable_streaming.xml",
-                "configs/read_only_mode.xml",
-            ],
-            user_configs=[
-                "configs/users.xml",
-                "configs/enable_keeper_fault_injection.xml",
-            ],
-            stay_alive=True,
-        )
 
         logging.info("Starting cluster...")
         cluster.start()
@@ -868,47 +850,6 @@ def test_disable_streaming(started_cluster):
         time.sleep(1)
 
     assert expected_rows == get_count()
-
-
-def test_disable_insertion_and_mutation(started_cluster):
-    node = started_cluster.instances["readonly_instance"]
-
-    table_name = f"test_disable_insertion_and_mutation_{uuid.uuid4().hex[:8]}"
-    dst_table_name = f"{table_name}_dst"
-    keeper_path = f"/clickhouse/test_{table_name}"
-    files_path = f"{table_name}_data"
-    files_to_generate = 10
-
-    assert (
-            "true"
-            == node.query("SELECT getServerSetting('disable_insertion_and_mutation')").strip()
-    )
-
-    create_table(
-        started_cluster,
-        node,
-        table_name,
-        "ordered",
-        files_path,
-        additional_settings={
-            "processing_threads_num": 1,
-            "keeper_path": keeper_path,
-        },
-    )
-
-    generate_random_files(
-        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
-    )
-
-    create_mv(node, table_name, dst_table_name)
-
-    def get_count():
-        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
-
-    assert node.contains_in_log(
-        f"StorageS3Queue (default.{table_name}): Streaming is disabled, rescheduling next check in 5000 ms"
-    )
-    assert 0 == get_count()
 
 
 def test_shutdown_logs(started_cluster):

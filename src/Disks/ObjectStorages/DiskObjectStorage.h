@@ -202,6 +202,8 @@ public:
 
     bool supportsHardLinks() const override;
 
+    bool supportsPartitionCommand(const PartitionCommand & command) const override;
+
     /// Get structure of object storage this disk works with. Examples:
     /// DiskObjectStorage(S3ObjectStorage)
     /// DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))

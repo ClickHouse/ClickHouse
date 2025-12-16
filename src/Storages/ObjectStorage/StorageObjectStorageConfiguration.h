@@ -6,6 +6,7 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/ICatalog.h>
@@ -14,18 +15,13 @@
 #include <Storages/IStorage.h>
 #include <Common/Exception.h>
 #include <Storages/StorageFactory.h>
-#include <Formats/FormatFilterInfo.h>
-#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 
 namespace DB
 {
 
 class NamedCollection;
 class SinkToStorage;
-class IDataLakeMetadata;
-struct IObjectIterator;
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
-using ObjectIterator = std::shared_ptr<IObjectIterator>;
 
 namespace ErrorCodes
 {
@@ -223,14 +219,11 @@ public:
 
     virtual void checkAlterIsPossible(const AlterCommands & commands)
     {
-        /// Check if any of the alter commands is ADD_INDEX and throw immediately
-        const bool alter_adds_index
-            = std::ranges::any_of(commands, [](const AlterCommand & c) { return c.type == AlterCommand::ADD_INDEX; });
-        if (alter_adds_index)
+        for (const auto & command : commands)
         {
-            const auto & features = StorageFactory::instance().getStorageFeatures(getEngineName());
-            if (!features.supports_skipping_indices)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Engine {} doesn't support skipping indices.", getEngineName());
+            if (!command.isCommentAlter())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
+                    command.type, getEngineName());
         }
     }
 

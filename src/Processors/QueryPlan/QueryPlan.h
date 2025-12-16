@@ -60,8 +60,6 @@ struct ExplainPlanOptions
     bool sorting = false;
     /// Show remote plans for distributed query.
     bool distributed = false;
-    /// Add input headers to step.
-    bool input_headers = false;
 
     SettingsChanges toSettingsChanges() const;
 };

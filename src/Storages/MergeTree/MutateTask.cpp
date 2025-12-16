@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MutateTask.h>
 
+#include <DataTypes/ObjectUtils.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Common/logger_useful.h>
@@ -801,7 +802,7 @@ static std::unordered_map<String, size_t> getStreamCounts(
         {
             auto callback = [&](const ISerialization::SubstreamPath & substream_path)
             {
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", source_part_checksums, data_part->storage.getSettings());
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", source_part_checksums);
                 if (stream_name)
                     ++stream_counts[*stream_name];
             };
@@ -953,7 +954,7 @@ static NameToNameVector collectFilesForRenames(
             {
                 ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
                 {
-                    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(command.column_name, substream_path, ".bin", source_part->checksums, source_part->storage.getSettings());
+                    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(command.column_name, substream_path, ".bin", source_part->checksums);
 
                     /// Delete files if they are no longer shared with another column.
                     if (stream_name && --stream_counts[*stream_name] == 0)
@@ -981,9 +982,7 @@ static NameToNameVector collectFilesForRenames(
 
                 ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
                 {
-                    auto storage_settings = source_part->storage.getSettings();
-
-                    String full_stream_from = ISerialization::getFileNameForStream(command.column_name, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+                    String full_stream_from = ISerialization::getFileNameForStream(command.column_name, substream_path);
                     String full_stream_to = boost::replace_first_copy(full_stream_from, escaped_name_from, escaped_name_to);
 
                     auto stream_from = IMergeTreeDataPart::getStreamNameOrHash(full_stream_from, ".bin", source_part->checksums);
@@ -991,6 +990,7 @@ static NameToNameVector collectFilesForRenames(
                         return;
 
                     String stream_to;
+                    auto storage_settings = source_part->storage.getSettings();
 
                     if ((*storage_settings)[MergeTreeSetting::replace_long_file_name_to_hash] && full_stream_to.size() > (*storage_settings)[MergeTreeSetting::max_file_name_length])
                         stream_to = sipHash128String(full_stream_to);
@@ -1626,7 +1626,7 @@ private:
                         break;
 
                     entries_to_hardlink.insert(it->first);
-                    ctx->existing_indices_stats_checksums.addFile(it->first, it->second);
+                    ctx->existing_indices_stats_checksums.addFile(it->first, it->second.file_size, it->second.file_hash);
                     ++it;
                 }
             }
@@ -1652,7 +1652,7 @@ private:
                 {
                     const auto & checksum = ctx->source_part->checksums.files.at(*stat_filename);
                     entries_to_hardlink.insert(*stat_filename);
-                    ctx->existing_indices_stats_checksums.addFile(*stat_filename, checksum);
+                    ctx->existing_indices_stats_checksums.addFile(*stat_filename, checksum.file_size, checksum.file_hash);
                 }
             }
         }
@@ -1705,7 +1705,7 @@ private:
                     hardlinked_files.insert(it->name());
                     /// Also we need to "rename" checksums to finalize correctly.
                     const auto & check_sum = ctx->source_part->checksums.files.at(it->name());
-                    ctx->existing_indices_stats_checksums.addFile(renamed_stats.at(it->name()), check_sum);
+                    ctx->existing_indices_stats_checksums.addFile(renamed_stats.at(it->name()), check_sum.file_size, check_sum.file_hash);
                 }
             }
             else if (it->isFile())
@@ -2237,6 +2237,8 @@ MutateTask::MutateTask(
     ctx->txn = txn;
     ctx->source_part = ctx->future_part->parts[0];
     ctx->need_prefix = need_prefix_;
+
+    extendObjectColumns(ctx->storage_columns, ctx->storage_snapshot->object_columns, /*with_subcolumns=*/ false);
 }
 
 

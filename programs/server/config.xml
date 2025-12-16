@@ -389,17 +389,6 @@
         </client>
     </openSSL>
 
-    <!-- Let's Encrypt certificate provider configuration -->
-    <!--
-    <acme>
-        <email>someone@example.com</email>
-        <terms_of_service_agreed>true</terms_of_service_agreed>
-        <domains>
-            <domain>example.com</domain>
-        </domains>
-    </acme>
-    -->
-
     <!-- Default root page on http[s] server. -->
     <!--
     <http_server_default_response><![CDATA[Greetings from ClickHouse!]]></http_server_default_response>
@@ -605,7 +594,7 @@
     <!-- NOTE: all files with `tmp` prefix will be removed at server startup -->
     <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 
-    <!-- Enable AuthType plaintext_password and no_password for ACL (1 = allow, 0 = forbid). -->
+    <!-- Disable AuthType plaintext_password and no_password for ACL. -->
     <allow_plaintext_password>1</allow_plaintext_password>
     <allow_no_password>1</allow_no_password>
     <allow_implicit_no_password>1</allow_implicit_no_password>
@@ -904,8 +893,6 @@
          Enabling this option is recommended but will lead to increased startup time for up to a few seconds.
     -->
     <mlock_executable>true</mlock_executable>
-    <!-- But skip it if the memory is low -->
-    <mlock_executable_min_total_memory_amount_bytes>5000000000</mlock_executable_min_total_memory_amount_bytes>
 
     <!-- Reallocate memory for machine code ("text") using huge pages. Highly experimental. -->
     <remap_executable>false</remap_executable>

@@ -15,9 +15,7 @@
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 #include <Storages/SelectQueryInfo.h>
 
-#include <mutex>
 #include <lz4.h>
-#include <arrow/util/crc32.h>
 
 #if USE_SNAPPY
 #include <snappy.h>
@@ -31,7 +29,6 @@ namespace DB::ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int CHECKSUM_DOESNT_MATCH;
 }
 
 namespace DB::Parquet
@@ -180,7 +177,7 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
     prefetcher.readSync(buf.data(), initial_read_size, file_size - initial_read_size);
 
     if (memcmp(buf.data() + initial_read_size - 4, "PAR1", 4) != 0)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Not a Parquet file (wrong magic bytes at the end of file)");
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Not a parquet file (wrong magic bytes at the end of file)");
 
     int32_t metadata_size_i32;
     memcpy(&metadata_size_i32, buf.data() + initial_read_size - 8, 4);
@@ -212,33 +209,6 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
         {
             if (col.meta_data.__isset.dictionary_page_offset && col.meta_data.dictionary_page_offset == 0)
                 col.meta_data.__isset.dictionary_page_offset = false;
-        }
-    }
-
-    /// Consider two quirks:
-    ///  (1) Some versions of spark didn't write dictionary_page_offset even when dictionary page is
-    ///      present. Instead, data_page_offset points to the dictionary page.
-    ///  (2) Old DuckDB versions (<= 0.10.2) wrote incorrect data_page_offset when dictionary is
-    ///      present.
-    /// We work around (1) in initializeDataPage by allowing dictionary page in place of data page.
-    /// We work around (2) here by converting it to case (1):
-    ///   data_page_offset = dictionary_page_offset
-    ///   dictionary_page_offset.reset()
-    /// Note: newer versions of DuckDB include version number in the `created_by` string, so this
-    /// `if` only applies to relatively old versions. Newer versions don't have this bug.
-    if (file_metadata.created_by == "DuckDB")
-    {
-        for (auto & rg : file_metadata.row_groups)
-        {
-            for (auto & col : rg.columns)
-            {
-                if (!col.__isset.offset_index_offset && col.meta_data.__isset.dictionary_page_offset)
-                {
-                    col.meta_data.data_page_offset = col.meta_data.dictionary_page_offset;
-                    col.meta_data.__isset.dictionary_page_offset = false;
-                    col.meta_data.dictionary_page_offset = 0;
-                }
-            }
         }
     }
 
@@ -293,7 +263,7 @@ void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrect
     }
 }
 
-void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read)
+void Reader::prefilterAndInitRowGroups()
 {
     extended_sample_block = *sample_block;
     for (const auto & col : format_filter_info->additional_columns)
@@ -364,7 +334,6 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
 
         RowGroup & row_group = row_groups.emplace_back();
         row_group.meta = meta;
-        row_group.need_to_process = !row_groups_to_read.has_value() || row_groups_to_read->contains(row_group_idx);
         row_group.row_group_idx = row_group_idx;
         row_group.start_global_row_idx = total_rows - size_t(meta->num_rows);
         row_group.columns.resize(primitive_columns.size());
@@ -773,9 +742,8 @@ void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColum
 bool Reader::decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInfo & column_info)
 {
     auto data = prefetcher.getRangeData(column.dictionary_page_prefetch);
-    const char * data_ptr = data.data();
-    const char * data_end = data.data() + data.size();
-    auto [header, page_data] = decodeAndCheckPageHeader(data_ptr, data_end);
+    parq::PageHeader header;
+    size_t header_size = deserializeThriftStruct(header, data.data(), data.size());
 
     if (header.type != parq::PageType::DICTIONARY_PAGE)
     {
@@ -786,7 +754,7 @@ bool Reader::decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInf
         return false;
     }
 
-    decodeDictionaryPageImpl(header, page_data, column, column_info);
+    decodeDictionaryPageImpl(header, data.subspan(header_size), column, column_info);
     return true;
 }
 
@@ -794,6 +762,7 @@ void Reader::decodeDictionaryPageImpl(const parq::PageHeader & header, std::span
 {
     chassert(header.type == parq::PageType::DICTIONARY_PAGE);
 
+    /// TODO [parquet]: Check checksum.
     size_t compressed_page_size = size_t(header.compressed_page_size);
     if (header.compressed_page_size < 0 || compressed_page_size > data.size())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Dictionary page size out of bounds: {} > {}", header.compressed_page_size, data.size());
@@ -1002,7 +971,7 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
                 const auto [start, end] = col.row_ranges_after_column_index[i];
                 chassert(start < end);
                 chassert(!i || start > prev_end);
-                prev_end = end;  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+                prev_end = end;
 
                 events.emplace_back(start, +1);
                 events.emplace_back(end, -1);
@@ -1060,8 +1029,8 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
 
             RowSubgroup & row_subgroup = row_group.subgroups.emplace_back();
             row_subgroup.start_row_idx = substart;
-            row_subgroup.filter.rows_pass = row_group.need_to_process ? subend - substart : 0;
-            row_subgroup.filter.rows_total = subend - substart;
+            row_subgroup.filter.rows_pass = subend - substart;
+            row_subgroup.filter.rows_total = row_subgroup.filter.rows_pass;
 
             row_subgroup.columns.resize(primitive_columns.size());
             row_subgroup.output.resize(extended_sample_block.columns());
@@ -1069,6 +1038,7 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
                 row_subgroup.block_missing_values.init(sample_block->columns());
         }
     }
+
     row_group.intersected_row_ranges_after_column_index = std::move(row_ranges);
 }
 
@@ -1397,7 +1367,7 @@ void Reader::skipToRow(size_t row_idx, ColumnChunk & column, const PrimitiveColu
 
         auto data = prefetcher.getRangeData(page_info.prefetch);
         const char * ptr = data.data();
-        if (!initializeDataPage(ptr, ptr + data.size(), first_row_idx, page_info.end_row_idx, row_idx, column, column_info))
+        if (!initializePage(ptr, ptr + data.size(), first_row_idx, page_info.end_row_idx, row_idx, column, column_info))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Page doesn't contain requested row");
         found_page = true;
     }
@@ -1419,33 +1389,12 @@ void Reader::skipToRow(size_t row_idx, ColumnChunk & column, const PrimitiveColu
         chassert(column.next_page_offset <= all_pages.size());
         const char * ptr = all_pages.data() + column.next_page_offset;
         const char * end = all_pages.data() + all_pages.size();
-        initializeDataPage(ptr, end, page.next_row_idx, /*end_row_idx=*/ std::nullopt, row_idx, column, column_info);
+        initializePage(ptr, end, page.next_row_idx, /*end_row_idx=*/ std::nullopt, row_idx, column, column_info);
         column.next_page_offset = ptr - all_pages.data();
     }
 }
 
-std::tuple<parq::PageHeader, std::span<const char>> Reader::decodeAndCheckPageHeader(const char * & data_ptr, const char * data_end) const
-{
-    parq::PageHeader header;
-    data_ptr += deserializeThriftStruct(header, data_ptr, data_end - data_ptr);
-    size_t compressed_page_size = size_t(header.compressed_page_size);
-    if (header.compressed_page_size < 0 || compressed_page_size > size_t(data_end - data_ptr))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Page size out of bounds: {} > {}", header.compressed_page_size, data_end - data_ptr);
-
-    std::span page_data(data_ptr, compressed_page_size);
-    data_ptr += compressed_page_size;
-
-    if (header.__isset.crc && options.format.parquet.verify_checksums)
-    {
-        uint32_t crc = arrow::internal::crc32(0, page_data.data(), page_data.size());
-        if (crc != uint32_t(header.crc))
-            throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Page CRC checksum verification failed");
-    }
-
-    return {header, page_data};
-}
-
-bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, size_t next_row_idx, std::optional<size_t> end_row_idx, size_t target_row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info)
+bool Reader::initializePage(const char * & data_ptr, const char * data_end, size_t next_row_idx, std::optional<size_t> end_row_idx, size_t target_row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info)
 {
     PageState & page = column.page;
     /// We reuse PageState instance across pages to reuse memory in buffers like decompressed_buf.
@@ -1462,7 +1411,13 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
     /// Decode page header.
 
     parq::PageHeader header;
-    std::tie(header, page.data) = decodeAndCheckPageHeader(data_ptr, data_end);
+    data_ptr += deserializeThriftStruct(header, data_ptr, data_end - data_ptr);
+    /// TODO [parquet]: Check checksum.
+    size_t compressed_page_size = size_t(header.compressed_page_size);
+    if (header.compressed_page_size < 0 || compressed_page_size > size_t(data_end - data_ptr))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Page size out of bounds: {} > {}", header.compressed_page_size, data_end - data_ptr);
+    page.data = std::span(data_ptr, compressed_page_size);
+    data_ptr += compressed_page_size;
 
     /// Check if all rows of the page are filtered out, if we have enough information.
 
@@ -1556,7 +1511,7 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
             page.codec = parq::CompressionCodec::UNCOMPRESSED;
         }
 
-        if (encoded_def_size + encoded_rep_size > page.data.size())
+        if (encoded_def_size + encoded_rep_size > compressed_page_size)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Page data is too short (def+rep)");
         encoded_rep = page.data.data();
         encoded_def = page.data.data() + encoded_rep_size;
@@ -1569,9 +1524,9 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
         if (column.dictionary.isInitialized())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Column chunk has multiple dictionary pages or inaccurate data_page_offset");
 
-        /// There's a dictionary page, but there was no dictionary_page_offset in ColumnMetaData.
-        /// This is probably not allowed, but we have to support it because some writers wrote such
-        /// files, see comment in readFileMetaData.
+        /// If we got here, this is a weird parquet file that has a dictionary page but no
+        /// dictionary_page_offset in ColumnMetaData. Not sure whether this is allowed, but spark
+        /// can output such files, so we have to support it.
         decodeDictionaryPageImpl(header, page.data, column, column_info);
         return false;
     }
@@ -1997,7 +1952,7 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
     return res;
 }
 
-void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group)
+void Reader::applyPrewhere(RowSubgroup & row_subgroup)
 {
     for (size_t step_idx = 0; step_idx < prewhere_steps.size(); ++step_idx)
     {
@@ -2033,7 +1988,7 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
         chassert(filter.size() == row_subgroup.filter.rows_pass);
 
         size_t rows_pass = countBytesInFilter(filter.data(), 0, filter.size());
-        if (rows_pass == 0 || !row_group.need_to_process)
+        if (rows_pass == 0)
         {
             /// Whole row group was filtered out.
             row_subgroup.filter.rows_pass = 0;

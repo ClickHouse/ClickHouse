@@ -242,7 +242,7 @@ struct DeltaLakeMetadataImpl
         std::set<String> & result) const
     {
         auto read_settings = context->getReadSettings();
-        RelativePathWithMetadata object_info(metadata_file_path);
+        ObjectInfo object_info(metadata_file_path);
         auto buf = createReadBuffer(object_info, object_storage, context, log);
 
         char c;
@@ -415,7 +415,7 @@ struct DeltaLakeMetadataImpl
 
         String json_str;
         auto read_settings = context->getReadSettings();
-        RelativePathWithMetadata object_info(last_checkpoint_file);
+        ObjectInfo object_info(last_checkpoint_file);
         auto buf = createReadBuffer(object_info, object_storage, context, log);
         readJSONObjectPossiblyInvalid(json_str, *buf);
 
@@ -485,7 +485,7 @@ struct DeltaLakeMetadataImpl
         LOG_TRACE(log, "Using checkpoint file: {}", checkpoint_path.string());
 
         auto read_settings = context->getReadSettings();
-        RelativePathWithMetadata object_info(checkpoint_path);
+        ObjectInfo object_info(checkpoint_path);
         auto buf = createReadBuffer(object_info, object_storage, context, log);
         auto format_settings = getFormatSettings(context);
 

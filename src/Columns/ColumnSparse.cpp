@@ -96,9 +96,9 @@ void ColumnSparse::get(size_t n, Field & res) const
     values->get(getValueIndex(n), res);
 }
 
-DataTypePtr  ColumnSparse::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+std::pair<String, DataTypePtr>  ColumnSparse::getValueNameAndType(size_t n) const
 {
-    return values->getValueNameAndTypeImpl(name_buf, getValueIndex(n), options);
+    return values->getValueNameAndType(getValueIndex(n));
 }
 
 bool ColumnSparse::getBool(size_t n) const
@@ -159,43 +159,29 @@ void ColumnSparse::insertData(const char * pos, size_t length)
     insertSingleValue([&](IColumn & column) { column.insertData(pos, length); });
 }
 
-StringRef ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
-    return values->serializeValueIntoArena(getValueIndex(n), arena, begin);
+    return values->serializeValueIntoArena(getValueIndex(n), arena, begin, settings);
 }
 
-StringRef ColumnSparse::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+char * ColumnSparse::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
-    return values->serializeAggregationStateValueIntoArena(getValueIndex(n), arena, begin);
+    return values->serializeValueIntoMemory(getValueIndex(n), memory, settings);
 }
 
-char * ColumnSparse::serializeValueIntoMemory(size_t n, char * memory) const
+std::optional<size_t> ColumnSparse::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
-    return values->serializeValueIntoMemory(getValueIndex(n), memory);
+    return values->getSerializedValueSize(getValueIndex(n), settings);
 }
 
-std::optional<size_t> ColumnSparse::getSerializedValueSize(size_t n) const
+void ColumnSparse::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
-    return values->getSerializedValueSize(getValueIndex(n));
+    insertSingleValue([&](IColumn & column) { column.deserializeAndInsertFromArena(in, settings); });
 }
 
-const char * ColumnSparse::deserializeAndInsertFromArena(const char * pos)
+void ColumnSparse::skipSerializedInArena(ReadBuffer & in) const
 {
-    const char * res = nullptr;
-    insertSingleValue([&](IColumn & column) { res = column.deserializeAndInsertFromArena(pos); });
-    return res;
-}
-
-const char * ColumnSparse::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
-{
-    const char * res = nullptr;
-    insertSingleValue([&](IColumn & column) { res = column.deserializeAndInsertAggregationStateValueFromArena(pos); });
-    return res;
-}
-
-const char * ColumnSparse::skipSerializedInArena(const char * pos) const
-{
-    return values->skipSerializedInArena(pos);
+    values->skipSerializedInArena(in);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

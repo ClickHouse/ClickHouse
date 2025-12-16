@@ -53,7 +53,6 @@ CREATE TABLE system.clusters
     `estimated_recovery_time` UInt32,
     `database_shard_name` String,
     `database_replica_name` String,
-    `is_shared_catalog_cluster` UInt8,
     `is_active` Nullable(UInt8),
     `unsynced_after_recovery` Nullable(UInt8),
     `replication_lag` Nullable(UInt32),
@@ -93,7 +92,6 @@ CREATE TABLE system.columns
     `numeric_scale` Nullable(UInt64),
     `datetime_precision` Nullable(UInt64),
     `serialization_hint` Nullable(String),
-    `statistics` String,
     `column` String ALIAS name
 )
 ENGINE = SystemColumns
@@ -663,7 +661,6 @@ CREATE TABLE system.processes
     `ProfileEvents` Map(String, UInt64),
     `Settings` Map(String, String),
     `current_database` String,
-    `is_internal` UInt8,
     `ProfileEvents.Names` Array(String) ALIAS mapKeys(ProfileEvents),
     `ProfileEvents.Values` Array(UInt64) ALIAS mapValues(ProfileEvents),
     `Settings.Names` Array(String) ALIAS mapKeys(Settings),
@@ -896,7 +893,6 @@ CREATE TABLE system.replicas
 (
     `database` String,
     `table` String,
-    `uuid` UUID,
     `engine` String,
     `is_leader` UInt8,
     `can_become_leader` UInt8,

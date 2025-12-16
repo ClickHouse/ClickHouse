@@ -12,7 +12,9 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
+
 
 namespace DataLake
 {
@@ -32,13 +34,6 @@ using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
 class StorageObjectStorageConfiguration;
 using StorageObjectStorageConfigurationPtr = std::shared_ptr<StorageObjectStorageConfiguration>;
 struct StorageID;
-struct IObjectIterator;
-struct RelativePathWithMetadata;
-class IObjectStorage;
-struct ObjectInfo;
-using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
-using ObjectIterator = std::shared_ptr<IObjectIterator>;
-using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;
 
 class IDataLakeMetadata : boost::noncopyable
 {

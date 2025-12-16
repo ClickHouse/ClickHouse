@@ -25,7 +25,6 @@ struct FormatSettings
     bool with_names_use_header = false;
     bool with_types_use_header = false;
     bool write_statistics = true;
-    bool into_outfile_create_parent_directories = false;
     bool import_nested_json = false;
     bool null_as_default = true;
     bool force_null_for_omitted_fields = false;
@@ -239,6 +238,7 @@ struct FormatSettings
         bool try_infer_numbers_from_strings = false;
         bool validate_types_from_metadata = true;
         bool validate_utf8 = false;
+        bool allow_deprecated_object_type = false;
         bool valid_output_on_exception = false;
         bool compact_allow_variable_number_of_columns = false;
         bool try_infer_objects_as_tuples = false;
@@ -294,8 +294,6 @@ struct FormatSettings
         bool enable_json_parsing = true;
         bool preserve_order = false;
         bool enable_row_group_prefetch = true;
-        bool verify_checksums = true;
-        bool local_time_as_utc = true;
         std::unordered_set<int> skip_row_groups = {};
         UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
         size_t prefer_block_bytes = DEFAULT_BLOCK_SIZE * 256;
@@ -316,7 +314,6 @@ struct FormatSettings
         bool output_compliant_nested_types = true;
         bool write_page_index = false;
         bool write_bloom_filter = false;
-        bool write_checksums = true;
         ParquetVersion output_version = ParquetVersion::V2_LATEST;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
         uint64_t output_compression_level;

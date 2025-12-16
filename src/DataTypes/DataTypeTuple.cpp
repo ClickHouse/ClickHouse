@@ -327,6 +327,11 @@ bool DataTypeTuple::haveMaximumSizeOfValue() const
     return std::all_of(elems.begin(), elems.end(), [](auto && elem) { return elem->haveMaximumSizeOfValue(); });
 }
 
+bool DataTypeTuple::hasDynamicSubcolumnsDeprecated() const
+{
+    return std::any_of(elems.begin(), elems.end(), [](auto && elem) { return elem->hasDynamicSubcolumnsDeprecated(); });
+}
+
 bool DataTypeTuple::isComparable() const
 {
     return std::all_of(elems.begin(), elems.end(), [](auto && elem) { return elem->isComparable(); });

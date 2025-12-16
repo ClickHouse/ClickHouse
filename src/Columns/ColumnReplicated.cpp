@@ -82,9 +82,9 @@ void ColumnReplicated::get(size_t n, Field & res) const
     nested_column->get(indexes.getIndexAt(n), res);
 }
 
-DataTypePtr ColumnReplicated::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options & options) const
+std::pair<String, DataTypePtr> ColumnReplicated::getValueNameAndType(size_t n) const
 {
-    return nested_column->getValueNameAndTypeImpl(name_buf, indexes.getIndexAt(n), options);
+    return nested_column->getValueNameAndType(indexes.getIndexAt(n));
 }
 
 bool ColumnReplicated::getBool(size_t n) const
@@ -133,43 +133,30 @@ void ColumnReplicated::insertData(const char * pos, size_t length)
     indexes.insertIndex(nested_column->size() - 1);
 }
 
-StringRef ColumnReplicated::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnReplicated::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
-    return nested_column->serializeValueIntoArena(indexes.getIndexAt(n), arena, begin);
+    return nested_column->serializeValueIntoArena(indexes.getIndexAt(n), arena, begin, settings);
 }
 
-StringRef ColumnReplicated::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+char * ColumnReplicated::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
-    return nested_column->serializeAggregationStateValueIntoArena(indexes.getIndexAt(n), arena, begin);
+    return nested_column->serializeValueIntoMemory(indexes.getIndexAt(n), memory, settings);
 }
 
-char * ColumnReplicated::serializeValueIntoMemory(size_t n, char * memory) const
+std::optional<size_t> ColumnReplicated::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
-    return nested_column->serializeValueIntoMemory(indexes.getIndexAt(n), memory);
+    return nested_column->getSerializedValueSize(indexes.getIndexAt(n), settings);
 }
 
-std::optional<size_t> ColumnReplicated::getSerializedValueSize(size_t n) const
+void ColumnReplicated::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
-    return nested_column->getSerializedValueSize(indexes.getIndexAt(n));
-}
-
-const char * ColumnReplicated::deserializeAndInsertFromArena(const char * pos)
-{
-    const auto * res = nested_column->deserializeAndInsertFromArena(pos);
+    nested_column->deserializeAndInsertFromArena(in, settings);
     indexes.insertIndex(nested_column->size() - 1);
-    return res;
 }
 
-const char * ColumnReplicated::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+void ColumnReplicated::skipSerializedInArena(ReadBuffer & in) const
 {
-    const auto * res = nested_column->deserializeAndInsertAggregationStateValueFromArena(pos);
-    indexes.insertIndex(nested_column->size() - 1);
-    return res;
-}
-
-const char * ColumnReplicated::skipSerializedInArena(const char * pos) const
-{
-    return nested_column->skipSerializedInArena(pos);
+    nested_column->skipSerializedInArena(in);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

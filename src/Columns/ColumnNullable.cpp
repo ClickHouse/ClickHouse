@@ -10,7 +10,6 @@
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/MaskOperations.h>
-#include <IO/Operators.h>
 
 #if USE_EMBEDDED_COMPILER
 #include <DataTypes/Native.h>
@@ -117,16 +116,12 @@ void ColumnNullable::get(size_t n, Field & res) const
         getNestedColumn().get(n, res);
 }
 
-DataTypePtr ColumnNullable::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+std::pair<String, DataTypePtr> ColumnNullable::getValueNameAndType(size_t n) const
 {
     if (isNullAt(n))
-    {
-        if (options.notFull(name_buf))
-            name_buf << "NULL";
-        return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
-    }
+        return {"NULL", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())};
 
-    return getNestedColumn().getValueNameAndTypeImpl(name_buf, n, options);
+    return getNestedColumn().getValueNameAndType(n);
 }
 
 Float64 ColumnNullable::getFloat64(size_t n) const
@@ -171,7 +166,7 @@ void ColumnNullable::insertData(const char * pos, size_t length)
     }
 }
 
-StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
     const auto & arr = getNullMapData();
 
@@ -184,32 +179,13 @@ StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char 
         return StringRef(pos, 1);
 
     /// Now serialize the nested value. Note that it also uses allocContinue so that the memory range remains contiguous.
-    auto nested_ref = getNestedColumn().serializeValueIntoArena(n, arena, begin);
+    auto nested_ref = getNestedColumn().serializeValueIntoArena(n, arena, begin, settings);
 
     /// serializeValueIntoArena may reallocate memory. Have to use ptr from nested_ref.data and move it back.
     return StringRef(nested_ref.data - 1, nested_ref.size + 1);
 }
 
-StringRef ColumnNullable::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
-{
-    const auto & arr = getNullMapData();
-
-    /// First serialize the NULL map byte.
-    auto * pos = arena.allocContinue(1, begin);
-    *pos = arr[n];
-
-    /// If the value is NULL, that's it.
-    if (arr[n])
-        return StringRef(pos, 1);
-
-    /// Now serialize the nested value. Note that it also uses allocContinue so that the memory range remains contiguous.
-    auto nested_ref = getNestedColumn().serializeAggregationStateValueIntoArena(n, arena, begin);
-
-    /// serializeAggregationStateValueIntoArena may reallocate memory. Have to use ptr from nested_ref.data and move it back.
-    return StringRef(nested_ref.data - 1, nested_ref.size + 1);
-}
-
-char * ColumnNullable::serializeValueIntoMemory(size_t n, char * memory) const
+char * ColumnNullable::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
     const auto & arr = getNullMapData();
 
@@ -219,56 +195,37 @@ char * ColumnNullable::serializeValueIntoMemory(size_t n, char * memory) const
     if (arr[n])
         return memory;
 
-    return getNestedColumn().serializeValueIntoMemory(n, memory);
+    return getNestedColumn().serializeValueIntoMemory(n, memory, settings);
 }
 
-std::optional<size_t> ColumnNullable::getSerializedValueSize(size_t n) const
+std::optional<size_t> ColumnNullable::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
-    auto nested_size = getNestedColumn().getSerializedValueSize(n);
+    auto nested_size = getNestedColumn().getSerializedValueSize(n, settings);
     if (!nested_size)
         return std::nullopt;
     return 1 + *nested_size; /// +1 for null mask byte.
 }
 
-const char * ColumnNullable::deserializeAndInsertFromArena(const char * pos)
+void ColumnNullable::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
-    UInt8 val = unalignedLoad<UInt8>(pos);
-    pos += sizeof(val);
+    UInt8 val;
+    readBinaryLittleEndian<UInt8>(val, in);
 
     getNullMapData().push_back(val);
 
     if (val == 0)
-        pos = getNestedColumn().deserializeAndInsertFromArena(pos);
+        getNestedColumn().deserializeAndInsertFromArena(in, settings);
     else
         getNestedColumn().insertDefault();
-
-    return pos;
 }
 
-const char * ColumnNullable::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+void ColumnNullable::skipSerializedInArena(ReadBuffer & in) const
 {
-    UInt8 val = unalignedLoad<UInt8>(pos);
-    pos += sizeof(val);
-
-    getNullMapData().push_back(val);
+    UInt8 val;
+    readBinaryLittleEndian<UInt8>(val, in);
 
     if (val == 0)
-        pos = getNestedColumn().deserializeAndInsertAggregationStateValueFromArena(pos);
-    else
-        getNestedColumn().insertDefault();
-
-    return pos;
-}
-
-const char * ColumnNullable::skipSerializedInArena(const char * pos) const
-{
-    UInt8 val = unalignedLoad<UInt8>(pos);
-    pos += sizeof(val);
-
-    if (val == 0)
-        return getNestedColumn().skipSerializedInArena(pos);
-
-    return pos;
+        getNestedColumn().skipSerializedInArena(in);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

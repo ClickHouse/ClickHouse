@@ -784,6 +784,7 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
     Coordination::Error code = Coordination::Error::ZOK;
 
     bool is_retry = false;
+    bool allow_remove_recursive = true;
     for (size_t i = 0; i < 1000; ++i)
     {
         Coordination::Requests requests;
@@ -798,7 +799,7 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
         try
         {
             zk_client = getZooKeeper(log);
-            supports_remove_recursive = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE);
+            supports_remove_recursive = allow_remove_recursive && zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE);
 
             Coordination::Stat stat;
             std::string registry_str;
@@ -851,7 +852,7 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                 if (supports_remove_recursive)
                 {
                     requests.push_back(zkutil::makeCheckRequest(registry_path, stat.version));
-                    requests.push_back(zkutil::makeRemoveRecursiveRequest(*zk_client, zookeeper_path, std::numeric_limits<uint32_t>::max()));
+                    requests.push_back(zkutil::makeRemoveRecursiveRequest(*zk_client, zookeeper_path, /*remove_nodes_limit=*/10000));
                 }
                 else
                 {
@@ -922,6 +923,13 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                 }
             }
             return;
+        }
+
+        if (!responses.empty() && supports_remove_recursive && code == Coordination::Error::ZNOTEMPTY) /// potentiall we reached RemoveRecursive node limit, let's try without it
+        {
+            allow_remove_recursive = false;
+            is_retry = true;
+            continue;
         }
 
         if (Coordination::isHardwareError(code)

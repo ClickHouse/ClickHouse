@@ -149,32 +149,26 @@ void ColumnTuple::get(size_t n, Field & res) const
         res_tuple.push_back((*columns[i])[n]);
 }
 
-DataTypePtr ColumnTuple::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+std::pair<String, DataTypePtr> ColumnTuple::getValueNameAndType(size_t n) const
 {
     const size_t tuple_size = columns.size();
 
-    if (options.notFull(name_buf))
-    {
-        if (tuple_size > 1)
-            name_buf << "(";
-        else
-            name_buf << "tuple(";
-    }
+    String value_name {tuple_size > 1 ? "(" : "tuple("};
 
     DataTypes element_types;
     element_types.reserve(tuple_size);
 
     for (size_t i = 0; i < tuple_size; ++i)
     {
-        if (options.notFull(name_buf) && i > 0)
-            name_buf << ", ";
-        const auto & type = columns[i]->getValueNameAndTypeImpl(name_buf, n, options);
+        const auto & [value, type] = columns[i]->getValueNameAndType(n);
         element_types.push_back(type);
+        if (i > 0)
+            value_name += ", ";
+        value_name += value;
     }
-    if (options.notFull(name_buf))
-        name_buf << ")";
+    value_name += ")";
 
-    return std::make_shared<DataTypeTuple>(element_types);
+    return {value_name, std::make_shared<DataTypeTuple>(element_types)};
 }
 
 bool ColumnTuple::isDefaultAt(size_t n) const
@@ -329,7 +323,7 @@ void ColumnTuple::rollback(const ColumnCheckpoint & checkpoint)
         columns[i]->rollback(*checkpoints[i]);
 }
 
-StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
     if (columns.empty())
     {
@@ -342,7 +336,7 @@ StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char con
     StringRef res(begin, 0);
     for (const auto & column : columns)
     {
-        auto value_ref = column->serializeValueIntoArena(n, arena, begin);
+        auto value_ref = column->serializeValueIntoArena(n, arena, begin, settings);
         res.data = value_ref.data - res.size;
         res.size += value_ref.size;
     }
@@ -350,41 +344,29 @@ StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char con
     return res;
 }
 
-StringRef ColumnTuple::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
     if (columns.empty())
     {
-        /// Has to put one useless byte into Arena, because serialization into zero number of bytes is ambiguous.
-        char * res = arena.allocContinue(1, begin);
-        *res = 0;
-        return { res, 1 };
+        *memory = 0;
+        return memory + 1;
     }
 
-    StringRef res(begin, 0);
     for (const auto & column : columns)
-    {
-        auto value_ref = column->serializeAggregationStateValueIntoArena(n, arena, begin);
-        res.data = value_ref.data - res.size;
-        res.size += value_ref.size;
-    }
-
-    return res;
-}
-
-char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory) const
-{
-    for (const auto & column : columns)
-        memory = column->serializeValueIntoMemory(n, memory);
+        memory = column->serializeValueIntoMemory(n, memory, settings);
 
     return memory;
 }
 
-std::optional<size_t> ColumnTuple::getSerializedValueSize(size_t n) const
+std::optional<size_t> ColumnTuple::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
+    if (columns.empty())
+        return 1;
+
     size_t res = 0;
     for (const auto & column : columns)
     {
-        auto element_size = column->getSerializedValueSize(n);
+        auto element_size = column->getSerializedValueSize(n, settings);
         if (!element_size)
             return std::nullopt;
         res += *element_size;
@@ -394,38 +376,30 @@ std::optional<size_t> ColumnTuple::getSerializedValueSize(size_t n) const
 }
 
 
-const char * ColumnTuple::deserializeAndInsertFromArena(const char * pos)
+void ColumnTuple::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     ++column_length;
 
     if (columns.empty())
-        return pos + 1;
+    {
+        in.ignore(1);
+        return;
+    }
 
     for (auto & column : columns)
-        pos = column->deserializeAndInsertFromArena(pos);
-
-    return pos;
+        column->deserializeAndInsertFromArena(in, settings);
 }
 
-const char * ColumnTuple::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+void ColumnTuple::skipSerializedInArena(ReadBuffer & in) const
 {
-    ++column_length;
-
     if (columns.empty())
-        return pos + 1;
+    {
+        in.ignore(1);
+        return;
+    }
 
-    for (auto & column : columns)
-        pos = column->deserializeAndInsertAggregationStateValueFromArena(pos);
-
-    return pos;
-}
-
-const char * ColumnTuple::skipSerializedInArena(const char * pos) const
-{
     for (const auto & column : columns)
-        pos = column->skipSerializedInArena(pos);
-
-    return pos;
+        column->skipSerializedInArena(in);
 }
 
 void ColumnTuple::updateHashWithValue(size_t n, SipHash & hash) const
@@ -911,6 +885,11 @@ void ColumnTuple::takeDynamicStructureFromColumn(const ColumnPtr & source_column
         columns[i]->takeDynamicStructureFromColumn(source_elements[i]);
 }
 
+void ColumnTuple::fixDynamicStructure()
+{
+    for (auto & column : columns)
+        column->fixDynamicStructure();
+}
 
 ColumnPtr ColumnTuple::compress(bool force_compression) const
 {

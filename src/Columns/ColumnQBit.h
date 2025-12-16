@@ -86,7 +86,7 @@ public:
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
 
     StringRef getDataAt(size_t n) const override { return tuple->getDataAt(n); }
     void insertData(const char * pos, size_t length) override { tuple->insertData(pos, length); }
@@ -115,13 +115,19 @@ public:
 
     void insertDefault() override { tuple->insertDefault(); }
     void popBack(size_t n) override { tuple->popBack(n); }
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override
     {
-        return tuple->serializeValueIntoArena(n, arena, begin);
+        return tuple->serializeValueIntoArena(n, arena, begin, settings);
     }
-    char * serializeValueIntoMemory(size_t n, char * memory) const override { return tuple->serializeValueIntoMemory(n, memory); }
-    const char * deserializeAndInsertFromArena(const char * pos) override { return tuple->deserializeAndInsertFromArena(pos); }
-    const char * skipSerializedInArena(const char * pos) const override { return tuple->skipSerializedInArena(pos); }
+    char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override
+    {
+        return tuple->serializeValueIntoMemory(n, memory, settings);
+    }
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override
+    {
+        tuple->deserializeAndInsertFromArena(in, settings);
+    }
+    void skipSerializedInArena(ReadBuffer & in) const override { tuple->skipSerializedInArena(in); }
     void updateHashWithValue(size_t n, SipHash & hash) const override { tuple->updateHashWithValue(n, hash); }
     void updateHashFast(SipHash & hash) const override { tuple->updateHashFast(hash); }
     WeakHash32 getWeakHash32() const override { return tuple->getWeakHash32(); }
