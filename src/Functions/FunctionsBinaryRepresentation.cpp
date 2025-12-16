@@ -67,7 +67,8 @@ struct HexImpl
         if (!reverse_order)
         {
             const auto raw_size = end - pos;
-            hexString(reinterpret_cast<UInt8*>(out), reinterpret_cast<const UInt8*>(pos), raw_size);
+            constexpr bool lower_case = false;
+            hexString<lower_case>(reinterpret_cast<UInt8*>(out), pos, raw_size);
             out += 2 * raw_size;
         }
         else

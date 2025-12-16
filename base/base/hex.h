@@ -460,18 +460,25 @@ inline std::string hexString(const void * data, size_t size)
 }
 
 /// Similar to the one above, but writes into the supplied output
+template<bool Lower>
 inline void hexString(UInt8* output, const void * data, size_t size)
 {
     const auto * p = reinterpret_cast<const uint8_t *>(data);
     auto * dst = reinterpret_cast<uint8_t *>(output);
+    auto get_case = []{
+        if constexpr (Lower)
+            return heks::lower;
+        else
+            return heks::upper;
+    };
     #if USE_MULTITARGET_CODE
     if (DB::isArchSupported(DB::TargetArch::AVX2))
     {
-        TargetSpecific::AVX2::encode_hex_string(dst, p, size, heks::lower);
+        TargetSpecific::AVX2::encode_hex_string(dst, p, size, get_case());
         return;
     }
     #endif
-    TargetSpecific::Default::encode_hex_string(dst, p, size, heks::lower);
+    TargetSpecific::Default::encode_hex_string(dst, p, size, get_case());
 }
 
 /// Converts an even sized hex string into binary representation
