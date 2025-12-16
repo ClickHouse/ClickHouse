@@ -462,12 +462,22 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 written = true;
             }
 
-            auto is_unary_operator = [] (const auto & func) -> bool
+            auto format_with_parens_for_unary_negate = [] (const auto & func_argument, auto & output, const auto & format_func)
             {
-                return func
-                    && func->arguments
-                    && func->arguments->children.size() == 1
-                    && (func->name == "negate" || func->name == "not");
+                /// We need parentheses around unary operator: (-x)[1] should not be formatted as -x[1]
+                /// because -x[1] is parsed as -(x[1]).
+                /// Same when the negate function is followed by tuple subscript operator aka tupleElement.
+                /// We must manually add outer parentheses because the unary operator's logic
+                /// prevents adding outside_parens when inside_parens is already present.
+                bool is_negate = func_argument
+                    && func_argument->arguments
+                    && func_argument->arguments->children.size() == 1
+                    && (func_argument->name == "negate");
+                if (is_negate)
+                    output << '(';
+                format_func();
+                if (is_negate)
+                    output << ')';
             };
 
             if (!written && name == "arrayElement"sv)
@@ -475,16 +485,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 if (frame.need_parens)
                     ostr << '(';
 
-                /// We need parentheses around unary operator: (-x)[1] should not be formatted as -x[1]
-                /// because -x[1] is parsed as -(x[1])
-                /// We must manually add outer parentheses because the unary operator's logic
-                /// prevents adding outside_parens when inside_parens is already present.
-                auto need_parens_around_first_arg = is_unary_operator(arguments->children[0]->as<ASTFunction>());
-                if (need_parens_around_first_arg)
-                    ostr << '(';
-                arguments->children[0]->format(ostr, settings, state, nested_dont_need_parens);
-                if (need_parens_around_first_arg)
-                    ostr << ')';
+                format_with_parens_for_unary_negate(arguments->children[0]->as<ASTFunction>(),  ostr, [&](){arguments->children[0]->format(ostr, settings, state, nested_dont_need_parens);});
                 ostr << '[';
                 arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
                 ostr << ']';
@@ -537,16 +538,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                         if (frame.need_parens)
                             ostr << '(';
 
-                        /// We need parentheses around unary operator: (-x)[1] should not be formatted as -x[1]
-                        /// because -x[1] is parsed as -(x[1])
-                        /// We must manually add outer parentheses because the unary operator's logic
-                        /// prevents adding outside_parens when inside_parens is already present.
-                        auto need_parens_around_first_arg = is_unary_operator(arguments->children[0]->as<ASTFunction>());
-                        if (need_parens_around_first_arg)
-                            ostr << '(';
-                        arguments->children[0]->format(ostr, settings, state, nested_dont_need_parens);
-                        if (need_parens_around_first_arg)
-                            ostr << ')';
+                        format_with_parens_for_unary_negate(arguments->children[0]->as<ASTFunction>(), ostr, [&](){arguments->children[0]->format(ostr, settings, state, nested_dont_need_parens);});
                         ostr << ".";
                         arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
                         written = true;
