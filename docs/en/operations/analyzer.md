@@ -317,6 +317,6 @@ SELECT * FROM (SELECT * FROM my_table FINAL) AS subquery ...
 
 Error: `Function with name countdistinct does not exist (UNKNOWN_FUNCTION)`. Exception code: 46
 
-Cause: Function names are case-sensitive or strictly mapped in the new analyzer. countdistinct (all lowercase) is no longer resolved automatically. 
+Cause: Function names are case-sensitive or strictly mapped in the new analyzer.
 
 Solution: Use the standard countDistinct (camelCase) or the ClickHouse specific uniq.
