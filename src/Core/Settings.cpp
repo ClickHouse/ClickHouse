@@ -243,8 +243,9 @@ For example, when reading from a table, if it is possible to evaluate expression
 For queries that are completed quickly because of a LIMIT, you can set a lower 'max_threads'. For example, if the necessary number of entries are located in every block and max_threads = 8, then 8 blocks are retrieved, although it would have been enough to read just one.
 
 The smaller the `max_threads` value, the less memory is consumed.
-
-Cloud default value: `auto(3)`
+The `max_threads` setting by default matches the number of CPU cores available to ClickHouse on the server.
+For Cloud users, the default value will display as `auto(N)` where N matches the vCPU size of your service e.g. 8GiB:2vCPU, 16GiB:4vCPU etc.
+    You can find your service size udner the settings tab.
 )", 0) \
     DECLARE(Bool, use_concurrency_control, true, R"(
 Respect the server's concurrency control (see the `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores` global server settings). If disabled, it allows using a larger number of threads even if the server is overloaded (not recommended for normal usage, and needed mostly for tests).
