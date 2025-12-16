@@ -131,7 +131,7 @@ CIDB statistics: [cidb]({result.get_hlabel_link('cidb')})
 
 Test output:
 ```
-{result.get_info_truncated(truncate_from_top=False, max_info_lines_cnt=50, max_line_length=200)}
+{result.get_info_truncated(truncate_from_top=False, max_info_lines_cnt=50, max_line_length=0)}
 ```
 """
         labels = [IssueLabels.CI_ISSUE, IssueLabels.FLAKY_TEST]
