@@ -487,7 +487,7 @@ namespace CurrentMetrics
     /// +1 to allow using END as a placeholder
     std::atomic<Value> values[END + 1] {};    /// Global variable, initialized by zeros.
 
-    static const std::array<std::string_view, CurrentMetrics::END> names =
+    static const std::array<std::string_view, END> names =
     {
     #define M(NAME, DOCUMENTATION) #NAME,
         APPLY_FOR_METRICS(M)
@@ -499,7 +499,7 @@ namespace CurrentMetrics
         return names[event];
     }
 
-    static const std::array<std::string_view, CurrentMetrics::END> docs =
+    static const std::array<std::string_view, END> docs =
     {
     #define M(NAME, DOCUMENTATION) DOCUMENTATION,
         APPLY_FOR_METRICS(M)

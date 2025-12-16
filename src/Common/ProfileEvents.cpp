@@ -1358,7 +1358,7 @@ Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
     return res;
 }
 
-static const std::array<std::string_view, ProfileEvents::END> names =
+static const std::array<std::string_view, END> names =
 {
 #define M(NAME, DOCUMENTATION, VALUE_TYPE) #NAME,
     APPLY_FOR_EVENTS(M)
@@ -1370,7 +1370,7 @@ const std::string_view & getName(Event event)
     return names[event];
 }
 
-static const std::array<std::string_view, ProfileEvents::END> docs =
+static const std::array<std::string_view, END> docs =
 {
 #define M(NAME, DOCUMENTATION, VALUE_TYPE) DOCUMENTATION,
     APPLY_FOR_EVENTS(M)
