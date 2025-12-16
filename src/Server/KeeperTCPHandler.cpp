@@ -570,6 +570,7 @@ void KeeperTCPHandler::runImpl()
                         request->spans.send_response,
                         {
                             {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
+                            {"keeper.session_id", std::to_string(session_id)},
                             {"keeper.xid", std::to_string(request->xid)},
                         },
                         status,
@@ -761,6 +762,7 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
                 request->spans.receive_request,
                 {
                     {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
+                    {"keeper.session_id", std::to_string(session_id)},
                     {"keeper.xid", std::to_string(request->xid)},
                 }
             );

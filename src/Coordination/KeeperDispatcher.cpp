@@ -28,6 +28,7 @@
 #include <future>
 #include <chrono>
 #include <limits>
+#include <string>
 
 #if USE_JEMALLOC
 #include <Common/Jemalloc.h>
@@ -149,7 +150,7 @@ void KeeperDispatcher::requestThread()
 
     while (!shutdown_called)
     {
-        const auto handle_opentelemetery_spans = [](const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
+        const auto handle_opentelemetery_spans = [this](const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
         {
             ZooKeeperOpentelemetrySpans::maybeFinalize(
                 request->spans.dispatcher_requests_queue,
@@ -157,6 +158,7 @@ void KeeperDispatcher::requestThread()
                     {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
                     {"keeper.session_id", std::to_string(session_id)},
                     {"keeper.xid", std::to_string(request->xid)},
+                    {"keeper.dispatcher.requests_queue.size", std::to_string(requests_queue->size())},
                 });
         };
 
@@ -392,6 +394,7 @@ void KeeperDispatcher::responseThread()
                         {"keeper.operation", Coordination::opNumToString(response_for_session.request->getOpNum())},
                         {"keeper.session_id", std::to_string(response_for_session.session_id)},
                         {"keeper.xid", std::to_string(response_for_session.request->xid)},
+                        {"keeper.dispatcher.responses_queue.size", std::to_string(responses_queue.size())},
                     },
                     OpenTelemetry::SpanStatus::OK,
                     "",
@@ -749,6 +752,9 @@ void KeeperDispatcher::sessionCleanerTask()
                     /// Close session == send close request to raft server
                     auto request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
                     request->xid = Coordination::CLOSE_XID;
+
+                    ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context);
+
                     using namespace std::chrono;
                     KeeperRequestForSession request_info
                     {
@@ -893,6 +899,8 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
             promise->set_value(session_id_response.session_id);
         };
     }
+
+    ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context);
 
     /// Push new session request to queue
     if (!requests_queue->tryPush(std::move(request_info), session_timeout_ms))

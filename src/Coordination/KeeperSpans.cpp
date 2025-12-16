@@ -42,6 +42,7 @@ void ZooKeeperOpentelemetrySpans::maybeInitialize(
     const std::optional<OpenTelemetry::TracingContext> & parent_context,
     UInt64 start_time_us)
 {
+    chassert(maybe_span.start_time_us == 0);
     chassert(maybe_span.span == std::nullopt);
 
     maybe_span.start_time_us = start_time_us;
