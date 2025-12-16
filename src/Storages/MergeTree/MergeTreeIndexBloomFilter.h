@@ -78,10 +78,10 @@ public:
 
     bool alwaysUnknownOrTrue() const override;
 
-    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjuntion_fn) const override
+    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const override
     {
         if (const auto & bf_granule = typeid_cast<const MergeTreeIndexGranuleBloomFilter *>(granule.get()))
-            return mayBeTrueOnGranule(bf_granule, update_partial_result_disjuntion_fn);
+            return mayBeTrueOnGranule(bf_granule);
 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Requires bloom filter index granule.");
     }
@@ -91,7 +91,7 @@ private:
     const size_t hash_functions;
     std::vector<RPNElement> rpn;
 
-    bool mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjuntion_fn) const;
+    bool mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule) const;
 
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out);
 
@@ -145,7 +145,7 @@ public:
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
 
-    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 

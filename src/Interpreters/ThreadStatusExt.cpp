@@ -223,7 +223,7 @@ void ThreadGroup::attachInternalProfileEventsQueue(const InternalProfileEventsQu
     shared_data.profile_queue_ptr = profile_queue;
 }
 
-ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group) noexcept
+ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, const char * thread_name, bool allow_existing_group) noexcept
     : thread_group(std::move(thread_group_))
 {
     try
@@ -253,7 +253,8 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
         LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
         CurrentThread::attachToGroup(thread_group);
-        setThreadName(thread_name);
+        if (thread_name[0] != '\0')
+            setThreadName(thread_name);
     }
     catch (...)
     {
@@ -532,7 +533,7 @@ void ThreadStatus::initPerformanceCounters()
         }
     }
     if (taskstats)
-        (*taskstats).reset();
+        taskstats->reset();
 }
 
 void ThreadStatus::finalizePerformanceCounters()
@@ -591,7 +592,7 @@ void ThreadStatus::resetPerformanceCountersLastUsage()
 {
     *last_rusage = RUsageCounters::current();
     if (taskstats)
-        (*taskstats).reset();
+        taskstats->reset();
 }
 
 void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_real_time_period, [[maybe_unused]] UInt64 global_profiler_cpu_time_period)

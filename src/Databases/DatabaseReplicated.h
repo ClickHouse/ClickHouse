@@ -37,12 +37,7 @@ struct ReplicaInfo
     std::optional<UInt32> replication_lag;
     UInt64 recovery_time;
 };
-
-struct ReplicasInfo
-{
-    std::vector<ReplicaInfo> replicas;
-    bool replicas_belong_to_shared_catalog;
-};
+using ReplicasInfo = std::vector<ReplicaInfo>;
 
 class DatabaseReplicated : public DatabaseAtomic
 {

@@ -268,8 +268,6 @@ struct QueryPlanSettings
             {"sorting", query_plan_options.sorting},
             {"distributed", query_plan_options.distributed},
             {"keep_logical_steps", keep_logical_steps},
-            {"input_headers", query_plan_options.input_headers},
-            {"column_structure", query_plan_options.column_structure},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -665,7 +663,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     /* allow_materialized */ false,
                     /* no_squash */ false,
                     /* no_destination */ false,
-                    /* async_insert */ false);
+                    /* async_isnert */ false);
                 auto io = insert.execute();
                 printPipeline(io.pipeline.getProcessors(), buf);
                 // we do not need it anymore, it would be executed

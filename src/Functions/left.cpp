@@ -23,7 +23,7 @@ Returns:
     {"String"}
     };
     FunctionDocumentation::Examples examples = {
-        {"Positive offset", "SELECT left('Hello World', 5)", "Hello"},
+        {"Positive offset", "SELECT left('Hello World', 5)", "Helllo"},
         {"Negative offset", "SELECT left('Hello World', -6)", "Hello"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 1};
