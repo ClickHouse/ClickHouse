@@ -3142,14 +3142,14 @@ def test_schema_inference_cache_multi_path(started_cluster):
         "('a', 1), ('b', 2)",
     )
 
+    run_query(instance, query1)
+    run_query(instance, query2)
+
     # Sleep so files last modification time is in the past
     time.sleep(2)
 
-    run_query(instance, query1)
-    run_query(instance, query2)
-    instance.query(
-        f"DESCRIBE TABLE (SELECT *, _path, _file, _size, _time FROM s3('{s3_path_prefix}/*'))"
-    )
+    instance.query(f"DESCRIBE TABLE s3('{s3_path_prefix}/*')")
+
     assert "a\t1\nb\t2\n" == instance.query(
         f"SELECT * FROM s3('{s3_path_prefix}/test2.parquet')"
     )
@@ -3157,12 +3157,12 @@ def test_schema_inference_cache_multi_path(started_cluster):
         f"SELECT * FROM s3('{s3_path_prefix}/test1.parquet')"
     )
 
-    instance.query(
-        f"DESCRIBE TABLE (SELECT *, _path, _file, _size, _time FROM url('{s3_path_prefix}/{{test1.parquet,test2.parquet}}'))"
-    )
+    instance.query(f"DESCRIBE TABLE url('{s3_path_prefix}/{{test1.parquet,test2.parquet}}')")
+
     assert "a\t1\nb\t2\n" == instance.query(
         f"SELECT * FROM url('{s3_path_prefix}/test2.parquet')"
     )
     assert "1\ta\n2\tb\n" == instance.query(
         f"SELECT * FROM url('{s3_path_prefix}/test1.parquet')"
     )
+    assert False
