@@ -162,7 +162,7 @@ public:
 
     static void setRandomDatabase(RandomGenerator & rg, SQLDatabase & d);
 
-    static void setName(Database * db, const uint32_t name);
+    static void setName(Database * db, uint32_t name);
 
     bool isAtomicDatabase() const;
 
