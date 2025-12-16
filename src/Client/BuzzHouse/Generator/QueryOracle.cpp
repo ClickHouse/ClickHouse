@@ -537,10 +537,10 @@ void QueryOracle::dumpOracleIntermediateSteps(
         break;
         case DumpOracleStrategy::INSERT_COUNT: {
             SQLQuery next2;
-            Insert * ins = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
+            Insert * ins = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
 
             chassert(nrows);
-            next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_system_cmd()->set_flush_async_insert_queue(true);
+            next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_system_cmd()->set_flush_async_insert_queue(true);
             gen.generateInsertToTable(rg, t, false, nrows, ins);
             intermediate_queries.emplace_back(next);
             intermediate_queries.emplace_back(next2);
