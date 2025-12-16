@@ -149,8 +149,6 @@ String argumentsOrParametersAsString(const Type & arguments_or_parameters, const
     return result;
 }
 
-}
-
 String FunctionDocumentation::argumentsAsString() const
 {
     return argumentsOrParametersAsString(arguments, syntax);
@@ -279,4 +277,5 @@ String FunctionDocumentation::categoryAsString() const
         return it->second;
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Category has no mapping to string");
+}
 }
