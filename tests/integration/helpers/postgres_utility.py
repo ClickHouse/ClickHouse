@@ -2,7 +2,7 @@ import time
 
 import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
-from .config_cluster import pg_pass
+from helpers.config_cluster import pg_pass
 
 postgres_table_template = """
     CREATE TABLE IF NOT EXISTS "{}" (

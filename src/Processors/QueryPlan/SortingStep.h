@@ -1,6 +1,5 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Processors/TopKThresholdTracker.h>
 #include <Core/SortDescription.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -14,17 +13,8 @@ class SortingStep : public ITransformingStep
 public:
     enum class Type : uint8_t
     {
-        /// Performs a complete sorting operation and returns a single fully ordered data stream
         Full,
-
-        /// Completes the sorting process for partially sorted data.
         FinishSorting,
-
-        /// Applies FinishSorting for partitioned partially sorted data.
-        /// The sorting is applied within each partition separately without merging them.
-        PartitionedFinishSorting,
-
-        /// Merges multiple sorted streams into a single sorted output.
         MergingSorted,
     };
 
@@ -48,13 +38,11 @@ public:
         explicit Settings(const QueryPlanSerializationSettings & settings);
 
         void updatePlanSettings(QueryPlanSerializationSettings & settings) const;
-
-        bool operator==(const Settings & other) const = default;
     };
 
     /// Full
     SortingStep(
-        const SharedHeader & input_header,
+        const Header & input_header,
         SortDescription description_,
         UInt64 limit_,
         const Settings & settings_,
@@ -62,7 +50,7 @@ public:
 
     /// Full with partitioning
     SortingStep(
-        const SharedHeader & input_header,
+        const Header & input_header,
         const SortDescription & description_,
         const SortDescription & partition_by_description_,
         UInt64 limit_,
@@ -70,7 +58,7 @@ public:
 
     /// FinishSorting
     SortingStep(
-        const SharedHeader & input_header,
+        const Header & input_header,
         SortDescription prefix_description_,
         SortDescription result_description_,
         size_t max_block_size_,
@@ -78,7 +66,7 @@ public:
 
     /// MergingSorted
     SortingStep(
-        const SharedHeader & input_header,
+        const Header & input_header,
         SortDescription sort_description_,
         size_t max_block_size_,
         UInt64 limit_ = 0,
@@ -107,24 +95,18 @@ public:
     Type getType() const { return type; }
     const Settings & getSettings() const { return sort_settings; }
 
-    void convertToPartitionedFinishSorting() { type = Type::PartitionedFinishSorting; }
-
     static void fullSortStreams(
         QueryPipelineBuilder & pipeline,
         const Settings & sort_settings,
         const SortDescription & result_sort_desc,
         UInt64 limit_,
-        bool skip_partial_sort = false,
-        TopKThresholdTrackerPtr threshold_tracker = nullptr);
+        bool skip_partial_sort = false);
 
     void serializeSettings(QueryPlanSerializationSettings & settings) const override;
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return type == Type::Full && partition_by_description.empty(); }
+    bool isSerializable() const override { return true; }
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
-
-    bool supportsDataflowStatisticsCollection() const override { return true; }
-    void setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker_) { threshold_tracker = threshold_tracker_; }
 
 private:
     void scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline);
@@ -134,7 +116,7 @@ private:
         QueryPipelineBuilder & pipeline,
         const Settings & sort_settings,
         const SortDescription & result_sort_desc,
-        UInt64 limit_, TopKThresholdTrackerPtr threshold_tracker);
+        UInt64 limit_);
 
     void mergingSorted(
         QueryPipelineBuilder & pipeline,
@@ -165,8 +147,6 @@ private:
     bool always_read_till_end = false;
     bool use_buffering = false;
     bool apply_virtual_row_conversions = false;
-
-    TopKThresholdTrackerPtr threshold_tracker;
 
     Settings sort_settings;
 };

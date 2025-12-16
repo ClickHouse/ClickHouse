@@ -15,10 +15,7 @@ $CLICKHOUSE_CLIENT -m -q "
         min_rows_for_wide_part = 2,
         fsync_after_insert = 1,
         fsync_part_directory = 1,
-        ratio_of_defaults_for_sparse_serialization = 1,
-        serialization_info_version = 'basic',
-        write_marks_for_substreams_in_compact_parts = 1,
-        auto_statistics_types = '';
+        ratio_of_defaults_for_sparse_serialization = 1;
 "
 
 ret=1
@@ -48,7 +45,7 @@ for i in {1..100}; do
     ")"
 
     # Non retriable errors
-    if [[ $FileSync -ne 9 ]]; then
+    if [[ $FileSync -ne 8 ]]; then
         echo "FileSync: $FileSync != 8" >&2
         exit 2
     fi
