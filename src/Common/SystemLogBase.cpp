@@ -39,7 +39,6 @@
 #include <Common/ThreadPool.h>
 
 #include <Common/logger_useful.h>
-#include <base/scope_guard.h>
 
 
 namespace DB
