@@ -852,7 +852,8 @@ Creates an array of argument values. Values can be added to the array in any (in
 
 The second version (with the `max_size` parameter) limits the size of the resulting array to `max_size` elements. For example, `groupArray(1)(x)` is equivalent to `[any (x)]`.
 
-In some cases, you can still rely on the order of execution. This applies to cases when `SELECT` comes from a subquery that uses `ORDER BY` if the subquery result is small enough.    
+In some cases, you can still rely on the order of execution.
+This applies to cases when `SELECT` comes from a subquery that uses `ORDER BY` if the subquery result is small enough.
     )";
     FunctionDocumentation::Syntax syntax_groupArray = R"(
 groupArray(x)
@@ -874,7 +875,7 @@ CREATE TABLE default.ck (
     name Nullable(String)
 ) ENGINE = Memory;
 
-INSERT INTO default.ck VALUES 
+INSERT INTO default.ck VALUES
 (1, 'zhangsan'),
 (1, NULL),
 (1, 'lisi'),
@@ -973,19 +974,20 @@ groupArraySample(max_size[, seed])(x)
         {"x", "Argument (column name or expression).", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_groupArraySample = {
-        "Array of randomly selected x arguments.", 
+        "Array of randomly selected x arguments.",
         {"Array(T)"}
     };
-    FunctionDocumentation::Examples examples_groupArraySample = {
+    FunctionDocumentation::Examples examples_groupArraySample =
     {
-         "Usage example",
-         R"(
+    {
+        "Usage example",
+        R"(
 CREATE TABLE default.colors (
     id Int32,
     color String
 ) ENGINE = Memory;
 
-INSERT INTO default.colors VALUES 
+INSERT INTO default.colors VALUES
 (1, 'red'),
 (2, 'blue'),
 (3, 'green'),
@@ -993,16 +995,16 @@ INSERT INTO default.colors VALUES
 (5, 'orange');
 
 SELECT groupArraySample(3)(color) as newcolors FROM default.colors;
-         )",
-         R"(
+        )",
+        R"(
 ┌─newcolors──────────────────┐
 │ ['white','blue','green']   │
 └────────────────────────────┘
-         )"
+        )"
     },
     {
-         "Example using a seed",
-         R"(
+        "Example using a seed",
+        R"(
 -- Query with column name and different seed
 SELECT groupArraySample(3, 987654321)(color) as newcolors FROM default.colors;
         )",
@@ -1013,8 +1015,8 @@ SELECT groupArraySample(3, 987654321)(color) as newcolors FROM default.colors;
         )"
     },
     {
-         "Using an expression as an argument",
-         R"(
+        "Using an expression as an argument",
+        R"(
 -- Query with expression as argument
 SELECT groupArraySample(3)(concat('light-', color)) as newcolors FROM default.colors;
         )",
@@ -1067,7 +1069,7 @@ SELECT groupArrayLast(2)(number+1) numbers FROM numbers(10);
     {
         "Comparison with groupArray",
         R"(
--- Compare with groupArray (first values)  
+-- Compare with groupArray (first values)
 SELECT groupArray(2)(number+1) numbers FROM numbers(10);)",
         R"(
 ┌─numbers─┐
@@ -1079,7 +1081,7 @@ SELECT groupArray(2)(number+1) numbers FROM numbers(10);)",
     FunctionDocumentation::IntroducedIn introduced_in_groupArrayLast = {23, 1};
     FunctionDocumentation::Category category_groupArrayLast = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_groupArrayLast = {description_groupArray, syntax_groupArray, arguments_groupArray, parameters_groupArray, returned_value_groupArray, examples_groupArray, introduced_in_groupArray, category_groupArrayLast};
-    
+
     factory.registerFunction("groupArrayLast", createAggregateFunctionGroupArray<true>, properties, documentation_groupArrayLast);
 }
 
