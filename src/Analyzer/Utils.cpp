@@ -975,7 +975,12 @@ void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const Stri
     function_node.resolveAsAggregateFunction(std::move(aggregate_function));
 }
 
-std::pair<QueryTreeNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & node)
+/** Returns:
+  * {_, false} - multiple sources
+  * {nullptr, true} - no sources (for constants)
+  * {source, true} - single source
+  */
+std::pair<QueryTreeNodePtr, bool> getExpressionSourceImpl(const QueryTreeNodePtr & node)
 {
     if (const auto * column = node->as<ColumnNode>())
     {
@@ -991,7 +996,7 @@ std::pair<QueryTreeNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & n
         const auto & args = func->getArguments().getNodes();
         for (const auto & arg : args)
         {
-            auto [arg_source, is_ok] = getExpressionSource(arg);
+            auto [arg_source, is_ok] = getExpressionSourceImpl(arg);
             if (!is_ok)
                 return {nullptr, false};
 
@@ -1008,6 +1013,14 @@ std::pair<QueryTreeNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & n
         return {nullptr, true};
 
     return {nullptr, false};
+}
+
+QueryTreeNodePtr getExpressionSource(const QueryTreeNodePtr & node)
+{
+    auto [source, is_ok] = getExpressionSourceImpl(node);
+    if (!is_ok)
+        return nullptr;
+    return source;
 }
 
 /** There are no limits on the maximum size of the result for the subquery.
@@ -1301,7 +1314,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
 
             const auto & shared_variant = dynamic_column.getSharedVariant();
             auto value_data = shared_variant.getDataAt(variant_column.offsetAt(row));
-            ReadBufferFromMemory buf(value_data);
+            ReadBufferFromMemory buf(value_data.data, value_data.size);
             auto type = decodeDataType(buf);
             auto tmp_column = type->createColumn();
             tmp_column->reserve(1);
@@ -1329,9 +1342,9 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             FormatSettings format_settings;
             for (size_t i = start; i != end; ++i)
             {
-                String path{shared_paths->getDataAt(i)};
+                String path = shared_paths->getDataAt(i).toString();
                 auto value_data = shared_values->getDataAt(i);
-                ReadBufferFromMemory buf(value_data);
+                ReadBufferFromMemory buf(value_data.data, value_data.size);
                 auto tmp_column = dynamic_type->createColumn();
                 tmp_column->reserve(1);
                 dynamic_serialization->deserializeBinary(*tmp_column, buf, format_settings);

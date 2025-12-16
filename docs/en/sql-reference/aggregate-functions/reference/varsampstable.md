@@ -5,7 +5,6 @@ description: 'Calculate the sample variance of a data set. Unlike `varSamp` , th
 sidebar_position: 213
 slug: /sql-reference/aggregate-functions/reference/varsampstable
 title: 'varSampStable'
-doc_type: 'reference'
 ---
 
 ## varSampStable {#varsampstable}

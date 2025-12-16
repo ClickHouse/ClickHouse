@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cmath>
 #include <map>
 #include <vector>
 
@@ -411,8 +410,6 @@ public:
     std::string_view getTypeName() const;
 
     bool isNull() const { return which == Types::Null; }
-    bool isNaN() const { return which == Types::Float64 && std::isnan(get<Float64>()); }
-    bool isInf() const { return which == Types::Float64 && std::isinf(get<Float64>()); }
 
     bool isNegativeInfinity() const { return which == Types::Null && get<Null>().isNegativeInfinity(); }
     bool isPositiveInfinity() const { return which == Types::Null && get<Null>().isPositiveInfinity(); }
@@ -620,9 +617,7 @@ private:
 
     ALWAYS_INLINE void destroy()
     {
-        auto old_which = which;
-        which = Types::Null;    /// for exception safety in subsequent calls to destroy and create, when create fails.
-        switch (old_which)
+        switch (which)
         {
             case Types::String:
                 destroy<String>();
@@ -645,13 +640,15 @@ private:
             case Types::CustomType:
                 destroy<CustomType>();
                 break;
-            default: [[likely]]
+            default:
                  break;
         }
+
+        which = Types::Null;    /// for exception safety in subsequent calls to destroy and create, when create fails.
     }
 
     template <typename T>
-    NO_INLINE void destroy()
+    void destroy()
     {
         T * MAY_ALIAS ptr = reinterpret_cast<T*>(&storage);
         ptr->~T();

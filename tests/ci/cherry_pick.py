@@ -507,15 +507,9 @@ class BackportPRs:
         # To not have a possible TZ issues
         tomorrow = date.today() + timedelta(days=1)
 
-        # The search API struggles to serve the heavy queries, so we limit the
-        # updated date to 90 days ago. It improves the response quality by an order of
-        # magnitude
-        updated = (date.today() - timedelta(days=90)).isoformat() + "..*"
-
         query_args = {
             "query": f"type:pr repo:{repo_name} -label:{backport_created_label}",
             "label": ",".join(labels_to_backport),
-            "updated": updated,
             "merged": [since_date, tomorrow],
         }
         logging.info("Query to find the backport PRs:\n %s", query_args)
@@ -800,6 +794,14 @@ def main():
     errors = [e for e in (bpp.error, cpp.error) if e is not None]
     if any(errors):
         logging.error("Finished successfully, but errors occurred!")
+        if IS_CI:
+            ci_buddy = CIBuddy()
+            ci_buddy.post_job_error(
+                f"The backport process finished with errors: {errors[0]}",
+                with_instance_info=True,
+                with_wf_link=True,
+                critical=True,
+            )
         raise errors[0]
 
 
@@ -807,20 +809,9 @@ if __name__ == "__main__":
     logging.getLogger().setLevel(level=logging.INFO)
 
     assert not is_shallow()
-    try:
-        with stash():
-            if os.getenv("ROBOT_CLICKHOUSE_SSH_KEY", ""):
-                with SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
-                    main()
-            else:
+    with stash():
+        if os.getenv("ROBOT_CLICKHOUSE_SSH_KEY", ""):
+            with SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
                 main()
-
-    except Exception as e:
-        if IS_CI:
-            ci_buddy = CIBuddy()
-            ci_buddy.post_job_error(
-                f"The backport process finished with errors: {e}",
-                with_instance_info=True,
-                with_wf_link=True,
-                critical=True,
-            )
+        else:
+            main()
