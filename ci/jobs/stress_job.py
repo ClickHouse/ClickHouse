@@ -227,11 +227,15 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     )
 
     server_died = False
+    test_results = []
     for test_result in test_results:
         if test_result.name == "Server died":
-            # error from stress.py
+            # This result from stress.py indicates a server crash - we use it as a flag
+            # to trigger detailed log parsing below, but don't include it in the CI report
+            # since we'll create a more informative result from the parsed logs
             server_died = True
-    test_results = [r for r in test_results if not r.is_ok()]
+        elif not test_result.is_ok():
+            test_results.append(test_result)
 
     if server_died:
         server_err_log = server_log_path / "clickhouse-server.err.log"
