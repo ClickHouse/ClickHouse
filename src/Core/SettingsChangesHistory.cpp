@@ -56,7 +56,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"text_index_hint_max_selectivity", 0.2, 0.2, "New setting"},
             {"allow_experimental_time_time64_type", false, true, "Enable Time and Time64 type by default"},
             {"enable_time_time64_type", false, true, "Enable Time and Time64 type by default"},
-            {"use_skip_indexes_for_top_k", false, false, "New setting."},
+            {"use_skip_indexes_for_top_k", false, true, "New setting."},
             {"use_top_k_dynamic_filtering", false, false, "New setting."},
             {"query_plan_max_limit_for_top_k_optimization", 0, 1000, "New setting."},
             {"aggregate_function_input_format", "state", "state", "New setting to control AggregateFunction input format during INSERT operations. Setting Value set to state by default"},
