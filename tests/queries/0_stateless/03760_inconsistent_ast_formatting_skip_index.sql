@@ -1,0 +1,13 @@
+DROP TABLE IF EXISTS t1;
+
+CREATE TABLE t1
+(
+    c0 Int64,
+    c1 Int64,
+    INDEX i1 (c0 AS v3) TYPE minmax GRANULARITY 5
+)
+ENGINE = MergeTree
+PARTITION BY tuple()
+ORDER BY tuple();
+
+ALTER TABLE t1 ADD INDEX i2 (c0 AS v3) TYPE minmax GRANULARITY 5; -- { serverError UNKNOWN_IDENTIFIER }

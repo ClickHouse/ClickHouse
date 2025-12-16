@@ -66,6 +66,7 @@ void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & 
 {
     if (auto expr = getExpression())
     {
+        frame.need_parens = true;
         if (part_of_create_index_query)
         {
             if (expr->as<ASTExpressionList>())
