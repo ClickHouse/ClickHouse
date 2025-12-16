@@ -289,9 +289,9 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
         .insertData(!function_name.empty() > 0 ? function_name.data() : nullptr, function_name.size());
     typeid_cast<ColumnNullable &>(*columns[i++]).insertData(!handler.empty() > 0 ? handler.data() : nullptr, handler.size());
     typeid_cast<ColumnNullable &>(*columns[i++])
-        .insertData(entry_type.has_value() ? reinterpret_cast<const char *>(entry_type.value()) : nullptr, sizeof(Instrumentation::EntryType));
+        .insertData(entry_type.has_value() ? reinterpret_cast<const char *>(&entry_type.value()) : nullptr, sizeof(Instrumentation::EntryType));
     typeid_cast<ColumnNullable &>(*columns[i++])
-        .insertData(duration_nanoseconds.has_value() ? reinterpret_cast<const char *>(duration_nanoseconds.value()) : nullptr, sizeof(UInt64));
+        .insertData(duration_nanoseconds.has_value() ? reinterpret_cast<const char *>(&duration_nanoseconds.value()) : nullptr, sizeof(UInt64));
 }
 
 }
