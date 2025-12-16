@@ -345,8 +345,8 @@ struct ConverterString
         buf.resize(count);
         for (size_t i = 0; i < count; ++i)
         {
-            std::string_view s = column.getDataAt(offset + i);
-            buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size()), reinterpret_cast<const uint8_t *>(s.data()));
+            StringRef s = column.getDataAt(offset + i);
+            buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size), reinterpret_cast<const uint8_t *>(s.data));
         }
         return buf.data();
     }
@@ -373,8 +373,8 @@ struct ConverterEnumAsString
         for (size_t i = 0; i < count; ++i)
         {
             const T value = data[offset + i];
-            const std::string_view s = enum_type->getNameForValue(value);
-            buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size()), reinterpret_cast<const uint8_t *>(s.data()));
+            const StringRef s = enum_type->getNameForValue(value);
+            buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size), reinterpret_cast<const uint8_t *>(s.data));
         }
         return buf.data();
     }

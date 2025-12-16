@@ -517,7 +517,6 @@ class ClickHouseCluster:
         enable_thread_fuzzer=False,
         thread_fuzzer_settings={},
         azurite_default_port=0,
-        server_binaries=[],
     ):
         for param in list(os.environ.keys()):
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
@@ -909,8 +908,6 @@ class ClickHouseCluster:
             )
 
         self.port_pool = PortPoolManager()
-        # For La Casa Del Dolor to run upgrades
-        self.server_binaries = server_binaries
 
     def compose_cmd(self, *args: str) -> List[str]:
         return ["docker", "compose", "--project-name", self.project_name, *args]
@@ -1100,16 +1097,14 @@ class ClickHouseCluster:
         except:
             pass
 
-        # We used to remove unused images, but it is too aggressive and causes issues in
-        # CI because of races between pulling and pruning.
-        # https://github.com/ClickHouse/ClickHouse/issues/80470#issuecomment-3631989064
-        # try:
-        #     logging.debug("Trying to prune unused images...")
+        # Remove unused images
+        try:
+            logging.debug("Trying to prune unused images...")
 
-        #     run_and_check(["docker", "image", "prune", "-f"])
-        #     logging.debug("Images pruned")
-        # except:
-        #     pass
+            run_and_check(["docker", "image", "prune", "-f"])
+            logging.debug("Images pruned")
+        except:
+            pass
 
         # Remove unused volumes
         try:
@@ -2011,8 +2006,8 @@ class ClickHouseCluster:
                 )
             with_remote_database_disk = False
 
-        if not with_dolor and with_remote_database_disk is None:
-            with_remote_database_disk = int(os.getenv("CLICKHOUSE_USE_DATABASE_DISK"))
+        if with_remote_database_disk is None:
+            with_remote_database_disk = os.getenv("CLICKHOUSE_USE_DATABASE_DISK")
 
         if with_remote_database_disk:
             logging.debug(f"Instance {name}, with_remote_database_disk enabled")
@@ -2608,16 +2603,6 @@ class ClickHouseCluster:
                 "bash",
                 "-c",
                 "rm {}".format(path),
-            ],
-        )
-
-    def remove_directory_from_container(self, container_id, path):
-        self.exec_in_container(
-            container_id,
-            [
-                "bash",
-                "-c",
-                "rm -rf {}".format(path),
             ],
         )
 
@@ -3827,41 +3812,6 @@ class ClickHouseCluster:
             run_and_check(clickhouse_start_cmd)
             logging.debug("ClickHouse instance created")
 
-            # Copy binaries and start ClickHouse for dolor instances
-            for instance in self.instances.values():
-                if instance.with_dolor:
-                    i = 0
-                    for val in self.server_binaries:
-                        subprocess.run(
-                            [
-                                "docker",
-                                "cp",
-                                val,
-                                f"{instance.docker_id}:/usr/bin/clickhouse{i}",
-                            ],
-                            check=True,
-                        )
-                        if i == 0:
-                            # The first binary will be used first
-                            instance.exec_in_container(
-                                [
-                                    "ln",
-                                    "-sf",
-                                    f"/usr/bin/clickhouse{i}",
-                                    "/usr/bin/clickhouse",
-                                ],
-                                user="root",
-                            )
-                        i += 1
-                    self.exec_in_container(
-                        instance.docker_id, ["chmod", "+777", "/usr/bin/clickhouse"]
-                    )
-                    instance.exec_in_container(
-                        ["bash", "-c", instance.clickhouse_start_command],
-                        user=str(os.getuid()),
-                        detach=True,
-                    )
-
             start_timeout = 300.0  # seconds
             for instance in self.instances.values():
                 instance.docker_client = self.docker_client
@@ -4377,11 +4327,7 @@ class ClickHouseInstance:
             self.krb5_conf = ""
 
         # Use a common path for data lakes on the filesystem
-        self.lakehouses_path = (
-            "- /var/lib/clickhouse/user_files/lakehouses:/var/lib/clickhouse/user_files/lakehouses"
-            if with_dolor
-            else ""
-        )
+        self.lakehouses_path = "- /var/lib/clickhouse/user_files/lakehouses:/var/lib/clickhouse/user_files/lakehouses" if with_dolor else ""
 
         self.docker_client = None
         self.ip_address = None
@@ -4742,9 +4688,9 @@ class ClickHouseInstance:
             )
         try:
             ps_clickhouse = self.exec_in_container(
-                ["bash", "-c", "ps --no-header -C clickhouse"], nothrow=True, user="root"
+                ["bash", "-c", "ps -C clickhouse"], nothrow=True, user="root"
             )
-            if not ps_clickhouse:
+            if ps_clickhouse == "  PID TTY      STAT   TIME COMMAND":
                 logging.warning("ClickHouse process already stopped")
                 return
 
@@ -4764,10 +4710,6 @@ class ClickHouseInstance:
                     time.sleep(1)
 
             if not stopped:
-                # Some sanitizer report in progress?
-                while self.get_process_pid("llvm-symbolizer") is not None:
-                    time.sleep(1)
-
                 pid = self.get_process_pid("clickhouse")
                 if pid is not None:
                     logging.warning(
@@ -4777,7 +4719,7 @@ class ClickHouseInstance:
                         [
                             "bash",
                             "-c",
-                            f"gdb -batch -ex 'thread apply all bt' -p {pid} > /var/log/clickhouse-server/stdout.log",
+                            f"gdb -batch -ex 'thread apply all bt full' -p {pid} > /var/log/clickhouse-server/stdout.log",
                         ],
                         user="root",
                     )
@@ -4871,7 +4813,7 @@ class ClickHouseInstance:
         pid = self.get_process_pid("clickhouse")
         if pid is not None:
             self.exec_in_container(
-                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt' -p {pid}"],
+                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"],
                 user="root",
             )
         if last_err is not None:
@@ -4894,7 +4836,7 @@ class ClickHouseInstance:
         pid = self.get_process_pid("clickhouse")
         if pid is not None:
             self.exec_in_container(
-                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt' -p {pid}"],
+                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"],
                 user="root",
             )
         raise Exception(
@@ -4955,7 +4897,7 @@ class ClickHouseInstance:
         return len(result) > 0
 
     def grep_in_log(
-        self, substring, from_host=False, filename="clickhouse-server.log", after=None, only_latest=False
+        self, substring, from_host=False, filename="clickhouse-server.log", after=None
     ):
         logging.debug(f"grep in log called %s", substring)
         if after is not None:
@@ -4968,7 +4910,7 @@ class ClickHouseInstance:
                 [
                     "bash",
                     "-c",
-                    f'[ -f {self.logs_dir}/{filename} ] && zgrep {after_opt} -a "{substring}" {self.logs_dir}/{filename}{"" if only_latest else "*"} || true',
+                    f'[ -f {self.logs_dir}/{filename} ] && zgrep {after_opt} -a "{substring}" {self.logs_dir}/{filename}* || true',
                 ]
             )
         else:
@@ -4976,30 +4918,11 @@ class ClickHouseInstance:
                 [
                     "bash",
                     "-c",
-                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep {after_opt} -a "{substring}" /var/log/clickhouse-server/{filename}{"" if only_latest else "*"} || true',
+                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep {after_opt} -a "{substring}" /var/log/clickhouse-server/{filename}* || true',
                 ]
             )
         logging.debug("grep result %s", result)
         return result
-
-    def count_log_lines(
-        self,
-        filename="/var/log/clickhouse-server/clickhouse-server.log",
-    ):
-        result = self.exec_in_container(
-            [
-                "bash",
-                "-c",
-                'wc -l {}'.format(
-                    filename,
-                ),
-            ]
-        )
-        separator = result.find(" ")
-        assert separator > 0, f"no separator in wc output: '{result}'"
-        wc_count = result[:separator]
-        assert wc_count.isdigit(), f"Line count is not a number: {wc_count}"
-        return int(wc_count)
 
     def count_in_log(self, substring):
         result = self.exec_in_container(
@@ -5715,9 +5638,7 @@ class ClickHouseInstance:
                 net_aliases = "aliases:"
                 net_alias1 = "- " + self.hostname
 
-        if self.with_dolor:
-            binary_volume = ""
-        elif not self.with_installed_binary:
+        if not self.with_installed_binary:
             binary_volume = "- " + self.server_bin_path + ":/usr/bin/clickhouse"
         else:
             binary_volume = "- " + self.server_bin_path + ":/usr/share/clickhouse_fresh"
