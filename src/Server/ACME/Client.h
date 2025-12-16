@@ -86,7 +86,7 @@ private:
 
     std::vector<std::string> domains;
     UInt64 refresh_certificates_task_interval_ms;
-    UInt64 refresh_certificates_before;
+    UInt64 refresh_certificates_before_seconds;
     std::optional<std::string> active_order;
 };
 
