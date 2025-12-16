@@ -1,4 +1,3 @@
-#include <Server/HTTP/deferHTTP100Continue.h>
 #include <Server/HTTP/HTTPServerConnection.h>
 #include <Server/TCPServer.h>
 
@@ -99,7 +98,7 @@ void HTTPServerConnection::run()
 
                     if (handler)
                     {
-                        if (!shouldDeferHTTP100Continue(request) && request.getExpectContinue() && response.getStatus() == Poco::Net::HTTPResponse::HTTP_OK)
+                        if (request.getExpectContinue() && response.getStatus() == Poco::Net::HTTPResponse::HTTP_OK)
                             response.sendContinue();
 
                         handler->handleRequest(request, response, write_event);

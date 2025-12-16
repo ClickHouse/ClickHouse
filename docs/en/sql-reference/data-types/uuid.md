@@ -4,7 +4,6 @@ sidebar_label: 'UUID'
 sidebar_position: 24
 slug: /sql-reference/data-types/uuid
 title: 'UUID'
-doc_type: 'reference'
 ---
 
 # UUID
