@@ -93,7 +93,7 @@ void MergeTreeReaderTextIndex::updateAllMarkRanges(const MarkRanges & ranges)
 {
     IMergeTreeReader::updateAllMarkRanges(ranges);
 
-    if (!ranges.empty())
+    if (granule && !ranges.empty())
     {
         const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
         size_t row_begin = index_granularity.getMarkStartingRow(ranges.front().begin);
