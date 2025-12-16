@@ -306,7 +306,6 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
     if (!settings.continuous_reading)
         state_sparse->reset();
 
-    size_t prev_size = column->size();
     auto mutable_column = column->assumeMutable();
     auto & column_sparse = assert_cast<ColumnSparse &>(*mutable_column);
 
