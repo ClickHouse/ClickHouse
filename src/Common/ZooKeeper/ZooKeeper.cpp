@@ -64,7 +64,7 @@ namespace zkutil
 
 namespace
 {
-    bool shouldCreateOpenTelemetrySpans(size_t num_requests = 1)
+    bool shouldCreateOpenTelemetrySpans(size_t payload_size_bytes = 0, size_t num_requests = 0)
     {
         const auto & context = DB::OpenTelemetry::CurrentContext();
         if (!context.isTraceEnabled())
@@ -82,13 +82,13 @@ namespace
                     return opentelemetry_keeper_spans_probability.value;
             }
 
-            if (num_requests > 100)
-                return 1.0 / 10;
-            if (num_requests > 10)
-                return 1.0 / 100;
-            if (num_requests > 1)
+            if (payload_size_bytes < 10'000 && num_requests < 1)
+                return 1.0 / 10000;
+            if (payload_size_bytes < 100'000 && num_requests < 10)
                 return 1.0 / 1000;
-            return 1.0 / 10000;
+            if (payload_size_bytes < 1'000'000 && num_requests < 100)
+                return 1.0 / 100;
+            return 1.0 / 10;
         }();
         std::bernoulli_distribution should_sample(sample_probability);
         return should_sample(thread_local_rng);
@@ -349,8 +349,13 @@ Coordination::Error ZooKeeper::getChildrenImpl(const std::string & path, Strings
     std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
     if (shouldCreateOpenTelemetrySpans())
     {
-        maybe_span.emplace("zookeeper.list", DB::OpenTelemetry::SpanKind::CLIENT);
-        maybe_span->addAttribute("zk.path", path);
+        maybe_span.emplace(
+            "zookeeper.list",
+            DB::OpenTelemetry::SpanKind::CLIENT,
+            std::unordered_map<String, String>{
+                {"zk.path", path},
+            }
+        );
         DB::OpenTelemetry::SetTraceFlagInCurrentContext(DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS, true);
     }
 
@@ -419,10 +424,16 @@ Coordination::Error ZooKeeper::tryGetChildrenWatch(
 Coordination::Error ZooKeeper::createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created)
 {
     std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
-    if (shouldCreateOpenTelemetrySpans())
+    if (shouldCreateOpenTelemetrySpans(data.size()))
     {
-        maybe_span.emplace("zookeeper.create", DB::OpenTelemetry::SpanKind::CLIENT);
-        maybe_span->addAttribute("zk.path", path);
+        maybe_span.emplace(
+            "zookeeper.create",
+            DB::OpenTelemetry::SpanKind::CLIENT,
+            std::unordered_map<String, String>{
+                {"zk.path", path},
+                {"zk.data.size_bytes", std::to_string(data.size())},
+            }
+        );
         DB::OpenTelemetry::SetTraceFlagInCurrentContext(DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS, true);
     }
 
@@ -578,8 +589,13 @@ Coordination::Error ZooKeeper::removeImpl(const std::string & path, int32_t vers
     std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
     if (shouldCreateOpenTelemetrySpans())
     {
-        maybe_span.emplace("zookeeper.remove", DB::OpenTelemetry::SpanKind::CLIENT);
-        maybe_span->addAttribute("zk.path", path);
+        maybe_span.emplace(
+            "zookeeper.remove",
+            DB::OpenTelemetry::SpanKind::CLIENT,
+            std::unordered_map<String, String>{
+                {"zk.path", path},
+            }
+        );
         DB::OpenTelemetry::SetTraceFlagInCurrentContext(DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS, true);
     }
 
@@ -621,8 +637,13 @@ Coordination::Error ZooKeeper::existsImpl(const std::string & path, Coordination
     std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
     if (shouldCreateOpenTelemetrySpans())
     {
-        maybe_span.emplace("zookeeper.exists", DB::OpenTelemetry::SpanKind::CLIENT);
-        maybe_span->addAttribute("zk.path", path);
+        maybe_span.emplace(
+            "zookeeper.exists",
+            DB::OpenTelemetry::SpanKind::CLIENT,
+            std::unordered_map<String, String>{
+                {"zk.path", path},
+            }
+        );
         DB::OpenTelemetry::SetTraceFlagInCurrentContext(DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS, true);
     }
 
@@ -676,8 +697,13 @@ Coordination::Error ZooKeeper::getImpl(
     std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
     if (shouldCreateOpenTelemetrySpans())
     {
-        maybe_span.emplace("zookeeper.get", DB::OpenTelemetry::SpanKind::CLIENT);
-        maybe_span->addAttribute("zk.path", path);
+        maybe_span.emplace(
+            "zookeeper.get",
+            DB::OpenTelemetry::SpanKind::CLIENT,
+            std::unordered_map<String, String>{
+                {"zk.path", path},
+            }
+        );
         DB::OpenTelemetry::SetTraceFlagInCurrentContext(DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS, true);
     }
 
@@ -754,10 +780,16 @@ Coordination::Error ZooKeeper::setImpl(const std::string & path, const std::stri
                            int32_t version, Coordination::Stat * stat)
 {
     std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
-    if (shouldCreateOpenTelemetrySpans())
+    if (shouldCreateOpenTelemetrySpans(data.size()))
     {
-        maybe_span.emplace("zookeeper.set", DB::OpenTelemetry::SpanKind::CLIENT);
-        maybe_span->addAttribute("zk.path", path);
+        maybe_span.emplace(
+            "zookeeper.set",
+            DB::OpenTelemetry::SpanKind::CLIENT,
+            std::unordered_map<String, String>{
+                {"zk.path", path},
+                {"zk.data.size_bytes", std::to_string(data.size())},
+            }
+        );
         DB::OpenTelemetry::SetTraceFlagInCurrentContext(DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS, true);
     }
 
@@ -815,11 +847,21 @@ ZooKeeper::multiImpl(const Coordination::Requests & requests, Coordination::Resp
     if (requests.empty())
         return {Coordination::Error::ZOK, ""};
 
+    size_t total_size = 0;
+    for (const auto & request : requests)
+        total_size += request->bytesSize();
+
     std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
-    if (shouldCreateOpenTelemetrySpans(requests.size()))
+    if (shouldCreateOpenTelemetrySpans(total_size, requests.size()))
     {
-        maybe_span.emplace("zookeeper.multi", DB::OpenTelemetry::SpanKind::CLIENT);
-        maybe_span->addAttribute("zk.request_count", static_cast<uint64_t>(requests.size()));
+        maybe_span.emplace(
+            "zookeeper.multi",
+            DB::OpenTelemetry::SpanKind::CLIENT,
+            std::unordered_map<String, String>{
+                {"zk.subrequests.size", std::to_string(requests.size())},
+                {"zk.subrequests.size_bytes", std::to_string(total_size)},
+            }
+        );
         DB::OpenTelemetry::SetTraceFlagInCurrentContext(DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS, true);
     }
 
@@ -909,8 +951,13 @@ Coordination::Error ZooKeeper::syncImpl(const std::string & path, std::string & 
     std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
     if (shouldCreateOpenTelemetrySpans())
     {
-        maybe_span.emplace("zookeeper.sync", DB::OpenTelemetry::SpanKind::CLIENT);
-        maybe_span->addAttribute("zk.path", path);
+        maybe_span.emplace(
+            "zookeeper.sync",
+            DB::OpenTelemetry::SpanKind::CLIENT,
+            std::unordered_map<String, String>{
+                {"zk.path", path},
+            }
+        );
         DB::OpenTelemetry::SetTraceFlagInCurrentContext(DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS, true);
     }
 
@@ -1085,8 +1132,13 @@ Coordination::Error ZooKeeper::tryRemoveRecursive(const std::string & path, uint
     std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
     if (shouldCreateOpenTelemetrySpans())
     {
-        maybe_span.emplace("zookeeper.remove_recursive", DB::OpenTelemetry::SpanKind::CLIENT);
-        maybe_span->addAttribute("zk.path", path);
+        maybe_span.emplace(
+            "zookeeper.remove_recursive",
+            DB::OpenTelemetry::SpanKind::CLIENT,
+            std::unordered_map<String, String>{
+                {"zk.path", path},
+            }
+        );
         DB::OpenTelemetry::SetTraceFlagInCurrentContext(DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS, true);
     }
 
@@ -1123,8 +1175,13 @@ Coordination::Error ZooKeeper::getACLImpl(const std::string & path, Coordination
     std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
     if (shouldCreateOpenTelemetrySpans())
     {
-        maybe_span.emplace("zookeeper.get_acl", DB::OpenTelemetry::SpanKind::CLIENT);
-        maybe_span->addAttribute("zk.path", path);
+        maybe_span.emplace(
+            "zookeeper.get_acl",
+            DB::OpenTelemetry::SpanKind::CLIENT,
+            std::unordered_map<String, String>{
+                {"zk.path", path},
+            }
+        );
         DB::OpenTelemetry::SetTraceFlagInCurrentContext(DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS, true);
     }
 
@@ -1276,7 +1333,10 @@ Coordination::ReconfigResponse ZooKeeper::reconfig(
     std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
     if (shouldCreateOpenTelemetrySpans())
     {
-        maybe_span.emplace("zookeeper.reconfig", DB::OpenTelemetry::SpanKind::CLIENT);
+        maybe_span.emplace(
+            "zookeeper.reconfig",
+            DB::OpenTelemetry::SpanKind::CLIENT
+        );
         DB::OpenTelemetry::SetTraceFlagInCurrentContext(DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS, true);
     }
 

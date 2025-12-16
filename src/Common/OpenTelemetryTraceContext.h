@@ -198,6 +198,7 @@ using TracingContextHolderPtr = std::unique_ptr<TracingContextHolder>;
 struct SpanHolder : public Span
 {
     explicit SpanHolder(std::string_view, SpanKind _kind = SpanKind::INTERNAL);
+    SpanHolder(std::string_view, SpanKind _kind, std::unordered_map<String, String> _attributes);
     ~SpanHolder();
 
     /// Finish a span explicitly if needed.

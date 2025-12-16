@@ -53,6 +53,7 @@ const char * opNumToString(OpNum op_num)
         case OpNum::Close: return "Close";
         case OpNum::Error: return "Error";
         case OpNum::Create: return "Create";
+        case OpNum::Create2: return "Create2";
         case OpNum::Remove: return "Remove";
         case OpNum::Exists: return "Exists";
         case OpNum::Get: return "Get";
@@ -74,6 +75,11 @@ const char * opNumToString(OpNum op_num)
         case OpNum::RemoveRecursive: return "RemoveRecursive";
         case OpNum::SessionID: return "SessionID";
         case OpNum::CheckStat: return "CheckStat";
+        case OpNum::AddWatch: return "AddWatch";
+        case OpNum::CheckWatch: return "CheckWatch";
+        case OpNum::RemoveWatch: return "RemoveWatch";
+        case OpNum::SetWatch: return "SetWatch";
+        case OpNum::SetWatch2: return "SetWatch2";
     }
 }
 
