@@ -667,7 +667,7 @@ CREATE TABLE default.user_activities (
     timestamp DateTime
 ) ENGINE = Memory;
 
-INSERT INTO default.user_activities VALUES 
+INSERT INTO default.user_activities VALUES
 (1, 'login', '2025-01-01 10:00:00'),
 (2, 'login', '2025-01-01 10:15:00'),
 (3, 'search', '2025-01-01 10:30:00'),
