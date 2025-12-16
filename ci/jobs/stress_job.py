@@ -253,7 +253,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             name, description = log_parser.parse_failure()
             test_results.append(
                 Result.create_from(
-                    name=name, info=description, status=Result.Status.FAILED
+                    name=name, info=description, status=Result.StatusExtended.FAIL
                 )
             )
 
