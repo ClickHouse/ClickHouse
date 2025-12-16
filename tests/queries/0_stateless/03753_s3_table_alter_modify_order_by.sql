@@ -1,3 +1,6 @@
+-- Tags: no-parallel, no-fasttest
+-- Tag no-fasttest: Depends on AWS
+
 DROP TABLE IF EXISTS test_s3;
 set s3_truncate_on_insert = 1;
 CREATE TABLE test_s3 (c0 Int) ENGINE = S3(s3_conn, filename = 'file.csv');
