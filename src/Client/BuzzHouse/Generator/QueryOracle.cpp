@@ -511,12 +511,12 @@ void QueryOracle::dumpOracleIntermediateSteps(
         }
         break;
         case DumpOracleStrategy::ALTER_UPDATE: {
-            if (rg.nextBool())
+            if (!t.areInsertsAppends() || rg.nextBool())
             {
                 std::optional<String> acluster;
                 Alter * at = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
 
-                acluster = gen.alterSingleTable(rg, t, 1, false, at);
+                acluster = gen.alterSingleTable(rg, t, 1, false, t.areInsertsAppends(), at);
                 if (acluster.has_value())
                 {
                     at->mutable_cluster()->set_cluster(acluster.value());
@@ -540,7 +540,8 @@ void QueryOracle::dumpOracleIntermediateSteps(
             Insert * ins = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
 
             chassert(nrows);
-            next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_system_cmd()->set_flush_async_insert_queue(true);
+            next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_system_cmd()->set_flush_async_insert_queue(
+                true);
             gen.generateInsertToTable(rg, t, false, nrows, ins);
             intermediate_queries.emplace_back(next);
             intermediate_queries.emplace_back(next2);

@@ -1186,7 +1186,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          },
          {},
          false)},
-    {"wait_for_async_insert", trueOrFalseSettingNoOracle},
     {"write_full_path_in_iceberg_metadata", trueOrFalseSettingNoOracle},
     /// ClickHouse cloud setting
     {"write_through_distributed_cache", trueOrFalseSettingNoOracle},
@@ -1354,7 +1353,8 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              {"parallel_replicas_count",
               CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.nextSmallNumber() - 1); }, {}, false)},
              {"remote_filesystem_read_method",
-              CHSetting([](RandomGenerator & rg, FuzzConfig &) { return rg.nextBool() ? "'read'" : "'threadpool'"; }, {}, false)}});
+              CHSetting([](RandomGenerator & rg, FuzzConfig &) { return rg.nextBool() ? "'read'" : "'threadpool'"; }, {}, false)},
+             {"wait_for_async_insert", trueOrFalseSettingNoOracle}}); /// breaks table dump oracle
         max_bytes_values.insert(
             max_bytes_values.end(),
             {"max_bytes_in_distinct",

@@ -1548,8 +1548,8 @@ uint32_t StatementGenerator::getIdentifierFromString(const String & tname) const
     return static_cast<uint32_t>(std::stoul(tname.substr(offset)));
 }
 
-std::optional<String>
-StatementGenerator::alterSingleTable(RandomGenerator & rg, SQLTable & t, const uint32_t nalters, const bool no_oracle, Alter * at)
+std::optional<String> StatementGenerator::alterSingleTable(
+    RandomGenerator & rg, SQLTable & t, const uint32_t nalters, const bool no_oracle, const bool can_update, Alter * at)
 {
     const bool prev_enforce_final = this->enforce_final;
     const bool prev_allow_not_deterministic = this->allow_not_deterministic;
@@ -1566,7 +1566,7 @@ StatementGenerator::alterSingleTable(RandomGenerator & rg, SQLTable & t, const u
     {
         const uint32_t alter_order_by = 3;
         const uint32_t heavy_delete = 30 * static_cast<uint32_t>(no_oracle && t.can_run_merges);
-        const uint32_t heavy_update = 40 * static_cast<uint32_t>(t.can_run_merges);
+        const uint32_t heavy_update = 40 * static_cast<uint32_t>(can_update && t.can_run_merges);
         const uint32_t add_column = 2 * static_cast<uint32_t>(no_oracle && !t.hasDatabasePeer() && t.cols.size() < fc.max_columns);
         const uint32_t materialize_column = 2 * static_cast<uint32_t>(t.can_run_merges);
         const uint32_t drop_column = 2 * static_cast<uint32_t>(no_oracle && !t.hasDatabasePeer() && !t.cols.empty() && t.can_run_merges);
@@ -1607,7 +1607,7 @@ StatementGenerator::alterSingleTable(RandomGenerator & rg, SQLTable & t, const u
         const uint32_t unfreeze_partition = 7 * static_cast<uint32_t>(!t.frozen_partitions.empty());
         const uint32_t clear_index_partition = 5 * static_cast<uint32_t>(table_has_partitions && !t.idxs.empty());
         const uint32_t move_partition = 5 * static_cast<uint32_t>(no_oracle && table_has_partitions && !fc.disks.empty());
-        const uint32_t modify_ttl = 5 * static_cast<uint32_t>(!t.is_deterministic);
+        const uint32_t modify_ttl = 5 * static_cast<uint32_t>(!t.is_deterministic && t.can_run_merges);
         const uint32_t remove_ttl = 2 * static_cast<uint32_t>(!t.is_deterministic);
         const uint32_t attach_partition_from = 5 * static_cast<uint32_t>(no_oracle && t.isMergeTreeFamily());
         const uint32_t replace_partition_from = 5 * static_cast<uint32_t>(t.isMergeTreeFamily());
@@ -2544,7 +2544,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
     {
         SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
 
-        cluster = this->alterSingleTable(rg, t, nalters, true, at);
+        cluster = this->alterSingleTable(rg, t, nalters, true, true, at);
     }
     else if (alter_database && nopt2 < (alter_view + alter_table + alter_database + 1))
     {

@@ -1063,15 +1063,13 @@ void StatementGenerator::generateMergeTreeEngineDetails(
             /// Replicated table params must come first when set
             std::vector<TableEngineParam> temp_params;
             const uint32_t nopt = rg.nextSmallNumber();
-            const std::function<bool(const SQLTable &)> replicated_tables = [](const SQLTable & t)
+            static const auto & replicated_tables = [](const SQLTable & t)
             { return t.isAttached() && t.isReplicatedOrSharedMergeTree() && (t.shard_counter > 0 || t.replica_counter > 0); };
-            const bool has_tables = collectionHas<SQLTable>(replicated_tables);
 
-            if (has_tables && nopt < 7)
+            if (collectionHas<SQLTable>(replicated_tables) && nopt < 7)
             {
-                /// Add as a replica to another database
-                const uint32_t dname = rg.pickRandomly(filterCollection<SQLTable>(replicated_tables)).get().tname;
-                SQLTable & t = this->tables.at(dname);
+                /// Add as a replica to another table
+                SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(replicated_tables));
 
                 b.shard_counter = rg.nextBool() ? t.shard_counter++ : t.shard_counter;
                 b.replica_counter = rg.nextBool() ? t.replica_counter++ : t.replica_counter;
@@ -2763,15 +2761,13 @@ void StatementGenerator::generateDatabaseEngineDetails(RandomGenerator & rg, SQL
     if (d.isReplicatedDatabase())
     {
         const uint32_t nopt = rg.nextSmallNumber();
-        const std::function<bool(const std::shared_ptr<SQLDatabase> &)> replicated_databases = [](const std::shared_ptr<SQLDatabase> & db)
+        static const auto & replicated_databases = [](const std::shared_ptr<SQLDatabase> & db)
         { return db->isAttached() && db->isReplicatedOrSharedDatabase() && (db->shard_counter > 0 || db->replica_counter > 0); };
-        const bool has_databases = collectionHas<std::shared_ptr<SQLDatabase>>(replicated_databases);
 
-        if (has_databases && nopt < 7)
+        if (collectionHas<std::shared_ptr<SQLDatabase>>(replicated_databases) && nopt < 7)
         {
             /// Add as a replica to another database
-            const uint32_t dname = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(replicated_databases)).get()->dname;
-            std::shared_ptr<SQLDatabase> & db = this->databases.at(dname);
+            std::shared_ptr<SQLDatabase> & db = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(replicated_databases));
 
             d.shard_counter = rg.nextBool() ? db->shard_counter++ : db->shard_counter;
             d.replica_counter = rg.nextBool() ? db->replica_counter++ : db->replica_counter;
