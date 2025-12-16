@@ -120,7 +120,6 @@ The supported formats are:
 | [RowBinaryWithNamesAndTypes](./formats/RowBinary/RowBinaryWithNamesAndTypes.md)                            | ✔   | ✔     |
 | [RowBinaryWithDefaults](./formats/RowBinary/RowBinaryWithDefaults.md)                                      | ✔   | ✗     |
 | [Native](./formats/Native.md)                                                                              | ✔   | ✔     |
-| [Buffers](./formats/Buffers.md)                                                                            | ✔   | ✔     |
 | [Null](./formats/Null.md)                                                                                  | ✗   | ✔     |
 | [Hash](./formats/Hash.md)                                                                                  | ✗   | ✔     |
 | [XML](./formats/XML.md)                                                                                    | ✗   | ✔     |

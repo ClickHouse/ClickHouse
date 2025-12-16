@@ -244,7 +244,7 @@ YTsaurusClient::SchemaDescription YTsaurusClient::getTableSchema(const String & 
     return {true, std::move(yt_columns)};
 }
 
-bool YTsaurusClient::checkSchemaCompatibility(const String & table_path, const SharedHeader & sample_block, String & reason, bool allow_nullable)
+bool YTsaurusClient::checkSchemaCompatibility(const String & table_path, const SharedHeader & sample_block, String & reason)
 {
     auto yt_schema = getTableSchema(table_path);
 
@@ -260,7 +260,12 @@ bool YTsaurusClient::checkSchemaCompatibility(const String & table_path, const S
             return false;
         }
         auto yt_column_type = iter->second;
-        if (!isYTSaurusTypesCompatible(column_type_with_name.type, yt_column_type, allow_nullable))
+
+        if (
+            yt_column_type->getColumnType() != TypeIndex::Dynamic &&
+            column_type_with_name.type->getColumnType() != TypeIndex::Dynamic &&
+            column_type_with_name.type->getColumnType() != yt_column_type->getColumnType()
+        )
         {
             reason = fmt::format("Column {} types mismatch. YtSaurus converted type {} table column type {}", column_type_with_name.name, yt_column_type->getName(), column_type_with_name.type->getName());
             return false;

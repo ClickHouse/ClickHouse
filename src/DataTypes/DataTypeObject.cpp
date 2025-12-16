@@ -293,7 +293,7 @@ std::optional<String> tryGetSubObjectSubcolumn(std::string_view subcolumn_name)
     if (!subcolumn_name.starts_with("^`"))
         return std::nullopt;
 
-    ReadBufferFromMemory buf(subcolumn_name.substr(1));
+    ReadBufferFromMemory buf(subcolumn_name.data() + 1, subcolumn_name.size() - 1);
     String path;
     /// Try to read back-quoted first path element.
     if (!tryReadBackQuotedString(path, buf))
@@ -367,7 +367,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
                 size_t lower_bound_index = ColumnObject::findPathLowerBoundInSharedData(prefix, *shared_data_paths, start, end);
                 for (; lower_bound_index != end; ++lower_bound_index)
                 {
-                    auto path = shared_data_paths->getDataAt(lower_bound_index);
+                    auto path = shared_data_paths->getDataAt(lower_bound_index).toView();
                     if (!path.starts_with(prefix))
                         break;
 

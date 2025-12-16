@@ -65,15 +65,9 @@ DatabaseAtomic::DatabaseAtomic(
     const String & logger_name,
     ContextPtr context_,
     DatabaseMetadataDiskSettings database_metadata_disk_settings_)
-    : DatabaseOrdinary(
-        name_,
-        metadata_path_,
-        DatabaseCatalog::getStoreDirPath() / "",
-        logger_name,
-        context_,
-        database_metadata_disk_settings_)
-    , path_to_table_symlinks(DatabaseCatalog::getDataDirPath(name_) / "")
-    , path_to_metadata_symlink(DatabaseCatalog::getMetadataDirPath(name_))
+    : DatabaseOrdinary(name_, metadata_path_, "store/", logger_name, context_, database_metadata_disk_settings_)
+    , path_to_table_symlinks(fs::path("data") / escapeForFileName(name_) / "")
+    , path_to_metadata_symlink(fs::path("metadata") / escapeForFileName(name_))
     , db_uuid(uuid)
 {
     assert(db_uuid != UUIDHelpers::Nil);
@@ -96,7 +90,7 @@ void DatabaseAtomic::createDirectoriesUnlocked()
     auto db_disk = getDisk();
 
     DatabaseOnDisk::createDirectoriesUnlocked();
-    db_disk->createDirectories(DatabaseCatalog::getMetadataDirPath());
+    db_disk->createDirectories("metadata");
     if (db_disk->isSymlinkSupported())
         db_disk->createDirectories(path_to_table_symlinks);
     tryCreateMetadataSymlink();
@@ -738,10 +732,11 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
         LOG_WARNING(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
     }
 
-    auto old_metadata_file_path = DatabaseCatalog::getMetadataFilePath(database_name);
-    auto new_metadata_file_path = DatabaseCatalog::getMetadataFilePath(new_name);
+    auto new_name_escaped = escapeForFileName(new_name);
+    auto old_database_metadata_path = fs::path("metadata") / (escapeForFileName(database_name) + ".sql");
+    auto new_database_metadata_path = fs::path("metadata") / (new_name_escaped + ".sql");
     auto default_db_disk = getContext()->getDatabaseDisk();
-    default_db_disk->moveFile(old_metadata_file_path, new_metadata_file_path);
+    default_db_disk->moveFile(old_database_metadata_path, new_database_metadata_path);
 
     String old_path_to_table_symlinks;
 
@@ -767,9 +762,9 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
             snapshot.database = database_name;
         }
 
-        path_to_metadata_symlink = DatabaseCatalog::getMetadataDirPath(new_name);
+        path_to_metadata_symlink = fs::path("metadata") / new_name_escaped;
         old_path_to_table_symlinks = path_to_table_symlinks;
-        path_to_table_symlinks = DatabaseCatalog::getDataDirPath(new_name) / "";
+        path_to_table_symlinks = fs::path("data") / new_name_escaped / "";
     }
 
     auto db_disk = getDisk();

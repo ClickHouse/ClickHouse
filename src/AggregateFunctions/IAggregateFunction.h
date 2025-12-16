@@ -544,14 +544,13 @@ public:
         size_t row_begin,
         size_t row_end,
         AggregateDataPtr __restrict place,
-        const IColumn ** __restrict columns,
+        const IColumn ** columns,
         Arena * arena,
         ssize_t if_argument_pos = -1) const override
     {
         if (if_argument_pos >= 0)
         {
-            alignas(32) const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
             for (size_t i = row_begin; i < row_end; ++i)
             {
                 if (flags[i])

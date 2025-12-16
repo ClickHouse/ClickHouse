@@ -1,5 +1,4 @@
 #pragma once
-
 #include <Processors/ISimpleTransform.h>
 
 namespace DB
@@ -11,14 +10,11 @@ using LazilyReadInfoPtr = std::shared_ptr<LazilyReadInfo>;
 class MergeTreeLazilyReader;
 using MergeTreeLazilyReaderPtr = std::unique_ptr<MergeTreeLazilyReader>;
 
-class RuntimeDataflowStatisticsCacheUpdater;
-using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
-
 class ColumnLazyTransform : public ISimpleTransform
 {
 public:
-    ColumnLazyTransform(
-        SharedHeader header_, MergeTreeLazilyReaderPtr lazy_column_reader_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
+    explicit ColumnLazyTransform(
+        SharedHeader header_, MergeTreeLazilyReaderPtr lazy_column_reader_);
 
     static Block transformHeader(Block header);
 
@@ -29,8 +25,6 @@ protected:
 
 private:
     MergeTreeLazilyReaderPtr lazy_column_reader;
-
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 };
 
 }
