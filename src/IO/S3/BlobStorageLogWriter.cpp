@@ -48,7 +48,6 @@ void BlobStorageLogWriter::addEvent(
     element.remote_path = remote_path;
     element.local_path = local_path_.empty() ? local_path : local_path_;
     element.data_size = data_size;
-    element.elapsed_microseconds = 0;//elapsed_microseconds;
     element.error_code = error_code;
     element.error_message = error_message;
 
