@@ -147,6 +147,8 @@ namespace ProfileEvents
             counters[event].should_trace = true;
         }
 
+        void setTraceProfileEvents(const String & events_list);
+
         /// Set all counters to zero
         void resetCounters();
 
@@ -198,6 +200,9 @@ namespace ProfileEvents
 
     /// Get description of event by identifier. Returns statically allocated string.
     const std::string_view & getDocumentation(Event event);
+
+    /// Get ProfileEvent by its name
+    Event getByName(std::string_view name);
 
     /// Get value type of event by identifier. Returns enum value.
     ValueType getValueType(Event event);

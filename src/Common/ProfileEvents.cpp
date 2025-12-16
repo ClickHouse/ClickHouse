@@ -8,6 +8,9 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/iter_find.hpp>
+
 #include <cfloat>
 #include <random>
 
@@ -1381,6 +1384,30 @@ const std::string_view & getDocumentation(Event event)
 {
     return docs[event];
 }
+
+/// Get ProfileEvent by its name
+Event getByName(std::string_view name)
+{
+    static std::unordered_map<std::string_view, Event> map =
+    {
+#define M(NAME, DOCUMENTATION, VALUE_TYPE) {#NAME, ProfileEvents::NAME},
+        APPLY_FOR_EVENTS(M)
+#undef M
+    };
+
+    return map.at(name);
+}
+
+void Counters::setTraceProfileEvents(const String & events_list)
+{
+    for (auto it = boost::make_split_iterator(events_list, boost::first_finder(",", boost::is_equal()));
+        it != decltype(it)();
+        ++it)
+    {
+        setTraceProfileEvent(getByName(std::string_view(*it)));
+    }
+}
+
 
 ValueType getValueType(Event event)
 {

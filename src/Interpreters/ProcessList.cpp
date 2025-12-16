@@ -12,7 +12,6 @@
 #include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadProfileEvents.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/logger_useful.h>
@@ -304,9 +303,7 @@ ProcessList::EntryPtr ProcessList::insert(
                     if (!list_of_events_to_trace.empty())
                     {
                         /// Trace specific profile events
-                        const auto & parsed_list = PerfEventsCounters::eventIndicesFromString(list_of_events_to_trace);
-                        for (const auto & event_id : parsed_list)
-                            thread_group->performance_counters.setTraceProfileEvent(ProfileEvents::Event(event_id));
+                        thread_group->performance_counters.setTraceProfileEvents(list_of_events_to_trace);
                     }
                     else
                     {
