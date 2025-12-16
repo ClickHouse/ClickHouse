@@ -260,7 +260,7 @@ static ASTPtr tryBuildAdditionalFilterAST(
             continue;
         }
 
-        /// Labmdas are not supported (converting back to AST is complicated).
+        /// Lambdas are not supported (converting back to AST is complicated).
         /// We have two cases here cause function with no capture can be constant-folded.
         if (WhichDataType(node->result_type).isFunction()
             || (node->type == ActionsDAG::ActionType::FUNCTION
@@ -311,13 +311,19 @@ static ASTPtr tryBuildAdditionalFilterAST(
             /// The column name can be taken from the projection name, or from the projection expression.
             /// It depends on the predicate and query stage.
 
-            if (projection_names.contains(node->result_name))
+            std::string_view r;
+            for(auto token : node->result_name | std::views::split('.'))
+                r = std::string_view(&*token.begin(), std::ranges::distance(token));
+
+            std::string result_name{r};
+
+            if (projection_names.contains(result_name))
             {
                 /// The input name matches the projection name. Example:
                 /// SELECT x FROM (SELECT number + 1 AS x FROM remote('127.0.0.2', numbers(3))) WHERE x = 1
                 /// In this case, ReadFromRemote has header `x UInt64` and filter DAG has input column with name `x`.
                 /// Here, filter is applied to the whole query, and checking for projection name is reasonable.
-                res = std::make_shared<ASTIdentifier>(node->result_name);
+                res = std::make_shared<ASTIdentifier>(result_name);
             }
             else
             {
@@ -330,7 +336,7 @@ static ASTPtr tryBuildAdditionalFilterAST(
                 /// Here, filter is pushed down before the aggregation, and projection name can't be used.
                 /// However, we can match the input with the execution name of projection query tree.
                 /// Note: this may not cover all the cases.
-                auto it = execution_name_to_projection_query_tree.find(node->result_name);
+                auto it = execution_name_to_projection_query_tree.find(result_name);
                 if (it != execution_name_to_projection_query_tree.end())
                     /// Append full expression as an AST.
                     /// We rely on plan optimization that the result is (expected to be) valid.
