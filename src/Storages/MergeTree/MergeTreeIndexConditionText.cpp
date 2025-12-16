@@ -75,6 +75,8 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     static constexpr auto cache_policy = "SLRU";
     size_t max_memory_usage = std::min(settings[Setting::max_memory_usage] / 10ULL, 100ULL * 1024 * 1024);
 
+    /// If usage of global text index caches is disabled, create local
+    /// one to share them between threads that read the same data parts.
     if (settings[Setting::use_text_index_dictionary_cache])
         dictionary_block_cache = context_->getTextIndexDictionaryBlockCache();
     else

@@ -11,6 +11,8 @@
 namespace DB
 {
 
+/// A segment of inverted index.
+/// Created during materialization of text index.
 struct InvertedIndexSegment
 {
     InvertedIndexSegment(DataPartStoragePtr part_storage_, String index_file_name_, size_t part_index_)
@@ -25,6 +27,9 @@ struct InvertedIndexSegment
     size_t part_index;
 };
 
+/// Transform that builds text indexes and periodically flushes their segments
+/// into temporary storage, when amount of accumulated data reaches some threshold.
+/// Used for materialization of text indexes.
 class BuildInvertedIndexTransform : public ISimpleTransform
 {
 public:
@@ -45,10 +50,13 @@ public:
     void aggregate(const Block & block);
     void finalize();
 
+    /// Returns all segements created by this transform for the given index and part.
     std::vector<InvertedIndexSegment> getSegments(size_t index_idx, size_t part_idx) const;
     const std::vector<MergeTreeIndexPtr> & getIndexes() const { return indexes; }
 
 private:
+    /// Resets current index granule and flush a segment
+    /// of the text index to the temporary storage.
     void writeTemporarySegment(size_t i);
 
     String index_file_prefix;
@@ -59,10 +67,20 @@ private:
     CompressionCodecPtr default_codec;
     String marks_file_extension;
 
+    /// Number of rows in blocks processed by the transform.
     size_t num_processed_rows = 0;
+    /// Number of flushed segments for each index.
     std::vector<size_t> segment_numbers;
 };
 
+/// Task that merges text indexes from data parts,
+/// or temporary segments of text indexes.
+/// Task can recalcute row numbers in the source
+/// posting to row numbers in the resulting part.
+/// The mapping from old part offsets to the new part offsets is built
+/// during the merge of data parts and can be optionally passed to this task.
+/// Currently merges all segments in one stage
+/// TODO: Implement multi-stage merge to reduce the memory usage.
 class MergeInvertedIndexesTask : public MergeProjectionsIndexesTask
 {
 public:
@@ -78,20 +96,21 @@ public:
 
     bool executeStep() override;
     void cancel() noexcept override;
-
-    void addTemporaryFilesCleanupOps(DiskTransactionPtr) noexcept override {}
     void addToChecksums(MergeTreeDataPartChecksums & checksums) override;
 
 private:
-    void init();
     void finalize();
     void cancelImpl() noexcept;
     Block getHeader() const;
     void initializeQueue();
-    bool isNewToken(const SortCursor & cursor) const;
 
+    /// Returns true if the given cursor points to a new token.
+    bool isNewToken(const SortCursor & cursor) const;
+    /// Reads the next dictionary block for the given source index.
     void readDictionaryBlock(size_t source_num);
+    /// Reads the next posting lists for the next token in the given source index.
     std::vector<PostingListPtr> readPostingLists(size_t source_num);
+    /// Adjusts row numbers in the postings list according to merged part offsets.
     PostingListPtr adjustPartOffsets(size_t source_num, PostingListPtr posting_list);
 
     void flushPostingList();
@@ -101,6 +120,8 @@ private:
     MergeTreeMutableDataPartPtr new_data_part;
     MergeTreeIndexPtr index_ptr;
     MergeTreeIndexTextParams params;
+
+    /// If not null, posting list values must be recalculated using merged offsets.
     std::shared_ptr<MergedPartOffsets> merged_part_offsets;
     MergeTreeWriterSettings writer_settings;
     size_t step_time_ms;
@@ -115,9 +136,13 @@ private:
     std::vector<DictionaryBlock> inputs;
     SortingQueue<SortCursor> queue;
 
+    /// Tokens accumulated for the current dictionary block.
     MutableColumnPtr output_tokens;
-    PostingList output_postings;
+    /// Tokens infos accumulated for the current dictionary block.
     std::vector<TokenPostingsInfo> output_infos;
+    /// Postings accumulated for the current token.
+    PostingList output_postings;
+    /// Sparse index accumulated for the task. Flushed only once in the end of the task.
     MutableColumnPtr sparse_index_tokens;
     MutableColumnPtr sparse_index_offsets;
 
@@ -128,7 +153,7 @@ using MergeInvertedIndexesTaskPtr = std::unique_ptr<MergeInvertedIndexesTask>;
 
 MutableDataPartStoragePtr createTemporaryInvertedIndexStorage(const DiskPtr & disk, const String & part_relative_path);
 
-std::vector<MergeTreeIndexPtr> getInvertedIndexesToBuild(
+std::vector<MergeTreeIndexPtr> getInvertedIndexesToBuildMerge(
     const IndicesDescription & indices_description,
     const NameSet & read_column_names,
     const IMergeTreeDataPart & data_part,

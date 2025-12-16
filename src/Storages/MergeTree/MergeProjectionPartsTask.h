@@ -44,7 +44,6 @@ public:
         }
 
     void addToChecksums(MergeTreeDataPartChecksums &) override {}
-    void addTemporaryFilesCleanupOps(DiskTransactionPtr) noexcept override {}
     void cancel() noexcept override
     {
         /// FIXME: See `executeHere` from MergeTask.h called in executeStep

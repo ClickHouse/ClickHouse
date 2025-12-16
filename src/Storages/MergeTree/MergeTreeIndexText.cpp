@@ -304,7 +304,7 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     auto * dictionary_stream = streams.at(MergeTreeIndexSubstream::Type::TextIndexDictionary);
     auto * postings_stream = streams.at(MergeTreeIndexSubstream::Type::TextIndexPostings);
 
-    if (!index_stream || !dictionary_stream)
+    if (!index_stream || !dictionary_stream || !postings_stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be deserialized with 3 streams: index, dictionary, postings. One of the streams is missing");
 
     sparse_index = deserializeSparseIndex(*index_stream->getDataBuffer(), state);
@@ -510,6 +510,9 @@ bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query)
         if (!has_any_range)
             continue;
 
+        /// We read postings only for tokens that has one block.
+        /// Otherwise, assume that the token is not useful
+        /// for filtering and is present in all granules.
         auto postings = getPostingsForToken(token);
         if (!postings)
             return true;
@@ -557,6 +560,9 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery &
         if (!has_any_range)
             return false;
 
+        /// We read postings only for tokens that has one block.
+        /// Otherwise, assume that the token is not useful
+        /// for filtering and is present in all granules.
         if (auto postings = getPostingsForToken(token))
         {
             intersection &= *postings;
@@ -656,6 +662,11 @@ void serializeTokensFrontCoding(
     }
 }
 
+/// Split postings into smaller blocks without copying the data.
+/// We use the fact that the Roaring Bitmap is split into small
+/// containers that are are stored in contiguous memory and sorted
+/// by the key. Therefore, to create a view to the smaller bitmap,
+/// we need only to adjust the pointers to the containers.
 std::vector<roaring::api::roaring_bitmap_t> splitPostings(const roaring::api::roaring_bitmap_t & postings, size_t block_size)
 {
     std::vector<roaring::api::roaring_bitmap_t> result;
@@ -683,6 +694,8 @@ std::vector<roaring::api::roaring_bitmap_t> splitPostings(const roaring::api::ro
         size_t container_cardinality = roaring::internal::container_get_cardinality(container.containers[i], container.typecodes[i]);
         total_cardinality += container_cardinality;
 
+        /// The result block size may exceed the threshold, but that's ok,
+        /// since sizes of the containers are much smaller than the target block size.
         if (total_cardinality >= block_size)
         {
             result.emplace_back(create_bitmap_view(begin_index, i - begin_index + 1));
@@ -716,15 +729,6 @@ void serializeTokensImpl(
             serializeTokensFrontCoding(token_getter, ostr, block_begin, block_end);
             break;
     }
-}
-
-template <typename Stream>
-size_t flushAndGetOffsetInFile(Stream & out)
-{
-    out.compressed_hashing.next();
-    auto mark = out.getCurrentMark();
-    chassert(mark.offset_in_decompressed_block == 0);
-    return mark.offset_in_compressed_file;
 }
 
 }
@@ -856,8 +860,12 @@ DictionarySparseIndex serializeTokensAndPostings(
         /// Start a new compressed block because the dictionary blocks
         /// are usually read with random reads and it is more efficient
         /// to decompress only the needed data.
-        sparse_index_offsets_data.emplace_back(flushAndGetOffsetInFile(dictionary_stream));
+        dictionary_stream.compressed_hashing.next();
+        auto dictionary_mark = dictionary_stream.getCurrentMark();
+        chassert(dictionary_mark.offset_in_decompressed_block == 0);
+
         const auto & first_token = tokens_and_postings[block_begin].first;
+        sparse_index_offsets_data.emplace_back(dictionary_mark.offset_in_compressed_file);
         sparse_index_str.insertData(first_token.data(), first_token.size());
 
         serializeTokensImpl(

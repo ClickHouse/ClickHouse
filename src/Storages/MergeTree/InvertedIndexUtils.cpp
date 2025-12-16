@@ -1,5 +1,5 @@
 #include <Processors/Port.h>
-#include <Storages/MergeTree/MergeInvertedIndexes.h>
+#include <Storages/MergeTree/InvertedIndexUtils.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Compression/CompressionFactory.h>
 #include <Parsers/parseQuery.h>
@@ -129,6 +129,9 @@ IProcessor::Status BuildInvertedIndexTransform::prepare()
 
 void BuildInvertedIndexTransform::aggregate(const Block & block)
 {
+    /// Threshold for the number of processed tokens to flush the segment.
+    /// Calculating used RAM or number of processed unique tokens adds significant overhead,
+    /// so we use a simple trade-off threshold, which is reasonable in normal scenarios.
     static constexpr size_t max_processed_tokens = 100'000'000;
     num_processed_rows += block.rows();
 
@@ -203,7 +206,23 @@ MergeInvertedIndexesTask::MergeInvertedIndexesTask(
     , writer_settings(writer_settings_)
     , step_time_ms((*new_data_part->storage.getSettings())[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds())
 {
-    init();
+    cursors.resize(segments.size());
+    inputs.resize(segments.size());
+    input_streams.resize(segments.size());
+
+    output_tokens = ColumnString::create();
+    params = typeid_cast<const MergeTreeIndexText &>(*index_ptr).getParams();
+    sparse_index_tokens = ColumnString::create();
+    sparse_index_offsets = ColumnUInt64::create();
+
+    std::tie(output_streams, output_streams_holders) = makeOutputStreams(
+        index_ptr->getSubstreams(),
+        index_ptr->getFileName(),
+        new_data_part->getDataPartStoragePtr(),
+        new_data_part->default_codec,
+        new_data_part->getMarksFileExtension(),
+        writer_settings);
+
     auto substreams = index_ptr->getSubstreams();
 
     for (size_t i = 0; i < segments.size(); ++i)
@@ -225,26 +244,6 @@ MergeInvertedIndexesTask::MergeInvertedIndexesTask(
 MergeInvertedIndexesTask::~MergeInvertedIndexesTask() noexcept
 {
     cancelImpl();
-}
-
-void MergeInvertedIndexesTask::init()
-{
-    cursors.resize(segments.size());
-    inputs.resize(segments.size());
-    input_streams.resize(segments.size());
-
-    output_tokens = ColumnString::create();
-    params = typeid_cast<const MergeTreeIndexText &>(*index_ptr).getParams();
-    sparse_index_tokens = ColumnString::create();
-    sparse_index_offsets = ColumnUInt64::create();
-
-    std::tie(output_streams, output_streams_holders) = makeOutputStreams(
-        index_ptr->getSubstreams(),
-        index_ptr->getFileName(),
-        new_data_part->getDataPartStoragePtr(),
-        new_data_part->default_codec,
-        new_data_part->getMarksFileExtension(),
-        writer_settings);
 }
 
 Block MergeInvertedIndexesTask::getHeader() const
@@ -339,7 +338,7 @@ void MergeInvertedIndexesTask::flushDictionaryBlock()
         ? TextIndexSerialization::TokensFormat::FrontCodedStrings
         : TextIndexSerialization::TokensFormat::RawStrings;
 
-    size_t num_tokens = output_tokens->size();
+    size_t num_tokens = output_infos.size();
     auto & output_str = assert_cast<ColumnString &>(*output_tokens);
     auto * dictionary_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexDictionary);
     auto & ostr = dictionary_stream->compressed_hashing;
@@ -348,7 +347,7 @@ void MergeInvertedIndexesTask::flushDictionaryBlock()
     auto current_mark = dictionary_stream->getCurrentMark();
     chassert(current_mark.offset_in_decompressed_block == 0);
 
-    auto first_token = output_str.getDataAt(0);
+    auto first_token = output_tokens->getDataAt(0);
     assert_cast<ColumnString &>(*sparse_index_tokens).insertData(first_token.data(), first_token.size());
     assert_cast<ColumnUInt64 &>(*sparse_index_offsets).insertValue(current_mark.offset_in_compressed_file);
 
@@ -381,6 +380,7 @@ bool MergeInvertedIndexesTask::executeStep()
     {
         is_initialized = true;
         initializeQueue();
+        /// Write marks for compatibility with other skip indexes.
         writeMarks(output_streams);
     }
 
@@ -479,7 +479,7 @@ MutableDataPartStoragePtr createTemporaryInvertedIndexStorage(const DiskPtr & di
     return storage;
 }
 
-std::vector<MergeTreeIndexPtr> getInvertedIndexesToBuild(
+std::vector<MergeTreeIndexPtr> getInvertedIndexesToBuildMerge(
     const IndicesDescription & indices_description,
     const NameSet & read_column_names,
     const IMergeTreeDataPart & data_part,
@@ -496,6 +496,8 @@ std::vector<MergeTreeIndexPtr> getInvertedIndexesToBuild(
             continue;
 
         auto index_ptr = MergeTreeIndexFactory::instance().get(index);
+        /// Rebuild index if merge may reduce rows because we cannot adjust parts offsets in that case.
+        /// Build index if it is not materialized in the data part.
         if (merge_may_reduce_rows || !index_ptr->getDeserializedFormat(data_part.checksums, index_ptr->getFileName()))
             indexes.push_back(std::move(index_ptr));
     }
@@ -511,6 +513,8 @@ std::unique_ptr<MergeTreeReaderStream> makeInvertedIndexInputStream(
 {
     static constexpr size_t marks_count = 1;
 
+    /// Use reader stream that doesn't read marks,
+    /// because text index always has one mark.
     return std::make_unique<MergeTreeReaderStreamSingleColumnWholePart>(
         data_part_storage,
         stream_name,

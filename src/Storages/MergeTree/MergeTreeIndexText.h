@@ -25,28 +25,27 @@ namespace DB
 /**
   * Implementation of inverted index for text search.
   *
-  * A text index is a skip index that can have arbitrary granularity.
+  * A text index is a skip index that is always calculated on the whole and has infinite granularity.
   * Granules are aggregated the same way as for other skip indexes
-  * and dumped to the disk when the index reaches the desired granularity.
+  * Unlike of other skip indexes, text index can merged instead of rebuilding on merge of the data parts.
   *
   * Text index has three streams (files with data and marks for them):
   * - File with index granules (.idx)
   * - File with dictionary blocks (.dct)
   * - File with posting lists (.pst)
   *
-  * Text index is supposed to be used with high cardinalities (128 by default).
-  *
-  * Each index granule accumulates tokens from all documents and collects the posting lists
+  * Index granule accumulates tokens from all documents and collects the posting lists
   * (positions in the granule of documents that contain the token) for each token.
   * Tokens are sorted and split into blocks before the granule is finalized.
   * The block size is controlled by the index parameter 'dictionary_block_size'.
   * The first rows of each block form a sparse index (similar to the primary key of MergeTree).
   *
   * Then index granule is written in the following way:
-  * 1. Posting lists are dumped, and the offset in the file to the posting list for each token is saved.
-  * 2. Posting lists are built and saved as Roaring Bitmaps. If the cardinality of the posting list is less than a threshold
-  *    (index parameter 'max_cardinality_for_embedded_postings'), it is embedded into the dictionary.
-  * 3. Then, dictionary blocks are dumped, and the offset in the dictionary file to the block is saved into the sparse index.
+  * 1. Posting lists are dumped in blocks of size 'posting_list_block_size'.
+  * 2. Offsets in the file to the posting list blocks along with min-max range of the block for each token are saved.
+  * 3. Posting lists are built and saved as Roaring Bitmaps.
+  * 4. If the cardinality of the posting list is less than a threshold it is embedded into the dictionary.
+  * 5. Dictionary blocks are dumped, and the offset in the dictionary file to the block is saved into the sparse index.
   *
   * The format of index granule:
   * - Sparse index - a mapping (first token in block -> offset in file to the beginning of the block).
@@ -62,7 +61,9 @@ namespace DB
   * - Information about posting lists for each token:
   *    1. Header of posting list (VarUInt) (see PostingsSerialization::Flags).
   *    2. Cardinality of token (VarUInt).
-  *    3. Offset in file to the posting list (VarUInt) or embedded serialized posting list if EmbeddedPostings flag is set.
+  *    3. a) If EmbeddedPostings flag is set, posting list embedded into the dictionary block.
+  *       b) Otherwise, number of blocks of the posting list (VarUInt), if SingleBlock flag is not set.
+  *       c) For each posting list block, offset in file to the block and min-max range of the block. All numbers are encoded as VarUInt.
   *
   * If size of posting list is less than a threshold, it is serialized as raw values encoded as VarUInt.
   * Otherwise, the format is:
@@ -73,7 +74,7 @@ namespace DB
 struct MergeTreeIndexTextParams
 {
     size_t dictionary_block_size = 0;
-    size_t dictionary_block_frontcoding_compression = 1; /// enabled by default
+    size_t dictionary_block_frontcoding_compression = 1;
     size_t posting_list_block_size = 1024 * 1024;
     String preprocessor;
 };
@@ -148,6 +149,7 @@ struct PostingsSerialization
     static PostingListPtr deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality);
 };
 
+/// Closed range of rows.
 struct RowsRange
 {
     size_t begin;
@@ -168,6 +170,7 @@ struct TokenPostingsInfo
     std::vector<RowsRange> ranges;
     PostingListPtr embedded_postings;
 
+    /// Returns indexes of posting list blocks to read for the given range of rows.
     std::vector<size_t> getBlocksToRead(const RowsRange & range) const;
 };
 
@@ -269,7 +272,7 @@ private:
     TokenToPostingsInfosMap remaining_tokens;
     /// Tokens with postings lists that have only one block.
     TokenToPostingsMap rare_tokens_postings;
-    /// TODO: comment
+    /// Current range of rows that is being processed. If set, mayBeTrueOnGranule returns more precise result.
     std::optional<RowsRange> current_range;
 };
 

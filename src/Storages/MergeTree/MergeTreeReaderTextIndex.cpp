@@ -4,7 +4,7 @@
 #include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
-#include <Storages/MergeTree/MergeInvertedIndexes.h>
+#include <Storages/MergeTree/InvertedIndexUtils.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <Columns/ColumnsNumber.h>
@@ -71,7 +71,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
             MergeTreeIndexReader::patchSettings(settings, substream.type));
     };
 
-    main_stream = make_stream(substreams[0]);
+    sparse_index_stream = make_stream(substreams[0]);
     dictionary_stream = make_stream(substreams[1]);
     small_postings_stream = make_stream(substreams[2]);
 
@@ -106,8 +106,9 @@ void MergeTreeReaderTextIndex::updateAllMarkRanges(const MarkRanges & ranges)
 
 void MergeTreeReaderTextIndex::prefetchBeginOfRange(Priority priority)
 {
-    main_stream->seekToStart();
-    main_stream->getDataBuffer()->prefetch(priority);
+    sparse_index_stream->seekToStart();
+    sparse_index_stream->getDataBuffer()->prefetch(priority);
+    is_prefetched = true;
 }
 
 MergeTreeDataPartPtr MergeTreeReaderTextIndex::getDataPart() const
@@ -121,11 +122,14 @@ MergeTreeDataPartPtr MergeTreeReaderTextIndex::getDataPart() const
 
 void MergeTreeReaderTextIndex::readGranule()
 {
-    main_stream->seekToStart();
+    if (!is_prefetched)
+        sparse_index_stream->seekToStart();
+
     dictionary_stream->seekToStart();
+    small_postings_stream->seekToStart();
 
     MergeTreeIndexInputStreams streams;
-    streams[MergeTreeIndexSubstream::Type::Regular] = main_stream.get();
+    streams[MergeTreeIndexSubstream::Type::Regular] = sparse_index_stream.get();
     streams[MergeTreeIndexSubstream::Type::TextIndexDictionary] = dictionary_stream.get();
     streams[MergeTreeIndexSubstream::Type::TextIndexPostings] = small_postings_stream.get();
 
@@ -316,6 +320,7 @@ size_t MergeTreeReaderTextIndex::readRows(
         read_rows += rows_to_read;
     }
 
+    /// Remove blocks that are no longer needed.
     if (auto rows_range = getRowsRangeForMark(from_mark - 1))
         cleanupPostingsBlocks(*rows_range);
 
@@ -421,7 +426,7 @@ PostingsMap MergeTreeReaderTextIndex::readPostingsIfNeeded(size_t mark)
             continue;
         }
 
-        auto token_postings = readPostingsForToken(token, token_info, *rows_range);
+        auto token_postings = readPostingsBlocksForToken(token, token_info, *rows_range);
 
         if (token_postings.size() == 1)
         {
@@ -441,7 +446,7 @@ PostingsMap MergeTreeReaderTextIndex::readPostingsIfNeeded(size_t mark)
     return result;
 }
 
-std::vector<PostingListPtr> MergeTreeReaderTextIndex::readPostingsForToken(std::string_view token, const TokenPostingsInfo & token_info, const RowsRange & range)
+std::vector<PostingListPtr> MergeTreeReaderTextIndex::readPostingsBlocksForToken(std::string_view token, const TokenPostingsInfo & token_info, const RowsRange & range)
 {
     auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
     auto read_postings = granule_text.getPostingsForToken(token);

@@ -46,7 +46,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/MergeInvertedIndexes.h>
+#include <Storages/MergeTree/InvertedIndexUtils.h>
 #include <Common/DimensionalMetrics.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
@@ -1269,6 +1269,10 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
             global_ctx->context,
             getLogger("VerticalMergeStage"));
 
+
+        /// Add step for building missed text indexes for single parts.
+        /// If merge may reduce rows, we will rebuild index
+        /// for the resulting part in the end of the pipeline.
         if (!global_ctx->merge_may_reduce_rows)
             addBuildInvertedIndexesStep(*plan_for_part, *global_ctx->future_part->parts[part_num], global_ctx);
 
@@ -1333,6 +1337,7 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
         }
     }
 
+    /// If merge may reduce rows, rebuild text indexes for the resulting part.
     if (global_ctx->merge_may_reduce_rows)
         addBuildInvertedIndexesStep(merge_column_query_plan, *global_ctx->new_data_part, global_ctx);
 
@@ -1698,6 +1703,7 @@ bool MergeTask::MergeInvertedIndexStage::prepare() const
 
     if (!global_ctx->merge_may_reduce_rows)
     {
+        /// If merge text indexes without rebuilt, part offsets must be set.
         if (!global_ctx->merged_part_offsets)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Merged part offsets are not set");
 
@@ -1717,6 +1723,7 @@ bool MergeTask::MergeInvertedIndexStage::prepare() const
 
         if (global_ctx->merge_may_reduce_rows)
         {
+            /// Text index was built for the resulting part.
             auto it = global_ctx->build_inverted_index_transforms.find(global_ctx->new_data_part->name);
             if (it == global_ctx->build_inverted_index_transforms.end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Build inverted index transform not found for part {}", global_ctx->new_data_part->name);
@@ -1731,10 +1738,13 @@ bool MergeTask::MergeInvertedIndexStage::prepare() const
 
                 if (index_ptr->getDeserializedFormat(part->checksums, index_ptr->getFileName()))
                 {
+                    /// If text index exists in the source part, take it as is.
                     segments.emplace_back(part->getDataPartStoragePtr(), index_ptr->getFileName(), part_idx);
                 }
                 else
                 {
+                    /// Otherwise, it should be materialized on merge.
+                    /// Take the segments from the build inverted index transform.
                     auto it = global_ctx->build_inverted_index_transforms.find(part->name);
                     if (it == global_ctx->build_inverted_index_transforms.end())
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Build inverted index transform not found for part {}", part->name);
@@ -2162,7 +2172,7 @@ void MergeTask::addBuildInvertedIndexesStep(QueryPlan & plan, const IMergeTreeDa
 {
     const auto & header = plan.getCurrentHeader();
     auto read_column_names = header->getNamesAndTypesList().getNameSet();
-    auto inverted_indexes_to_build = getInvertedIndexesToBuild(global_ctx->inverted_indexes_to_merge, read_column_names, data_part, global_ctx->merge_may_reduce_rows);
+    auto inverted_indexes_to_build = getInvertedIndexesToBuildMerge(global_ctx->inverted_indexes_to_merge, read_column_names, data_part, global_ctx->merge_may_reduce_rows);
 
     if (inverted_indexes_to_build.empty())
         return;
@@ -2194,6 +2204,7 @@ void MergeTask::addBuildInvertedIndexesStep(QueryPlan & plan, const IMergeTreeDa
         global_ctx->new_data_part->index_granularity_info.mark_type.getFileExtension());
 
     auto build_inverted_index_step = std::make_unique<BuildInvertedIndexStep>(header, transform);
+    /// Save transform to the context to be able to take segments for merging from it later.
     global_ctx->build_inverted_index_transforms.emplace(data_part.name, transform);
     plan.addStep(std::move(build_inverted_index_step));
 }
@@ -2298,6 +2309,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             global_ctx->context,
             ctx->log);
 
+        /// Add step for building missed text indexes for single parts.
+        /// If merge may reduce rows, we will rebuild index
+        /// for the resulting part in the end of the pipeline.
         if (!global_ctx->merge_may_reduce_rows)
             addBuildInvertedIndexesStep(*plan_for_part, *part, global_ctx);
 
@@ -2450,6 +2464,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     if (!subqueries.empty())
         addCreatingSetsStep(merge_parts_query_plan, std::move(subqueries), global_ctx->context);
 
+    /// If merge may reduce rows, rebuild text index for the resulting part.
     if (global_ctx->merge_may_reduce_rows)
         addBuildInvertedIndexesStep(merge_parts_query_plan, *global_ctx->new_data_part, global_ctx);
 

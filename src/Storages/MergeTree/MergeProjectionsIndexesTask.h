@@ -14,10 +14,10 @@ struct IDiskTransaction;
 using DiskTransactionPtr = std::shared_ptr<IDiskTransaction>;
 struct MergeTreeDataPartChecksums;
 
+/// Base task for merging projections and text indexes.
 class MergeProjectionsIndexesTask : public IExecutableTask
 {
 public:
-    virtual void addTemporaryFilesCleanupOps(DiskTransactionPtr external_transaction) noexcept = 0;
     virtual void addToChecksums(MergeTreeDataPartChecksums & checksums) = 0;
 
     void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }

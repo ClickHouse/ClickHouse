@@ -101,6 +101,7 @@ void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & 
 
 UInt64 getSecondaryIndexGranularity(const std::shared_ptr<ASTFunction> & type, const ASTPtr & granularity)
 {
+    /// Text index is always built for the whole part and granularity is ignored.
     if (type && type->name == "text")
         return ASTIndexDeclaration::DEFAULT_TEXT_INDEX_GRANULARITY;
 

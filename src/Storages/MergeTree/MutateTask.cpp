@@ -31,7 +31,7 @@
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/MergeTree/MergeInvertedIndexes.h>
+#include <Storages/MergeTree/InvertedIndexUtils.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
@@ -1343,7 +1343,7 @@ public:
 private:
     void prepare();
     bool mutateOriginalPartAndPrepareProjections();
-    void createBuildInvertedIndexTask();
+    void createBuildInvertedIndexesTask();
     void writeTempProjectionPart(size_t projection_idx, Chunk chunk);
     void finalizeTempProjectionsAndIndexes();
     bool iterateThroughAllMergeSubtasks();
@@ -1391,7 +1391,7 @@ void PartMergerWriter::prepare()
 
     if (!ctx->inverted_indices_to_recalc.empty())
     {
-        createBuildInvertedIndexTask();
+        createBuildInvertedIndexesTask();
     }
 
     existing_rows_count = 0;
@@ -1453,7 +1453,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
     return true;
 }
 
-void PartMergerWriter::createBuildInvertedIndexTask()
+void PartMergerWriter::createBuildInvertedIndexesTask()
 {
     auto part_path = ctx->new_data_part->getDataPartStorage().getRelativePath();
     temporary_inverted_index_storage = createTemporaryInvertedIndexStorage(ctx->disk, part_path);

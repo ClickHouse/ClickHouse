@@ -32,6 +32,8 @@ struct MergeTreeIndexSubstream
 
     static bool isCompressed(Type type)
     {
+        /// Text index postings are not compressed by write buffer,
+        /// because the compression is implicitly applied during building them.
         return type != Type::TextIndexPostings;
     }
 };

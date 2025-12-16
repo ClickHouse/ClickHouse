@@ -44,8 +44,11 @@ public:
 private:
     void createEmptyColumns(Columns & columns) const;
 
+    /// Returns postings for all all tokens required for the given mark.
     PostingsMap readPostingsIfNeeded(size_t mark);
-    std::vector<PostingListPtr> readPostingsForToken(std::string_view token, const TokenPostingsInfo & token_info, const RowsRange & range);
+    /// Returns postings for all blocks of the given token required for the given range.
+    std::vector<PostingListPtr> readPostingsBlocksForToken(std::string_view token, const TokenPostingsInfo & token_info, const RowsRange & range);
+    /// Removes blocks with max value less than the given range.
     void cleanupPostingsBlocks(const RowsRange & range);
 
     std::optional<RowsRange> getRowsRangeForMark(size_t mark) const;
@@ -54,22 +57,30 @@ private:
     void readGranule();
     void analyzeTokensCardinality();
     void initializePostingStreams();
-
-    void fillSkippedColumn(IColumn & column, size_t num_rows);
     void fillColumn(IColumn & column, const String & column_name, PostingsMap & postings, size_t row_offset, size_t num_rows);
 
     using TokenToPostingsInfosMap = MergeTreeIndexGranuleText::TokenToPostingsInfosMap;
+
     size_t getNumRowsInGranule(size_t index_mark) const;
     double estimateCardinality(const TextSearchQuery & query, const TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const;
 
     MergeTreeIndexWithCondition index;
-    bool can_skip_mark;
     MergeTreeIndexGranulePtr granule;
     PostingsBlocksMap postings_blocks;
 
-    std::unique_ptr<MergeTreeReaderStream> main_stream;
+    /// True if the reader is allowed to skip marks.
+    /// Otherwise it only fills virtual columns.
+    bool can_skip_mark;
+    bool is_prefetched = false;
+
+    std::unique_ptr<MergeTreeReaderStream> sparse_index_stream;
     std::unique_ptr<MergeTreeReaderStream> dictionary_stream;
+
+    /// Stream for small postings that are embedded or has one block.
     std::unique_ptr<MergeTreeReaderStream> small_postings_stream;
+    /// Streams for large postings that are split into multiple blocks.
+    /// A separate stream is created for each token to read
+    /// postings blocks continuously without additional seeks.
     absl::flat_hash_map<std::string_view, std::unique_ptr<MergeTreeReaderStream>> large_postings_streams;
 
     /// Current row position used when continuing reads across multiple calls.
@@ -80,7 +91,9 @@ private:
     roaring::Roaring analyzed_granules;
     roaring::Roaring may_be_true_granules;
 
+    /// Virtual columns that are always true.
     std::vector<bool> is_always_true;
+    /// Tokens that are useful for analysis and filling virtual columns.
     absl::flat_hash_set<std::string_view> useful_tokens;
     std::unique_ptr<MergeTreeIndexDeserializationState> deserialization_state;
 };
