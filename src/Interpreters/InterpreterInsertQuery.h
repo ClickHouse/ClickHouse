@@ -71,6 +71,7 @@ private:
     bool no_squash = false;
     bool no_destination = false;
     const bool async_insert;
+    bool select_query_sorted = false;
 
     size_t max_threads = 0;
     size_t max_insert_threads = 0;

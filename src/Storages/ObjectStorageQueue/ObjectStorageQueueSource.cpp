@@ -551,7 +551,7 @@ void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
     std::lock_guard lock(mutex);
     for (const auto & [processor, holders] : bucket_holders)
     {
-        LOG_TEST(log, "Releasing {} bucket holders for processor {}", holders.size(), processor);
+        LOG_TRACE(log, "Releasing {} bucket holders for processor {}", holders.size(), processor);
 
         for (auto it = holders.begin(); it != holders.end(); ++it)
         {
@@ -720,11 +720,13 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                     continue;
                 }
 
-                LOG_TRACE(log, "Processor {} acquired bucket: {}", current_processor, bucket);
-
                 bucket_holder_it->second.push_back(acquired_bucket);
                 current_bucket_holder = bucket_holder_it->second.back().get();
+                const std::string previous_processor = bucket_processor.has_value() ? toString(bucket_processor.value()) : "None";
                 bucket_processor = current_processor;
+
+                LOG_TRACE(log, "Processor {} acquired bucket: {} (keys cache: {}, processor: {}, previous processor: {})",
+                          current_processor, bucket, it->second.keys.size(), it->second.processor.value(), previous_processor);
 
                 /// Take the key from the front, the order is important.
                 auto [object_info, file_metadata] = bucket_keys.front();

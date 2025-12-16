@@ -587,7 +587,7 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleWebIdenti
         }
     }
 
-    auto empty_credentials = std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(Aws::Auth::AWSCredentials());
+    auto empty_credentials = std::make_shared<Aws::Auth::AnonymousAWSCredentialsProvider>();
     if (token_file.empty())
     {
         LOG_WARNING(logger, "Token file must be specified to use STS AssumeRole web identity creds provider.");
@@ -844,12 +844,12 @@ Aws::String SSOCredentialsProvider::loadAccessTokenFile(const Aws::String & sso_
 S3CredentialsProviderChain::S3CredentialsProviderChain(
         const DB::S3::PocoHTTPClientConfiguration & configuration,
         const Aws::Auth::AWSCredentials & credentials,
-        CredentialsConfiguration credentials_configuration)
+        const CredentialsConfiguration & credentials_configuration)
 {
     auto logger = getLogger("S3CredentialsProviderChain");
 
     /// we don't provide any credentials to avoid signing
-    if (credentials_configuration.no_sign_request)
+    if (credentials_configuration.no_sign_request || configuration.http_client == "gcp_oauth")
         return;
 
     /// add explicit credentials to the front of the chain
@@ -1103,7 +1103,7 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleCredentia
     std::string session_name_,
     uint64_t expiration_window_seconds_,
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider,
-    DB::S3::PocoHTTPClientConfiguration & client_configuration,
+    const DB::S3::PocoHTTPClientConfiguration & client_configuration,
     const std::string & sts_endpoint_override)
 {
     auto client = std::make_shared<AWSAssumeRoleClient>(credentials_provider, client_configuration, sts_endpoint_override);
@@ -1163,6 +1163,36 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::Reload()
     credentials.SetExpiration(result.getExpiration());
 
     LOG_TRACE(logger, "Successfully retrieved credentials");
+}
+
+std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
+    const DB::S3::PocoHTTPClientConfiguration & configuration,
+    const Aws::Auth::AWSCredentials & credentials,
+    const CredentialsConfiguration & credentials_configuration)
+{
+    std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
+    if (credentials_configuration.no_sign_request || configuration.http_client == "gcp_oauth")
+    {
+        credentials_provider = std::make_shared<Aws::Auth::AnonymousAWSCredentialsProvider>();
+    }
+    else
+    {
+        credentials_provider
+            = std::make_shared<S3CredentialsProviderChain>(configuration, credentials, credentials_configuration);
+    }
+
+    if (!credentials_configuration.role_arn.empty())
+    {
+        credentials_provider = AwsAuthSTSAssumeRoleCredentialsProvider::create(
+            credentials_configuration.role_arn,
+            credentials_configuration.role_session_name,
+            credentials_configuration.expiration_window_seconds,
+            std::move(credentials_provider),
+            configuration,
+            credentials_configuration.sts_endpoint_override);
+    }
+
+    return credentials_provider;
 }
 
 }

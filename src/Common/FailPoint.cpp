@@ -108,6 +108,7 @@ static struct InitFiu
     REGULAR(plain_object_storage_copy_fail_on_file_move) \
     REGULAR(database_replicated_delay_recovery) \
     REGULAR(database_replicated_delay_entry_execution) \
+    PAUSEABLE(database_replicated_stop_entry_execution) \
     REGULAR(remove_merge_tree_part_delay) \
     REGULAR(plain_object_storage_copy_temp_source_file_fail_on_file_move) \
     REGULAR(plain_object_storage_copy_temp_target_file_fail_on_file_move) \
@@ -115,7 +116,6 @@ static struct InitFiu
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
     ONCE(iceberg_writes_cleanup) \
     ONCE(backup_add_empty_memory_table) \
-    REGULAR(refresh_task_stop_racing_for_running_refresh) \
     REGULAR(sleep_in_logs_flush) \
     ONCE(smt_commit_exception_before_op) \
     ONCE(disk_object_storage_fail_commit_metadata_transaction) \
@@ -139,61 +139,11 @@ APPLY_FOR_FAILPOINTS(M, M, M, M)
 std::unordered_map<String, std::shared_ptr<FailPointChannel>> FailPointInjection::fail_point_wait_channels;
 std::mutex FailPointInjection::mu;
 
-class FailPointChannel : private boost::noncopyable
+struct FailPointChannel
 {
-public:
-    explicit FailPointChannel(UInt64 timeout_)
-        : timeout_ms(timeout_)
-    {}
-    FailPointChannel()
-        : timeout_ms(0)
-    {}
-
-    void wait()
-    {
-        std::unique_lock lock(m);
-        if (timeout_ms == 0)
-            cv.wait(lock);
-        else
-            cv.wait_for(lock, std::chrono::milliseconds(timeout_ms));
-    }
-
-    void notifyAll()
-    {
-        std::unique_lock lock(m);
-        cv.notify_all();
-    }
-
-private:
-    UInt64 timeout_ms;
-    std::mutex m;
     std::condition_variable cv;
+    bool notified = false;
 };
-
-void FailPointInjection::enablePauseFailPoint(const String & fail_point_name, UInt64 time_ms)
-{
-#define SUB_M(NAME, flags)                                                                                  \
-    if (fail_point_name == FailPoints::NAME)                                                                \
-    {                                                                                                       \
-        /* FIU_ONETIME -- Only fail once; the point of failure will be automatically disabled afterwards.*/ \
-        fiu_enable(FailPoints::NAME, 1, nullptr, flags);                                                    \
-        std::lock_guard lock(mu);                                                                           \
-        fail_point_wait_channels.try_emplace(FailPoints::NAME, std::make_shared<FailPointChannel>(time_ms));   \
-        return;                                                                                             \
-    }
-#define ONCE(NAME)
-#define REGULAR(NAME)
-#define PAUSEABLE_ONCE(NAME) SUB_M(NAME, FIU_ONETIME)
-#define PAUSEABLE(NAME) SUB_M(NAME, 0)
-    APPLY_FOR_FAILPOINTS(ONCE, REGULAR, PAUSEABLE_ONCE, PAUSEABLE)
-#undef SUB_M
-#undef ONCE
-#undef REGULAR
-#undef PAUSEABLE_ONCE
-#undef PAUSEABLE
-
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
-}
 
 void FailPointInjection::pauseFailPoint(const String & fail_point_name)
 {
@@ -235,7 +185,8 @@ void FailPointInjection::disableFailPoint(const String & fail_point_name)
     {
         /// can not rely on deconstruction to do the notify_all things, because
         /// if someone wait on this, the deconstruct will never be called.
-        iter->second->notifyAll();
+        iter->second->notified = true;
+        iter->second->cv.notify_all();
         fail_point_wait_channels.erase(iter);
     }
     fiu_disable(fail_point_name.c_str());
@@ -246,11 +197,11 @@ void FailPointInjection::wait(const String & fail_point_name)
     std::unique_lock lock(mu);
     auto iter = fail_point_wait_channels.find(fail_point_name);
     if (iter == fail_point_wait_channels.end())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not find channel for fail point {}", fail_point_name);
-
-    lock.unlock();
-    auto ptr = iter->second;
-    ptr->wait();
+        /// We may get here if pauseFailPoint was called in parallel with disableFailPoint.
+        return;
+    auto channel = iter->second;
+    /// Note: this may unlock and re-lock the mutex, invalidating `iter`.
+    channel->cv.wait(lock, [&] { return channel->notified; });
 }
 
 #else // USE_LIBFIU

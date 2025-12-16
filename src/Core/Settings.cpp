@@ -1908,7 +1908,16 @@ Possible values:
 <max_concurrent_queries_for_user>5</max_concurrent_queries_for_user>
 ```
 )", 0) \
-    \
+\
+    DECLARE(BoolAuto, insert_select_deduplicate, Field("auto"), R"(
+Enables or disables block deduplication of `INSERT SELECT` (for Replicated\* tables).
+The setting overrids `insert_deduplicate` for `INSERT SELECT` queries.
+That setting has three possible values:
+- 0 — Deduplication is disabled for `INSERT SELECT` query.
+- 1 — Deduplication is enabled for `INSERT SELECT` query. If select result is not stable, exception is thrown.
+- auto — Deduplication is enabled if `insert_deduplicate` is enable and select result is stable, otherwise disabled.
+    )", 0) \
+\
     DECLARE(Bool, insert_deduplicate, true, R"(
 Enables or disables block deduplication of `INSERT` (for Replicated\* tables).
 
@@ -2476,8 +2485,6 @@ Possible values:
 
 - 0 for turning off the timer.
 
-**Temporarily disabled in ClickHouse Cloud.**
-
 See also:
 
 - System table [trace_log](/operations/system-tables/trace_log)
@@ -2495,8 +2502,6 @@ Possible values:
             - 1000000000 (once a second) for cluster-wide profiling.
 
 - 0 for turning off the timer.
-
-**Temporarily disabled in ClickHouse Cloud.**
 
 See also:
 

@@ -70,6 +70,8 @@ enum class DataPartRemovalState : uint8_t
 };
 
 /// Description of the data part.
+/// Warning: `IStorage` must outlive all its `IMergeTreeDataPart`s. Whenever you hold a
+///          MergeTreeDataPartPtr you must also hold the corresponding StoragePtr.
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>, public DataPartStorageHolder
 {
 public:
