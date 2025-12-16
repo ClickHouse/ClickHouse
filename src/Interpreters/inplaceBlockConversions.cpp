@@ -298,7 +298,6 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
         if (res_columns[i] == nullptr || isColumnConst(*res_columns[i]))
             continue;
 
-        auto serialization_info = available_column->type->getSerializationInfo(*res_columns[i]);
         auto serialization = available_column->type->getSerialization(*available_column->type->getSerializationInfo(*res_columns[i]));
         serialization->enumerateStreams([&](const auto & subpath)
         {
