@@ -2366,7 +2366,9 @@ struct ConvertImpl
 
                         size_t remaining = input_rows_count - i;
 
+#if !defined(OS_DARWIN)
                         _Pragma("clang loop vectorize_width(4) interleave_count(2)")
+#endif
                         for (size_t j = 0; j < remaining; ++j)
                         {
                             double tmp = static_cast<double>(s[j]);
@@ -2383,7 +2385,9 @@ struct ConvertImpl
 
                         size_t remaining = input_rows_count - i;
 
+#if !defined(OS_DARWIN)
                         _Pragma("clang loop vectorize_width(4) interleave_count(2)")
+#endif
                         for (size_t j = 0; j < remaining; ++j)
                         {
                             double tmp = static_cast<double>(s[j]);

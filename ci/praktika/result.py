@@ -87,11 +87,11 @@ class Result(MetaClasses.Serializable):
                 "WARNING: No results and no status provided - setting status to error"
             )
             status = Result.Status.ERROR
-        if not name:
-            name = _Environment.get().JOB_NAME
-            if not name:
-                print("ERROR: Failed to guess the .name")
-                raise
+        # if not name:
+        #     name = _Environment.get().JOB_NAME
+        #     if not name:
+        #         print("ERROR: Failed to guess the .name")
+        #         raise
         start_time = None
         duration = None
         if not stopwatch:
@@ -312,6 +312,14 @@ class Result(MetaClasses.Serializable):
             self.ext["labels"] = []
         self.ext["labels"].append(label)
 
+    def get_labels(self):
+        return self.ext.get("labels", [])
+
+    def has_label(self, label):
+        return label in self.ext.get("labels", []) or label in [
+            x[0] for x in self.ext.get("hlabels", [])
+        ]
+
     def set_comment(self, comment):
         self.ext["comment"] = comment
 
@@ -448,6 +456,20 @@ class Result(MetaClasses.Serializable):
                 # Recursively process children with updated path
                 leaves.extend(cls._flat_failed_leaves(r, path=path))
         return leaves
+
+    def to_failed_results_with_flat_leaves(self):
+        """
+        Creates a minimal result tree containing only failed jobs with their failed leaf results flattened.
+        Returns a two-level structure: top-level failed jobs -> flat list of their failed leaf results.
+        """
+        result = copy.deepcopy(self)
+        failed_results = []
+        for r in result.results:
+            if not r.is_ok():
+                r.results = self._flat_failed_leaves(r)
+                failed_results.append(r)
+        result.results = failed_results
+        return result
 
     def update_sub_result(self, result: "Result", drop_nested_results=False):
         assert self.results, "BUG?"

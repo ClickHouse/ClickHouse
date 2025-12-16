@@ -78,8 +78,65 @@ private:
 
 REGISTER_FUNCTION(ToInterval)
 {
-    factory.registerFunction<FunctionToInterval>(
-        FunctionDocumentation{.description = R"(Creates an interval from a value and a unit.)", .category = FunctionDocumentation::Category::TypeConversion});
+    FunctionDocumentation::Description description_toInterval = R"(
+Creates an Interval value from a numeric value and a unit string.
+
+This function provides a unified way to create intervals of different types (seconds, minutes, hours, days, weeks, months, quarters, years)
+from a single function by specifying the unit as a string argument. The unit string is case-insensitive.
+
+This is equivalent to calling type-specific functions like `toIntervalSecond`, `toIntervalMinute`, `toIntervalDay`, etc.,
+but allows the unit to be specified dynamically as a string parameter.
+    )";
+    FunctionDocumentation::Syntax syntax_toInterval = R"(
+toInterval(value, unit)
+    )";
+    FunctionDocumentation::Arguments arguments_toInterval = {
+        {"value", "The numeric value representing the number of units. Can be any numeric type.", {"Int8", "Int16", "Int32", "Int64", "UInt8", "UInt16", "UInt32", "UInt64", "Float32", "Float64"}},
+        {"unit", R"(The unit of time. Must be a constant string. Valid values: 'nanosecond', 'microsecond', 'millisecond', 'second', 'minute', 'hour', 'day', 'week', 'month', 'quarter', 'year'.)", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_toInterval = {R"(Returns an Interval value of the specified type. The result type depends on the unit: IntervalNanosecond, IntervalMicrosecond, IntervalMillisecond, IntervalSecond, IntervalMinute, IntervalHour, IntervalDay, IntervalWeek, IntervalMonth, IntervalQuarter, or IntervalYear.)", {"Interval"}};
+    FunctionDocumentation::Examples examples_toInterval = {
+        {"Create intervals with different units", R"(
+SELECT
+    toInterval(5, 'second') AS seconds,
+    toInterval(3, 'day') AS days,
+    toInterval(2, 'month') AS months
+        )",
+        R"(
+┌─seconds─┬─days─┬─months─┐
+│ 5       │ 3    │ 2      │
+└─────────┴──────┴────────┘
+        )"},
+        {"Use intervals in date arithmetic", R"(
+SELECT
+    now() AS current_time,
+    now() + toInterval(1, 'hour') AS one_hour_later,
+    now() - toInterval(7, 'day') AS week_ago
+        )",
+        R"(
+┌─────────current_time─┬──one_hour_later─────┬────────────week_ago─┐
+│ 2025-01-04 10:30:00  │ 2025-01-04 11:30:00 │ 2024-12-28 10:30:00 │
+└──────────────────────┴─────────────────────┴─────────────────────┘
+        )"},
+        {"Dynamic interval creation", R"(
+SELECT toDate('2025-01-01') + toInterval(number, 'day') AS dates
+FROM numbers(5)
+        )",
+        R"(
+┌──────dates─┐
+│ 2025-01-01 │
+│ 2025-01-02 │
+│ 2025-01-03 │
+│ 2025-01-04 │
+│ 2025-01-05 │
+└────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_toInterval = {25, 4};
+    FunctionDocumentation::Category category_toInterval = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation documentation_toInterval = {description_toInterval, syntax_toInterval, arguments_toInterval, returned_value_toInterval, examples_toInterval, introduced_in_toInterval, category_toInterval};
+
+    factory.registerFunction<FunctionToInterval>(documentation_toInterval);
 }
 
 }
