@@ -77,11 +77,13 @@ private:
 
     void createBuffersIfNeeded(AggregateDataPtr __restrict place) const
     {
-        if (!data(place).null_buf)
-            data(place).null_buf = std::make_unique<NullWriteBuffer>();
-        if (!data(place).compressed_buf)
-            data(place).compressed_buf = std::make_unique<CompressedWriteBuffer>(
-                *data(place).null_buf, getCodecOrDefault(), block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE));
+        Data & data_ref = data(place);
+
+        if (!data_ref.null_buf)
+            data_ref.null_buf = std::make_unique<NullWriteBuffer>();
+        if (data_ref.compressed_buf)
+            data_ref.compressed_buf = std::make_unique<CompressedWriteBuffer>(
+                *data_ref.null_buf, getCodecOrDefault(), block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE));
     }
 
     std::pair<UInt64, UInt64> finalizeAndGetSizes(ConstAggregateDataPtr __restrict place) const
