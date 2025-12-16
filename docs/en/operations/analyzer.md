@@ -202,7 +202,7 @@ The list of features that the new analyzer currently doesn't support is given be
 
 ## Cloud Migration {#cloud-migration}
 
-We are enabling the new query analyzer on all instances where it is currently disabled to support new functional and performance optimization. This change enforces stricter SQL scoping rules, requiring customers to manually update non-compliant queries.
+We are enabling the new query analyzer on all instances where it is currently disabled to support new functional and performance optimizations. This change enforces stricter SQL scoping rules, requiring customers to manually update non-compliant queries.
 
 ### Migration workflow
 
@@ -215,7 +215,7 @@ LIMIT 1
 SETTINGS skip_unavailable_shards=1
 ```
 
-2. Run the query with the analyzer enabled by adding these settings
+2. Run the query with the analyzer enabled by adding these settings.
 ```sql
 SETTINGS
     enable_analyzer=1,
