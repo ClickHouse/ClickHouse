@@ -616,6 +616,10 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
         if (server_revision >= DBMS_MIN_REVISION_WITH_VERSIONED_CLUSTER_FUNCTION_PROTOCOL)
         {
             readVarUInt(worker_cluster_function_protocol_version, *in);
+            worker_cluster_function_protocol_version = std::min(
+                    worker_cluster_function_protocol_version,
+                    static_cast<UInt64>(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION)
+            );
         }
     }
     else if (packet_type == Protocol::Server::Exception)
