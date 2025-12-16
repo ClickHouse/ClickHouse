@@ -249,8 +249,12 @@ public:
     /// Insert all the data from shared data with specified path to dynamic column.
     static void fillPathColumnFromSharedData(IColumn & path_column, StringRef path, const ColumnPtr & shared_data_column, size_t start, size_t end);
 
-    /// Validate that all dynamic paths have correct sizes and that shared data doesn't contain any dynamic paths.
-    void validateDynamicPathsAndSharedData(size_t shared_data_offset = 0) const;
+    /// Due to previous bugs we can have an invalid state where we have some path
+    /// both in shared data and in dynamic paths and only one value is not NULL.
+    /// This methods repairs the column and removes this duplicate by removing path
+    /// and value from shared data and keeping only dynamic path containing non-Null value.
+    /// offset argument - is the offset from which we should check for duplicates.
+    void repairDuplicatesInDynamicPathsAndSharedData(size_t offset = 0);
 
 private:
     void insertFromSharedDataAndFillRemainingDynamicPaths(const ColumnObject & src_object_column, std::vector<std::string_view> && src_dynamic_paths_for_shared_data, size_t start, size_t length);
