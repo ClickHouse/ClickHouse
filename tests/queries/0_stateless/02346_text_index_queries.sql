@@ -23,7 +23,7 @@ INSERT INTO tab VALUES (101, 'Alick a01'), (102, 'Blick a02'), (103, 'Click a03'
 SELECT name, type FROM system.data_skipping_indices WHERE table =='tab' AND database = currentDatabase() LIMIT 1;
 
 -- throw in a random consistency check
-CHECK TABLE tab;
+CHECK TABLE tab SETTINGS check_query_single_value_result = 1;
 
 -- search text index with ==
 SELECT * FROM tab WHERE s == 'Alick a01';

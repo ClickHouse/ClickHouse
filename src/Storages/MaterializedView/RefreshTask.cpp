@@ -76,11 +76,6 @@ namespace ErrorCodes
     extern const int ABORTED;
 }
 
-namespace FailPoints
-{
-extern const char refresh_task_stop_racing_for_running_refresh[];
-}
-
 RefreshTask::RefreshTask(
     StorageMaterializedView * view_, ContextPtr context, const DB::ASTRefreshStrategy & strategy, bool attach, bool coordinated, bool empty, bool is_restore_from_backup)
     : log(getLogger("RefreshTask"))
@@ -997,11 +992,6 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
         ops.emplace_back(zkutil::makeSetRequest(coordination.path, root.toString(), root.version));
         if (running)
         {
-            bool stop_racing_for_running_refresh = false;
-            fiu_do_on(FailPoints::refresh_task_stop_racing_for_running_refresh, { stop_racing_for_running_refresh = true; });
-            if (stop_racing_for_running_refresh)
-                return false;
-
             ops.emplace_back(
                 zkutil::makeCreateRequest(coordination.path + "/running", coordination.replica_name, zkutil::CreateMode::Ephemeral));
         }

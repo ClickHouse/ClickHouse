@@ -65,6 +65,7 @@ RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
 # https://s3.amazonaws.com/clickhouse-test-reports/59337/524625a1d2f4cc608a3f1059e3df2c30f353a649/integration_tests__asan__analyzer__[5_6].html
 COPY requirements.txt /
 RUN python3 -m pip install --no-cache-dir -r requirements.txt
+RUN python3 -m pip install git+https://github.com/ClickHouse/kazoo.git
 
 RUN curl -fsSL -O https://archive.apache.org/dist/spark/spark-3.5.5/spark-3.5.5-bin-hadoop3.tgz \
     && tar xzvf spark-3.5.5-bin-hadoop3.tgz -C / \

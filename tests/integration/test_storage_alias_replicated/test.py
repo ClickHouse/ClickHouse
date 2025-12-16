@@ -8,7 +8,7 @@ node1 = cluster.add_instance(
     main_configs=["configs/remote_servers.xml"],
     user_configs=["configs/config_alias.xml"],
     with_zookeeper=True,
-    macros={"replica": "node1"},
+    macros={"shard": "shard1", "replica": "node1"},
 )
 
 node2 = cluster.add_instance(
@@ -16,7 +16,7 @@ node2 = cluster.add_instance(
     main_configs=["configs/remote_servers.xml"],
     user_configs=["configs/config_alias.xml"],
     with_zookeeper=True,
-    macros={"replica": "node2"},
+    macros={"shard": "shard1", "replica": "node2"},
 )
 
 
@@ -29,8 +29,8 @@ def started_cluster():
         cluster.shutdown()
 
 def test_alias_with_replicated(started_cluster):
-    node1.query("CREATE DATABASE test_rmt ENGINE = Replicated('/clickhouse/databases/test_rmt', 'shard1', 'node1')")
-    node2.query("CREATE DATABASE test_rmt ENGINE = Replicated('/clickhouse/databases/test_rmt', 'shard1', 'node2')")
+    node1.query("CREATE DATABASE test_rmt ENGINE = Replicated('/clickhouse/databases/test_rmt', '{shard}', '{replica}')")
+    node2.query("CREATE DATABASE test_rmt ENGINE = Replicated('/clickhouse/databases/test_rmt', '{shard}', '{replica}')")
 
     node1.query("CREATE TABLE test_rmt.rmt_table (id UInt32, value String) ENGINE = ReplicatedMergeTree ORDER BY id")
     node1.query("CREATE TABLE test_rmt.alias_rmt ENGINE = Alias('rmt_table')")
@@ -55,3 +55,17 @@ def test_alias_with_replicated(started_cluster):
 
     node1.query("DROP DATABASE test_rmt SYNC")
     node2.query("DROP DATABASE test_rmt SYNC")
+
+def test_alias_empty_args_with_replicated(started_cluster):
+    node1.query("CREATE DATABASE d0 ENGINE = Replicated('/clickhouse/path/d0', '{shard}', '{replica}')")
+
+    error = node1.query_and_get_error("CREATE TABLE d0.t0 (c0 Int) ENGINE = Alias()")
+    assert "NUMBER_OF_ARGUMENTS_DOESNT_MATCH" in error
+    
+    node1.query("CREATE TABLE d0.source (c0 Int) ENGINE = MergeTree ORDER BY c0")
+    node1.query("CREATE TABLE d0.alias_table ENGINE = Alias('source')")
+    node1.query("INSERT INTO d0.source VALUES (1)")
+    
+    assert node1.query("SELECT * FROM d0.alias_table") == "1\n"
+    
+    node1.query("DROP DATABASE d0 SYNC")

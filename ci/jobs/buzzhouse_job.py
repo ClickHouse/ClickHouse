@@ -155,6 +155,7 @@ def main():
         "test_with_fill": False,  # Creating too many issues
         "compare_success_results": False,  # This can give false positives, so disable it
         "allow_infinite_tables": False,  # Creating too many issues
+        "allow_health_check": False,  # I have to test this first
         "allow_hardcoded_inserts": allow_hardcoded_inserts,
         "client_file_path": "/var/lib/clickhouse/user_files",
         "server_file_path": "/var/lib/clickhouse/user_files",
@@ -175,6 +176,8 @@ def main():
         "truncate_output": True,
         # Don't always run transactions, makes many statements fail
         "allow_transactions": random.randint(1, 5) == 1,
+        # Run query oracles sometimes
+        "allow_query_oracles": random.randint(1, 4) == 1,
         "remote_servers": ["localhost:9000"],
         "remote_secure_servers": ["localhost:9440"],
         "http_servers": ["localhost:8123"],
