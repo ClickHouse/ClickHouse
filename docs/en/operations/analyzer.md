@@ -204,7 +204,7 @@ The list of features that the new analyzer currently doesn't support is given be
 
 We are enabling the new query analyzer on all instances where it is currently disabled to support new functional and performance optimizations. This change enforces stricter SQL scoping rules, requiring customers to manually update non-compliant queries.
 
-### Migration workflow
+### Migration workflow {#migratoin-workflow}
 
 1. Identify the query by filtering `system.query_log` using the `normalized_query_hash`:
 ```sql
