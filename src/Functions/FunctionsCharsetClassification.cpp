@@ -160,7 +160,7 @@ Detects the character set of a non-UTF8-encoded input string.
     };
     FunctionDocumentation::IntroducedIn introduced_in_charset = {22, 2};
     FunctionDocumentation::Category category_charset = FunctionDocumentation::Category::NLP;
-    FunctionDocumentation documentation_charset = {description_charset, syntax_charset, arguments_charset, returned_value_charset, examples_charset, introduced_in_charset, category_charset};
+    FunctionDocumentation documentation_charset = {description_charset, syntax_charset, arguments_charset, {}, returned_value_charset, examples_charset, introduced_in_charset, category_charset};
 
     factory.registerFunction<FunctionDetectCharset>(documentation_charset);
 
@@ -178,7 +178,7 @@ Prefer this version when your character set is UTF-16 or UTF-32.
     };
     FunctionDocumentation::IntroducedIn introduced_in_unknown = {22, 2};
     FunctionDocumentation::Category category_unknown = FunctionDocumentation::Category::NLP;
-    FunctionDocumentation documentation_unknown = {description_unknown, syntax_unknown, arguments_unknown, returned_value_unknown, examples_unknown, introduced_in_unknown, category_unknown};
+    FunctionDocumentation documentation_unknown = {description_unknown, syntax_unknown, arguments_unknown, {}, returned_value_unknown, examples_unknown, introduced_in_unknown, category_unknown};
 
     factory.registerFunction<FunctionDetectLanguageUnknown>(documentation_unknown);
 }

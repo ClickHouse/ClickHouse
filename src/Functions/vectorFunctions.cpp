@@ -2219,6 +2219,7 @@ SELECT L2DistanceTransposed(vec, array(1.0, 2.0), 16) FROM qbit;"
         = {description_l2_distance_transposed,
            syntax_l2_distance_transposed,
            arguments_l2_distance_transposed,
+           {},
            returned_value_l2_distance_transposed,
            examples_l2_distance_transposed,
            introduced_in_l2_distance_transposed,

@@ -1257,7 +1257,7 @@ SELECT MACNumToString(149809441867716) AS mac_address;
     };
     FunctionDocumentation::IntroducedIn introduced_in_macnumtostring = {1, 1};
     FunctionDocumentation::Category category_macnumtostring = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_macnumtostring = {description_macnumtostring, syntax_macnumtostring, arguments_macnumtostring, returned_value_macnumtostring, examples_macnumtostring, introduced_in_macnumtostring, category_macnumtostring};
+    FunctionDocumentation documentation_macnumtostring = {description_macnumtostring, syntax_macnumtostring, arguments_macnumtostring, {}, returned_value_macnumtostring, examples_macnumtostring, introduced_in_macnumtostring, category_macnumtostring};
 
     factory.registerFunction<FunctionMACNumToString>(documentation_macnumtostring);
 
@@ -1282,7 +1282,7 @@ SELECT MACStringToNum('01:02:03:04:05:06') AS mac_numeric;
     FunctionDocumentation::ReturnedValue returned_value_macstringtonum = {"Returns a UInt64 number.", {"UInt64"}};
     FunctionDocumentation::Category category_macstringtonum = FunctionDocumentation::Category::Other;
     FunctionDocumentation::IntroducedIn introduced_in_macstringtonum = {1, 1};
-    FunctionDocumentation documentation_macstringtonum = {description_macstringtonum, syntax_macstringtonum, arguments_macstringtonum, returned_value_macstringtonum, examples_macstringtonum, introduced_in_macstringtonum, category_macstringtonum};
+    FunctionDocumentation documentation_macstringtonum = {description_macstringtonum, syntax_macstringtonum, arguments_macstringtonum, {}, returned_value_macstringtonum, examples_macstringtonum, introduced_in_macstringtonum, category_macstringtonum};
 
     factory.registerFunction<FunctionMACStringTo<ParseMACImpl>>(documentation_macstringtonum);
 
@@ -1307,7 +1307,7 @@ SELECT MACStringToOUI('00:50:56:12:34:56') AS oui;
     FunctionDocumentation::ReturnedValue returned_value_macstringtooui = {"First three octets as UInt64 number.", {"UInt64"}};
     FunctionDocumentation::Category category_macstringtooui = FunctionDocumentation::Category::Other;
     FunctionDocumentation::IntroducedIn introduced_in_macstringtooui = {1, 1};
-    FunctionDocumentation documentation_macstringtooui = {description_macstringtooui, syntax_macstringtooui, arguments_macstringtooui, returned_value_macstringtooui, examples_macstringtooui, introduced_in_macstringtooui, category_macstringtooui};
+    FunctionDocumentation documentation_macstringtooui = {description_macstringtooui, syntax_macstringtooui, arguments_macstringtooui, {}, returned_value_macstringtooui, examples_macstringtooui, introduced_in_macstringtooui, category_macstringtooui};
 
     factory.registerFunction<FunctionMACStringTo<ParseOUIImpl>>(documentation_macstringtooui);
 
