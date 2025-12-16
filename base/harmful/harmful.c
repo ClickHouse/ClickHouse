@@ -3,7 +3,7 @@
   * (by terminating the program immediately).
   */
 
-#include "../base/sanitizer_defs.h"
+#include <base/sanitizer_defs.h>
 
 /// We check for "harmful" functions if it's a debug build or with a sanitizer.
 #if defined(DEBUG_OR_SANITIZER_BUILD)
