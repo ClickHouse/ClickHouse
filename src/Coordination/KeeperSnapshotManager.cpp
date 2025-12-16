@@ -33,12 +33,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace CoordinationSetting
-{
-    extern const CoordinationSettingsUInt64 rocksdb_load_batch_size;
-}
-
-
 namespace
 {
     void moveSnapshotBetweenDisks(
@@ -256,7 +250,7 @@ void KeeperStorageSnapshot<Storage>::serialize(const KeeperStorageSnapshot<Stora
         const auto & path = it->key;
 
         // write only the root system path because of digest
-        if (Coordination::matchPath(path, keeper_system_path) == Coordination::PathMatchResult::IS_CHILD)
+        if (Coordination::matchPath(path.toView(), keeper_system_path) == Coordination::PathMatchResult::IS_CHILD)
         {
             if (counter == snapshot.snapshot_container_size - 1)
                 break;
@@ -320,7 +314,7 @@ void KeeperStorageSnapshot<Storage>::serialize(const KeeperStorageSnapshot<Stora
 }
 
 template<typename Storage>
-void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<Storage> & deserialization_result, ReadBuffer & in, KeeperContextPtr keeper_context, bool load_full_storage) TSA_NO_THREAD_SAFETY_ANALYSIS
+void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<Storage> & deserialization_result, ReadBuffer & in, KeeperContextPtr keeper_context) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     uint8_t version;
     readBinary(version, in);
@@ -399,10 +393,6 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
     if (recalculate_digest)
         storage.nodes_digest = 0;
 
-    auto batch_load_size = keeper_context->getCoordinationSettings()[CoordinationSetting::rocksdb_load_batch_size];
-    if constexpr (use_rocksdb)
-        storage.container.startLoading(batch_load_size);
-
     for (size_t nodes_read = 0; nodes_read < snapshot_container_size; ++nodes_read)
     {
         size_t path_size = 0;
@@ -414,12 +404,6 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
 
         typename Storage::Node node{};
         readNode(node, in, current_version, storage.acl_map, keeper_context->shouldBlockACL());
-
-        if (!load_full_storage)
-        {
-            deserialization_result.paths.push_back(std::string{path});
-            continue;
-        }
 
         using enum Coordination::PathMatchResult;
         auto match_result = Coordination::matchPath(path, keeper_system_path);
@@ -477,23 +461,17 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
         storage.container.insertOrReplace(std::move(path_data), path_size, std::move(node));
     }
 
-    if constexpr (use_rocksdb)
-    {
-        LOG_TRACE(getLogger("KeeperSnapshotManager"), "Update node stats");
-        storage.container.finishLoading();
-    }
+    LOG_TRACE(getLogger("KeeperSnapshotManager"), "Building structure for children nodes");
 
     if constexpr (!use_rocksdb)
     {
-        LOG_TRACE(getLogger("KeeperSnapshotManager"), "Building structure for children nodes");
-
         for (const auto & itr : storage.container)
         {
             if (itr.key != "/")
             {
-                auto parent_path = Coordination::parentNodePath(itr.key);
+                auto parent_path = parentNodePath(itr.key);
                 storage.container.updateValue(
-                    parent_path, [path = itr.key](typename Storage::Node & value) { value.addChild(Coordination::getBaseNodeName(path)); });
+                    parent_path, [path = itr.key](typename Storage::Node & value) { value.addChild(getBaseNodeName(path)); });
             }
         }
 
@@ -511,7 +489,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                         " is different from actual children size {} for node {}",
                         itr.value.stats.numChildren(),
                         itr.value.getChildren().size(),
-                        itr.key);
+                        itr.key.toView());
 #else
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
@@ -519,7 +497,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                         " is different from actual children size {} for node {}",
                         itr.value.stats.numChildren(),
                         itr.value.getChildren().size(),
-                        itr.key);
+                        itr.key.toView());
 #endif
                 }
             }
@@ -799,7 +777,7 @@ bool KeeperSnapshotManager<Storage>::isZstdCompressed(nuraft::ptr<nuraft::buffer
 }
 
 template<typename Storage>
-SnapshotDeserializationResult<Storage> KeeperSnapshotManager<Storage>::deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer, bool load_full_storage) const
+SnapshotDeserializationResult<Storage> KeeperSnapshotManager<Storage>::deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const
 {
     bool is_zstd_compressed = isZstdCompressed(buffer);
 
@@ -813,9 +791,8 @@ SnapshotDeserializationResult<Storage> KeeperSnapshotManager<Storage>::deseriali
 
     SnapshotDeserializationResult<Storage> result;
     result.storage = std::make_unique<Storage>(storage_tick_time, superdigest, keeper_context, /* initialize_system_nodes */ false);
-    KeeperStorageSnapshot<Storage>::deserialize(result, *compressed_reader, keeper_context, load_full_storage);
-    if (load_full_storage)
-        result.storage->initializeSystemNodes();
+    KeeperStorageSnapshot<Storage>::deserialize(result, *compressed_reader, keeper_context);
+    result.storage->initializeSystemNodes();
     return result;
 }
 

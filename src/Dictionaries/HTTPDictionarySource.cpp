@@ -1,4 +1,4 @@
-#include <Dictionaries/HTTPDictionarySource.h>
+#include "HTTPDictionarySource.h"
 #include <Common/HTTPHeaderFilter.h>
 #include <Core/ServerSettings.h>
 #include <Formats/formatBlock.h>
@@ -11,9 +11,9 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/logger_useful.h>
-#include <Dictionaries/DictionarySourceFactory.h>
-#include <Dictionaries/DictionarySourceHelpers.h>
-#include <Dictionaries/DictionaryStructure.h>
+#include "DictionarySourceFactory.h"
+#include "DictionarySourceHelpers.h"
+#include "DictionaryStructure.h"
 #include <Storages/NamedCollectionsHelpers.h>
 
 
@@ -86,7 +86,7 @@ void HTTPDictionarySource::getUpdateFieldAndDate(Poco::URI & uri)
     }
 }
 
-BlockIO HTTPDictionarySource::loadAll()
+QueryPipeline HTTPDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll {}", toString());
 
@@ -99,12 +99,11 @@ BlockIO HTTPDictionarySource::loadAll()
                    .withHeaders(configuration.header_entries)
                    .withDelayInit(false)
                    .create(credentials);
-    BlockIO io;
-    io.pipeline = createWrappedBuffer(std::move(buf));
-    return io;
+
+    return createWrappedBuffer(std::move(buf));
 }
 
-BlockIO HTTPDictionarySource::loadUpdatedAll()
+QueryPipeline HTTPDictionarySource::loadUpdatedAll()
 {
     Poco::URI uri(configuration.url);
     getUpdateFieldAndDate(uri);
@@ -118,12 +117,10 @@ BlockIO HTTPDictionarySource::loadUpdatedAll()
                    .withDelayInit(false)
                    .create(credentials);
 
-    BlockIO io;
-    io.pipeline = createWrappedBuffer(std::move(buf));
-    return io;
+    return createWrappedBuffer(std::move(buf));
 }
 
-BlockIO HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
@@ -149,12 +146,10 @@ BlockIO HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
                    .withDelayInit(false)
                    .create(credentials);
 
-    BlockIO io;
-    io.pipeline = createWrappedBuffer(std::move(buf));
-    return io;
+    return createWrappedBuffer(std::move(buf));
 }
 
-BlockIO HTTPDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+QueryPipeline HTTPDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
@@ -180,9 +175,7 @@ BlockIO HTTPDictionarySource::loadKeys(const Columns & key_columns, const std::v
                    .withDelayInit(false)
                    .create(credentials);
 
-    BlockIO io;
-    io.pipeline = createWrappedBuffer(std::move(buf));
-    return io;
+    return createWrappedBuffer(std::move(buf));
 }
 
 bool HTTPDictionarySource::isModified() const
@@ -213,8 +206,7 @@ std::string HTTPDictionarySource::toString() const
 
 void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const String & /*name*/,
-                                   const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const DictionaryStructure & dict_struct,
                                    const Poco::Util::AbstractConfiguration & config,
                                    const std::string & config_prefix,
                                    Block & sample_block,

@@ -14,6 +14,7 @@
 #include <DataTypes/IDataType.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -21,7 +22,6 @@
 #include <Columns/ColumnMap.h>
 
 #include <boost/algorithm/string.hpp>
-
 
 namespace DB
 {
@@ -704,7 +704,7 @@ namespace
         capnp::Data::Reader getData(const ColumnPtr & column, size_t row_num)
         {
             auto data = column->getDataAt(row_num);
-            return capnp::Data::Reader(reinterpret_cast<const kj::byte *>(data.data()), data.size());
+            return capnp::Data::Reader(reinterpret_cast<const kj::byte *>(data.data), data.size);
         }
 
         void insertData(IColumn & column, capnp::Data::Reader data)
@@ -755,9 +755,9 @@ namespace
         {
             auto data = column->getDataAt(row_num);
             if constexpr (std::is_same_v<CapnpType, capnp::Data>)
-                return Reader(reinterpret_cast<const kj::byte *>(data.data()), data.size());
+                return Reader(reinterpret_cast<const kj::byte *>(data.data), data.size);
             else
-                return Reader(data.data(), data.size());
+                return Reader(data.data, data.size);
         }
 
         void insertData(IColumn & column, Reader data)
@@ -806,18 +806,18 @@ namespace
             auto data = column->getDataAt(row_num);
             if constexpr (std::is_same_v<CapnpType, capnp::Data>)
             {
-                return Reader(reinterpret_cast<const kj::byte *>(data.data()), data.size());
+                return Reader(reinterpret_cast<const kj::byte *>(data.data), data.size);
             }
             else
             {
-                if (data.back() == 0)
-                    return Reader(data.data(), data.size());
+                if (data.data[data.size - 1] == 0)
+                    return Reader(data.data, data.size);
 
                 /// In TEXT type data should be null-terminated, but ClickHouse FixedString data could not be.
                 /// To make data null-terminated we should copy it to temporary String object and use it in capnp::Text::Reader.
                 /// Note that capnp::Text::Reader works only with pointer to the data and it's size, so we should
                 /// guarantee that new String object life time is longer than capnp::Text::Reader life time.
-                tmp_string = data;
+                tmp_string = data.toString();
                 return Reader(tmp_string.data(), tmp_string.size());
             }
         }
@@ -1267,9 +1267,9 @@ namespace
             const auto * tuple_data_type = assert_cast<const DataTypeTuple *>(data_type.get());
             auto nested_types = tuple_data_type->getElements();
             Names nested_names;
-            bool has_explicit_names = tuple_data_type->hasExplicitNames();
+            bool have_explicit_names = tuple_data_type->haveExplicitNames();
             auto structure_fields = struct_schema.getFields();
-            if (!has_explicit_names)
+            if (!have_explicit_names)
             {
                 if (nested_types.size() != structure_fields.size())
                     throw Exception(

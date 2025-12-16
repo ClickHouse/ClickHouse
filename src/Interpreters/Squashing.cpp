@@ -14,11 +14,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-Squashing::Squashing(SharedHeader header_, size_t min_block_size_rows_, size_t min_block_size_bytes_)
+Squashing::Squashing(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_)
     : min_block_size_rows(min_block_size_rows_)
     , min_block_size_bytes(min_block_size_bytes_)
     , header(header_)
 {
+    LOG_TEST(getLogger("Squashing"), "header columns {}", header.columns());
 }
 
 Chunk Squashing::flush()
@@ -95,9 +96,9 @@ Chunk Squashing::convertToChunk(CurrentData && data) const
     // It is imortant that chunk is not empty, it has to have columns even if they are empty
     // Sometimes there are could be no columns in header but not empty rows in chunks
     // That happens when we intend to add defaults for the missing columns after
-    auto aggr_chunk = Chunk(header->getColumns(), 0);
-    if (header->columns() == 0)
-        aggr_chunk = Chunk(header->getColumns(), data.getRows());
+    auto aggr_chunk = Chunk(header.getColumns(), 0);
+    if (header.columns() == 0)
+        aggr_chunk = Chunk(header.getColumns(), data.getRows());
 
     aggr_chunk.getChunkInfos().add(std::move(info));
     chassert(aggr_chunk);
@@ -144,9 +145,19 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoColl
         auto columns = input_chunks[i].detachColumns();
         for (size_t j = 0; j != num_columns; ++j)
         {
+            /// IColumn::structureEquals is not implemented for deprecated object type, ignore it and always convert to non-sparse.
+            bool has_object_deprecated = columns[j]->getDataType() == TypeIndex::ObjectDeprecated ||
+                mutable_columns[j]->getDataType() == TypeIndex::ObjectDeprecated;
+            auto has_object_deprecated_lambda = [&has_object_deprecated](const auto & subcolumn)
+            {
+                has_object_deprecated = has_object_deprecated || subcolumn.getDataType() == TypeIndex::ObjectDeprecated;
+            };
+            columns[j]->forEachSubcolumnRecursively(has_object_deprecated_lambda);
+            mutable_columns[j]->forEachSubcolumnRecursively(has_object_deprecated_lambda);
+
             /// Need to check if there are any sparse columns in subcolumns,
             /// since `IColumn::isSparse` is not recursive but sparse column can be inside a tuple, for example.
-            have_same_serialization[j] &= columns[j]->structureEquals(*mutable_columns[j]);
+            have_same_serialization[j] &= !has_object_deprecated && columns[j]->structureEquals(*mutable_columns[j]);
             source_columns_list[j].emplace_back(std::move(columns[j]));
         }
     }
@@ -155,13 +166,13 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoColl
     {
         if (!have_same_serialization[i])
         {
-            mutable_columns[i] = removeSpecialRepresentations(mutable_columns[i]->convertToFullColumnIfConst())->assumeMutable();
+            mutable_columns[i] = recursiveRemoveSparse(std::move(mutable_columns[i]))->assumeMutable();
             for (auto & column : source_columns_list[i])
-                column = removeSpecialRepresentations(column->convertToFullColumnIfConst());
+                column = recursiveRemoveSparse(column);
         }
 
         /// We know all the data we will insert in advance and can make all necessary pre-allocations.
-        mutable_columns[i]->prepareForSquashing(source_columns_list[i], /* factor */ 1);
+        mutable_columns[i]->prepareForSquashing(source_columns_list[i]);
         for (auto & source_column : source_columns_list[i])
         {
             auto column = std::move(source_column);

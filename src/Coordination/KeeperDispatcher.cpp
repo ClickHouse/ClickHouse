@@ -38,7 +38,6 @@ namespace ProfileEvents
     extern const Event KeeperCommitWaitElapsedMicroseconds;
     extern const Event KeeperBatchMaxCount;
     extern const Event KeeperBatchMaxTotalSize;
-    extern const Event KeeperRequestRejectedDueToSoftMemoryLimitCount;
 }
 
 using namespace std::chrono_literals;
@@ -129,7 +128,7 @@ KeeperDispatcher::KeeperDispatcher()
 
 void KeeperDispatcher::requestThread()
 {
-    DB::setThreadName(ThreadName::KEEPER_REQUEST);
+    setThreadName("KeeperReqT");
 
     /// Result of requests batch from previous iteration
     RaftAppendResult prev_result = nullptr;
@@ -166,7 +165,6 @@ void KeeperDispatcher::requestThread()
                 Int64 mem_soft_limit = keeper_context->getKeeperMemorySoftLimit();
                 if (configuration_and_settings->standalone_keeper && isExceedingMemorySoftLimit() && checkIfRequestIncreaseMem(request.request))
                 {
-                    ProfileEvents::increment(ProfileEvents::KeeperRequestRejectedDueToSoftMemoryLimitCount, 1);
                     LOG_WARNING(
                         log,
                         "Processing requests refused because of max_memory_usage_soft_limit {}, the total allocated memory is {}, RSS is {}, request type "
@@ -266,7 +264,7 @@ void KeeperDispatcher::requestThread()
                     if (current_batch_bytes_size == max_batch_bytes_size)
                         ProfileEvents::increment(ProfileEvents::KeeperBatchMaxTotalSize, 1);
 
-                    LOG_TEST(log, "Processing requests batch, size: {}, bytes: {}", current_batch.size(), current_batch_bytes_size);
+                    LOG_TRACE(log, "Processing requests batch, size: {}, bytes: {}", current_batch.size(), current_batch_bytes_size);
 
                     auto result = server->putRequestBatch(current_batch);
 
@@ -333,8 +331,7 @@ void KeeperDispatcher::requestThread()
 
 void KeeperDispatcher::responseThread()
 {
-    DB::setThreadName(ThreadName::KEEPER_RESPONSE);
-
+    setThreadName("KeeperRspT");
     const auto & shutdown_called = keeper_context->isShutdownCalled();
     while (!shutdown_called)
     {
@@ -349,7 +346,7 @@ void KeeperDispatcher::responseThread()
 
             try
             {
-                setResponse(response_for_session.session_id, response_for_session.response, response_for_session.request);
+                 setResponse(response_for_session.session_id, response_for_session.response, response_for_session.request);
             }
             catch (...)
             {
@@ -361,8 +358,7 @@ void KeeperDispatcher::responseThread()
 
 void KeeperDispatcher::snapshotThread()
 {
-    DB::setThreadName(ThreadName::KEEPER_SNAPSHOT);
-
+    setThreadName("KeeperSnpT");
     const auto & shutdown_called = keeper_context->isShutdownCalled();
     CreateSnapshotTask task;
     while (snapshots_queue.pop(task))
@@ -749,7 +745,6 @@ void KeeperDispatcher::addErrorResponses(const KeeperRequestsForSessions & reque
         response->xid = request_for_session.request->xid;
         response->zxid = 0;
         response->error = error;
-        response->enqueue_ts = std::chrono::steady_clock::now();
         if (!responses_queue.push(DB::KeeperResponseForSession{request_for_session.session_id, response}))
             throw Exception(ErrorCodes::SYSTEM_ERROR,
                 "Could not push error response xid {} zxid {} error message {} to responses queue",
@@ -1029,7 +1024,7 @@ Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
 void KeeperDispatcher::cleanResources()
 {
 #if USE_JEMALLOC
-    Jemalloc::purgeArenas();
+    purgeJemallocArenas();
 #endif
 }
 

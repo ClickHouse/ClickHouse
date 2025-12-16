@@ -19,26 +19,26 @@ $CLICKHOUSE_CLIENT --distributed_foreground_insert=0 --network_compression_metho
 
 function select_thread()
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
-    do
+    while true; do
         $CLICKHOUSE_CLIENT --distributed_foreground_insert=0 --network_compression_method='zstd' --query "SELECT count() FROM local" >/dev/null
         $CLICKHOUSE_CLIENT --distributed_foreground_insert=0 --network_compression_method='zstd' --query "SELECT count() FROM distributed" >/dev/null
     done
 }
 
+export -f select_thread;
+
 TIMEOUT=30
 
-select_thread 2> /dev/null &
-select_thread 2> /dev/null &
-select_thread 2> /dev/null &
-select_thread 2> /dev/null &
-select_thread 2> /dev/null &
-select_thread 2> /dev/null &
-select_thread 2> /dev/null &
-select_thread 2> /dev/null &
-select_thread 2> /dev/null &
-select_thread 2> /dev/null &
+timeout $TIMEOUT bash -c select_thread 2> /dev/null &
+timeout $TIMEOUT bash -c select_thread 2> /dev/null &
+timeout $TIMEOUT bash -c select_thread 2> /dev/null &
+timeout $TIMEOUT bash -c select_thread 2> /dev/null &
+timeout $TIMEOUT bash -c select_thread 2> /dev/null &
+timeout $TIMEOUT bash -c select_thread 2> /dev/null &
+timeout $TIMEOUT bash -c select_thread 2> /dev/null &
+timeout $TIMEOUT bash -c select_thread 2> /dev/null &
+timeout $TIMEOUT bash -c select_thread 2> /dev/null &
+timeout $TIMEOUT bash -c select_thread 2> /dev/null &
 
 wait
 

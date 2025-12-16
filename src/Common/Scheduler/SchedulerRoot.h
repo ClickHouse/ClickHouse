@@ -4,13 +4,14 @@
 
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
-#include <Common/setThreadName.h>
+
 #include <Common/Scheduler/ISchedulerNode.h>
 #include <Common/Scheduler/ISchedulerConstraint.h>
 
 #include <Poco/Util/XMLConfiguration.h>
 
 #include <unordered_map>
+#include <map>
 #include <memory>
 #include <atomic>
 
@@ -52,7 +53,7 @@ private:
     };
 
 public:
-    explicit SchedulerRoot()
+    SchedulerRoot()
         : ISchedulerNode(&events)
     {}
 
@@ -64,10 +65,10 @@ public:
     }
 
     /// Runs separate scheduler thread
-    void start(ThreadName name)
+    void start()
     {
         if (!scheduler.joinable())
-            scheduler = ThreadFromGlobalPool([this, name] { schedulerThread(name); });
+            scheduler = ThreadFromGlobalPool([this] { schedulerThread(); });
     }
 
     /// Joins scheduler threads and execute every pending request iff graceful
@@ -86,7 +87,7 @@ public:
                 {
                     auto [request, _] = dequeueRequest();
                     if (request)
-                        request->execute();
+                        execute(request);
                     else
                         has_work = false;
                     while (events.forceProcess())
@@ -232,16 +233,14 @@ private:
         value->next = nullptr;
     }
 
-    void schedulerThread(ThreadName name)
+    void schedulerThread()
     {
-        DB::setThreadName(name);
-
         while (!stop_flag.load())
         {
             // Dequeue and execute single request
             auto [request, _] = dequeueRequest();
             if (request)
-                request->execute();
+                execute(request);
             else // No more requests -- block until any event happens
                 events.process();
 
@@ -250,12 +249,15 @@ private:
         }
     }
 
+    void execute(ResourceRequest * request)
+    {
+        request->execute();
+    }
+
     Resource * current = nullptr; // round-robin pointer
+    std::unordered_map<ISchedulerNode *, Resource> children; // resources by pointer
     std::atomic<bool> stop_flag = false;
     EventQueue events;
-    /// Resources by pointer. Must be destroyed before the "events",
-    /// because the descructor of ISchedulerNode might access the mutex in that queue.
-    std::unordered_map<ISchedulerNode *, Resource> children;
     ThreadFromGlobalPool scheduler;
 };
 

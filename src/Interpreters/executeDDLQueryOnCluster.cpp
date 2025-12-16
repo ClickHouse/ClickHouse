@@ -1,9 +1,7 @@
 #include <filesystem>
-#include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/ContextAccess.h>
 #include <Common/OpenTelemetryTraceContext.h>
-#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -34,14 +32,10 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_distributed_ddl;
+    extern const SettingsBool database_replicated_enforce_synchronous_settings;
     extern const SettingsDistributedDDLOutputMode distributed_ddl_output_mode;
     extern const SettingsInt64 distributed_ddl_task_timeout;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
-}
-
-namespace ServerSetting
-{
-    extern const ServerSettingsBool distributed_ddl_use_initial_user_and_roles;
 }
 
 namespace ErrorCodes
@@ -195,11 +189,6 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     entry.setSettingsIfRequired(context);
     entry.tracing_context = OpenTelemetry::CurrentContext();
     entry.initial_query_id = context->getClientInfo().initial_query_id;
-    if (context->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles])
-    {
-        entry.initiator_user = context->getUserName();
-        entry.initiator_user_roles = context->getAccessControl().tryReadNames(context->getCurrentRoles());
-    }
     String node_path = ddl_worker.enqueueQuery(entry, params.retries_info);
 
     return getDDLOnClusterStatus(node_path, ddl_worker.getReplicasDir(), entry, context);
@@ -219,7 +208,7 @@ BlockIO getDDLOnClusterStatus(const String & node_path, const String & replicas_
 
     if (context->getSettingsRef()[Setting::distributed_ddl_output_mode] == DistributedDDLOutputMode::NONE
         || context->getSettingsRef()[Setting::distributed_ddl_output_mode] == DistributedDDLOutputMode::NONE_ONLY_ACTIVE)
-        io.pipeline.complete(std::make_shared<EmptySink>(io.pipeline.getSharedHeader()));
+        io.pipeline.complete(std::make_shared<EmptySink>(io.pipeline.getHeader()));
 
     return io;
 }

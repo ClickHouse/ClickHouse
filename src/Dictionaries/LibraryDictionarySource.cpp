@@ -1,9 +1,8 @@
-#include <Dictionaries/LibraryDictionarySource.h>
+#include "LibraryDictionarySource.h"
 
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <Common/filesystemHelpers.h>
-#include <QueryPipeline/BlockIO.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <filesystem>
@@ -106,31 +105,25 @@ bool LibraryDictionarySource::supportsSelectiveLoad() const
 }
 
 
-BlockIO LibraryDictionarySource::loadAll()
+QueryPipeline LibraryDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll {}", toString());
-    BlockIO io;
-    io.pipeline = bridge_helper->loadAll();
-    return io;
+    return bridge_helper->loadAll();
 }
 
 
-BlockIO LibraryDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline LibraryDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
-    BlockIO io;
-    io.pipeline = bridge_helper->loadIds(ids);
-    return io;
+    return bridge_helper->loadIds(ids);
 }
 
 
-BlockIO LibraryDictionarySource::loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows)
+QueryPipeline LibraryDictionarySource::loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);
-    BlockIO io;
-    io.pipeline = bridge_helper->loadKeys(block);
-    return io;
+    return bridge_helper->loadKeys(block);
 }
 
 
@@ -183,8 +176,7 @@ String LibraryDictionarySource::getDictAttributesString()
 
 void registerDictionarySourceLibrary(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const String & /*name*/,
-                                 const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,

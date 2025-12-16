@@ -21,7 +21,6 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/KeyHolderHelpers.h>
 
 #include <memory>
 
@@ -183,7 +182,7 @@ public:
 /// Generic implementation, it uses serialized representation as object descriptor.
 struct AggregateFunctionGroupArrayIntersectGenericData
 {
-    using Set = HashSet<std::string_view>;
+    using Set = HashSet<StringRef>;
 
     Set value;
     UInt64 version = 0;
@@ -197,7 +196,7 @@ class AggregateFunctionGroupArrayIntersectGeneric final
     : public IAggregateFunctionDataHelper<AggregateFunctionGroupArrayIntersectGenericData,
         AggregateFunctionGroupArrayIntersectGeneric<is_plain_column>>
 {
-    const DataTypePtr input_data_type;
+    const DataTypePtr & input_data_type;
 
     using State = AggregateFunctionGroupArrayIntersectGenericData;
 
@@ -236,9 +235,8 @@ public:
                 else
                 {
                     const char * begin = nullptr;
-                    auto settings = IColumn::SerializationSettings::createForAggregationState();
-                    auto serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin, &settings);
-                    chassert(!serialized.empty());
+                    StringRef serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin);
+                    chassert(serialized.data != nullptr);
                     set.emplace(SerializedKeyHolder{serialized, *arena}, it, inserted);
                 }
             }
@@ -257,9 +255,8 @@ public:
                 else
                 {
                     const char * begin = nullptr;
-                    auto settings = IColumn::SerializationSettings::createForAggregationState();
-                    auto serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin, &settings);
-                    chassert(!serialized.empty());
+                    StringRef serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin);
+                    chassert(serialized.data != nullptr);
                     it = set.find(serialized);
 
                     if (it != nullptr)
@@ -344,7 +341,10 @@ public:
 
         for (auto & elem : set)
         {
-            deserializeAndInsert<is_plain_column>(elem.getValue(), data_to);
+            if constexpr (is_plain_column)
+                data_to.insertData(elem.getValue().data, elem.getValue().size);
+            else
+                std::ignore = data_to.deserializeAndInsertFromArena(elem.getValue().data);
         }
     }
 };
