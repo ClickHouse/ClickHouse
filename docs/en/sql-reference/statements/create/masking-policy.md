@@ -27,7 +27,7 @@ CREATE MASKING POLICY [IF NOT EXISTS | OR REPLACE] policy_name ON [database.]tab
     [PRIORITY priority_number]
 ```
 
-## UPDATE Clause
+## UPDATE Clause {#update-clause}
 
 The `UPDATE` clause specifies which columns to mask and how to transform them. You can mask multiple columns in a single policy.
 
@@ -37,7 +37,7 @@ Examples:
 - Hash-based masking: `UPDATE email = concat('masked_', substring(hex(cityHash64(email)), 1, 8))`
 - Multiple columns: `UPDATE email = '***@***.***', phone = '***-***-****'`
 
-## WHERE Clause
+## WHERE Clause {#where-clause}
 
 The optional `WHERE` clause allows conditional masking based on row values. Only rows matching the condition will have the masking applied.
 
@@ -49,7 +49,7 @@ WHERE salary > 100000
 TO analyst;
 ```
 
-## TO Clause
+## TO Clause {#to-clause}
 
 In the `TO` section, specify which users and roles the policy should apply to.
 
@@ -61,7 +61,7 @@ In the `TO` section, specify which users and roles the policy should apply to.
 Unlike row policies, masking policies do not affect users who don't have the policy applied. If no masking policy applies to a user, they see the original data.
 :::
 
-## PRIORITY Clause
+## PRIORITY Clause {#priority-clause}
 
 When multiple masking policies target the same column for a user, the `PRIORITY` clause determines the application order. Policies are applied in order from highest to lowest priority.
 
