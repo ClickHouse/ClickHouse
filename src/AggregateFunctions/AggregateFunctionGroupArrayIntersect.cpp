@@ -183,7 +183,7 @@ public:
 /// Generic implementation, it uses serialized representation as object descriptor.
 struct AggregateFunctionGroupArrayIntersectGenericData
 {
-    using Set = HashSet<std::string_view>;
+    using Set = HashSet<StringRef>;
 
     Set value;
     UInt64 version = 0;
@@ -238,7 +238,7 @@ public:
                     const char * begin = nullptr;
                     auto settings = IColumn::SerializationSettings::createForAggregationState();
                     auto serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin, &settings);
-                    chassert(!serialized.empty());
+                    chassert(serialized.data != nullptr);
                     set.emplace(SerializedKeyHolder{serialized, *arena}, it, inserted);
                 }
             }
@@ -259,7 +259,7 @@ public:
                     const char * begin = nullptr;
                     auto settings = IColumn::SerializationSettings::createForAggregationState();
                     auto serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin, &settings);
-                    chassert(!serialized.empty());
+                    chassert(serialized.data != nullptr);
                     it = set.find(serialized);
 
                     if (it != nullptr)

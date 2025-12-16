@@ -182,7 +182,7 @@ static InputOrderInfoPtr convertSortingKeyToInputOrder(const KeyDescription & ke
 
 bool ReadFromObjectStorageStep::requestReadingInOrder(InputOrderInfoPtr order_info_) const
 {
-    return isPrefixInputOrder(order_info_, getDataOrder()) && configuration->isDataSortedBySortingKey(storage_snapshot->metadata, getContext());
+    return isPrefixInputOrder(order_info_, getDataOrder());
 }
 
 InputOrderInfoPtr ReadFromObjectStorageStep::getDataOrder() const

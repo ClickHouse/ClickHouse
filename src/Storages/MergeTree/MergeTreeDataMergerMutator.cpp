@@ -164,11 +164,39 @@ std::unordered_map<String, PartsRanges> combineByPartitions(PartsRanges && range
     return ranges_by_partitions;
 }
 
+struct PartitionStatistics
+{
+    time_t min_age = std::numeric_limits<time_t>::max();
+    size_t part_count = 0;
+    size_t total_size = 0;
+};
+
+std::unordered_map<String, PartitionStatistics> calculateStatisticsForPartitions(const PartsRanges & ranges)
+{
+    std::unordered_map<String, PartitionStatistics> stats;
+
+    for (const auto & range : ranges)
+    {
+        chassert(!range.empty());
+        PartitionStatistics & partition_stats = stats[range.front().info.getPartitionId()];
+
+        partition_stats.part_count += range.size();
+
+        for (const auto & part : range)
+        {
+            partition_stats.min_age = std::min(partition_stats.min_age, part.age);
+            partition_stats.total_size += part.size;
+        }
+    }
+
+    return stats;
+}
+
 String getBestPartitionToOptimizeEntire(
     size_t max_total_size_to_merge,
     const ContextPtr & context,
     const MergeTreeSettingsPtr & settings,
-    const PartitionsStatistics & stats,
+    const std::unordered_map<String, PartitionStatistics> & stats,
     const LoggerPtr & log)
 {
     if (!(*settings)[MergeTreeSetting::min_age_to_force_merge_on_partition_only])
@@ -251,7 +279,6 @@ MergeSelectorChoices chooseMergesFrom(
     const MergeSelectorApplier & selector,
     const IMergePredicate & predicate,
     const PartsRanges & ranges,
-    const PartitionsStatistics & partitions_stats,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeSettingsPtr & data_settings,
     const PartitionIdToTTLs & next_delete_times,
@@ -263,7 +290,7 @@ MergeSelectorChoices chooseMergesFrom(
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergerMutatorSelectPartsForMergeElapsedMicroseconds);
 
     auto choices = selector.chooseMergesFrom(
-        ranges, partitions_stats, predicate, metadata_snapshot,
+        ranges, predicate, metadata_snapshot,
         data_settings, next_delete_times, next_recompress_times,
         can_use_ttl_merges, current_time);
 
@@ -273,11 +300,10 @@ MergeSelectorChoices chooseMergesFrom(
 
         for (size_t i = 0; i < choices.size(); ++i)
         {
-            const auto & merge_type = choices[i].merge_type;
             const auto & range = choices[i].range;
             const auto & range_patches = choices[i].range_patches;
             ProfileEvents::increment(ProfileEvents::MergerMutatorSelectRangePartsCount, range.size());
-            LOG_TRACE(log, "Merge #{} type {} with {} parts from {} to {} with {} patches", i, merge_type, range.size(), range.front().name, range.back().name, range_patches.size());
+            LOG_TRACE(log, "Merge #{} with {} parts from {} to {} with {} patches", i, range.size(), range.front().name, range.back().name, range_patches.size());
         }
     }
 
@@ -361,7 +387,7 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
 
         auto merge_choices = chooseMergesFrom(
             selector, *merge_predicate,
-            ranges_in_partition, partitions_stats, metadata_snapshot, settings,
+            ranges_in_partition, metadata_snapshot, settings,
             next_delete_ttl_merge_times_by_partition, next_recompress_ttl_merge_times_by_partition,
             can_use_ttl_merges, current_time, log);
 
@@ -418,10 +444,9 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
         });
     }
 
-    const auto partitions_stats = calculateStatisticsForPartitions(ranges);
     auto merge_choices = chooseMergesFrom(
         selector, *merge_predicate,
-        ranges, partitions_stats, metadata_snapshot, settings,
+        ranges, metadata_snapshot, settings,
         next_delete_ttl_merge_times_by_partition, next_recompress_ttl_merge_times_by_partition,
         can_use_ttl_merges, current_time, log);
 
@@ -430,6 +455,8 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
         updateTTLMergeTimes(merge_choices, settings, current_time);
         return merge_choices;
     }
+
+    const auto partitions_stats = calculateStatisticsForPartitions(ranges);
 
     if (auto best = getBestPartitionToOptimizeEntire(selector.max_merge_sizes[0], context, settings, partitions_stats, log); !best.empty())
     {
