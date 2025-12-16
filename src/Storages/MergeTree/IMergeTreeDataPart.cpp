@@ -1679,7 +1679,7 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
         /*uncompressed_cache=*/{},
         storage.getContext()->getMarkCache().get(),
         nullptr,
-        MergeTreeReaderSettings{},
+        MergeTreeReaderSettings::createFromSettings(),
         ValueSizeMap{},
         ReadBufferFromFileBase::ProfileCallback{});
 
@@ -2502,7 +2502,7 @@ ColumnSize IMergeTreeDataPart::getColumnSize(const String & column_name) const
     return ColumnSize{};
 }
 
-IMergeTreeDataPart::ColumnSizeByName IMergeTreeDataPart::getColumnSizes() const
+const IMergeTreeDataPart::ColumnSizeByName & IMergeTreeDataPart::getColumnSizes() const
 {
     std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
     if (!are_columns_and_secondary_indices_sizes_calculated && areChecksumsLoaded())
@@ -2662,8 +2662,19 @@ std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
     const Checksums & checksums_,
     const MergeTreeSettingsPtr & settings)
 {
-    auto stream_name = ISerialization::getFileNameForStream(column_name, substream_path, ISerialization::StreamFileNameSettings(*settings));
-    return getStreamNameOrHash(stream_name, extension, checksums_);
+    ISerialization::StreamFileNameSettings stream_file_name_settings(*settings);
+    auto stream_name = ISerialization::getFileNameForStream(column_name, substream_path, stream_file_name_settings);
+    if (auto result_stream_name = getStreamNameOrHash(stream_name, extension, checksums_))
+        return result_stream_name;
+
+    /// To be able to read old parts after changes in stream file name settings, try to change settings and try to find it again.
+    if (ISerialization::tryToChangeStreamFileNameSettingsForNotFoundStream(substream_path, stream_file_name_settings))
+    {
+        stream_name = ISerialization::getFileNameForStream(column_name, substream_path, stream_file_name_settings);
+        return getStreamNameOrHash(stream_name, extension, checksums_);
+    }
+
+    return std::nullopt;
 }
 
 std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
@@ -2673,8 +2684,19 @@ std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
     const Checksums & checksums_,
     const MergeTreeSettingsPtr & settings)
 {
-    auto stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(*settings));
-    return getStreamNameOrHash(stream_name, extension, checksums_);
+    ISerialization::StreamFileNameSettings stream_file_name_settings(*settings);
+    auto stream_name = ISerialization::getFileNameForStream(column, substream_path, stream_file_name_settings);
+    if (auto result_stream_name = getStreamNameOrHash(stream_name, extension, checksums_))
+        return result_stream_name;
+
+    /// To be able to read old parts after changes in stream file name settings, try to change settings and try to find it again.
+    if (ISerialization::tryToChangeStreamFileNameSettingsForNotFoundStream(substream_path, stream_file_name_settings))
+    {
+        stream_name = ISerialization::getFileNameForStream(column, substream_path, stream_file_name_settings);
+        return getStreamNameOrHash(stream_name, extension, checksums_);
+    }
+
+    return std::nullopt;
 }
 
 std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
@@ -2684,8 +2706,19 @@ std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
     const IDataPartStorage & storage_,
     const MergeTreeSettingsPtr & settings)
 {
-    auto stream_name = ISerialization::getFileNameForStream(column_name, substream_path, ISerialization::StreamFileNameSettings(*settings));
-    return getStreamNameOrHash(stream_name, extension, storage_);
+    ISerialization::StreamFileNameSettings stream_file_name_settings(*settings);
+    auto stream_name = ISerialization::getFileNameForStream(column_name, substream_path, stream_file_name_settings);
+    if (auto result_stream_name = getStreamNameOrHash(stream_name, extension, storage_))
+        return result_stream_name;
+
+    /// To be able to read old parts after changes in stream file name settings, try to change settings and try to find it again.
+    if (ISerialization::tryToChangeStreamFileNameSettingsForNotFoundStream(substream_path, stream_file_name_settings))
+    {
+        stream_name = ISerialization::getFileNameForStream(column_name, substream_path, stream_file_name_settings);
+        return getStreamNameOrHash(stream_name, extension, storage_);
+    }
+
+    return std::nullopt;
 }
 
 std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
@@ -2695,8 +2728,19 @@ std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
     const IDataPartStorage & storage_,
     const MergeTreeSettingsPtr & settings)
 {
-    auto stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(*settings));
-    return getStreamNameOrHash(stream_name, extension, storage_);
+    ISerialization::StreamFileNameSettings stream_file_name_settings(*settings);
+    auto stream_name = ISerialization::getFileNameForStream(column, substream_path, stream_file_name_settings);
+    if (auto result_stream_name = getStreamNameOrHash(stream_name, extension, storage_))
+        return result_stream_name;
+
+    /// To be able to read old parts after changes in stream file name settings, try to change settings and try to find it again.
+    if (ISerialization::tryToChangeStreamFileNameSettingsForNotFoundStream(substream_path, stream_file_name_settings))
+    {
+        stream_name = ISerialization::getFileNameForStream(column, substream_path, stream_file_name_settings);
+        return getStreamNameOrHash(stream_name, extension, storage_);
+    }
+
+    return std::nullopt;
 }
 
 void IMergeTreeDataPart::markProjectionPartAsBroken(const String & projection_name, const String & message, int code) const
@@ -2738,10 +2782,10 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
 
     StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr();
     StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
-    MergeTreeReaderSettings settings;
+
     /// We need to read only prefixes, so no data will be read.
     /// Use read settings without prefetches/filesystem cache/etc.
-    settings.read_settings = getReadSettingsForMetadata();
+    MergeTreeReaderSettings settings = MergeTreeReaderSettings::createFromSettings(getReadSettingsForMetadata());
     settings.can_read_part_without_marks = true;
     /// Use prefixes deserialization thread pool to read prefixes faster.
     /// In JSON type there might be hundreds of small files that needs to be read.

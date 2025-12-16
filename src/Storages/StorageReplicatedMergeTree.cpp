@@ -2853,6 +2853,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
     using PartDescriptionPtr = std::shared_ptr<PartDescription>;
     using PartDescriptions = std::vector<PartDescriptionPtr>;
 
+    StoragePtr source_table; // must outlive parts_to_add (`src_table_part` points into this table)
     PartDescriptions all_parts;
     PartDescriptions parts_to_add;
     PartsToRemoveFromZooKeeper parts_to_remove;
@@ -2908,7 +2909,6 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
         LOG_WARNING(log, "Some (but not all) parts from REPLACE PARTITION command already exist. REPLACE PARTITION will not be atomic.");
     }
 
-    StoragePtr source_table;
     TableLockHolder table_lock_holder_src_table;
     StorageID source_table_id{entry_replace.from_database, entry_replace.from_table};
 
@@ -2968,6 +2968,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
 
             part_desc->found_new_part_name = part_desc->new_part_name;
             part_desc->found_new_part_info = part_desc->new_part_info;
+            chassert(!part_desc->src_table_part);
             part_desc->src_table_part = src_part;
 
             ++num_clonable_parts;
@@ -6503,7 +6504,7 @@ void StorageReplicatedMergeTree::alter(
 
     if (!query_settings[Setting::allow_suspicious_primary_key])
     {
-        MergeTreeData::verifySortingKey(future_metadata.sorting_key);
+        MergeTreeData::verifySortingKey(future_metadata.sorting_key, merging_params);
     }
 
     {
@@ -6581,8 +6582,8 @@ void StorageReplicatedMergeTree::alter(
                 future_metadata_in_zk.ttl_table = "";
         }
 
-        String new_indices_str = future_metadata.secondary_indices.toString();
-        if (new_indices_str != current_metadata->secondary_indices.toString())
+        String new_indices_str = future_metadata.secondary_indices.explicitToString();
+        if (new_indices_str != current_metadata->secondary_indices.explicitToString())
             future_metadata_in_zk.skip_indices = new_indices_str;
 
         String new_projections_str = future_metadata.projections.toString();
