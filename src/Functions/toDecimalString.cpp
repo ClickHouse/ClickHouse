@@ -265,16 +265,52 @@ private:
 
 REGISTER_FUNCTION(ToDecimalString)
 {
-    factory.registerFunction<FunctionToDecimalString>(
-        FunctionDocumentation{
-            .description=R"(
-Returns string representation of a number. First argument is the number of any numeric type,
-second argument is the desired number of digits in fractional part. Returns String.
+    FunctionDocumentation::Description description_toDecimalString = R"(
+Converts a numeric value to a String with specified number of fractional digits.
 
+The function rounds the input value to the specified number of decimal places. If the input value has fewer fractional
+digits than requested, the result is padded with zeros to achieve the exact number of fractional digits specified.
+    )";
+    FunctionDocumentation::Syntax syntax_toDecimalString = R"(
+toDecimalString(number, scale)
+    )";
+    FunctionDocumentation::Arguments arguments_toDecimalString = {
+        {"number", "The numeric value to convert to a string. Can be any numeric type (Int, UInt, Float, Decimal).", {"Int8", "Int16", "Int32", "Int64", "UInt8", "UInt16", "UInt32", "UInt64", "Float32", "Float64", "Decimal"}},
+        {"scale", "The number of digits to display in the fractional part. The result will be rounded if necessary.", {"UInt8"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_toDecimalString = {"Returns a String representation of the number with exactly the specified number of fractional digits.", {"String"}};
+    FunctionDocumentation::Examples examples_toDecimalString = {
+        {"Round and format a number", R"(
+SELECT toDecimalString(2.1456, 2)
         )",
-            .examples{{"toDecimalString", "SELECT toDecimalString(2.1456,2)", ""}},
-            .category = FunctionDocumentation::Category::TypeConversion
-        }, FunctionFactory::Case::Insensitive);
+        R"(
+┌─toDecimalString(2.1456, 2)─┐
+│ 2.15                       │
+└────────────────────────────┘
+        )"},
+        {"Pad with zeros", R"(
+SELECT toDecimalString(5, 3)
+        )",
+        R"(
+┌─toDecimalString(5, 3)─┐
+│ 5.000                 │
+└───────────────────────┘
+        )"},
+        {"Different numeric types", R"(
+SELECT toDecimalString(CAST(123.456 AS Decimal(10,3)), 2) AS decimal_val,
+       toDecimalString(CAST(42.7 AS Float32), 4) AS float_val
+        )",
+        R"(
+┌─decimal_val─┬─float_val─┐
+│ 123.46      │ 42.7000   │
+└─────────────┴───────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_toDecimalString = {23, 3};
+    FunctionDocumentation::Category category_toDecimalString = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation documentation_toDecimalString = {description_toDecimalString, syntax_toDecimalString, arguments_toDecimalString, returned_value_toDecimalString, examples_toDecimalString, introduced_in_toDecimalString, category_toDecimalString};
+
+    factory.registerFunction<FunctionToDecimalString>(documentation_toDecimalString, FunctionFactory::Case::Insensitive);
 }
 
 }

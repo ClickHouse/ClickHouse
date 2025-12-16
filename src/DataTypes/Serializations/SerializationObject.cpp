@@ -1060,7 +1060,7 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {}. Expected size {}", path, path_column->size(), expected_size);
     }
 
-    column_object.validateDynamicPathsAndSharedData(shared_data_previous_size);
+    column_object.repairDuplicatesInDynamicPathsAndSharedData(shared_data_previous_size);
 }
 
 void SerializationObject::serializeBinary(const Field & field, WriteBuffer & ostr, const DB::FormatSettings & settings) const
