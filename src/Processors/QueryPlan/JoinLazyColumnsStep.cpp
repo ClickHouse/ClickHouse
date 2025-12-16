@@ -34,4 +34,9 @@ void JoinLazyColumnsStep::updateOutputHeader()
         *input_headers.front(), *input_headers.back()));
 }
 
+void JoinLazyColumnsStep::describePipeline(FormatSettings & settings) const
+{
+    IQueryPlanStep::describePipeline(processors, settings);
+}
+
 }

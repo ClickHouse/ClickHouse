@@ -27,6 +27,11 @@ struct LazyMaterializingRows
 
 using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 
+/// This transform has two ports for the main and lazy columns.
+/// First, we read the main port and get the required row indexes.
+/// Then, we prepare the main chunk and fill LazyMaterializingRows state.
+/// Then, we read the lazy port, expecting data is sorted by the global row index.
+/// Then, we prepare lazy columns by restoring the row order.
 class LazilyMaterializingTransform final : public IProcessor
 {
 public:
@@ -43,6 +48,10 @@ private:
     Chunks chunks;
     std::optional<Chunk> result_chunk;
 
+    /// This fields are calculated after main chunks read in prepareMainChunk.
+    /// The permutation is calculated to sort global row index.
+    /// The sorted_indexes are those indexes after we removed duplicates.
+    /// The offsets are prefix sum of duplicate indexes.
     PaddedPODArray<UInt64> sorted_indexes;
     PaddedPODArray<UInt64> offsets;
     PaddedPODArray<size_t> permutation;
@@ -50,6 +59,7 @@ private:
     LazyMaterializingRowsPtr lazy_materializing_rows;
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
+    /// Those functions are called once each after the corresponding port is finished.
     void prepareMainChunk();
     void prepareLazyChunk();
 };

@@ -146,6 +146,10 @@ IProcessor::Status LazyReadFromMergeTreeSource::prepare(const PortNumbers & upda
     if (lazy_materializing_rows)
         return Status::ExpandPipeline;
 
+    /// Here we reading inputs as long as they are ready, to parallelize reading.
+    /// But the chunks should be processed in the order of parts and ranges.
+    /// So we keep the chunks in the list to keep the order.
+
     if (next_input_to_process != inputs.end())
     {
         for (auto input_num : updated_input_ports)
@@ -164,7 +168,7 @@ IProcessor::Status LazyReadFromMergeTreeSource::prepare(const PortNumbers & upda
     while (next_input_to_process != inputs.end())
     {
         auto & input = *next_input_to_process;
-        auto & lst = chunks[next_ps];
+        auto & lst = chunks[next_chunk_to_process];
 
         if (!lst.empty())
         {
@@ -176,7 +180,7 @@ IProcessor::Status LazyReadFromMergeTreeSource::prepare(const PortNumbers & upda
         if (input.isFinished())
         {
             next_input_to_process++;
-            next_ps++;
+            next_chunk_to_process++;
             continue;
         }
 

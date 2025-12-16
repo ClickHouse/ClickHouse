@@ -50,9 +50,9 @@ private:
     const std::string log_name;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
-    size_t next_ps = 0;
-    InputPorts::iterator next_input_to_process;
     std::vector<std::list<Chunk>> chunks;
+    size_t next_chunk_to_process = 0;
+    InputPorts::iterator next_input_to_process;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 

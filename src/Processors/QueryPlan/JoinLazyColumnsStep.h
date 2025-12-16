@@ -21,6 +21,7 @@ public:
     String getName() const override { return "JoinLazyColumnsStep"; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
+    void describePipeline(FormatSettings & settings) const override;
 
     bool supportsDataflowStatisticsCollection() const override { return true; }
 

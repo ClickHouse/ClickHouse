@@ -1,4 +1,4 @@
-set parallel_replicas_local_plan=1;
+set enable_parallel_replicas = 0;
 
 drop table if exists test;
 CREATE table test

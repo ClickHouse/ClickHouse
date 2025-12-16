@@ -66,6 +66,7 @@ void LazilyReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline
         dataflow_cache_updater
     );
 
+    processors.emplace_back(source);
     Pipe pipe(std::move(source));
     pipeline.init(std::move(pipe));
 }

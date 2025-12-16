@@ -118,6 +118,9 @@ void LazyMaterializingRows::filterRangesAndFillRows(const PaddedPODArray<UInt64>
 {
     rows_in_parts.clear();
 
+    /// Here we have a list of part/ranges and the list of sorted indexes.
+    /// We need to remove unused granules from ranges, possibly splitting them to smaller ones.
+    /// Ranges are sorted as well, so we need traverse them properly.
     size_t next_index = 0;
     for (auto & part : ranges_in_data_parts)
     {
@@ -243,6 +246,8 @@ void LazilyMaterializingTransform::prepareMainChunk()
     columns.erase(columns.begin() + pos);
     result_chunk = Chunk(std::move(columns), rows);
 
+    /// Here we create a block with one column with empty name, and sort description with empty name.
+    /// It just works.
     Block block({{index_col, std::make_shared<DataTypeUInt64>(), {}}});
     SortDescription descr;
     descr.emplace_back(std::string{});
@@ -351,11 +356,11 @@ void LazilyMaterializingTransform::prepareLazyChunk()
         Stopwatch permute_watch;
         for (auto & col : lazy_columns)
         {
-            if (!is_identity_permutation)
-                col = col->permute(inverted_permutation, rows);
-
             if (should_replicate)
                 col = col->replicate(offsets);
+
+            if (!is_identity_permutation)
+                col = col->permute(inverted_permutation, rows);
         }
         permute_ms = permute_watch.elapsedMilliseconds();
     }

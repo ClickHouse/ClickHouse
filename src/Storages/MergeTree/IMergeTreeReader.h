@@ -42,6 +42,8 @@ public:
 
     virtual bool canReadIncompleteGranules() const = 0;
 
+    /// This is a special case for the filter-only reader, when no other filtration is potentially applied.
+    /// So we must always apply filter into the RangeReader.
     virtual bool mustApplyFilter() const { return false; }
 
     virtual size_t getResultColumnCount() const { return getColumns().size(); }
