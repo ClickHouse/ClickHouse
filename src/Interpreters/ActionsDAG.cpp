@@ -1002,7 +1002,6 @@ Block ActionsDAG::updateHeader(const Block & header) const
         throw;
     }
 
-
     Block res;
     res.reserve(result_columns.size());
     for (auto & col : result_columns)

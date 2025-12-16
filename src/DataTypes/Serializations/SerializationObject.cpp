@@ -1046,7 +1046,7 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
     settings.path.pop_back();
 
-    column_object.validateDynamicPathsAndSharedData(shared_data_previous_size);
+    column_object.repairDuplicatesInDynamicPathsAndSharedData(shared_data_previous_size);
 }
 
 void SerializationObject::serializeBinary(const Field & field, WriteBuffer & ostr, const DB::FormatSettings & settings) const

@@ -1117,6 +1117,7 @@ DECLARE_DEFAULT_CODE(
 
 DECLARE_AVX512VBMI_SPECIFIC_CODE(
     template <typename Container, typename Type>
+    __attribute__((no_sanitize("memory"))) /// False positive on _mm512_permutex2var_epi8
     void vectorIndexImpl(const Container & data, const PaddedPODArray<Type> & indexes, size_t limit, Container & res_data)
     {
         static constexpr UInt64 MASK64 = 0xffffffffffffffff;

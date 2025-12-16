@@ -151,8 +151,12 @@ void Client::initialize(const Poco::Util::AbstractConfiguration & config)
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "List of domains handled by ACME client is empty, please check configuration.");
 
     domains = served_domains;
-    refresh_certificates_task_interval = config.getInt("acme.refresh_certificates_task_interval", /* one hour */ 1000 * 60 * 60);
-    refresh_certificates_before = config.getInt("acme.refresh_certificates_before", /* one month */ 60 * 60 * 24 * 30);
+
+    auto default_refresh_certificates_task_interval = /* one hour, in seconds */ 60 * 60;
+    auto default_refresh_certificates_before = /* one month, in seconds */ 60 * 60 * 24 * 30;
+
+    refresh_certificates_task_interval_ms = config.getInt("acme.refresh_certificates_task_interval_seconds", default_refresh_certificates_task_interval) * 1000;
+    refresh_certificates_before_seconds = config.getInt("acme.refresh_certificates_before_seconds", default_refresh_certificates_before);
 
     acme_hostname = Poco::URI(directory_url).getHost();
     LOG_TEST(log, "ACME server hostname: {}", acme_hostname);
@@ -214,7 +218,7 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
 
             int tzd;
             auto expiration_date = Poco::DateTimeParser::parse("%y%m%d%H%M%S", x509_certificate.expiresOn(), tzd);
-            auto best_before = Poco::Timestamp() + Poco::Timespan(refresh_certificates_before * Poco::Timespan::SECONDS);
+            auto best_before = Poco::Timestamp() + Poco::Timespan(refresh_certificates_before_seconds * Poco::Timespan::SECONDS);
 
             if (expiration_date < best_before)
             {
@@ -230,7 +234,7 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
 
             CertificateReloader::instance().tryLoad(config);
 
-            refresh_certificates_task->scheduleAfter(refresh_certificates_task_interval);
+            refresh_certificates_task->scheduleAfter(refresh_certificates_task_interval_ms);
             return;
         }
 
@@ -326,7 +330,7 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
         {
             LOG_DEBUG(log, "Order {} is not ready yet (status: {}), retrying", order_url, order_data.status);
 
-            refresh_certificates_task->scheduleAfter(refresh_certificates_task_interval);
+            refresh_certificates_task->scheduleAfter(refresh_certificates_task_interval_ms);
             return;
         }
 
@@ -359,7 +363,7 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
         return;
     }
 
-    refresh_certificates_task->scheduleAfter(refresh_certificates_task_interval);
+    refresh_certificates_task->scheduleAfter(refresh_certificates_task_interval_ms);
 }
 
 void Client::authenticationTask()

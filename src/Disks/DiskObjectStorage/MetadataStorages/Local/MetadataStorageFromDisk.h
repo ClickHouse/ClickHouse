@@ -39,8 +39,7 @@ public:
 
     /// Metadata on disk for an empty file can store empty list of blobs and size=0
     bool supportsEmptyFilesWithoutBlobs() const override { return true; }
-
-    bool areBlobPathsRandom() const override { return key_generator->isRandom(); }
+    bool areBlobPathsRandom() const override { return true; }
 
     bool existsFile(const std::string & path) const override;
     bool existsDirectory(const std::string & path) const override;
@@ -141,7 +140,7 @@ public:
 
     std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path) override;
 };
 
 }

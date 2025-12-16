@@ -535,7 +535,7 @@ void StorageObjectStorageQueue::read(
     if (!local_context->getSettingsRef()[Setting::stream_like_engine_allow_direct_select])
     {
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. "
-                        "To enable use setting `stream_like_engine_allow_direct_select`");
+                        "To enable use setting `stream_like_engine_allow_direct_select`. Be aware that usually the read data is removed from the queue.");
     }
     bool do_commit_on_select;
     {

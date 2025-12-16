@@ -1054,8 +1054,10 @@ bool applyFunctionChainToColumn(
             return false;
 
         result_column = castColumnAccurate({result_column, result_type, ""}, argument_type);
-        result_type = removeLowCardinality(func->getResultType());
-        result_column = func->execute({{result_column, argument_type, ""}}, result_type, result_column->size(), /* dry_run = */ false);
+        auto func_result_type = func->getResultType();
+        result_column = func->execute({{result_column, argument_type, ""}}, func_result_type, result_column->size(), /* dry_run = */ false);
+        result_column = result_column->convertToFullColumnIfLowCardinality();
+        result_type = removeLowCardinality(func_result_type);
 
         // Transforming nullable columns to the nested ones, in case no nulls found
         if (result_column->isNullable())

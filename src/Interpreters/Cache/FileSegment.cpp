@@ -780,8 +780,8 @@ void FileSegment::complete(const LockedKeyPtr & locked_key, bool allow_backgroun
     });
 
     LOG_TEST(
-        log, "Complete based on current state (is_last_holder: {}, {})",
-        is_last_holder, getInfoForLogUnlocked(segment_lock));
+        log, "Complete based on current state (is_last_holder: {}, force shrink: {}, {})",
+        is_last_holder, force_shrink_to_downloaded_size, getInfoForLogUnlocked(segment_lock));
 
     if (is_downloader)
     {

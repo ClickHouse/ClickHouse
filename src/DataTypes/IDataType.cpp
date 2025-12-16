@@ -304,7 +304,10 @@ SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column) con
     if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
         return getSerializationInfo(column_const->getDataColumn());
 
-    return std::make_shared<SerializationInfo>(ISerialization::getKindStack(column), SerializationInfo::Settings{});
+    /// Enable all supported serialization features when deriving info from an existing column. Since the column
+    /// reflects the actual in-memory state, the serialization info must accept any variant that the column may contain.
+    return std::make_shared<SerializationInfo>(
+        ISerialization::getKindStack(column), SerializationInfoSettings::enableAllSupportedSerializations());
 }
 
 SerializationPtr IDataType::getDefaultSerialization(SerializationPtr override_default) const
@@ -318,12 +321,13 @@ SerializationPtr IDataType::getDefaultSerialization(SerializationPtr override_de
     return doGetDefaultSerialization();
 }
 
-SerializationPtr IDataType::getSerialization(ISerialization::KindStack kind_stack, SerializationPtr override_default) const
+SerializationPtr IDataType::getSerialization(
+    ISerialization::KindStack kind_stack, const SerializationInfoSettings & settings, SerializationPtr override_default) const
 {
     auto serialization = getDefaultSerialization(override_default);
     for (auto kind : kind_stack)
     {
-        if (supportsSparseSerialization() && kind == ISerialization::Kind::SPARSE)
+        if (settings.canUseSparseSerialization(*this) && kind == ISerialization::Kind::SPARSE)
             serialization = std::make_shared<SerializationSparse>(serialization);
         else if (kind == ISerialization::Kind::DETACHED)
             serialization = std::make_shared<SerializationDetached>(serialization);
@@ -336,7 +340,7 @@ SerializationPtr IDataType::getSerialization(ISerialization::KindStack kind_stac
 
 SerializationPtr IDataType::getSerialization(const SerializationInfo & info) const
 {
-    return getSerialization(info.getKindStack());
+    return getSerialization(info.getKindStack(), info.getSettings());
 }
 
 SerializationPtr IDataType::getSerialization(const SerializationInfoSettings & settings) const

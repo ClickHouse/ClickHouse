@@ -153,6 +153,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int CANNOT_WRITE_TO_FILE;
     extern const int CANNOT_CREATE_DIRECTORY;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 }
@@ -1383,9 +1384,15 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
                     double elapsed = receive_watch.elapsedSeconds();
                     if (break_on_timeout && elapsed > receive_timeout.totalSeconds())
                     {
-                        output_stream << "Timeout exceeded while receiving data from server."
-                                    << " Waited for " << static_cast<size_t>(elapsed) << " seconds,"
-                                    << " timeout is " << receive_timeout.totalSeconds() << " seconds." << std::endl;
+                        PreformattedMessage error_message = PreformattedMessage::create
+                        (
+                            "Timeout exceeded while receiving data from server. Waited for {} seconds, timeout is {} seconds.",
+                            static_cast<size_t>(elapsed),
+                            receive_timeout.totalSeconds()
+                        );
+
+                        client_exception = std::make_unique<Exception>(error_message, ErrorCodes::TIMEOUT_EXCEEDED);
+                        have_error = true;
 
                         cancelQuery();
                     }
@@ -3405,6 +3412,11 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
 
     if (options.contains("prompt"))
         getClientConfiguration().setString("prompt", options["prompt"].as<std::string>());
+
+    if (options.contains("oauth-url"))
+        getClientConfiguration().setString("oauth-url", options["oauth-url"].as<std::string>());
+    if (options.contains("oauth-client-id"))
+        getClientConfiguration().setString("oauth-client-id", options["oauth-client-id"].as<std::string>());
 
     if (options.contains("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());

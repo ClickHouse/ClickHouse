@@ -8,7 +8,7 @@ REGISTER_FUNCTION(ToUnixTimestamp64Nano)
 {
     /// toUnixTimestamp64Nano documentation
     FunctionDocumentation::Description description_toUnixTimestamp64Nano = R"(
-Converts a [`DateTime64`](/sql-reference/data-types/datetime64) to a [`Int64`](/sql-reference/functions/type-conversion-functions#toint64) value with fixed nanosecond precision.
+Converts a [`DateTime64`](/sql-reference/data-types/datetime64) to a [`Int64`](/sql-reference/functions/type-conversion-functions#toInt64) value with fixed nanosecond precision.
 The input value is scaled up or down appropriately depending on its precision.
 
 :::note

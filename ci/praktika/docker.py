@@ -59,7 +59,8 @@ class Docker:
                     continue
                 platforms.append(platform)
 
-            command = f"docker buildx build --builder default {tags_substr} {from_tag} --platform {','.join(platforms)} --cache-to type=inline --cache-from type=registry,ref={config.name} {config.path} {'' if disable_push else ' --push'}"
+            # add --provenance=false --sbom=false to build an old-school image instead of a manifest list
+            command = f"docker buildx build --builder default {tags_substr} {from_tag} --platform {','.join(platforms)} --provenance=false --sbom=false --cache-to type=inline --cache-from type=registry,ref={config.name} {config.path} {'' if disable_push else ' --push'}"
 
             return Result.from_commands_run(
                 name=name,

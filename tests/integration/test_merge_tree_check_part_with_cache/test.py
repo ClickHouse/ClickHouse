@@ -90,7 +90,7 @@ def test_check_part_with_cache(start_cluster):
             settings={"enable_filesystem_cache": 1},
         )
 
-    assert node.query("CHECK TABLE s3_test") == "1\n"
+    assert node.query("CHECK TABLE s3_test SETTINGS check_query_single_value_result = 1") == "1\n"
 
     # Check that cache is removed only for one part after CHECK TABLE
     cache_path = get_cache_path_of_data_file("all_1_1_0")

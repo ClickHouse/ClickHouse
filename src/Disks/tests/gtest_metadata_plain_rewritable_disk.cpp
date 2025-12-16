@@ -1694,3 +1694,239 @@ TEST_F(MetadataPlainRewritableDiskTest, FileRemoteInfoMoveUndo)
         "./FileRemoteInfoMoveUndo/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/tmp",
     }));
 }
+
+TEST_F(MetadataPlainRewritableDiskTest, OwnChangesVisibility)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("OwnChangesVisibility");
+    auto object_storage = getObjectStorage("OwnChangesVisibility");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectoryRecursive("/A/B/C");
+        size_t written_bytes = writeObject(object_storage, tx->generateObjectKeyForPath("/A/B/C/file").serialize(), "finally!");
+        tx->createMetadataFile("/A/B/C/file", {StoredObject("file", "file", written_bytes)});
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C"));
+    EXPECT_TRUE(metadata->existsFile("/A/B/C/file"));
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/B/C/file").front().remote_path), "finally!");
+
+    EXPECT_EQ(listAllBlobs("OwnChangesVisibility"), std::vector<std::string>({
+        "./OwnChangesVisibility/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",
+        "./OwnChangesVisibility/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/file",
+    }));
+
+    metadata = restartMetadataStorage("OwnChangesVisibility");
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C"));
+    EXPECT_TRUE(metadata->existsFile("/A/B/C/file"));
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/B/C/file").front().remote_path), "finally!");
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, UncommittedMove)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("UncommittedMove");
+    auto object_storage = getObjectStorage("UncommittedMove");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectoryRecursive("/A/B/C");
+        tx->createDirectoryRecursive("/X/Y/Z");
+        size_t written_bytes = writeObject(object_storage, tx->generateObjectKeyForPath("/A/B/C/file").serialize(), "finally!");
+        tx->createMetadataFile("/A/B/C/file", {StoredObject("file", "file", written_bytes)});
+        tx->moveFile("/A/B/C/file", "/X/Y/Z/file");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C"));
+    EXPECT_TRUE(metadata->existsDirectory("/X/Y/Z"));
+    EXPECT_FALSE(metadata->existsFile("/A/B/C/file"));
+    EXPECT_TRUE(metadata->existsFile("/X/Y/Z/file"));
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/X/Y/Z/file").front().remote_path), "finally!");
+
+    EXPECT_EQ(listAllBlobs("UncommittedMove"), std::vector<std::string>({
+        "./UncommittedMove/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",
+        "./UncommittedMove/__meta/ykwvvchguqasvfnkikaqtiebknfzafwv/prefix.path",
+        "./UncommittedMove/ykwvvchguqasvfnkikaqtiebknfzafwv/file"
+    }));
+
+    metadata = restartMetadataStorage("UncommittedMove");
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C"));
+    EXPECT_TRUE(metadata->existsDirectory("/X/Y/Z"));
+    EXPECT_FALSE(metadata->existsFile("/A/B/C/file"));
+    EXPECT_TRUE(metadata->existsFile("/X/Y/Z/file"));
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/X/Y/Z/file").front().remote_path), "finally!");
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, UncommittedHardlink)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("UncommittedHardlink");
+    auto object_storage = getObjectStorage("UncommittedHardlink");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectoryRecursive("/A/B/C");
+        tx->createDirectoryRecursive("/X/Y/Z");
+        size_t written_bytes = writeObject(object_storage, tx->generateObjectKeyForPath("/A/B/C/file").serialize(), "finally!");
+        tx->createMetadataFile("/A/B/C/file", {StoredObject("file", "file", written_bytes)});
+        tx->createHardLink("/A/B/C/file", "/X/Y/Z/file");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C"));
+    EXPECT_TRUE(metadata->existsDirectory("/X/Y/Z"));
+    EXPECT_TRUE(metadata->existsFile("/A/B/C/file"));
+    EXPECT_TRUE(metadata->existsFile("/X/Y/Z/file"));
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/B/C/file").front().remote_path), "finally!");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/X/Y/Z/file").front().remote_path), "finally!");
+
+    EXPECT_EQ(listAllBlobs("UncommittedHardlink"), std::vector<std::string>({
+        "./UncommittedHardlink/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",
+        "./UncommittedHardlink/__meta/ykwvvchguqasvfnkikaqtiebknfzafwv/prefix.path",
+        "./UncommittedHardlink/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/file",
+        "./UncommittedHardlink/ykwvvchguqasvfnkikaqtiebknfzafwv/file"
+    }));
+
+    metadata = restartMetadataStorage("UncommittedHardlink");
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C"));
+    EXPECT_TRUE(metadata->existsDirectory("/X/Y/Z"));
+    EXPECT_TRUE(metadata->existsFile("/A/B/C/file"));
+    EXPECT_TRUE(metadata->existsFile("/X/Y/Z/file"));
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/B/C/file").front().remote_path), "finally!");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/X/Y/Z/file").front().remote_path), "finally!");
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, UncommittedHardlinkUndo)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("UncommittedHardlinkUndo");
+    auto object_storage = getObjectStorage("UncommittedHardlinkUndo");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectoryRecursive("/A/B/C");
+        tx->createDirectoryRecursive("/X/Y/Z");
+        size_t written_bytes = writeObject(object_storage, tx->generateObjectKeyForPath("/A/B/C/file").serialize(), "finally!");
+        tx->createMetadataFile("/A/B/C/file", {StoredObject("file", "file", written_bytes)});
+        tx->createHardLink("/A/B/C/file", "/X/Y/Z/file");
+        tx->moveFile("non-existing", "other-place");
+        EXPECT_ANY_THROW(tx->commit());
+    }
+
+    EXPECT_FALSE(metadata->existsDirectory("/A/B/C"));
+    EXPECT_FALSE(metadata->existsDirectory("/X/Y/Z"));
+    EXPECT_EQ(listAllBlobs("UncommittedHardlinkUndo"), std::vector<std::string>({
+        "./UncommittedHardlinkUndo/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/file",
+    }));
+
+    metadata = restartMetadataStorage("UncommittedHardlinkUndo");
+    EXPECT_FALSE(metadata->existsDirectory("/A/B/C"));
+    EXPECT_FALSE(metadata->existsDirectory("/X/Y/Z"));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, UncommittedDirectoryMoves)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("UncommittedDirectoryMoves");
+    auto object_storage = getObjectStorage("UncommittedDirectoryMoves");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectoryRecursive("/A/B/C");
+
+        writeObject(object_storage, tx->generateObjectKeyForPath("/A/B/C/file").serialize(), "1");
+        tx->createMetadataFile("/A/B/C/file", {StoredObject("file", "file", 1)});
+
+        tx->moveDirectory("/A/B/C", "/A/B/D");
+        tx->createDirectory("/A/B/C");
+
+        writeObject(object_storage, tx->generateObjectKeyForPath("/A/B/C/file").serialize(), "2");
+        tx->createMetadataFile("/A/B/C/file", {StoredObject("file", "file", 1)});
+
+        writeObject(object_storage, tx->generateObjectKeyForPath("/A/B/D/file_2").serialize(), "3");
+        tx->createMetadataFile("/A/B/D/file_2", {StoredObject("file_2", "file_2", 1)});
+
+        tx->moveDirectory("/A/B/D", "/A/B/C/X");
+        tx->createDirectory("/A/B/C/X/Y");
+
+        writeObject(object_storage, tx->generateObjectKeyForPath("/A/B/C/X/Y/file").serialize(), "4");
+        tx->createMetadataFile("/A/B/C/X/Y/file", {StoredObject("file", "file", 1)});
+
+        writeObject(object_storage, tx->generateObjectKeyForPath("/A/B/C/X/file_3").serialize(), "5");
+        tx->createMetadataFile("/A/B/C/X/file_3", {StoredObject("file_3", "file_3", 1)});
+
+        tx->commit();
+    }
+
+    EXPECT_EQ(listAllBlobs("UncommittedDirectoryMoves"), std::vector<std::string>({
+        "./UncommittedDirectoryMoves/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",  /// /A/B/C/X
+        "./UncommittedDirectoryMoves/__meta/wcageakzukwtfkvkwibqrfhzrrlubsbg/prefix.path",  /// /A/B/C
+        "./UncommittedDirectoryMoves/__meta/ykwvvchguqasvfnkikaqtiebknfzafwv/prefix.path",  /// /A/B/C/X/Y
+        "./UncommittedDirectoryMoves/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/file",                /// /A/B/C/X/file
+        "./UncommittedDirectoryMoves/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/file_2",              /// /A/B/C/X/file_2
+        "./UncommittedDirectoryMoves/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/file_3",              /// /A/B/C/X/file_3
+        "./UncommittedDirectoryMoves/wcageakzukwtfkvkwibqrfhzrrlubsbg/file",                /// /A/B/C/file
+        "./UncommittedDirectoryMoves/ykwvvchguqasvfnkikaqtiebknfzafwv/file",                /// /A/B/C/X/Y/file
+    }));
+
+    EXPECT_EQ(sorted(metadata->listDirectory("/")), std::vector<std::string>({"A"}));
+    EXPECT_EQ(sorted(metadata->listDirectory("/A")), std::vector<std::string>({"B"}));
+    EXPECT_EQ(sorted(metadata->listDirectory("/A/B")), std::vector<std::string>({"C"}));
+    EXPECT_EQ(sorted(metadata->listDirectory("/A/B/C")), std::vector<std::string>({"X", "file"}));
+    EXPECT_EQ(sorted(metadata->listDirectory("/A/B/C/X")), std::vector<std::string>({"Y", "file", "file_2", "file_3"}));
+    EXPECT_EQ(sorted(metadata->listDirectory("/A/B/C/X/Y")), std::vector<std::string>({"file"}));
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/B/C/X/file").front().remote_path), "1");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/B/C/file").front().remote_path), "2");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/B/C/X/file_2").front().remote_path), "3");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/B/C/X/Y/file").front().remote_path), "4");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/B/C/X/file_3").front().remote_path), "5");
+
+    metadata = restartMetadataStorage("UncommittedDirectoryMoves");
+    EXPECT_EQ(sorted(metadata->listDirectory("/")), std::vector<std::string>({"A"}));
+    EXPECT_EQ(sorted(metadata->listDirectory("/A")), std::vector<std::string>({"B"}));
+    EXPECT_EQ(sorted(metadata->listDirectory("/A/B")), std::vector<std::string>({"C"}));
+    EXPECT_EQ(sorted(metadata->listDirectory("/A/B/C")), std::vector<std::string>({"X", "file"}));
+    EXPECT_EQ(sorted(metadata->listDirectory("/A/B/C/X")), std::vector<std::string>({"Y", "file", "file_2", "file_3"}));
+    EXPECT_EQ(sorted(metadata->listDirectory("/A/B/C/X/Y")), std::vector<std::string>({"file"}));
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/B/C/X/file").front().remote_path), "1");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/B/C/file").front().remote_path), "2");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/B/C/X/file_2").front().remote_path), "3");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/B/C/X/Y/file").front().remote_path), "4");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/B/C/X/file_3").front().remote_path), "5");
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, CreateDirectoryFromVirtualNode)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("CreateDirectoryFromVirtualNode");
+    auto object_storage = getObjectStorage("CreateDirectoryFromVirtualNode");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectoryRecursive("/A/B/C");
+        tx->commit();
+
+        tx = metadata->createTransaction();
+        auto size_bytes = writeObject(object_storage, tx->generateObjectKeyForPath("/A/B/file").serialize(), "I'm real");
+        tx->createMetadataFile("/A/B/file", {StoredObject("/A/B/file", "file", size_bytes)});
+        tx->commit();
+    }
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/B/file").front().remote_path), "I'm real");
+
+    EXPECT_EQ(
+        listAllBlobs("CreateDirectoryFromVirtualNode"),
+        std::vector<std::string>({
+            "./CreateDirectoryFromVirtualNode/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",
+            "./CreateDirectoryFromVirtualNode/__meta/ykwvvchguqasvfnkikaqtiebknfzafwv/prefix.path",
+            "./CreateDirectoryFromVirtualNode/ykwvvchguqasvfnkikaqtiebknfzafwv/file",
+        }));
+}

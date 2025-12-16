@@ -752,4 +752,26 @@ void ISerialization::insertDataFromCachedColumn(const ISerialization::Deserializ
     }
 }
 
+bool ISerialization::isVariantSubcolumn(const SubstreamPath & substream_path)
+{
+    for (const auto & stream : substream_path)
+    {
+        if (stream.type == Substream::VariantElement)
+            return true;
+    }
+
+    return false;
+}
+
+bool ISerialization::tryToChangeStreamFileNameSettingsForNotFoundStream(const ISerialization::SubstreamPath & substream_path, ISerialization::StreamFileNameSettings & stream_file_name_settings)
+{
+    if (isVariantSubcolumn(substream_path) && stream_file_name_settings.escape_variant_substreams)
+    {
+        stream_file_name_settings.escape_variant_substreams = false;
+        return true;
+    }
+
+    return false;
+}
+
 }

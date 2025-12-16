@@ -4,7 +4,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/TextIndexCache.h>
-#include <roaring.hh>
+#include <roaring/roaring.hh>
 
 namespace DB
 {

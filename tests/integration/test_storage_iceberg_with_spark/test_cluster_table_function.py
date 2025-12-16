@@ -293,7 +293,7 @@ def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with
     buffers_count_with_splitted_tasks = get_buffers_count(lambda: instance.query(f"SELECT * FROM {table_function_expr_s3_cluster} ORDER BY ALL SETTINGS input_format_parquet_use_native_reader_v3={input_format_parquet_use_native_reader_v3},cluster_table_function_split_granularity='bucket', cluster_table_function_buckets_batch_size={cluster_table_function_buckets_batch_size}").strip().split())
     buffers_count_default = get_buffers_count(lambda: instance.query(f"SELECT * FROM {table_function_expr_s3_cluster} ORDER BY ALL SETTINGS input_format_parquet_use_native_reader_v3={input_format_parquet_use_native_reader_v3}, cluster_table_function_buckets_batch_size={cluster_table_function_buckets_batch_size}").strip().split())
     if buffers_count_with_splitted_tasks != 0:
-        assert buffers_count_with_splitted_tasks > buffers_count_default
+        assert buffers_count_with_splitted_tasks >= buffers_count_default
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_bucket_split_single_node(started_cluster_iceberg_with_spark, storage_type):

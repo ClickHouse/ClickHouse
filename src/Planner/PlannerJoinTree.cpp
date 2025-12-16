@@ -24,6 +24,8 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/StorageDummy.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageValues.h>
 
@@ -60,8 +62,6 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
-#include <Storages/StorageDummy.h>
-
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -84,6 +84,8 @@
 
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/DirectJoinMergeTreeEntity.h>
+
 
 #include <ranges>
 
@@ -98,6 +100,7 @@ namespace Setting
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_unaligned_array_join;
     extern const SettingsBool join_use_nulls;
+    extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsBool query_plan_use_new_logical_join_step;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_columns_to_read;
@@ -128,6 +131,7 @@ namespace Setting
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool query_plan_display_internal_aliases;
     extern const SettingsBool enable_lazy_columns_replication;
+    extern const SettingsBool parallel_replicas_allow_materialized_views;
 }
 
 namespace ErrorCodes
@@ -925,8 +929,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     prewhere_info = std::make_shared<PrewhereInfo>();
                     prewhere_info->prewhere_actions = prewhere_actions->clone();
                     prewhere_info->prewhere_column_name = prewhere_actions->getOutputs().at(0)->result_name;
-                    /// Do not remove prewhere column if it is the only column to read
-                    bool keep_prewhere_column = columns_names.size() == 1 && columns_names.at(0) == prewhere_info->prewhere_column_name;
+                    /// Do not remove prewhere column if it is needed later
+                    bool keep_prewhere_column = std::ranges::contains(columns_names, prewhere_info->prewhere_column_name);
                     prewhere_info->remove_prewhere_column = !keep_prewhere_column;
                     prewhere_info->need_filter = true;
                 }
@@ -1061,10 +1065,24 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                 auto parallel_replicas_enabled_for_storage = [](const StoragePtr & table, const Settings & query_settings)
                 {
-                    if (!table->isMergeTree())
+                    const auto * mv = typeid_cast<const StorageMaterializedView *>(table.get());
+                    const auto * table_ptr = table.get();
+                    if (mv)
+                    {
+                        if (!query_settings[Setting::parallel_replicas_allow_materialized_views])
+                            return false;
+
+                        // address refreshable MVs separately, currently leads to logical error
+                        if (mv->isRefreshable())
+                            return false;
+
+                        table_ptr = mv->getTargetTable().get();
+                    }
+
+                    if (!table_ptr->isMergeTree())
                         return false;
 
-                    if (!table->supportsReplication() && !query_settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
+                    if (!table_ptr->supportsReplication() && !query_settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
                         return false;
 
                     return true;
@@ -1085,6 +1103,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             return true;
 
                         const auto & left_table_expr = join_node->getLeftTableExpression();
+
+                        if (const auto * table = typeid_cast<const TableNode *>(left_table_expr.get());
+                            table && table->getStorage()->isView())
+                            return false;
+
                         const auto join_kind = join_node->getKind();
                         const auto join_strictness = join_node->getStrictness();
                         if ((join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All) || join_kind == JoinKind::Left)
@@ -2275,6 +2298,74 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
     };
 }
 
+void tryMakeDirectJoinWithMergeTree(const JoinOperator & join_operator,
+    QueryPlan & right_query_plan,
+    PreparedJoinStorage & prepared_join,
+    PlannerContextPtr & planner_context)
+{
+    const auto & query_context = planner_context->getQueryContext();
+    const auto & settings = query_context->getSettingsRef();
+
+    /// In chooseJoinAlgorithm, direct has the highest priority (automatically used with dictionary or storage join).
+    /// Use direct join with MergeTree only if 'direct' is explicitly specified as the single option.
+    if (settings[Setting::join_algorithm].value != std::vector{JoinAlgorithm::DIRECT})
+        return;
+
+    bool allow_strictness = join_operator.strictness == JoinStrictness::All ||
+        join_operator.strictness == JoinStrictness::Semi ||
+        join_operator.strictness == JoinStrictness::Anti;
+
+    if (!allow_strictness || !isInnerOrLeft(join_operator.kind))
+        return;
+    if (!join_operator.residual_filter.empty() || join_operator.expression.size() != 1)
+        return;
+    auto [predicate_type, lhs, rhs] = join_operator.expression[0].asBinaryPredicate();
+    if (predicate_type != JoinConditionOperator::Equals)
+        return;
+
+    /// Check that right plan is ReadFromMergeTree with ExpressionStep/FilterStep on the top
+    auto * root_node = right_query_plan.getRootNode();
+    if (!root_node || !root_node->step)
+        return;
+    const auto * expr_step = root_node->step.get();
+    if (!typeid_cast<const ExpressionStep *>(expr_step) && !typeid_cast<const FilterStep *>(expr_step))
+        return;
+    if (root_node->children.size() != 1 || !root_node->children.front())
+        return;
+    auto * reading_step = typeid_cast<ReadFromMergeTree *>(root_node->children.front()->step.get());
+    if (!reading_step)
+        return;
+
+    if (lhs.fromRight() && rhs.fromLeft())
+        std::swap(lhs, rhs);
+    else if (!lhs.fromLeft() || !rhs.fromRight())
+        return;
+
+    auto lookup_plan = right_query_plan.clone();
+    auto & lookup_read_step = lookup_plan.getRootNode()->children.front()->step;
+    if (auto * lookup_reading_step = typeid_cast<ReadFromMergeTree *>(lookup_read_step.get()))
+    {
+        /// We need to analyze index again with new condition
+        lookup_reading_step->setAnalyzedResult(nullptr);
+        /// Hand-constructed filter dag has same hash key each time, so disable cache
+        lookup_reading_step->disableQueryConditionCache();
+        /// initializePipeline is done multiple times concurrently, so not to remove parts snapshot
+        lookup_reading_step->disableMergeTreePartsSnapshotRemoval();
+    }
+
+    for (const auto & column_name : lookup_plan.getCurrentHeader()->getNames())
+        prepared_join.column_mapping[column_name] = column_name;
+
+    auto filter_dag = JoinExpressionActions::getSubDAG(rhs);
+
+    prepared_join.storage_key_value = std::make_unique<DirectJoinMergeTreeEntity>(std::move(lookup_plan), std::move(filter_dag), query_context);
+    bool use_nulls = settings[Setting::join_use_nulls] && isLeftOrFull(join_operator.kind);
+    auto join_lookup_step = std::make_unique<JoinStepLogicalLookup>(std::move(right_query_plan), std::move(prepared_join), use_nulls);
+
+    right_query_plan = {};
+    right_query_plan.addStep(std::move(join_lookup_step));
+}
+
 JoinTreeQueryPlan buildQueryPlanForJoinNode(
     const QueryTreeNodePtr & join_table_expression,
     JoinTreeQueryPlan left_join_tree_query_plan,
@@ -2316,6 +2407,10 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
         auto join_lookup_step = std::make_unique<JoinStepLogicalLookup>(std::move(right_join_tree_query_plan.query_plan), std::move(prepared_join), use_nulls);
         right_join_tree_query_plan.query_plan = {};
         right_join_tree_query_plan.query_plan.addStep(std::move(join_lookup_step));
+    }
+    else
+    {
+        tryMakeDirectJoinWithMergeTree(join_step_logical->getJoinOperator(), right_join_tree_query_plan.query_plan, prepared_join, planner_context);
     }
 
     appendSetsFromActionsDAG(join_step_logical->getActionsDAG(), left_join_tree_query_plan.useful_sets);

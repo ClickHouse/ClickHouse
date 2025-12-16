@@ -823,37 +823,46 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 {
                     auto & tuple_args = non_const_set_candidate->getArguments().getNodes();
 
-                    /// special handling for NULL IN (tuple) with transform_null_in enabled
-                    if (left_is_null && scope.context->getSettingsRef()[Setting::transform_null_in])
+                    /// If the left-hand side is a lambda, do not rewrite
+                    /// Lambdas are rejected later by getLambdaArgumentTypes() with a proper error
+                    if (in_first_argument->getNodeType() == QueryTreeNodeType::LAMBDA)
                     {
-                        return handleNullInTuple(tuple_args, function_name,
-                                            parameters_projection_names,
-                                            arguments_projection_names, scope, node);
+                        /// Do nothing; leave IN as-is
                     }
-
-                    if (left_is_null && !scope.context->getSettingsRef()[Setting::transform_null_in])
+                    else
                     {
-                        auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
-                        auto null_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
-                        node = std::make_shared<ConstantNode>(Field{}, null_type);
-                        return ProjectionNames{proj};
-                    }
+                        /// special handling for NULL IN (tuple) with transform_null_in enabled
+                        if (left_is_null && scope.context->getSettingsRef()[Setting::transform_null_in])
+                        {
+                            return handleNullInTuple(tuple_args, function_name,
+                                                parameters_projection_names,
+                                                arguments_projection_names, scope, node);
+                        }
 
-                    // convert tuple to array with proper type handling
-                    in_second_argument = convertTupleToArray(tuple_args, in_first_argument, scope);
+                        if (left_is_null && !scope.context->getSettingsRef()[Setting::transform_null_in])
+                        {
+                            auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
+                            auto null_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
+                            node = std::make_shared<ConstantNode>(Field{}, null_type);
+                            return ProjectionNames{proj};
+                        }
 
-                    /// convert to has() and handle null-safety
-                    function_name = "has";
-                    is_special_function_in = false;
-                    auto & fn_args = function_node.getArguments().getNodes();
-                    std::swap(fn_args[0], fn_args[1]);
+                        /// convert tuple to array with proper type handling
+                        in_second_argument = convertTupleToArray(tuple_args, in_first_argument, scope);
 
-                    if (!scope.context->getSettingsRef()[Setting::transform_null_in])
-                    {
-                        auto [wrapped_node, proj_names] = makeNullSafeHas(
-                            fn_args[0], fn_args[1], arguments_projection_names, scope);
-                        node = wrapped_node;
-                        return proj_names;
+                        /// convert to has() and handle null-safety
+                        function_name = "has";
+                        is_special_function_in = false;
+                        auto & fn_args = function_node.getArguments().getNodes();
+                        std::swap(fn_args[0], fn_args[1]);
+
+                        if (!scope.context->getSettingsRef()[Setting::transform_null_in])
+                        {
+                            auto [wrapped_node, proj_names] = makeNullSafeHas(
+                                fn_args[0], fn_args[1], arguments_projection_names, scope);
+                            node = wrapped_node;
+                            return proj_names;
+                        }
                     }
                 }
             }

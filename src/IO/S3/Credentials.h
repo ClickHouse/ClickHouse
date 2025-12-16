@@ -214,7 +214,7 @@ public:
     S3CredentialsProviderChain(
         const DB::S3::PocoHTTPClientConfiguration & configuration,
         const Aws::Auth::AWSCredentials & credentials,
-        CredentialsConfiguration credentials_configuration);
+        const CredentialsConfiguration & credentials_configuration);
 };
 
 class AssumeRoleRequest : public Aws::AmazonSerializableWebServiceRequest
@@ -283,7 +283,7 @@ public:
             std::string session_name_,
             uint64_t expiration_window_seconds_,
             std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider,
-            DB::S3::PocoHTTPClientConfiguration & client_configuration,
+            const DB::S3::PocoHTTPClientConfiguration & client_configuration,
             const std::string & sts_endpoint_override = "");
 
     AwsAuthSTSAssumeRoleCredentialsProvider(
@@ -317,6 +317,10 @@ private:
     LoggerPtr logger;
 };
 
+std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
+    const DB::S3::PocoHTTPClientConfiguration & configuration,
+    const Aws::Auth::AWSCredentials & credentials,
+    const CredentialsConfiguration & credentials_configuration);
 }
 
 #else

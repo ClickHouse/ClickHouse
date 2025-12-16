@@ -156,6 +156,13 @@ HashJoin::HashJoin(
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
 {
+    if (joined_block_split_single_row && max_joined_block_rows == 0)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Setting `joined_block_split_single_row` is set to true, but `max_joined_block_rows` is 0 (no limit). "
+            "Set max_joined_block_rows > 0 or use `max_joined_block_bytes` with default `max_joined_block_rows` (by default equals to block size).");
+    }
+
     for (auto & column : right_sample_block)
     {
         if (!column.column)
@@ -1065,7 +1072,7 @@ IJoinResult::JoinResultBlock CrossJoinResult::next()
 
     bool is_last = left_row >= rows_total;
     res = res.cloneWithColumns(std::move(dst_columns));
-    return {res, is_last};
+    return {res, nullptr, is_last};
 }
 
 JoinResultPtr HashJoin::joinBlockImplCross(Block block) const

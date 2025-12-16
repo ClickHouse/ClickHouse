@@ -13,9 +13,16 @@ workflow = Workflow.Config(
     jobs=[
         Job.Config(
             name="Collect flaky tests",
-            command="python3 ./ci/jobs/collect_gh_issues.py",
+            command="python3 ./ci/praktika/issue.py --collect-and-upload",
             runs_on=RunnerLabels.STYLE_CHECK_ARM,
-        )
+            enable_gh_auth=True,
+        ),
+        Job.Config(
+            name="Autoassign approvers",
+            command="python3 ./ci/jobs/autoassign_approvers.py",
+            runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            enable_gh_auth=True,
+        ),
     ],
     secrets=SECRETS,
     enable_report=True,

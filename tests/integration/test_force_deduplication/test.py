@@ -64,7 +64,7 @@ def test_basic(start_cluster):
         """
         SET max_partitions_per_insert_block = 3;
         SET materialized_views_ignore_errors = 1;
-        INSERT INTO test SELECT number FROM numbers(10);
+        INSERT INTO test SELECT number FROM numbers(10) ORDER BY ALL;
         """
     )
     src, a, b, c = get_counts()
@@ -75,7 +75,7 @@ def test_basic(start_cluster):
     old_src, old_a, old_b, old_c = src, a, b, c
 
     # deduplication only for src table
-    node.query("INSERT INTO test SELECT number FROM numbers(10)")
+    node.query("INSERT INTO test SELECT number FROM numbers(10) ORDER BY ALL")
     src, a, b, c = get_counts()
     assert src == old_src
     assert a == old_a + 10
@@ -87,7 +87,7 @@ def test_basic(start_cluster):
     node.query(
         """
         SET deduplicate_blocks_in_dependent_materialized_views = 1;
-        INSERT INTO test SELECT number FROM numbers(10);
+        INSERT INTO test SELECT number FROM numbers(10) ORDER BY ALL;
         """
     )
     src, a, b, c = get_counts()
@@ -101,7 +101,7 @@ def test_basic(start_cluster):
     node.query(
         """
         SET deduplicate_blocks_in_dependent_materialized_views = 1;
-        INSERT INTO test SELECT number FROM numbers(10);
+        INSERT INTO test SELECT number FROM numbers(10) ORDER BY ALL;
         """
     )
     src, a, b, c = get_counts()
@@ -117,7 +117,7 @@ def test_basic(start_cluster):
         SET max_partitions_per_insert_block = 3;
         SET materialized_views_ignore_errors = 1;
         SET deduplicate_blocks_in_dependent_materialized_views = 1;
-        INSERT INTO test SELECT number FROM numbers(100,10);
+        INSERT INTO test SELECT number FROM numbers(100,10) ORDER BY ALL;
         """
     )
     src, a, b, c = get_counts()
@@ -131,7 +131,7 @@ def test_basic(start_cluster):
     node.query(
         """
         SET deduplicate_blocks_in_dependent_materialized_views = 1;
-        INSERT INTO test SELECT number FROM numbers(100,10);
+        INSERT INTO test SELECT number FROM numbers(100,10) ORDER BY ALL;
         """
     )
     src, a, b, c = get_counts()

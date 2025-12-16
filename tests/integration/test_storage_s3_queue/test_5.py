@@ -1028,15 +1028,16 @@ def test_failed_startup(started_cluster):
 
     zk = started_cluster.get_kazoo_client("zoo1")
 
-    # Wait for table shutdown to be callled.
-    for i in range(5):
-        try:
-            zk.get(f"{keeper_path}")
-            time.sleep(1)
-            continue
-        except NoNodeError:
-            pass
-        break
+    # Wait for table data to be removed.
+    uuid = node.query(f"select uuid from system.tables where name = '{table_name}'").strip()
+    wait_message = f"StorageObjectStorageQueue({keeper_path}): Table '{uuid}' has been removed from the registry"
+    wait_message_2 = f"StorageObjectStorageQueue({keeper_path}): Table is unregistered after retry"
+    for _ in range(50):
+        if node.contains_in_log(wait_message) or node.contains_in_log(wait_message_2):
+            break
+        time.sleep(1)
+    assert node.contains_in_log(wait_message) or node.contains_in_log(wait_message_2)
+
     try:
         zk.get(f"{keeper_path}")
         assert False

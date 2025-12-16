@@ -158,6 +158,23 @@ private:
     }
 };
 
+class TokenizerFactory : public boost::noncopyable
+{
+public:
+    static void isAllowedTokenizer(std::string_view tokenizer, const std::vector<String> & allowed_tokenizers, std::string_view caller_name);
+
+    static std::unique_ptr<ITokenExtractor> createTokenizer(
+            std::string_view tokenizer, /// internal or external tokenizer name
+            std::span<const Field> params,
+            const std::vector<String> & allowed_tokenizers,
+            std::string_view caller_name,
+            bool only_validate = false);
+
+private:
+    static UInt64 extractNgramParam(std::span<const Field> params);
+    static std::vector<String> extractSplitByStringParam(std::span<const Field> params);
+    static std::tuple<UInt64, UInt64, std::optional<UInt64>> extractSparseGramsParams(std::span<const Field> params);
+};
 
 /// Parser extracting all ngrams from string.
 struct NgramsTokenExtractor final : public ITokenExtractorHelper<NgramsTokenExtractor>
