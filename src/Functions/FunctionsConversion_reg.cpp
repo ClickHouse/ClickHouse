@@ -1050,7 +1050,7 @@ type_c: Decimal(76, 3)
 
     /// toDate documentation
     FunctionDocumentation::Description description_toDate = R"(
-Converts an input value to type [`Date`](/sql-reference/data-types/date).
+Converts an input value to type [`Date`](/en/sql-reference/data-types/date).
 Supports conversion from String, FixedString, DateTime, or numeric types.
     )";
     FunctionDocumentation::Syntax syntax_toDate = "toDate(x)";
@@ -1145,7 +1145,7 @@ toTypeName(value): Date32
 
     /// toTime documentation
     FunctionDocumentation::Description description_toTime = R"(
-Converts an input value to type [Time](/sql-reference/data-types/time).
+Converts an input value to type [Time](/en/sql-reference/data-types/time).
 Supports conversion from String, FixedString, DateTime, or numeric types representing seconds since midnight.
     )";
     FunctionDocumentation::Syntax syntax_toTime = "toTime(x)";
@@ -1189,7 +1189,7 @@ SELECT toTime(52225)
     factory.registerFunction<detail::FunctionToTime>(documentation_toTime);
 
     FunctionDocumentation::Description description_toTime64 = R"(
-Converts an input value to type [Time64](/sql-reference/data-types/time64).
+Converts an input value to type [Time64](/en/sql-reference/data-types/time64).
 Supports conversion from String, FixedString, DateTime64, or numeric types representing microseconds since midnight.
 Provides microsecond precision for time values.
     )";
@@ -1555,7 +1555,7 @@ LIMIT 10
 Converts a `String`, `Date`, or `DateTime` to a Unix timestamp (seconds since `1970-01-01 00:00:00 UTC`) as `UInt32`.
     )";
     FunctionDocumentation::Syntax syntax_to_unix_timestamp = R"(
-toUnixTimestamp(date[, timezone])
+toUnixTimestamp(date, [timezone])
     )";
     FunctionDocumentation::Arguments arguments_to_unix_timestamp = {
         {"date", "Value to convert.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
@@ -2037,7 +2037,7 @@ toInt32OrZero('abc'): 0
     factory.registerFunction<detail::FunctionToInt32OrZero>(documentation_toInt32OrZero);
 
     FunctionDocumentation::Description description_toInt64OrZero = R"(
-Converts an input value to type [Int64](/sql-reference/data-types/int-uint) but returns `0` in case of an error.
+Converts an input value to type [Int64](/en/sql-reference/data-types/int-uint) but returns `0` in case of an error.
 Like [`toInt64`](#toint64) but returns `0` instead of throwing an exception.
 
 See also:
@@ -2077,7 +2077,7 @@ SELECT toInt64OrZero('abc')
     factory.registerFunction<detail::FunctionToInt64OrZero>(documentation_toInt64OrZero);
 
     FunctionDocumentation::Description description_toInt128OrZero = R"(
-Converts an input value to type [Int128](/sql-reference/data-types/int-uint) but returns `0` in case of an error.
+Converts an input value to type [Int128](/en/sql-reference/data-types/int-uint) but returns `0` in case of an error.
 Like [`toInt128`](#toint128) but returns `0` instead of throwing an exception.
 
 See also:
@@ -2117,7 +2117,7 @@ SELECT toInt128OrZero('abc')
     factory.registerFunction<detail::FunctionToInt128OrZero>(documentation_toInt128OrZero);
 
     FunctionDocumentation::Description description_toInt256OrZero = R"(
-Converts an input value to type [Int256](/sql-reference/data-types/int-uint) but returns `0` in case of an error.
+Converts an input value to type [Int256](/en/sql-reference/data-types/int-uint) but returns `0` in case of an error.
 Like [`toInt256`](#toint256) but returns `0` instead of throwing an exception.
 
 See also:
@@ -2378,7 +2378,7 @@ SELECT toTimeOrZero('12:30:45'), toTimeOrZero('invalid')
     /// toTime64OrZero documentation
     FunctionDocumentation::Description description_toTime64OrZero = R"(
 Converts an input value to a value of type Time64 but returns `00:00:00.000` in case of an error.
-Like [`toTime64`](#toTime64) but returns `00:00:00.000` instead of throwing an exception on conversion errors.
+Like [`toTime64`](#toTime54) but returns `00:00:00.000` instead of throwing an exception on conversion errors.
 )";
     FunctionDocumentation::Syntax syntax_toTime64OrZero = "toTime64OrZero(x)";
     FunctionDocumentation::Arguments arguments_toTime64OrZero = {
@@ -2648,7 +2648,7 @@ SELECT toDecimal256OrZero('42.7', 2), toDecimal256OrZero('invalid', 2)
     /// toUUIDOrZero documentation
     FunctionDocumentation::Description description_toUUIDOrZero = R"(
 Converts an input value to a value of type [UUID](../data-types/uuid.md) but returns zero UUID in case of an error.
-Like [`toUUID`](/sql-reference/functions/uuid-functions#touuid) but returns zero UUID (`00000000-0000-0000-0000-000000000000`) instead of throwing an exception on conversion errors.
+Like [`toUUID`](#touuid) but returns zero UUID (`00000000-0000-0000-0000-000000000000`) instead of throwing an exception on conversion errors.
 
 Supported arguments:
 - String representations of UUID in standard format (8-4-4-4-12 hexadecimal digits).
@@ -3887,7 +3887,7 @@ SELECT toDecimal256OrNull('42.7', 2), toDecimal256OrNull('invalid', 2)
     /// toUUIDOrNull documentation
     FunctionDocumentation::Description description_toUUIDOrNull = R"(
 Converts an input value to a value of type `UUID` but returns `NULL` in case of an error.
-Like [`toUUID`](/sql-reference/functions/uuid-functions#touuid) but returns `NULL` instead of throwing an exception on conversion errors.
+Like [`toUUID`](#touuid) but returns `NULL` instead of throwing an exception on conversion errors.
 
 Supported arguments:
 - String representations of UUID in standard format (8-4-4-4-12 hexadecimal digits).

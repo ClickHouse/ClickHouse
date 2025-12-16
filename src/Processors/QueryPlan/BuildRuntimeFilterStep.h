@@ -17,8 +17,7 @@ public:
         String filter_name_,
         UInt64 exact_values_limit_,
         UInt64 bloom_filter_bytes_,
-        UInt64 bloom_filter_hash_functions_,
-        bool allow_to_use_not_exact_filter_);
+        UInt64 bloom_filter_hash_functions_);
 
     BuildRuntimeFilterStep(const BuildRuntimeFilterStep & other) = default;
 
@@ -47,8 +46,6 @@ private:
     UInt64 exact_values_limit;
     UInt64 bloom_filter_bytes;
     UInt64 bloom_filter_hash_functions;
-
-    bool allow_to_use_not_exact_filter;
 };
 
 }

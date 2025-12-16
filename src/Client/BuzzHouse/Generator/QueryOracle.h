@@ -19,7 +19,7 @@ class QueryOracle
 {
 private:
     static const std::vector<std::vector<OutFormat>> oracleFormats;
-    FuzzConfig & fc;
+    const FuzzConfig & fc;
     const std::filesystem::path qcfile, qsfile, qfile_peer;
 
     MD5Impl md5_hash1, md5_hash2;
@@ -28,21 +28,20 @@ private:
 
     PeerQuery peer_query = PeerQuery::AllPeers;
     int first_errcode = 0;
-    bool other_steps_sucess = true, can_test_oracle_result, measure_performance, compare_explain;
+    bool other_steps_sucess = true, can_test_oracle_result, measure_performance;
 
     std::unordered_set<uint32_t> found_tables;
     DB::Strings nsettings;
 
-    void swapQuery(RandomGenerator & rg, StatementGenerator & gen, google::protobuf::Message & mes);
     bool findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen, bool replace);
-    void addLimitOrOffset(RandomGenerator & rg, StatementGenerator & gen, SelectStatementCore * ssc) const;
+    void addLimitOrOffset(RandomGenerator & rg, StatementGenerator & gen, uint32_t ncols, SelectStatementCore * ssc) const;
     void insertOnTableOrCluster(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, bool peer, TableOrFunction * tof) const;
     void generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, bool test_content, const SQLTable & t, SQLQuery & sq2);
     void
     generateImportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4) const;
 
 public:
-    explicit QueryOracle(FuzzConfig & ffc)
+    explicit QueryOracle(const FuzzConfig & ffc)
         : fc(ffc)
         , qcfile(ffc.client_file_path / "query.data")
         , qsfile(ffc.server_file_path / "query.data")
@@ -77,7 +76,6 @@ public:
     bool generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1);
     void generateOracleSelectQuery(RandomGenerator & rg, PeerQuery pq, StatementGenerator & gen, SQLQuery & sq2);
     void generateSecondSetting(RandomGenerator & rg, StatementGenerator & gen, bool use_settings, const SQLQuery & sq1, SQLQuery & sq3);
-    void maybeUpdateOracleSelectQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLQuery & sq1, SQLQuery & sq2);
 
     /// Replace query with peer tables
     void truncatePeerTables(const StatementGenerator & gen);
