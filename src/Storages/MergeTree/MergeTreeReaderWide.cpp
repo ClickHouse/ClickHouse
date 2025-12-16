@@ -24,6 +24,11 @@ namespace
     constexpr auto DATA_FILE_EXTENSION = ".bin";
 }
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 MergeTreeReaderWide::MergeTreeReaderWide(
     MergeTreeDataPartInfoForReaderPtr data_part_info_,
     NamesAndTypesList columns_,
