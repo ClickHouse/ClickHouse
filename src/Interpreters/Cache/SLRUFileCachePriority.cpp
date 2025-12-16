@@ -110,7 +110,7 @@ bool SLRUFileCachePriority::canFit( /// NOLINT
 
     if (reservee)
     {
-        const auto * slru_iterator = assert_cast<SLRUIterator *>(reservee->getNestedOrThis());
+        const auto * slru_iterator = assert_cast<SLRUIterator *>(reservee.get());
         if (slru_iterator->is_protected)
             return protected_queue.canFit(size, elements, lock);
         return probationary_queue.canFit(size, elements, lock);
@@ -189,7 +189,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
         return probationary_queue.collectCandidatesForEviction(size, elements, stat, res, reservee, continue_from_last_eviction_pos, user_id, lock);
     }
 
-    auto * slru_iterator = assert_cast<SLRUIterator *>(reservee->getNestedOrThis());
+    auto * slru_iterator = assert_cast<SLRUIterator *>(reservee.get());
     bool success = false;
 
     /// If `reservee` is not nullptr (e.g. is already in some queue),
@@ -354,7 +354,7 @@ IFileCachePriority::CollectStatus SLRUFileCachePriority::collectCandidatesForEvi
 
 void SLRUFileCachePriority::downgrade(IteratorPtr iterator, const CachePriorityGuard::Lock & lock)
 {
-    auto * candidate_it = assert_cast<SLRUIterator *>(iterator->getNestedOrThis());
+    auto * candidate_it = assert_cast<SLRUIterator *>(iterator.get());
     if (!candidate_it->is_protected)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -417,33 +417,43 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
         return;
     }
 
+    /// We need to remove the entry from probationary first
+    /// in order to make space for downgrade from protected.
+    iterator.lru_iterator.remove(lock);
+
     EvictionCandidates eviction_candidates;
     FileCacheReserveStat stat;
-
-    /// Check if there is enough space in protected queue to move entry there.
-    /// If not - we need to "downgrade" lowest priority entries from protected
-    /// queue to probationary queue.
-    ///
-    if (!collectCandidatesForEvictionInProtected(
-            entry->size, /* elements */1, stat, eviction_candidates, nullptr, false, FileCache::getInternalUser().user_id, lock))
+    try
     {
-        /// "downgrade" candidates cannot be moved to probationary queue,
-        /// so entry cannot be moved to protected queue as well.
-        /// Then just increase its priority within probationary queue.
-        iterator.lru_iterator.increasePriority(lock);
-        return;
+        /// Check if there is enough space in protected queue to move entry there.
+        /// If not - we need to "downgrade" lowest priority entries from protected
+        /// queue to probationary queue.
+        ///
+        if (!collectCandidatesForEvictionInProtected(
+                entry->size, /* elements */1, stat, eviction_candidates, nullptr, false, FileCache::getInternalUser().user_id, lock))
+        {
+            /// "downgrade" candidates cannot be moved to probationary queue,
+            /// so entry cannot be moved to protected queue as well.
+            /// Then just increase its priority within probationary queue.
+            iterator.lru_iterator = addOrThrow(entry, probationary_queue, lock);
+            return;
+        }
+
+        eviction_candidates.evict();
+        eviction_candidates.finalize(nullptr, lock);
+
+        /// Count how much we evict,
+        /// because it could affect performance if we have to do this often.
+        ProfileEvents::increment(
+            ProfileEvents::FilesystemCacheEvictedFileSegmentsDuringPriorityIncrease,
+            eviction_candidates.size());
+    }
+    catch (...)
+    {
+        iterator.lru_iterator = addOrThrow(entry, probationary_queue, lock);
+        throw;
     }
 
-    eviction_candidates.evict();
-    eviction_candidates.finalize(nullptr, lock);
-
-    /// Count how much we evict,
-    /// because it could affect performance if we have to do this often.
-    ProfileEvents::increment(
-        ProfileEvents::FilesystemCacheEvictedFileSegmentsDuringPriorityIncrease,
-        eviction_candidates.size());
-
-    iterator.lru_iterator.remove(lock);
     iterator.lru_iterator = addOrThrow(entry, protected_queue, lock);
     iterator.is_protected = true;
 }

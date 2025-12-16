@@ -4,7 +4,6 @@
 #include <parquet/encoding.h>
 #include <parquet/schema.h>
 #include <arrow/util/rle_encoding.h>
-#include <arrow/util/crc32.h>
 #include <lz4.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
@@ -251,76 +250,7 @@ struct StatisticsStringRef
         int t = memcmp(a.ptr, b.ptr, std::min(a.len, b.len));
         if (t != 0)
             return t;
-        return int(a.len) - int(b.len);
-    }
-};
-
-struct StatisticsStringCopy
-{
-    bool empty = true;
-    String min;
-    String max;
-
-    void add(parquet::ByteArray x)
-    {
-        addMin(x);
-        addMax(x);
-        empty = false;
-    }
-
-    void merge(const StatisticsStringCopy & s)
-    {
-        if (s.empty)
-            return;
-        addMin(parquet::ByteArray(static_cast<UInt32>(s.min.size()), reinterpret_cast<const uint8_t *>(s.min.data())));
-        addMax(parquet::ByteArray(static_cast<UInt32>(s.max.size()), reinterpret_cast<const uint8_t *>(s.max.data())));
-        empty = false;
-    }
-
-    void clear() { *this = {}; }
-
-    parq::Statistics get(const WriteOptions & options) const
-    {
-        parq::Statistics s;
-        if (empty)
-            return s;
-        if (min.size() <= options.max_statistics_size)
-        {
-            s.__set_min_value(std::string(min.data(), min.size()));
-            s.__set_is_min_value_exact(true);
-        }
-        if (max.size() <= options.max_statistics_size)
-        {
-            s.__set_max_value(std::string(max.data(), max.size()));
-            s.__set_is_max_value_exact(true);
-        }
-        return s;
-    }
-
-    void addMin(parquet::ByteArray x)
-    {
-        if (empty || compare(x, min) < 0)
-        {
-            // assign to String to make a copy only when we update min
-            min.assign(reinterpret_cast<const char *>(x.ptr), x.len);
-        }
-    }
-
-    void addMax(parquet::ByteArray x)
-    {
-        if (empty || compare(x, max) > 0)
-        {
-            // assign to String to make a copy only when we update max
-            max.assign(reinterpret_cast<const char *>(x.ptr), x.len);
-        }
-    }
-
-    static int compare(parquet::ByteArray a, const String & b)
-    {
-        int t = memcmp(a.ptr, b.data(), std::min(a.len, static_cast<UInt32>(b.size())));
-        if (t != 0)
-            return t;
-        return int(a.len) - int(b.size());
+        return a.len - b.len;
     }
 };
 
@@ -414,8 +344,8 @@ struct ConverterString
         buf.resize(count);
         for (size_t i = 0; i < count; ++i)
         {
-            std::string_view s = column.getDataAt(offset + i);
-            buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size()), reinterpret_cast<const uint8_t *>(s.data()));
+            StringRef s = column.getDataAt(offset + i);
+            buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size), reinterpret_cast<const uint8_t *>(s.data));
         }
         return buf.data();
     }
@@ -442,8 +372,8 @@ struct ConverterEnumAsString
         for (size_t i = 0; i < count; ++i)
         {
             const T value = data[offset + i];
-            const std::string_view s = enum_type->getNameForValue(value);
-            buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size()), reinterpret_cast<const uint8_t *>(s.data()));
+            const StringRef s = enum_type->getNameForValue(value);
+            buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size), reinterpret_cast<const uint8_t *>(s.data));
         }
         return buf.data();
     }
@@ -512,7 +442,7 @@ struct ConverterNumberAsFixedString
 
 struct ConverterJSON
 {
-    using Statistics = StatisticsStringCopy;
+    using Statistics = StatisticsStringRef;
 
     const ColumnObject & column;
     DataTypePtr data_type;
@@ -885,12 +815,8 @@ void writeColumnImpl(
         d.__set_encoding(use_dictionary ? parq::Encoding::RLE_DICTIONARY : encoding);
         d.__set_definition_level_encoding(parq::Encoding::RLE);
         d.__set_repetition_level_encoding(parq::Encoding::RLE);
-
-        if (options.write_checksums)
-        {
-            uint32_t crc = arrow::internal::crc32(0, compressed.data(), compressed.size());
-            header.__set_crc(crc);
-        }
+        /// We could also put checksum in `header.crc`, but apparently no one uses it:
+        /// https://issues.apache.org/jira/browse/PARQUET-594
 
         parq::Statistics page_stats = page_statistics.get(options);
         bool has_null_count = s.max_def == 1 && s.max_rep == 0;
@@ -951,12 +877,6 @@ void writeColumnImpl(
         header.__isset.dictionary_page_header = true;
         header.dictionary_page_header.__set_num_values(dict_encoder->num_entries());
         header.dictionary_page_header.__set_encoding(parq::Encoding::PLAIN);
-
-        if (options.write_checksums)
-        {
-            uint32_t crc = arrow::internal::crc32(0, compressed.data(), compressed.size());
-            header.__set_crc(crc);
-        }
 
         writePage(header, compressed, s, /*add_to_offset_index*/ false, /*first_row_index*/ 0, out);
 
@@ -1234,7 +1154,6 @@ void writeColumnChunkBody(
         case TypeIndex::Int128:  F(Int128); break;
         case TypeIndex::Int256:  F(Int256); break;
         case TypeIndex::IPv6:    F(IPv6); break;
-        case TypeIndex::UUID:    F(UUID); break;
         #undef F
 
         #define D(source_type) \
@@ -1392,12 +1311,7 @@ void writeFileFooter(FileWriteState & file,
         meta.num_rows += rg.row_group.num_rows;
         meta.row_groups.push_back(std::move(rg.row_group));
     }
-
-    /// parquet.thrift sayeth:
-    ///  >  This should be in the format
-    ///  >  <Application> version <App Version> (build <App Build Hash>).
-    ///  >  e.g. impala version 1.0 (build 6cf94d29b2b7115df4de2c06e2ab4326d721eb55)
-    meta.__set_created_by(fmt::format("ClickHouse version {}.{}.{} (build {})", VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, VERSION_GITHASH));
+    meta.__set_created_by(std::string(VERSION_NAME) + " " + VERSION_DESCRIBE);
 
     if (options.write_page_statistics || options.write_column_chunk_statistics)
     {

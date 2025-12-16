@@ -1,6 +1,5 @@
 import pytest
 import logging
-logging.getLogger("py4j").setLevel(logging.ERROR) # before import pyspark; prevents lots of log spam
 import pyspark
 
 
@@ -8,7 +7,6 @@ from helpers.cluster import ClickHouseCluster
 from helpers.s3_tools import (
     AzureUploader,
     LocalUploader,
-    S3Downloader,
     S3Uploader,
     LocalDownloader,
     prepare_s3_bucket,
@@ -32,7 +30,7 @@ def get_spark():
     )
     return builder.master("local").getOrCreate()
 
-@pytest.fixture(scope="package")
+@pytest.fixture(scope="session")
 def started_cluster_iceberg_with_spark():
     try:
         cluster = ClickHouseCluster(__file__, with_spark=True)
@@ -102,7 +100,6 @@ def started_cluster_iceberg_with_spark():
 
         cluster.default_local_uploader = LocalUploader(cluster.instances["node1"])
         cluster.default_local_downloader = LocalDownloader(cluster.instances["node1"])
-        cluster.default_s3_downloader = S3Downloader(cluster.minio_client, cluster.minio_bucket)
 
         yield cluster
 
