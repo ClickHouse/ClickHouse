@@ -1241,6 +1241,7 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCh3GetUnidirectionalEdgeBoundary, 0, 0, 1, 1),
     /// Polygons functions
     CHFunction(SQLFunc::FUNCWKT, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCreadWKT, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCreadWKTMultiPolygon, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCreadWKTPolygon, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCreadWKTPoint, 0, 0, 1, 1),

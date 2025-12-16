@@ -828,7 +828,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     if (measure_performance)
     {
         /// Add tag to find query later on
-        SetValue * sv = svs.add_other_values();
+        SetValue * sv = svs.has_set_value() ? svs.add_other_values() : svs.mutable_set_value();
 
         sv->set_property("log_comment");
         sv->set_value("'measure_performance'");
@@ -836,13 +836,13 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     else if (indexes)
     {
         /// These settings are relevant to show index information
-        SetValue * sv4 = svs.add_other_values();
-        SetValue * sv5 = svs.add_other_values();
+        SetValue * sv2 = svs.has_set_value() ? svs.add_other_values() : svs.mutable_set_value();
+        SetValue * sv3 = svs.add_other_values();
 
-        sv4->set_property("use_query_condition_cache");
-        sv4->set_value("0");
-        sv5->set_property("use_skip_indexes_on_data_read");
-        sv5->set_value("0");
+        sv2->set_property("use_query_condition_cache");
+        sv2->set_value("0");
+        sv3->set_property("use_skip_indexes_on_data_read");
+        sv3->set_value("0");
     }
 }
 
