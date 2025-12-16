@@ -5,6 +5,7 @@ description: 'Computes the sum of the numbers, using the same data type for the 
 sidebar_position: 200
 slug: /sql-reference/aggregate-functions/reference/sumwithoverflow
 title: 'sumWithOverflow'
+doc_type: 'reference'
 ---
 
 # sumWithOverflow
@@ -66,7 +67,6 @@ FROM employees;
 ```
 
 Result:
-
 
 ```response
    ┌─no_overflow─┬─overflow─┬─toTypeName(no_overflow)─┬─toTypeName(overflow)─┐

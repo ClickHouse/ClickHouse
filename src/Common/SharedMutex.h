@@ -11,7 +11,9 @@
 namespace DB
 {
 
-// Faster implementation of `std::shared_mutex` based on a pair of futexes
+// Faster implementation of STD shared_mutex based on a pair of futexes
+// See https://github.com/ClickHouse/ClickHouse/issues/87060 for a comparison with absl::Mutex
+// Or run `./src/unit_tests_dbms --gtest_filter=*SharedMutex*`
 class TSA_CAPABILITY("SharedMutex") SharedMutex
 {
 public:
@@ -36,10 +38,8 @@ private:
     static constexpr UInt64 readers = (1ull << 32ull) - 1ull; // Lower 32 bits of state
     static constexpr UInt64 writers = ~readers; // Upper 32 bits of state
 
-    alignas(64) std::atomic<UInt64> state;
+    std::atomic<UInt64> state;
     std::atomic<UInt32> waiters;
-    /// Is set while the lock is held (or is in the process of being acquired) in exclusive mode only to facilitate debugging
-    std::atomic<UInt64> writer_thread_id;
 };
 
 }
@@ -51,7 +51,7 @@ private:
 namespace DB
 {
 
-class TSA_CAPABILITY("SharedMutex") SharedMutex : public absl::Mutex
+class TSA_CAPABILITY("SharedMutex") SharedMutex final : absl::Mutex
 {
     using absl::Mutex::Mutex;
 

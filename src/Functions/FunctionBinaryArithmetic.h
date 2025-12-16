@@ -367,7 +367,7 @@ struct StringIntegerOperationImpl
         {
             if constexpr (op_case == OpCase::LeftConstant)
             {
-                Op::apply(&in_vec[0], &in_vec[in_offsets[0] - 1], b[i], out_vec, out_offsets);
+                Op::apply(&in_vec[0], &in_vec[in_offsets[0]], b[i], out_vec, out_offsets);
             }
             else
             {
@@ -375,11 +375,11 @@ struct StringIntegerOperationImpl
 
                 if constexpr (op_case == OpCase::Vector)
                 {
-                    Op::apply(&in_vec[prev_offset], &in_vec[new_offset - 1], b[i], out_vec, out_offsets);
+                    Op::apply(&in_vec[prev_offset], &in_vec[new_offset], b[i], out_vec, out_offsets);
                 }
                 else
                 {
-                    Op::apply(&in_vec[prev_offset], &in_vec[new_offset - 1], b[0], out_vec, out_offsets);
+                    Op::apply(&in_vec[prev_offset], &in_vec[new_offset], b[0], out_vec, out_offsets);
                 }
 
                 prev_offset = new_offset;
@@ -516,9 +516,9 @@ struct StringReduceOperationImpl
         {
             res[i] = process(
                 a.data() + offsets_a[i - 1],
-                a.data() + offsets_a[i] - 1,
+                a.data() + offsets_a[i],
                 b.data() + offsets_b[i - 1],
-                b.data() + offsets_b[i] - 1);
+                b.data() + offsets_b[i]);
         }
     }
 
@@ -530,7 +530,7 @@ struct StringReduceOperationImpl
         {
             res[i] = process(
                 a.data() + offsets_a[i - 1],
-                a.data() + offsets_a[i] - 1,
+                a.data() + offsets_a[i],
                 reinterpret_cast<const UInt8 *>(b.data()),
                 reinterpret_cast<const UInt8 *>(b.data()) + b.size());
         }
@@ -1775,26 +1775,28 @@ public:
             return arguments[0];
         }
 
-        /// Special case - one or both arguments are IPv4
-        if (isIPv4(arguments[0]) || isIPv4(arguments[1]))
+        /// Special case - one argument is IPv4 and the other is Ipv4 or an integer
+        if ((isIPv4(arguments[0]) && (isIPv4(arguments[1]) || isInteger(arguments[1])))
+            || (isIPv4(arguments[1]) && isInteger(arguments[0])))
         {
             DataTypes new_arguments {
                     isIPv4(arguments[0]) ? std::make_shared<DataTypeUInt32>() : arguments[0],
                     isIPv4(arguments[1]) ? std::make_shared<DataTypeUInt32>() : arguments[1],
             };
 
-            return getReturnTypeImplStatic(new_arguments, context);
+            return getReturnTypeImplStatic2(new_arguments, context);
         }
 
-        /// Special case - one or both arguments are IPv6
-        if (isIPv6(arguments[0]) || isIPv6(arguments[1]))
+        /// Special case -one argument is IPv6 and the other is Ipv4 or an integer
+        if ((isIPv6(arguments[0]) && (isIPv6(arguments[1]) || isInteger(arguments[1])))
+            || (isIPv6(arguments[1]) && isInteger(arguments[0])))
         {
             DataTypes new_arguments {
                     isIPv6(arguments[0]) ? std::make_shared<DataTypeUInt128>() : arguments[0],
                     isIPv6(arguments[1]) ? std::make_shared<DataTypeUInt128>() : arguments[1],
             };
 
-            return getReturnTypeImplStatic(new_arguments, context);
+            return getReturnTypeImplStatic2(new_arguments, context);
         }
 
 
@@ -1864,6 +1866,11 @@ public:
             }
         }
 
+        return getReturnTypeImplStatic2(arguments, context);
+    }
+
+    static DataTypePtr getReturnTypeImplStatic2(const DataTypes & arguments, ContextPtr context)
+    {
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime/String and another is Interval.
         if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0], arguments[1], context))
         {
@@ -2063,16 +2070,7 @@ public:
                     }
                     else if constexpr (std::is_same_v<ResultDataType, DataTypeTime>)
                     {
-                        // Special case for Time: binary OPS should reuse timezone
-                        // of Time argument as timezeone of result type.
-                        // NOTE: binary plus/minus are not allowed on Time64, and we are not handling it here.
-
-                        const TimezoneMixin * tz = nullptr;
-                        if constexpr (std::is_same_v<RightDataType, DataTypeTime>)
-                            tz = &right;
-                        if constexpr (std::is_same_v<LeftDataType, DataTypeTime>)
-                            tz = &left;
-                        type_res = std::make_shared<DataTypeTime>(*tz);
+                        type_res = std::make_shared<DataTypeTime>();
                     }
                     else
                         type_res = std::make_shared<ResultDataType>();
@@ -2223,8 +2221,8 @@ public:
                 const auto * col_left = &checkAndGetColumn<ColumnString>(col_left_const->getDataColumn());
                 const auto * col_right = &checkAndGetColumn<ColumnString>(col_right_const->getDataColumn());
 
-                std::string_view a = col_left->getDataAt(0).toView();
-                std::string_view b = col_right->getDataAt(0).toView();
+                std::string_view a = col_left->getDataAt(0);
+                std::string_view b = col_right->getDataAt(0);
 
                 auto res = OpImpl::constConst(a, b);
 
@@ -2255,12 +2253,12 @@ public:
             }
             else if (is_left_column_const)
             {
-                std::string_view str_view = col_left->getDataAt(0).toView();
+                std::string_view str_view = col_left->getDataAt(0);
                 OpImpl::vectorConstant(col_right->getChars(), col_right->getOffsets(), str_view, data);
             }
             else
             {
-                std::string_view str_view = col_right->getDataAt(0).toView();
+                std::string_view str_view = col_right->getDataAt(0);
                 OpImpl::vectorConstant(col_left->getChars(), col_left->getOffsets(), str_view, data);
             }
 

@@ -34,17 +34,21 @@ namespace ErrorCodes
 {
     extern const int POCO_EXCEPTION;
     extern const int STD_EXCEPTION;
+    extern const int AVRO_EXCEPTION;
     extern const int UNKNOWN_EXCEPTION;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_MREMAP;
     extern const int POTENTIALLY_BROKEN_DATA_PART;
+    extern const int CORRUPTED_DATA;
 }
 
-void abortOnFailedAssertion(const String & description, void * const * trace, size_t trace_offset, size_t trace_size)
+void abortOnFailedAssertion(const String & description, std::string_view format_string, void * const * trace, size_t trace_offset, size_t trace_size)
 {
     auto & logger = Poco::Logger::root();
     LOG_FATAL(&logger, "Logical error: '{}'.", description);
+    if (!format_string.empty())
+        LOG_FATAL(&logger, "Format string: '{}'.", format_string);
     if (trace)
         LOG_FATAL(&logger, "Stack trace (when copying this message, always include the lines below):\n\n{}", StackTrace::toString(trace, trace_offset, trace_size));
     abort();
@@ -53,12 +57,22 @@ void abortOnFailedAssertion(const String & description, void * const * trace, si
 void abortOnFailedAssertion(const String & description)
 {
     StackTrace st;
-    abortOnFailedAssertion(description, st.getFramePointers().data(), st.getOffset(), st.getSize());
+    abortOnFailedAssertion(description, "", st.getFramePointers().data(), st.getOffset(), st.getSize());
 }
 
 bool terminate_on_any_exception = false;
+std::atomic_bool abort_on_logical_error = false;
 static int terminate_status_code = 128 + SIGABRT;
 std::function<void(std::string_view format_string, int code, bool remote, const Exception::FramePointers & trace)> Exception::callback = {};
+
+constexpr bool debug_or_sanitizer_build =
+#ifdef DEBUG_OR_SANITIZER_BUILD
+true
+#else
+false
+#endif
+;
+
 
 /// - Aborts the process if error code is LOGICAL_ERROR.
 /// - Increments error codes statistics.
@@ -67,12 +81,11 @@ static size_t handle_error_code(
 {
     // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
     // Log the message before we fail.
-#ifdef DEBUG_OR_SANITIZER_BUILD
     if (code == ErrorCodes::LOGICAL_ERROR)
     {
-        abortOnFailedAssertion(msg, trace.data(), 0, trace.size());
+        if (debug_or_sanitizer_build || abort_on_logical_error.load(std::memory_order_relaxed))
+            abortOnFailedAssertion(msg, format_string, trace.data(), 0, trace.size());
     }
-#endif
 
     if (Exception::callback)
     {
@@ -81,19 +94,21 @@ static size_t handle_error_code(
         Exception::callback(format_string, code, remote, trace);
     }
 
-    return ErrorCodes::increment(code, remote, msg, trace);
+    return ErrorCodes::increment(code, remote, msg, std::string(format_string), trace);
 }
 
 
-Exception::MessageMasked::MessageMasked(const std::string & msg_)
+Exception::MessageMasked::MessageMasked(const std::string & msg_, std::string format_string_)
     : msg(msg_)
+    , format_string(std::move(format_string_))
 {
     if (auto masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(msg);
 }
 
-Exception::MessageMasked::MessageMasked(std::string && msg_)
+Exception::MessageMasked::MessageMasked(std::string && msg_, std::string format_string_)
     : msg(std::move(msg_))
+    , format_string(std::move(format_string_))
 {
     if (auto masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(msg);
@@ -108,6 +123,7 @@ Exception::Exception(const MessageMasked & msg_masked, int code, bool remote_)
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
     capture_thread_frame_pointers = getThreadFramePointers();
+    message_format_string = msg_masked.format_string;
     error_index = handle_error_code(msg_masked.msg, message_format_string, code, remote, getStackFramePointers());
 }
 
@@ -118,6 +134,7 @@ Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
     capture_thread_frame_pointers = getThreadFramePointers();
+    message_format_string = msg_masked.format_string;
     error_index = handle_error_code(message(), message_format_string, code, remote, getStackFramePointers());
 }
 
@@ -135,8 +152,17 @@ Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
 #endif
 }
 
+static int getCodeForSTDException(const std::exception & exc)
+{
+    /// This looks strange, but avoids a direct dependency on the external library.
+    std::string name = demangle(typeid(exc).name());
+    if (name.starts_with("avro::"))
+        return ErrorCodes::AVRO_EXCEPTION;
+    return ErrorCodes::STD_EXCEPTION;
+}
+
 Exception::Exception(CreateFromSTDTag, const std::exception & exc)
-    : Poco::Exception(demangle(typeid(exc).name()) + ": " + String(exc.what()), ErrorCodes::STD_EXCEPTION)
+    : Poco::Exception(demangle(typeid(exc).name()) + ": " + String(exc.what()), getCodeForSTDException(exc))
 {
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
@@ -274,7 +300,8 @@ bool Exception::isErrorCodeImportant() const
 {
     const int error_code = code();
     return error_code == ErrorCodes::LOGICAL_ERROR
-        || error_code == ErrorCodes::POTENTIALLY_BROKEN_DATA_PART;
+        || error_code == ErrorCodes::POTENTIALLY_BROKEN_DATA_PART
+        || error_code == ErrorCodes::CORRUPTED_DATA;
 }
 
 Exception::~Exception()
@@ -294,21 +321,34 @@ static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string 
     try
     {
         PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
-        if (!start_of_message.empty())
-            message.text = fmt::format("{}: {}", start_of_message, message.text);
-
-        switch (level)
+        if (start_of_message.empty())
         {
-            case LogsLevel::none: break;
-            case LogsLevel::test: LOG_TEST(logger, message); break;
-            case LogsLevel::trace: LOG_TRACE(logger, message); break;
-            case LogsLevel::debug: LOG_DEBUG(logger, message); break;
-            case LogsLevel::information: LOG_INFO(logger, message); break;
-            case LogsLevel::warning: LOG_WARNING(logger, message); break;
-            case LogsLevel::error: LOG_ERROR(logger, message); break;
-            case LogsLevel::fatal: LOG_FATAL(logger, message); break;
+            switch (level)
+            {
+                case LogsLevel::none: break;
+                case LogsLevel::test: LOG_TEST(logger, message); break;
+                case LogsLevel::trace: LOG_TRACE(logger, message); break;
+                case LogsLevel::debug: LOG_DEBUG(logger, message); break;
+                case LogsLevel::information: LOG_INFO(logger, message); break;
+                case LogsLevel::warning: LOG_WARNING(logger, message); break;
+                case LogsLevel::error: LOG_ERROR(logger, message); break;
+                case LogsLevel::fatal: LOG_FATAL(logger, message); break;
+            }
         }
-
+        else
+        {
+            switch (level)
+            {
+                case LogsLevel::none: break;
+                case LogsLevel::test: LOG_TEST(logger, "{}: {}", start_of_message, message.text); break;
+                case LogsLevel::trace: LOG_TRACE(logger, "{}: {}", start_of_message, message.text); break;
+                case LogsLevel::debug: LOG_DEBUG(logger, "{}: {}", start_of_message, message.text); break;
+                case LogsLevel::information: LOG_INFO(logger, "{}: {}", start_of_message, message.text); break;
+                case LogsLevel::warning: LOG_WARNING(logger, "{}: {}", start_of_message, message.text); break;
+                case LogsLevel::error: LOG_ERROR(logger, "{}: {}", start_of_message, message.text); break;
+                case LogsLevel::fatal: LOG_FATAL(logger, "{}: {}", start_of_message, message.text); break;
+            }
+        }
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -479,12 +519,20 @@ std::string getExtraExceptionInfo(const std::exception & e)
     return msg;
 }
 
-std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace /*= false*/, bool with_extra_info /*= true*/)
+std::string getCurrentExceptionMessage(
+    bool with_stacktrace,
+    bool check_embedded_stacktrace /*= false*/,
+    bool with_extra_info /*= true*/,
+    bool with_version /*= true*/)
 {
-    return getCurrentExceptionMessageAndPattern(with_stacktrace, check_embedded_stacktrace, with_extra_info).text;
+    return getCurrentExceptionMessageAndPattern(with_stacktrace, check_embedded_stacktrace, with_extra_info, with_version).text;
 }
 
-PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, bool check_embedded_stacktrace /*= false*/, bool with_extra_info /*= true*/)
+PreformattedMessage getCurrentExceptionMessageAndPattern(
+    bool with_stacktrace,
+    bool check_embedded_stacktrace /*= false*/,
+    bool with_extra_info /*= true*/,
+    bool with_version /*= true*/)
 {
     WriteBufferFromOwnString stream;
     std::string_view message_format_string;
@@ -497,8 +545,9 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
     catch (const Exception & e)
     {
         stream << getExceptionMessage(e, with_stacktrace, check_embedded_stacktrace)
-               << (with_extra_info ? getExtraExceptionInfo(e) : "")
-               << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
+               << (with_extra_info ? getExtraExceptionInfo(e) : "");
+        if (with_version)
+            stream << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
         message_format_string = e.tryGetMessageFormatString();
         message_format_string_args = e.getMessageFormatStringArgs();
     }
@@ -509,8 +558,9 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
             stream << "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
                 << ", " << e.displayText()
                 << (with_stacktrace ? ", Stack trace (when copying this message, always include the lines below):\n\n" + getExceptionStackTraceString(e) : "")
-                << (with_extra_info ? getExtraExceptionInfo(e) : "")
-                << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
+                << (with_extra_info ? getExtraExceptionInfo(e) : "");
+            if (with_version)
+                stream << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
         }
         catch (...) {} // NOLINT(bugprone-empty-catch)
     }
@@ -526,25 +576,27 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
 
             stream << "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", type: " << name << ", e.what() = " << e.what()
                 << (with_stacktrace ? ", Stack trace (when copying this message, always include the lines below):\n\n" + getExceptionStackTraceString(e) : "")
-                << (with_extra_info ? getExtraExceptionInfo(e) : "")
-                << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
+                << (with_extra_info ? getExtraExceptionInfo(e) : "");
+            if (with_version)
+                stream << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
         }
         catch (...) {} // NOLINT(bugprone-empty-catch)
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
-        try
+        if (debug_or_sanitizer_build || abort_on_logical_error.load(std::memory_order_relaxed))
         {
-            throw;
-        }
-        catch (const std::logic_error &)
-        {
-            if (!with_stacktrace)
-                stream << ", Stack trace:\n\n" << getExceptionStackTraceString(e);
+            try
+            {
+                throw;
+            }
+            catch (const std::logic_error &)
+            {
+                if (!with_stacktrace)
+                    stream << ", Stack trace:\n\n" << getExceptionStackTraceString(e);
 
-            abortOnFailedAssertion(stream.str());
+                abortOnFailedAssertion(stream.str());
+            }
+            catch (...) {} // NOLINT(bugprone-empty-catch)
         }
-        catch (...) {} // NOLINT(bugprone-empty-catch)
-#endif
     }
     catch (...)
     {
@@ -556,7 +608,9 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
             if (status)
                 name += " (demangling status: " + toString(status) + ")";
 
-            stream << "Unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ", type: " << name << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
+            stream << "Unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ", type: " << name;
+            if (with_version)
+                stream << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
         }
         catch (...) {} // NOLINT(bugprone-empty-catch)
     }
@@ -729,9 +783,9 @@ bool ExecutionStatus::tryDeserializeText(const std::string & data)
     return true;
 }
 
-ExecutionStatus ExecutionStatus::fromCurrentException(const std::string & start_of_message, bool with_stacktrace)
+ExecutionStatus ExecutionStatus::fromCurrentException(const std::string & start_of_message, bool with_stacktrace, bool with_version)
 {
-    String msg = (start_of_message.empty() ? "" : (start_of_message + ": ")) + getCurrentExceptionMessage(with_stacktrace, true);
+    String msg = (start_of_message.empty() ? "" : (start_of_message + ": ")) + getCurrentExceptionMessage(with_stacktrace, /*check_embedded_stacktrace=*/true, /*with_extra_info=*/true, with_version);
     return ExecutionStatus(getCurrentExceptionCode(), msg);
 }
 
@@ -740,6 +794,29 @@ ExecutionStatus ExecutionStatus::fromText(const std::string & data)
     ExecutionStatus status;
     status.deserializeText(data);
     return status;
+}
+
+std::exception_ptr copyMutableException(std::exception_ptr ptr)
+{
+    try
+    {
+        std::rethrow_exception(ptr);
+    }
+    catch (Poco::Exception & e)
+    {
+        try
+        {
+            e.rethrow();
+        }
+        catch (...)
+        {
+            return std::current_exception();
+        }
+    }
+    catch (...)
+    {
+        return std::current_exception();
+    }
 }
 
 }

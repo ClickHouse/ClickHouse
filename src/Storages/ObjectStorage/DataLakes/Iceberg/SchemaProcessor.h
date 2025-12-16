@@ -7,18 +7,20 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
+#include <Formats/FormatFilterInfo.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <base/defines.h>
-
-
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 #include <Common/SharedMutex.h>
 
 #include <unordered_map>
-namespace DB
+namespace DB::Iceberg
 {
+
+ColumnMapperPtr createColumnMapper(Poco::JSON::Object::Ptr schema_object);
 
 /**
  * Iceberg supports the following data types (see https://iceberg.apache.org/spec/#schemas-and-data-types):
@@ -85,10 +87,19 @@ public:
     std::optional<NameAndTypePair> tryGetFieldCharacteristics(Int32 schema_version, Int32 source_id) const;
     NamesAndTypesList tryGetFieldsCharacteristics(Int32 schema_id, const std::vector<Int32> & source_ids) const;
     std::optional<Int32> tryGetColumnIDByName(Int32 schema_id, const std::string & name) const;
-
+    Poco::JSON::Object::Ptr getIcebergTableSchemaById(Int32 id) const;
     bool hasClickhouseTableSchemaById(Int32 id) const;
 
     static DataTypePtr getSimpleType(const String & type_name);
+
+    static std::unordered_map<String, Int64> traverseSchema(Poco::JSON::Array::Ptr schema);
+
+    void registerSnapshotWithSchemaId(Int64 snapshot_id, Int32 schema_id);
+    Int32 getSchemaIdForSnapshot(Int64 snapshot_id) const;
+    std::optional<Int32> tryGetSchemaIdForSnapshot(Int64 snapshot_id) const;
+
+    ColumnMapperPtr getColumnMapperById(Int32 id) const;
+
 private:
     std::unordered_map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids TSA_GUARDED_BY(mutex);
     std::unordered_map<Int32, std::shared_ptr<NamesAndTypesList>> clickhouse_table_schemas_by_ids TSA_GUARDED_BY(mutex);
@@ -96,6 +107,7 @@ private:
     mutable std::map<std::pair<Int32, Int32>, NameAndTypePair> clickhouse_types_by_source_ids TSA_GUARDED_BY(mutex);
     mutable std::map<std::pair<Int32, std::string>, Int32> clickhouse_ids_by_source_names TSA_GUARDED_BY(mutex);
     std::optional<Int32> current_schema_id TSA_GUARDED_BY(mutex) = 0;
+    std::unordered_map<Int64, Int32> schema_id_by_snapshot TSA_GUARDED_BY(mutex);
 
     NamesAndTypesList getSchemaType(const Poco::JSON::Object::Ptr & schema);
     DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type, String & current_full_name, bool is_subfield_of_root);
@@ -115,4 +127,5 @@ private:
     mutable SharedMutex mutex;
 };
 
+using IcebergSchemaProcessorPtr = std::shared_ptr<IcebergSchemaProcessor>;
 }

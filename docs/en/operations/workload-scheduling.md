@@ -4,9 +4,10 @@ sidebar_label: 'Workload scheduling'
 sidebar_position: 69
 slug: /operations/workload-scheduling
 title: 'Workload scheduling'
+doc_type: 'reference'
 ---
 
-When ClickHouse execute multiple queries simultaneously, they may be using shared resources (e.g. disks). Scheduling constraints and policies can be applied to regulate how resources are utilized and shared between different workloads. For every resource a scheduling hierarchy can be configured. Hierarchy root represents a resource, while leafs are queues, holding requests that exceed resource capacity.
+When ClickHouse execute multiple queries simultaneously, they may be using shared resources (e.g. disks and CPU cores). Scheduling constraints and policies can be applied to regulate how resources are utilized and shared between different workloads. For all resources a common scheduling hierarchy can be configured. Hierarchy root represents shared resources, while leafs are specific workloads, holding requests that exceed resource capacity.
 
 :::note
 Currently [remote disk IO](#disk_config) and [CPU](#cpu_scheduling) can be scheduled using described method. For flexible memory limits see [Memory overcommit](settings/memory-overcommit.md)
@@ -205,8 +206,12 @@ To customize workload the following settings could be used:
 * `max_io_requests` - the limit on the number of concurrent IO requests in this workload.
 * `max_bytes_inflight` - the limit on the total inflight bytes for concurrent requests in this workload.
 * `max_bytes_per_second` - the limit on byte read or write rate of this workload.
-* `max_burst_bytes` - maximum number of bytes that could be processed by the workload without being throttled (for every resource independently).
+* `max_burst_bytes` - the maximum number of bytes that could be processed by the workload without being throttled (for every resource independently).
 * `max_concurrent_threads` - the limit on the number of threads for queries in this workload.
+* `max_concurrent_threads_ratio_to_cores` - the same as `max_concurrent_threads`, but normalized to the number of available CPU cores.
+* `max_cpus` - the limit on the number of CPU cores to serve queries in this workload.
+* `max_cpu_share` - the same as `max_cpus`, but normalized to the number of available CPU cores.
+* `max_burst_cpu_seconds` - the maximum number of CPU seconds that could be consumed by the workload without being throttled due to `max_cpus`.
 
 All limits specified through workload settings are independent for every resource. For example workload with `max_bytes_per_second = 10485760` will have 10 MB/s bandwidth limit for every read and write resource independently. If common limit for reading and writing is required, consider using the same resource for READ and WRITE access.
 
@@ -266,12 +271,51 @@ To exclude a query from CPU scheduling set a query setting [use_concurrency_cont
 
 CPU scheduling is not supported for merges and mutations yet.
 
+To provide fair allocations for workload it is necessary to perform preemption and down-scaling during query execution. Preemption is enabled with `cpu_slot_preemption` server setting. If it is enabled, every threads renews its CPU slot periodically (according to `cpu_slot_quantum_ns` server setting). Such a renewal can block execution if CPU is overloaded. When execution is blocked for prolonged time (see `cpu_slot_preemption_timeout_ms` server setting), then query scales down and the number of concurrently running threads decreases dynamically. Note that CPU time fairness is guaranteed between workloads, but between queries inside the same workload it might be violated in some corner cases.
+
 :::warning
-Slot scheduling provides a way to control [query concurrency](/operations/settings/settings.md#max_threads) but does not guarantee fair CPU time allocation yet. This requires further development of CPU slot preemption and will be supported later.
+Slot scheduling provides a way to control [query concurrency](/operations/settings/settings.md#max_threads) but does not guarantee fair CPU time allocation unless server setting `cpu_slot_preemption` is set to `true`, otherwise fairness is provided based on number of CPU slot allocations among competing workloads. It does not imply equal amount of CPU seconds because without preemption CPU slot may be held indefinitely. A thread acquires a slot at the beginning and release when work is done.
 :::
 
 :::note
 Declaring CPU resource disables effect of [`concurrent_threads_soft_limit_num`](server-configuration-parameters/settings.md#concurrent_threads_soft_limit_num) and [`concurrent_threads_soft_limit_ratio_to_cores`](server-configuration-parameters/settings.md#concurrent_threads_soft_limit_ratio_to_cores) settings. Instead, workload setting `max_concurrent_threads` is used to limit the number of CPUs allocated for a specific workload. To achieve the previous behavior create only WORKER THREAD resource, set `max_concurrent_threads` for the workload `all` to the same value as `concurrent_threads_soft_limit_num` and use `workload = "all"` query setting. This configuration corresponds to [`concurrent_threads_scheduler`](server-configuration-parameters/settings.md#concurrent_threads_scheduler) setting set "fair_round_robin" value.
+:::
+
+## Threads vs. CPUs {#threads_vs_cpus}
+
+There are two way to control CPU consumption of a workload:
+* Thread number limit: `max_concurrent_threads` and `max_concurrent_threads_ratio_to_cores`
+* CPU throttling: `max_cpus`, `max_cpu_share` and `max_burst_cpu_seconds`
+
+The first allows one to dynamically control how many threads are spawned for a query, depending on the current server load. It effectively lowers what `max_threads` query setting dictates. The second throttles CPU consumption of the workload using token bucket algorithm. It does not affect thread number directly, but throttles the total CPU consumption of all threads in the workload.
+
+Token bucket throttling with `max_cpus` and `max_burst_cpu_seconds` means the following. During any interval of `delta` seconds the total CPU consumption by all queries in workload is not allowed to be greater than `max_cpus * delta + max_burst_cpu_seconds` CPU seconds. It limits average consumption by `max_cpus` in long-term, but this limit might be exceeded in short-term. For example, given `max_burst_cpu_seconds = 60` and `max_cpus=0.001`, one is allowed to run either 1 thread for 60 seconds or 2 threads for 30 seconds or 60 threads for 1 seconds without being throttled. Default value for `max_burst_cpu_seconds` is 1 second. Lower values may lead to under-utilization of allowed `max_cpus` cores given many concurrent threads.
+
+:::warning
+CPU throttling settings are active only if `cpu_slot_preemption` server setting is enabled and ignored otherwise.
+:::
+
+While holding a CPU slot a thread could be in one of there main states:
+* **Running:** Effectively consuming CPU resource. Time spent in this state in accounted by the CPU throttling.
+* **Ready:** Waiting for a CPU to became available. Not accounted by CPU throttling.
+* **Blocked:** Doing IO operations or other blocking syscalls (e.g. waiting on a mutex). Not accounted by CPU throttling.
+
+Let's consider an example of configuration that combines both CPU throttling and thread number limits:
+
+```sql
+CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
+CREATE WORKLOAD all SETTINGS max_concurrent_threads_ratio_to_cores = 2
+CREATE WORKLOAD admin IN all SETTINGS max_concurrent_threads = 2, priority = -1
+CREATE WORKLOAD production IN all SETTINGS weight = 4
+CREATE WORKLOAD analytics IN production SETTINGS max_cpu_share = 0.7, weight = 3
+CREATE WORKLOAD ingestion IN production
+CREATE WORKLOAD development IN all SETTINGS max_cpu_share = 0.3
+```
+
+Here we limit the total number of threads for all queries to be x2 of the available CPUs. Admin workload is limited to exactly two threads at most, regardless of the number of available CPUs. Admin has priority -1 (less than default 0) and it gets any CPU slot first if required. When the admin does not run queries, CPU resources are divided among production and development workloads. Guaranteed shares of CPU time are based on weights (4 to 1): At least 80% goes to production (if required), and at least 20% goes to development (if required). While weights form guarantees, CPU throttling forms limits: production is not limited and can consume 100%, while development has a limit of 30%, which is applied even if there are no queries from other workloads. Production workload is not a leaf, so its resources are split among analytics and ingestion according to weights (3 to 1). It means that analytics has a guarantee of at least 0.8 * 0.75 = 60%, and based on `max_cpu_share`, it has a limit of 70% of total CPU resources. While ingestion is left with a guarantee of at least 0.8 * 0.25 = 20%, it has no upper limit.
+
+:::note
+If you want to maximize CPU utilization on your ClickHouse server, avoid using `max_cpus` and `max_cpu_share` for the root workload `all`. Instead, set a higher value for `max_concurrent_threads`. For example, on a system with 8 CPUs, set `max_concurrent_threads = 16`. This allows 8 threads to run CPU tasks while 8 other threads can handle I/O operations. Additional threads will create CPU pressure, ensuring scheduling rules are enforced. In contrast, setting `max_cpus = 8` will never create CPU pressure because the server cannot exceed the 8 available CPUs.
 :::
 
 ## Query slot scheduling {#query_scheduling}
@@ -297,21 +341,56 @@ Blocked queries will wait indefinitely and not appear in `SHOW PROCESSLIST` unti
 
 Definitions of all workloads and resources in the form of `CREATE WORKLOAD` and `CREATE RESOURCE` queries are stored persistently either on disk at `workload_path` or in ZooKeeper at `workload_zookeeper_path`. ZooKeeper storage is recommended to achieve consistency between nodes. Alternatively `ON CLUSTER` clause could be used along with disk storage.
 
+## Configuration-based workloads and resources {#config_based_workloads}
+
+In addition to SQL-based definitions, workloads and resources can be predefined in the server configuration file. This is useful in cloud environments where some limitations are dictated by infrastructure, while other limits could be changed by customers. Configuration-based entities have priority over SQL-defined ones and cannot be modified or deleted using SQL commands.
+
+### Configuration format {#config_based_workloads_format}
+
+```xml
+<clickhouse>
+    <resources_and_workloads>
+        RESOURCE s3disk_read (READ DISK s3);
+        RESOURCE s3disk_write (WRITE DISK s3);
+        WORKLOAD all SETTINGS max_io_requests = 500 FOR s3disk_read, max_io_requests = 1000 FOR s3disk_write, max_bytes_per_second = 1342177280 FOR s3disk_read, max_bytes_per_second = 3355443200 FOR s3disk_write;
+        WORKLOAD production IN all SETTINGS weight = 3;
+    </resources_and_workloads>
+</clickhouse>
+```
+
+The configuration uses the same SQL syntax as `CREATE WORKLOAD` and `CREATE RESOURCE` statements. All queries must be valid.
+
+### Usage recommendations {#config_based_workloads_usage_recommendations}
+
+For cloud environments, a typical setup might include:
+
+1. Define root workload and network IO resources in configuration to set infrastructure limits
+2. Set `throw_on_unknown_workload` to enforce these limits
+3. Create a `CREATE WORKLOAD default IN all` to automatically apply limits to all queries (since the default value for `workload` query setting is 'default')
+4. Allow users to create additional workloads within the configured hierarchy
+
+This ensures that all background activities and queries respect the infrastructure limitations while still allowing flexibility for user-specific scheduling policies.
+
+Another use case is different configuration for different nodes in a heterogeneous cluster.
+
 ## Strict resource access {#strict_resource_access}
 
-To enforce all queries to follow resource scheduling policies there is a server setting `throw_on_unknown_workload`. If it is set to `true` then every query is required to use valid `workload` query setting, otherwise `RESOURCE_ACCESS_DENIED` exception is thrown. If it is set to `false` then such a query does not use resource scheduler, i.e. it will get unlimited access to any `RESOURCE`.
+To enforce all queries to follow resource scheduling policies there is a server setting `throw_on_unknown_workload`. If it is set to `true` then every query is required to use valid `workload` query setting, otherwise `RESOURCE_ACCESS_DENIED` exception is thrown. If it is set to `false` then such a query does not use resource scheduler, i.e. it will get unlimited access to any `RESOURCE`. Query setting 'use_concurrency_control = 0' allows query to avoid CPU scheduler and get unlimited access to CPU. To enforce CPU scheduling create a setting constraint to keep 'use_concurrency_control' read-only constant value.
 
 :::note
 Do not set `throw_on_unknown_workload` to `true` unless `CREATE WORKLOAD default` is executed. It could lead to server startup issues if a query without explicit setting `workload` is executed during startup.
 :::
 
 ## See also {#see-also}
- - [system.scheduler](/operations/system-tables/scheduler.md)
- - [system.workloads](/operations/system-tables/workloads.md)
- - [system.resources](/operations/system-tables/resources.md)
- - [merge_workload](/operations/settings/merge-tree-settings.md#merge_workload) merge tree setting
- - [merge_workload](/operations/server-configuration-parameters/settings.md#merge_workload) global server setting
- - [mutation_workload](/operations/settings/merge-tree-settings.md#mutation_workload) merge tree setting
- - [mutation_workload](/operations/server-configuration-parameters/settings.md#mutation_workload) global server setting
- - [workload_path](/operations/server-configuration-parameters/settings.md#workload_path) global server setting
- - [workload_zookeeper_path](/operations/server-configuration-parameters/settings.md#workload_zookeeper_path) global server setting
+- [system.scheduler](/operations/system-tables/scheduler.md)
+- [system.workloads](/operations/system-tables/workloads.md)
+- [system.resources](/operations/system-tables/resources.md)
+- [merge_workload](/operations/settings/merge-tree-settings.md#merge_workload) merge tree setting
+- [merge_workload](/operations/server-configuration-parameters/settings.md#merge_workload) global server setting
+- [mutation_workload](/operations/settings/merge-tree-settings.md#mutation_workload) merge tree setting
+- [mutation_workload](/operations/server-configuration-parameters/settings.md#mutation_workload) global server setting
+- [workload_path](/operations/server-configuration-parameters/settings.md#workload_path) global server setting
+- [workload_zookeeper_path](/operations/server-configuration-parameters/settings.md#workload_zookeeper_path) global server setting
+- [cpu_slot_preemption](/operations/server-configuration-parameters/settings.md#cpu_slot_preemption) global server setting
+- [cpu_slot_quantum_ns](/operations/server-configuration-parameters/settings.md#cpu_slot_quantum_ns) global server setting
+- [cpu_slot_preemption_timeout_ms](/operations/server-configuration-parameters/settings.md#cpu_slot_preemption_timeout_ms) global server setting

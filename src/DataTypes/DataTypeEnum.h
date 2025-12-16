@@ -3,7 +3,6 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/EnumValues.h>
 #include <Columns/ColumnVector.h>
-#include <Common/HashTable/HashMap.h>
 
 
 namespace DB
@@ -53,19 +52,13 @@ public:
     TypeIndex getTypeId() const override { return type_id; }
     TypeIndex getColumnType() const override { return sizeof(FieldType) == 1 ? TypeIndex::Int8 : TypeIndex::Int16; }
 
-    FieldType readValue(ReadBuffer & istr) const
-    {
-        FieldType x;
-        readText(x, istr);
-        return this->findByValue(x)->first;
-    }
-
     Field castToName(const Field & value_or_name) const override;
     Field castToValue(const Field & value_or_name) const override;
 
     MutableColumnPtr createColumn() const override { return ColumnType::create(); }
 
     Field getDefault() const override;
+    Type getDefaultValue() const;
     void insertDefaultInto(IColumn & column) const override;
 
     bool equals(const IDataType & rhs) const override;

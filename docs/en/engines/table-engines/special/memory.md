@@ -5,10 +5,11 @@ description: 'The Memory engine stores data in RAM, in uncompressed form. Data i
 sidebar_label: 'Memory'
 sidebar_position: 110
 slug: /engines/table-engines/special/memory
-title: 'Memory Table Engine'
+title: 'Memory table engine'
+doc_type: 'reference'
 ---
 
-# Memory Table Engine
+# Memory table engine
 
 :::note
 When using the Memory table engine on ClickHouse Cloud, data is not replicated across all nodes (by design). To guarantee that all queries are routed to the same node and that the Memory table engine works as expected, you can do one of the following:
@@ -28,7 +29,7 @@ The Memory engine is used by the system for temporary tables with external query
 
 Upper and lower bounds can be specified to limit Memory engine table size, effectively allowing it to act as a circular buffer (see [Engine Parameters](#engine-parameters)).
 
-## Engine Parameters {#engine-parameters}
+## Engine parameters {#engine-parameters}
 
 - `min_bytes_to_keep` — Minimum bytes to keep when memory table is size-capped.
   - Default value: `0`
@@ -44,7 +45,6 @@ Upper and lower bounds can be specified to limit Memory engine table size, effec
   - Default value: `false`
 
 ## Usage {#usage}
-
 
 **Initialize settings**
 ```sql
@@ -108,4 +108,3 @@ SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' AND data
 │       65536 │      10000 │
 └─────────────┴────────────┘
 ```
-

@@ -6,10 +6,19 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Client/ClientApplicationBase.h>
 #include <Common/EventNotifier.h>
+#include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Parsers/parseQuery.h>
 #include <Poco/Util/HelpFormatter.h>
+
+#if USE_SSL
+#include <Poco/Net/Context.h>
+#include <Poco/Net/SSLManager.h>
+#include <Poco/Net/AcceptCertificateHandler.h>
+#include <Poco/Net/RejectCertificateHandler.h>
+#endif
 
 
 namespace DB
@@ -201,6 +210,29 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
         Poco::Util::Option("identity", "", "connect to Keeper using authentication with specified identity. default no identity")
             .argument("<identity>")
             .binding("identity"));
+
+    options.addOption(
+        Poco::Util::Option("secure", "s", "use secure connection (adds secure:// prefix to host). default false")
+            .binding("secure"));
+
+    options.addOption(
+        Poco::Util::Option("tls-cert-file", "", "path to TLS certificate file for secure connection")
+            .argument("<file>")
+            .binding("tls-cert-file"));
+
+    options.addOption(
+        Poco::Util::Option("tls-key-file", "", "path to TLS private key file for secure connection")
+            .argument("<file>")
+            .binding("tls-key-file"));
+
+    options.addOption(
+        Poco::Util::Option("tls-ca-file", "", "path to TLS CA certificate file for secure connection")
+            .argument("<file>")
+            .binding("tls-ca-file"));
+
+    options.addOption(
+        Poco::Util::Option("accept-invalid-certificate", "", "accept invalid TLS certificates (bypasses verification). default false")
+            .binding("accept-invalid-certificate"));
 }
 
 void KeeperClient::initialize(Poco::Util::Application & /* self */)
@@ -229,7 +261,10 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
         std::make_shared<GetDirectChildrenNumberCommand>(),
         std::make_shared<GetAllChildrenNumberCommand>(),
         std::make_shared<CPCommand>(),
+        std::make_shared<CPRCommand>(),
         std::make_shared<MVCommand>(),
+        std::make_shared<MVRCommand>(),
+        std::make_shared<GetAclCommand>(),
     });
 
     String home_path;
@@ -269,56 +304,82 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
     EventNotifier::init();
 }
 
-bool KeeperClient::processQueryText(const String & text)
+bool KeeperClient::processQueryText(const String & text, bool is_interactive)
 {
-    if (exit_strings.find(text) != exit_strings.end())
+    if (exit_strings.contains(text))
         return false;
 
-    try
+    static constexpr size_t total_retries = 10;
+    std::chrono::milliseconds current_sleep{100};
+    size_t i = 0;
+
+    while (true)
     {
-        if (waiting_confirmation)
+        try
         {
-            waiting_confirmation = false;
-            if (text.size() == 1 && (text == "y" || text == "Y"))
-                confirmation_callback();
-            return true;
-        }
+            if (i > 0)
+                connectToKeeper();
 
-        KeeperParser parser;
-        const char * begin = text.data();
-        const char * end = begin + text.size();
-
-        while (begin < end)
-        {
-            String message;
-            ASTPtr res = tryParseQuery(
-                parser,
-                begin,
-                end,
-                /* out_error_message = */ message,
-                /* hilite = */ true,
-                /* description = */ "",
-                /* allow_multi_statements = */ true,
-                /* max_query_size = */ 0,
-                /* max_parser_depth = */ 0,
-                /* max_parser_backtracks = */ 0,
-                /* skip_insignificant = */ false);
-
-            if (!res)
+            if (waiting_confirmation)
             {
-                std::cerr << message << "\n";
+                waiting_confirmation = false;
+                if (text.size() == 1 && (text == "y" || text == "Y"))
+                    confirmation_callback();
                 return true;
             }
 
-            auto * query = res->as<ASTKeeperQuery>();
+            KeeperParser parser;
+            const char * begin = text.data();
+            const char * end = begin + text.size();
 
-            auto command = KeeperClient::commands.find(query->command);
-            command->second->execute(query, this);
+            while (begin < end)
+            {
+                String message;
+                ASTPtr res = tryParseQuery(
+                    parser,
+                    begin,
+                    end,
+                    /* out_error_message = */ message,
+                    /* hilite = */ true,
+                    /* description = */ "",
+                    /* allow_multi_statements = */ true,
+                    /* max_query_size = */ 0,
+                    /* max_parser_depth = */ 0,
+                    /* max_parser_backtracks = */ 0,
+                    /* skip_insignificant = */ false);
+
+                if (!res)
+                {
+                    std::cerr << message << "\n";
+                    return true;
+                }
+
+                auto * query = res->as<ASTKeeperQuery>();
+
+                auto command = KeeperClient::commands.find(query->command);
+                command->second->execute(query, this);
+            }
+
+            break;
         }
-    }
-    catch (Coordination::Exception & err)
-    {
-        std::cerr << err.message() << "\n";
+        catch (Coordination::Exception & err)
+        {
+            std::cerr << err.message() << "\n";
+
+            if (!is_interactive || !Coordination::isHardwareError(err.code))
+                break;
+
+            if (i == total_retries)
+            {
+                std::cerr << "Failed to connect to Keeper" << std::endl;
+                break;
+            }
+
+            ++i;
+            current_sleep = std::min<std::chrono::milliseconds>(current_sleep * 2, std::chrono::milliseconds{5000});
+            std::cerr << fmt::format("Will try to reconnect after {}ms ({}/{})", current_sleep.count(), i, total_retries) << std::endl;
+            std::this_thread::sleep_for(current_sleep);
+        }
     }
     return true;
 }
@@ -357,7 +418,7 @@ void KeeperClient::runInteractiveReplxx()
         if (input.empty())
             break;
 
-        if (!processQueryText(input))
+        if (!processQueryText(input, /*is_interactive=*/true))
             break;
     }
 
@@ -368,7 +429,7 @@ void KeeperClient::runInteractiveInputStream()
 {
     for (String input; std::getline(std::cin, input);)
     {
-        if (!processQueryText(input))
+        if (!processQueryText(input, /*is_interactive=*/true))
             break;
 
         std::cout << "\a\a\a\a" << std::endl;
@@ -384,16 +445,43 @@ void KeeperClient::runInteractive()
         runInteractiveReplxx();
 }
 
-int KeeperClient::main(const std::vector<String> & /* args */)
+void KeeperClient::connectToKeeper()
 {
-    if (config().hasOption("help"))
+#if USE_SSL
+    /// Configure SSL context if TLS options are provided
+    if (config().has("tls-cert-file") || config().has("tls-key-file") || config().has("tls-ca-file") || config().has("accept-invalid-certificate"))
     {
-        Poco::Util::HelpFormatter help_formatter(KeeperClient::options());
-        auto header_str = fmt::format("{} [OPTION]\n", commandName());
-        help_formatter.setHeader(header_str);
-        help_formatter.format(std::cout);
-        return 0;
+        Poco::Net::Context::VerificationMode verification_mode = Poco::Net::Context::VERIFY_RELAXED;
+
+        if (config().has("accept-invalid-certificate"))
+        {
+            verification_mode = Poco::Net::Context::VERIFY_NONE;
+        }
+
+        auto context = Poco::Net::Context::Ptr(new Poco::Net::Context(
+            Poco::Net::Context::TLSV1_2_CLIENT_USE,
+            config().getString("tls-key-file", ""),
+            config().getString("tls-cert-file", ""),
+            config().getString("tls-ca-file", ""),
+            verification_mode,
+            9,
+            true,
+            "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH"
+        ));
+
+        Poco::Net::SSLManager::InvalidCertificateHandlerPtr certificate_handler;
+        if (config().has("accept-invalid-certificate"))
+        {
+            certificate_handler = new Poco::Net::AcceptCertificateHandler(false);
+        }
+        else
+        {
+            certificate_handler = new Poco::Net::RejectCertificateHandler(false);
+        }
+
+        Poco::Net::SSLManager::instance().initializeClient(nullptr, certificate_handler, context);
     }
+#endif
 
     ConfigProcessor config_processor(config().getString("config-file", "config.xml"));
 
@@ -403,6 +491,8 @@ int KeeperClient::main(const std::vector<String> & /* args */)
 
     Poco::Util::AbstractConfiguration::Keys keys;
     clickhouse_config.configuration->keys("zookeeper", keys);
+
+    zkutil::ZooKeeperArgs new_zk_args;
 
     if (!config().has("host") && !config().has("port") && !keys.empty())
     {
@@ -417,10 +507,10 @@ int KeeperClient::main(const std::vector<String> & /* args */)
             String host = clickhouse_config.configuration->getString(prefix + ".host");
             String port = clickhouse_config.configuration->getString(prefix + ".port");
 
-            if (clickhouse_config.configuration->has(prefix + ".secure"))
+            if (clickhouse_config.configuration->has(prefix + ".secure") || config().has("secure"))
                 host = "secure://" + host;
 
-            zk_args.hosts.push_back(host + ":" + port);
+            new_zk_args.hosts.push_back(host + ":" + port);
         }
     }
     else
@@ -428,26 +518,44 @@ int KeeperClient::main(const std::vector<String> & /* args */)
         String host = config().getString("host", "localhost");
         String port = config().getString("port", "9181");
 
-        zk_args.hosts.push_back(host + ":" + port);
+        if (config().has("secure"))
+            host = "secure://" + host;
+
+        new_zk_args.hosts.push_back(host + ":" + port);
     }
 
-    zk_args.availability_zones.resize(zk_args.hosts.size());
-    zk_args.connection_timeout_ms = config().getInt("connection-timeout", 10) * 1000;
-    zk_args.session_timeout_ms = config().getInt("session-timeout", 10) * 1000;
-    zk_args.operation_timeout_ms = config().getInt("operation-timeout", 10) * 1000;
-    zk_args.use_xid_64 = config().hasOption("use-xid-64");
-    zk_args.password = config().getString("password", "");
-    zk_args.identity = config().getString("identity", "");
-    if (!zk_args.identity.empty())
-        zk_args.auth_scheme = "digest";
-    zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(zk_args);
+    new_zk_args.availability_zones.resize(new_zk_args.hosts.size());
+    new_zk_args.connection_timeout_ms = config().getInt("connection-timeout", 10) * 1000;
+    new_zk_args.session_timeout_ms = config().getInt("session-timeout", 10) * 1000;
+    new_zk_args.operation_timeout_ms = config().getInt("operation-timeout", 10) * 1000;
+    new_zk_args.use_xid_64 = config().hasOption("use-xid-64");
+    new_zk_args.password = config().getString("password", "");
+    new_zk_args.identity = config().getString("identity", "");
+    if (!new_zk_args.identity.empty())
+        new_zk_args.auth_scheme = "digest";
+    zk_args = new_zk_args;
+    zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(std::move(new_zk_args));
+}
+
+int KeeperClient::main(const std::vector<String> & /* args */)
+{
+    if (config().hasOption("help"))
+    {
+        Poco::Util::HelpFormatter help_formatter(KeeperClient::options());
+        auto header_str = fmt::format("{} [OPTION]\n", commandName());
+        help_formatter.setHeader(header_str);
+        help_formatter.format(std::cout);
+        return 0;
+    }
+
+    connectToKeeper();
 
     if (config().has("no-confirmation") || config().has("query"))
         ask_confirmation = false;
 
     if (config().has("query"))
     {
-        processQueryText(config().getString("query"));
+        processQueryText(config().getString("query"), /*is_interactive=*/false);
     }
     else
         runInteractive();

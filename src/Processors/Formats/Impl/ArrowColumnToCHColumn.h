@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <unordered_map>
 
 #include "config.h"
 
@@ -25,6 +26,8 @@ public:
         const Block & header_,
         const std::string & format_name_,
         const FormatSettings & format_settings_,
+        const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse_,
+        const std::optional<std::unordered_map<String, String>> & clickhouse_columns_to_parquet_,
         bool allow_missing_columns_,
         bool null_as_default_,
         FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_,
@@ -49,7 +52,9 @@ public:
         bool allow_inferring_nullable_columns = true,
         bool case_insensitive_matching = false,
         bool allow_geoparquet_parser = true,
-        bool enable_json_parsing = true);
+        bool enable_json_parsing = true,
+        const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse = std::nullopt,
+        const std::optional<std::unordered_map<String, String>> & clickhouse_columns_to_parquet = std::nullopt);
 
     struct DictionaryInfo
     {
@@ -76,7 +81,7 @@ private:
     const Block & header;
     const std::string format_name;
 
-    const FormatSettings & format_settings;
+    FormatSettings format_settings;
     /// If false, throw exception if some columns in header not exists in arrow table.
     bool allow_missing_columns;
     bool null_as_default;
@@ -90,6 +95,9 @@ private:
     /// To avoid converting dictionary from Arrow Dictionary
     /// to LowCardinality every chunk we save it and reuse.
     std::unordered_map<std::string, DictionaryInfo> dictionary_infos;
+
+    std::optional<std::unordered_map<String, String>> parquet_columns_to_clickhouse;
+    std::optional<std::unordered_map<String, String>> clickhouse_columns_to_parquet;
 };
 
 }

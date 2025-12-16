@@ -152,7 +152,7 @@ FutureSetFromSubquery::FutureSetFromSubquery(
     set_and_key->key = PreparedSets::toString(hash_, {});
 
     set_and_key->set = std::make_shared<Set>(size_limits, max_size_for_index, transform_null_in);
-    set_and_key->set->setHeader(source->getCurrentHeader().getColumnsWithTypeAndName());
+    set_and_key->set->setHeader(source->getCurrentHeader()->getColumnsWithTypeAndName());
 }
 
 FutureSetFromSubquery::FutureSetFromSubquery(
@@ -182,7 +182,7 @@ SetPtr FutureSetFromSubquery::get() const
 void FutureSetFromSubquery::setQueryPlan(std::unique_ptr<QueryPlan> source_)
 {
     source = std::move(source_);
-    set_and_key->set->setHeader(source->getCurrentHeader().getColumnsWithTypeAndName());
+    set_and_key->set->setHeader(source->getCurrentHeader()->getColumnsWithTypeAndName());
 }
 
 void FutureSetFromSubquery::setExternalTable(StoragePtr external_table_) { external_table = std::move(external_table_); }
@@ -231,7 +231,7 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
 
     auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-    pipeline.complete(std::make_shared<EmptySink>(Block()));
+    pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
 
     CompletedPipelineExecutor executor(pipeline);
     executor.execute();
@@ -271,7 +271,7 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     set_and_key->set->fillSetElements();
     auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-    pipeline.complete(std::make_shared<EmptySink>(Block()));
+    pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
 
     CompletedPipelineExecutor executor(pipeline);
     executor.execute();

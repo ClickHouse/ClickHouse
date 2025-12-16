@@ -18,9 +18,7 @@ public:
     explicit ASTUserNameWithHost(const String & name_);
     explicit ASTUserNameWithHost(ASTPtr && name_ast_, String && host_pattern_ = "");
 
-    String getBaseName() const;
     String getHostPattern() const;
-
     String toString() const;
 
     String getID(char) const override { return "UserNameWithHost"; }
@@ -28,10 +26,11 @@ public:
     void replace(String name_);
 
 protected:
-    void formatImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 
 private:
     String getStringFromAST(const ASTPtr & ast) const;
+    String getBaseName() const;
 
     ASTPtr username;
     ASTPtr host_pattern;

@@ -79,12 +79,10 @@ public:
         if (!canBeNativeType(*result_type))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "LLVMExecutableFunction unexpected result type in: {}", result_type->getName());
 
-        auto result_column = result_type->createColumn();
+        auto result_column = result_type->createUninitializedColumnWithSize(input_rows_count);
 
         if (input_rows_count)
         {
-            result_column = result_column->cloneResized(input_rows_count);
-
             std::vector<ColumnData> columns(arguments.size() + 1);
             std::vector<ColumnPtr> columns_backup;
 
@@ -497,7 +495,7 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const 
 
             while (current_frame.next_child_to_visit < current_node->children.size())
             {
-                const auto & child = node.children[current_frame.next_child_to_visit];
+                const auto & child = current_node->children[current_frame.next_child_to_visit];
 
                 if (visited_nodes.contains(child))
                 {

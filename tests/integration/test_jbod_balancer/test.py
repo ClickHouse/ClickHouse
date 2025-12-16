@@ -78,7 +78,7 @@ def check_balance(node, table):
 
 
 def wait_until_fully_merged(node, table):
-    for i in range(20):
+    for i in range(200):
         # Wait in-flight merges to finish
         merges_count_query = (
             f"select count() from system.merges where table = '{table}'"

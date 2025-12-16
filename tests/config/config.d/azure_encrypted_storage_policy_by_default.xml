@@ -1,0 +1,6 @@
+<clickhouse>
+    <merge_tree>
+        <storage_policy>azure</storage_policy>
+    </merge_tree>
+    <temporary_data_in_cache>cached_azure</temporary_data_in_cache>
+</clickhouse>

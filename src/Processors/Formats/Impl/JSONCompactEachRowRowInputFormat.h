@@ -24,7 +24,7 @@ class JSONCompactEachRowRowInputFormat final : public RowInputFormatWithNamesAnd
 {
 public:
     JSONCompactEachRowRowInputFormat(
-        const Block & header_,
+        SharedHeader header_,
         ReadBuffer & in_,
         Params params_,
         bool with_names_,

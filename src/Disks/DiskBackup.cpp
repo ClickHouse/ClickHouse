@@ -117,11 +117,6 @@ void DiskBackup::createDirectories(const String & path)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "DiskBackup does not support createDirectories method");
 }
 
-void DiskBackup::clearDirectory(const String &)
-{
-    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "DiskBackup does not support clearDirectory method");
-}
-
 void DiskBackup::moveDirectory(const String &, const String &)
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "DiskBackup does not support moveDirectory method");
@@ -144,7 +139,7 @@ void DiskBackup::replaceFile(const String &, const String &)
 }
 
 std::unique_ptr<ReadBufferFromFileBase>
-DiskBackup::readFile(const String & path, const ReadSettings &, std::optional<size_t>, std::optional<size_t>) const
+DiskBackup::readFile(const String & path, const ReadSettings &, std::optional<size_t>) const
 {
     std::string replaced_path = replacePathPrefix(path);
     return backup->readFile(replaced_path);

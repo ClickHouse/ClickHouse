@@ -1,11 +1,8 @@
--- Tags: no-fasttest, long, no-asan, no-ubsan, no-debug
+-- Tags: no-fasttest, long, no-asan, no-ubsan, no-tsan, no-debug
 -- ^^ Disable test for slow builds: generating data takes time but a sufficiently large data set
 -- is necessary for different hnsw_candidate_list_size_for_search settings to make a difference
 
 -- Tests vector search with setting 'hnsw_candidate_list_size_for_search'
-
-SET enable_vector_similarity_index = 1;
-SET max_execution_time = 600;
 
 DROP TABLE IF EXISTS tab;
 

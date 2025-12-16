@@ -93,7 +93,44 @@ private:
 
 REGISTER_FUNCTION(GenerateUUIDv4)
 {
-    factory.registerFunction<FunctionGenerateUUIDv4>();
+    /// generateUUIDv4 documentation
+    FunctionDocumentation::Description description_generateUUIDv4 = R"(Generates a [version 4](https://tools.ietf.org/html/rfc4122#section-4.4) [UUID](../data-types/uuid.md).)";
+    FunctionDocumentation::Syntax syntax_generateUUIDv4 = "generateUUIDv4([expr])";
+    FunctionDocumentation::Arguments arguments_generateUUIDv4 = {
+        {"expr", "Optional. An arbitrary expression used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_generateUUIDv4 = {"Returns a UUIDv4.", {"UUID"}};
+    FunctionDocumentation::Examples examples_generateUUIDv4 = {
+    {
+        "Usage example",
+        R"(
+SELECT generateUUIDv4(number) FROM numbers(3);
+        )",
+        R"(
+┌─generateUUIDv4(number)───────────────┐
+│ fcf19b77-a610-42c5-b3f5-a13c122f65b6 │
+│ 07700d36-cb6b-4189-af1d-0972f23dc3bc │
+│ 68838947-1583-48b0-b9b7-cf8268dd343d │
+└──────────────────────────────────────┘
+        )"
+    },
+    {
+        "Common subexpression elimination",
+        R"(
+SELECT generateUUIDv4(1), generateUUIDv4(1);
+        )",
+        R"(
+┌─generateUUIDv4(1)────────────────────┬─generateUUIDv4(2)────────────────────┐
+│ 2d49dc6e-ddce-4cd0-afb8-790956df54c1 │ 2d49dc6e-ddce-4cd0-afb8-790956df54c1 │
+└──────────────────────────────────────┴──────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_generateUUIDv4 = {1, 1};
+    FunctionDocumentation::Category category_generateUUIDv4 = FunctionDocumentation::Category::UUID;
+    FunctionDocumentation documentation_generateUUIDv4 = {description_generateUUIDv4, syntax_generateUUIDv4, arguments_generateUUIDv4, returned_value_generateUUIDv4, examples_generateUUIDv4, introduced_in_generateUUIDv4, category_generateUUIDv4};
+
+    factory.registerFunction<FunctionGenerateUUIDv4>(documentation_generateUUIDv4);
 }
 
 }

@@ -16,12 +16,13 @@
 namespace DB
 {
 
-MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_, const ProfileEvents::Event & read_event_, const ProfileEvents::Event & write_event_)
+MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_, bool secure_required_, const ProfileEvents::Event & read_event_, const ProfileEvents::Event & write_event_)
     : server(server_)
     , log(getLogger("MySQLHandlerFactory"))
 #if USE_SSL
     , keypair(KeyPair::generateRSA())
 #endif
+    , secure_required(secure_required_)
     , read_event(read_event_)
     , write_event(write_event_)
 {
@@ -66,11 +67,12 @@ Poco::Net::TCPServerConnection * MySQLHandlerFactory::createConnection(const Poc
         tcp_server,
         socket,
         ssl_enabled,
+        secure_required,
         connection_id,
         keypair
     );
 #else
-    return new MySQLHandler(server, tcp_server, socket, ssl_enabled, connection_id);
+    return new MySQLHandler(server, tcp_server, socket, ssl_enabled, secure_required, connection_id);
 #endif
 
 }

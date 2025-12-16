@@ -491,4 +491,17 @@ struct ProfileEventsCommand : public IFourLetterCommand
     ~ProfileEventsCommand() override = default;
 };
 
+struct ToggleRequestLogging : public IFourLetterCommand
+{
+    explicit ToggleRequestLogging(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "lgrq"; }
+    String run() override;
+    ~ToggleRequestLogging() override = default;
+};
+
+
 }

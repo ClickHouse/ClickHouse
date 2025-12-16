@@ -6,6 +6,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <base/defines.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -42,7 +43,7 @@ public:
         FileIterator(
             std::shared_ptr<ObjectStorageQueueMetadata> metadata_,
             ObjectStoragePtr object_storage_,
-            ConfigurationPtr configuration_,
+            StorageObjectStorageConfigurationPtr configuration_,
             const StorageID & storage_id_,
             size_t list_objects_batch_size_,
             const ActionsDAG::Node * predicate_,
@@ -75,7 +76,7 @@ public:
 
         const std::shared_ptr<ObjectStorageQueueMetadata> metadata;
         const ObjectStoragePtr object_storage;
-        const ConfigurationPtr configuration;
+        const StorageObjectStorageConfigurationPtr configuration;
         const NamesAndTypesList virtual_columns;
         const bool file_deletion_on_processed_enabled;
         const ObjectStorageQueueMode mode;
@@ -87,15 +88,15 @@ public:
         ExpressionActionsPtr filter_expr;
         bool recursive{false};
 
-        Source::ObjectInfos object_infos TSA_GUARDED_BY(next_mutex);
+        ObjectInfos object_infos TSA_GUARDED_BY(next_mutex);
         std::vector<FileMetadataPtr> file_metadatas;
         bool is_finished = false;
         std::mutex next_mutex;
         size_t index = 0;
 
         std::pair<ObjectInfoPtr, FileMetadataPtr> next();
-        void filterProcessableFiles(Source::ObjectInfos & objects);
-        void filterOutProcessedAndFailed(Source::ObjectInfos & objects);
+        void filterProcessableFiles(ObjectInfos & objects);
+        void filterOutProcessedAndFailed(ObjectInfos & objects);
 
         std::atomic<bool> & shutdown_called;
         std::mutex mutex;
@@ -126,6 +127,7 @@ public:
         };
         NextKeyFromBucket getNextKeyFromAcquiredBucket(size_t processor) TSA_REQUIRES(mutex);
         bool hasKeysForProcessor(const Processor & processor) const;
+        std::string bucketHoldersToString() const TSA_REQUIRES(mutex);
     };
 
     struct CommitSettings
@@ -144,17 +146,20 @@ public:
         Stopwatch elapsed_time{CLOCK_MONOTONIC_COARSE};
     };
     using ProcessingProgressPtr = std::shared_ptr<ProcessingProgress>;
+    using AfterProcessingSettings = ObjectStorageQueuePostProcessor::AfterProcessingSettings;
 
     ObjectStorageQueueSource(
         String name_,
         size_t processor_id_,
         std::shared_ptr<FileIterator> file_iterator_,
-        ConfigurationPtr configuration_,
+        StorageObjectStorageConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
         ProcessingProgressPtr progress_,
         const ReadFromFormatInfo & read_from_format_info_,
         const std::optional<FormatSettings> & format_settings_,
+        FormatParserSharedResourcesPtr parser_shared_resources_,
         const CommitSettings & commit_settings_,
+        const AfterProcessingSettings & after_processing_settings_,
         std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
         ContextPtr context_,
         size_t max_block_size_,
@@ -170,6 +175,8 @@ public:
     String getName() const override;
 
     Chunk generate() override;
+
+    void onFinish() override { parser_shared_resources->finishStream(); }
 
     /// Commit files after insertion into storage finished.
     /// `success` defines whether insertion was successful or not.
@@ -205,12 +212,14 @@ private:
     const String name;
     const size_t processor_id;
     const std::shared_ptr<FileIterator> file_iterator;
-    const ConfigurationPtr configuration;
+    const StorageObjectStorageConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
     const ProcessingProgressPtr progress;
     ReadFromFormatInfo read_from_format_info;
     const std::optional<FormatSettings> format_settings;
+    FormatParserSharedResourcesPtr parser_shared_resources;
     const CommitSettings commit_settings;
+    const AfterProcessingSettings after_processing_settings;
     const std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
     const size_t max_block_size;
     const ObjectStorageQueueMode mode;

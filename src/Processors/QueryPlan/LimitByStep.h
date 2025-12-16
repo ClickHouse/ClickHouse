@@ -9,7 +9,7 @@ class LimitByStep : public ITransformingStep
 {
 public:
     explicit LimitByStep(
-            const Header & input_header_,
+            const SharedHeader & input_header_,
             size_t group_length_, size_t group_offset_, Names columns_);
 
     String getName() const override { return "LimitBy"; }
@@ -24,6 +24,7 @@ public:
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
+    void applyOrder(SortDescription sort_desc);
 private:
     void updateOutputHeader() override
     {
@@ -32,7 +33,10 @@ private:
 
     size_t group_length;
     size_t group_offset;
+
     Names columns;
+
+    bool in_order = false;
 };
 
 }

@@ -47,13 +47,13 @@ private:
             key_columns.emplace_back(key_column_to_read.column);
             key_types.emplace_back(key_column_to_read.type);
 
-            if (header.has(key_column_to_read.name))
+            if (header->has(key_column_to_read.name))
                 name_to_column.emplace(key_column_to_read.name, key_column_to_read.column);
         }
 
         for (const auto & data_column : data_columns)
         {
-            if (header.has(data_column.name))
+            if (header->has(data_column.name))
                 name_to_column.emplace(data_column.name, data_column.column);
         }
 
@@ -76,9 +76,9 @@ private:
         }
 
         std::vector<ColumnPtr> result_columns;
-        result_columns.reserve(header.columns());
+        result_columns.reserve(header->columns());
 
-        for (const auto & column_with_type : header)
+        for (const auto & column_with_type : *header)
         {
             const auto & header_name = column_with_type.name;
             auto it = name_to_column.find(header_name);
@@ -174,7 +174,7 @@ void DictionarySourceCoordinator::initialize(const Names & column_names)
         columns_with_type.emplace_back(std::move(column_with_type));
     }
 
-    header = Block(std::move(columns_with_type));
+    header = std::make_shared<const Block>(Block(std::move(columns_with_type)));
 }
 
 ColumnsWithTypeAndName

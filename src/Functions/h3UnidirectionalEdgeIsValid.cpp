@@ -94,7 +94,32 @@ public:
 
 REGISTER_FUNCTION(H3UnidirectionalEdgeIsValid)
 {
-    factory.registerFunction<FunctionH3UnidirectionalEdgeIsValid>();
+    FunctionDocumentation::Description description = R"(
+Determines if the provided [H3](#h3-index) is a valid unidirectional edge index.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3UnidirectionalEdgeIsValid(index)";
+    FunctionDocumentation::Arguments arguments = {
+        {"index", "Hexagon index number.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns `1` if the H3 index is a valid unidirectional edge, `0` otherwise.",
+        {"UInt8"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Check if an H3 index is a valid unidirectional edge",
+            "SELECT h3UnidirectionalEdgeIsValid(1248204388774707199) AS validOrNot",
+            R"(
+┌─validOrNot─┐
+│          1 │
+└────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3UnidirectionalEdgeIsValid>(documentation);
 }
 
 }

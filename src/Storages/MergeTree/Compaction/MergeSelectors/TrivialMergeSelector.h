@@ -21,10 +21,10 @@ public:
         size_t num_ranges_to_choose = 100;
     };
 
-    PartsRange select(
+    PartsRanges select(
         const PartsRanges & parts_ranges,
-        size_t max_total_size_to_merge,
-        RangeFilter range_filter) const override;
+        const MergeSizes & max_merge_sizes,
+        const RangeFilter & range_filter) const override;
 
 private:
     const Settings settings;

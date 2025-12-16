@@ -151,7 +151,7 @@ def insert(
                 query.append("SET max_insert_block_size = 256")
             if with_time_column:
                 query.append(
-                    "INSERT INTO {table_name} ({col0}, {col1}, time) SELECT number AS {col0}, number + 1 AS {col1}, now() + 10 AS time FROM numbers_mt({chunk})".format(
+                    "INSERT INTO {table_name} ({col0}, {col1}, time) SELECT number AS {col0}, number + 1 AS {col1}, now() + 10 AS time FROM numbers_mt({chunk}) ORDER BY ALL".format(
                         table_name=table_name,
                         chunk=chunk,
                         col0=col_names[0],
@@ -160,7 +160,7 @@ def insert(
                 )
             elif slow:
                 query.append(
-                    "INSERT INTO {table_name} ({col0}, {col1}) SELECT number + sleepEachRow(0.001) AS {col0}, number + 1 AS {col1} FROM numbers_mt({chunk}) SETTINGS function_sleep_max_microseconds_per_block = 0".format(
+                    "INSERT INTO {table_name} ({col0}, {col1}) SELECT number + sleepEachRow(0.001) AS {col0}, number + 1 AS {col1} FROM numbers_mt({chunk}) ORDER BY ALL SETTINGS function_sleep_max_microseconds_per_block = 0".format(
                         table_name=table_name,
                         chunk=chunk,
                         col0=col_names[0],
@@ -169,7 +169,7 @@ def insert(
                 )
             else:
                 query.append(
-                    "INSERT INTO {table_name} ({col0},{col1}) SELECT number + {offset} AS {col0}, number + 1 + {offset} AS {col1} FROM numbers_mt({chunk})".format(
+                    "INSERT INTO {table_name} ({col0},{col1}) SELECT number + {offset} AS {col0}, number + 1 + {offset} AS {col1} FROM numbers_mt({chunk}) ORDER BY ALL".format(
                         table_name=table_name,
                         chunk=chunk,
                         col0=col_names[0],

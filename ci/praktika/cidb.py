@@ -4,10 +4,19 @@ import json
 import urllib
 from typing import Optional
 
-import requests
-
 from ._environment import _Environment
 from .info import Info
+
+try:
+    import requests
+except ImportError as ex:
+    if not Info().is_local_run:
+        raise ex
+    else:
+        print(
+            f"WARNING: 'requests' module is not installed: {ex}. CIDB will not work - ok for local runs only."
+        )
+
 from .result import Result
 from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
@@ -45,6 +54,45 @@ class CIDB:
             "X-ClickHouse-Key": passwd,
         }
 
+    def get_link_to_test_case_statistics(
+        self, test_name: str, job_name: Optional[str] = None, url="", user=""
+    ) -> str:
+        """
+        Build a link to query CI DB statistics for a specific test case.
+        The link format follows the Play-style URL: <self.url>[?user=<user>]#<base64(sql)>.
+        Groups by day and shows recent failures for the test. Optionally filters by job_name.
+        """
+        # Basic sanitization for SQL string literals
+        tn = (test_name or "").replace("'", "''")
+        jn = (job_name or "").replace("'", "''") if job_name else None
+        # Prefer configured table name if available, fall back to default
+        table = Settings.CI_DB_TABLE_NAME or "checks"
+
+        query = f"""\
+WITH
+    90 AS interval_days
+SELECT
+    toStartOfDay(check_start_time) AS day,
+    count() AS failures,
+    groupUniqArray(pull_request_number) AS prs,
+    any(report_url) AS report_url
+FROM {table}
+WHERE (now() - toIntervalDay(interval_days)) <= check_start_time
+    AND test_name = '{tn}'
+    -- AND check_name = '{job_name}'
+    AND test_status IN ('FAIL', 'ERROR')
+    AND ((head_ref = 'master' AND pull_request_number = 0) OR pull_request_number != 0)
+GROUP BY day
+ORDER BY day DESC
+"""
+
+        # Compose base URL, optionally attaching user parameter
+        base = url or self.url or ""
+        if user:
+            sep = "&" if "?" in base else "?"
+            base = f"{base}/play{sep}user={urllib.parse.quote(user, safe='')}&run=1"
+        return f"{base}#{Utils.to_base64(query)}"
+
     @classmethod
     def _get_sub_result_with_test_cases(
         cls, result: Result, result_name_for_cidb
@@ -70,13 +118,13 @@ class CIDB:
             check_status=result.status,
             check_duration_ms=int(result.duration * 1000) if result.duration else None,
             check_start_time=Utils.timestamp_to_str(result.start_time),
-            report_url=Info().get_report_url(),
+            report_url=Info().get_job_report_url(),
             pull_request_url=env.CHANGE_URL,
             base_ref=env.BASE_BRANCH,
             base_repo=env.REPOSITORY,
             head_ref=env.BRANCH,
             head_repo=env.FORK_NAME,
-            task_url="",
+            task_url=Info().get_job_url(),
             instance_type=",".join(
                 filter(None, [env.INSTANCE_TYPE, env.INSTANCE_LIFE_CYCLE])
             ),
@@ -107,7 +155,7 @@ class CIDB:
                 record.test_context_raw = result_.info
                 yield json.dumps(dataclasses.asdict(record))
 
-    def query(self, query: str, retries: int = 1):
+    def query(self, query: str, retries: int = 1, log_level="warning"):
         """
         Executes a SELECT query on CI DB with retry support.
 
@@ -118,8 +166,10 @@ class CIDB:
         params = {
             "database": Settings.CI_DB_DB_NAME,
             "query": query,
-            "send_logs_level": "warning",
         }
+
+        if log_level:
+            params["send_logs_level"] = log_level
 
         for attempt in range(1, retries + 1):
             try:

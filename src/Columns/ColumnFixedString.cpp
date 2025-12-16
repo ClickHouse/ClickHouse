@@ -119,17 +119,16 @@ void ColumnFixedString::insertData(const char * pos, size_t length)
     memset(chars.data() + old_size + length, 0, n - length);
 }
 
-const char * ColumnFixedString::deserializeAndInsertFromArena(const char * pos)
+void ColumnFixedString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings *)
 {
     size_t old_size = chars.size();
     chars.resize(old_size + n);
-    memcpy(chars.data() + old_size, pos, n);
-    return pos + n;
+    in.readStrict(reinterpret_cast<char *>(chars.data() + old_size), n);
 }
 
-const char * ColumnFixedString::skipSerializedInArena(const char * pos) const
+void ColumnFixedString::skipSerializedInArena(ReadBuffer & in) const
 {
-    return pos + n;
+    in.ignore(n);
 }
 
 void ColumnFixedString::updateHashWithValue(size_t index, SipHash & hash) const
@@ -219,7 +218,7 @@ size_t ColumnFixedString::estimateCardinalityInPermutedRange(const Permutation &
     for (size_t i = equal_range.from; i < equal_range.to; ++i)
     {
         size_t permuted_i = permutation[i];
-        StringRef value = getDataAt(permuted_i);
+        auto value = getDataAt(permuted_i);
         elements.emplace(value, inserted);
     }
     return elements.size();
@@ -453,6 +452,13 @@ void ColumnFixedString::updateAt(const IColumn & src, size_t dst_pos, size_t src
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of FixedString doesn't match");
 
     memcpy(chars.data() + dst_pos * n, src_fixed.chars.data() + src_pos * n, n);
+}
+
+std::span<char> ColumnFixedString::insertRawUninitialized(size_t count)
+{
+    size_t start = chars.size();
+    chars.resize(start + count * n);
+    return {reinterpret_cast<char *>(chars.data() + start), count * n};
 }
 
 }

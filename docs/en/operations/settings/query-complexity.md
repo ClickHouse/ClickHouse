@@ -1,12 +1,13 @@
 ---
 description: 'Settings which restrict query complexity.'
-sidebar_label: 'Restrictions on Query Complexity'
+sidebar_label: 'Restrictions on query complexity'
 sidebar_position: 59
 slug: /operations/settings/query-complexity
-title: 'Restrictions on Query Complexity'
+title: 'Restrictions on query complexity'
+doc_type: 'reference'
 ---
 
-# Restrictions on Query Complexity
+# Restrictions on query complexity
 
 ## Overview {#overview}
 

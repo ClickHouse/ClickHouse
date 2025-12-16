@@ -36,7 +36,6 @@ ASTPtr ASTDropQuery::clone() const
 
 void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "");
     if (kind == ASTDropQuery::Kind::Drop)
         ostr << "DROP ";
     else if (kind == ASTDropQuery::Kind::Detach)
@@ -67,8 +66,6 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
 
     if (if_empty)
         ostr << "IF EMPTY ";
-
-    ostr << (settings.hilite ? hilite_none : "");
 
     if (!table && !database_and_tables && database)
     {
@@ -111,14 +108,10 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
 
     if (!like.empty())
     {
-        ostr << (settings.hilite ? hilite_keyword : "")
+        ostr
             << (not_like ? " NOT" : "")
             << (case_insensitive_like ? " ILIKE " : " LIKE")
-            << (settings.hilite ? hilite_none : "");
-        if (settings.hilite)
-            highlightStringWithMetacharacters(quoteString(like), ostr, "%_");
-        else
-            ostr << quoteString(like);
+            << quoteString(like);
     }
 
     formatOnCluster(ostr, settings);
@@ -127,7 +120,7 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
         ostr << " PERMANENTLY";
 
     if (sync)
-        ostr << (settings.hilite ? hilite_keyword : "") << " SYNC" << (settings.hilite ? hilite_none : "");
+        ostr << " SYNC";
 }
 
 ASTs ASTDropQuery::getRewrittenASTsOfSingleTable()

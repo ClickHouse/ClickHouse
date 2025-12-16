@@ -14,7 +14,7 @@ REGISTER_FUNCTION(ToStartOfMillisecond)
 Rounds down a date with time to the start of the milliseconds.
     )";
     FunctionDocumentation::Syntax syntax = R"(
-toStartOfMillisecond(datetime, [timezone])
+toStartOfMillisecond(datetime[, timezone])
     )";
     FunctionDocumentation::Arguments arguments = {
         {"datetime", "Date and time.", {"DateTime64"}},
@@ -43,7 +43,7 @@ SELECT toStartOfMillisecond(dt64, 'Asia/Istanbul');
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionToStartOfMillisecond>();
+    factory.registerFunction<FunctionToStartOfMillisecond>(documentation);
 }
 
 using FunctionToStartOfMicrosecond = FunctionDateOrDateTimeToSomething<DataTypeDateTime64, ToStartOfMicrosecondImpl>;
@@ -54,7 +54,7 @@ REGISTER_FUNCTION(ToStartOfMicrosecond)
 Rounds down a date with time to the start of the microseconds.
     )";
     FunctionDocumentation::Syntax syntax = R"(
-toStartOfMicrosecond(datetime, [timezone])
+toStartOfMicrosecond(datetime[, timezone])
     )";
     FunctionDocumentation::Arguments arguments = {
         {"datetime", "Date and time.", {"DateTime64"}},
@@ -94,7 +94,7 @@ REGISTER_FUNCTION(ToStartOfNanosecond)
 Rounds down a date with time to the start of the nanoseconds.
         )";
     FunctionDocumentation::Syntax syntax = R"(
-toStartOfNanosecond(datetime, [timezone])
+toStartOfNanosecond(datetime[, timezone])
         )";
     FunctionDocumentation::Arguments arguments = {
         {"datetime", "Date and time.", {"DateTime64"}},

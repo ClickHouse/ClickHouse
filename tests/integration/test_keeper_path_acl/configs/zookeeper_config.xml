@@ -13,10 +13,17 @@
         <path_acls>
             <acl1>
                 <path>/test_path</path>
-                <scheme>digest</scheme>
-                <id>user1:password1</id>
+                <scheme>world</scheme>
+                <id>anyone</id>
                 <permissions>read,write</permissions>
             </acl1>
+            <acl2>
+                <path>/test_path_another</path>
+                <scheme>world</scheme>
+                <id>anyone</id>
+                <permissions>read,write</permissions>
+                <apply_to_children>1</apply_to_children>
+            </acl2>
         </path_acls>
     </zookeeper>
 </clickhouse>

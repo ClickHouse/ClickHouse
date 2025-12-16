@@ -63,6 +63,7 @@ namespace ErrorCodes
     extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
+    extern const int OPENSSL_ERROR;
 }
 
 static const size_t PACKET_HEADER_SIZE = 4;
@@ -169,6 +170,12 @@ static String killConnectionIdReplacementQuery(const String & query)
     return query;
 }
 
+/// Replace "SHOW COLLATIONS" into empty response.
+static String showCollationsReplacementQuery(const String & /*query*/)
+{
+    return "SELECT 1 LIMIT 0";
+}
+
 
 /** MySQL returns this error code, HY000, so should we.
   *
@@ -197,13 +204,15 @@ MySQLHandler::MySQLHandler(
     IServer & server_,
     TCPServer & tcp_server_,
     const Poco::Net::StreamSocket & socket_,
-    bool ssl_enabled, uint32_t connection_id_,
+    bool ssl_enabled, bool secure_required_,
+     uint32_t connection_id_,
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
     , log(getLogger("MySQLHandler"))
+    , secure_required(secure_required_)
     , connection_id(connection_id_)
     , auth_plugin(new MySQLProtocol::Authentication::Native41())
     , read_event(read_event_)
@@ -218,6 +227,7 @@ MySQLHandler::MySQLHandler(
     queries_replacements.emplace("KILL QUERY", killConnectionIdReplacementQuery);
     queries_replacements.emplace("SHOW TABLE STATUS LIKE", showTableStatusReplacementQuery);
     queries_replacements.emplace("SHOW VARIABLES", selectEmptyReplacementQuery);
+    queries_replacements.emplace("SHOW COLLATION", showCollationsReplacementQuery);
     settings_replacements.emplace("SQL_SELECT_LIMIT", "limit");
     settings_replacements.emplace("NET_WRITE_TIMEOUT", "send_timeout");
     settings_replacements.emplace("NET_READ_TIMEOUT", "receive_timeout");
@@ -227,7 +237,7 @@ MySQLHandler::~MySQLHandler() = default;
 
 void MySQLHandler::run()
 {
-    setThreadName("MySQLHandler");
+    DB::setThreadName(ThreadName::MYSQL_HANDLER);
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::MYSQL);
     SCOPE_EXIT({ session.reset(); });
@@ -268,6 +278,9 @@ void MySQLHandler::run()
         if (!(client_capabilities & CLIENT_PROTOCOL_41))
             throw Exception(ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES, "Required capability: CLIENT_PROTOCOL_41.");
 
+        if (secure_required && !(client_capabilities & CLIENT_SSL))
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "SSL connection required.");
+
         authenticate(handshake_response.username, handshake_response.auth_plugin_name, handshake_response.auth_response);
 
         try
@@ -305,6 +318,7 @@ void MySQLHandler::run()
 
             if (!tcp_server.isOpen())
                 return;
+
             try
             {
                 switch (command)
@@ -550,10 +564,10 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         if (should_replace)
         {
             ReadBufferFromString replacement(replacement_query);
-            executeQuery(replacement, *out, false, query_context, set_result_details, QueryFlags{}, format_settings);
+            executeQuery(replacement, *out, query_context, set_result_details, QueryFlags{}, format_settings);
         }
         else
-            executeQuery(payload, *out, false, query_context, set_result_details, QueryFlags{}, format_settings);
+            executeQuery(payload, *out, query_context, set_result_details, QueryFlags{}, format_settings);
 
 
         if (!with_output)
@@ -664,11 +678,12 @@ MySQLHandlerSSL::MySQLHandlerSSL(
     TCPServer & tcp_server_,
     const Poco::Net::StreamSocket & socket_,
     bool ssl_enabled,
+    bool secure_required_,
     uint32_t connection_id_,
     KeyPair & private_key_,
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
-    : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, connection_id_, read_event_, write_event_)
+    : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, secure_required_, connection_id_, read_event_, write_event_)
     , private_key(private_key_)
 {}
 

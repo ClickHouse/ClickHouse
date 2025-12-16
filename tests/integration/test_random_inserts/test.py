@@ -51,8 +51,8 @@ def test_random_inserts(started_cluster):
     with PartitionManager() as pm_random_drops:
         for sacrifice in nodes:
             pass  # This test doesn't work with partition problems still
-            # pm_random_drops._add_rule({'probability': 0.01, 'destination': sacrifice.ip_address, 'source_port': 2181, 'action': 'REJECT --reject-with tcp-reset'})
-            # pm_random_drops._add_rule({'probability': 0.01, 'source': sacrifice.ip_address, 'destination_port': 2181, 'action': 'REJECT --reject-with tcp-reset'})
+            # pm_random_drops.add_rule({'probability': 0.01, 'destination': sacrifice.ip_address, 'source_port': 2181, 'action': 'REJECT --reject-with tcp-reset'})
+            # pm_random_drops.add_rule({'probability': 0.01, 'source': sacrifice.ip_address, 'destination_port': 2181, 'action': 'REJECT --reject-with tcp-reset'})
 
         min_timestamp = int(time.time())
         max_timestamp = min_timestamp + DURATION_SECONDS

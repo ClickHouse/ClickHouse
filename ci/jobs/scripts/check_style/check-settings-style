@@ -46,6 +46,7 @@ ALL_DECLARATION_FILES="
     $ROOT_PATH/src/Storages/RocksDB/RocksDBSettings.cpp
     $ROOT_PATH/src/Storages/SetSettings.cpp
     $ROOT_PATH/src/Storages/TimeSeries/TimeSeriesSettings.cpp
+    $ROOT_PATH/src/Storages/YTsaurus/YTsaurusSettings.cpp
 "
 
 # We create an initial file with the shape {setting_name} {ClassName}{Type} SettingsDeclaration
@@ -119,6 +120,7 @@ done
 SETTINGS_H_EXCLUDES=(
     # Templated code
     --exclude "$ROOT_PATH/src/Access/resolveSetting.h"
+    --exclude "$ROOT_PATH/src/Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h"
 
     # For functions we allow it for regular functions (due to lots of
     # templates), but forbid it in interface (IFunction) part.

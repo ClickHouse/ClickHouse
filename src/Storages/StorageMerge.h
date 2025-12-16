@@ -140,6 +140,8 @@ private:
 
     ColumnSizeByName getColumnSizes() const override;
 
+    std::optional<ColumnSizeByName> tryGetColumnSizes() const override;
+
     ColumnsDescription getColumnsDescriptionFromSourceTables(const ContextPtr & context) const;
 
     static VirtualColumnsDescription createVirtuals();
@@ -167,7 +169,7 @@ public:
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
-        Block common_header_,
+        SharedHeader common_header_,
         size_t max_block_size,
         size_t num_streams,
         StoragePtr storage,
@@ -190,7 +192,7 @@ public:
 private:
     const size_t required_max_block_size;
     const size_t requested_num_streams;
-    Block common_header;
+    SharedHeader common_header;
 
     StorageListWithLocks selected_tables;
     Names all_column_names;

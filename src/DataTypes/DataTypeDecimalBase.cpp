@@ -33,7 +33,7 @@ bool decimalCheckArithmeticOverflow(ContextPtr context)
 template <is_decimal T>
 Field DataTypeDecimalBase<T>::getDefault() const
 {
-    return DecimalField(T(0), scale);
+    return DecimalField<T>(T(0), scale);
 }
 
 template <is_decimal T>

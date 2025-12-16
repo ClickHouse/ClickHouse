@@ -1,23 +1,18 @@
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/ObjectUtils.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/IInterpreter.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Planner/Utils.h>
-#include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
@@ -34,10 +29,8 @@
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/StorageSnapshot.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/getStructureOfRemoteTable.h>
-#include <base/defines.h>
 
 
 namespace DB
@@ -77,6 +70,8 @@ namespace Setting
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool async_query_sending_for_remote;
+    extern const SettingsString cluster_for_parallel_replicas;
+    extern const SettingsBool parallel_replicas_support_projection;
 }
 
 namespace DistributedSetting
@@ -206,15 +201,28 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     /// disable parallel replicas if cluster contains only shards with 1 replica
     if (context->canUseTaskBasedParallelReplicas())
     {
-        bool disable_parallel_replicas = true;
-        for (const auto & shard : cluster.getShardsInfo())
+        bool disable_parallel_replicas = false;
+        if (is_remote_function)
         {
-            if (shard.getAllNodeCount() > 1)
+            if (cluster.getName().empty()) // disable parallel replicas with remote() table functions w/o configured cluster
+                disable_parallel_replicas = true;
+            else
+                new_settings[Setting::cluster_for_parallel_replicas] = cluster.getName();
+        }
+
+        if (!disable_parallel_replicas)
+        {
+            disable_parallel_replicas = true;
+            for (const auto & shard : cluster.getShardsInfo())
             {
-                disable_parallel_replicas = false;
-                break;
+                if (shard.getAllNodeCount() > 1)
+                {
+                    disable_parallel_replicas = false;
+                    break;
+                }
             }
         }
+
         if (disable_parallel_replicas)
             new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
     }
@@ -313,7 +321,7 @@ getShardFilterGeneratorForCustomKey(const Cluster & cluster, ContextPtr context,
 
 void executeQuery(
     QueryPlan & query_plan,
-    const Block & header,
+    SharedHeader header,
     QueryProcessingStage::Enum processed_stage,
     const StorageID & main_table,
     const ASTPtr & table_func_ptr,
@@ -377,7 +385,7 @@ void executeQuery(
             // decide for each shard if parallel reading from replicas should be enabled
             // according to settings and number of replicas declared per shard
             const auto & addresses = cluster->getShardsAddresses().at(i);
-            bool parallel_replicas_enabled = addresses.size() > 1 && context->canUseTaskBasedParallelReplicas();
+            const bool parallel_replicas_enabled = addresses.size() > 1 && new_context->canUseTaskBasedParallelReplicas();
 
             stream_factory.createForShard(
                 shard_info,
@@ -470,7 +478,7 @@ void executeQuery(
         return;
     }
 
-    Headers input_headers;
+    SharedHeaders input_headers;
     input_headers.reserve(plans.size());
     for (auto & plan : plans)
         input_headers.emplace_back(plan->getCurrentHeader());
@@ -479,10 +487,11 @@ void executeQuery(
     query_plan.unitePlans(std::move(union_step), std::move(plans));
 }
 
-static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context)
+static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context, const UInt64 & shard_num)
 {
     const auto & settings = context->getSettingsRef();
     auto context_mutable = Context::createCopy(context);
+
     /// check hedged connections setting
     if (settings[Setting::use_hedged_requests].value)
     {
@@ -504,10 +513,24 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
         /// disable hedged connections -> parallel replicas uses own logic to choose replicas
         context_mutable->setSetting("use_hedged_requests", Field{false});
     }
+
+    /// If parallel replicas executed over distributed table i.e. in scope of a shard,
+    /// currently, local plan for parallel replicas is not created.
+    /// Having local plan is prerequisite to use projection with parallel replicas.
+    /// So, currently, we disable projection support with parallel replicas when reading over distributed table with parallel replicas
+    /// Otherwise, it can lead to incorrect results, in particular with use of implicit projection min_max_count
+    if (shard_num > 0 && settings[Setting::parallel_replicas_support_projection].value)
+    {
+        LOG_TRACE(
+            logger,
+            "Disabling 'parallel_replicas_support_projection'. Currently, it's not supported for queries with parallel replicas over distributed tables");
+        context_mutable->setSetting("parallel_replicas_support_projection", Field{false});
+    }
+
     return context_mutable;
 }
 
-static std::pair<ClusterPtr, size_t> prepairClusterForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context)
+static std::pair<ClusterPtr, size_t> prepareClusterForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context)
 {
     /// check cluster for parallel replicas
     auto not_optimized_cluster = context->getClusterForParallelReplicas();
@@ -556,7 +579,7 @@ static std::pair<ClusterPtr, size_t> prepairClusterForParallelReplicas(const Log
     return {new_cluster, shard_num};
 }
 
-static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepairConnectionPoolsForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context, const ClusterPtr & cluster)
+static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context, const ClusterPtr & cluster)
 {
     const auto & settings = context->getSettingsRef();
 
@@ -606,10 +629,14 @@ static std::optional<size_t> findLocalReplicaIndexAndUpdatePools(std::vector<Con
     for (size_t i = 0, s = pools.size(); i < s; ++i)
     {
         const auto & hostname = pools[i]->getHost();
+        const auto & port = pools[i]->getPort();
         const auto found = std::find_if(
             begin(shard.local_addresses),
             end(shard.local_addresses),
-            [&hostname](const Cluster::Address & local_addr) { return hostname == local_addr.host_name; });
+            [&hostname, &port](const Cluster::Address & local_addr)
+            {
+                return hostname == local_addr.host_name && port == local_addr.port;
+            });
         if (found != shard.local_addresses.end())
         {
             local_replica_index = i;
@@ -636,7 +663,7 @@ static std::optional<size_t> findLocalReplicaIndexAndUpdatePools(std::vector<Con
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
     const StorageID & storage_id,
-    const Block & header,
+    SharedHeader header,
     QueryProcessingStage::Enum processed_stage,
     const ASTPtr & query_ast,
     ContextPtr context,
@@ -645,11 +672,11 @@ void executeQueryWithParallelReplicas(
 {
     auto logger = getLogger("executeQueryWithParallelReplicas");
     LOG_DEBUG(logger, "Executing read from {}, header {}, query ({}), stage {} with parallel replicas",
-        storage_id.getNameForLogs(), header.dumpStructure(), query_ast->formatForLogging(), processed_stage);
+        storage_id.getNameForLogs(), header->dumpStructure(), query_ast->formatForLogging(), processed_stage);
 
-    auto new_context = updateContextForParallelReplicas(logger, context);
-    auto [cluster, shard_num] = prepairClusterForParallelReplicas(logger, new_context);
-    auto [connection_pools, max_replicas_to_use] = prepairConnectionPoolsForParallelReplicas(logger, new_context, cluster);
+    auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, context);
+    auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
+    auto [connection_pools, max_replicas_to_use] = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
 
     auto external_tables = new_context->getExternalTables();
     auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(max_replicas_to_use);
@@ -664,7 +691,7 @@ void executeQueryWithParallelReplicas(
 
         auto [local_plan, with_parallel_replicas] = createLocalPlanForParallelReplicas(
             query_ast,
-            header,
+            *header,
             new_context,
             processed_stage,
             coordinator,
@@ -703,7 +730,7 @@ void executeQueryWithParallelReplicas(
         auto remote_plan = std::make_unique<QueryPlan>();
         remote_plan->addStep(std::move(read_from_remote));
 
-        Headers input_headers;
+        SharedHeaders input_headers;
         input_headers.reserve(2);
         input_headers.emplace_back(stub_local_plan->getCurrentHeader());
         input_headers.emplace_back(remote_plan->getCurrentHeader());
@@ -785,7 +812,7 @@ void executeQueryWithParallelReplicasCustomKey(
     const ColumnsDescription & columns,
     const StorageSnapshotPtr & snapshot,
     QueryProcessingStage::Enum processed_stage,
-    const Block & header,
+    SharedHeader header,
     ContextPtr context)
 {
     /// Return directly (with correct header) if no shard to query.
@@ -801,12 +828,8 @@ void executeQueryWithParallelReplicasCustomKey(
         return;
     }
 
-    ColumnsDescriptionByShardNum columns_object;
-    if (hasDynamicSubcolumnsDeprecated(columns))
-        columns_object = getExtendedObjectsOfRemoteTables(*query_info.cluster, storage_id, columns, context);
-
     ClusterProxy::SelectStreamFactory select_stream_factory
-        = ClusterProxy::SelectStreamFactory(header, columns_object, snapshot, processed_stage);
+        = ClusterProxy::SelectStreamFactory(header, snapshot, processed_stage);
 
     auto shard_filter_generator = getShardFilterGeneratorForCustomKey(*query_info.getCluster(), context, columns);
     if (shard_filter_generator && context->getSettingsRef()[Setting::serialize_query_plan])
@@ -1013,9 +1036,9 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
 
     const auto & settings = context->getSettingsRef();
 
-    auto new_context = updateContextForParallelReplicas(logger, context);
-    auto [cluster, shard_num] = prepairClusterForParallelReplicas(logger, new_context);
-    auto [connection_pools, max_replicas_to_use] = prepairConnectionPoolsForParallelReplicas(logger, new_context, cluster);
+    auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, context);
+    auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
+    auto [connection_pools, max_replicas_to_use] = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
     std::optional<size_t> local_replica_index;
 
     if (coordinator)
@@ -1055,7 +1078,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
 
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(
-            /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
+            /*one_line=*/true, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
         insert_ast->IAST::format(buf, ast_format_settings);
         formatted_query = buf.str();
     }
@@ -1084,7 +1107,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             connection_pools[i],
             formatted_query,
-            Block{},
+            std::make_shared<const Block>(Block{}),
             new_context,
             null_throttler,
             Scalars{},
@@ -1096,7 +1119,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
 
         QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(
             remote_query_executor, false, settings[Setting::async_socket_for_remote], settings[Setting::async_query_sending_for_remote]));
-        remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getHeader()));
+        remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getSharedHeader()));
 
         pipeline.addCompletedPipeline(std::move(remote_pipeline));
     }

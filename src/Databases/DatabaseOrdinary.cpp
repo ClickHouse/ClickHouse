@@ -10,9 +10,10 @@
 #include <Databases/DatabaseMetadataDiskSettings.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
+#include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/TablesLoader.h>
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -36,6 +37,7 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Common/AsyncLoader.h>
 #include <Interpreters/TransactionLog.h>
 
 #include <boost/algorithm/string/replace.hpp>
@@ -87,7 +89,7 @@ DatabaseOrdinary::DatabaseOrdinary(
     : DatabaseOrdinary(
           name_,
           metadata_path_,
-          std::filesystem::path("data") / escapeForFileName(name_) / "",
+          DatabaseCatalog::getDataDirPath(name_) / "",
           "DatabaseOrdinary (" + name_ + ")",
           context_,
           database_metadata_disk_settings_)
@@ -626,7 +628,7 @@ Strings DatabaseOrdinary::getAllTableNames(ContextPtr) const
     return {unique_names.begin(), unique_names.end()};
 }
 
-void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
+void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)
 {
     auto db_disk = getDisk();
     waitDatabaseStarted();
@@ -652,7 +654,7 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     if (table_id.uuid != UUIDHelpers::Nil && create_query.uuid != table_id.uuid)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot alter table {}: metadata file {} has different UUID", table_id.getNameForLogs(), table_metadata_path);
 
-    applyMetadataChangesToCreateQuery(ast, metadata, local_context);
+    applyMetadataChangesToCreateQuery(ast, metadata, local_context, validate_new_create_query);
 
     statement = getObjectDefinitionFromCreateQuery(ast);
     auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast, local_context->getCurrentDatabase());
@@ -694,7 +696,16 @@ void registerDatabaseOrdinary(DatabaseFactory & factory)
                 ErrorCodes::UNKNOWN_DATABASE_ENGINE,
                 "Ordinary database engine is deprecated (see also allow_deprecated_database_ordinary setting)");
 
-        args.context->addWarningMessageAboutDatabaseOrdinary(args.database_name);
+        // Do not warn about ordinary databases that is most likely created by recovering replicas
+        if (!args.database_name.ends_with(DatabaseReplicated::BROKEN_TABLES_SUFFIX))
+            args.context->addWarningMessageAboutDatabaseOrdinary(args.database_name);
+        else
+            args.context->addOrUpdateWarningMessage(
+                Context::WarningType::MAYBE_BROKEN_TABLES,
+                PreformattedMessage::create(
+                    "The database {} is probably created during recovering a lost replica. If it has no tables, it can be deleted. If it "
+                    "has tables, it worth to check why they were considered broken.",
+                    backQuoteIfNeed(args.database_name)));
 
         DatabaseMetadataDiskSettings database_metadata_disk_settings;
         auto * engine_define = args.create_query.storage;

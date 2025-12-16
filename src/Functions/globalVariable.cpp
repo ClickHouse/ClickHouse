@@ -91,7 +91,22 @@ private:
 
 REGISTER_FUNCTION(GlobalVariable)
 {
-    factory.registerFunction<FunctionGlobalVariable>();
+    FunctionDocumentation::Description description = R"(
+Takes a constant string argument and returns the value of the global variable with that name. This function is intended for compatibility with MySQL and not needed or useful for normal operation of ClickHouse. Only few dummy global variables are defined.
+    )";
+    FunctionDocumentation::Syntax syntax = "globalVariable(name)";
+    FunctionDocumentation::Arguments arguments = {
+        {"name", "Global variable name.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the value of variable `name`.", {"Any"}};
+    FunctionDocumentation::Examples examples = {
+        {"globalVariable", "SELECT globalVariable('max_allowed_packet')", "67108864"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionGlobalVariable>(documentation);
 }
 
 }

@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 select 'TEST numericIndexedVectorPointwise operations in bit promotion with zero values and Float64 value type';
 DROP TABLE IF EXISTS uin_value_details;
 CREATE TABLE uin_value_details
