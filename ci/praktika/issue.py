@@ -61,13 +61,17 @@ def parse_issue_body_fields(body: str) -> dict:
             fields[field] = match.group(1).strip()
 
     # Parse failure flags (comma-separated list)
-    flags_match = re.search(r"Failure flags:\s*(.+?)(?:\n|$)", body, re.IGNORECASE)
+    flags_match = re.search(
+        r"^Failure flags:[ \t]*(.*)$", body, re.IGNORECASE | re.MULTILINE
+    )
+    fields["failure_flags"] = []
     if flags_match:
         flags_str = flags_match.group(1).strip()
         # Split by comma and strip whitespace from each flag
-        fields["failure_flags"] = [
-            flag.strip() for flag in flags_str.split(",") if flag.strip()
-        ]
+        if flags_str:
+            fields["failure_flags"] = [
+                flag.strip() for flag in flags_str.split(",") if flag.strip()
+            ]
 
     return fields
 
@@ -197,7 +201,7 @@ class Issue:
         return bool(self.test_pattern) and self.test_pattern != "%"
 
     def validate(self, verbose=True):
-        if not self.test_name:
+        if not self.test_name and not self.is_infrastructure():
             if verbose:
                 print(f"WARNING: Invalid issue [{self.url}] must have test_name")
             return False
@@ -238,22 +242,24 @@ class Issue:
         if result.is_ok() or result.has_label("issue"):
             return False
 
-        # Recursively check sub-results first
+        # Recursively check sub-results first.
+        # If called for the workflow result, its sub-results are jobs and their names should be used
+        # for job_pattern matching.
         if result.results:
             marked = False
+            is_workflow_level_call = not job_name
             for sub_result in result.results:
-                if not job_name:
-                    # it's a call for entire workflow result - subresults are jobs
-                    job_name = sub_result.name
-                if self.check_result(sub_result, job_name=job_name):
+                sub_job_name = sub_result.name if is_workflow_level_call else job_name
+                if self.check_result(sub_result, job_name=sub_job_name):
                     marked = True
             return marked
 
-        # This is a leaf result - check if it matches
-        if self.is_infrastructure():
-            return self._check_infrastructure_match(result, job_name)
-        else:
-            return self._check_flaky_test_match(result)
+        # Leaf result - check if it matches.
+        return (
+            self._check_infrastructure_match(result, job_name)
+            if self.is_infrastructure()
+            else self._check_flaky_test_match(result)
+        )
 
     def _check_flaky_test_match(self, result: Result) -> bool:
         """Check if this flaky test issue matches the result."""
@@ -310,13 +316,13 @@ class Issue:
                 return False
 
         # Check test_pattern (SQL style %name%) with result.name
-        if self.test_pattern:
+        if self.test_pattern and self.test_pattern != "%":
             pattern_parts = [p for p in self.test_pattern.split("%") if p]
             if not any(part in result.name for part in pattern_parts):
                 return False
 
         # Check job_pattern (SQL style %name%) with top level result name
-        if self.job_pattern:
+        if self.job_pattern and self.job_pattern != "%":
             job_pattern_parts = [p for p in self.job_pattern.split("%") if p]
             if not any(part in top_level_result_name for part in job_pattern_parts):
                 return False
