@@ -646,6 +646,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     UInt64 prepare_insert_data_to_block = 0;
     UInt64 execute_insert_time = 0;
     UInt64 confirm_time = 0;
+    size_t flush_size = to_flush.size();
 
     try
     {
@@ -729,8 +730,10 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 
     LOG_TRACE(
         log,
-        "Flushed system log up to offset {}. Timings: {}/{}/{}/{}/{}",
+        "Flushed system log up to offset {}. Entries {}. Timings: prepare_table={}ms, reserve_block={}ms, insert_to_block={}ms, "
+        "execute_insert={}ms, confirm={}ms",
         to_flush_end,
+        flush_size,
         prepare_table_time,
         prepare_reserve_block,
         prepare_insert_data_to_block,

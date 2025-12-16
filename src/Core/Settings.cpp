@@ -7637,7 +7637,7 @@ void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
         auto value = accessor.getValueString(*this, i);
         key_column.insertData(name.data(), name.size());
         value_column.insertData(value.data(), value.size());
-        size++;
+        ++size;
     }
 
     /// Iterate over the custom settings
@@ -7651,7 +7651,7 @@ void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
         auto value = setting_field.toString();
         key_column.insertData(name.data(), name.size());
         value_column.insertData(value.data(), value.size());
-        size++;
+        ++size;
     }
 
     offsets.push_back(offsets.back() + size);
