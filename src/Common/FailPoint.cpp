@@ -203,7 +203,8 @@ void FailPointInjection::notifyFailPoint(const String & fail_point_name)
     if (auto iter = fail_point_wait_channels.find(fail_point_name); iter != fail_point_wait_channels.end())
     {
         /// Notify the failpoint to continue execution without disabling it
-        iter->second->notifyAll();
+        iter->second->notified = true;
+        iter->second->cv.notify_all();
     }
     else
     {
