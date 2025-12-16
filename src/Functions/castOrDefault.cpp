@@ -377,7 +377,7 @@ SELECT accurateCastOrDefault('abc', 'UInt32')
     factory.registerFunction<FunctionCastOrDefault>(accurateCastOrDefault_documentation);
 
     FunctionDocumentation::Description toUInt8OrDefault_description = R"(
-Like [`toUInt8`](#toUint8), this function converts an input value to a value of type [UInt8](../data-types/int-uint.md) but returns the default value in case of an error.
+Like [`toUInt8`](#toUInt8), this function converts an input value to a value of type [UInt8](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
     )";
     FunctionDocumentation::Syntax toUInt8OrDefault_syntax = "toUInt8OrDefault(expr[, default])";
@@ -714,7 +714,7 @@ Converts the argument to the [Date32](../data-types/date32.md) data type. If the
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDate32OrDefault", std::make_shared<DataTypeDate32>()); },
         toDate32OrDefault_documentation);
     FunctionDocumentation::Description toDateTimeOrDefault_description = R"(
-Like [toDateTime](#todatetime) but if unsuccessful, returns a default value which is either the third argument (if specified), or otherwise the lower boundary of [DateTime](../data-types/datetime.md).
+Like [toDateTime](#toDateTime) but if unsuccessful, returns a default value which is either the third argument (if specified), or otherwise the lower boundary of [DateTime](../data-types/datetime.md).
     )";
     FunctionDocumentation::Syntax toDateTimeOrDefault_syntax = "toDateTimeOrDefault(expr[, timezone, default])";
     FunctionDocumentation::Arguments toDateTimeOrDefault_arguments = {
@@ -734,7 +734,7 @@ Like [toDateTime](#todatetime) but if unsuccessful, returns a default value whic
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDateTimeOrDefault", std::make_shared<DataTypeDateTime>()); },
         toDateTimeOrDefault_documentation);
     FunctionDocumentation::Description toDateTime64OrDefault_description = R"(
-Like [toDateTime64](#todatetime64), this function converts an input value to a value of type [DateTime64](../data-types/datetime64.md),
+Like [toDateTime64](#toDateTime64), this function converts an input value to a value of type [DateTime64](../data-types/datetime64.md),
 but returns either the default value of [DateTime64](../data-types/datetime64.md)
 or the provided default if an invalid argument is received.
     )";

@@ -530,17 +530,19 @@ static void runExternalCommand(
     }
 }
 
+static const String & restart_cmd = "--Reconnecting client";
+static const String & external_cmd = "--External command ";
+static const String & health_check_cmd = "--Health check";
+
 /// Returns false when server is not available.
 bool Client::buzzHouse()
 {
     String full_query;
     bool server_up = true;
-    static const String & restart_cmd = "--Reconnecting client";
     static const String & rerun_database = "--External database ";
     static const RE2 rerun_database_re(R"((?i)^--External\s+database\s+(.*)$)");
     static const String & rerun_table = "--External table ";
     static const RE2 rerun_table_re(R"((?i)^--External\s+table\s+(.*)$)");
-    static const String & external_cmd = "--External command ";
     static const RE2 extern_re(R"((?i)^--External\s+command\s+(?:(async)\s+)?with\s+seed\s+(\d+)\s+to\s+([^\s.]+)\.([^\s.]+)\s*$)");
 
     /// Set time to run, but what if a query runs for too long?
@@ -588,6 +590,10 @@ bool Client::buzzHouse()
 
                 UNUSED(x);
                 runExternalCommand(external_integrations, seed, !async_flag.empty(), database, table);
+            }
+            else if (startsWith(full_query, health_check_cmd))
+            {
+                fuzz_config->validateClickHouseHealth();
             }
             else
             {
@@ -679,9 +685,10 @@ bool Client::buzzHouse()
                 const uint32_t restart_client = 1 * static_cast<uint32_t>(fuzz_config->allow_client_restarts);
                 const uint32_t external_call
                     = 10 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_external_call));
+                const uint32_t health_check = 3 * static_cast<uint32_t>(fuzz_config->allow_health_check);
                 const uint32_t run_query = 910;
-                const uint32_t prob_space
-                    = correctness_oracle + settings_oracle + dump_oracle + peer_oracle + restart_client + external_call + run_query;
+                const uint32_t prob_space = correctness_oracle + settings_oracle + dump_oracle + peer_oracle + restart_client
+                    + external_call + health_check + run_query;
                 std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
                 const uint32_t nopt = next_dist(rg.generator);
 
@@ -874,15 +881,24 @@ bool Client::buzzHouse()
                     const auto & ntname = tbl.getTableName(false);
                     const bool async = fuzz_config->allow_async_requests && rg.nextSmallNumber() < 4;
 
-                    fuzz_config->outf << "--External command " << (async ? "async " : "") << "with seed " << nseed << " to " << ndname
-                                      << "." << ntname << std::endl;
+                    fuzz_config->outf << external_cmd << (async ? "async " : "") << "with seed " << nseed << " to " << ndname << "."
+                                      << ntname << std::endl;
                     runExternalCommand(external_integrations, nseed, async, ndname, ntname);
+                }
+                else if (
+                    health_check
+                    && nopt
+                        < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + restart_client + external_call + health_check
+                           + 1))
+                {
+                    fuzz_config->outf << health_check_cmd << std::endl;
+                    fuzz_config->validateClickHouseHealth();
                 }
                 else if (
                     run_query
                     && nopt
-                        < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + restart_client + external_call + run_query
-                           + 1))
+                        < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + restart_client + external_call + health_check
+                           + run_query + 1))
                 {
                     gen.generateNextStatement(rg, sq1);
                     BuzzHouse::SQLQueryToString(full_query, sq1);

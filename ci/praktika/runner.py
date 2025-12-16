@@ -15,7 +15,7 @@ from .gh import GH
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
 from .info import Info
-from .native_jobs import _is_praktika_job
+from .native_jobs import _check_and_link_open_issues, _is_praktika_job
 from .result import Result, ResultInfo
 from .runtime import RunConfig
 from .s3 import S3
@@ -609,12 +609,30 @@ class Runner:
                 CacheRunnerHooks.post_run(workflow, job)
 
         workflow_result = None
+
+        is_final_job = job.name == Settings.FINISH_WORKFLOW_JOB_NAME
+        if workflow.enable_open_issues_check:
+            # should be done before HtmlRunnerHooks.post_run(workflow, job, info_errors)
+            #   to upload updated job and workflow results to S3
+            try:
+                if is_final_job:
+                    # re-check entire workflow in the final job as some new issues may appear
+                    workflow_result = Result.from_fs(workflow.name)
+                    _check_and_link_open_issues(workflow_result, job_name="")
+                else:
+                    _check_and_link_open_issues(result, job_name=job.name)
+            except Exception as e:
+                print(f"ERROR: failed to check open issues: {e}")
+                traceback.print_exc()
+                if is_final_job:
+                    env.add_info(ResultInfo.OPEN_ISSUES_CHECK_ERROR)
+
+        # always in the end
         if workflow.enable_report:
             print(f"Run html report hook")
             HtmlRunnerHooks.post_run(workflow, job, info_errors)
-            workflow_result = Result.from_fs(workflow.name)
-
-            if job.name == Settings.FINISH_WORKFLOW_JOB_NAME and ci_db:
+            workflow_result = workflow_result or Result.from_fs(workflow.name)
+            if is_final_job and ci_db:
                 # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data
                 workflow_storage_usage = StorageUsage.from_dict(
                     workflow_result.ext.get("storage_usage", {})
