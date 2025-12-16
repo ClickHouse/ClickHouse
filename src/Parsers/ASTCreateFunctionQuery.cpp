@@ -23,7 +23,7 @@ ASTPtr ASTCreateFunctionQuery::clone() const
 
 void ASTCreateFunctionQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const
 {
-    ostr << "CREATE ";
+    ostr << (settings.hilite ? hilite_keyword : "") << "CREATE ";
 
     if (or_replace)
         ostr << "OR REPLACE ";
@@ -33,11 +33,13 @@ void ASTCreateFunctionQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSe
     if (if_not_exists)
         ostr << "IF NOT EXISTS ";
 
-    ostr << backQuoteIfNeed(getFunctionName());
+    ostr << (settings.hilite ? hilite_none : "");
+
+    ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getFunctionName()) << (settings.hilite ? hilite_none : "");
 
     formatOnCluster(ostr, settings);
 
-    ostr << " AS ";
+    ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
     function_core->format(ostr, settings, state, frame);
 }
 

@@ -4,7 +4,6 @@ sidebar_label: 'studentTTest'
 sidebar_position: 194
 slug: /sql-reference/aggregate-functions/reference/studentttest
 title: 'studentTTest'
-doc_type: 'reference'
 ---
 
 # studentTTest
@@ -13,7 +12,7 @@ Applies Student's t-test to samples from two populations.
 
 **Syntax**
 
-```sql
+``` sql
 studentTTest([confidence_level])(sample_data, sample_index)
 ```
 
@@ -29,6 +28,7 @@ The null hypothesis is that means of populations are equal. Normal distribution 
 
 - `confidence_level` — Confidence level in order to calculate confidence intervals. [Float](../../../sql-reference/data-types/float.md).
 
+
 **Returned values**
 
 [Tuple](../../../sql-reference/data-types/tuple.md) with two or four elements (if the optional `confidence_level` is specified):
@@ -38,11 +38,12 @@ The null hypothesis is that means of populations are equal. Normal distribution 
 - [calculated confidence-interval-low. [Float64](../../../sql-reference/data-types/float.md).]
 - [calculated confidence-interval-high. [Float64](../../../sql-reference/data-types/float.md).]
 
+
 **Example**
 
 Input table:
 
-```text
+``` text
 ┌─sample_data─┬─sample_index─┐
 │        20.3 │            0 │
 │        21.1 │            0 │
@@ -55,13 +56,13 @@ Input table:
 
 Query:
 
-```sql
+``` sql
 SELECT studentTTest(sample_data, sample_index) FROM student_ttest;
 ```
 
 Result:
 
-```text
+``` text
 ┌─studentTTest(sample_data, sample_index)───┐
 │ (-0.21739130434783777,0.8385421208415731) │
 └───────────────────────────────────────────┘

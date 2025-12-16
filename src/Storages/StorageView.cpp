@@ -1,9 +1,7 @@
-#include <Access/ViewDefinerDependencies.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -138,9 +136,6 @@ StorageView::StorageView(
     if (query.sql_security)
         storage_metadata.setSQLSecurity(query.sql_security->as<ASTSQLSecurity &>());
 
-    if (storage_metadata.sql_security_type == SQLSecurityType::DEFINER)
-        ViewDefinerDependencies::instance().addViewDependency(*storage_metadata.definer, table_id_);
-
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
     SelectQueryDescription description;
@@ -193,7 +188,7 @@ void StorageView::read(
 
     /// It's expected that the columns read from storage are not constant.
     /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
-    ActionsDAG materializing_actions(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
+    ActionsDAG materializing_actions(query_plan.getCurrentHeader().getColumnsWithTypeAndName());
     materializing_actions.addMaterializingOutputActions(/*materialize_sparse=*/ true);
 
     auto materializing = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(materializing_actions));
@@ -205,7 +200,7 @@ void StorageView::read(
     const auto & header = query_plan.getCurrentHeader();
 
     const auto * select_with_union = current_inner_query->as<ASTSelectWithUnionQuery>();
-    if (select_with_union && hasJoin(*select_with_union) && changedNullabilityOneWay(*header, expected_header))
+    if (select_with_union && hasJoin(*select_with_union) && changedNullabilityOneWay(header, expected_header))
     {
         throw DB::Exception(ErrorCodes::INCORRECT_QUERY,
                             "Query from view {} returned Nullable column having not Nullable type in structure. "
@@ -215,46 +210,13 @@ void StorageView::read(
     }
 
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-            header->getColumnsWithTypeAndName(),
+            header.getColumnsWithTypeAndName(),
             expected_header.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name,
-            context);
+            ActionsDAG::MatchColumnsMode::Name);
 
     auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(convert_actions_dag));
     converting->setStepDescription("Convert VIEW subquery result to VIEW table structure");
     query_plan.addStep(std::move(converting));
-}
-
-void StorageView::drop()
-{
-    auto table_id = getStorageID();
-
-    if (getInMemoryMetadataPtr()->sql_security_type == SQLSecurityType::DEFINER)
-        ViewDefinerDependencies::instance().removeViewDependencies(table_id);
-}
-
-void StorageView::alter(
-    const AlterCommands & params,
-    ContextPtr context,
-    AlterLockHolder &)
-{
-    auto table_id = getStorageID();
-    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
-    StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
-    params.apply(new_metadata, context);
-
-    DatabaseCatalog::instance()
-        .getDatabase(table_id.database_name)
-        ->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
-
-    auto & instance = ViewDefinerDependencies::instance();
-    if (old_metadata.sql_security_type == SQLSecurityType::DEFINER)
-        instance.removeViewDependencies(table_id);
-
-    if (new_metadata.sql_security_type == SQLSecurityType::DEFINER)
-        instance.addViewDependency(*new_metadata.definer, table_id);
-
-    setInMemoryMetadata(new_metadata);
 }
 
 static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_query)
@@ -270,7 +232,7 @@ static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_quer
     return select_element->table_expression->as<ASTTableExpression>();
 }
 
-void StorageView::replaceQueryParametersIfParameterizedView(ASTPtr & outer_query, const NameToNameMap & parameter_values)
+void StorageView::replaceQueryParametersIfParametrizedView(ASTPtr & outer_query, const NameToNameMap & parameter_values)
 {
     ReplaceQueryParameterVisitor visitor(parameter_values);
     visitor.visit(outer_query);

@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/IStoragePolicy.h>
@@ -23,7 +22,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/StorageView.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/StringUtils.h>
@@ -55,7 +53,7 @@ bool needTable(const DatabasePtr & database, const Block & header)
     static const std::set<std::string> columns_without_table = {"database", "name", "uuid", "metadata_modification_time"};
     for (const auto & column : header.getColumnsWithTypeAndName())
     {
-        if (!columns_without_table.contains(column.name))
+        if (columns_without_table.find(column.name) == columns_without_table.end())
             return true;
     }
     return false;
@@ -70,8 +68,7 @@ ColumnPtr getFilteredDatabases(const ActionsDAG::Node * predicate, ContextPtr co
 {
     MutableColumnPtr column = ColumnString::create();
 
-    const auto & settings = context->getSettingsRef();
-    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables]});
+    const auto databases = DatabaseCatalog::instance().getDatabases();
     for (const auto & database_name : databases | boost::adaptors::map_keys)
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
@@ -90,37 +87,26 @@ ColumnPtr getFilteredTables(
 {
     Block sample{
         ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "name"),
-        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "uuid"),
         ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "engine")};
 
-    MutableColumnPtr table_column = ColumnString::create();
-    MutableColumnPtr uuid_column;
+    MutableColumnPtr database_column = ColumnString::create();
     MutableColumnPtr engine_column;
 
-    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context);
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample);
     if (dag)
     {
         bool filter_by_engine = false;
-        bool filter_by_uuid = false;
         for (const auto * input : dag->getInputs())
-        {
             if (input->result_name == "engine")
                 filter_by_engine = true;
 
-            if (input->result_name == "uuid")
-                filter_by_uuid = true;
-        }
-
         if (filter_by_engine)
             engine_column = ColumnString::create();
-
-        if (filter_by_uuid)
-            uuid_column = ColumnUUID::create();
     }
 
     for (size_t database_idx = 0; database_idx < filtered_databases_column->size(); ++database_idx)
     {
-        const auto database_name = filtered_databases_column->getDataAt(database_idx);
+        const auto & database_name = filtered_databases_column->getDataAt(database_idx).toString();
         DatabasePtr database = DatabaseCatalog::instance().tryGetDatabase(database_name);
         if (!database)
             continue;
@@ -130,30 +116,27 @@ ColumnPtr getFilteredTables(
             auto table_it = database->getDetachedTablesIterator(context, {}, false);
             for (; table_it->isValid(); table_it->next())
             {
-                table_column->insert(table_it->table());
+                database_column->insert(table_it->table());
             }
         }
         else
         {
             auto table_it = database->getLightweightTablesIterator(context,
                                                                    /* filter_by_table_name */ {},
-                                                                   /* skip_not_loaded */ false);
+                                                                   /* skip_not_loaded */ false,
+                                                                   !context->getSettingsRef()[DB::Setting::show_data_lake_catalogs_in_system_tables]);
             for (; table_it->isValid(); table_it->next())
             {
-                table_column->insert(table_it->name());
+                database_column->insert(table_it->name());
                 if (engine_column)
                     engine_column->insert(table_it->table()->getName());
-                if (uuid_column)
-                    uuid_column->insert(table_it->table()->getStorageID().uuid);
             }
         }
     }
 
-    Block block{ColumnWithTypeAndName(std::move(table_column), std::make_shared<DataTypeString>(), "name")};
+    Block block{ColumnWithTypeAndName(std::move(database_column), std::make_shared<DataTypeString>(), "name")};
     if (engine_column)
         block.insert(ColumnWithTypeAndName(std::move(engine_column), std::make_shared<DataTypeString>(), "engine"));
-    if (uuid_column)
-        block.insert(ColumnWithTypeAndName(std::move(uuid_column), std::make_shared<DataTypeUUID>(), "uuid"));
 
     if (dag)
         VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*dag), context), block);
@@ -183,10 +166,6 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"create_table_query", std::make_shared<DataTypeString>(), "The query that was used to create the table."},
         {"engine_full", std::make_shared<DataTypeString>(), "Parameters of the table engine."},
         {"as_select", std::make_shared<DataTypeString>(), "SELECT query for view."},
-        {"parameterized_view_parameters",
-            std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()}, Names{"name", "type"})),
-            "Parameters of parameterized view."
-        },
         {"partition_key", std::make_shared<DataTypeString>(), "The partition key expression specified in the table."},
         {"sorting_key", std::make_shared<DataTypeString>(), "The sorting key expression specified in the table."},
         {"primary_key", std::make_shared<DataTypeString>(), "The primary key expression specified in the table."},
@@ -209,9 +188,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"active_parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The number of active parts in this table."},
         {"total_marks", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The total number of marks in all parts in this table."},
         {"active_on_fly_data_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active data mutations (UPDATEs and DELETEs) suitable for applying on the fly."},
-        {"active_on_fly_alter_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active alter mutations (MODIFY COLUMNs) suitable for applying on the fly."},
         {"active_on_fly_metadata_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active metadata mutations (RENAMEs) suitable for applying on the fly."},
-        {"columns_descriptions_cache_size", std::make_shared<DataTypeUInt64>(), "Size of columns description cache for *MergeTree tables"},
         {"lifetime_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Total number of rows INSERTed since server start (only for Buffer tables)."
         },
@@ -234,7 +211,6 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"loading_dependent_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
             "Dependent loading table."
         },
-        {"definer", std::make_shared<DataTypeString>(), "SQL security definer's name used for the table."},
     };
 
     description.setAliases({
@@ -250,7 +226,7 @@ class TablesBlockSource : public ISource
 public:
     TablesBlockSource(
         std::vector<UInt8> columns_mask_,
-        SharedHeader header,
+        Block header,
         UInt64 max_block_size_,
         ColumnPtr databases_,
         ColumnPtr tables_,
@@ -264,46 +240,12 @@ public:
         size_t size = tables_->size();
         tables.reserve(size);
         for (size_t idx = 0; idx < size; ++idx)
-            tables.insert(std::string{tables_->getDataAt(idx)});
+            tables.insert(tables_->getDataAt(idx).toString());
     }
 
     String getName() const override { return "Tables"; }
 
 protected:
-    NameToNameMap getSelectParamters(const StorageMetadataPtr & metadata_snapshot)
-    {
-        const SelectQueryDescription & query_description = metadata_snapshot->getSelectQuery();
-        ASTPtr inner_query = query_description.inner_query;
-        if (!inner_query || !inner_query->as<ASTSelectWithUnionQuery>())
-            return {};
-
-        return inner_query->as<ASTSelectWithUnionQuery>()->getQueryParameters();
-    }
-
-    void fillParametralizedViewData(MutableColumns & columns, const StoragePtr & table, size_t & res_index)
-    {
-        if (table)
-        {
-            StorageMetadataPtr metadata_snapshot = table->tryGetInMemoryMetadataPtr().value_or(nullptr);
-            if (!metadata_snapshot)
-            {
-                columns[res_index++]->insertDefault();
-                return;
-            }
-
-            NameToNameMap query_parameters_array = getSelectParamters(metadata_snapshot);
-            if (!query_parameters_array.empty())
-            {
-                Array changes;
-                for (const auto & [key, value] : query_parameters_array)
-                    changes.push_back(Tuple{key, value});
-                columns[res_index++]->insert(changes);
-            }
-            else
-                columns[res_index++]->insertDefault();
-        }
-    }
-
     Chunk generate() override
     {
         if (done)
@@ -322,7 +264,7 @@ protected:
 
             while (database_idx < databases->size() && (!tables_it || !tables_it->isValid()))
             {
-                database_name = databases->getDataAt(database_idx);
+                database_name = databases->getDataAt(database_idx).toString();
                 database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
                 if (!database)
@@ -404,19 +346,15 @@ protected:
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(table.second->getName());
 
+                        const auto & settings = context->getSettingsRef();
                         while (src_index < columns_mask.size())
                         {
                             // total_rows
-                            if (src_index == 14 && columns_mask[src_index])
-                            {
-                                // parameterized view parameters
-                                fillParametralizedViewData(res_columns, table.second, res_index);
-                            }
-                            else if (src_index == 20 && columns_mask[src_index])
+                            if (src_index == 19 && columns_mask[src_index])
                             {
                                 try
                                 {
-                                    if (auto total_rows = table.second->totalRows(context))
+                                    if (auto total_rows = table.second->totalRows(settings))
                                         res_columns[res_index]->insert(*total_rows);
                                     else
                                         res_columns[res_index]->insertDefault();
@@ -430,11 +368,11 @@ protected:
                                 ++res_index;
                             }
                             // total_bytes
-                            else if (src_index == 21 && columns_mask[src_index])
+                            else if (src_index == 20 && columns_mask[src_index])
                             {
                                 try
                                 {
-                                    if (auto total_bytes = table.second->totalBytes(context))
+                                    if (auto total_bytes = table.second->totalBytes(settings))
                                         res_columns[res_index]->insert(*total_bytes);
                                     else
                                         res_columns[res_index]->insertDefault();
@@ -443,7 +381,7 @@ protected:
                                 {
                                     /// Even if the method throws, it should not prevent querying system.tables.
                                     tryLogCurrentException("StorageSystemTables");
-                                    res_columns[res_index]->insertDefault();
+                                    res_columns[res_index++]->insertDefault();
                                 }
                                 ++res_index;
                             }
@@ -465,7 +403,8 @@ protected:
             if (!tables_it || !tables_it->isValid())
                 tables_it = database->getLightweightTablesIterator(context,
                         /* filter_by_table_name */ {},
-                        /* skip_not_loaded */ false);
+                        /* skip_not_loaded */ false,
+                        !context->getSettingsRef()[DB::Setting::show_data_lake_catalogs_in_system_tables]);
 
             const bool need_table = needTable(database, getPort().getHeader());
 
@@ -525,12 +464,10 @@ protected:
                 {
                     chassert(lock != nullptr);
                     Array table_paths_array;
-                    if (auto paths = table->tryGetDataPaths())
-                    {
-                        table_paths_array.reserve(paths->size());
-                        for (const String & path : *paths)
-                            table_paths_array.push_back(path);
-                    }
+                    auto paths = table->getDataPaths();
+                    table_paths_array.reserve(paths.size());
+                    for (const String & path : paths)
+                        table_paths_array.push_back(path);
                     res_columns[res_index++]->insert(table_paths_array);
                     /// We don't need the lock anymore
                     lock = nullptr;
@@ -544,7 +481,7 @@ protected:
 
                 StorageMetadataPtr metadata_snapshot;
                 if (table)
-                    metadata_snapshot = table->tryGetInMemoryMetadataPtr().value_or(nullptr);
+                    metadata_snapshot = table->getInMemoryMetadataPtr();
 
                 if (columns_mask[src_index++])
                 {
@@ -619,10 +556,6 @@ protected:
                 else
                     src_index += 3;
 
-                // parameterized view parameters
-                if (columns_mask[src_index++])
-                    fillParametralizedViewData(res_columns, table, res_index);
-
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])
                 {
@@ -658,23 +591,20 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto policy = table ? table->tryGetStoragePolicy().value_or(nullptr) : nullptr;
+                    auto policy = table ? table->getStoragePolicy() : nullptr;
                     if (policy)
                         res_columns[res_index++]->insert(policy->getName());
                     else
                         res_columns[res_index++]->insertDefault();
                 }
 
-                ContextMutablePtr context_copy = Context::createCopy(context);
-                Settings settings_copy = context_copy->getSettingsCopy();
-                settings_copy[Setting::select_sequential_consistency] = 0;
-                context_copy->setSettings(settings_copy);
-
+                auto settings = context->getSettingsRef();
+                settings[Setting::select_sequential_consistency] = 0;
                 if (columns_mask[src_index++])
                 {
                     try
                     {
-                        auto total_rows = table ? table->totalRows(context) : std::nullopt;
+                        auto total_rows = table ? table->totalRows(settings) : std::nullopt;
                         if (total_rows)
                             res_columns[res_index]->insert(*total_rows);
                         else
@@ -693,7 +623,7 @@ protected:
                 {
                     try
                     {
-                        auto total_bytes = table->totalBytes(context_copy);
+                        auto total_bytes = table->totalBytes(settings);
                         if (total_bytes)
                             res_columns[res_index]->insert(*total_bytes);
                         else
@@ -712,7 +642,7 @@ protected:
                 {
                     try
                     {
-                        auto total_bytes_uncompressed = table->totalBytesUncompressed(context_copy->getSettingsRef());
+                        auto total_bytes_uncompressed = table->totalBytesUncompressed(settings);
                         if (total_bytes_uncompressed)
                             res_columns[res_index]->insert(*total_bytes_uncompressed);
                         else
@@ -752,40 +682,25 @@ protected:
                         res_columns[res_index++]->insertDefault();
                 }
 
-                if (table_merge_tree)
-                {
-                    MutationCounters mutation_counters;
-                    if (columns_mask[src_index] || columns_mask[src_index + 1] || columns_mask[src_index + 2])
-                        mutation_counters = table_merge_tree->getMutationCounters();
-
-                    if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(mutation_counters.num_data);
-                    if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(mutation_counters.num_alter);
-                    if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(mutation_counters.num_metadata);
-                }
-                else
-                {
-                    for (size_t i = 0; i < 3; ++i)
-                    {
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insertDefault();
-                    }
-                }
-
-                // columns_descriptions_cache_size
                 if (columns_mask[src_index++])
                 {
                     if (table_merge_tree)
-                        res_columns[res_index++]->insert(table_merge_tree->getColumnsDescriptionsCacheSize());
+                        res_columns[res_index++]->insert(table_merge_tree->getNumberOnFlyDataMutations());
                     else
                         res_columns[res_index++]->insertDefault();
                 }
 
                 if (columns_mask[src_index++])
                 {
-                    auto lifetime_rows = table ? table->tryLifetimeRows().value_or(std::nullopt) : std::nullopt;
+                    if (table_merge_tree)
+                        res_columns[res_index++]->insert(table_merge_tree->getNumberOnFlyMetadataMutations());
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    auto lifetime_rows = table ? table->lifetimeRows() : std::nullopt;
                     if (lifetime_rows)
                         res_columns[res_index++]->insert(*lifetime_rows);
                     else
@@ -794,7 +709,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto lifetime_bytes = table ? table->tryLifetimeBytes().value_or(std::nullopt) : std::nullopt;
+                    auto lifetime_bytes = table ? table->lifetimeBytes() : std::nullopt;
                     if (lifetime_bytes)
                         res_columns[res_index++]->insert(*lifetime_bytes);
                     else
@@ -851,18 +766,7 @@ protected:
                         res_columns[res_index++]->insert(dependents_databases);
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(dependents_tables);
-                }
-                else
-                {
-                    src_index += 4;
-                }
 
-                if (columns_mask[src_index++])
-                {
-                    if (metadata_snapshot && metadata_snapshot->sql_security_type == SQLSecurityType::DEFINER)
-                        res_columns[res_index++]->insert(*metadata_snapshot->definer);
-                    else
-                        res_columns[res_index++]->insertDefault();
                 }
             }
         }
@@ -898,7 +802,7 @@ public:
         std::vector<UInt8> columns_mask_,
         size_t max_block_size_)
         : SourceStepWithFilter(
-            std::make_shared<const Block>(std::move(sample_block)),
+            std::move(sample_block),
             column_names_,
             query_info_,
             storage_snapshot_,

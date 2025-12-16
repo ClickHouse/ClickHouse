@@ -25,7 +25,6 @@ SingleStatisticsDescription & SingleStatisticsDescription::operator=(const Singl
 
     type = other.type;
     ast = other.ast ? other.ast->clone() : nullptr;
-    is_implicit = other.is_implicit;
 
     return *this;
 }
@@ -37,13 +36,12 @@ SingleStatisticsDescription & SingleStatisticsDescription::operator=(SingleStati
 
     type = std::exchange(other.type, StatisticsType{});
     ast = other.ast ? other.ast->clone() : nullptr;
-    is_implicit = other.is_implicit;
     other.ast.reset();
 
     return *this;
 }
 
-StatisticsType stringToStatisticsType(String type)
+static StatisticsType stringToStatisticsType(String type)
 {
     if (type == "tdigest")
         return StatisticsType::TDigest;
@@ -53,7 +51,6 @@ StatisticsType stringToStatisticsType(String type)
         return StatisticsType::CountMinSketch;
     if (type == "minmax")
         return StatisticsType::MinMax;
-
     throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistics type: {}. Supported statistics types are 'countmin', 'minmax', 'tdigest' and 'uniq'.", type);
 }
 
@@ -74,13 +71,13 @@ String SingleStatisticsDescription::getTypeName() const
     }
 }
 
-SingleStatisticsDescription::SingleStatisticsDescription(StatisticsType type_, ASTPtr ast_, bool is_implicit_)
-    : type(type_), ast(ast_), is_implicit(is_implicit_)
+SingleStatisticsDescription::SingleStatisticsDescription(StatisticsType type_, ASTPtr ast_)
+    : type(type_), ast(ast_)
 {}
 
 bool SingleStatisticsDescription::operator==(const SingleStatisticsDescription & other) const
 {
-    return type == other.type && is_implicit == other.is_implicit;
+    return type == other.type;
 }
 
 bool ColumnStatisticsDescription::operator==(const ColumnStatisticsDescription & other) const
@@ -91,11 +88,6 @@ bool ColumnStatisticsDescription::operator==(const ColumnStatisticsDescription &
 bool ColumnStatisticsDescription::empty() const
 {
     return types_to_desc.empty();
-}
-
-bool ColumnStatisticsDescription::hasExplicitStatistics() const
-{
-    return std::any_of(types_to_desc.begin(), types_to_desc.end(), [](const auto & desc) { return !desc.second.is_implicit; });
 }
 
 bool ColumnStatisticsDescription::contains(const String & stat_type) const
@@ -144,9 +136,9 @@ std::vector<std::pair<String, ColumnStatisticsDescription>> ColumnStatisticsDesc
         auto stat_type = stringToStatisticsType(Poco::toLower(stat_type_name));
         if (statistics_types.contains(stat_type))
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Statistics type {} was specified more than once", stat_type_name);
+        SingleStatisticsDescription stat(stat_type, stat_ast->clone());
 
-        SingleStatisticsDescription stat(stat_type, stat_ast->clone(), false);
-        statistics_types.emplace(stat.type, std::move(stat));
+        statistics_types.emplace(stat.type, stat);
     }
 
     std::vector<std::pair<String, ColumnStatisticsDescription>> result;
@@ -172,21 +164,19 @@ std::vector<std::pair<String, ColumnStatisticsDescription>> ColumnStatisticsDesc
     return result;
 }
 
-ColumnStatisticsDescription ColumnStatisticsDescription::fromStatisticsDescriptionAST(const ASTPtr & statistics_desc, const String & column_name, DataTypePtr data_type)
+ColumnStatisticsDescription ColumnStatisticsDescription::fromColumnDeclaration(const ASTColumnDeclaration & column, DataTypePtr data_type)
 {
-    const auto & stat_type_list_ast = statistics_desc->as<ASTFunction &>().arguments;
+    const auto & stat_type_list_ast = column.statistics_desc->as<ASTFunction &>().arguments;
     if (stat_type_list_ast->children.empty())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "We expect at least one statistics type for column {}", column_name);
-
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "We expect at least one statistics type for column {}", column.formatForErrorMessage());
     ColumnStatisticsDescription stats;
     for (const auto & ast : stat_type_list_ast->children)
     {
         const auto & stat_type = ast->as<const ASTFunction &>().name;
 
-        SingleStatisticsDescription stat(stringToStatisticsType(Poco::toLower(stat_type)), ast->clone(), false);
+        SingleStatisticsDescription stat(stringToStatisticsType(Poco::toLower(stat_type)), ast->clone());
         if (stats.types_to_desc.contains(stat.type))
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Column {} already contains statistics type {}", column_name, stat_type);
-
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Column {} already contains statistics type {}", column.name, stat_type);
         stats.types_to_desc.emplace(stat.type, std::move(stat));
     }
     stats.data_type = data_type;
@@ -199,34 +189,14 @@ ASTPtr ColumnStatisticsDescription::getAST() const
     function_node->name = "STATISTICS";
     function_node->kind = ASTFunction::Kind::STATISTICS;
     function_node->arguments = std::make_shared<ASTExpressionList>();
-
     for (const auto & [type, desc] : types_to_desc)
     {
         if (desc.ast == nullptr)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown ast");
-
-        if (!desc.is_implicit)
-            function_node->arguments->children.push_back(desc.ast);
+        function_node->arguments->children.push_back(desc.ast);
     }
-
     function_node->children.push_back(function_node->arguments);
     return function_node;
 }
-
-String ColumnStatisticsDescription::getNameForLogs() const
-{
-    String ret;
-    for (const auto & [tp, desc] : types_to_desc)
-    {
-        ret += desc.getTypeName();
-        if (desc.is_implicit)
-            ret += "(auto)";
-        ret += ",";
-    }
-    if (!ret.empty())
-        ret.pop_back();
-    return ret;
-}
-
 
 }

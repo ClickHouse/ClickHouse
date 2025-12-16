@@ -14,7 +14,7 @@ class CustomSeparatedRowInputFormat final : public RowInputFormatWithNamesAndTyp
 {
 public:
     CustomSeparatedRowInputFormat(
-        SharedHeader header_,
+        const Block & header_,
         ReadBuffer & in_,
         const Params & params_,
         bool with_names_, bool with_types_, bool ignore_spaces_, const FormatSettings & format_settings_);
@@ -25,7 +25,7 @@ public:
 
 private:
     CustomSeparatedRowInputFormat(
-        SharedHeader header_,
+        const Block & header_,
         std::unique_ptr<PeekableReadBuffer> in_buf_,
         const Params & params_,
         bool with_names_, bool with_types_, bool ignore_spaces_, const FormatSettings & format_settings_);

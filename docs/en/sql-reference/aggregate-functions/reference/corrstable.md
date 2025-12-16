@@ -4,7 +4,6 @@ description: 'Calculates the Pearson correlation coefficient, but uses a numeric
 sidebar_position: 119
 slug: /sql-reference/aggregate-functions/reference/corrstable
 title: 'corrStable'
-doc_type: 'reference'
 ---
 
 # corrStable

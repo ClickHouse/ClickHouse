@@ -2,7 +2,6 @@
 
 #include <Common/VariableContext.h>
 #include <Common/Stopwatch.h>
-#include <Interpreters/Context_fwd.h>
 #include <base/types.h>
 #include <base/strong_typedef.h>
 #include <Poco/Message.h>
@@ -22,11 +21,7 @@ namespace ProfileEvents
     using Event = StrongTypedef<size_t, struct EventTag>;
     using Count = size_t;
     using Increment = Int64;
-    /// Avoid false sharing when multiple threads increment different counters close to each other.
-    struct alignas(64) Counter : public std::atomic<Count>
-    {
-        using std::atomic<Count>::atomic;
-    };
+    using Counter = std::atomic<Count>;
     class Counters;
 
     /// Counters - how many times each event happened
@@ -66,9 +61,7 @@ namespace ProfileEvents
         std::unique_ptr<Counter[]> counters_holder;
         /// Used to propagate increments
         std::atomic<Counters *> parent = {};
-        std::atomic_bool trace_profile_events = false;
-        Counter prev_cpu_wait_microseconds = 0;
-        Counter prev_cpu_virtual_time_microseconds = 0;
+        bool trace_profile_events = false;
 
     public:
 
@@ -92,8 +85,6 @@ namespace ProfileEvents
         {
             return counters[event];
         }
-
-        double getCPUOverload(Int64 os_cpu_busy_time_threshold, bool reset = false);
 
         void increment(Event event, Count amount = 1);
         void incrementNoTrace(Event event, Count amount = 1);
@@ -136,7 +127,7 @@ namespace ProfileEvents
 
         void setTraceProfileEvents(bool value)
         {
-            trace_profile_events.store(value, std::memory_order_relaxed);
+            trace_profile_events = value;
         }
 
         /// Set all counters to zero
@@ -196,10 +187,6 @@ namespace ProfileEvents
 
     /// Get index just after last event identifier.
     Event end();
-
-    /// Check CPU overload. If should_throw parameter is set, the method will throw when the server is overloaded.
-    /// Otherwise, this method will return true if the server is overloaded.
-    bool checkCPUOverload(Int64 os_cpu_busy_time_threshold, double min_ratio, double max_ratio, bool should_throw);
 
     struct CountersIncrement
     {
