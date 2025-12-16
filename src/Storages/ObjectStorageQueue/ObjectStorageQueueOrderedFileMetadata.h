@@ -71,7 +71,6 @@ private:
     const size_t buckets_num;
     const std::string zk_path;
     const BucketInfoPtr bucket_info;
-    const std::string zookeeper_name;
 
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
 

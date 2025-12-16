@@ -1518,7 +1518,7 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
         zk_path_prefix = "/";
 
     std::string result_zk_path;
-    String resolved_zookeeper_name = zkutil::DEFAULT_ZOOKEEPER_NAME;
+    String resolved_zookeeper_name(zkutil::DEFAULT_ZOOKEEPER_NAME.data(), zkutil::DEFAULT_ZOOKEEPER_NAME.size());
     if (queue_settings[ObjectStorageQueueSetting::keeper_path].changed)
     {
         /// We do not add table uuid here on purpose.

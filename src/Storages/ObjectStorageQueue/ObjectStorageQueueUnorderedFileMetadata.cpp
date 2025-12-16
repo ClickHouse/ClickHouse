@@ -39,7 +39,7 @@ ObjectStorageQueueUnorderedFileMetadata::prepareProcessingRequestsImpl(
     Coordination::Requests & requests,
     const std::string & processing_id)
 {
-    auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
+        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
     processor_info = getProcessorInfo(processing_id);
 
     SetProcessingResponseIndexes result;
@@ -74,7 +74,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
     zk_retry.retryLoop([&]
     {
-        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+    auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
         std::string data;
         /// If it is a retry, we could have failed after actually successfully executing the requests.
         /// So here we check if we succeeded by checking `processor_info` of the processing node.

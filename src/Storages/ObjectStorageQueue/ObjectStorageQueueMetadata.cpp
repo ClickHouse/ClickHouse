@@ -548,8 +548,8 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                     table_metadata.loading_retries,
                     noop,
                     /* use_persistent_processing_nodes */false, /// Processing nodes will not be created.
-                    log,
-                    zookeeper_name).prepareProcessedAtStartRequests(requests);
+                    zookeeper_name,
+                    log).prepareProcessedAtStartRequests(requests);
             }
 
             code = zk_client->tryMulti(requests, responses);

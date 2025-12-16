@@ -171,7 +171,6 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
     , buckets_num(buckets_num_)
     , zk_path(zk_path_)
     , bucket_info(bucket_info_)
-    , zookeeper_name(zookeeper_name_)
 {
 }
 
@@ -473,7 +472,7 @@ void ObjectStorageQueueOrderedFileMetadata::doPrepareProcessedRequests(
 {
     NodeMetadata processed_node;
     Coordination::Stat processed_node_stat;
-    if (getMaxProcessedFile(processed_node, &processed_node_stat, processed_node_path_, log))
+    if (getMaxProcessedFile(processed_node, &processed_node_stat, processed_node_path_, log, zookeeper_name))
     {
         LOG_TEST(log, "Current max processed file: {}, condition less: {}",
                  processed_node.file_path, bool(path <= processed_node.file_path));
@@ -538,7 +537,8 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(
             processed_node,
             &processed_node_stat,
             old_processed_path,
-            log);
+            log,
+            zookeeper_name_);
 
         if (!has_processed_node)
         {
