@@ -53,6 +53,9 @@ struct GroupingSetsParams
 
 using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
 
+class RuntimeDataflowStatisticsCacheUpdater;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
+
 /** How are "total" values calculated with WITH TOTALS?
   * (For more details, see TotalsHavingTransform.)
   *
@@ -182,6 +185,8 @@ public:
 
     explicit Aggregator(const Block & header_, const Params & params_);
 
+    const Params & getParams() const { return params; }
+
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
     bool executeOnBlock(const Block & block,
         AggregatedDataVariants & result,
@@ -285,6 +290,9 @@ public:
 
     /// Get data structure of the result.
     Block getHeader(bool final) const;
+
+    /// Part of automatic parallel replicas implementation.
+    size_t estimateSizeOfCompressedState(AggregatedDataVariants & result, ssize_t bucket) const;
 
 private:
 
@@ -556,7 +564,8 @@ private:
         Arena * arena,
         bool final,
         Int32 bucket,
-        std::atomic<bool> & is_cancelled) const;
+        std::atomic<bool> & is_cancelled,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater) const;
 
     Block prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
     BlocksList prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final) const;

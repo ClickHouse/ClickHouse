@@ -1,4 +1,5 @@
 -- Tags: no-parallel-replicas
+-- Random settings limits: index_granularity=(128, None)
 
 SET enable_analyzer = 1;
 SET allow_experimental_full_text_index = 1;

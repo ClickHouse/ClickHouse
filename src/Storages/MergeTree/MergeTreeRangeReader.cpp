@@ -1,23 +1,26 @@
-#include <Storages/MergeTree/MergeTreeRangeReader.h>
-#include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Storages/MergeTree/MergeTreeReaderIndex.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Columns/FilterDescription.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/TargetSpecific.h>
-#include <Common/logger_useful.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
-#include <base/range.h>
-#include <Interpreters/castColumn.h>
-#include <Interpreters/ExpressionActions.h>
+#include <Columns/FilterDescription.h>
 #include <DataTypes/DataTypeNothing.h>
+#include <IO/Operators.h>
+#include <IO/VarInt.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/castColumn.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/MergeTreeRangeReader.h>
+#include <Storages/MergeTree/MergeTreeReaderIndex.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <base/range.h>
+#include <base/scope_guard.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/qvm/vec_traits.hpp>
-#include <base/scope_guard.h>
 #include <fmt/ranges.h>
+#include <Common/TargetSpecific.h>
+#include <Common/logger_useful.h>
+
+#include <Columns/ColumnString.h>
 
 #ifdef __SSE2__
 #include <emmintrin.h>
@@ -944,8 +947,21 @@ static size_t getTotalBytesInColumns(const Columns & columns)
 {
     size_t total_bytes = 0;
     for (const auto & column : columns)
+    {
         if (column)
-            total_bytes += column->byteSize();
+        {
+            if (const auto * col_str = typeid_cast<const ColumnString *>(column.get()))
+            {
+                /// This function is used to estimate the number of bytes read from disk. For String column offsets might actually take
+                /// more memory than chars, so blindly assuming that each offset takes 8 bytes might overestimate the actual bytes read.
+                total_bytes += col_str->getChars().size() + col_str->getOffsets().size() * getLengthOfVarUInt(col_str->getOffsets().back());
+            }
+            else
+            {
+                total_bytes += column->byteSize();
+            }
+        }
+    }
     return total_bytes;
 }
 
