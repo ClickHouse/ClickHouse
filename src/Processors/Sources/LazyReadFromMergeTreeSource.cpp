@@ -40,7 +40,8 @@ LazyReadFromMergeTreeSource::LazyReadFromMergeTreeSource(
     StorageSnapshotPtr storage_snapshot_,
     ContextPtr context_,
     const std::string & log_name_,
-    LazyMaterializingRowsPtr lazy_materializing_rows_)
+    LazyMaterializingRowsPtr lazy_materializing_rows_,
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
     : IProcessor({}, {std::move(header)})
     , max_block_size(max_block_size_)
     , max_threads(max_threads_)
@@ -52,6 +53,7 @@ LazyReadFromMergeTreeSource::LazyReadFromMergeTreeSource(
     , context(std::move(context_))
     , log_name(log_name_)
     , lazy_materializing_rows(std::move(lazy_materializing_rows_))
+    , updater(std::move(updater_))
 {
 }
 
@@ -254,7 +256,8 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
         outputs.front().getHeader().getNames(),
         pool_settings,
         block_size,
-        context);
+        context,
+        updater);
 
     Processors processors;
     for (size_t i = 0; i < ranges_in_data_parts.size(); ++i)

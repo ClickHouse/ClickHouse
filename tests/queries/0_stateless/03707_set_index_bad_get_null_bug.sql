@@ -1,3 +1,5 @@
+set parallel_replicas_local_plan=1;
+
 drop table if exists test;
 CREATE table test
 (

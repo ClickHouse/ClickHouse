@@ -8,6 +8,8 @@
 namespace DB
 {
 
+class RuntimeDataflowStatisticsCacheUpdater;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 
 struct LazyMaterializingRows
 {
@@ -28,7 +30,7 @@ using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 class LazilyMaterializingTransform final : public IProcessor
 {
 public:
-    LazilyMaterializingTransform(SharedHeader main_header, SharedHeader lazy_header, LazyMaterializingRowsPtr lazy_materializing_rows_);
+    LazilyMaterializingTransform(SharedHeader main_header, SharedHeader lazy_header, LazyMaterializingRowsPtr lazy_materializing_rows_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
 
     static Block transformHeader(const Block & main_header, const Block & lazy_header);
 
@@ -46,6 +48,7 @@ private:
     PaddedPODArray<size_t> permutation;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
     void prepareMainChunk();
     void prepareLazyChunk();

@@ -1,5 +1,6 @@
 #include <iostream>
 #include <Processors/Transforms/LazilyMaterializingTransform.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Interpreters/Squashing.h>
 #include <Interpreters/sortBlock.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -27,11 +28,12 @@ Block LazilyMaterializingTransform::transformHeader(const Block & main_header, c
     return Block(std::move(columns));
 }
 
-LazilyMaterializingTransform::LazilyMaterializingTransform(SharedHeader main_header, SharedHeader lazy_header, LazyMaterializingRowsPtr lazy_materializing_rows_)
+LazilyMaterializingTransform::LazilyMaterializingTransform(SharedHeader main_header, SharedHeader lazy_header, LazyMaterializingRowsPtr lazy_materializing_rows_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
     : IProcessor(
         InputPorts({main_header, lazy_header}),
         OutputPorts({OutputPort(std::make_shared<Block>(transformHeader(*main_header, *lazy_header)))}))
     , lazy_materializing_rows(std::move(lazy_materializing_rows_))
+    , updater(std::move(updater_))
 {
 }
 
@@ -361,6 +363,9 @@ void LazilyMaterializingTransform::prepareLazyChunk()
     auto columns = result_chunk->detachColumns();
     columns.insert(columns.end(), lazy_columns.begin(), lazy_columns.end());
     result_chunk = Chunk(std::move(columns), rows);
+
+    if (updater)
+        updater->recordOutputChunk(*result_chunk, getOutputs().front().getHeader());
 
     auto total_ms = total_watch.elapsedMilliseconds();
     if (total_ms >= 100)

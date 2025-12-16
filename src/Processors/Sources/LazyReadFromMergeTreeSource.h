@@ -11,6 +11,9 @@ namespace DB
 struct LazyMaterializingRows;
 using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 
+class RuntimeDataflowStatisticsCacheUpdater;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
+
 /// Dynamically created readers from MergeTree based on LazyMaterializingRows.
 class LazyReadFromMergeTreeSource final : public IProcessor
 {
@@ -26,7 +29,8 @@ public:
         StorageSnapshotPtr storage_snapshot,
         ContextPtr context_,
         const std::string & log_name_,
-        LazyMaterializingRowsPtr lazy_materializing_rows_);
+        LazyMaterializingRowsPtr lazy_materializing_rows_,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
     ~LazyReadFromMergeTreeSource() override;
 
     String getName() const override { return "LazyReadFromMergeTreeSource"; }
@@ -49,6 +53,8 @@ private:
     size_t next_ps = 0;
     InputPorts::iterator next_input_to_process;
     std::vector<std::list<Chunk>> chunks;
+
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
     Processors buildReaders();
     RangesInDataParts splitRanges(RangesInDataParts parts_with_ranges, size_t total_marks) const;

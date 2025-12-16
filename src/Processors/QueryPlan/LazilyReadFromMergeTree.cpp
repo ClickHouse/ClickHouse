@@ -62,7 +62,8 @@ void LazilyReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline
         storage_snapshot,
         context,
         log_name,
-        lazy_materializing_rows
+        lazy_materializing_rows,
+        dataflow_cache_updater
     );
 
     Pipe pipe(std::move(source));

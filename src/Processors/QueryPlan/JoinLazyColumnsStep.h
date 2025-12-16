@@ -22,6 +22,8 @@ public:
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
+    bool supportsDataflowStatisticsCollection() const override { return true; }
+
 protected:
     void updateOutputHeader() override;
 

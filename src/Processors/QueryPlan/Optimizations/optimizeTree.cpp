@@ -9,10 +9,10 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/JoinLazyColumnsStep.h>
 #include <Poco/Logger.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
-
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 #include <memory>
@@ -372,7 +372,9 @@ void considerEnablingParallelReplicas(
         while (reading_step && !reading_step->children.empty())
         {
             // TODO(nickitat): support multiple read steps with parallel replicas
-            if (reading_step->children.size() > 1)
+            const auto * lazy_joining = typeid_cast<const JoinLazyColumnsStep *>(reading_step->step.get());
+
+            if (!lazy_joining && reading_step->children.size() > 1)
                 return;
             reading_step = reading_step->children.front();
         }
