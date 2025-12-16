@@ -462,7 +462,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 written = true;
             }
 
-            auto format_with_parens_for_unary_negate = [] (const auto & func_argument, auto & output, const auto & format_func)
+            auto format_with_parens_for_unary_negate = [&] (const auto & func_argument)
             {
                 /// We need parentheses around unary operator: (-x)[1] should not be formatted as -x[1]
                 /// because -x[1] is parsed as -(x[1]).
@@ -474,10 +474,10 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     && func_argument->arguments->children.size() == 1
                     && (func_argument->name == "negate");
                 if (is_negate)
-                    output << '(';
-                format_func();
+                    ostr << '(';
+                func_argument->format(ostr, settings, state, nested_dont_need_parens);
                 if (is_negate)
-                    output << ')';
+                    ostr << ')';
             };
 
             if (!written && name == "arrayElement"sv)
@@ -485,7 +485,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 if (frame.need_parens)
                     ostr << '(';
 
-                format_with_parens_for_unary_negate(arguments->children[0]->as<ASTFunction>(), ostr, [&](){arguments->children[0]->format(ostr, settings, state, nested_dont_need_parens);});
+                format_with_parens_for_unary_negate(arguments->children[0]->as<ASTFunction>());
                 ostr << '[';
                 arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
                 ostr << ']';
@@ -538,7 +538,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                         if (frame.need_parens)
                             ostr << '(';
 
-                        format_with_parens_for_unary_negate(arguments->children[0]->as<ASTFunction>(), ostr, [&](){arguments->children[0]->format(ostr, settings, state, nested_dont_need_parens);});
+                        format_with_parens_for_unary_negate(arguments->children[0]->as<ASTFunction>());
                         ostr << ".";
                         arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
                         written = true;

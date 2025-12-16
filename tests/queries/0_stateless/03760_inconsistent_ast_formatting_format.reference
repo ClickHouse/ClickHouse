@@ -1,6 +1,4 @@
 SELECT (-('a'))[4]
-FROM numbers(1)
-FORMAT `Null`
 SELECT (-('a')).1
-FROM numbers(1)
-FORMAT `Null`
+SELECT (-('a')).1
+SELECT (-(NULL))[1]

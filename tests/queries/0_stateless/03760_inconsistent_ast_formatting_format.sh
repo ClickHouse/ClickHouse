@@ -5,8 +5,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 ${CLICKHOUSE_FORMAT} --query "
-SELECT (-'a')[4] FROM numbers(1) FORMAT Null;
+SELECT (-'a')[4];
 "
 ${CLICKHOUSE_FORMAT} --query "
-SELECT (-('a')).1 FROM numbers(1) FORMAT Null;
+SELECT (-('a')).1;
+"
+${CLICKHOUSE_FORMAT} --query "
+SELECT (-'a').1;
+"
+${CLICKHOUSE_FORMAT} --query "
+SELECT (-NULL)[1];
 "
