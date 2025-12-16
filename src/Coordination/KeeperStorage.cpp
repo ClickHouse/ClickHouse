@@ -3982,7 +3982,8 @@ uint64_t KeeperStorage<Container>::getArenaDataSize() const
 
 uint64_t KeeperStorageBase::getWatchedPathsCount() const
 {
-    return watches.size() + list_watches.size() + persistent_watches.size() + persistent_recursive_watches.size();
+    return watches.size() + list_watches.size() + persistent_watches.size() + persistent_list_watches.size()
+        + persistent_recursive_watches.size();
 }
 
 void KeeperStorageBase::clearDeadWatches(int64_t session_id)
@@ -3992,9 +3993,10 @@ void KeeperStorageBase::clearDeadWatches(int64_t session_id)
     if (watches_it == sessions_and_watchers.end())
         return;
 
-    for (const auto [watch_path, watch_type] : watches_it->second)
+    size_t erased_watches = 0;
+    for (auto watch_it = watches_it->second.begin(); watch_it != watches_it->second.end();)
     {
-        auto erase_session_from_map = [session_id, watch_path](auto & watch_map)
+        auto erase_session_from_map = [&](auto & watch_map, const auto watch_path)
         {
             auto it = watch_map.find(watch_path);
             chassert(it != watch_map.end());
@@ -4002,27 +4004,32 @@ void KeeperStorageBase::clearDeadWatches(int64_t session_id)
             watches_for_path.erase(session_id);
             if (watches_for_path.empty())
                 watch_map.erase(it);
+            watch_it = watches_it->second.erase(watch_it);
+            ++erased_watches;
         };
 
+        const auto [watch_path, watch_type] = *watch_it;
         switch (watch_type)
         {
             case WatchType::LIST_WATCH:
-                erase_session_from_map(list_watches);
+                erase_session_from_map(list_watches, watch_path);
                 break;
             case WatchType::WATCH:
-                erase_session_from_map(watches);
+                erase_session_from_map(watches, watch_path);
                 break;
             case WatchType::PERSISTENT_WATCH:
                 [[fallthrough]];
             case WatchType::PERSISTENT_LIST_WATCH:
                 [[fallthrough]];
             case WatchType::PERSISTENT_RECURSIVE_WATCH:
+                ++watch_it;
                 break;
         }
     }
 
-    total_watches_count -= watches_it->second.size();
-    sessions_and_watchers.erase(watches_it);
+    total_watches_count -= erased_watches;
+    if (watches_it->second.empty())
+        sessions_and_watchers.erase(watches_it);
 }
 
 void KeeperStorageBase::dumpWatches(WriteBufferFromOwnString & buf) const
@@ -4284,11 +4291,17 @@ bool KeeperStorageBase::removePersistentWatch(const String & path, Coordination:
 {
     auto erase_watch_for_session = [&](auto & watch_map, WatchType watch_type)
     {
-        auto erased = sessions_and_watchers[session_id].erase(WatchInfo{.path = path, .type = watch_type});
+        auto watches_it = sessions_and_watchers.find(session_id);
+        if (watches_it == sessions_and_watchers.end())
+            return false;
+
+        auto erased = watches_it->second.erase(WatchInfo{.path = path, .type = watch_type});
         if (!erased)
             return false;
 
-        --total_watches_count;
+        if (watches_it->second.empty())
+            sessions_and_watchers.erase(watches_it);
+
         auto watch_it = watch_map.find(path);
         chassert(watch_it != watch_map.end());
         auto & watches_for_path = watch_it->second;
@@ -4297,6 +4310,7 @@ bool KeeperStorageBase::removePersistentWatch(const String & path, Coordination:
         if (watches_for_path.empty())
             watch_map.erase(watch_it);
 
+        --total_watches_count;
         return true;
     };
 
