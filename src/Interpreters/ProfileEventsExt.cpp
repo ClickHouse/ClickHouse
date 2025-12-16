@@ -46,8 +46,8 @@ void dumpToMapColumn(const Counters::Snapshot & counters, DB::IColumn * column, 
         if (nonzero_only && 0 == value)
             continue;
 
-        const char * desc = getName(event);
-        key_column.insertData(desc, strlen(desc));
+        std::string_view desc = getName(event);
+        key_column.insertData(desc);
         value_column.getData().push_back(value);
         size++;
     }
@@ -68,8 +68,8 @@ static void dumpProfileEvents(ProfileEventsSnapshot const & snapshot, DB::Mutabl
         if (value == 0)
             continue;
 
-        const char * desc = getName(event);
-        name_column->insertData(desc, strlen(desc));
+        std::string_view desc = getName(event);
+        name_column->insertData(desc);
         value_column->insert(value);
         rows++;
     }

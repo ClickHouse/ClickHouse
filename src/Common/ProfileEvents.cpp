@@ -1326,7 +1326,7 @@ Counters::Counters(Counters && src) noexcept
     : counters(std::exchange(src.counters, nullptr))
     , counters_holder(std::move(src.counters_holder))
     , parent(src.parent.exchange(nullptr))
-    , trace_profile_events(src.trace_profile_events.load(std::memory_order_relaxed))
+    , trace_all_profile_events(src.trace_all_profile_events.load(std::memory_order_relaxed))
     , level(src.level)
 {
 }
@@ -1358,28 +1358,28 @@ Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
     return res;
 }
 
-const char * getName(Event event)
+static const std::array<std::string_view, ProfileEvents::END> names =
 {
-    static const char * strings[] =
-    {
-    #define M(NAME, DOCUMENTATION, VALUE_TYPE) #NAME,
-        APPLY_FOR_EVENTS(M)
-    #undef M
-    };
+#define M(NAME, DOCUMENTATION, VALUE_TYPE) #NAME,
+    APPLY_FOR_EVENTS(M)
+#undef M
+};
 
-    return strings[event];
+const std::string_view & getName(Event event)
+{
+    return names[event];
 }
 
-const char * getDocumentation(Event event)
+static const std::array<std::string_view, ProfileEvents::END> docs =
 {
-    static const char * strings[] =
-    {
-    #define M(NAME, DOCUMENTATION, VALUE_TYPE) DOCUMENTATION,
-        APPLY_FOR_EVENTS(M)
-    #undef M
-    };
+#define M(NAME, DOCUMENTATION, VALUE_TYPE) DOCUMENTATION,
+    APPLY_FOR_EVENTS(M)
+#undef M
+};
 
-    return strings[event];
+const std::string_view & getDocumentation(Event event)
+{
+    return docs[event];
 }
 
 ValueType getValueType(Event event)
@@ -1475,8 +1475,10 @@ void Counters::increment(Event event, Count amount)
 
     do
     {
-        send_to_trace_log |= current->trace_profile_events.load(std::memory_order_relaxed);
         current->counters[event].fetch_add(amount, std::memory_order_relaxed);
+        send_to_trace_log |= current->counters[event].should_trace;
+        send_to_trace_log |= current->trace_all_profile_events.load(std::memory_order_relaxed);
+
         current = current->parent;
     } while (current != nullptr);
 
