@@ -17,8 +17,6 @@ public:
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionConnectionId>(context_); }
 
-    bool isDeterministic() const override { return false; }
-
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 0; }

@@ -140,7 +140,8 @@ GlueCatalog::GlueCatalog(
         enable_s3_requests_logging,
         /* for_disk_s3 = */ false,
         /* opt_disk_name = */ {},
-        /* request_throttler = */ {});
+        /* get_request_throttler = */ nullptr,
+        /* put_request_throttler = */ nullptr);
 
     Aws::Glue::GlueClientConfiguration client_configuration;
     client_configuration.maxConnections = static_cast<unsigned>(global_settings[DB::Setting::s3_max_connections]);
@@ -170,8 +171,8 @@ GlueCatalog::GlueCatalog(
     else
     {
         LOG_TRACE(log, "Creating AWS glue client with credentials empty {}, region '{}', endpoint '{}'", credentials.IsEmpty(), region, endpoint);
-        auto credentials_provider = DB::S3::getCredentialsProvider(poco_config, credentials, creds_config);
-        glue_client = std::make_unique<Aws::Glue::GlueClient>(credentials_provider, endpoint_provider, client_configuration);
+        std::shared_ptr<DB::S3::S3CredentialsProviderChain> chain = std::make_shared<DB::S3::S3CredentialsProviderChain>(poco_config, credentials, creds_config);
+        glue_client = std::make_unique<Aws::Glue::GlueClient>(chain, endpoint_provider, client_configuration);
     }
 
 }
@@ -477,7 +478,7 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
         DB::StoredObject metadata_stored_object(metadata_path);
         auto read_buf = object_storage->readObject(metadata_stored_object, read_settings);
         String metadata_file;
-        readStringUntilEOF(metadata_file, *read_buf);
+        readString(metadata_file, *read_buf);
 
         Poco::JSON::Parser parser;
         Poco::Dynamic::Var result = parser.parse(metadata_file);

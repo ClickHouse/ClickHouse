@@ -11,7 +11,6 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadPool.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <Common/setThreadName.h>
 
 #include <utility>
 
@@ -168,7 +167,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     if (!index_granularity_info.mark_type.adaptive)
     {
         /// Read directly to marks.
-        chassert(expected_uncompressed_size == plain_marks.size() * sizeof(MarkInCompressedFile));
+        chassert(expected_uncompressed_size == plain_marks.size() * sizeof(MarkInCompressedFile));  /// NOLINT(bugprone-sizeof-expression)
         reader->readStrict(reinterpret_cast<char *>(plain_marks.data()), expected_uncompressed_size);
 
         if (!reader->eof())
@@ -240,7 +239,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
         }
         else
         {
-            loaded_marks = mark_cache->getWithoutMetrics(key);
+            loaded_marks = mark_cache->get(key);
             if (!loaded_marks)
                 loaded_marks = loadMarksImpl();
         }
@@ -264,7 +263,7 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
     /// Avoid queueing jobs into thread pool if marks are in cache
     auto data_part_storage = data_part_reader->getDataPartStorage();
     auto key = MarkCache::hash(fs::path(data_part_storage->getFullPath()) / mrk_path);
-    if (MarkCache::MappedPtr loaded_marks = mark_cache->getForAsyncLoading(key))
+    if (MarkCache::MappedPtr loaded_marks = mark_cache->get(key))
     {
         ProfileEvents::increment(ProfileEvents::MarksTasksFromCache);
         auto promise = std::promise<MarkCache::MappedPtr>();
@@ -285,7 +284,7 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
             return loadMarksSync();
         },
         *load_marks_threadpool,
-        ThreadName::LOAD_MARKS);
+        "LoadMarksThread");
 }
 
 void addMarksToCache(const IMergeTreeDataPart & part, const PlainMarksByName & cached_marks, MarkCache * mark_cache)
