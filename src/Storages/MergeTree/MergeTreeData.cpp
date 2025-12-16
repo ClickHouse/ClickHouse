@@ -1976,12 +1976,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} has invalid version metadata: {}", res.part->name, version.toString());
 
         if (version_updated)
-        {
-            if (supportsTransactions())
-                res.part->storeVersionMetadata(/* force */ true);
-            else
-                LOG_INFO(log, "Skip version metadata update of {} in case of ATTACH AS REPLICATED", res.part->name);
-        }
+            res.part->storeVersionMetadata(/* force */ true);
 
         /// Deactivate part if creation was not committed or if removal was.
         if (version.creation_csn == Tx::RolledBackCSN || version.removal_csn)
@@ -7460,6 +7455,24 @@ void MergeTreeData::validateDetachedPartName(const String & name)
     if (startsWith(name, "attaching_") || startsWith(name, "deleting_"))
         throw DB::Exception(ErrorCodes::BAD_DATA_PART_NAME, "Cannot drop part {}: "
                             "most likely it is used by another DROP or ATTACH query.", name);
+}
+
+void MergeTreeData::clearTransactionMetadata(const std::filesystem::path & data_path)
+{
+    namespace fs = std::filesystem;
+
+    for (const auto & entry : fs::directory_iterator(data_path))
+    {
+        if (!entry.is_directory())
+            continue;
+
+        auto txn_file_path = entry.path() / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME;
+        if (fs::exists(txn_file_path))
+        {
+            fs::remove(txn_file_path);
+            LOG_DEBUG(getLogger("MergeTreeData"), "Removed transaction metadata file: {}", txn_file_path.string());
+        }
+    }
 }
 
 void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr local_context)

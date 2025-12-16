@@ -2572,6 +2572,19 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     else if (!to_replicated)
        throw Exception(ErrorCodes::INCORRECT_QUERY, "Can not attach table as not replicated, table is already not replicated");
 
+    /// When converting to replicated, remove all transaction metadata files
+    if (to_replicated && !engine_name.starts_with("Replicated"))
+    {
+        String table_data_path = database->getTableDataPath(create);
+        auto full_data_path = fs::path(getContext()->getPath()) / table_data_path;
+
+        if (fs::exists(full_data_path) && fs::is_directory(full_data_path))
+        {
+            LOG_INFO(getLogger("InterpreterCreateQuery"), "Clearing transaction metadata for table {} during ATTACH AS REPLICATED", full_data_path);
+            MergeTreeData::clearTransactionMetadata(full_data_path);
+        }
+    }
+
     /// Set new engine
     DatabaseOrdinary::setMergeTreeEngine(create, getContext(), to_replicated);
 
