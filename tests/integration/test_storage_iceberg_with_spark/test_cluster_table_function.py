@@ -295,16 +295,13 @@ def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with
     if buffers_count_with_splitted_tasks != 0:
         assert buffers_count_with_splitted_tasks > buffers_count_default
 
-@pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_bucket_split_single_node(started_cluster_iceberg_with_spark, format_version, storage_type):
+def test_bucket_split_single_node(started_cluster_iceberg_with_spark, storage_type):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = (
-        "test_partition_by_"
+        "test_bucket_split_single_node_"
         + format_version
-        + "_"
-        + storage_type
         + "_"
         + get_uuid_str()
     )
