@@ -104,7 +104,7 @@ struct ManifestFileEntry : public boost::noncopyable
         , snapshot_id(snapshot_id_)
         , schema_id(schema_id_)
         , partition_key_value(std::move(partition_key_value_))
-        , common_partition_specification(std::move(common_partition_specification_))
+        , common_partition_specification(common_partition_specification_)
         , columns_infos(std::move(columns_infos_))
         , file_format(file_format_)
         , reference_data_file_path(reference_data_file_path_)
@@ -200,8 +200,6 @@ using ManifestFilePtr = std::shared_ptr<ManifestFileContent>;
 bool operator<(const PartitionSpecification & lhs, const PartitionSpecification & rhs);
 bool operator<(const DB::Row & lhs, const DB::Row & rhs);
 
-
-std::weak_ordering operator<=>(const ManifestFileEntry & lhs, const ManifestFileEntry & rhs);
 
 std::weak_ordering operator<=>(const ManifestFileEntryPtr & lhs, const ManifestFileEntryPtr & rhs);
 }
