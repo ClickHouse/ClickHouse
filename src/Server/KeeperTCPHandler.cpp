@@ -45,8 +45,6 @@ namespace ProfileEvents
     extern const Event KeeperTotalElapsedMicroseconds;
 }
 
-
-
 namespace DB
 {
 
