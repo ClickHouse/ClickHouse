@@ -58,6 +58,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_time_time64_type", false, true, "Enable Time and Time64 type by default"},
             {"use_skip_indexes_for_top_k", false, true, "New setting."},
             {"use_top_k_dynamic_filtering", false, false, "New setting."},
+            {"use_skip_indexes_on_data_read", false, true, "Testing setting"},
             {"query_plan_max_limit_for_top_k_optimization", 0, 1000, "New setting."},
             {"aggregate_function_input_format", "state", "state", "New setting to control AggregateFunction input format during INSERT operations. Setting Value set to state by default"},
             {"delta_lake_snapshot_start_version", -1, -1, "New setting."},
