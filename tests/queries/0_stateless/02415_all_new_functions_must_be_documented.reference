@@ -31,15 +31,6 @@ notNullIn
 notNullInIgnoreSet
 nullIn
 nullInIgnoreSet
-parseDateTime64
-parseDateTime64InJodaSyntax
-parseDateTime64InJodaSyntaxOrNull
-parseDateTime64InJodaSyntaxOrZero
-parseDateTime64OrNull
-parseDateTime64OrZero
-parseDateTimeInJodaSyntax
-parseDateTimeInJodaSyntaxOrNull
-parseDateTimeInJodaSyntaxOrZero
 polygonAreaCartesian
 polygonAreaSpherical
 polygonConvexHullCartesian
@@ -63,7 +54,6 @@ readWKTPolygon
 readWKTRing
 sigmoid
 svg
-toISOWeek
 validateNestedArraySizes
 windowID
 wkt
