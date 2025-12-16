@@ -4560,7 +4560,7 @@ Possible values:
 - 0 — The data types in column definitions are set to not `Nullable` by default.
 )", 0) \
     DECLARE(Bool, cast_keep_nullable, false, R"(
-Enables or disables keeping of the `Nullable` data type in [CAST](/sql-reference/functions/type-conversion-functions#cast) operations.
+Enables or disables keeping of the `Nullable` data type in [CAST](/sql-reference/functions/type-conversion-functions#CAST) operations.
 
 When the setting is enabled and the argument of `CAST` function is `Nullable`, the result is also transformed to `Nullable` type. When the setting is disabled, the result always has the destination type exactly.
 
@@ -4603,7 +4603,7 @@ Result:
 
 **See Also**
 
-- [CAST](/sql-reference/functions/type-conversion-functions#cast) function
+- [CAST](/sql-reference/functions/type-conversion-functions#CAST) function
 )", 0) \
     DECLARE(Bool, cast_ipv4_ipv6_default_on_conversion_error, false, R"(
 CAST operator into IPv4, CAST operator into IPV6 type, toIPv4, toIPv6 functions will return default value instead of throwing exception on conversion error.
@@ -6628,7 +6628,7 @@ Possible values:
 
     ClickHouse can parse the basic `YYYY-MM-DD HH:MM:SS` format and all [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) date and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
 
-- `'best_effort_us'` — Similar to `best_effort` (see the difference in [parseDateTimeBestEffortUS](../../sql-reference/functions/type-conversion-functions#parsedatetimebesteffortus)
+- `'best_effort_us'` — Similar to `best_effort` (see the difference in [parseDateTimeBestEffortUS](../../sql-reference/functions/type-conversion-functions#parseDateTimeBestEffortUS)
 
 - `'basic'` — Use basic parser.
 
