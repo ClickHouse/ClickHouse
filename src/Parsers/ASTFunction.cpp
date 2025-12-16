@@ -432,7 +432,13 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
             if (auto it = std::ranges::find(operators, name, &FunctionOperatorMapping::function_name); it != operators.end())
             {
-                if (frame.need_parens)
+                /// IN operators need parentheses when used as function arguments (except as the first argument)
+                /// to avoid ambiguity with the comma separator. Example: position(1 IN (SELECT 1), 1)
+                /// should be formatted as position((1 IN (SELECT 1)), 1) to distinguish the IN's comma
+                /// from the position() function's comma separator.
+                bool is_in_operator = (name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn");
+                bool need_parens_around_in = frame.need_parens || (is_in_operator && frame.list_element_index > 0);
+                if (need_parens_around_in)
                     ostr << '(';
                 arguments->children[0]->format(ostr, settings, state, nested_need_parens);
                 ostr << it->operator_name;
@@ -440,7 +446,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 /// Format x IN 1 as x IN (1): put parens around rhs even if there is a single element in set.
                 const auto * second_arg_func = arguments->children[1]->as<ASTFunction>();
                 const auto * second_arg_literal = arguments->children[1]->as<ASTLiteral>();
-                bool extra_parents_around_in_rhs = (name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn")
+                bool extra_parents_around_in_rhs = is_in_operator
                     && !second_arg_func
                     && !(second_arg_literal
                          && (second_arg_literal->value.getType() == Field::Types::Tuple
@@ -457,7 +463,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 if (!extra_parents_around_in_rhs)
                     arguments->children[1]->format(ostr, settings, state, nested_need_parens);
 
-                if (frame.need_parens)
+                if (need_parens_around_in)
                     ostr << ')';
                 written = true;
             }
