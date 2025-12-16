@@ -24,6 +24,7 @@
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DirectJoinMergeTreeEntity.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
@@ -43,12 +44,14 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageJoin.h>
 
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
@@ -489,6 +492,17 @@ void JoinStepLogical::updateOutputHeader()
 
     if (!header.columns())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is empty, actions_dag: {}", actions_dag->dumpDAG());
+
+    /// Materialize constant columns because we need a non-constant dummy column as result
+    const auto & outputs = actions_dag->getOutputs();
+    for (const auto * node : outputs)
+    {
+        if (isDummyColumnOfThisStep(node))
+        {
+            materializeBlockInplace(header);
+            break;
+        }
+    }
 
     output_header = std::make_shared<const Block>(std::move(header));
 }
@@ -983,6 +997,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
         rhs.setSourceRelations(BitSet().set(1));
 
         join_expression.push_back(JoinActionRef::transform({lhs, rhs}, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
+
+        table_join->setIsJoinWithConstant(true);
     }
 
     std::vector<JoinActionRef> used_expressions;

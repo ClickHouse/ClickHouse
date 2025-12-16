@@ -1679,7 +1679,7 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
         /*uncompressed_cache=*/{},
         storage.getContext()->getMarkCache().get(),
         nullptr,
-        MergeTreeReaderSettings{},
+        MergeTreeReaderSettings::createFromSettings(),
         ValueSizeMap{},
         ReadBufferFromFileBase::ProfileCallback{});
 
@@ -2502,7 +2502,7 @@ ColumnSize IMergeTreeDataPart::getColumnSize(const String & column_name) const
     return ColumnSize{};
 }
 
-IMergeTreeDataPart::ColumnSizeByName IMergeTreeDataPart::getColumnSizes() const
+const IMergeTreeDataPart::ColumnSizeByName & IMergeTreeDataPart::getColumnSizes() const
 {
     std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
     if (!are_columns_and_secondary_indices_sizes_calculated && areChecksumsLoaded())
@@ -2782,10 +2782,10 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
 
     StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr();
     StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
-    MergeTreeReaderSettings settings;
+
     /// We need to read only prefixes, so no data will be read.
     /// Use read settings without prefetches/filesystem cache/etc.
-    settings.read_settings = getReadSettingsForMetadata();
+    MergeTreeReaderSettings settings = MergeTreeReaderSettings::createFromSettings(getReadSettingsForMetadata());
     settings.can_read_part_without_marks = true;
     /// Use prefixes deserialization thread pool to read prefixes faster.
     /// In JSON type there might be hundreds of small files that needs to be read.
