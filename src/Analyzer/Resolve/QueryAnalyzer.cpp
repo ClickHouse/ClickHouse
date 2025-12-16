@@ -3081,11 +3081,19 @@ ProjectionNames QueryAnalyzer::resolveSortNodeList(QueryTreeNodePtr & sort_node_
     for (auto & node : sort_node_list_typed.getNodes())
     {
         auto & sort_node = node->as<SortNode &>();
-        sort_expression_projection_names = resolveExpressionNode(sort_node.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        auto & sort_expression = sort_node.getExpression();
+        bool is_order_by_asterisk = sort_expression->getNodeType() == QueryTreeNodeType::MATCHER;
 
-        if (auto * sort_column_list_node = sort_node.getExpression()->as<ListNode>())
+        sort_expression_projection_names = resolveExpressionNode(sort_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+        if (auto * sort_column_list_node = sort_expression->as<ListNode>())
         {
             size_t sort_column_list_node_size = sort_column_list_node->getNodes().size();
+            if (sort_column_list_node_size != 1 && is_order_by_asterisk)
+            {
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Expression ORDER BY {} is not supported, matcher expression can only contain single column",
+                    sort_expression->formatASTForErrorMessage());
+            }
             if (sort_column_list_node_size != 1)
             {
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
