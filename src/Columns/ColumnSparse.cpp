@@ -429,8 +429,9 @@ void ColumnSparse::filter(const Filter & filt)
         {
             if (filt[i])
             {
-                res_offsets_data[res_offsets_pos++] = res_offset;
+                res_offsets_data[res_offsets_pos] = res_offset;
                 values_filter.push_back(1);
+                ++res_offsets_pos;
                 ++res_offset;
             }
             else

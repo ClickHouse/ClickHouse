@@ -199,7 +199,8 @@ namespace
         void insertOne(size_t array_size)
         {
             current_src_offset += array_size;
-            res_offsets[size++] = current_src_offset;
+            res_offsets[size] = current_src_offset;
+            ++size;
         }
 
         template <size_t SIMD_BYTES>
@@ -256,7 +257,7 @@ namespace
         /// copy array ending at *end_offset_ptr
         const auto copy_array = [&] (const IColumn::Offset * offset_ptr)
         {
-            const auto arr_offset = offset_ptr == offsets_begin ? 0 : offset_ptr[-1];
+            const auto arr_offset = offset_ptr[-1];
             const auto arr_size = *offset_ptr - arr_offset;
 
             result_offsets_builder.insertOne(arr_size);
@@ -283,7 +284,7 @@ namespace
                 /// SIMD_BYTES consecutive rows pass the filter
                 const auto first = offsets_pos == offsets_begin;
 
-                const auto chunk_offset = first ? 0 : offsets_pos[-1];
+                const auto chunk_offset = offsets_pos[-1];
                 const auto chunk_size = offsets_pos[SIMD_BYTES - 1] - chunk_offset;
 
                 result_offsets_builder.template insertChunk<SIMD_BYTES>(offsets_pos, first, chunk_offset, chunk_size);
@@ -350,7 +351,7 @@ void filterArraysImplInPlace(
 
     InPlaceResultOffsetsBuilder result_offsets_builder(offsets_pos);
 
-    const auto copy_array = [&] (const IColumn::Offset * offset_ptr)
+    const auto copy_array_inplace = [&] (const IColumn::Offset * offset_ptr)
     {
         const auto arr_offset = offset_ptr[-1];
         const auto arr_size = *offset_ptr - arr_offset;
@@ -392,7 +393,7 @@ void filterArraysImplInPlace(
             while (mask)
             {
                 size_t index = std::countr_zero(mask);
-                copy_array(offsets_pos + index);
+                copy_array_inplace(offsets_pos + index);
             #ifdef __BMI__
                 mask = _blsr_u64(mask);
             #else
@@ -408,7 +409,7 @@ void filterArraysImplInPlace(
     while (filt_pos < filt_end)
     {
         if (*filt_pos)
-            copy_array(offsets_pos);
+            copy_array_inplace(offsets_pos);
 
         ++filt_pos;
         ++offsets_pos;

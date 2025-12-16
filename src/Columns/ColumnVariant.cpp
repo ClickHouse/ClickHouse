@@ -86,9 +86,14 @@ void ColumnVariant::constructOffsetsFromDiscriminators()
         for (Discriminator discr : discriminators_concrete->getData())
         {
             if (discr == NULL_DISCRIMINATOR)
+            {
                 offsets_data.emplace_back();
+            }
             else
-                offsets_data.push_back(nested_offsets[discr]++);
+            {
+                offsets_data.push_back(nested_offsets[discr]);
+                ++nested_offsets[discr];
+            }
         }
     }
 }
