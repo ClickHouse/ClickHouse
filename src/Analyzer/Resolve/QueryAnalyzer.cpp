@@ -4385,6 +4385,10 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                         left_subquery->getJoinTree() = left_table_expression;
 
                         IdentifierResolveScope & left_subquery_scope = createIdentifierResolveScope(left_subquery, nullptr /*parent_scope*/);
+                        /// We are using alias column mechanism for USING column from projection.
+                        /// It will be calculated right after reading, so column will be not nullable there.
+                        left_subquery_scope.join_use_nulls = false;
+
                         resolveQuery(left_subquery, left_subquery_scope);
 
                         const auto & resolved_nodes = left_subquery->getProjection().getNodes();
@@ -4417,7 +4421,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             /** With `analyzer_compatibility_join_using_top_level_identifier` alias in projection has higher priority than column from left table.
               * But if aliased expression cannot be resolved from left table, we get UNKNOW_IDENTIFIER error,
               * despite the fact that column from USING could be resolved from left table.
-              * It's compatibility with a default behavior for old analyzer.
+              * It's compatible with a default behavior for old analyzer.
               */
             if (settings[Setting::analyzer_compatibility_join_using_top_level_identifier])
                 result_left_table_expression = try_resolve_identifier_from_query_projection(identifier_full_name, join_node_typed.getLeftTableExpression(), scope);
@@ -4427,14 +4431,6 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                 IdentifierLookup identifier_lookup{identifier_node->getIdentifier(), IdentifierLookupContext::EXPRESSION};
                 result_left_table_expression = identifier_resolver.tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node_typed.getLeftTableExpression(), scope).resolved_identifier;
             }
-
-            /** Here we may try to resolve identifier from projection in case it's not resolved from left table expression
-              * and analyzer_compatibility_join_using_top_level_identifier is disabled.
-              * For now we do not do this, because not all corner cases are clear.
-              * But let's at least mention it in error message
-              */
-            /// if (!settings.analyzer_compatibility_join_using_top_level_identifier && !result_left_table_expression)
-            ///     result_left_table_expression = try_resolve_identifier_from_query_projection(identifier_full_name, join_node_typed.getLeftTableExpression(), scope);
 
             if (!result_left_table_expression)
             {
