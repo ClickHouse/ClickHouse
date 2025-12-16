@@ -224,7 +224,7 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
         if (res_columns[i] == nullptr || isColumnConst(*res_columns[i]))
             continue;
 
-        auto serialization = IDataType::getSerialization(*available_column);
+        auto serialization = available_column->type->getSerialization(*available_column->type->getSerializationInfo(*res_columns[i]));
         serialization->enumerateStreams([&](const auto & subpath)
         {
             if (subpath.empty() || subpath.back().type != ISerialization::Substream::ArraySizes)
