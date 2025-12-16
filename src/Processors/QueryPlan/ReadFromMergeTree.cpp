@@ -3386,8 +3386,7 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
     storage_snapshot = std::make_shared<StorageSnapshot>(
         storage_snapshot->storage,
         storage_snapshot->metadata,
-        std::move(new_virtual_columns),
-        std::move(storage_snapshot->data));
+        std::move(new_virtual_columns));
 
     if (output_header != nullptr)
     {
