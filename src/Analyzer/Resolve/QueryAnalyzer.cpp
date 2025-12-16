@@ -3398,7 +3398,7 @@ void removeUnusedProjections(QueryTreeNodePtr & projection_node_list, Identifier
             used_projection_indices.push_back(i);
     }
 
-    if (used_projection_indices.size() == 0 || used_projection_indices.size() == projection_nodes.size())
+    if (used_projection_indices.empty() || used_projection_indices.size() == projection_nodes.size())
         return;
 
     QueryTreeNodes new_projection_nodes;
