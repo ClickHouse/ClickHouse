@@ -37,12 +37,7 @@ struct ReplicaInfo
     std::optional<UInt32> replication_lag;
     UInt64 recovery_time;
 };
-
-struct ReplicasInfo
-{
-    std::vector<ReplicaInfo> replicas;
-    bool replicas_belong_to_shared_catalog;
-};
+using ReplicasInfo = std::vector<ReplicaInfo>;
 
 class DatabaseReplicated : public DatabaseAtomic
 {
@@ -131,9 +126,6 @@ public:
 
     void renameDatabase(ContextPtr query_context, const String & new_name) override;
 
-    static ASTPtr parseQueryFromMetadataInZooKeeper(
-        ContextPtr context_, const String & database_name_, const String & zookeeper_path_, const String & node_name, const String & query);
-
     friend struct DatabaseReplicatedTask;
     friend class DatabaseReplicatedDDLWorker;
 
@@ -174,8 +166,8 @@ private:
     std::map<String, String> getConsistentMetadataSnapshotImpl(const ZooKeeperPtr & zookeeper, const FilterByNameFunction & filter_by_table_name,
                                                                size_t max_retries, UInt32 & max_log_ptr) const;
 
-    static ASTPtr parseQueryFromMetadata(
-        ContextPtr context_, const String & database_name_, const String & table_name, const String & query, const String & description);
+    ASTPtr parseQueryFromMetadata(const String & table_name, const String & query, const String & description) const;
+    ASTPtr parseQueryFromMetadataInZooKeeper(const String & table_name, const String & query) const;
     ASTPtr parseQueryFromMetadataOnDisk(const String & table_name) const;
     String readMetadataFile(const String & table_name) const;
 
