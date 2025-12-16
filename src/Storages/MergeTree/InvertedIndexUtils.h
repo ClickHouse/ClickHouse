@@ -50,7 +50,7 @@ public:
     void aggregate(const Block & block);
     void finalize();
 
-    /// Returns all segements created by this transform for the given index and part.
+    /// Returns all segments created by this transform for the given index and part.
     std::vector<InvertedIndexSegment> getSegments(size_t index_idx, size_t part_idx) const;
     const std::vector<MergeTreeIndexPtr> & getIndexes() const { return indexes; }
 
