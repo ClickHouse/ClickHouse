@@ -74,6 +74,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"parallel_replicas_allow_materialized_views", false, true, "Allow usage of materialized views with parallel replicas"},
             {"distributed_cache_use_clients_cache_for_read", true, true, "New setting"},
             {"distributed_cache_use_clients_cache_for_write", false, false, "New setting"},
+            {"use_parquet_metadata_cache", true, true, "Enables cache of parquet file metadata."},
             {"enable_positional_arguments_for_projections", true, false, "New setting to control positional arguments in projections."},
         });
         addSettingsChanges(settings_changes_history, "25.11",
@@ -105,7 +106,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"database_shared_drop_table_delay_seconds", 8 * 60 * 60, 8 * 60 * 60, "New setting."},
             {"filesystem_cache_allow_background_download", true, true, "New setting to control background downloads in filesystem cache per query."},
             {"show_processlist_include_internal", false, true, "New setting."},
-            {"use_parquet_metadata_cache", true, true, "Enables cache of parquet file metadata."}
             {"enable_positional_arguments_for_projections", true, false, "New setting to control positional arguments in projections."},
         });
         addSettingsChanges(settings_changes_history, "25.10",
