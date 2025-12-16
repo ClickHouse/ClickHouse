@@ -439,7 +439,7 @@ void considerEnablingParallelReplicas(
                 return;
             }
 
-            query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(plan_with_parallel_replicas));
+            query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*plan_with_parallel_replicas));
         }
     }
     else
