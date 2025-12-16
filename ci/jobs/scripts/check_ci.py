@@ -600,7 +600,7 @@ def main():
         known_failures = []
         unknown_failures = []
 
-        for resut in workflow_result.results:
+        for result in workflow_result.results:
             if result.has_label("issue"):
                 known_failures.append((result.name, result))
                 result.set_comment("ISSUE EXISTS")
