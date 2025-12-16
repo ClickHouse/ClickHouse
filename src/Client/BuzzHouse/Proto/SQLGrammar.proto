@@ -2912,11 +2912,15 @@ message LimitByStatement {
     }
 }
 
+message LimitStatement {
+    required Expr limit = 1;
+    optional bool with_ties = 2;
+}
+
 message FetchStatement {
     required bool first = 1;
     required Expr row_count = 2;
     required RowsKeyword rows = 3;
-    required bool only = 4;
 }
 
 message OffsetStatement {
@@ -2924,6 +2928,7 @@ message OffsetStatement {
     required Expr row_count = 2;
     optional RowsKeyword rows = 3;
     optional FetchStatement fetch = 4;
+    optional bool with_ties = 5;
 }
 
 enum AllOrDistinct {
@@ -2943,7 +2948,7 @@ message SelectStatementCore {
     repeated WindowDef window_defs = 9;
     optional WhereStatement qualify_expr = 10;
     optional LimitByStatement limit_by = 11;
-    optional Expr limit = 12;
+    optional LimitStatement limit = 12;
     optional OffsetStatement offset = 13;
 }
 

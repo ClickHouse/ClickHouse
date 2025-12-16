@@ -410,6 +410,7 @@ private:
     void generateOrderBy(RandomGenerator & rg, uint32_t ncols, bool allow_settings, bool is_window, OrderByStatement * ob);
     void generateLimitExpr(RandomGenerator & rg, Expr * expr);
     void generateLimitBy(RandomGenerator & rg, LimitByStatement * ls);
+    void generateLimit(RandomGenerator & rg, bool has_order_by, LimitStatement * lim);
     void generateOffset(RandomGenerator & rg, bool has_order_by, OffsetStatement * off);
     void generateGroupByExpr(
         RandomGenerator & rg,
