@@ -11,7 +11,6 @@
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 #include <Common/Exception.h>
 #include <Processors/Transforms/LazilyMaterializingTransform.h>
-#include <IO/Operators.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
