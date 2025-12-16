@@ -59,6 +59,11 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
      {"grace_hash",           JoinAlgorithm::GRACE_HASH}})
 
 
+IMPLEMENT_SETTING_MULTI_ENUM(JoinOrderAlgorithm, ErrorCodes::BAD_ARGUMENTS,
+    {{"greedy",             JoinOrderAlgorithm::GREEDY},
+     {"dpsize",             JoinOrderAlgorithm::DPSIZE}})
+
+
 IMPLEMENT_SETTING_ENUM(TotalsMode, ErrorCodes::UNKNOWN_TOTALS_MODE,
     {{"before_having",          TotalsMode::BEFORE_HAVING},
      {"after_having_exclusive", TotalsMode::AFTER_HAVING_EXCLUSIVE},

@@ -329,7 +329,7 @@ void ColumnTuple::rollback(const ColumnCheckpoint & checkpoint)
         columns[i]->rollback(*checkpoints[i]);
 }
 
-std::string_view ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
     if (columns.empty())
     {
@@ -342,34 +342,14 @@ std::string_view ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, c
     std::string_view res;
     for (const auto & column : columns)
     {
-        auto value_ref = column->serializeValueIntoArena(n, arena, begin);
+        auto value_ref = column->serializeValueIntoArena(n, arena, begin, settings);
         res = std::string_view{value_ref.data() - res.size(), res.size() + value_ref.size()};
     }
 
     return res;
 }
 
-std::string_view ColumnTuple::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
-{
-    if (columns.empty())
-    {
-        /// Has to put one useless byte into Arena, because serialization into zero number of bytes is ambiguous.
-        char * res = arena.allocContinue(1, begin);
-        *res = 0;
-        return { res, 1 };
-    }
-
-    std::string_view res;
-    for (const auto & column : columns)
-    {
-        auto value_ref = column->serializeAggregationStateValueIntoArena(n, arena, begin);
-        res = std::string_view{value_ref.data() - res.size(), res.size() + value_ref.size()};
-    }
-
-    return res;
-}
-
-char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory) const
+char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
     if (columns.empty())
     {
@@ -378,12 +358,12 @@ char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory) const
     }
 
     for (const auto & column : columns)
-        memory = column->serializeValueIntoMemory(n, memory);
+        memory = column->serializeValueIntoMemory(n, memory, settings);
 
     return memory;
 }
 
-std::optional<size_t> ColumnTuple::getSerializedValueSize(size_t n) const
+std::optional<size_t> ColumnTuple::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
     if (columns.empty())
         return 1;
@@ -391,7 +371,7 @@ std::optional<size_t> ColumnTuple::getSerializedValueSize(size_t n) const
     size_t res = 0;
     for (const auto & column : columns)
     {
-        auto element_size = column->getSerializedValueSize(n);
+        auto element_size = column->getSerializedValueSize(n, settings);
         if (!element_size)
             return std::nullopt;
         res += *element_size;
@@ -401,7 +381,7 @@ std::optional<size_t> ColumnTuple::getSerializedValueSize(size_t n) const
 }
 
 
-void ColumnTuple::deserializeAndInsertFromArena(ReadBuffer & in)
+void ColumnTuple::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     ++column_length;
 
@@ -412,21 +392,7 @@ void ColumnTuple::deserializeAndInsertFromArena(ReadBuffer & in)
     }
 
     for (auto & column : columns)
-        column->deserializeAndInsertFromArena(in);
-}
-
-void ColumnTuple::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
-{
-    ++column_length;
-
-    if (columns.empty())
-    {
-        in.ignore(1);
-        return;
-    }
-
-    for (auto & column : columns)
-        column->deserializeAndInsertAggregationStateValueFromArena(in);
+        column->deserializeAndInsertFromArena(in, settings);
 }
 
 void ColumnTuple::skipSerializedInArena(ReadBuffer & in) const
@@ -499,10 +465,7 @@ void ColumnTuple::expand(const Filter & mask, bool inverted)
 {
     if (columns.empty())
     {
-        size_t bytes = countBytesInFilter(mask);
-        if (inverted)
-            bytes = mask.size() - bytes;
-        column_length = bytes;
+        column_length = mask.size();
         return;
     }
 
@@ -514,10 +477,12 @@ ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
 {
     if (columns.empty())
     {
-        if (limit == 0 && column_length != perm.size())
-            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of permutation ({}) doesn't match size of column ({})", perm.size(), column_length);
+        size_t result_size = limit ? limit : perm.size();
+        if (perm.size() < result_size)
+            throw Exception(
+                ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of permutation ({}) is less than required ({})", perm.size(), result_size);
 
-        return cloneResized(limit ? std::min(column_length, limit) : column_length);
+        return cloneResized(result_size);
     }
 
     const size_t tuple_size = columns.size();
@@ -533,10 +498,12 @@ ColumnPtr ColumnTuple::index(const IColumn & indexes, size_t limit) const
 {
     if (columns.empty())
     {
-        if (indexes.size() < limit)
-            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of indexes is less than required");
+        size_t result_size = limit ? limit : indexes.size();
+        if (indexes.size() < result_size)
+            throw Exception(
+                ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of indexes ({}) is less than required ({})", indexes.size(), result_size);
 
-        return cloneResized(limit ? limit : column_length);
+        return cloneResized(result_size);
     }
 
     const size_t tuple_size = columns.size();
@@ -924,6 +891,11 @@ void ColumnTuple::takeDynamicStructureFromColumn(const ColumnPtr & source_column
         columns[i]->takeDynamicStructureFromColumn(source_elements[i]);
 }
 
+void ColumnTuple::fixDynamicStructure()
+{
+    for (auto & column : columns)
+        column->fixDynamicStructure();
+}
 
 ColumnPtr ColumnTuple::compress(bool force_compression) const
 {

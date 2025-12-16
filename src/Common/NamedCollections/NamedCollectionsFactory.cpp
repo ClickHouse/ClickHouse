@@ -249,7 +249,7 @@ bool NamedCollectionFactory::loadIfNot(std::lock_guard<std::mutex> & lock)
 
     if (metadata_storage->isReplicated())
     {
-        update_task = context->getSchedulePool().createTask("NamedCollectionsMetadataStorage", [this]{ updateFunc(); });
+        update_task = context->getSchedulePool().createTask(StorageID::createEmpty(), "NamedCollectionsMetadataStorage", [this]{ updateFunc(); });
         update_task->activate();
         update_task->schedule();
     }

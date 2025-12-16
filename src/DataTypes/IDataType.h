@@ -145,7 +145,8 @@ public:
     SerializationPtr getDefaultSerialization(SerializationPtr override_default = {}) const;
 
     /// Chooses serialization according to serialization kind stack.
-    SerializationPtr getSerialization(ISerialization::KindStack kind_stack, SerializationPtr override_default = {}) const;
+    SerializationPtr getSerialization(
+        ISerialization::KindStack kind_stack, const SerializationInfoSettings & settings, SerializationPtr override_default = {}) const;
 
     /// Chooses serialization according to collected information about content of column.
     virtual SerializationPtr getSerialization(const SerializationInfo & info) const;
@@ -170,6 +171,12 @@ public:
     /** Create empty column for corresponding type and default serialization.
       */
     virtual MutableColumnPtr createColumn() const = 0;
+
+    /** Creates a column with specified size, without initializing values.
+      * This is useful when you need to create a large column to fill later (e.g. the result of a function)
+      * Default implementation uses createColumn and cloneResized.
+      */
+    virtual MutableColumnPtr createUninitializedColumnWithSize(size_t size) const;
 
     /** Create empty column for corresponding type and serialization.
      */

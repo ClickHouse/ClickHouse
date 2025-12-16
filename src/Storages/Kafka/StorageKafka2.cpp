@@ -72,6 +72,7 @@ extern const Event KafkaMessagesRead;
 extern const Event KafkaMessagesFailed;
 extern const Event KafkaRowsRead;
 extern const Event KafkaWrites;
+extern const Event KafkaMVNotReady;
 }
 
 
@@ -178,7 +179,7 @@ StorageKafka2::StorageKafka2(
     auto task_count = thread_per_consumer ? num_consumers : 1;
     for (size_t i = 0; i < task_count; ++i)
     {
-        auto task = getContext()->getMessageBrokerSchedulePool().createTask(log->name(), [this, i] { threadFunc(i); });
+        auto task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), log->name(), [this, i] { threadFunc(i); });
         task->deactivate();
         tasks.emplace_back(std::make_shared<TaskContext>(std::move(task)));
     }
@@ -188,7 +189,7 @@ StorageKafka2::StorageKafka2(
     if (!first_replica)
         createReplica();
 
-    activating_task = getContext()->getSchedulePool().createTask(log->name() + "(activating task)", [this]() { activateAndReschedule(); });
+    activating_task = getContext()->getSchedulePool().createTask(getStorageID(), log->name() + " (activating task)", [this]() { activateAndReschedule(); });
     activating_task->deactivate();
 }
 
@@ -1013,7 +1014,10 @@ void StorageKafka2::threadFunc(size_t idx)
             {
                 maybe_stall_reason.reset();
                 if (!StorageKafkaUtils::checkDependencies(table_id, getContext()))
+                {
+                    ProfileEvents::increment(ProfileEvents::KafkaMVNotReady);
                     break;
+                }
 
                 LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 

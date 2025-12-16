@@ -38,7 +38,7 @@ size_t LazyOutput::buildOutput(
             if (bytes_limit)
             {
                 for (const auto & col : left_block)
-                    col.column->collectSerializedValueSizes(left_sizes, nullptr);
+                    col.column->collectSerializedValueSizes(left_sizes, nullptr, nullptr);
             }
             return buildOutputFromBlocksLimitAndOffset(
                 columns, row_refs_begin, row_refs_end,
