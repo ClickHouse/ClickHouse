@@ -85,7 +85,7 @@ private:
     std::shared_ptr<zkutil::ZooKeeperLock> lock;
 
     std::vector<std::string> domains;
-    UInt64 refresh_certificates_task_interval;
+    UInt64 refresh_certificates_task_interval_ms;
     UInt64 refresh_certificates_before;
     std::optional<std::string> active_order;
 };
