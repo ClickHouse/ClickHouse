@@ -21,6 +21,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMemory.h>
 #include <Poco/DirectoryIterator.h>
+#include <Poco/String.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
@@ -846,25 +847,11 @@ Strings DatabaseCatalog::getDatabasesCaseInsensitive(const String & database_nam
 {
     assert(!database_name.empty());
     Strings result;
-    // ASCII-only lowercase conversion for both sides
-    auto to_lower_ascii = [](const String & s) {
-        String out;
-        out.reserve(s.size());
-        for (char c : s)
-        {
-            if (c >= 'A' && c <= 'Z')
-                out.push_back(static_cast<char>(c + ('a' - 'A')));
-            else
-                out.push_back(c);
-        }
-        return out;
-    };
-
-    const String target = to_lower_ascii(database_name);
+    const String target = Poco::toLower(database_name);
     std::lock_guard lock{databases_mutex};
     for (const auto & [name, _] : databases)
     {
-        if (to_lower_ascii(name) == target)
+        if (Poco::toLower(name) == target)
             result.push_back(name);
     }
     return result;

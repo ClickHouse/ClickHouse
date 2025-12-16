@@ -383,7 +383,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabas
     }
     catch (const Exception & e)
     {
-        bool do_fallback = 
+        bool do_fallback =
             (e.code() == ErrorCodes::UNKNOWN_DATABASE && settings[Setting::enable_case_insensitive_databases]) ||
             (e.code() == ErrorCodes::UNKNOWN_TABLE && settings[Setting::enable_case_insensitive_tables]);
 
