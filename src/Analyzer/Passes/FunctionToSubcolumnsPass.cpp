@@ -151,6 +151,21 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
         return NameAndTypePair{names[index - 1], types[index - 1]};
     }
 
+    /// Maybe negative index
+    if (value.getType() == Field::Types::Int64)
+    {
+        ssize_t index = value.safeGet<Int64>();
+        ssize_t size = types.size();
+
+        if (index == 0 || std::abs(index) > size)
+            return {};
+
+        if (index > 0)
+            return NameAndTypePair{names[index - 1], types[index - 1]};
+        else
+            return NameAndTypePair{names[size + index], types[size + index]};
+    }
+
     return {};
 }
 

@@ -2508,21 +2508,286 @@ SELECT parseDateTimeOrNull('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
     FunctionDocumentation::Category parseDateTimeOrNull_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTimeOrNull_documentation = {parseDateTimeOrNull_description, parseDateTimeOrNull_syntax, parseDateTimeOrNull_arguments, parseDateTimeOrNull_returned_value, parseDateTimeOrNull_examples, parseDateTimeOrNull_introduced_in, parseDateTimeOrNull_category};
 
+    /// parseDateTime64 documentation
+    FunctionDocumentation::Description parseDateTime64_description = R"(
+Parses a date and time string with sub-second precision according to a MySQL date format string.
+
+This function is the inverse of [`formatDateTime`](/sql-reference/functions/date-time-functions) for DateTime64.
+It parses a String argument using a format String. Returns a DateTime64 type which can represent dates from 1900 to 2299 with sub-second precision.
+    )";
+    FunctionDocumentation::Syntax parseDateTime64_syntax = "parseDateTime64(time_string, format[, timezone])";
+    FunctionDocumentation::Arguments parseDateTime64_arguments = {
+        {"time_string", "String to be parsed into DateTime64.", {"String"}},
+        {"format", "Format string specifying how to parse time_string.", {"String"}},
+        {"timezone", "Optional. Timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue parseDateTime64_returned_value = {"Returns a DateTime64 parsed from the input string according to the MySQL style format string.", {"DateTime64"}};
+    FunctionDocumentation::Examples parseDateTime64_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT parseDateTime64('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
+        )",
+        R"(
+┌─parseDateTime64('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')─┐
+│                                       2025-01-04 23:00:00.123       │
+└─────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn parseDateTime64_introduced_in = {24, 11};
+    FunctionDocumentation::Category parseDateTime64_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation parseDateTime64_documentation = {parseDateTime64_description, parseDateTime64_syntax, parseDateTime64_arguments, parseDateTime64_returned_value, parseDateTime64_examples, parseDateTime64_introduced_in, parseDateTime64_category};
+
+    /// parseDateTime64OrZero documentation
+    FunctionDocumentation::Description parseDateTime64OrZero_description = R"(
+Same as [`parseDateTime64`](#parseDateTime64) but returns zero date when it encounters an unparsable date format.
+    )";
+    FunctionDocumentation::Syntax parseDateTime64OrZero_syntax = "parseDateTime64OrZero(time_string, format[, timezone])";
+    FunctionDocumentation::Arguments parseDateTime64OrZero_arguments = {
+        {"time_string", "String to be parsed into DateTime64.", {"String"}},
+        {"format", "Format string specifying how to parse time_string.", {"String"}},
+        {"timezone", "Optional. Timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue parseDateTime64OrZero_returned_value = {"Returns DateTime64 parsed from input string, or zero DateTime64 if parsing fails.", {"DateTime64"}};
+    FunctionDocumentation::Examples parseDateTime64OrZero_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT parseDateTime64OrZero('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
+        )",
+        R"(
+┌─parseDateTime64OrZero('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')─┐
+│                                             2025-01-04 23:00:00.123       │
+└───────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn parseDateTime64OrZero_introduced_in = {24, 11};
+    FunctionDocumentation::Category parseDateTime64OrZero_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation parseDateTime64OrZero_documentation = {parseDateTime64OrZero_description, parseDateTime64OrZero_syntax, parseDateTime64OrZero_arguments, parseDateTime64OrZero_returned_value, parseDateTime64OrZero_examples, parseDateTime64OrZero_introduced_in, parseDateTime64OrZero_category};
+
+    /// parseDateTime64OrNull documentation
+    FunctionDocumentation::Description parseDateTime64OrNull_description = R"(
+Same as [`parseDateTime64`](#parseDateTime64) but returns `NULL` when it encounters an unparsable date format.
+    )";
+    FunctionDocumentation::Syntax parseDateTime64OrNull_syntax = "parseDateTime64OrNull(time_string, format[, timezone])";
+    FunctionDocumentation::Arguments parseDateTime64OrNull_arguments = {
+        {"time_string", "String to be parsed into DateTime64.", {"String"}},
+        {"format", "Format string specifying how to parse time_string.", {"String"}},
+        {"timezone", "Optional. Timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue parseDateTime64OrNull_returned_value = {"Returns DateTime64 parsed from input string, or NULL if parsing fails.", {"Nullable(DateTime64)"}};
+    FunctionDocumentation::Examples parseDateTime64OrNull_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT parseDateTime64OrNull('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
+        )",
+        R"(
+┌─parseDateTime64OrNull('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')─┐
+│                                            2025-01-04 23:00:00.123        │
+└───────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn parseDateTime64OrNull_introduced_in = {24, 11};
+    FunctionDocumentation::Category parseDateTime64OrNull_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation parseDateTime64OrNull_documentation = {parseDateTime64OrNull_description, parseDateTime64OrNull_syntax, parseDateTime64OrNull_arguments, parseDateTime64OrNull_returned_value, parseDateTime64OrNull_examples, parseDateTime64OrNull_introduced_in, parseDateTime64OrNull_category};
+
+    /// parseDateTimeInJodaSyntax documentation
+    FunctionDocumentation::Description parseDateTimeInJodaSyntax_description = R"(
+Parses a date and time string according to a Joda date format string.
+
+This function is the inverse of [`formatDateTimeInJodaSyntax`](/sql-reference/functions/date-time-functions#formatDateTimeInJodaSyntax).
+It parses a String argument using a Joda-style format String. Returns a DateTime type.
+
+Refer to [Joda Time documentation](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) for the format patterns.
+    )";
+    FunctionDocumentation::Syntax parseDateTimeInJodaSyntax_syntax = "parseDateTimeInJodaSyntax(time_string, format[, timezone])";
+    FunctionDocumentation::Arguments parseDateTimeInJodaSyntax_arguments = {
+        {"time_string", "String to be parsed into DateTime.", {"String"}},
+        {"format", "Format string in Joda syntax specifying how to parse time_string.", {"String"}},
+        {"timezone", "Optional. Timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue parseDateTimeInJodaSyntax_returned_value = {"Returns a DateTime parsed from the input string according to the Joda style format string.", {"DateTime"}};
+    FunctionDocumentation::Examples parseDateTimeInJodaSyntax_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT parseDateTimeInJodaSyntax('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')
+        )",
+        R"(
+┌─parseDateTimeInJodaSyntax('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')─┐
+│                                                      2025-01-04 23:00:00 │
+└──────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn parseDateTimeInJodaSyntax_introduced_in = {23, 3};
+    FunctionDocumentation::Category parseDateTimeInJodaSyntax_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation parseDateTimeInJodaSyntax_documentation = {parseDateTimeInJodaSyntax_description, parseDateTimeInJodaSyntax_syntax, parseDateTimeInJodaSyntax_arguments, parseDateTimeInJodaSyntax_returned_value, parseDateTimeInJodaSyntax_examples, parseDateTimeInJodaSyntax_introduced_in, parseDateTimeInJodaSyntax_category};
+
+    /// parseDateTimeInJodaSyntaxOrZero documentation
+    FunctionDocumentation::Description parseDateTimeInJodaSyntaxOrZero_description = R"(
+Same as [`parseDateTimeInJodaSyntax`](#parseDateTimeInJodaSyntax) but returns zero date when it encounters an unparsable date format.
+    )";
+    FunctionDocumentation::Syntax parseDateTimeInJodaSyntaxOrZero_syntax = "parseDateTimeInJodaSyntaxOrZero(time_string, format[, timezone])";
+    FunctionDocumentation::Arguments parseDateTimeInJodaSyntaxOrZero_arguments = {
+        {"time_string", "String to be parsed into DateTime.", {"String"}},
+        {"format", "Format string in Joda syntax specifying how to parse time_string.", {"String"}},
+        {"timezone", "Optional. Timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue parseDateTimeInJodaSyntaxOrZero_returned_value = {"Returns DateTime parsed from input string, or zero DateTime if parsing fails.", {"DateTime"}};
+    FunctionDocumentation::Examples parseDateTimeInJodaSyntaxOrZero_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT parseDateTimeInJodaSyntaxOrZero('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')
+        )",
+        R"(
+┌─parseDateTimeInJodaSyntaxOrZero('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')─┐
+│                                                          2025-01-04 23:00:00   │
+└────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn parseDateTimeInJodaSyntaxOrZero_introduced_in = {23, 3};
+    FunctionDocumentation::Category parseDateTimeInJodaSyntaxOrZero_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation parseDateTimeInJodaSyntaxOrZero_documentation = {parseDateTimeInJodaSyntaxOrZero_description, parseDateTimeInJodaSyntaxOrZero_syntax, parseDateTimeInJodaSyntaxOrZero_arguments, parseDateTimeInJodaSyntaxOrZero_returned_value, parseDateTimeInJodaSyntaxOrZero_examples, parseDateTimeInJodaSyntaxOrZero_introduced_in, parseDateTimeInJodaSyntaxOrZero_category};
+
+    /// parseDateTimeInJodaSyntaxOrNull documentation
+    FunctionDocumentation::Description parseDateTimeInJodaSyntaxOrNull_description = R"(
+Same as [`parseDateTimeInJodaSyntax`](#parseDateTimeInJodaSyntax) but returns `NULL` when it encounters an unparsable date format.
+    )";
+    FunctionDocumentation::Syntax parseDateTimeInJodaSyntaxOrNull_syntax = "parseDateTimeInJodaSyntaxOrNull(time_string, format[, timezone])";
+    FunctionDocumentation::Arguments parseDateTimeInJodaSyntaxOrNull_arguments = {
+        {"time_string", "String to be parsed into DateTime.", {"String"}},
+        {"format", "Format string in Joda syntax specifying how to parse time_string.", {"String"}},
+        {"timezone", "Optional. Timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue parseDateTimeInJodaSyntaxOrNull_returned_value = {"Returns DateTime parsed from input string, or NULL if parsing fails.", {"Nullable(DateTime)"}};
+    FunctionDocumentation::Examples parseDateTimeInJodaSyntaxOrNull_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT parseDateTimeInJodaSyntaxOrNull('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')
+        )",
+        R"(
+┌─parseDateTimeInJodaSyntaxOrNull('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')─┐
+│                                                         2025-01-04 23:00:00    │
+└────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn parseDateTimeInJodaSyntaxOrNull_introduced_in = {23, 3};
+    FunctionDocumentation::Category parseDateTimeInJodaSyntaxOrNull_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation parseDateTimeInJodaSyntaxOrNull_documentation = {parseDateTimeInJodaSyntaxOrNull_description, parseDateTimeInJodaSyntaxOrNull_syntax, parseDateTimeInJodaSyntaxOrNull_arguments, parseDateTimeInJodaSyntaxOrNull_returned_value, parseDateTimeInJodaSyntaxOrNull_examples, parseDateTimeInJodaSyntaxOrNull_introduced_in, parseDateTimeInJodaSyntaxOrNull_category};
+
+    /// parseDateTime64InJodaSyntax documentation
+    FunctionDocumentation::Description parseDateTime64InJodaSyntax_description = R"(
+Parses a date and time string with sub-second precision according to a Joda date format string.
+
+This function is the inverse of [`formatDateTimeInJodaSyntax`](/sql-reference/functions/date-time-functions#formatDateTimeInJodaSyntax) for DateTime64.
+It parses a String argument using a Joda-style format String. Returns a DateTime64 type which can represent dates from 1900 to 2299 with sub-second precision.
+
+Refer to [Joda Time documentation](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) for the format patterns.
+    )";
+    FunctionDocumentation::Syntax parseDateTime64InJodaSyntax_syntax = "parseDateTime64InJodaSyntax(time_string, format[, timezone])";
+    FunctionDocumentation::Arguments parseDateTime64InJodaSyntax_arguments = {
+        {"time_string", "String to be parsed into DateTime64.", {"String"}},
+        {"format", "Format string in Joda syntax specifying how to parse time_string.", {"String"}},
+        {"timezone", "Optional. Timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue parseDateTime64InJodaSyntax_returned_value = {"Returns a DateTime64 parsed from the input string according to the Joda style format string.", {"DateTime64"}};
+    FunctionDocumentation::Examples parseDateTime64InJodaSyntax_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT parseDateTime64InJodaSyntax('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')
+        )",
+        R"(
+┌─parseDateTime64InJodaSyntax('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')─┐
+│                                                          2025-01-04 23:00:00.123   │
+└────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn parseDateTime64InJodaSyntax_introduced_in = {24, 10};
+    FunctionDocumentation::Category parseDateTime64InJodaSyntax_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation parseDateTime64InJodaSyntax_documentation = {parseDateTime64InJodaSyntax_description, parseDateTime64InJodaSyntax_syntax, parseDateTime64InJodaSyntax_arguments, parseDateTime64InJodaSyntax_returned_value, parseDateTime64InJodaSyntax_examples, parseDateTime64InJodaSyntax_introduced_in, parseDateTime64InJodaSyntax_category};
+
+    /// parseDateTime64InJodaSyntaxOrZero documentation
+    FunctionDocumentation::Description parseDateTime64InJodaSyntaxOrZero_description = R"(
+Same as [`parseDateTime64InJodaSyntax`](#parseDateTime64InJodaSyntax) but returns zero date when it encounters an unparsable date format.
+    )";
+    FunctionDocumentation::Syntax parseDateTime64InJodaSyntaxOrZero_syntax = "parseDateTime64InJodaSyntaxOrZero(time_string, format[, timezone])";
+    FunctionDocumentation::Arguments parseDateTime64InJodaSyntaxOrZero_arguments = {
+        {"time_string", "String to be parsed into DateTime64.", {"String"}},
+        {"format", "Format string in Joda syntax specifying how to parse time_string.", {"String"}},
+        {"timezone", "Optional. Timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue parseDateTime64InJodaSyntaxOrZero_returned_value = {"Returns DateTime64 parsed from input string, or zero DateTime64 if parsing fails.", {"DateTime64"}};
+    FunctionDocumentation::Examples parseDateTime64InJodaSyntaxOrZero_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT parseDateTime64InJodaSyntaxOrZero('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')
+        )",
+        R"(
+┌─parseDateTime64InJodaSyntaxOrZero('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')─┐
+│                                                              2025-01-04 23:00:00.123     │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn parseDateTime64InJodaSyntaxOrZero_introduced_in = {24, 10};
+    FunctionDocumentation::Category parseDateTime64InJodaSyntaxOrZero_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation parseDateTime64InJodaSyntaxOrZero_documentation = {parseDateTime64InJodaSyntaxOrZero_description, parseDateTime64InJodaSyntaxOrZero_syntax, parseDateTime64InJodaSyntaxOrZero_arguments, parseDateTime64InJodaSyntaxOrZero_returned_value, parseDateTime64InJodaSyntaxOrZero_examples, parseDateTime64InJodaSyntaxOrZero_introduced_in, parseDateTime64InJodaSyntaxOrZero_category};
+
+    /// parseDateTime64InJodaSyntaxOrNull documentation
+    FunctionDocumentation::Description parseDateTime64InJodaSyntaxOrNull_description = R"(
+Same as [`parseDateTime64InJodaSyntax`](#parseDateTime64InJodaSyntax) but returns `NULL` when it encounters an unparsable date format.
+    )";
+    FunctionDocumentation::Syntax parseDateTime64InJodaSyntaxOrNull_syntax = "parseDateTime64InJodaSyntaxOrNull(time_string, format[, timezone])";
+    FunctionDocumentation::Arguments parseDateTime64InJodaSyntaxOrNull_arguments = {
+        {"time_string", "String to be parsed into DateTime64.", {"String"}},
+        {"format", "Format string in Joda syntax specifying how to parse time_string.", {"String"}},
+        {"timezone", "Optional. Timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue parseDateTime64InJodaSyntaxOrNull_returned_value = {"Returns DateTime64 parsed from input string, or NULL if parsing fails.", {"Nullable(DateTime64)"}};
+    FunctionDocumentation::Examples parseDateTime64InJodaSyntaxOrNull_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT parseDateTime64InJodaSyntaxOrNull('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')
+        )",
+        R"(
+┌─parseDateTime64InJodaSyntaxOrNull('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')─┐
+│                                                             2025-01-04 23:00:00.123      │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn parseDateTime64InJodaSyntaxOrNull_introduced_in = {24, 10};
+    FunctionDocumentation::Category parseDateTime64InJodaSyntaxOrNull_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation parseDateTime64InJodaSyntaxOrNull_documentation = {parseDateTime64InJodaSyntaxOrNull_description, parseDateTime64InJodaSyntaxOrNull_syntax, parseDateTime64InJodaSyntaxOrNull_arguments, parseDateTime64InJodaSyntaxOrNull_returned_value, parseDateTime64InJodaSyntaxOrNull_examples, parseDateTime64InJodaSyntaxOrNull_introduced_in, parseDateTime64InJodaSyntaxOrNull_category};
+
     factory.registerFunction<FunctionParseDateTime>(parseDateTime_documentation);
     factory.registerAlias("TO_UNIXTIME", FunctionParseDateTime::name, FunctionFactory::Case::Insensitive);
     factory.registerFunction<FunctionParseDateTimeOrZero>(parseDateTimeOrZero_documentation);
     factory.registerFunction<FunctionParseDateTimeOrNull>(parseDateTimeOrNull_documentation);
     factory.registerAlias("str_to_date", FunctionParseDateTimeOrNull::name, FunctionFactory::Case::Insensitive);
-    factory.registerFunction<FunctionParseDateTimeInJodaSyntax>();
-    factory.registerFunction<FunctionParseDateTimeInJodaSyntaxOrZero>();
-    factory.registerFunction<FunctionParseDateTimeInJodaSyntaxOrNull>();
+    factory.registerFunction<FunctionParseDateTimeInJodaSyntax>(parseDateTimeInJodaSyntax_documentation);
+    factory.registerFunction<FunctionParseDateTimeInJodaSyntaxOrZero>(parseDateTimeInJodaSyntaxOrZero_documentation);
+    factory.registerFunction<FunctionParseDateTimeInJodaSyntaxOrNull>(parseDateTimeInJodaSyntaxOrNull_documentation);
 
-    factory.registerFunction<FunctionParseDateTime64InJodaSyntax>();
-    factory.registerFunction<FunctionParseDateTime64InJodaSyntaxOrZero>();
-    factory.registerFunction<FunctionParseDateTime64InJodaSyntaxOrNull>();
-    factory.registerFunction<FunctionParseDateTime64>();
-    factory.registerFunction<FunctionParseDateTime64OrZero>();
-    factory.registerFunction<FunctionParseDateTime64OrNull>();
+    factory.registerFunction<FunctionParseDateTime64InJodaSyntax>(parseDateTime64InJodaSyntax_documentation);
+    factory.registerFunction<FunctionParseDateTime64InJodaSyntaxOrZero>(parseDateTime64InJodaSyntaxOrZero_documentation);
+    factory.registerFunction<FunctionParseDateTime64InJodaSyntaxOrNull>(parseDateTime64InJodaSyntaxOrNull_documentation);
+    factory.registerFunction<FunctionParseDateTime64>(parseDateTime64_documentation);
+    factory.registerFunction<FunctionParseDateTime64OrZero>(parseDateTime64OrZero_documentation);
+    factory.registerFunction<FunctionParseDateTime64OrNull>(parseDateTime64OrNull_documentation);
 }
 
 

@@ -1435,7 +1435,8 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         log,
         indexes,
         /*find_exact_ranges*/false,
-        /*is_parallel_reading_from_replicas*/false);
+        /*is_parallel_reading_from_replicas*/false,
+        /*use_query_condition_cache*/true);
 }
 
 QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(

@@ -1,6 +1,9 @@
+#include <algorithm>
 #include <string_view>
 
 #include <Parsers/ASTFunction.h>
+
+#include <boost/algorithm/string/predicate.hpp>
 
 #include <Common/quoteString.h>
 #include <Common/FieldVisitorToString.h>
@@ -254,6 +257,17 @@ static bool isAcceptableArgumentsForLambdaExpression(const ASTs & arguments)
     return false;
 }
 
+namespace
+{
+
+struct FunctionOperatorMapping
+{
+    std::string_view function_name;
+    std::string_view operator_name;
+};
+
+}
+
 void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.expression_list_prepend_whitespace = false;
@@ -307,19 +321,15 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         /// Unary prefix operators.
         if (arguments->children.size() == 1)
         {
-            const char * operators[] =
-            {
-                "negate",      "-",
-                "not",         "NOT ",
-                nullptr
-            };
+            static constexpr std::array<FunctionOperatorMapping, 2> operators = {{
+                {"negate", "-"},
+                {"not", "NOT "},
+            }};
 
-            for (const char ** func = operators; *func; func += 2)
+            if (auto it = std::ranges::find_if(operators, [&](const auto & op) { return boost::iequals(name, op.function_name); });
+                it != operators.end())
             {
-                if (strcasecmp(name.c_str(), func[0]) != 0)
-                {
-                    continue;
-                }
+                const auto & func_symbol = it->operator_name;
 
                 const auto * literal = arguments->children[0]->as<ASTLiteral>();
                 const auto * function = arguments->children[0]->as<ASTFunction>();
@@ -351,7 +361,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 if (outside_parens)
                     ostr << '(';
 
-                ostr << func[1];
+                ostr << func_symbol;
 
                 if (inside_parens)
                     ostr << '(';
@@ -364,38 +374,28 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
                 if (outside_parens)
                     ostr << ')';
-
-                break;
             }
         }
 
         /// Unary postfix operators.
         if (!written && arguments->children.size() == 1)
         {
-            const char * operators[] =
-            {
-                "isNull",          " IS NULL",
-                "isNotNull",       " IS NOT NULL",
-                nullptr
-            };
+            static constexpr std::array<FunctionOperatorMapping, 2> operators = {{
+                {"isNull", " IS NULL"},
+                {"isNotNull", " IS NOT NULL"},
+            }};
 
-            for (const char ** func = operators; *func; func += 2)
+            if (auto it = std::ranges::find_if(operators, [&](const auto & op) { return boost::iequals(name, op.function_name); });
+                it != operators.end())
             {
-                if (strcasecmp(name.c_str(), func[0]) != 0)
-                {
-                    continue;
-                }
-
                 if (frame.need_parens)
                     ostr << '(';
                 arguments->format(ostr, settings, state, nested_need_parens);
-                ostr << func[1];
+                ostr << it->operator_name;
                 if (frame.need_parens)
                     ostr << ')';
 
                 written = true;
-
-                break;
             }
         }
 
@@ -405,65 +405,61 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
         if (!written && arguments->children.size() == 2)
         {
-            const char * operators[] =
-            {
-                "multiply",          " * ",
-                "divide",            " / ",
-                "modulo",            " % ",
-                "plus",              " + ",
-                "minus",             " - ",
-                "notEquals",         " != ",
-                "lessOrEquals",      " <= ",
-                "greaterOrEquals",   " >= ",
-                "less",              " < ",
-                "greater",           " > ",
-                "equals",            " = ",
-                "isNotDistinctFrom", " <=> ",
-                "isDistinctFrom",    " IS DISTINCT FROM ",
-                "like",              " LIKE ",
-                "ilike",             " ILIKE ",
-                "notLike",           " NOT LIKE ",
-                "notILike",          " NOT ILIKE ",
-                "in",                " IN ",
-                "notIn",             " NOT IN ",
-                "globalIn",          " GLOBAL IN ",
-                "globalNotIn",       " GLOBAL NOT IN ",
-                nullptr
-            };
+            static constexpr std::array<FunctionOperatorMapping, 21> operators =
+            {{
+                {"multiply",          " * "},
+                {"divide",            " / "},
+                {"modulo",            " % "},
+                {"plus",              " + "},
+                {"minus",             " - "},
+                {"notEquals",         " != "},
+                {"lessOrEquals",      " <= "},
+                {"greaterOrEquals",   " >= "},
+                {"less",              " < "},
+                {"greater",           " > "},
+                {"equals",            " = "},
+                {"isNotDistinctFrom", " <=> "},
+                {"isDistinctFrom",    " IS DISTINCT FROM "},
+                {"like",              " LIKE "},
+                {"ilike",             " ILIKE "},
+                {"notLike",           " NOT LIKE "},
+                {"notILike",          " NOT ILIKE "},
+                {"in",                " IN "},
+                {"notIn",             " NOT IN "},
+                {"globalIn",          " GLOBAL IN "},
+                {"globalNotIn",       " GLOBAL NOT IN "}
+            }};
 
-            for (const char ** func = operators; *func; func += 2)
+            if (auto it = std::ranges::find(operators, name, &FunctionOperatorMapping::function_name); it != operators.end())
             {
-                if (name == std::string_view(func[0]))
+                if (frame.need_parens)
+                    ostr << '(';
+                arguments->children[0]->format(ostr, settings, state, nested_need_parens);
+                ostr << it->operator_name;
+
+                /// Format x IN 1 as x IN (1): put parens around rhs even if there is a single element in set.
+                const auto * second_arg_func = arguments->children[1]->as<ASTFunction>();
+                const auto * second_arg_literal = arguments->children[1]->as<ASTLiteral>();
+                bool extra_parents_around_in_rhs = (name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn")
+                    && !second_arg_func
+                    && !(second_arg_literal
+                         && (second_arg_literal->value.getType() == Field::Types::Tuple
+                            || second_arg_literal->value.getType() == Field::Types::Array))
+                    && !arguments->children[1]->as<ASTSubquery>();
+
+                if (extra_parents_around_in_rhs)
                 {
-                    if (frame.need_parens)
-                        ostr << '(';
-                    arguments->children[0]->format(ostr, settings, state, nested_need_parens);
-                    ostr << func[1];
-
-                    /// Format x IN 1 as x IN (1): put parens around rhs even if there is a single element in set.
-                    const auto * second_arg_func = arguments->children[1]->as<ASTFunction>();
-                    const auto * second_arg_literal = arguments->children[1]->as<ASTLiteral>();
-                    bool extra_parents_around_in_rhs = (name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn")
-                        && !second_arg_func
-                        && !(second_arg_literal
-                             && (second_arg_literal->value.getType() == Field::Types::Tuple
-                                || second_arg_literal->value.getType() == Field::Types::Array))
-                        && !arguments->children[1]->as<ASTSubquery>();
-
-                    if (extra_parents_around_in_rhs)
-                    {
-                        ostr << '(';
-                        arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
-                        ostr << ')';
-                    }
-
-                    if (!extra_parents_around_in_rhs)
-                        arguments->children[1]->format(ostr, settings, state, nested_need_parens);
-
-                    if (frame.need_parens)
-                        ostr << ')';
-                    written = true;
+                    ostr << '(';
+                    arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
+                    ostr << ')';
                 }
+
+                if (!extra_parents_around_in_rhs)
+                    arguments->children[1]->format(ostr, settings, state, nested_need_parens);
+
+                if (frame.need_parens)
+                    ostr << ')';
+                written = true;
             }
 
             if (!written && name == "arrayElement"sv)
@@ -572,31 +568,27 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
         if (!written && arguments->children.size() >= 2)
         {
-            const char * operators[] =
-            {
-                "and", " AND ",
-                "or", " OR ",
-                nullptr
-            };
+            constexpr std::array<FunctionOperatorMapping, 2> operators
+            {{
+                {"and", " AND "},
+                {"or", " OR "}
+            }};
 
-            for (const char ** func = operators; *func; func += 2)
+            if (auto it = std::ranges::find(operators, name, &FunctionOperatorMapping::function_name); it != operators.end())
             {
-                if (name == std::string_view(func[0]))
+                if (frame.need_parens)
+                    ostr << '(';
+                for (size_t i = 0; i < arguments->children.size(); ++i)
                 {
-                    if (frame.need_parens)
-                        ostr << '(';
-                    for (size_t i = 0; i < arguments->children.size(); ++i)
-                    {
-                        if (i != 0)
-                            ostr << func[1];
-                        if (arguments->children[i]->as<ASTSetQuery>())
-                            ostr << "SETTINGS ";
-                        arguments->children[i]->format(ostr, settings, state, nested_need_parens);
-                    }
-                    if (frame.need_parens)
-                        ostr << ')';
-                    written = true;
+                    if (i != 0)
+                        ostr << it->operator_name;
+                    if (arguments->children[i]->as<ASTSetQuery>())
+                        ostr << "SETTINGS ";
+                    arguments->children[i]->format(ostr, settings, state, nested_need_parens);
                 }
+                if (frame.need_parens)
+                    ostr << ')';
+                written = true;
             }
         }
 

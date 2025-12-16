@@ -42,11 +42,10 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
 NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     const MergeTreeDataPartPtr & data_part,
     NamesAndTypesList & columns,
+    const NameSet & empty_columns,
     SerializationInfoByName & serialization_infos,
     MergeTreeData::DataPart::Checksums & checksums)
 {
-    const NameSet & empty_columns = data_part->expired_columns;
-
     /// For compact part we have to override whole file with data, it's not
     /// worth it
     if (empty_columns.empty() || isCompactPart(data_part))
