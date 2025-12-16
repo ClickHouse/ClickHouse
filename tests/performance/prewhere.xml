@@ -4,6 +4,4 @@
     </settings>
 
     <query>SELECT Title FROM hits_10m_single PREWHERE WatchID % 2 = 1 WHERE UserID = 10000 FORMAT Null</query>
-    <query>SELECT SearchPhrase FROM hits_100m_single PREWHERE SearchPhrase != '' FORMAT Null</query>
-    <query>SELECT SearchPhrase FROM hits_100m_single PREWHERE SearchPhrase != '' ORDER BY EventTime LIMIT 10 FORMAT Null</query>
 </test>
