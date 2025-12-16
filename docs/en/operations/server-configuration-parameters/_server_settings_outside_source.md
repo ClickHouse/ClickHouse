@@ -43,7 +43,7 @@ This setting should be used with extra caution since forwarded addresses can be 
 
 ## backups {#backups}
 
-Settings for backups, used when executing the [`BACKUP` and `RESTORE`](../backup.md) statements.
+Settings for backups, used when executing the [`BACKUP` and `RESTORE`](/operations/backup/overview) statements.
 
 The following settings can be configured by sub-tags:
 

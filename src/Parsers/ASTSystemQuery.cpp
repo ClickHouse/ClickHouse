@@ -4,9 +4,9 @@
 #include <Parsers/ASTSystemQuery.h>
 #include <Poco/String.h>
 #include <Common/quoteString.h>
+#include <Interpreters/InstrumentationManager.h>
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
-#include <xray/xray_interface.h>
 
 namespace DB
 {

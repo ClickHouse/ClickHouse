@@ -344,10 +344,11 @@ private:
     void setClusterInfo(RandomGenerator & rg, SQLBase & b) const;
     template <typename T>
     void randomEngineParams(RandomGenerator & rg, std::optional<SQLRelation> & rel, T * te);
-    void generateMergeTreeEngineDetails(RandomGenerator & rg, const SQLRelation & rel, const SQLBase & b, bool add_pkey, TableEngine * te);
+    void generateMergeTreeEngineDetails(RandomGenerator & rg, const SQLRelation & rel, SQLBase & b, bool add_pkey, TableEngine * te);
     void generateEngineDetails(RandomGenerator & rg, const SQLRelation & rel, SQLBase & b, bool add_pkey, TableEngine * te);
 
     DatabaseEngineValues getNextDatabaseEngine(RandomGenerator & rg);
+    void generateDatabaseEngineDetails(RandomGenerator & rg, SQLDatabase & d);
     void getNextTableEngine(RandomGenerator & rg, bool use_external_integrations, SQLBase & b);
     void setRandomShardKey(RandomGenerator & rg, const std::optional<SQLTable> & t, Expr * expr);
     void getNextPeerTableDatabase(RandomGenerator & rg, SQLBase & b);
@@ -638,6 +639,8 @@ public:
     const std::function<bool(const SQLTable &)> attached_tables = [](const SQLTable & t) { return t.isAttached(); };
     const std::function<bool(const SQLView &)> attached_views = [](const SQLView & v) { return v.isAttached(); };
     const std::function<bool(const SQLDictionary &)> attached_dictionaries = [](const SQLDictionary & d) { return d.isAttached(); };
+    const std::function<bool(const SQLTable &)> has_mergeable_tables
+        = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily() && t.can_run_merges; };
 
     const std::function<bool(const SQLTable &)> attached_tables_to_test_format
         = [](const SQLTable & t) { return t.isAttached() && t.teng != TableEngineValues::GenerateRandom; };

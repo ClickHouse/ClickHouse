@@ -117,12 +117,12 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
 
     if (code == Coordination::Error::ZOK)
     {
-        LOG_TEST(log, "Released bucket {}", bucket_info->bucket);
+        LOG_TRACE(log, "Released bucket {}", bucket_info->bucket);
         return;
     }
     else if (zk_retry.isRetry() && code == Coordination::Error::ZNONODE)
     {
-        LOG_TEST(log, "Released bucket {} (has zk session loss)", bucket_info->bucket);
+        LOG_TRACE(log, "Released bucket {} (has zk session loss)", bucket_info->bucket);
         return;
     }
 
@@ -295,6 +295,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         std::optional<NodeMetadata> processed_node;
         Coordination::Stat processed_node_stat;
         std::optional<std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State>> result;
+        zk_retry.resetFailures();
         zk_retry.retryLoop([&]
         {
             bool is_multi_read_enabled = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ);
