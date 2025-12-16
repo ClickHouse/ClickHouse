@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -39,7 +38,7 @@ public:
 
     /// The same as read, but with specified set of parts.
     QueryPlanStepPtr readFromParts(
-        RangesInDataPartsPtr parts,
+        RangesInDataParts parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -122,8 +121,8 @@ private:
 
     /// Select the parts in which there can be data that satisfy `minmax_idx_condition` and that match the condition on `_part`,
     ///  as well as `max_block_number_to_read`.
-    static RangesInDataParts selectPartsToRead(
-        const RangesInDataParts & parts,
+    static void selectPartsToRead(
+        RangesInDataParts & parts,
         const std::optional<std::unordered_set<String>> & part_values,
         const std::optional<KeyCondition> & minmax_idx_condition,
         const DataTypes & minmax_columns_types,
@@ -133,8 +132,8 @@ private:
         QueryStatusPtr query_status);
 
     /// Same as previous but also skip parts uuids if any to the query context, or skip parts which uuids marked as excluded.
-    static RangesInDataParts selectPartsToReadWithUUIDFilter(
-        const RangesInDataParts & parts,
+    static void selectPartsToReadWithUUIDFilter(
+        RangesInDataParts & parts,
         const std::optional<std::unordered_set<String>> & part_values,
         MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
         const std::optional<KeyCondition> & minmax_idx_condition,
@@ -177,8 +176,8 @@ public:
         ContextPtr context);
 
     /// Filter parts using minmax index and partition key.
-    static RangesInDataParts filterPartsByPartition(
-        const RangesInDataParts & parts,
+    static void filterPartsByPartition(
+        RangesInDataParts & parts,
         const std::optional<PartitionPruner> & partition_pruner,
         const std::optional<KeyCondition> & minmax_idx_condition,
         const std::optional<std::unordered_set<String>> & part_values,

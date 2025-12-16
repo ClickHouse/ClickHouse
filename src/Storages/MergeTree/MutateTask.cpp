@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MutateTask.h>
 
+#include <DataTypes/ObjectUtils.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Common/logger_useful.h>
@@ -78,8 +79,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsBool enable_index_granularity_compression;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
-    extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
-    extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
 }
 
 namespace ErrorCodes
@@ -140,46 +139,6 @@ static UInt64 getExistingRowsCount(const Block & block)
     return existing_count;
 }
 
-static NameSet getRemovedStatistics(const StorageMetadataPtr & metadata_snapshot, const MutationCommand & command)
-{
-    if (command.type != MutationCommand::Type::DROP_STATISTICS)
-        return {};
-
-    NameSet removed_stats;
-
-    if (command.clear && command.statistics_columns.empty())
-    {
-        for (const auto & column_desc : metadata_snapshot->getColumns())
-        {
-            if (!column_desc.statistics.empty())
-                removed_stats.insert(column_desc.name);
-        }
-    }
-    else
-    {
-        for (const auto & column_name : command.statistics_columns)
-            removed_stats.insert(column_name);
-    }
-
-    return removed_stats;
-}
-
-static std::optional<String> getStatisticFilename(const String & statistic_name, const IMergeTreeDataPart & part)
-{
-    auto escaped_name = escapeForFileName(statistic_name);
-    auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(escaped_name, STATS_FILE_SUFFIX, part.checksums);
-    return stream_name ? std::make_optional(*stream_name + STATS_FILE_SUFFIX) : std::nullopt;
-}
-
-String getNewStatisticFilename(const String & statistic_name, const MergeTreeSettings & storage_settings)
-{
-    auto filename = escapeForFileName(statistic_name);
-    if (storage_settings[MergeTreeSetting::replace_long_file_name_to_hash] && filename.size() > storage_settings[MergeTreeSetting::max_file_name_length])
-        filename = sipHash128String(filename);
-
-    return filename + STATS_FILE_SUFFIX;
-}
-
 /** Split mutation commands into two parts:
 *   First part should be executed by mutations interpreter.
 *   Other is just simple drop/renames, so they can be executed without interpreter.
@@ -234,7 +193,6 @@ static void splitAndModifyMutationCommands(
                 || command.type == MutationCommand::Type::MATERIALIZE_STATISTICS
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
-                || command.type == MutationCommand::Type::REWRITE_PARTS
                 || command.type == MutationCommand::Type::DELETE
                 || command.type == MutationCommand::Type::UPDATE
                 || command.type == MutationCommand::Type::APPLY_DELETED_MASK
@@ -375,7 +333,6 @@ static void splitAndModifyMutationCommands(
                 || command.type == MutationCommand::Type::MATERIALIZE_STATISTICS
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
-                || command.type == MutationCommand::Type::REWRITE_PARTS
                 || command.type == MutationCommand::Type::DELETE
                 || command.type == MutationCommand::Type::UPDATE
                 || command.type == MutationCommand::Type::APPLY_DELETED_MASK
@@ -520,15 +477,7 @@ getColumnsForNewDataPart(
         }
     }
 
-    SerializationInfo::Settings settings
-    {
-        (*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
-        false,
-        (*source_part->storage.getSettings())[MergeTreeSetting::serialization_info_version],
-        (*source_part->storage.getSettings())[MergeTreeSetting::string_serialization_version],
-    };
-
-    SerializationInfoByName new_serialization_infos(settings);
+    SerializationInfoByName new_serialization_infos;
     for (const auto & [name, old_info] : serialization_infos)
     {
         auto it = renamed_columns_from_to.find(name);
@@ -549,6 +498,12 @@ getColumnsForNewDataPart(
 
         auto old_type = part_columns.getPhysical(name).type;
         auto new_type = updated_header.getByName(new_name).type;
+
+        SerializationInfo::Settings settings
+        {
+            .ratio_of_defaults_for_sparse = (*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+            .choose_kind = false
+        };
 
         if (!new_type->supportsSparseSerialization() || settings.isAlwaysDefault())
             continue;
@@ -801,7 +756,7 @@ static std::unordered_map<String, size_t> getStreamCounts(
         {
             auto callback = [&](const ISerialization::SubstreamPath & substream_path)
             {
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", source_part_checksums, data_part->storage.getSettings());
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, source_part_checksums);
                 if (stream_name)
                     ++stream_counts[*stream_name];
             };
@@ -845,10 +800,7 @@ static NameSet collectFilesToSkip(
         files_to_skip.insert(projection->getDirectoryName());
 
     for (const auto & stat : stats_to_recalc)
-    {
-        if (auto filename = getStatisticFilename(stat->getStatisticName(), *source_part))
-            files_to_skip.insert(*filename);
-    }
+        files_to_skip.insert(stat->getFileName() + STATS_FILE_SUFFIX);
 
     if (isWidePart(source_part))
     {
@@ -896,7 +848,6 @@ static NameSet collectFilesToSkip(
 /// from filesystem and in-memory checksums. Ordered result is important,
 /// because we can apply renames that affects each other: x -> z, y -> x.
 static NameToNameVector collectFilesForRenames(
-    StorageMetadataPtr metadata_snapshot,
     MergeTreeData::DataPartPtr source_part,
     MergeTreeData::DataPartPtr new_part,
     const MutationCommands & commands_for_removes,
@@ -939,13 +890,9 @@ static NameToNameVector collectFilesForRenames(
         }
         else if (command.type == MutationCommand::Type::DROP_STATISTICS)
         {
-            auto removed_stats = MutationHelpers::getRemovedStatistics(metadata_snapshot, command);
-
-            for (const auto & stats_name : removed_stats)
-            {
-                if (auto filename = getStatisticFilename(STATS_FILE_PREFIX + stats_name, *source_part))
-                    add_rename(*filename, "");
-            }
+            for (const auto & statistics_column_name : command.statistics_columns)
+                if (source_part->checksums.has(STATS_FILE_PREFIX + statistics_column_name + STATS_FILE_SUFFIX))
+                    add_rename(STATS_FILE_PREFIX + statistics_column_name + STATS_FILE_SUFFIX, "");
         }
         else if (isWidePart(source_part))
         {
@@ -953,7 +900,7 @@ static NameToNameVector collectFilesForRenames(
             {
                 ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
                 {
-                    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(command.column_name, substream_path, ".bin", source_part->checksums, source_part->storage.getSettings());
+                    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(command.column_name, substream_path, source_part->checksums);
 
                     /// Delete files if they are no longer shared with another column.
                     if (stream_name && --stream_counts[*stream_name] == 0)
@@ -966,9 +913,9 @@ static NameToNameVector collectFilesForRenames(
                 if (auto serialization = source_part->tryGetSerialization(command.column_name))
                     serialization->enumerateStreams(callback);
 
-                /// If we drop a column with statistics, we should also drop the stat file.
-                if (auto filename = getStatisticFilename(STATS_FILE_PREFIX + command.column_name, *source_part))
-                    add_rename(*filename, "");
+                /// if we drop a column with statistics, we should also drop the stat file.
+                if (source_part->checksums.has(STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX))
+                    add_rename(STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX, "");
             }
             else if (command.type == MutationCommand::Type::RENAME_COLUMN)
             {
@@ -981,16 +928,15 @@ static NameToNameVector collectFilesForRenames(
 
                 ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
                 {
-                    auto storage_settings = source_part->storage.getSettings();
-
-                    String full_stream_from = ISerialization::getFileNameForStream(command.column_name, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+                    String full_stream_from = ISerialization::getFileNameForStream(command.column_name, substream_path);
                     String full_stream_to = boost::replace_first_copy(full_stream_from, escaped_name_from, escaped_name_to);
 
-                    auto stream_from = IMergeTreeDataPart::getStreamNameOrHash(full_stream_from, ".bin", source_part->checksums);
+                    auto stream_from = IMergeTreeDataPart::getStreamNameOrHash(full_stream_from, source_part->checksums);
                     if (!stream_from)
                         return;
 
                     String stream_to;
+                    auto storage_settings = source_part->storage.getSettings();
 
                     if ((*storage_settings)[MergeTreeSetting::replace_long_file_name_to_hash] && full_stream_to.size() > (*storage_settings)[MergeTreeSetting::max_file_name_length])
                         stream_to = sipHash128String(full_stream_to);
@@ -1007,12 +953,9 @@ static NameToNameVector collectFilesForRenames(
                 if (auto serialization = source_part->tryGetSerialization(command.column_name))
                     serialization->enumerateStreams(callback);
 
-                /// If we rename a column with statistics, we should also rename the stat file.
-                if (auto filename = getStatisticFilename(STATS_FILE_PREFIX + command.column_name, *source_part))
-                {
-                    auto new_filename = getNewStatisticFilename(STATS_FILE_PREFIX + command.rename_to, *source_part->storage.getSettings());
-                    add_rename(*filename, new_filename);
-                }
+                /// if we rename a column with statistics, we should also rename the stat file.
+                if (source_part->checksums.has(STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX))
+                    add_rename(STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX, STATS_FILE_PREFIX + command.rename_to + STATS_FILE_SUFFIX);
             }
             else if (command.type == MutationCommand::Type::READ_COLUMN || command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
             {
@@ -1034,8 +977,11 @@ static NameToNameVector collectFilesForRenames(
         }
     }
 
-    if (source_part->getSerializationInfos().needsPersistence() && !new_part->getSerializationInfos().needsPersistence())
+    if (!source_part->getSerializationInfos().empty()
+        && new_part->getSerializationInfos().empty())
+    {
         rename_vector.emplace_back(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, "");
+    }
 
     return rename_vector;
 }
@@ -1076,12 +1022,11 @@ void finalizeMutatedPart(
         written_files.push_back(std::move(out_ttl));
     }
 
-    const auto & serialization_infos = new_data_part->getSerializationInfos();
-    if (serialization_infos.needsPersistence())
+    if (!new_data_part->getSerializationInfos().empty())
     {
         auto out_serialization = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out_serialization);
-        serialization_infos.writeJSON(out_hashing);
+        new_data_part->getSerializationInfos().writeJSON(out_hashing);
         out_hashing.finalize();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
@@ -1581,22 +1526,13 @@ private:
         for (const auto & command : ctx->for_file_renames)
         {
             if (command.type == MutationCommand::DROP_INDEX)
-            {
                 removed_indices.insert(command.column_name);
-            }
             else if (command.type == MutationCommand::DROP_STATISTICS)
-            {
-                auto current_removed_stats = MutationHelpers::getRemovedStatistics(ctx->metadata_snapshot, command);
-                std::move(current_removed_stats.begin(), current_removed_stats.end(), std::inserter(removed_stats, removed_stats.end()));
-            }
-            else if (command.type == MutationCommand::RENAME_COLUMN)
-            {
-                if (auto filename = MutationHelpers::getStatisticFilename(STATS_FILE_PREFIX + command.column_name, *ctx->source_part))
-                {
-                    String new_filename = MutationHelpers::getNewStatisticFilename(STATS_FILE_PREFIX + command.rename_to, *ctx->source_part->storage.getSettings());
-                    renamed_stats[*filename] = std::move(new_filename);
-                }
-            }
+                for (const auto & column_name : command.statistics_columns)
+                    removed_stats.insert(column_name);
+            else if (command.type == MutationCommand::RENAME_COLUMN
+                     && ctx->source_part->checksums.files.contains(STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX))
+                renamed_stats[STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX] = STATS_FILE_PREFIX + command.rename_to + STATS_FILE_SUFFIX;
         }
 
         bool is_full_part_storage = isFullPartStorage(ctx->new_data_part->getDataPartStorage());
@@ -1626,7 +1562,7 @@ private:
                         break;
 
                     entries_to_hardlink.insert(it->first);
-                    ctx->existing_indices_stats_checksums.addFile(it->first, it->second);
+                    ctx->existing_indices_stats_checksums.addFile(it->first, it->second.file_size, it->second.file_hash);
                     ++it;
                 }
             }
@@ -1648,11 +1584,12 @@ private:
                 /// We do not hard-link statistics which
                 /// 1. In `DROP STATISTICS` statement. It is filtered by `removed_stats`
                 /// 2. Not in column list anymore, including `DROP COLUMN`. It is not touched by this loop.
-                if (auto stat_filename = MutationHelpers::getStatisticFilename(STATS_FILE_PREFIX + col.name, *ctx->source_part))
+                String stat_file_name = STATS_FILE_PREFIX + col.name + STATS_FILE_SUFFIX;
+                auto it = ctx->source_part->checksums.files.find(stat_file_name);
+                if (it != ctx->source_part->checksums.files.end())
                 {
-                    const auto & checksum = ctx->source_part->checksums.files.at(*stat_filename);
-                    entries_to_hardlink.insert(*stat_filename);
-                    ctx->existing_indices_stats_checksums.addFile(*stat_filename, checksum);
+                    entries_to_hardlink.insert(it->first);
+                    ctx->existing_indices_stats_checksums.addFile(it->first, it->second.file_size, it->second.file_hash);
                 }
             }
         }
@@ -1705,7 +1642,7 @@ private:
                     hardlinked_files.insert(it->name());
                     /// Also we need to "rename" checksums to finalize correctly.
                     const auto & check_sum = ctx->source_part->checksums.files.at(it->name());
-                    ctx->existing_indices_stats_checksums.addFile(renamed_stats.at(it->name()), check_sum);
+                    ctx->existing_indices_stats_checksums.addFile(renamed_stats.at(it->name()), check_sum.file_size, check_sum.file_hash);
                 }
             }
             else if (it->isFile())
@@ -2237,6 +2174,8 @@ MutateTask::MutateTask(
     ctx->txn = txn;
     ctx->source_part = ctx->future_part->parts[0];
     ctx->need_prefix = need_prefix_;
+
+    extendObjectColumns(ctx->storage_columns, ctx->storage_snapshot->object_columns, /*with_subcolumns=*/ false);
 }
 
 
@@ -2271,7 +2210,7 @@ bool MutateTask::execute()
             //
             // Fetching a byte-identical part (in case of checksum mismatches) will fail with
             // `Part ... should be deleted after previous attempt before fetch`.
-            promise.set_value(std::exchange(ctx->new_data_part, nullptr));
+            promise.set_value(std::move(ctx->new_data_part));
             return false;
         }
     }
@@ -2282,9 +2221,6 @@ void MutateTask::cancel() noexcept
 {
     if (task)
         task->cancel();
-
-    if (ctx->new_data_part)
-        ctx->new_data_part->removeIfNeeded();
 }
 
 void MutateTask::updateProfileEvents() const
@@ -2315,7 +2251,7 @@ static bool canSkipConversionToNullable(const MergeTreeDataPartPtr & part, const
         return false;
 
     auto serialization = part->getSerialization(command.column_name);
-    if (serialization->getKindStack() != ISerialization::KindStack{ISerialization::Kind::DEFAULT})
+    if (serialization->getKind() != ISerialization::Kind::DEFAULT)
         return false;
 
     return true;
@@ -2421,14 +2357,7 @@ bool MutateTask::prepare()
         });
     }
 
-    auto is_storage_touched = isStorageTouchedByMutations(
-        ctx->source_part,
-        mutations_snapshot,
-        ctx->metadata_snapshot,
-        ctx->commands_for_part,
-        context_for_reading,
-        [&my_ctx = *ctx](const Progress &) { my_ctx.checkOperationIsNotCanceled(); }
-    );
+    auto is_storage_touched = isStorageTouchedByMutations(ctx->source_part, mutations_snapshot, ctx->metadata_snapshot, ctx->commands_for_part, context_for_reading);
 
     if (!is_storage_touched.any_rows_affected)
     {
@@ -2512,7 +2441,6 @@ bool MutateTask::prepare()
     context_for_reading->setSetting("allow_asynchronous_read_from_io_pool_for_merge_tree", false);
     context_for_reading->setSetting("max_streams_for_merge_tree_reading", Field(0));
     context_for_reading->setSetting("read_from_filesystem_cache_if_exists_otherwise_bypass_cache", 1);
-    context_for_reading->setSetting("read_from_distributed_cache_if_exists_otherwise_bypass_cache", 1);
 
     bool suitable_for_ttl_optimization = ctx->metadata_snapshot->hasOnlyRowsTTL() && (*ctx->data->getSettings())[MergeTreeSetting::ttl_only_drop_parts];
     MutationHelpers::splitAndModifyMutationCommands(
@@ -2692,7 +2620,6 @@ bool MutateTask::prepare()
             updated_columns_in_patches);
 
         ctx->files_to_rename = MutationHelpers::collectFilesForRenames(
-            ctx->metadata_snapshot,
             ctx->source_part,
             ctx->new_data_part,
             ctx->for_file_renames,

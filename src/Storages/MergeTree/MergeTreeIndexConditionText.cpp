@@ -1,10 +1,9 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
-#include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/misc.h>
-#include <Functions/hasAnyAllTokens.h>
+#include <Functions/searchAnyAll.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
@@ -23,12 +22,9 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool text_index_use_bloom_filter;
-    extern const SettingsBool use_text_index_dictionary_cache;
-    extern const SettingsBool use_text_index_header_cache;
-    extern const SettingsBool use_text_index_postings_cache;
 }
 
-SipHash TextSearchQuery::getHash() const
+UInt128 TextSearchQuery::getHash() const
 {
     SipHash hash;
     hash.update(function_name);
@@ -38,26 +34,18 @@ SipHash TextSearchQuery::getHash() const
     for (const auto & token : tokens)
         hash.update(token);
 
-    return hash;
+    return hash.get128();
 }
 
 MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     const ActionsDAG::Node * predicate,
     ContextPtr context_,
     const Block & index_sample_block,
-    TokenExtractorPtr token_extractor_,
-    MergeTreeIndexTextPreprocessorPtr preprocessor_)
+    TokenExtractorPtr token_extactor_)
     : WithContext(context_)
     , header(index_sample_block)
-    , token_extractor(token_extractor_)
+    , token_extractor(token_extactor_)
     , use_bloom_filter(context_->getSettingsRef()[Setting::text_index_use_bloom_filter])
-    , preprocessor(preprocessor_)
-    , use_dictionary_block_cache(context_->getSettingsRef()[Setting::use_text_index_dictionary_cache])
-    , dictionary_block_cache(context_->getTextIndexDictionaryBlockCache())
-    , use_header_cache(context_->getSettingsRef()[Setting::use_text_index_header_cache])
-    , header_cache(context_->getTextIndexHeaderCache())
-    , use_postings_cache(context_->getSettingsRef()[Setting::use_text_index_postings_cache])
-    , postings_cache(context_->getTextIndexPostingsCache())
 {
     if (!predicate)
     {
@@ -80,7 +68,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
         for (const auto & search_query : element.text_search_queries)
         {
             all_search_tokens_set.insert(search_query->tokens.begin(), search_query->tokens.end());
-            all_search_queries[search_query->getHash().get128()] = search_query;
+            all_search_queries[search_query->getHash()] = search_query;
         }
 
         if (getTextSearchMode(element) == TextSearchMode::Any)
@@ -93,7 +81,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
 
 TextSearchMode MergeTreeIndexConditionText::getTextSearchMode(const RPNElement & element)
 {
-    if (element.function == RPNElement::FUNCTION_HAS_ALL_TOKENS
+    if (element.function == RPNElement::FUNCTION_SEARCH_ALL
         || element.function == RPNElement::FUNCTION_AND
         || element.function == RPNElement::FUNCTION_EQUALS
         || (element.function == RPNElement::FUNCTION_MATCH && element.text_search_queries.size() == 1))
@@ -105,8 +93,8 @@ TextSearchMode MergeTreeIndexConditionText::getTextSearchMode(const RPNElement &
 bool MergeTreeIndexConditionText::isSupportedFunctionForDirectRead(const String & function_name)
 {
     return function_name == "hasToken"
-        || function_name == "hasAnyTokens"
-        || function_name == "hasAllTokens";
+        || function_name == "searchAny"
+        || function_name == "searchAll";
 }
 
 bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_name)
@@ -114,8 +102,6 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
     return isSupportedFunctionForDirectRead(function_name)
         || function_name == "equals"
         || function_name == "notEquals"
-        || function_name == "mapContainsKey"
-        || function_name == "has"
         || function_name == "like"
         || function_name == "notLike"
         || function_name == "hasTokenOrNull"
@@ -142,13 +128,13 @@ TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const Acti
 std::optional<String> MergeTreeIndexConditionText::replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name)
 {
     auto query_hash = query.getHash();
-    auto it = all_search_queries.find(query_hash.get128());
+    auto it = all_search_queries.find(query_hash);
 
     if (it == all_search_queries.end())
         return std::nullopt;
 
-    auto hash_str = getSipHash128AsHexString(query_hash);
-    String virtual_column_name = fmt::format("{}{}_{}_{}", TEXT_INDEX_VIRTUAL_COLUMN_PREFIX, index_name, query.function_name, hash_str);
+    size_t counter = function_name_to_index[query.function_name]++;
+    String virtual_column_name = fmt::format("{}{}_{}_{}", TEXT_INDEX_VIRTUAL_COLUMN_PREFIX, index_name, query.function_name, counter);
 
     virtual_column_to_search_query[virtual_column_name] = it->second;
     return virtual_column_name;
@@ -168,13 +154,12 @@ bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const
     return rpnEvaluatesAlwaysUnknownOrTrue(
         rpn,
         {RPNElement::FUNCTION_EQUALS,
-         RPNElement::FUNCTION_NOT_EQUALS,
-         RPNElement::FUNCTION_HAS,
-         RPNElement::FUNCTION_HAS_ANY_TOKENS,
-         RPNElement::FUNCTION_HAS_ALL_TOKENS,
-         RPNElement::FUNCTION_IN,
-         RPNElement::FUNCTION_NOT_IN,
-         RPNElement::FUNCTION_MATCH});
+            RPNElement::FUNCTION_NOT_EQUALS,
+            RPNElement::FUNCTION_SEARCH_ANY,
+            RPNElement::FUNCTION_SEARCH_ALL,
+            RPNElement::FUNCTION_IN,
+            RPNElement::FUNCTION_NOT_IN,
+            RPNElement::FUNCTION_MATCH});
 }
 
 bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
@@ -191,17 +176,16 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
         {
             rpn_stack.emplace_back(true, true);
         }
-        else if (element.function == RPNElement::FUNCTION_HAS_ANY_TOKENS)
+        else if (element.function == RPNElement::FUNCTION_SEARCH_ANY)
         {
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
             bool exists_in_granule = granule->hasAnyTokenFromQuery(*text_search_query);
             rpn_stack.emplace_back(exists_in_granule, true);
         }
-        else if (element.function == RPNElement::FUNCTION_HAS_ALL_TOKENS
+        else if (element.function == RPNElement::FUNCTION_SEARCH_ALL
             || element.function == RPNElement::FUNCTION_EQUALS
-            || element.function == RPNElement::FUNCTION_NOT_EQUALS
-            || element.function == RPNElement::FUNCTION_HAS)
+            || element.function == RPNElement::FUNCTION_NOT_EQUALS)
         {
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
@@ -346,66 +330,21 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
     return false;
 }
 
-namespace
-{
-
-/**
-  * Since functions `mapKeys` and `mapValues` project data as Array(T) from Map, this function checks if an index column is defined for the Map.
-  * The expected data is either form of Array(String) or Array(FixedString).
-  */
-bool traverseArrayFunctionNode(const RPNBuilderTreeNode & index_column_node, const Block & header, Field & const_value)
-{
-    const auto function = index_column_node.toFunctionNode();
-    if (function.getFunctionName() == "arrayElement")
-    {
-        const auto column_name = function.getArgumentAt(0).getColumnName();
-        bool has_maps_keys_index_column_name = header.has(fmt::format("mapKeys({})", column_name));
-        bool has_map_values_index_column_name = header.has(fmt::format("mapValues({})", column_name));
-        if (has_maps_keys_index_column_name)
-        {
-            const auto & argument_const_key = function.getArgumentAt(1);
-            DataTypePtr key_const_type;
-            if (argument_const_key.tryGetConstant(const_value, key_const_type))
-            {
-                auto const_data_type = WhichDataType(key_const_type);
-                if (!const_data_type.isStringOrFixedString())
-                    return false;
-                return true;
-            }
-            return false;
-        }
-        return has_map_values_index_column_name;
-    }
-    return false;
-}
-
-}
-
-
-std::vector<String> MergeTreeIndexConditionText::stringToTokens(const Field & field) const
+static std::vector<String> stringToTokens(const Field & field, const ITokenExtractor & token_extractor)
 {
     std::vector<String> tokens;
-    const String value = preprocessor->process(field.safeGet<String>());
-    token_extractor->stringToTokens(value.data(), value.size(), tokens);
+    const auto & value = field.safeGet<String>();
+    token_extractor.stringToTokens(value.data(), value.size(), tokens);
     return tokens;
 }
 
-std::vector<String> MergeTreeIndexConditionText::substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const
+static std::vector<String> substringToTokens(const Field & field, const ITokenExtractor & token_extractor, bool is_prefix, bool is_suffix)
 {
     std::vector<String> tokens;
-    const String value = preprocessor->process(field.safeGet<String>());
-    token_extractor->substringToTokens(value.data(), value.size(), tokens, is_prefix, is_suffix);
+    const auto & value = field.safeGet<String>();
+    token_extractor.substringToTokens(value.data(), value.size(), tokens, is_prefix, is_suffix);
     return tokens;
 }
-
-std::vector<String> MergeTreeIndexConditionText::stringLikeToTokens(const Field & field) const
-{
-    std::vector<String> tokens;
-    const String value = preprocessor->process(field.safeGet<String>());
-    token_extractor->stringLikeToTokens(value.data(), value.size(), tokens);
-    return tokens;
-}
-
 
 bool MergeTreeIndexConditionText::traverseFunctionNode(
     const RPNBuilderFunctionTreeNode & function_node,
@@ -415,53 +354,40 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     RPNElement & out) const
 {
     bool index_column_exists = header.has(index_column_node.getColumnName());
-    bool index_column_map_keys_exists = header.has(fmt::format("mapKeys({})", index_column_node.getColumnName()));
-
-    Field const_value = value_field;
-    if (index_column_node.isFunction())
-        index_column_exists = index_column_exists || traverseArrayFunctionNode(index_column_node, header, const_value);
-
-    if (!index_column_exists && !index_column_map_keys_exists)
+    if (!index_column_exists)
         return false;
 
     auto value_data_type = WhichDataType(value_type);
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
 
+    const Field & const_value = value_field;
     const String & function_name = function_node.getFunctionName();
 
     if (function_name == "notEquals")
     {
-        auto tokens = stringToTokens(const_value);
+        auto tokens = stringToTokens(const_value, *token_extractor);
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
         return true;
     }
     if (function_name == "equals")
     {
-        auto tokens = stringToTokens(const_value);
+        auto tokens = stringToTokens(const_value, *token_extractor);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
         return true;
     }
-    if (function_name == "hasAnyTokens" || function_name == "hasAllTokens")
+    if (function_name == "searchAny" || function_name == "searchAll")
     {
         std::vector<String> search_tokens;
 
-        // hasAny/AllTokens funcs accept either string which will be tokenized or array of strings to be used as-is
-        if (value_data_type.isString())
+        for (const auto & element : const_value.safeGet<Array>())
         {
-            search_tokens = stringToTokens(const_value);
-        }
-        else
-        {
-            for (const auto & element : const_value.safeGet<Array>())
-            {
-                if (element.getType() != Field::Types::String)
-                    return false;
+            if (element.getType() != Field::Types::String)
+                return false;
 
-                search_tokens.push_back(element.safeGet<String>());
-            }
+            search_tokens.push_back(element.safeGet<String>());
         }
 
         /// TODO(ahmadov): move this block to another place, e.g. optimizations or query tree re-write.
@@ -471,21 +397,21 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(function_dag_node->function_base.get());
         chassert(adaptor != nullptr);
 
-        if (function_name == "hasAnyTokens")
+        if (function_name == "searchAny")
         {
-            out.function = RPNElement::FUNCTION_HAS_ANY_TOKENS;
+            out.function = RPNElement::FUNCTION_SEARCH_ANY;
             out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::Any, search_tokens));
 
-            auto & search_function = typeid_cast<FunctionHasAnyAllTokens<traits::HasAnyTokensTraits> &>(*adaptor->getFunction());
+            auto & search_function = typeid_cast<FunctionSearchImpl<traits::SearchAnyTraits> &>(*adaptor->getFunction());
             search_function.setTokenExtractor(token_extractor->clone());
             search_function.setSearchTokens(search_tokens);
         }
         else
         {
-            out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS;
+            out.function = RPNElement::FUNCTION_SEARCH_ALL;
             out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, search_tokens));
 
-            auto & search_function = typeid_cast<FunctionHasAnyAllTokens<traits::HasAllTokensTraits> &>(*adaptor->getFunction());
+            auto & search_function = typeid_cast<FunctionSearchImpl<traits::SearchAllTraits> &>(*adaptor->getFunction());
             search_function.setTokenExtractor(token_extractor->clone());
             search_function.setSearchTokens(search_tokens);
         }
@@ -494,23 +420,21 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
-        auto tokens = stringToTokens(const_value);
-        if (tokens.empty())
-            tokens.push_back("");
+        auto tokens = stringToTokens(const_value, *token_extractor);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
         return true;
     }
     if (function_name == "startsWith")
     {
-        auto tokens = substringToTokens(const_value, true, false);
+        auto tokens = substringToTokens(const_value, *token_extractor, true, false);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
         return true;
     }
     if (function_name == "endsWith")
     {
-        auto tokens = substringToTokens(const_value, false, true);
+        auto tokens = substringToTokens(const_value, *token_extractor, false, true);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
         return true;
@@ -518,7 +442,9 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     /// Currently, not all token extractors support LIKE-style matching.
     if (function_name == "like" && token_extractor->supportsStringLike())
     {
-        std::vector<String> tokens = stringLikeToTokens(const_value);
+        std::vector<String> tokens;
+        const auto & value = const_value.safeGet<String>();
+        token_extractor->stringLikeToTokens(value.data(), value.size(), tokens);
 
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
@@ -526,7 +452,9 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "notLike" && token_extractor->supportsStringLike())
     {
-        std::vector<String> tokens = stringLikeToTokens(const_value);
+        std::vector<String> tokens;
+        const auto & value = const_value.safeGet<String>();
+        token_extractor->stringLikeToTokens(value.data(), value.size(), tokens);
 
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
@@ -543,36 +471,19 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         {
             for (const auto & alternative : result.alternatives)
             {
-                auto tokens = substringToTokens(alternative, false, false);
+                auto tokens = substringToTokens(alternative, *token_extractor, false, false);
                 out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
             }
             return true;
         }
         if (!result.required_substring.empty())
         {
-            auto tokens = substringToTokens(result.required_substring, false, false);
+            auto tokens = substringToTokens(result.required_substring, *token_extractor, false, false);
             out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
             return true;
         }
 
         return false;
-    }
-    if (function_name == "mapContainsKey")
-    {
-        /// mapContainsKey can be used only with an index defined as `mapKeys(Map(String, ...))`
-        if (!index_column_map_keys_exists || !value_data_type.isStringOrFixedString())
-            return false;
-        auto tokens = stringToTokens(const_value);
-        out.function = RPNElement::FUNCTION_HAS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
-        return true;
-    }
-    if (function_name == "has")
-    {
-        auto tokens = stringToTokens(const_value);
-        out.function = RPNElement::FUNCTION_HAS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
-        return true;
     }
 
     return false;
@@ -638,11 +549,6 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     }
 
     return true;
-}
-
-bool isTextIndexVirtualColumn(const String & column_name)
-{
-    return column_name.starts_with(TEXT_INDEX_VIRTUAL_COLUMN_PREFIX);
 }
 
 }

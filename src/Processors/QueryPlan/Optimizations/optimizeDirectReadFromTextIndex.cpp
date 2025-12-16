@@ -6,7 +6,6 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Common/logger_useful.h>
-#include <Storages/MergeTree/RangesInDataPart.h>
 #include <base/defines.h>
 
 namespace DB::QueryPlanOptimizations
@@ -35,39 +34,6 @@ String getNameWithoutAliases(const ActionsDAG::Node * node)
     }
 
     return node->result_name;
-}
-
-String optimizationInfoToString(const IndexReadColumns & added_columns, const Names & removed_columns)
-{
-    chassert(!added_columns.empty());
-
-    String result = "Added: [";
-
-    /// This will list the index and the new associated columns
-    size_t idx = 0;
-    for (const auto & [_, columns_names_and_types] : added_columns)
-    {
-        for (const String & column_name : columns_names_and_types.getNames())
-        {
-            if (++idx > 1)
-                result += ", ";
-            result += column_name;
-        }
-    }
-    result += "]";
-
-    if (!removed_columns.empty())
-    {
-        result += ", Removed: [";
-        for (size_t i = 0; i < removed_columns.size(); ++i)
-        {
-            if (i > 0)
-                result += ", ";
-            result += removed_columns[i];
-        }
-        result += "]";
-    }
-    return result;
 }
 
 /// This class substitutes filters with text-search functions by virtual columns which skip IO and read less data.
@@ -201,7 +167,6 @@ private:
             return std::nullopt;
 
         function_node.type = ActionsDAG::ActionType::INPUT;
-        function_node.result_type = std::make_shared<DataTypeUInt8>();
         function_node.result_name = virtual_column_name.value();
         function_node.function.reset();
         function_node.function_base.reset();
@@ -235,7 +200,7 @@ void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*n
     ///    |
     /// ReadFromMergeTree
 
-    ReadFromMergeTree * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
+    auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
     if (!read_from_merge_tree_step)
         return;
 
@@ -243,7 +208,7 @@ void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*n
     if (!indexes || indexes->skip_indexes.useful_indices.empty())
         return;
 
-    const RangesInDataParts & parts_with_ranges = read_from_merge_tree_step->getParts();
+    const auto & parts_with_ranges = read_from_merge_tree_step->getParts();
     if (parts_with_ranges.empty())
         return;
 
@@ -273,31 +238,23 @@ void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*n
         return;
 
     QueryPlan::Node * filter_node = (stack.rbegin() + 1)->node;
-    FilterStep * filter_step = typeid_cast<FilterStep *>(filter_node->step.get());
+    auto * filter_step = typeid_cast<FilterStep *>(filter_node->step.get());
+
     if (!filter_step)
         return;
 
-    ActionsDAG & filter_dag = filter_step->getExpression();
-    const ActionsDAG::Node & filter_column_node = filter_dag.findInOutputs(filter_step->getFilterColumnName());
-
+    /// Now try to modify the ActionsDAG.
+    auto & filter_dag = filter_step->getExpression();
     FullTextMatchingFunctionDAGReplacer replacer(filter_dag, index_conditions);
     auto [added_columns, removed_columns] = replacer.replace();
 
     if (added_columns.empty())
         return;
 
-    auto logger = getLogger("optimizeDirectReadFromTextIndex");
-    LOG_DEBUG(logger, "{}", optimizationInfoToString(added_columns, removed_columns));
-
-    read_from_merge_tree_step->createReadTasksForTextIndex(indexes->skip_indexes, added_columns, removed_columns);
+    read_from_merge_tree_step->replaceColumnsForTextSearch(added_columns, removed_columns);
 
     bool removes_filter_column = filter_step->removesFilterColumn();
-
-    /// The original node (pointer address) should be preserved in the DAG outputs because we replace in-place.
-    /// However, the `result_name` could be different if the output column was replaced.
-    chassert(std::ranges::contains(filter_dag.getOutputs(), &filter_column_node));
-
-    const String new_filter_column_name = filter_column_node.result_name;
+    auto new_filter_column_name = filter_dag.getOutputs().front()->result_name;
     filter_node->step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_dag.clone(), new_filter_column_name, removes_filter_column);
 }
 

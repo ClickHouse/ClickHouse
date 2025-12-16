@@ -21,7 +21,6 @@ from helpers.s3_tools import (
     LocalUploader,
     S3Uploader,
     LocalDownloader,
-    S3Downloader,
     prepare_s3_bucket,
 )
 
@@ -114,7 +113,6 @@ def started_cluster():
 
         cluster.default_local_uploader = LocalUploader(cluster.instances["node1"])
         cluster.default_local_downloader = LocalDownloader(cluster.instances["node1"])
-        cluster.default_s3_downloader = S3Downloader(cluster.minio_client, cluster.minio_bucket)
 
         yield cluster
 
@@ -155,14 +153,10 @@ def write_iceberg_from_df(
         if partition_by is None:
             df.writeTo(table_name).tableProperty(
                 "format-version", format_version
-            ).tableProperty(
-                "write.parquet.row-group-size-bytes", "104850"  # 1MB
             ).using("iceberg").create()
         else:
             df.writeTo(table_name).tableProperty(
                 "format-version", format_version
-            ).tableProperty(
-                "write.parquet.row-group-size-bytes", "104850"  # 1MB
             ).partitionedBy(partition_by).using("iceberg").create()
     else:
         df.writeTo(table_name).append()
@@ -198,10 +192,9 @@ def get_creation_expression(
     use_version_hint=False,
     run_on_cluster=False,
     explicit_metadata_path="",
-    additional_settings = [],
     **kwargs,
 ):
-    settings_array = list(additional_settings)
+    settings_array = []
 
     if explicit_metadata_path:
         settings_array.append(f"iceberg_metadata_file_path = '{explicit_metadata_path}'")
@@ -223,7 +216,7 @@ def get_creation_expression(
 
     if_not_exists_prefix = ""
     if if_not_exists:
-        if_not_exists_prefix = "IF NOT EXISTS"
+        if_not_exists_prefix = "IF NOT EXISTS"        
 
     if storage_type == "s3":
         if "bucket" in kwargs:
@@ -319,7 +312,7 @@ def convert_schema_and_data_to_pandas_df(schema_raw, data_raw):
     pandas_types = [clickhouse_to_pandas_types[t]for t in types]
 
     schema_df = pd.DataFrame([types], columns=column_names)
-
+    
     # Convert data to DataFrame
     data_rows = list(
         map(
@@ -327,13 +320,13 @@ def convert_schema_and_data_to_pandas_df(schema_raw, data_raw):
             filter(lambda x: len(x) > 0, data_raw.strip().split("\n")),
         )
     )
-
+    
     if data_rows:
         data_df = pd.DataFrame(data_rows, columns=column_names, dtype='object')
     else:
         # Create empty DataFrame with correct columns
         data_df = pd.DataFrame(columns=column_names, dtype='object')
-
+    
     data_df = data_df.astype(dict(zip(column_names, pandas_types)))
     return schema_df, data_df
 
@@ -369,18 +362,17 @@ def create_iceberg_table(
     partition_by="",
     if_not_exists=False,
     compression_method=None,
-    run_on_cluster=False,
     format="Parquet",
     **kwargs,
 ):
     if 'output_format_parquet_use_custom_encoder' in kwargs:
         node.query(
-            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, run_on_cluster = run_on_cluster, **kwargs),
+            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, **kwargs),
             settings={"output_format_parquet_use_custom_encoder" : 0, "output_format_parquet_parallel_encoding" : 0}
         )
     else:
         node.query(
-            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, run_on_cluster=run_on_cluster, **kwargs),
+            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, **kwargs),
         )
 
 
@@ -447,14 +439,10 @@ def default_download_directory(
         return started_cluster.default_local_downloader.download_directory(
             local_path, remote_path, **kwargs
         )
-    elif storage_type == "s3":
-        return started_cluster.default_s3_downloader.download_directory(
-            local_path, remote_path, **kwargs
-        )
     else:
         raise Exception(f"Unknown iceberg storage type for downloading: {storage_type}")
 
-
+        
 def execute_spark_query_general(
     spark, started_cluster, storage_type: str, table_name: str, query: str
 ):

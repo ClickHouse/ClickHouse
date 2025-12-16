@@ -117,9 +117,9 @@ public:
         return bytes_ignored;
     }
 
-    size_t ignoreAll()
+    void ignoreAll()
     {
-        return tryIgnore(std::numeric_limits<size_t>::max());
+        tryIgnore(std::numeric_limits<size_t>::max());
     }
 
     /// Peeks a single byte.

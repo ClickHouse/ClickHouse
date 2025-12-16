@@ -19,7 +19,7 @@ public:
 
     SQLRelationCol() = default;
 
-    SQLRelationCol(const String & rname, const DB::Strings & names)
+    SQLRelationCol(const String rname, const DB::Strings names)
         : rel_name(rname)
         , path(names)
     {
@@ -45,7 +45,7 @@ public:
 
     SQLRelation() = default;
 
-    explicit SQLRelation(const String & n)
+    explicit SQLRelation(const String n)
         : name(n)
     {
     }
@@ -319,7 +319,7 @@ private:
     void addRandomRelation(RandomGenerator & rg, std::optional<String> rel_name, uint32_t ncols, Expr * expr);
     void generateStorage(RandomGenerator & rg, Storage * store) const;
     void generateNextCodecs(RandomGenerator & rg, CodecList * cl);
-    void generateTableExpression(RandomGenerator & rg, std::optional<SQLRelation> & rel, bool use_global_agg, Expr * expr);
+    void generateTableExpression(RandomGenerator & rg, bool use_global_agg, Expr * expr);
     void generateTTLExpression(RandomGenerator & rg, const std::optional<SQLTable> & t, Expr * ttl_expr);
     void generateNextTTL(RandomGenerator & rg, const std::optional<SQLTable> & t, const TableEngine * te, TTLExpr * ttl_expr);
     void generateNextStatistics(RandomGenerator & rg, ColumnStatistics * cstats);
@@ -340,8 +340,6 @@ private:
     void addTableConstraint(RandomGenerator & rg, SQLTable & t, bool staged, ConstraintDef * cdef);
     void generateTableKey(RandomGenerator & rg, const SQLRelation & rel, const SQLBase & b, bool allow_asc_desc, TableKey * tkey);
     void setClusterInfo(RandomGenerator & rg, SQLBase & b) const;
-    template <typename T>
-    void randomEngineParams(RandomGenerator & rg, std::optional<SQLRelation> & rel, T * te);
     void generateMergeTreeEngineDetails(RandomGenerator & rg, const SQLRelation & rel, const SQLBase & b, bool add_pkey, TableEngine * te);
     void generateEngineDetails(RandomGenerator & rg, const SQLRelation & rel, SQLBase & b, bool add_pkey, TableEngine * te);
 
@@ -350,7 +348,7 @@ private:
     void setRandomShardKey(RandomGenerator & rg, const std::optional<SQLTable> & t, Expr * expr);
     void getNextPeerTableDatabase(RandomGenerator & rg, SQLBase & b);
 
-    void generateNextRefreshableView(RandomGenerator & rg, RefreshableView * rv);
+    void generateNextRefreshableView(RandomGenerator & rg, RefreshableView * cv);
     void generateNextCreateView(RandomGenerator & rg, CreateView * cv);
     void generateNextCreateDictionary(RandomGenerator & rg, CreateDictionary * cd);
     void generateNextDrop(RandomGenerator & rg, Drop * dp);
@@ -370,20 +368,16 @@ private:
     void generateNextKill(RandomGenerator & rg, Kill * kil);
     void generateUptDelWhere(RandomGenerator & rg, const SQLTable & t, Expr * expr);
     void generateAlter(RandomGenerator & rg, Alter * at);
-    void generateHotTableSettingsValues(RandomGenerator & rg, bool create, SettingValues * vals);
+    void setRandomSetting(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SetValue * set);
     void generateSettingValues(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SettingValues * vals);
     void generateSettingValues(
         RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, size_t nvalues, SettingValues * vals);
-    void generateHotTableSettingList(RandomGenerator & rg, SettingList * sl);
     void generateSettingList(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SettingList * sl);
     void generateAttach(RandomGenerator & rg, Attach * att);
     void generateDetach(RandomGenerator & rg, Detach * det);
     void generateNextCreateFunction(RandomGenerator & rg, CreateFunction * cf);
     void generateNextSystemStatement(RandomGenerator & rg, bool allow_table_statements, SystemCommand * sc);
-    void generateNextShowStatement(RandomGenerator & rg, ShowStatement * st);
 
-    void generateLikeExpr(RandomGenerator & rg, Expr * expr);
-    Expr * generatePartialSearchExpr(RandomGenerator & rg, Expr * expr) const;
     void addFieldAccess(RandomGenerator & rg, Expr * expr, uint32_t nested_prob);
     void addColNestedAccess(RandomGenerator & rg, ExprColumn * expr, uint32_t nested_prob);
     void addSargableColRef(RandomGenerator & rg, const SQLRelationCol & rel_col, Expr * expr);
@@ -402,7 +396,7 @@ private:
     void prepareNextExplain(RandomGenerator & rg, ExplainQuery * eq);
     void generateOrderBy(RandomGenerator & rg, uint32_t ncols, bool allow_settings, bool is_window, OrderByStatement * ob);
     void generateLimitExpr(RandomGenerator & rg, Expr * expr);
-    void generateLimit(RandomGenerator & rg, bool has_order_by, LimitStatement * ls);
+    void generateLimit(RandomGenerator & rg, bool has_order_by, uint32_t ncols, LimitStatement * ls);
     void generateOffset(RandomGenerator & rg, bool has_order_by, OffsetStatement * off);
     void generateGroupByExpr(
         RandomGenerator & rg,
@@ -491,22 +485,18 @@ private:
         uint32_t added_partition_strategy = 0;
         uint32_t added_partition_columns_in_data_file = 0;
         uint32_t added_structure = 0;
-        uint32_t added_storage_class_name = 0;
         const uint32_t toadd_path = 1;
-        const uint32_t toadd_format = (b.file_format.has_value() && !this->allow_not_deterministic)
-            || (this->allow_not_deterministic && rg.nextMediumNumber() < 91);
-        const uint32_t toadd_compression
-            = (b.file_comp.has_value() && !this->allow_not_deterministic) || (this->allow_not_deterministic && rg.nextMediumNumber() < 51);
-        const uint32_t toadd_partition_strategy = (b.partition_strategy.has_value() && !this->allow_not_deterministic)
-            || ((b.isS3Engine() || b.isAzureEngine()) && this->allow_not_deterministic && rg.nextMediumNumber() < 21);
+        const uint32_t toadd_format = (b.file_format.has_value() || this->allow_not_deterministic) && rg.nextMediumNumber() < 91;
+        const uint32_t toadd_compression = (b.file_comp.has_value() || this->allow_not_deterministic) && rg.nextMediumNumber() < 51;
+        const uint32_t toadd_partition_strategy
+            = (b.partition_strategy.has_value() || ((b.isS3Engine() || b.isAzureEngine()) && this->allow_not_deterministic))
+            && rg.nextMediumNumber() < 21;
         const uint32_t toadd_partition_columns_in_data_file
-            = (b.partition_columns_in_data_file.has_value() && !this->allow_not_deterministic)
-            || ((b.isS3Engine() || b.isAzureEngine()) && this->allow_not_deterministic && rg.nextMediumNumber() < 21);
-        const uint32_t toadd_storage_class_name = (b.storage_class_name.has_value() && !this->allow_not_deterministic)
-            || (b.isS3Engine() && this->allow_not_deterministic && rg.nextMediumNumber() < 21);
+            = (b.partition_columns_in_data_file.has_value() || ((b.isS3Engine() || b.isAzureEngine()) && this->allow_not_deterministic))
+            && rg.nextMediumNumber() < 21;
         const uint32_t toadd_structure = !std::is_same_v<U, TableEngine> && (!this->allow_not_deterministic || rg.nextMediumNumber() < 91);
         const uint32_t total_to_add = toadd_path + toadd_format + toadd_compression + toadd_partition_strategy
-            + toadd_partition_columns_in_data_file + toadd_storage_class_name + toadd_structure;
+            + toadd_partition_columns_in_data_file + toadd_structure;
 
         for (uint32_t i = 0; i < total_to_add; i++)
         {
@@ -517,10 +507,9 @@ private:
             const uint32_t add_partition_strategy = 2 * static_cast<uint32_t>(added_partition_strategy < toadd_partition_strategy);
             const uint32_t add_partition_columns_in_data_file
                 = 2 * static_cast<uint32_t>(added_partition_columns_in_data_file < toadd_partition_columns_in_data_file);
-            const uint32_t add_storage_class_name = 2 * static_cast<uint32_t>(added_storage_class_name < toadd_storage_class_name);
             const uint32_t add_structure = 4 * static_cast<uint32_t>(added_structure < toadd_structure);
-            const uint32_t prob_space = add_path + add_format + add_compression + add_partition_strategy
-                + add_partition_columns_in_data_file + add_storage_class_name + add_structure;
+            const uint32_t prob_space
+                = add_path + add_format + add_compression + add_partition_strategy + add_partition_columns_in_data_file + add_structure;
             std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
             const uint32_t nopt = next_dist(rg.generator);
 
@@ -535,8 +524,7 @@ private:
             if (add_path && nopt < (add_path + 1))
             {
                 /// Path to the bucket
-                next->set_key(
-                    b.isOnS3() ? (b.getLakeCatalog() == LakeCatalog::None ? "filename" : "url") : (b.isOnAzure() ? "blob_path" : "path"));
+                next->set_key(b.isOnS3() ? "filename" : (b.isOnAzure() ? "blob_path" : "path"));
                 next->set_value(b.getTablePath(rg, fc, this->allow_not_deterministic));
                 added_path++;
             }
@@ -589,31 +577,16 @@ private:
                 added_partition_columns_in_data_file++;
             }
             else if (
-                add_storage_class_name
-                && nopt
-                    < (add_path + add_format + add_compression + add_partition_strategy + add_partition_columns_in_data_file
-                       + add_storage_class_name + 1))
-            {
-                /// Storage class name in S3
-                const String next_scn = (b.storage_class_name.has_value() && (!this->allow_not_deterministic || rg.nextMediumNumber() < 81))
-                    ? b.storage_class_name.value()
-                    : (rg.nextBool() ? "STANDARD" : "INTELLIGENT_TIERING");
-
-                next->set_key("storage_class_name");
-                next->set_value(next_scn);
-                added_storage_class_name++;
-            }
-            else if (
                 add_structure
                 && nopt
-                    < (add_path + add_format + add_compression + add_partition_strategy + add_partition_columns_in_data_file
-                       + add_storage_class_name + add_structure + 1))
+                    < (add_path + add_format + add_compression + add_partition_strategy + add_partition_columns_in_data_file + add_structure
+                       + 1))
             {
                 /// Structure for table function
                 next->set_key("structure");
                 if constexpr (std::is_same_v<U, TableEngine>)
                 {
-                    UNREACHABLE();
+                    chassert(0);
                 }
                 else
                 {
@@ -623,7 +596,7 @@ private:
             }
             else
             {
-                UNREACHABLE();
+                chassert(0);
             }
         }
     }
@@ -677,7 +650,6 @@ public:
 
     void updateGenerator(const SQLQuery & sq, ExternalIntegrations & ei, bool success);
     void setInTransaction(const bool value) { in_transaction = value; }
-    bool getAllowNotDetermistic() const { return allow_not_deterministic; }
 
     friend class QueryOracle;
 };

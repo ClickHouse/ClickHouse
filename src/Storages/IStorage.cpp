@@ -227,7 +227,9 @@ void IStorage::readFromPipe(
     }
 }
 
-std::optional<QueryPipeline> IStorage::distributedWrite(const ASTInsertQuery & /*query*/, ContextPtr /*context*/)
+std::optional<QueryPipeline> IStorage::distributedWrite(
+    const ASTInsertQuery & /*query*/,
+    ContextPtr /*context*/)
 {
     return {};
 }
@@ -325,7 +327,7 @@ StorageID IStorage::getStorageID() const
     return storage_id;
 }
 
-ConditionSelectivityEstimatorPtr IStorage::getConditionSelectivityEstimator(const RangesInDataParts &, ContextPtr) const
+ConditionSelectivityEstimatorPtr IStorage::getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const
 {
     return nullptr;
 }

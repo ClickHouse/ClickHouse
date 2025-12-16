@@ -1,16 +1,10 @@
-#include <atomic>
 #include <memory>
-#include <mutex>
-#include <optional>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
-#include <Common/Exception.h>
-#include <Formats/FormatSettings.h>
 
 #if USE_PARQUET
 
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
-#include <Common/setThreadName.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -604,45 +598,6 @@ const parquet::ColumnDescriptor * getColumnDescriptorIfBloomFilterIsPresent(
     return parquet_column_descriptor;
 }
 
-void ParquetFileBucketInfo::serialize(WriteBuffer & buffer)
-{
-    writeVarUInt(row_group_ids.size(), buffer);
-    for (auto chunk : row_group_ids)
-        writeVarUInt(chunk, buffer);
-}
-
-void ParquetFileBucketInfo::deserialize(ReadBuffer & buffer)
-{
-    size_t size_chunks;
-    readVarUInt(size_chunks, buffer);
-    row_group_ids = std::vector<size_t>{};
-    row_group_ids.resize(size_chunks);
-    size_t bucket;
-    for (size_t i = 0; i < size_chunks; ++i)
-    {
-        readVarUInt(bucket, buffer);
-        row_group_ids[i] = bucket;
-    }
-}
-
-String ParquetFileBucketInfo::getIdentifier() const
-{
-    String result;
-    for (auto chunk : row_group_ids)
-        result += "_" + std::to_string(chunk);
-    return result;
-}
-
-ParquetFileBucketInfo::ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_)
-    : row_group_ids(row_group_ids_)
-{
-}
-
-void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances)
-{
-    instances.emplace("Parquet", std::make_shared<ParquetFileBucketInfo>());
-}
-
 ParquetBlockInputFormat::ParquetBlockInputFormat(
     ReadBuffer & buf,
     SharedHeader header_,
@@ -702,16 +657,6 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         return;
 
     metadata = parquet::ReadMetaData(arrow_file);
-    if (buckets_to_read)
-    {
-        std::unordered_set<size_t> set_to_read(buckets_to_read->row_group_ids.begin(), buckets_to_read->row_group_ids.end());
-        for (int i = 0; i < metadata->num_row_groups(); ++i)
-        {
-            if (!set_to_read.contains(i))
-                skip_row_groups.insert(i);
-        }
-    }
-
     const bool prefetch_group = io_pool != nullptr;
 
     std::shared_ptr<arrow::Schema> schema;
@@ -880,14 +825,13 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 
 void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_batch_idx)
 {
-    bool row_group_prefetch = io_pool != nullptr;
+    const bool row_group_prefetch = io_pool != nullptr;
     auto & row_group_batch = row_group_batches[row_group_batch_idx];
 
     parquet::ArrowReaderProperties arrow_properties;
-    parquet::ReaderProperties reader_properties(arrow::default_memory_pool());
+    parquet::ReaderProperties reader_properties(ArrowMemoryPool::instance());
     arrow_properties.set_use_threads(false);
     arrow_properties.set_batch_size(row_group_batch.adaptive_chunk_size);
-    reader_properties.set_page_checksum_verification(format_settings.parquet.verify_checksums);
 
     // When reading a row group, arrow will:
     //  1. Look at `metadata` to get all byte ranges it'll need to read from the file (typically one
@@ -933,10 +877,7 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
     // other, failing an assert. So we disable pre-buffering in this case.
     // That version is >10 years old, so this is not very important.
     if (metadata->writer_version().VersionLt(parquet::ApplicationVersion::PARQUET_816_FIXED_VERSION()))
-    {
         arrow_properties.set_pre_buffer(false);
-        row_group_prefetch = false;
-    }
 
     if (format_settings.parquet.use_native_reader)
     {
@@ -962,7 +903,7 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
         parquet::arrow::FileReaderBuilder builder;
         THROW_ARROW_NOT_OK(builder.Open(arrow_file, reader_properties, metadata));
         builder.properties(arrow_properties);
-        builder.memory_pool(arrow::default_memory_pool());
+        builder.memory_pool(ArrowMemoryPool::instance());
         // should get raw reader before build, raw_reader will set null after build
         auto * parquet_file_reader = builder.raw_reader();
         THROW_ARROW_NOT_OK(builder.Build(&row_group_batch.file_reader));
@@ -1008,7 +949,7 @@ void ParquetBlockInputFormat::scheduleRowGroup(size_t row_group_batch_idx)
         {
             try
             {
-                ThreadGroupSwitcher switcher(thread_group, ThreadName::PARQUET_DECODER);
+                ThreadGroupSwitcher switcher(thread_group, "ParquetDecoder");
                 threadFunction(row_group_batch_idx);
             }
             catch (...)
@@ -1063,9 +1004,9 @@ void ParquetBlockInputFormat::RowGroupPrefetchIterator::prefetchNextRowGroups()
     if (next_row_group_idx < row_group_batch.row_groups_idxs.size())
     {
         size_t total_bytes_compressed = 0;
-        // Merge small row groups, but always prefetch at least one row group
+        // Merge small row groups
         while (next_row_group_idx < row_group_batch.row_groups_idxs.size() &&
-               (total_bytes_compressed < min_bytes_for_seek || prefetched_row_groups.empty()))
+               total_bytes_compressed < min_bytes_for_seek)
         {
             total_bytes_compressed += row_group_batch.row_group_sizes[next_row_group_idx];
             prefetched_row_groups.emplace_back(row_group_batch.row_groups_idxs[next_row_group_idx]);
@@ -1136,19 +1077,6 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
             return batch;
         };
 
-        // If record_batch_reader is null, try to get the next row group reader from prefetch iterator
-        if (!row_group_batch.record_batch_reader && row_group_batch.prefetch_iterator)
-        {
-            row_group_batch.record_batch_reader = row_group_batch.prefetch_iterator->nextRowGroupReader();
-        }
-
-        // If we still don't have a reader, we're done with this row group
-        if (!row_group_batch.record_batch_reader)
-        {
-            end_of_row_group();
-            return;
-        }
-
         auto batch = fetchBatch();
         if (!*batch && row_group_batch.prefetch_iterator)
         {
@@ -1197,8 +1125,9 @@ void ParquetBlockInputFormat::scheduleMoreWorkIfNeeded(std::optional<size_t> row
     {
         size_t max_decoding_threads = parser_shared_resources->getParsingThreadsPerReader();
         while (row_group_batches_started - row_group_batches_completed < max_decoding_threads &&
-                row_group_batches_started < row_group_batches.size())
+               row_group_batches_started < row_group_batches.size())
             scheduleRowGroup(row_group_batches_started++);
+
         if (row_group_batch_touched)
         {
             auto & row_group = row_group_batches[*row_group_batch_touched];
@@ -1229,7 +1158,7 @@ Chunk ParquetBlockInputFormat::read()
                               [](size_t sum, const RowGroupBatchState & batch) { return sum + batch.total_rows; });
 
         row_group_batches_completed++;
-        chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(total_rows_before));
+        chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumOffset>(total_rows_before));
         return chunk;
     }
 
@@ -1240,9 +1169,7 @@ Chunk ParquetBlockInputFormat::read()
         if (background_exception)
         {
             is_stopped = true;
-            /// This exception can be mutated (addMessage()) in IInputFormat::generate(),
-            /// so we need to copy it (copyMutableException()) to avoid sharing mutable exception between multiple threads
-            std::rethrow_exception(copyMutableException(background_exception));
+            std::rethrow_exception(background_exception);
         }
         if (is_stopped)
             return {};
@@ -1279,7 +1206,7 @@ Chunk ParquetBlockInputFormat::read()
                 + std::accumulate(row_group.chunk_sizes.begin(), row_group.chunk_sizes.begin() + chunk.chunk_idx, 0ull);
 
 
-            chunk.chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(total_rows_before));
+            chunk.chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumOffset>(total_rows_before));
 
             return std::move(chunk.chunk);
         }
@@ -1292,11 +1219,6 @@ Chunk ParquetBlockInputFormat::read()
         else
             decodeOneChunk(row_group_batches_completed, lock);
     }
-}
-
-void ParquetBlockInputFormat::setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_)
-{
-    buckets_to_read = std::static_pointer_cast<ParquetFileBucketInfo>(buckets_to_read_);
 }
 
 void ParquetBlockInputFormat::resetParser()
@@ -1395,53 +1317,8 @@ std::optional<size_t> ArrowParquetSchemaReader::readNumberOrRows()
     return metadata->num_rows();
 }
 
-std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_)
-{
-    std::atomic<int> is_stopped = false;
-    auto arrow_file = asArrowFile(buf, format_settings_, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true, nullptr);
-    auto metadata = parquet::ReadMetaData(arrow_file);
-    std::vector<size_t> bucket_sizes;
-    for (int i = 0; i < metadata->num_row_groups(); ++i)
-        bucket_sizes.push_back(metadata->RowGroup(i)->total_byte_size());
-
-    std::vector<std::vector<size_t>> buckets;
-    size_t current_weight = 0;
-    for (size_t i = 0; i < bucket_sizes.size(); ++i)
-    {
-        if (current_weight + bucket_sizes[i] <= bucket_size)
-        {
-            if (buckets.empty())
-                buckets.emplace_back();
-            buckets.back().push_back(i);
-            current_weight += bucket_sizes[i];
-        }
-        else
-        {
-            current_weight = 0;
-            buckets.push_back({});
-            buckets.back().push_back(i);
-            current_weight += bucket_sizes[i];
-        }
-    }
-
-    std::vector<FileBucketInfoPtr> result;
-    for (const auto & bucket : buckets)
-    {
-        result.push_back(std::make_shared<ParquetFileBucketInfo>(bucket));
-    }
-    return result;
-}
-
 void registerInputFormatParquet(FormatFactory & factory)
 {
-    factory.registerFileBucketInfo(
-        "Parquet",
-        []
-        {
-            return std::make_shared<ParquetFileBucketInfo>();
-        }
-    );
-
     factory.registerRandomAccessInputFormat(
         "Parquet",
         [](ReadBuffer & buf,
@@ -1484,10 +1361,6 @@ void registerInputFormatParquet(FormatFactory & factory)
 
 void registerParquetSchemaReader(FormatFactory & factory)
 {
-    factory.registerSplitter("Parquet", []
-        {
-            return std::make_shared<ParquetBucketSplitter>();
-        });
     factory.registerSchemaReader(
         "Parquet",
         [](ReadBuffer & buf, const FormatSettings & settings) -> SchemaReaderPtr

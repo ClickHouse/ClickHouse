@@ -187,7 +187,9 @@ void registerStorageObjectStorage(StorageFactory & factory)
     UNUSED(factory);
 }
 
-[[maybe_unused]] static DataLakeStorageSettingsPtr getDataLakeStorageSettings(const ASTStorage & storage_def)
+#if USE_AVRO /// StorageIceberg depending on Avro to parse metadata with Avro format.
+
+static DataLakeStorageSettingsPtr getDataLakeStorageSettings(const ASTStorage & storage_def)
 {
     auto storage_settings = std::make_shared<DataLakeStorageSettings>();
     if (storage_def.settings)
@@ -195,10 +197,9 @@ void registerStorageObjectStorage(StorageFactory & factory)
     return storage_settings;
 }
 
-#if USE_AVRO /// StorageIceberg depending on Avro to parse metadata with Avro format.
-
 void registerStorageIceberg(StorageFactory & factory)
 {
+#if USE_AWS_S3
     factory.registerStorage(
         IcebergDefinition::storage_engine_name,
         [&](const StorageFactory::Arguments & args)
@@ -214,46 +215,31 @@ void registerStorageIceberg(StorageFactory & factory)
                 auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
                 switch (disk->getObjectStorage()->getType())
                 {
-#if USE_AWS_S3
-                    case ObjectStorageType::S3:
-                        configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
-                        break;
-#endif
-#if USE_AZURE_BLOB_STORAGE
-                    case ObjectStorageType::Azure:
-                        configuration = std::make_shared<StorageAzureIcebergConfiguration>(storage_settings);
-                        break;
-#endif
-                    case ObjectStorageType::Local:
-                        configuration = std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
-                        break;
-                    default:
-                        throw Exception(
-                            ErrorCodes::BAD_ARGUMENTS,
-                            "Unsupported disk type for {}: {}",
-                            IcebergDefinition::storage_engine_name,
-                            disk->getObjectStorage()->getType());
+                case ObjectStorageType::S3:
+                    configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
+                    break;
+                case ObjectStorageType::Azure:
+                    configuration = std::make_shared<StorageAzureIcebergConfiguration>(storage_settings);
+                    break;
+                case ObjectStorageType::Local:
+                    configuration = std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
+                    break;
+                default:
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", IcebergDefinition::storage_engine_name, disk->getObjectStorage()->getType());
                 }
             }
             else
-#if USE_AWS_S3
                 configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
-#endif
-            if (configuration == nullptr)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "This storage configuration is not available at this build");
-            }
             return createStorageObjectStorage(args, configuration);
         },
         {
             .supports_settings = true,
             .supports_sort_order = true,
             .supports_schema_inference = true,
-            /// This source access type is probably a bug which was overlooked and we do not know how to fix it simply, so we keep it as it is.
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         });
-#if USE_AWS_S3
+
     factory.registerStorage(
         IcebergS3Definition::storage_engine_name,
         [&](const StorageFactory::Arguments & args)
