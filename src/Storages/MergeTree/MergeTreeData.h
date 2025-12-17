@@ -761,9 +761,6 @@ public:
 
     static void validateDetachedPartName(const String & name);
 
-    /// Remove transaction metadata files (txn_version.txt) from all parts in the specified data directory
-    static void clearTransactionMetadata(const std::filesystem::path & data_path);
-
     void dropDetached(const ASTPtr & partition, bool part, ContextPtr context);
 
     MutableDataPartsVector tryLoadPartsToAttach(const ASTPtr & partition, bool attach_part,

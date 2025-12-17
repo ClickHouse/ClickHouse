@@ -177,6 +177,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_TABLES;
     extern const int TOO_MANY_DATABASES;
     extern const int THERE_IS_NO_COLUMN;
+    extern const int CANNOT_RESTORE_TABLE;
 }
 
 namespace fs = std::filesystem;
@@ -2576,13 +2577,7 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     if (to_replicated && !engine_name.starts_with("Replicated"))
     {
         String table_data_path = database->getTableDataPath(create);
-        auto full_data_path = fs::path(getContext()->getPath()) / table_data_path;
-
-        if (fs::exists(full_data_path) && fs::is_directory(full_data_path))
-        {
-            LOG_INFO(getLogger("InterpreterCreateQuery"), "Clearing transaction metadata for table {} during ATTACH AS REPLICATED", full_data_path);
-            MergeTreeData::clearTransactionMetadata(full_data_path);
-        }
+        clearTransactionMetadata(table_data_path, getContext());
     }
 
     /// Set new engine
@@ -2599,6 +2594,52 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
         /*content=*/statement,
         /*fsync_metadata=*/getContext()->getSettingsRef()[Setting::fsync_metadata]);
     db_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
+}
+
+void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_path, ContextPtr local_context)
+{
+    LOG_INFO(getLogger("InterpreterCreateQuery"), "Clearing transaction metadata for table, relative path: {} when ATTACH AS REPLICATED.", table_data_path);
+
+    /// Use disk API to remove transaction metadata files from all disks
+    auto disks = local_context->getDisksMap();
+    size_t total_removed = 0;
+
+    for (const auto & [disk_name, disk] : disks)
+    {
+        try
+        {
+            /// Skip if the table data path doesn't exist on this disk
+            if (!disk->existsDirectory(table_data_path))
+                continue;
+
+            /// Iterate through all parts in the table data directory
+            for (auto it = disk->iterateDirectory(table_data_path); it->isValid(); it->next())
+            {
+                String part_name = it->name();
+                String part_path = fs::path(table_data_path) / part_name;
+
+                /// Check if it's a directory (part directory)
+                if (!disk->existsDirectory(part_path))
+                    continue;
+
+                /// Try to remove txn_version.txt file
+                String txn_file = fs::path(part_path) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME;
+                if (disk->existsFile(txn_file))
+                {
+                    disk->removeFile(txn_file);
+                    total_removed++;
+                }
+            }
+        }
+        catch (...)
+        {
+            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+                           "Cannot ATTACH AS REPLICATED: failed to clear transaction metadata on disk {}, due to {}",
+                           disk_name, getCurrentExceptionMessage(false));
+        }
+    }
+
+    LOG_INFO(getLogger("InterpreterCreateQuery"), "Removed {} transaction metadata files for table, relative path: {}.", total_removed, table_data_path);
 }
 
 void registerInterpreterCreateQuery(InterpreterFactory & factory)

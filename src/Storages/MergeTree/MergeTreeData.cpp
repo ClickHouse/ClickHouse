@@ -7457,24 +7457,6 @@ void MergeTreeData::validateDetachedPartName(const String & name)
                             "most likely it is used by another DROP or ATTACH query.", name);
 }
 
-void MergeTreeData::clearTransactionMetadata(const std::filesystem::path & data_path)
-{
-    namespace fs = std::filesystem;
-
-    for (const auto & entry : fs::directory_iterator(data_path))
-    {
-        if (!entry.is_directory())
-            continue;
-
-        auto txn_file_path = entry.path() / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME;
-        if (fs::exists(txn_file_path))
-        {
-            fs::remove(txn_file_path);
-            LOG_DEBUG(getLogger("MergeTreeData"), "Removed transaction metadata file: {}", txn_file_path.string());
-        }
-    }
-}
-
 void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr local_context)
 {
     PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
