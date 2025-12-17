@@ -925,10 +925,18 @@ BlockIO InterpreterSystemQuery::execute()
             LOG_TRACE(log, "Finished waiting for failpoint {}", query.fail_point_name);
             break;
         }
+        case Type::NOTIFY_FAILPOINT:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
+            LOG_TRACE(log, "Notifying failpoint {}", query.fail_point_name);
+            FailPointInjection::notifyFailPoint(query.fail_point_name);
+            break;
+        }
 #else // USE_LIBFIU
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::WAIT_FAILPOINT:
+        case Type::NOTIFY_FAILPOINT:
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without FIU support");
 #endif // USE_LIBFIU
         case Type::RESET_COVERAGE:
@@ -2298,6 +2306,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::START_THREAD_FUZZER:
         case Type::ENABLE_FAILPOINT:
         case Type::WAIT_FAILPOINT:
+        case Type::NOTIFY_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::RESET_COVERAGE:
         case Type::UNKNOWN:

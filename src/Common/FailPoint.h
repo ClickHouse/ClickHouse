@@ -53,6 +53,8 @@ public:
 
     static void disableFailPoint(const String & fail_point_name);
 
+    static void notifyFailPoint(const String & fail_point_name);
+
     static void wait(const String & fail_point_name);
 
 private:

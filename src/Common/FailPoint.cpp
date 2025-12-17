@@ -142,7 +142,10 @@ std::mutex FailPointInjection::mu;
 struct FailPointChannel
 {
     std::condition_variable cv;
-    bool notified = false;
+    /// Notification epoch/generation number. Incremented on each notify.
+    /// Threads record the epoch when they start waiting, and only wake up
+    /// if the current epoch is greater than their recorded epoch.
+    size_t epoch = 0;
 };
 
 void FailPointInjection::pauseFailPoint(const String & fail_point_name)
@@ -183,13 +186,29 @@ void FailPointInjection::disableFailPoint(const String & fail_point_name)
     std::lock_guard lock(mu);
     if (auto iter = fail_point_wait_channels.find(fail_point_name); iter != fail_point_wait_channels.end())
     {
-        /// can not rely on deconstruction to do the notify_all things, because
-        /// if someone wait on this, the deconstruct will never be called.
-        iter->second->notified = true;
+        /// Increment epoch to wake up all waiting threads.
+        /// They will find the channel has been erased and return.
+        ++iter->second->epoch;
         iter->second->cv.notify_all();
         fail_point_wait_channels.erase(iter);
     }
     fiu_disable(fail_point_name.c_str());
+}
+
+void FailPointInjection::notifyFailPoint(const String & fail_point_name)
+{
+    std::lock_guard lock(mu);
+    if (auto iter = fail_point_wait_channels.find(fail_point_name); iter != fail_point_wait_channels.end())
+    {
+        /// Increment epoch to mark a new notification cycle
+        /// This allows the failpoint to be paused and notified multiple times
+        ++iter->second->epoch;
+        iter->second->cv.notify_all();
+    }
+    else
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find channel for fail point {}", fail_point_name);
+    }
 }
 
 void FailPointInjection::wait(const String & fail_point_name)
@@ -200,8 +219,15 @@ void FailPointInjection::wait(const String & fail_point_name)
         /// We may get here if pauseFailPoint was called in parallel with disableFailPoint.
         return;
     auto channel = iter->second;
+
+    /// Record the epoch when this thread starts waiting
+    size_t my_epoch = channel->epoch;
+
     /// Note: this may unlock and re-lock the mutex, invalidating `iter`.
-    channel->cv.wait(lock, [&] { return channel->notified; });
+    /// Wait for epoch to be incremented by either notifyFailPoint or disableFailPoint
+    channel->cv.wait(lock, [&] {
+        return channel->epoch > my_epoch;
+    });
 }
 
 #else // USE_LIBFIU
@@ -219,6 +245,10 @@ void FailPointInjection::enablePauseFailPoint(const String &, UInt64)
 }
 
 void FailPointInjection::disableFailPoint(const String &)
+{
+}
+
+void FailPointInjection::notifyFailPoint(const String &)
 {
 }
 
