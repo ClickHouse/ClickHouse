@@ -109,7 +109,7 @@ CREATE DATABASE test_03361_dBAmB ENGINE = Atomic;
 
 -- CI databases ON: ambiguous DB name should error
 SET enable_case_insensitive_databases = 1;
-SELECT 1 FROM test_03361_dbamb.nonexistent; -- { serverError AMBIGUOUS_IDENTIFIER }
+SELECT 1 FROM test_03361_dbamb.nonexistent; -- { serverError UNKNOWN_DATABASE }
 
 -- CI databases OFF: unknown database
 SET enable_case_insensitive_databases = 0;
@@ -117,7 +117,7 @@ SELECT 1 FROM test_03361_dbamb.nonexistent; -- { serverError UNKNOWN_DATABASE }
 
 -- Quoted DB name still participates in CI database matching
 SET enable_case_insensitive_databases = 1;
-SELECT 1 FROM `test_03361_dbamb`.nonexistent; -- { serverError AMBIGUOUS_IDENTIFIER }
+SELECT 1 FROM `test_03361_dbamb`.nonexistent; -- { serverError UNKNOWN_DATABASE }
 
 DROP DATABASE IF EXISTS test_03361_DbAmb SYNC;
 DROP DATABASE IF EXISTS test_03361_dBAmB SYNC;
