@@ -698,7 +698,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
     size_t num_streams = left->getNumStreams();
     if (right->getNumStreams() != num_streams)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Join by layers expect the same number of ports for the left and the right pipeline. Actual: {} and {}.",
+            "Join by layers expects the same number of ports for the left and the right pipeline. Actual: {} and {}.",
             num_streams, right->getNumStreams());
 
     SharedHeader left_header = left->getSharedHeader();

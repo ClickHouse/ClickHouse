@@ -270,6 +270,14 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
 
     settings.getter = create_stream_getter(false);
     serialization->deserializeBinaryBulkWithMultipleStreams(column, 0, max_rows_to_read, settings, deserialize_states[name], &cache);
+    if (column->getDataType() != name_and_type.type->getColumnType())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Unexpected return type when reading column '{}' from {}. Expected {}. Got {}",
+            name_and_type.name,
+            storage.getStorageID().getFullTableName(),
+            name_and_type.type->getColumnType(),
+            column->getDataType());
 }
 
 bool LogSource::isFinished()

@@ -66,7 +66,7 @@ increments the number of seconds in the date with time.
     FunctionDocumentation::Examples examples = {example1, example2};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, categories};
 
     factory.registerFunction<FunctionPlus>(documentation);
 }
