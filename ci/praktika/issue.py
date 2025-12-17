@@ -18,83 +18,6 @@ if TYPE_CHECKING:
     pass
 
 
-def parse_issue_body_fields(body: str) -> dict:
-    """
-    Parse structured fields from issue body.
-
-    Expected format in body:
-    - Test name: <content>
-    - Failure reason: <content>
-    - Failure flags: <flag1>, <flag2>, ...
-    - CI action: <content>
-    - Test pattern: <content>
-    - Job pattern: <content>
-
-    Returns:
-        Dictionary with parsed fields
-    """
-    fields = {
-        "test_name": "",
-        "failure_reason": "",
-        "failure_flags": [],
-        "ci_action": "",
-        "test_pattern": "",
-        "job_pattern": "",
-    }
-
-    if not body:
-        return fields
-
-    # Parse each field with regex
-    # Pattern: field name followed by colon, then content until end of line
-    patterns = {
-        "test_name": r"Test name:\s*(.+?)(?:\n|$)",
-        "failure_reason": r"Failure reason:\s*(.+?)(?:\n|$)",
-        "ci_action": r"CI action:\s*(.+?)(?:\n|$)",
-        "test_pattern": r"Test pattern:\s*(.+?)(?:\n|$)",
-        "job_pattern": r"Job pattern:\s*(.+?)(?:\n|$)",
-    }
-
-    for field, pattern in patterns.items():
-        match = re.search(pattern, body, re.IGNORECASE)
-        if match:
-            fields[field] = match.group(1).strip()
-
-    # Parse failure flags (comma-separated list)
-    flags_match = re.search(
-        r"^Failure flags:[ \t]*(.*)$", body, re.IGNORECASE | re.MULTILINE
-    )
-    fields["failure_flags"] = []
-    if flags_match:
-        flags_str = flags_match.group(1).strip()
-        # Split by comma and strip whitespace from each flag
-        if flags_str:
-            fields["failure_flags"] = [
-                flag.strip() for flag in flags_str.split(",") if flag.strip()
-            ]
-
-    return fields
-
-
-def extract_test_name(title: str) -> Optional[str]:
-    pattern1 = r"\b(\d{5}_\S+)"
-    match1 = re.search(pattern1, title)
-    if match1:
-        test_name = match1.group(1)
-        # Strip trailing quotes, backticks, and other punctuation
-        return test_name.rstrip("`'\",.;:!?)")
-
-    # Pattern 2: pytest-style names that start with test_, allowing rich suffixes
-    # Use a negated class to stop at whitespace or closing punctuation/quotes.
-    pattern2 = r"\b(test_[^\s`'\",]+)"
-    match2 = re.search(pattern2, title)
-    if match2:
-        test_name = match2.group(1)
-        # Strip trailing quotes, backticks, and other punctuation
-        return test_name.rstrip("`'\",.;:!?)")
-    return None
-
-
 def fetch_github_issues(
     label: str, state: str = "open", hours_back: float = None
 ) -> List[dict]:
@@ -200,6 +123,64 @@ class Issue:
     def has_test_pattern(self):
         return bool(self.test_pattern) and self.test_pattern != "%"
 
+    @staticmethod
+    def parse_issue_body_fields(body: str) -> dict:
+        fields = {
+            "test_name": "",
+            "failure_reason": "",
+            "failure_flags": [],
+            "ci_action": "",
+            "test_pattern": "",
+            "job_pattern": "",
+        }
+
+        if not body:
+            return fields
+
+        patterns = {
+            "test_name": r"Test name:\s*(.+?)(?:\n|$)",
+            "failure_reason": r"Failure reason:\s*(.+?)(?:\n|$)",
+            "ci_action": r"CI action:\s*(.+?)(?:\n|$)",
+            "test_pattern": r"Test pattern:\s*(.+?)(?:\n|$)",
+            "job_pattern": r"Job pattern:\s*(.+?)(?:\n|$)",
+        }
+
+        for field, pattern in patterns.items():
+            match = re.search(pattern, body, re.IGNORECASE)
+            if match:
+                fields[field] = match.group(1).strip()
+
+        flags_match = re.search(
+            r"^Failure flags:[ \t]*(.*)$", body, re.IGNORECASE | re.MULTILINE
+        )
+        fields["failure_flags"] = []
+        if flags_match:
+            flags_str = flags_match.group(1).strip()
+            if flags_str:
+                fields["failure_flags"] = [
+                    flag.strip() for flag in flags_str.split(",") if flag.strip()
+                ]
+
+        return fields
+
+    @staticmethod
+    def extract_test_name(title) -> Optional[str]:
+        """
+        Temporary helper method until all CI issues following the same pattern with test name in the body
+        """
+        pattern1 = r"\b(\d{5}_\S+)"
+        match1 = re.search(pattern1, title)
+        if match1:
+            test_name = match1.group(1)
+            return test_name.rstrip("`'\",.;:!?)")
+
+        pattern2 = r"\b(test_[^\s`'\",]+)"
+        match2 = re.search(pattern2, title)
+        if match2:
+            test_name = match2.group(1)
+            return test_name.rstrip("`'\",.;:!?)")
+        return None
+
     def validate(self, verbose=True):
         if not self.test_name and not self.is_infrastructure():
             if verbose:
@@ -263,12 +244,6 @@ class Issue:
 
     def _check_flaky_test_match(self, result: Result) -> bool:
         """Check if this flaky test issue matches the result."""
-        # Only check flaky tests and fuzz issues
-        if not any(
-            l in self.labels for l in [IssueLabels.FLAKY_TEST, IssueLabels.FUZZ]
-        ):
-            return False
-
         name_in_report = result.name
         test_name = self.test_name
 
@@ -342,12 +317,12 @@ class Issue:
         closed_at="",
         number=0,
     ):
-        body_fields = parse_issue_body_fields(body)
+        body_fields = cls.parse_issue_body_fields(body)
         test_name = body_fields["test_name"]
         if not test_name:
             if IssueLabels.FLAKY_TEST in labels:
                 # Extract test name from title or body
-                test_name = extract_test_name(title)
+                test_name = cls.extract_test_name(title)
             else:
                 test_name = title
         issue_url = (
@@ -547,8 +522,13 @@ if __name__ == "__main__":
     Path(temp_path).mkdir(exist_ok=True)
 
     def collect_and_upload():
-        TestCaseIssueCatalog.from_gh().dump()  # .to_s3()
-        return True
+        print(f"Fetching active testing issues...")
+        c = TestCaseIssueCatalog.from_gh()
+        c.dump()
+        print(f"Uploading to S3...")
+        url = c.to_s3()
+        print(f"Catalog uploaded to S3: {url}")
+        return bool(url)
 
     def download():
         TestCaseIssueCatalog.from_s3().dump()
@@ -563,6 +543,7 @@ if __name__ == "__main__":
                 command=lambda: collect_and_upload(),
             )
         )
+        # collect_and_upload()
     elif "--download" in sys.argv:
         results.append(
             Result.from_commands_run(
@@ -573,4 +554,4 @@ if __name__ == "__main__":
         print("ERROR: No action specified")
         raise
 
-    Result.create_from(status=Result.Status.SUCCESS).complete_job()
+    Result.create_from(results=results).complete_job()
