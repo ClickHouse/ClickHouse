@@ -1040,6 +1040,9 @@ void ColumnVariant::filter(const Filter & filt)
         /// It make sense to call filter() on variant only if the result size is not 0.
         if (!variant_result_is_empty[i])
             variants[i]->filter(nested_filters[i]);
+        /// If result variant size is 0, we need to make this variant empty.
+        else
+            variants[i] = variants[i]->cloneEmpty();
     }
 
     discriminators_concrete->filter(filt);

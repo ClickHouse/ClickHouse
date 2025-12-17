@@ -545,7 +545,7 @@ void MergeTreeRangeReader::ReadResult::applyFilter(const FilterWithCachedCount &
     LOG_TEST(log, "ReadResult::applyFilter() num_rows after: {}", num_rows);
 }
 
-void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & current_filter, bool can_read_incomplete_granules)
+void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & current_filter, bool can_read_incomplete_granules, bool must_apply_filter)
 {
     checkInternalConsistency();
 
@@ -675,7 +675,7 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
             applyFilter(current_filter);
         }
         /// Another guess, if it's worth filtering at PREWHERE
-        else if (filter.countBytesInFilter() < 0.6 * filter.size())
+        else if (must_apply_filter || (filter.countBytesInFilter() < 0.6 * filter.size()))
         {
             applyFilter(filter);
         }
@@ -1081,7 +1081,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
         {
             auto current_filter = FilterWithCachedCount(result.columns.front());
             result.columns.clear();
-            result.optimize(current_filter, merge_tree_reader->canReadIncompleteGranules());
+            result.optimize(current_filter, merge_tree_reader->canReadIncompleteGranules(), merge_tree_reader->mustApplyFilter());
         }
         else
         {
@@ -1490,7 +1490,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     /// to only output those rows from this reader to the next Sorting step.
     bool is_vector_search = merge_tree_reader->data_part_info_for_read->getReadHints().vector_search_results.has_value();
     if (is_vector_search && (part_offsets_filter_for_vector_search.size() == result.num_rows))
-        result.optimize(part_offsets_filter_for_vector_search, merge_tree_reader->canReadIncompleteGranules());
+        result.optimize(part_offsets_filter_for_vector_search, merge_tree_reader->canReadIncompleteGranules(), false);
 
     if (!prewhere_info || prewhere_info->type == PrewhereExprStep::None)
         return;
@@ -1570,7 +1570,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
             result.columns.erase(result.columns.begin() + filter_column_pos);
 
         FilterWithCachedCount current_filter(current_step_filter);
-        result.optimize(current_filter, merge_tree_reader->canReadIncompleteGranules());
+        result.optimize(current_filter, merge_tree_reader->canReadIncompleteGranules(), false);
 
         if (prewhere_info->need_filter && !result.filterWasApplied())
         {
