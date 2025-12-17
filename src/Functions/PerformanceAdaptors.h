@@ -252,7 +252,7 @@ public:
     template <TargetArch Arch, typename FunctionImpl, typename ...Args>
     void registerImplementation(Args &&... args)
     {
-        if (isArchSupported(Arch))
+        if ((Arch == TargetArch::Default) || isArchSupported(Arch))
         {
             // TODO(dakovalkov): make this option better.
             const auto & choose_impl = getContext()->getSettingsRef()[Setting::function_implementation].value;
