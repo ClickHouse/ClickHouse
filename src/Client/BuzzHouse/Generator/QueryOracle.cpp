@@ -361,6 +361,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
     const std::optional<String> & cluster = t.getCluster();
 
     intermediate_queries.clear();
+    gen.setAllowNotDetermistic(false);
     switch (strategy)
     {
         case DumpOracleStrategy::DUMP_TABLE: {
@@ -547,6 +548,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
             intermediate_queries.emplace_back(next2);
         }
     }
+    gen.setAllowNotDetermistic(true);
 }
 
 void QueryOracle::generateImportQuery(
@@ -1236,7 +1238,6 @@ void QueryOracle::replaceQueryWithTablePeers(
         /// Then insert the data
         insertOnTableOrCluster(rg, gen, t, true, ins->mutable_tof());
         JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
-
         insertOnTableOrCluster(rg, gen, t, false, jtf->mutable_tof());
         jtf->set_final(t.supportsFinal());
         gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
