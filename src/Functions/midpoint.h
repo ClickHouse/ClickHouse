@@ -61,29 +61,25 @@ private:
     template <typename T>
     static constexpr bool is_integer_like_v = std::is_integral_v<T> || is_big_int_v<T>;
 
-    template <typename T, bool = is_integer_like_v<T>>
+    template <typename T>
     struct WiderIntImpl
     {
         using type = T;
     };
 
     template <typename T>
-    struct WiderIntImpl<T, true>
+    requires is_integer_like_v<T> && (sizeof(T) <= 16) /// cannot widen beyond 256-bit
+    struct WiderIntImpl<T>
     {
         static constexpr bool is_signed_v = std::numeric_limits<T>::is_signed;
-
         using type = std::conditional_t<
             (sizeof(T) <= 8),
             std::conditional_t<is_signed_v, Int128, UInt128>,
-            std::conditional_t<
-                (sizeof(T) <= 16),
-                std::conditional_t<is_signed_v, Int256, UInt256>,
-                T>>; /// cannot widen beyond 256-bit
+            std::conditional_t<is_signed_v, Int256, UInt256>>;
     };
 
     template <typename T>
     using WiderInt = typename WiderIntImpl<T>::type;
-
 
     template <typename ResultColumnType>
     static void calculateForNumericType(auto & result_data, const Columns & input_columns, size_t input_rows_count)
@@ -166,7 +162,7 @@ private:
         using ResultType = typename ResultColumnType::ValueType;
         using Native = typename ResultType::NativeType;
 
-        using SumType = std::conditional_t<(sizeof(Native) <= 8), Int128, std::conditional_t<(sizeof(Native) <= 16), Int256, Native>>;
+        using SumType = WiderInt<Native>;
 
         result_data.resize(input_rows_count);
 
@@ -194,7 +190,7 @@ private:
         using ResultType = typename ResultColumnType::ValueType;
         using Native = typename ResultType::NativeType;
 
-        using SumType = std::conditional_t<(sizeof(Native) <= 8), Int128, std::conditional_t<(sizeof(Native) <= 16), Int256, Native>>;
+        using SumType = WiderInt<Native>;
 
         result_data.resize(input_rows_count);
 
@@ -376,6 +372,9 @@ private:
 template <typename A, typename B>
 struct MidpointImpl
 {
+    template <typename T>
+    static constexpr bool is_integer_like_v = std::is_integral_v<T> || is_big_int_v<T>;
+
     using ResultType = typename NumberTraits::ResultOfIf<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
@@ -383,11 +382,7 @@ struct MidpointImpl
     template <typename Result = ResultType>
     static Result apply(A a, B b)
     {
-        if constexpr (is_floating_point<Result>)
-        {
-            return (static_cast<Result>(a) + static_cast<Result>(b)) / static_cast<Result>(2);
-        }
-        else if constexpr (std::is_integral_v<Result> || is_big_int_v<Result>)
+        if constexpr (is_integer_like_v<Result>)
         {
             Result x = static_cast<Result>(a);
             Result y = static_cast<Result>(b);
