@@ -17,7 +17,7 @@ namespace ErrorCodes
 class SerializationObjectDistinctPaths final : public SimpleTextSerialization
 {
 public:
-    SerializationObjectDistinctPaths(const std::vector<String> & typed_paths_);
+    explicit SerializationObjectDistinctPaths(const std::vector<String> & typed_paths_);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
