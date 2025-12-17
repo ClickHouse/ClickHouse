@@ -1,23 +1,26 @@
-#include <Storages/MergeTree/MergeTreeRangeReader.h>
-#include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Storages/MergeTree/MergeTreeReaderIndex.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Columns/FilterDescription.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/TargetSpecific.h>
-#include <Common/logger_useful.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
-#include <base/range.h>
-#include <Interpreters/castColumn.h>
-#include <Interpreters/ExpressionActions.h>
+#include <Columns/FilterDescription.h>
 #include <DataTypes/DataTypeNothing.h>
+#include <IO/Operators.h>
+#include <IO/VarInt.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/castColumn.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/MergeTreeRangeReader.h>
+#include <Storages/MergeTree/MergeTreeReaderIndex.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <base/range.h>
+#include <base/scope_guard.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/qvm/vec_traits.hpp>
-#include <base/scope_guard.h>
 #include <fmt/ranges.h>
+#include <Common/TargetSpecific.h>
+#include <Common/logger_useful.h>
+
+#include <Columns/ColumnString.h>
 
 #ifdef __SSE2__
 #include <emmintrin.h>
@@ -47,8 +50,34 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static void filterColumns(Columns & columns, const IColumn::Filter & filter, size_t filter_bytes)
+static bool canInplaceFilter(const ColumnPtr & column, const ColumnPtr & filter_column)
 {
+    if (!column)
+        return true;
+
+    if (filter_column == column)
+        return false;
+
+    if (column->use_count() > 1)
+        return false;
+
+    bool can_inplace = true;
+    column->forEachSubcolumn([&](const ColumnPtr & subcolumn)
+    {
+        if (!can_inplace)
+            return;
+
+        if (!canInplaceFilter(subcolumn, filter_column))
+            can_inplace = false;
+    });
+
+    return can_inplace;
+}
+
+static void filterColumns(Columns & columns, const FilterWithCachedCount & filter)
+{
+    const auto & filter_data = filter.getData();
+
     for (auto & column : columns)
     {
         if (column)
@@ -57,7 +86,10 @@ static void filterColumns(Columns & columns, const IColumn::Filter & filter, siz
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of column {} doesn't match size of filter {}",
                     column->size(), filter.size());
 
-            column = column->filter(filter, filter_bytes);
+            if (canInplaceFilter(column, filter.getColumn()))
+                column->assumeMutable()->filter(filter_data);
+            else
+                column = column->filter(filter_data, filter.countBytesInFilter());
 
             if (column->empty())
             {
@@ -82,7 +114,7 @@ void MergeTreeRangeReader::filterColumns(Columns & columns, const FilterWithCach
         return;
     }
 
-    DB::filterColumns(columns, filter.getData(), filter.countBytesInFilter());
+    DB::filterColumns(columns, filter);
 }
 
 void MergeTreeRangeReader::filterBlock(Block & block, const FilterWithCachedCount & filter)
@@ -944,8 +976,21 @@ static size_t getTotalBytesInColumns(const Columns & columns)
 {
     size_t total_bytes = 0;
     for (const auto & column : columns)
+    {
         if (column)
-            total_bytes += column->byteSize();
+        {
+            if (const auto * col_str = typeid_cast<const ColumnString *>(column.get()))
+            {
+                /// This function is used to estimate the number of bytes read from disk. For String column offsets might actually take
+                /// more memory than chars, so blindly assuming that each offset takes 8 bytes might overestimate the actual bytes read.
+                total_bytes += col_str->getChars().size() + col_str->getOffsets().size() * getLengthOfVarUInt(col_str->getOffsets().back());
+            }
+            else
+            {
+                total_bytes += column->byteSize();
+            }
+        }
+    }
     return total_bytes;
 }
 

@@ -31,6 +31,8 @@ workflow = Workflow.Config(
     jobs=[
         # binary_build_job,
         # jepsen_keeper_job,
+        # binary_build_job,
+        # JobConfigs.jepsen_keeper,
     ],
     artifacts=[
         # *ArtifactConfigs.clickhouse_binaries,

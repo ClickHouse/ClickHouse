@@ -70,18 +70,19 @@ common_ft_job_config = Job.Config(
 common_stress_job_config = Job.Config(
     name=JobNames.STRESS,
     runs_on=[],  # from parametrize()
-    command="cd ./tests/ci && python3 ./stress_check.py",
+    command="python3 ./ci/jobs/stress_job.py",
     digest_config=Job.CacheDigestConfig(
         include_paths=[
             "./tests/queries/0_stateless/",
-            "./tests/ci/stress.py",
-            "./tests/ci/stress_check.py",
+            "./ci/jobs/stress_job.py",
+            "./ci/jobs/scripts/stress/stress.py",
             "./tests/clickhouse-test",
             "./tests/config",
             "./tests/*.txt",
             "./tests/docker_scripts/",
             "./ci/docker/stress-test",
             "./ci/jobs/scripts/clickhouse_proc.py",
+            "./ci/jobs/scripts/log_parser.py",
         ],
     ),
     allow_merge_on_failure=True,
@@ -242,6 +243,7 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
+
     # release_build_jobs = common_build_job_config.set_post_hooks(
     #     post_hooks=[
     #         "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
@@ -256,8 +258,7 @@ class JobConfigs:
     #             ArtifactNames.RPM_AMD_RELEASE,
     #             ArtifactNames.TGZ_AMD_RELEASE,
     #         ],
-    #         # Release needs same architecture (for now) to handle `clickhouse hash-binary` to setup binary hash
-    #         runs_on=RunnerLabels.AMD_LARGE,
+    #         runs_on=RunnerLabels.ARM_LARGE,
     #         timeout=3 * 3600,
     #     ),
     #     Job.ParamSet(
@@ -268,7 +269,6 @@ class JobConfigs:
     #             ArtifactNames.RPM_ARM_RELEASE,
     #             ArtifactNames.TGZ_ARM_RELEASE,
     #         ],
-    #         # Release needs same architecture (for now) to handle `clickhouse hash-binary` to setup binary hash
     #         runs_on=RunnerLabels.ARM_LARGE,
     #     ),
     # )
@@ -574,7 +574,6 @@ class JobConfigs:
     #         requires=[ArtifactNames.CH_ARM_BINARY],
     #     ),
     # )
-
     functional_tests_jobs_coverage = common_ft_job_config.parametrize(
         *[
             Job.ParamSet(
@@ -690,6 +689,7 @@ class JobConfigs:
     #     ),
     # )
     # might be heavy on azure - run only on master
+
     # stress_test_azure_jobs = common_stress_job_config.parametrize(
     #     Job.ParamSet(
     #         parameter="azure, amd_msan",
@@ -705,13 +705,15 @@ class JobConfigs:
     # upgrade_test_jobs = Job.Config(
     #     name=JobNames.UPGRADE,
     #     runs_on=["from param"],
-    #     command="cd ./tests/ci && python3 ./upgrade_check.py",
+    #     command="python3 ./ci/jobs/upgrade_job.py",
     #     digest_config=Job.CacheDigestConfig(
     #         include_paths=[
-    #             "./tests/ci/upgrade_check.py",
-    #             "./tests/ci/stress_check.py",
+    #             "./ci/jobs/upgrade_job.py",
+    #             "./ci/jobs/stress_job.py",
+    #             "./ci/jobs/scripts/stress/stress.py",
     #             "./tests/docker_scripts/",
     #             "./ci/docker/stress-test",
+    #             "./ci/jobs/scripts/log_parser.py",
     #         ]
     #     ),
     #     allow_merge_on_failure=True,

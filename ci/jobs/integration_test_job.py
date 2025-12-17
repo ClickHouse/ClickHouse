@@ -424,7 +424,7 @@ def main():
             error_info.append(test_result_sequential.info)
 
     # Collect logs before rerun
-    files = []
+    attached_files = []
     if not info.is_local_run:
         failed_suits = []
         # Collect docker compose configs used in tests
@@ -440,14 +440,14 @@ def main():
             failed_tests_files.append(f"tests/integration/{failed_suit}")
 
         if failed_suits:
-            files.append(
+            attached_files.append(
                 Utils.compress_files_gz(failed_tests_files, f"{temp_path}/logs.tar.gz")
             )
-            files.append(
+            attached_files.append(
                 Utils.compress_files_gz(config_files, f"{temp_path}/configs.tar.gz")
             )
             if Path("./ci/tmp/docker-in-docker.log").exists():
-                files.append("./ci/tmp/docker-in-docker.log")
+                attached_files.append("./ci/tmp/docker-in-docker.log")
 
     # Collect coverage reports 
     # for p in Path("./").glob("*.profraw"):
@@ -489,7 +489,6 @@ def main():
     if not info.is_local_run:
         print("Dumping dmesg")
         Shell.check("dmesg -T > dmesg.log", verbose=True, strict=True)
-        failed_tests_files.append("dmesg.log")
         with open("dmesg.log", "rb") as dmesg:
             dmesg = dmesg.read()
             if (
@@ -502,8 +501,9 @@ def main():
                         name=OOM_IN_DMESG_TEST_NAME, status=Result.StatusExtended.FAIL
                     )
                 )
+                attached_files.append("dmesg.log")
 
-    R = Result.create_from(results=test_results, stopwatch=sw, files=files)
+    R = Result.create_from(results=test_results, stopwatch=sw, files=attached_files)
        
     if is_llvm_coverage:
         assert is_bugfix_validation is False, "LLVM coverage with bugfix validation is not supported"

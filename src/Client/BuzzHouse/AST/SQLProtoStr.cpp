@@ -265,7 +265,8 @@ CONV_FN(FieldAccess, fa)
             break;
         case FieldType::kTupleIndex:
             ret += ".";
-            ret += std::to_string((fa.tuple_index() % 9) + 1);
+            ret += fa.tuple_index() < 0 ? "-" : "";
+            ret += std::to_string((std::abs(fa.tuple_index()) % 5) + 1);
             break;
         default:
             ret += "[1]";
@@ -1310,9 +1311,14 @@ CONV_FN(ExprIn, ein)
         case InType::kSingleExpr:
             ExprToString(ret, ein.single_expr());
             break;
-        case InType::kExprs:
+        case InType::kArray:
+            ret += "[";
+            ExprListToString(ret, ein.array());
+            ret += "]";
+            break;
+        case InType::kTuple:
             ret += "(";
-            ExprListToString(ret, ein.exprs());
+            ExprListToString(ret, ein.tuple());
             ret += ")";
             break;
         case InType::kSel:
@@ -2462,9 +2468,6 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kS3:
             S3FuncToString(ret, tf.s3());
             break;
-        case TableFunctionType::kFunc:
-            SQLTableFuncCallToString(ret, tf.func());
-            break;
         case TableFunctionType::kMerge:
             MergeFuncToString(ret, tf.merge());
             break;
@@ -2515,6 +2518,9 @@ CONV_FN(TableFunction, tf)
             break;
         case TableFunctionType::kFlight:
             ArrowFlightFuncToString(ret, tf.flight());
+            break;
+        case TableFunctionType::kFunc:
+            SQLTableFuncCallToString(ret, tf.func());
             break;
         default:
             ret += "numbers(10)";
@@ -2725,8 +2731,16 @@ CONV_FN(FetchStatement, fet)
     ExprToString(ret, fet.row_count());
     ret += " ";
     ret += RowsKeyword_Name(fet.rows()).substr(4);
-    ret += " ";
-    ret += fet.only() ? "ONLY" : "WITH TIES";
+}
+
+void LimitStatementToString(String & ret, const bool has_offset, const LimitStatement & lim)
+{
+    ret += "LIMIT ";
+    ExprToString(ret, lim.limit());
+    if (!has_offset && lim.with_ties())
+    {
+        ret += " WITH TIES";
+    }
 }
 
 void OffsetStatementToString(String & ret, const bool has_limit, const OffsetStatement & off)
@@ -2734,7 +2748,7 @@ void OffsetStatementToString(String & ret, const bool has_limit, const OffsetSta
     ret += (has_limit && off.comma()) ? "," : "OFFSET";
     ret += " ";
     ExprToString(ret, off.row_count());
-    if (off.has_rows() || off.has_fetch())
+    if ((!has_limit || !off.comma()) && (off.has_rows() || off.has_fetch()))
     {
         ret += " ";
         ret += off.has_rows() ? RowsKeyword_Name(off.rows()).substr(4) : "ROWS";
@@ -2743,6 +2757,12 @@ void OffsetStatementToString(String & ret, const bool has_limit, const OffsetSta
     {
         ret += " ";
         FetchStatementToString(ret, off.fetch());
+        ret += " ";
+        ret += off.with_ties() ? "WITH TIES" : "ONLY";
+    }
+    else if (has_limit && off.comma() && off.with_ties())
+    {
+        ret += " WITH TIES";
     }
 }
 
@@ -2826,8 +2846,8 @@ CONV_FN(SelectStatementCore, ssc)
     }
     if (ssc.has_limit())
     {
-        ret += " LIMIT ";
-        ExprToString(ret, ssc.limit());
+        ret += " ";
+        LimitStatementToString(ret, ssc.has_offset(), ssc.limit());
     }
     if (ssc.has_offset() && (ssc.has_limit() || !ssc.has_limit_by()))
     {
@@ -3064,9 +3084,26 @@ CONV_FN(CreateDatabase, create_database)
     }
 }
 
+static void CreateOrReplaceToString(String & ret, const CreateReplaceOption & cro)
+{
+    switch (cro)
+    {
+        case CreateReplaceOption::Create:
+            ret += "CREATE";
+            break;
+        case CreateReplaceOption::Replace:
+            ret += "REPLACE";
+            break;
+        case CreateReplaceOption::CreateOrReplace:
+            ret += "CREATE OR REPLACE";
+            break;
+    }
+}
+
 CONV_FN(CreateFunction, create_function)
 {
-    ret += "CREATE FUNCTION ";
+    CreateOrReplaceToString(ret, create_function.create_opt());
+    ret += " FUNCTION ";
     FunctionToString(ret, create_function.function());
     if (create_function.has_cluster())
     {
@@ -3483,22 +3520,6 @@ CONV_FN(CreateTableSelect, create_table)
     ret += create_table.paren() ? "(" : "";
     SelectToString(ret, create_table.select());
     ret += create_table.paren() ? ")" : "";
-}
-
-static void CreateOrReplaceToString(String & ret, const CreateReplaceOption & cro)
-{
-    switch (cro)
-    {
-        case CreateReplaceOption::Create:
-            ret += "CREATE";
-            break;
-        case CreateReplaceOption::Replace:
-            ret += "REPLACE";
-            break;
-        case CreateReplaceOption::CreateOrReplace:
-            ret += "CREATE OR REPLACE";
-            break;
-    }
 }
 
 CONV_FN(CreateTable, create_table)

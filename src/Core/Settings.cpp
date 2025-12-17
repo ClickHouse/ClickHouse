@@ -1,4 +1,5 @@
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/BaseSettings.h>
@@ -36,6 +37,8 @@ constexpr UInt64 default_distributed_cache_connect_timeout_ms = 50;
 constexpr UInt64 default_distributed_cache_send_timeout_ms = 3000;
 constexpr UInt64 default_distributed_cache_receive_timeout_ms = 3000;
 constexpr UInt64 default_distributed_cache_tcp_keep_alive_timeout_ms = 2900;
+constexpr UInt64 default_distributed_cache_use_clients_cache_for_read = true;
+constexpr UInt64 default_distributed_cache_use_clients_cache_for_write = false;
 #else
 constexpr UInt64 default_max_size_to_drop = 0lu;
 constexpr UInt64 default_distributed_cache_connect_max_tries = DistributedCache::DEFAULT_CONNECT_MAX_TRIES;
@@ -47,6 +50,8 @@ constexpr UInt64 default_distributed_cache_connect_timeout_ms = DistributedCache
 constexpr UInt64 default_distributed_cache_send_timeout_ms = DistributedCache::DEFAULT_SEND_TIMEOUT_MS;
 constexpr UInt64 default_distributed_cache_receive_timeout_ms = DistributedCache::DEFAULT_RECEIVE_TIMEOUT_MS;
 constexpr UInt64 default_distributed_cache_tcp_keep_alive_timeout_ms = DistributedCache::DEFAULT_TCP_KEEP_ALIVE_TIMEOUT_MS;
+constexpr UInt64 default_distributed_cache_use_clients_cache_for_read = DistributedCache::DEFAULT_USE_CLIENTS_CACHE_FOR_READ;
+constexpr UInt64 default_distributed_cache_use_clients_cache_for_write = DistributedCache::DEFAULT_USE_CLIENTS_CACHE_FOR_WRITE;
 #endif
 }
 
@@ -705,7 +710,8 @@ The maximum speed of local reads in bytes per second.
 The maximum speed of local writes in bytes per second.
 )", 0) \
     DECLARE(Bool, stream_like_engine_allow_direct_select, false, R"(
-Allow direct SELECT query for Kafka, RabbitMQ, FileLog, Redis Streams, and NATS engines. In case there are attached materialized views, SELECT query is not allowed even if this setting is enabled.
+Allow direct SELECT query for Kafka, RabbitMQ, FileLog, Redis Streams, S3Queue, AzureQueue and NATS engines. In case there are attached materialized views, SELECT query is not allowed even if this setting is enabled.
+If there are no attached materialized views, enabling this setting allows to read data. Be aware that usually the read data is removed from the queue. In order to avoid removing read data the related engine settings should be configured properly.
 )", 0) \
     DECLARE(String, stream_like_engine_insert_queue, "", R"(
 When stream-like engine reads from multiple queues, the user will need to select one queue to insert into when writing. Used by Redis Streams and NATS.
@@ -1064,6 +1070,18 @@ Result:
 │  10 │  20 │   30  │
 └─────┴─────┴───────┘
 ```
+)", 0) \
+    DECLARE(Bool, enable_positional_arguments_for_projections, false, R"(
+Enables or disables supporting positional arguments in PROJECTION definitions. See also [enable_positional_arguments](#enable_positional_arguments) setting.
+
+:::note
+This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
+:::
+
+Possible values:
+
+- 0 — Positional arguments aren't supported.
+- 1 — Positional arguments are supported: column numbers can use instead of column names.
 )", 0) \
     DECLARE(Bool, enable_extended_results_for_datetime_functions, false, R"(
 Enables or disables returning results of type `Date32` with extended range (compared to type `Date`)
@@ -1437,6 +1455,26 @@ Split parts ranges into intersecting and non intersecting during FINAL optimizat
     DECLARE(Bool, split_intersecting_parts_ranges_into_layers_final, true, R"(
 Split intersecting parts ranges into layers during FINAL optimization
 )", 0) \
+    DECLARE(Bool, apply_row_policy_after_final, false, R"(
+When enabled, row policies and PREWHERE are applied after FINAL processing for *MergeTree tables. (Especially for ReplacingMergeTree)
+When disabled, row policies are applied before FINAL, which can cause different results when the policy
+filters out rows that should be used for deduplication in ReplacingMergeTree or similar engines.
+
+If the row policy expression depends only on columns in ORDER BY, it will still be applied before FINAL as an optimization,
+since such filtering cannot affect the deduplication result.
+
+Possible values:
+
+- 0 — Row policy and PREWHERE are applied before FINAL (default).
+- 1 — Row policy and PREWHERE are applied after FINAL.
+)", 0) \
+    DECLARE(Bool, apply_prewhere_after_final, false, R"(
+When enabled, PREWHERE conditions are applied after FINAL processing for ReplacingMergeTree and similar engines.
+This can be useful when PREWHERE references columns that may have different values across duplicate rows,
+and you want FINAL to select the winning row before filtering. When disabled, PREWHERE is applied during reading.
+Note: If apply_row_level_security_after_final is enabled and row policy uses non-sorting-key columns, PREWHERE will also
+be deferred to maintain correct execution order (row policy must be applied before PREWHERE).
+)", 0) \
     \
     DECLARE(UInt64, mysql_max_rows_to_insert, 65536, R"(
 The maximum number of rows in MySQL batch insertion of the MySQL storage engine
@@ -1547,6 +1585,28 @@ Possible values:
 
 - 0 — Disabled.
 - 1 — Enabled.
+)", 0) \
+    DECLARE(Bool, use_skip_indexes_for_top_k, false, R"(
+Enable using data skipping indexes for TopK filtering.
+
+When enabled, if a minmax skip index exists on the column in `ORDER BY <column> LIMIT n` query, optimizer will attempt to use the minmax index to skip granules that are not relevant for the final result . This can reduce query latency.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
+    DECLARE(Bool, use_top_k_dynamic_filtering, false, R"(
+Enable dynamic filtering optimization when executing a `ORDER BY <column> LIMIT n` query.
+
+When enabled, the query executor will try to skip granules and rows that will not be part of the final `top N` rows in the resultset. This optimization is dynamic in nature and latency improvements depends on data distribution and presence of other predicates in the query.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
+    DECLARE(UInt64, query_plan_max_limit_for_top_k_optimization, 1000, R"(Control maximum limit value that allows to evaluate query plan for TopK optimization by using minmax skip index and dynamic threshold filtering. If zero, there is no limit.
 )", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_insert, true, R"(
 If INSERTs build and store skip indexes. If disabled, skip indexes will only be built and stored [during merges](merge-tree-settings.md/#materialize_skip_indexes_on_merge) or by explicit [MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index).
@@ -1869,7 +1929,16 @@ Possible values:
 <max_concurrent_queries_for_user>5</max_concurrent_queries_for_user>
 ```
 )", 0) \
-    \
+\
+    DECLARE(BoolAuto, insert_select_deduplicate, Field("auto"), R"(
+Enables or disables block deduplication of `INSERT SELECT` (for Replicated\* tables).
+The setting overrids `insert_deduplicate` for `INSERT SELECT` queries.
+That setting has three possible values:
+- 0 — Deduplication is disabled for `INSERT SELECT` query.
+- 1 — Deduplication is enabled for `INSERT SELECT` query. If select result is not stable, exception is thrown.
+- auto — Deduplication is enabled if `insert_deduplicate` is enable and select result is stable, otherwise disabled.
+    )", 0) \
+\
     DECLARE(Bool, insert_deduplicate, true, R"(
 Enables or disables block deduplication of `INSERT` (for Replicated\* tables).
 
@@ -2437,8 +2506,6 @@ Possible values:
 
 - 0 for turning off the timer.
 
-**Temporarily disabled in ClickHouse Cloud.**
-
 See also:
 
 - System table [trace_log](/operations/system-tables/trace_log)
@@ -2456,8 +2523,6 @@ Possible values:
             - 1000000000 (once a second) for cluster-wide profiling.
 
 - 0 for turning off the timer.
-
-**Temporarily disabled in ClickHouse Cloud.**
 
 See also:
 
@@ -3132,9 +3197,12 @@ Possible values:
 
 - direct
 
- This algorithm can be applied when the storage for the right table supports key-value requests.
+ The `direct` (also known as nested loop) algorithm performs a lookup in the right table using rows from the left table as keys.
+ It's supported by special storages such as [Dictionary](/engines/table-engines/special/dictionary), [EmbeddedRocksDB](../../engines/table-engines/integrations/embedded-rocksdb.md), and [MergeTree](/engines/table-engines/mergetree-family/mergetree) tables.
 
- The `direct` algorithm performs a lookup in the right table using rows from the left table as keys. It's supported only by special storage such as [Dictionary](/engines/table-engines/special/dictionary) or [EmbeddedRocksDB](../../engines/table-engines/integrations/embedded-rocksdb.md) and only the `LEFT` and `INNER` JOINs.
+ For MergeTree tables, the algorithm pushes join key filters directly to the storage layer. This can be more efficient when the key can use the table's primary key index for lookups, otherwise it performs full scans of the right table for each left table block.
+
+ Supports `INNER` and `LEFT` joins and only single-column equality join keys without other conditions.
 
 - auto
 
@@ -3142,7 +3210,7 @@ Possible values:
 
 - full_sorting_merge
 
- [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) with full sorting joined tables before joining.
+ [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) with full sorting of joined tables before joining.
 
 - prefer_partial_merge
 
@@ -3151,7 +3219,7 @@ Possible values:
 - default (deprecated)
 
  Legacy value, please don't use anymore.
- Same as `direct,hash`, i.e. try to use direct join and hash join join (in this order).
+ Same as `direct,hash`, i.e. try to use direct join and hash join (in this order).
 
 )", 0) \
     DECLARE(UInt64, cross_join_min_rows_to_compress, 10000000, R"(
@@ -3885,7 +3953,7 @@ Possible values:
 You can also specify the MergeTree setting [`max_partitions_to_read`](/operations/settings/settings#max_partitions_to_read) in tables' setting.
 :::
 )", 0) \
-    DECLARE(Bool, check_query_single_value_result, true, R"(
+    DECLARE(Bool, check_query_single_value_result, false, R"(
 Defines the level of detail for the [CHECK TABLE](/sql-reference/statements/check-table) query result for `MergeTree` family engines .
 
 Possible values:
@@ -4516,7 +4584,7 @@ Possible values:
 - 0 — The data types in column definitions are set to not `Nullable` by default.
 )", 0) \
     DECLARE(Bool, cast_keep_nullable, false, R"(
-Enables or disables keeping of the `Nullable` data type in [CAST](/sql-reference/functions/type-conversion-functions#cast) operations.
+Enables or disables keeping of the `Nullable` data type in [CAST](/sql-reference/functions/type-conversion-functions#CAST) operations.
 
 When the setting is enabled and the argument of `CAST` function is `Nullable`, the result is also transformed to `Nullable` type. When the setting is disabled, the result always has the destination type exactly.
 
@@ -4559,7 +4627,7 @@ Result:
 
 **See Also**
 
-- [CAST](/sql-reference/functions/type-conversion-functions#cast) function
+- [CAST](/sql-reference/functions/type-conversion-functions#CAST) function
 )", 0) \
     DECLARE(Bool, cast_ipv4_ipv6_default_on_conversion_error, false, R"(
 CAST operator into IPv4, CAST operator into IPV6 type, toIPv4, toIPv6 functions will return default value instead of throwing exception on conversion error.
@@ -5902,6 +5970,9 @@ Max attempts to read with backoff
     DECLARE(Bool, cluster_function_process_archive_on_multiple_nodes, true, R"(
 If set to `true`, increases performance of processing archives in cluster functions. Should be set to `false` for compatibility and to avoid errors during upgrade to 25.7+ if using cluster functions with archives on earlier versions.
 )", 0) \
+    DECLARE(UInt64, max_streams_for_files_processing_in_cluster_functions, 0, R"(
+If is not zero, limit the number of threads reading data from files in *Cluster table functions.
+)", 0) \
     DECLARE(Bool, enable_filesystem_cache, true, R"(
 Use cache for remote filesystem. This setting does not turn on/off cache for disks (must be done via disk config), but allows to bypass cache for some queries if intended
 )", 0) \
@@ -6257,6 +6328,12 @@ Only has an effect in ClickHouse Cloud. Timeout for sending data to istributed c
     DECLARE(UInt64, distributed_cache_tcp_keep_alive_timeout_ms, default_distributed_cache_tcp_keep_alive_timeout_ms, R"(
 Only has an effect in ClickHouse Cloud. The time in milliseconds the connection to distributed cache server needs to remain idle before TCP starts sending keepalive probes.
 )", 0) \
+    DECLARE(Bool, distributed_cache_use_clients_cache_for_write, default_distributed_cache_use_clients_cache_for_write, R"(
+Only has an effect in ClickHouse Cloud. Use clients cache for write requests.
+)", 0) \
+    DECLARE(Bool, distributed_cache_use_clients_cache_for_read, default_distributed_cache_use_clients_cache_for_read, R"(
+Only has an effect in ClickHouse Cloud. Use clients cache for read requests.
+)", 0) \
     DECLARE(Bool, filesystem_cache_allow_background_download, true, R"(
 Allow filesystem cache to enqueue background downloads for data read from remote storage. Disable to keep downloads in the foreground for the current query/session.
 )", 0) \
@@ -6575,7 +6652,7 @@ Possible values:
 
     ClickHouse can parse the basic `YYYY-MM-DD HH:MM:SS` format and all [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) date and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
 
-- `'best_effort_us'` — Similar to `best_effort` (see the difference in [parseDateTimeBestEffortUS](../../sql-reference/functions/type-conversion-functions#parsedatetimebesteffortus)
+- `'best_effort_us'` — Similar to `best_effort` (see the difference in [parseDateTimeBestEffortUS](../../sql-reference/functions/type-conversion-functions#parseDateTimeBestEffortUS)
 
 - `'basic'` — Use basic parser.
 
@@ -6736,6 +6813,14 @@ Replace external dictionary sources to Null on restore. Useful for testing purpo
     DECLARE_WITH_ALIAS(UInt64, allow_experimental_parallel_reading_from_replicas, 0, R"(
 Use up to `max_parallel_replicas` the number of replicas from each shard for SELECT query execution. Reading is parallelized and coordinated dynamically. 0 - disabled, 1 - enabled, silently disable them in case of failure, 2 - enabled, throw an exception in case of failure
 )", BETA, enable_parallel_replicas) \
+    DECLARE(UInt64, automatic_parallel_replicas_mode, 0, R"(
+🚨 HIGHLY EXPERIMENTAL 🚨
+Enable automatic switching to execution with parallel replicas based on collected statistics. Requires enabling `parallel_replicas_local_plan` and providing `cluster_for_parallel_replicas`.
+0 - disabled, 1 - enabled, 2 - only statistics collection is enabled (switching to execution with parallel replicas is disabled).
+)", 0) \
+    DECLARE(UInt64, automatic_parallel_replicas_min_bytes_per_replica, 0, R"(
+Threshold of bytes to read per replica to enable parallel replicas automatically (applies only when `automatic_parallel_replicas_mode`=1). 0 means no threshold.
+)", 0) \
     DECLARE(NonZeroUInt64, max_parallel_replicas, 1000, R"(
 The maximum number of replicas for each shard when executing a query.
 
@@ -6834,6 +6919,9 @@ The timeout in milliseconds for connecting to a remote replica during query exec
 )", BETA) \
     DECLARE(Bool, parallel_replicas_for_cluster_engines, true, R"(
 Replace table function engines with their -Cluster alternatives
+)", 0) \
+    DECLARE(Bool, parallel_replicas_allow_materialized_views, true, R"(
+Allow usage of materialized views with parallel replicas
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, allow_experimental_database_iceberg, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'iceberg'
@@ -7152,6 +7240,10 @@ Possible values:
     DECLARE(Bool, serialize_string_in_memory_with_zero_byte, true, R"(
 Serialize String values during aggregation with zero byte at the end. Enable to keep compatibility when querying cluster of incompatible versions.
 )", 0) \
+    DECLARE(UInt64, s3_path_filter_limit, 1000, R"(
+Maximum number of `_path` values that can be extracted from query filters to use for file iteration
+instead of glob listing. 0 means disabled.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
@@ -7367,7 +7459,13 @@ Allow to create table with the Alias engine.
 )", EXPERIMENTAL) \
     DECLARE(Bool, use_paimon_partition_pruning, false, R"(
 Use Paimon partition pruning for Paimon table functions
-    )", EXPERIMENTAL) \
+)", EXPERIMENTAL) \
+DECLARE(JoinOrderAlgorithm, query_plan_optimize_join_order_algorithm, "greedy", R"(
+Specifies which JOIN order algorithms to attempt during query plan optimization. The following algorithms are available:
+ - 'greedy' - basic greedy algorithm - works fast but might not produce the best join order
+ - 'dpsize' - implements DPsize algorithm currently only for Inner joins - considers all possible join orders and finds the most optimal one but might be slow for queries with many tables and join predicates.
+Multiple algorithms can be specified, e.g. 'dpsize,greedy'.
+)", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
@@ -7564,23 +7662,44 @@ void SettingsImpl::loadSettingsFromConfig(const String & path, const Poco::Util:
 
 void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
 {
-    /// Convert ptr and make simple check
-    auto * column_map = column ? &typeid_cast<ColumnMap &>(*column) : nullptr;
-    if (!column_map)
+    if (!column)
         return;
 
-    auto & offsets = column_map->getNestedColumn().getOffsets();
-    auto & tuple_column = column_map->getNestedData();
-    auto & key_column = tuple_column.getColumn(0);
-    auto & value_column = tuple_column.getColumn(1);
+    auto & column_map = typeid_cast<ColumnMap &>(*column);
+    auto & offsets = column_map.getNestedColumn().getOffsets();
+
+    auto & tuple_column = column_map.getNestedData();
+    auto & key_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(0));
+    auto & value_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(1));
 
     size_t size = 0;
-    for (const auto & setting : all(changed_only ? SKIP_UNCHANGED : SKIP_NONE))
+
+    /// Iterate over standard settings
+    const auto & accessor = Traits::Accessor::instance();
+    for (size_t i = 0; i < accessor.size(); i++)
     {
-        auto name = setting.getName();
+        if (changed_only && !accessor.isValueChanged(*this, i))
+            continue;
+
+        const auto & name = accessor.getName(i);
+        auto value = accessor.getValueString(*this, i);
         key_column.insertData(name.data(), name.size());
-        value_column.insertData(setting.getValueString());
-        size++;
+        value_column.insertData(value.data(), value.size());
+        ++size;
+    }
+
+    /// Iterate over the custom settings
+    for (const auto & custom : custom_settings_map)
+    {
+        const auto & setting_field = custom.second;
+        if (changed_only && !setting_field.changed)
+            continue;
+
+        const auto & name = custom.first;
+        auto value = setting_field.toString();
+        key_column.insertData(name.data(), name.size());
+        value_column.insertData(value.data(), value.size());
+        ++size;
     }
 
     offsets.push_back(offsets.back() + size);

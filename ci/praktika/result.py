@@ -83,12 +83,15 @@ class Result(MetaClasses.Serializable):
         if isinstance(status, bool):
             status = Result.Status.SUCCESS if status else Result.Status.FAILED
         if not results and not status:
+            print(
+                "WARNING: No results and no status provided - setting status to error"
+            )
             status = Result.Status.ERROR
-        if not name:
-            name = _Environment.get().JOB_NAME
-            if not name:
-                print("ERROR: Failed to guess the .name")
-                raise
+        # if not name:
+        #     name = _Environment.get().JOB_NAME
+        #     if not name:
+        #         print("ERROR: Failed to guess the .name")
+        #         raise
         start_time = None
         duration = None
         if not stopwatch:
@@ -319,6 +322,14 @@ class Result(MetaClasses.Serializable):
             return
         self.ext["labels"] = [l for l in self.ext["labels"] if l != label]
 
+    def get_labels(self):
+        return self.ext.get("labels", [])
+
+    def has_label(self, label):
+        return label in self.ext.get("labels", []) or label in [
+            x[0] for x in self.ext.get("hlabels", [])
+        ]
+
     def set_comment(self, comment):
         self.ext["comment"] = comment
 
@@ -455,6 +466,20 @@ class Result(MetaClasses.Serializable):
                 # Recursively process children with updated path
                 leaves.extend(cls._flat_failed_leaves(r, path=path))
         return leaves
+
+    def to_failed_results_with_flat_leaves(self):
+        """
+        Creates a minimal result tree containing only failed jobs with their failed leaf results flattened.
+        Returns a two-level structure: top-level failed jobs -> flat list of their failed leaf results.
+        """
+        result = copy.deepcopy(self)
+        failed_results = []
+        for r in result.results:
+            if not r.is_ok():
+                r.results = self._flat_failed_leaves(r)
+                failed_results.append(r)
+        result.results = failed_results
+        return result
 
     def update_sub_result(self, result: "Result", drop_nested_results=False):
         assert self.results, "BUG?"
@@ -716,6 +741,46 @@ class Result(MetaClasses.Serializable):
         else:
             sys.exit(0)
 
+    def get_info_truncated(
+        self,
+        max_info_lines_cnt=100,
+        truncate_from_top=True,
+        max_line_length=0,
+    ):
+        """
+        Get truncated info string with line count and line length limits applied.
+
+        Args:
+            max_info_lines_cnt: Maximum number of info lines to include
+            truncate_from_top: If True, truncate from the top; if False, truncate from the bottom
+            max_line_length: Maximum length of each line (0 means no limit)
+
+        Returns:
+            Truncated info string
+        """
+        info_lines = self.info.splitlines()
+
+        # Truncate info lines if too many
+        if len(info_lines) > max_info_lines_cnt:
+            truncated_count = len(info_lines) - max_info_lines_cnt
+            if truncate_from_top:
+                info_lines = [
+                    f"~~~~~ truncated {truncated_count} lines ~~~~~"
+                ] + info_lines[-max_info_lines_cnt:]
+            else:
+                info_lines = info_lines[:max_info_lines_cnt] + [
+                    f"~~~~~ truncated {truncated_count} lines ~~~~~"
+                ]
+
+        # Truncate individual lines if too long
+        if max_line_length > 0:
+            info_lines = [
+                line[:max_line_length] + "..." if len(line) > max_line_length else line
+                for line in info_lines
+            ]
+
+        return "\n".join(info_lines)
+
     def to_stdout_formatted(
         self,
         indent="",
@@ -745,23 +810,12 @@ class Result(MetaClasses.Serializable):
 
         if add_frame or not self.is_ok():
             output += f"{indent}{self.status} [{self.name}]\n"
-            info_lines = self.info.splitlines()
-
-            # Truncate info lines if too many
-            if len(info_lines) > max_info_lines_cnt:
-                truncated_count = len(info_lines) - max_info_lines_cnt
-                if truncate_from_top:
-                    info_lines = [
-                        f"~~~~~ truncated {truncated_count} lines ~~~~~"
-                    ] + info_lines[-max_info_lines_cnt:]
-                else:
-                    info_lines = info_lines[:max_info_lines_cnt] + [
-                        f"~~~~~ truncated {truncated_count} lines ~~~~~"
-                    ]
-
-            for line in info_lines:
-                if max_line_length > 0 and len(line) > max_line_length:
-                    line = line[:max_line_length] + "..."
+            truncated_info = self.get_info_truncated(
+                max_info_lines_cnt=max_info_lines_cnt,
+                truncate_from_top=truncate_from_top,
+                max_line_length=max_line_length,
+            )
+            for line in truncated_info.splitlines():
                 output += f"{sub_indent}| {line}\n"
 
         # Recursively format sub-results if this result is not ok
@@ -822,6 +876,7 @@ class ResultInfo:
     TIMEOUT = "Timeout"
 
     GH_STATUS_ERROR = "Failed to set GH commit status"
+    OPEN_ISSUES_CHECK_ERROR = "Failed to check open issues"
 
     NOT_FINALIZED = (
         "Job failed to produce Result due to a script error or CI runner issue"

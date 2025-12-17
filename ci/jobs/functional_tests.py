@@ -117,7 +117,8 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "azure": " --azure-blob-storage --no-random-settings --no-random-merge-tree-settings",  # azurite is slow, with randomization it can be super slow
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
-    "flaky check": "--flaky-check"
+    "flaky check": "--flaky-check",
+    "targeted": "--flaky-check",  # to disable tests not compatible with the thread fuzzer
 }
 
 
@@ -151,8 +152,6 @@ def main():
         elif (
             to.startswith("amd_")
             or to.startswith("arm_")
-            or "flaky" in to
-            or "targeted" in to
             or "llvm coverage" in to
         ):
             pass
@@ -223,7 +222,7 @@ def main():
         rerun_count = 50
     elif is_targeted_check:
         print(f"Rerun count set to 5 for targeted check")
-        rerun_count = 10
+        rerun_count = 5
 
     if not info.is_local_run:
         # TODO: find a way to work with Azure secret so it's ok for local tests as well, for now keep azure disabled
