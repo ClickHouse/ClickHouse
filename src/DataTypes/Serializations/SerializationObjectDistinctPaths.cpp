@@ -14,7 +14,7 @@ namespace ErrorCodes
 SerializationObjectDistinctPaths::SerializationObjectDistinctPaths(const std::vector<String> & typed_paths_)
     : typed_paths(typed_paths_)
 {
-    auto shared_data_type = DataTypeObject::getTypeOfSharedData();
+    const auto & shared_data_type = DataTypeObject::getTypeOfSharedData();
     shared_data_paths_serialization = shared_data_type->getSubcolumnSerialization("paths", shared_data_type->getDefaultSerialization());
 }
 
