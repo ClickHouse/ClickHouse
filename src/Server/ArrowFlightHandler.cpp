@@ -426,8 +426,8 @@ namespace
     /// the previous object is stored as `previous_info`, and the next object is referenced by `next_poll_descriptor`.
     struct PollDescriptorInfo : public PollDescriptorWithExpirationTime
     {
-        std::shared_ptr<const CHColumnToArrowColumn> ch_to_arrow_converter;
-        std::shared_ptr<PollDescriptorInfo> previous_info;
+        std::shared_ptr<arrow::Schema> schema;
+        std::shared_ptr<const PollDescriptorInfo> previous_info;
         bool evaluating = false;
         bool evaluated = false;
 
@@ -461,35 +461,56 @@ namespace
     {
     public:
         PollSession(
-            std::unique_ptr<Session> session_,
             ContextPtr query_context_,
             ThreadGroupPtr thread_group_,
             BlockIO && block_io_,
-            std::shared_ptr<const CHColumnToArrowColumn> ch_to_arrow_converter_)
-            : session(std::move(session_))
-            , query_context(query_context_)
+            std::function<arrow::Result<std::shared_ptr<arrow::Schema>>(std::shared_ptr<arrow::Schema>)> schema_modifier = nullptr,
+            std::function<void(Block &)> block_modifier_ = nullptr)
+            : query_context(query_context_)
             , thread_group(thread_group_)
             , block_io(std::move(block_io_))
             , executor(block_io.pipeline)
-            , ch_to_arrow_converter(ch_to_arrow_converter_)
+            , schema(
+                CHColumnToArrowColumn::calculateArrowSchema(
+                    executor.getHeader().getColumnsWithTypeAndName(),
+                    "Arrow",
+                    nullptr,
+                    {.output_string_as_string = true}
+                )
+            )
+            , block_modifier(block_modifier_)
         {
+            if (schema_modifier)
+            {
+                auto result = schema_modifier(schema);
+                if (!result.ok())
+                    throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed to convert Arrow schema {}", schema->ToString());
+                schema = result.ValueUnsafe();
+            }
         }
 
         ~PollSession() = default;
 
         ThreadGroupPtr getThreadGroup() const { return thread_group; }
-        std::shared_ptr<const CHColumnToArrowColumn> getCHToArrowConverter() const { return ch_to_arrow_converter; }
-        bool getNextBlock(Block & block) { return executor.pull(block); }
+        std::shared_ptr<arrow::Schema> getSchema() const { return schema; }
+        bool getNextBlock(Block & block)
+        {
+            if (!executor.pull(block))
+                return false;
+            if (block_modifier)
+                block_modifier(block);
+            return true;
+        }
         void onFinish() { block_io.onFinish(); }
         void onException() { block_io.onException(); }
 
     private:
-        std::unique_ptr<Session> session;
         ContextPtr query_context;
         ThreadGroupPtr thread_group;
         BlockIO block_io;
         PullingPipelineExecutor executor;
-        std::shared_ptr<const CHColumnToArrowColumn> ch_to_arrow_converter;
+        std::shared_ptr<arrow::Schema> schema;
+        std::function<void(Block &)> block_modifier;
     };
 
     /// Creates a converter to convert ClickHouse blocks to the Arrow format.
@@ -624,7 +645,8 @@ public:
         auto info = std::make_shared<PollDescriptorInfo>();
         info->poll_descriptor = poll_descriptor;
         info->expiration_time = expiration_time;
-        info->ch_to_arrow_converter = poll_session->getCHToArrowConverter();
+        info->schema = poll_session->getSchema();
+        info->previous_info = previous_info;
         std::lock_guard lock{mutex};
         bool inserted = poll_descriptors.try_emplace(poll_descriptor, info).second;  /// NOLINT(clang-analyzer-deadcode.DeadStores)
         chassert(inserted); /// Poll descriptors are unique.
@@ -723,7 +745,7 @@ public:
     }
 
     /// Ends evaluation for a specified poll descriptor.
-    void endEvaluation(const String & poll_descriptor, const String & ticket, UInt64 rows, UInt64 bytes, bool last)
+    void endEvaluation(const String & poll_descriptor, const std::optional<String> & ticket, UInt64 rows, UInt64 bytes, bool last)
     {
         std::lock_guard lock{mutex};
         auto it = poll_descriptors.find(poll_descriptor);
@@ -1573,7 +1595,7 @@ arrow::Status ArrowFlightHandler::GetSchema(
             auto poll_info_res = calls_data->getPollDescriptorInfo(poll_descriptor);
             ARROW_RETURN_NOT_OK(poll_info_res);
             const auto & poll_info = poll_info_res.ValueOrDie();
-            schema = poll_info->ch_to_arrow_converter->getArrowSchema();
+            schema = poll_info->schema;
         }
         else
         {
@@ -1648,8 +1670,19 @@ arrow::Status ArrowFlightHandler::PollFlightInfo(
     {
         LOG_INFO(log, "PollFlightInfo is called for descriptor {}", request.ToString());
 
+        const auto & auth = AuthMiddleware::get(context);
+        auto session = authenticate(auth, server.context());
+        /// Close session (if any) after processing the request
+        bool close_session = auth.sessionClose() && server.config().getBool("enable_arrow_close_session", true);
+        SCOPE_EXIT_SAFE({ releaseOrCloseSession(session, auth.sessionId(), close_session); });
+
+        std::string sql;
+        std::function<arrow::Result<std::shared_ptr<arrow::Schema>>(std::shared_ptr<arrow::Schema>)> schema_modifier;
+        std::function<void(Block &)> block_modifier;
+        std::shared_ptr<arrow::Table> table;
+
         std::shared_ptr<const PollDescriptorInfo> poll_info;
-        std::shared_ptr<const CHColumnToArrowColumn> ch_to_arrow_converter;
+        std::shared_ptr<arrow::Schema> schema;
         std::optional<PollDescriptorWithExpirationTime> next_poll_descriptor;
         bool should_cancel_poll_descriptor = false;
 
@@ -1661,21 +1694,54 @@ arrow::Status ArrowFlightHandler::PollFlightInfo(
             auto poll_info_res = calls_data->getPollDescriptorInfo(poll_descriptor);
             ARROW_RETURN_NOT_OK(poll_info_res);
             poll_info = poll_info_res.ValueOrDie();
-            ch_to_arrow_converter = poll_info->ch_to_arrow_converter;
+            schema = poll_info->schema;
             if (poll_info->next_poll_descriptor)
                 next_poll_descriptor = calls_data->getPollDescriptorWithExpirationTime(*poll_info->next_poll_descriptor);
             should_cancel_poll_descriptor = cancel_poll_descriptor_after_poll_flight_info;
         }
         else
         {
-            auto sql_res = convertGetDescriptorToSQL(request);
-            ARROW_RETURN_NOT_OK(sql_res);
-            const String & sql = sql_res.ValueOrDie();
+            if (
+                google::protobuf::Any any_msg;
+                    request.type == arrow::flight::FlightDescriptor::CMD
+                    && !request.cmd.empty()
+                    && any_msg.ParseFromArray(request.cmd.data(), request.cmd.size())
+            )
+            {
+                auto res = commandSelector(any_msg);
+                if (const auto * command_selector_tuple = std::get_if<0>(&res))
+                    std::tie(sql, schema_modifier, block_modifier) = *command_selector_tuple;
+                else if (const auto * result_table = std::get_if<1>(&res))
+                {
+                    ARROW_RETURN_NOT_OK(*result_table);
+                    table = result_table->ValueUnsafe();
+                }
+            }
 
-            auto session = std::make_unique<Session>(server.context(), ClientInfo::Interface::ARROW_FLIGHT);
+            if (table)
+            {
+                auto ticket_info = calls_data->createTicket(table);
+                std::vector<arrow::flight::FlightEndpoint> endpoints;
+                arrow::flight::FlightEndpoint endpoint;
+                endpoint.ticket = arrow::flight::Ticket{.ticket = ticket_info->ticket};
+                endpoint.expiration_time = ticket_info->expiration_time;
+                endpoints.emplace_back(endpoint);
 
-            const auto & auth = AuthMiddleware::get(context);
-            session->authenticate(auth.username(), auth.password(), getClientAddress(context));
+                auto flight_info_res = arrow::flight::FlightInfo::Make(*table->schema(), request, endpoints, table->num_rows(), calculateTableBytes(table), /* ordered = */ true);
+                ARROW_RETURN_NOT_OK(flight_info_res);
+                auto flight_info = std::make_unique<arrow::flight::FlightInfo>(flight_info_res.ValueOrDie());
+                *info = std::make_unique<arrow::flight::PollInfo>(std::move(flight_info), std::nullopt, std::nullopt, std::nullopt);
+
+                LOG_INFO(log, "PollFlightInfo returns {}", (*info)->ToString());
+                return arrow::Status::OK();
+            }
+
+            if (sql.empty())
+            {
+                auto sql_res = convertGetDescriptorToSQL(request);
+                ARROW_RETURN_NOT_OK(sql_res);
+                sql = sql_res.ValueUnsafe();
+            }
 
             auto query_context = session->makeQueryContext();
             query_context->setCurrentQueryId(""); /// Empty string means the query id will be autogenerated.
@@ -1689,10 +1755,8 @@ arrow::Status ArrowFlightHandler::PollFlightInfo(
                 ARROW_RETURN_NOT_OK(checkNoCustomFormat(ast));
                 ARROW_RETURN_NOT_OK(checkPipelineIsPulling(block_io.pipeline));
 
-                ch_to_arrow_converter = createCHToArrowConverter(block_io.pipeline.getHeader());
-
-                auto poll_session = std::make_unique<PollSession>(std::move(session), query_context, thread_group, std::move(block_io),
-                                                                  ch_to_arrow_converter);
+                auto poll_session = std::make_unique<PollSession>(query_context, thread_group, std::move(block_io), schema_modifier, block_modifier);
+                schema = poll_session->getSchema();
 
                 auto next_info = calls_data->createPollDescriptor(std::move(poll_session), /* previous_info = */ nullptr);
                 next_poll_descriptor = *next_info;
@@ -1725,13 +1789,9 @@ arrow::Status ArrowFlightHandler::PollFlightInfo(
         }
         std::reverse(endpoints.begin(), endpoints.end());
 
-        std::unique_ptr<arrow::flight::FlightInfo> flight_info;
-        if (!endpoints.empty())
-        {
-            auto flight_info_res = arrow::flight::FlightInfo::Make(*ch_to_arrow_converter->getArrowSchema(), request, endpoints, total_rows, total_bytes, /* ordered = */ true);
-            ARROW_RETURN_NOT_OK(flight_info_res);
-            flight_info = std::make_unique<arrow::flight::FlightInfo>(flight_info_res.ValueOrDie());
-        }
+        auto flight_info_res = arrow::flight::FlightInfo::Make(*schema, request, endpoints, total_rows, total_bytes, /* ordered = */ true);
+        ARROW_RETURN_NOT_OK(flight_info_res);
+        std::unique_ptr<arrow::flight::FlightInfo> flight_info = std::make_unique<arrow::flight::FlightInfo>(flight_info_res.ValueOrDie());
 
         std::optional<arrow::flight::FlightDescriptor> next;
         std::optional<Timestamp> expiration_time;
@@ -1776,12 +1836,11 @@ arrow::Status ArrowFlightHandler::evaluatePollDescriptor(const String & poll_des
     }
 
     ThreadGroupSwitcher thread_group_switcher{poll_session->getThreadGroup(), ThreadName::ARROW_FLIGHT};
-    auto ch_to_arrow_converter = poll_session->getCHToArrowConverter();
     bool last = false;
 
     try
     {
-        String ticket;
+        std::optional<String> ticket;
         UInt64 rows = 0;
         UInt64 bytes = 0;
         Block block;
@@ -1789,13 +1848,12 @@ arrow::Status ArrowFlightHandler::evaluatePollDescriptor(const String & poll_des
         {
             if (!block.empty())
             {
+                auto header = getHeader(block.getColumnsWithTypeAndName());
                 rows = block.rows();
                 bytes = block.bytes();
-                std::shared_ptr<arrow::Table> table;
-                auto num_columns = block.columns();
                 std::vector<Chunk> chunks;
                 chunks.emplace_back(Chunk{std::move(block).getColumns(), rows});
-                ch_to_arrow_converter->clone(true)->chChunkToArrowTable(table, chunks, num_columns);
+                std::shared_ptr<arrow::Table> table = CHColumnToArrowColumn::chunkToArrowTable(header, "Arrow", chunks, {.output_string_as_string = true}, header.size(), poll_session->getSchema());
                 auto ticket_info = calls_data->createTicket(table);
                 ticket = ticket_info->ticket;
             }
