@@ -659,9 +659,55 @@ uint8_t suffixToCopy(UInt64 mask)
     return prefix_to_copy >= 64 ? prefix_to_copy : 64 - prefix_to_copy;
 }
 
+template <typename T>
+class ResultInserter
+{
+private:
+    PaddedPODArray<T> & container;
+
+public:
+    explicit ResultInserter(PaddedPODArray<T> & cont) : container(cont) {}
+
+    void insertSingle(T element)
+    {
+        container.push_back(element);
+    }
+
+    void insertRange(const T * begin, const T * end)
+    {
+        container.insert(begin, end);
+    }
+};
+
+template <typename T>
+class InPlaceResultInserter
+{
+private:
+    T * result_ptr;
+    size_t & container_size;
+
+public:
+    explicit InPlaceResultInserter(T * ptr, size_t & size) : result_ptr(ptr), container_size(size) {}
+
+    void insertSingle(T element)
+    {
+        *result_ptr = element;
+        ++result_ptr;
+        ++container_size;
+    }
+
+    void insertRange(const T * begin, const T * end)
+    {
+        size_t count = end - begin;
+        memmove(result_ptr, begin, count * sizeof(T));
+        result_ptr += count;
+        container_size += count;
+    }
+};
+
 DECLARE_DEFAULT_CODE(
-template <typename T, typename Container, size_t SIMD_ELEMENTS>
-inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Container & res_data)
+template <typename T, typename Inserter, size_t SIMD_ELEMENTS>
+inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Inserter & inserter)
 {
     while (filt_pos < filt_end_aligned)
     {
@@ -670,21 +716,21 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
 
         if (0xFF != prefix_to_copy)
         {
-            res_data.insert(data_pos, data_pos + prefix_to_copy);
+            inserter.insertRange(data_pos, data_pos + prefix_to_copy);
         }
         else
         {
             const uint8_t suffix_to_copy = suffixToCopy(mask);
             if (0xFF != suffix_to_copy)
             {
-                res_data.insert(data_pos + SIMD_ELEMENTS - suffix_to_copy, data_pos + SIMD_ELEMENTS);
+                inserter.insertRange(data_pos + SIMD_ELEMENTS - suffix_to_copy, data_pos + SIMD_ELEMENTS);
             }
             else
             {
                 while (mask)
                 {
                     size_t index = std::countr_zero(mask);
-                    res_data.push_back(data_pos[index]);
+                    inserter.insertSingle(data_pos[index]);
                     mask = blsr(mask);
                 }
             }
@@ -812,7 +858,10 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
         TargetSpecific::AVX512VBMI2::doFilterAligned<T, Container, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, res_data);
     else
 #endif
-        TargetSpecific::Default::doFilterAligned<T, Container, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, res_data);
+    {
+        ResultInserter<T> inserter(res_data);
+        TargetSpecific::Default::doFilterAligned<T, ResultInserter<T>, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, inserter);
+    }
 
     while (filt_pos < filt_end)
     {
@@ -824,6 +873,44 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     }
 
     return res;
+}
+
+template <typename T>
+void ColumnVector<T>::filter(const IColumn::Filter & filt)
+{
+    const auto size = data.size();
+    const auto filter_size = filt.size();
+
+    if (size != filter_size)
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filter_size, size);
+
+    const UInt8 * filt_pos = filt.data();
+    const UInt8 * filt_end = filt_pos + size;
+    const T * data_pos = data.data();
+    T * result_data = data.data();
+    size_t result_size = 0;
+
+    /** A slightly more optimized version.
+      * Based on the assumption that often pieces of consecutive values
+      *  completely pass or do not pass the filter.
+      * Therefore, we will optimistically check the parts of `SIMD_ELEMENTS` values.
+      */
+    static constexpr size_t SIMD_ELEMENTS = 64;
+    const UInt8 * filt_end_aligned = filt_pos + size / SIMD_ELEMENTS * SIMD_ELEMENTS;
+
+    InPlaceResultInserter<T> inserter(result_data, result_size);
+    TargetSpecific::Default::doFilterAligned<T, InPlaceResultInserter<T>, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, inserter);
+
+    while (filt_pos < filt_end)
+    {
+        if (*filt_pos)
+            result_data[result_size++] = *data_pos;
+
+        ++filt_pos;
+        ++data_pos;
+    }
+
+    data.resize_assume_reserved(result_size);
 }
 
 template <typename T>

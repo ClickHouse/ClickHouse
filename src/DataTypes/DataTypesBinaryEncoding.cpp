@@ -24,6 +24,7 @@
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesCache.h>
+#include <Columns/ColumnDynamic.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Parsers/NullsAction.h>
@@ -847,12 +848,18 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected version of JSON type binary encoding");
             size_t max_dynamic_paths;
             readVarUInt(max_dynamic_paths, buf);
+            if (max_dynamic_paths > DataTypeObject::MAX_DYNAMIC_PATHS_LIMIT)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "'max_dynamic_paths' for JSON type is too large: {}. The maximum is {}", max_dynamic_paths, DataTypeObject::MAX_DYNAMIC_PATHS_LIMIT);
+
             UInt8 max_dynamic_types;
             readBinary(max_dynamic_types, buf);
+            if (max_dynamic_types > ColumnDynamic::MAX_DYNAMIC_TYPES_LIMIT)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "'max_dynamic_types' for JSON type is too large: {}. The maximum is {}", UInt32(max_dynamic_types), ColumnDynamic::MAX_DYNAMIC_TYPES_LIMIT);
+
             size_t typed_paths_size;
             readVarUInt(typed_paths_size, buf);
-            if (typed_paths_size > MAX_ARRAY_SIZE)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many typed paths during JSON type decoding: {}. Maximum: {}", typed_paths_size, MAX_ARRAY_SIZE);
+            if (typed_paths_size > DataTypeObject::MAX_TYPED_PATHS)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many typed paths during JSON type decoding: {}. Maximum: {}", typed_paths_size, DataTypeObject::MAX_TYPED_PATHS);
 
             std::unordered_map<String, DataTypePtr> typed_paths;
             for (size_t i = 0; i != typed_paths_size; ++i)

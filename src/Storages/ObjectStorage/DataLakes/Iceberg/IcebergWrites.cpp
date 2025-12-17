@@ -98,6 +98,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
 namespace FailPoints
@@ -490,13 +491,13 @@ void generateManifestList(
                 entry.field(field_name) = value;
             }
         };
-        set_versioned_field(new_snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id), Iceberg::f_added_snapshot_id);
+        entry.field(Iceberg::f_added_snapshot_id) = new_snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
         auto summary = new_snapshot->getObject(Iceberg::f_summary);
         if (version == 1)
         {
-            set_versioned_field(1, Iceberg::f_added_data_files_count);
-            set_versioned_field(std::stoi(summary->getValue<String>(Iceberg::f_total_data_files)), Iceberg::f_existing_data_files_count);
-            set_versioned_field(0, Iceberg::f_deleted_data_files_count);
+            set_versioned_field(1, Iceberg::f_added_files_count);
+            set_versioned_field(std::stoi(summary->getValue<String>(Iceberg::f_total_data_files)), Iceberg::f_existing_files_count);
+            set_versioned_field(0, Iceberg::f_deleted_files_count);
             if (summary->has(Iceberg::f_added_position_deletes))
                 set_versioned_field(summary->getValue<Int32>(Iceberg::f_added_position_deletes), Iceberg::f_deleted_rows_count);
         }
@@ -551,7 +552,59 @@ void generateManifestList(
 
                 while (reader.read(datum))
                 {
-                    writer.write(datum);
+                    if (version == 1)
+                    {
+                        const avro::GenericRecord & old_entry = datum.value<avro::GenericRecord>();
+                        avro::GenericDatum new_datum(schema.root());
+                        avro::GenericRecord & new_entry = new_datum.value<avro::GenericRecord>();
+                        new_entry.field(f_manifest_path) = old_entry.field(Iceberg::f_manifest_path);
+                        new_entry.field(f_manifest_length) = old_entry.field(Iceberg::f_manifest_length);
+                        new_entry.field(f_partition_spec_id) = old_entry.field(Iceberg::f_partition_spec_id);
+                        /// Why do we need this for version 1? In some version, iceberg-spark has changed the type of field `f_added_snapshot_id`
+                        /// from 'null, long' to 'long'. See https://github.com/apache/iceberg/pull/11626.
+                        /// Just in case that we read the old type 'null, long', we do this conversion: read every field
+                        /// and write it again with new, correct schema.
+                        if (old_entry.hasField(Iceberg::f_added_snapshot_id))
+                        {
+                            const avro::GenericDatum & old_added_snapshot_id_entry = old_entry.field(Iceberg::f_added_snapshot_id);
+                            if (old_added_snapshot_id_entry.isUnion())
+                            {
+                                if (old_added_snapshot_id_entry.unionBranch() == 0) /// it means add_snapshot_id is null
+                                {
+                                    /// This only happens when we read data written by a old version of iceberg, which violent the spec of iceberg.
+                                    throw Exception(
+                                        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                                        "Manifest list {} has null value for field '{}', but it is required",
+                                        relative_path_with_metadata.getPath(),
+                                        Iceberg::f_added_snapshot_id);
+                                }
+                            }
+                            new_entry.field(f_added_snapshot_id) = old_added_snapshot_id_entry.value<Int64>();
+                        }
+                        else
+                            /// This only happens when we read data written by a old version of iceberg, which violent the spec of iceberg.
+                            throw Exception(
+                                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                                "Manifest list {} has null value for field '{}', but it is required",
+                                relative_path_with_metadata.getPath(),
+                                Iceberg::f_added_snapshot_id);
+                        auto add_field_to_datum = [&](const String & field)
+                        {
+                            if (old_entry.hasField(field))
+                                new_entry.field(field) = old_entry.field(field);
+                        };
+                        add_field_to_datum(Iceberg::f_added_files_count);
+                        add_field_to_datum(Iceberg::f_existing_files_count);
+                        add_field_to_datum(Iceberg::f_deleted_files_count);
+                        add_field_to_datum(Iceberg::f_partitions);
+                        add_field_to_datum(Iceberg::f_added_rows_count);
+                        add_field_to_datum(Iceberg::f_existing_rows_count);
+                        add_field_to_datum(Iceberg::f_deleted_rows_count);
+                        add_field_to_datum(Iceberg::f_key_metadata);
+                        writer.write(new_datum);
+                    }
+                    else
+                        writer.write(datum);
                 }
                 break;
             }
