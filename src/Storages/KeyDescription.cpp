@@ -32,7 +32,6 @@ KeyDescription::KeyDescription(const KeyDescription & other)
     , reverse_flags(other.reverse_flags)
     , data_types(other.data_types)
     , additional_column(other.additional_column)
-    , sort_order_id(other.sort_order_id)
 {
     if (other.expression)
         expression = other.expression->clone();
@@ -67,7 +66,6 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
     if (additional_column.has_value() && !other.additional_column.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong key assignment, losing additional_column");
     additional_column = other.additional_column;
-    sort_order_id = other.sort_order_id;
     return *this;
 }
 
@@ -179,10 +177,10 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
 
         auto check = [&](const IDataType & type)
         {
-            if (isDynamic(type) || isVariant(type) || isObject(type))
+            if (isDynamic(type) || isVariant(type))
                 throw Exception(
                     ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_KEY,
-                    "Column with type Variant/Dynamic/JSON is not allowed in key expression. Consider using a subcolumn with a specific data "
+                    "Column with type Variant/Dynamic is not allowed in key expression. Consider using a subcolumn with a specific data "
                     "type instead (for example 'column.Int64' or 'json.some.path.:Int64' if its a JSON path subcolumn) or casting this column to a specific data type");
         };
 

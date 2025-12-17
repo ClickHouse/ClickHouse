@@ -6,7 +6,6 @@ keywords: ['BSONEachRow']
 output_format: true
 slug: /interfaces/formats/BSONEachRow
 title: 'BSONEachRow'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
@@ -18,7 +17,7 @@ doc_type: 'reference'
 The `BSONEachRow` format parses data as a sequence of Binary JSON (BSON) documents without any separator between them.
 Each row is formatted as a single document and each column is formatted as a single BSON document field with the column name as a key.
 
-## Data types matching {#data-types-matching}
+## Data Types Matching {#data-types-matching}
 
 For output it uses the following correspondence between ClickHouse types and BSON types:
 
@@ -80,55 +79,9 @@ In this case, the format will validate that the size of the binary data equals t
 This format does not work properly on Big-Endian platforms.
 :::
 
-## Example usage {#example-usage}
+## Example Usage {#example-usage}
 
-### Inserting data {#inserting-data}
-
-Using a BSON file with the following data, named as `football.bson`:
-
-```text
-    ┌───────date─┬─season─┬─home_team─────────────┬─away_team───────────┬─home_team_goals─┬─away_team_goals─┐
- 1. │ 2022-04-30 │   2021 │ Sutton United         │ Bradford City       │               1 │               4 │
- 2. │ 2022-04-30 │   2021 │ Swindon Town          │ Barrow              │               2 │               1 │
- 3. │ 2022-04-30 │   2021 │ Tranmere Rovers       │ Oldham Athletic     │               2 │               0 │
- 4. │ 2022-05-02 │   2021 │ Port Vale             │ Newport County      │               1 │               2 │
- 5. │ 2022-05-02 │   2021 │ Salford City          │ Mansfield Town      │               2 │               2 │
- 6. │ 2022-05-07 │   2021 │ Barrow                │ Northampton Town    │               1 │               3 │
- 7. │ 2022-05-07 │   2021 │ Bradford City         │ Carlisle United     │               2 │               0 │
- 8. │ 2022-05-07 │   2021 │ Bristol Rovers        │ Scunthorpe United   │               7 │               0 │
- 9. │ 2022-05-07 │   2021 │ Exeter City           │ Port Vale           │               0 │               1 │
-10. │ 2022-05-07 │   2021 │ Harrogate Town A.F.C. │ Sutton United       │               0 │               2 │
-11. │ 2022-05-07 │   2021 │ Hartlepool United     │ Colchester United   │               0 │               2 │
-12. │ 2022-05-07 │   2021 │ Leyton Orient         │ Tranmere Rovers     │               0 │               1 │
-13. │ 2022-05-07 │   2021 │ Mansfield Town        │ Forest Green Rovers │               2 │               2 │
-14. │ 2022-05-07 │   2021 │ Newport County        │ Rochdale            │               0 │               2 │
-15. │ 2022-05-07 │   2021 │ Oldham Athletic       │ Crawley Town        │               3 │               3 │
-16. │ 2022-05-07 │   2021 │ Stevenage Borough     │ Salford City        │               4 │               2 │
-17. │ 2022-05-07 │   2021 │ Walsall               │ Swindon Town        │               0 │               3 │
-    └────────────┴────────┴───────────────────────┴─────────────────────┴─────────────────┴─────────────────┘
-```
-
-Insert the data:
-
-```sql
-INSERT INTO football FROM INFILE 'football.bson' FORMAT BSONEachRow;
-```
-
-### Reading data {#reading-data}
-
-Read data using the `BSONEachRow` format:
-
-```sql
-SELECT *
-FROM football INTO OUTFILE 'docs_data/bson/football.bson'
-FORMAT BSONEachRow
-```
-
-:::tip
-BSON is a binary format that does not display in a human-readable form on the terminal. Use the `INTO OUTFILE` to output BSON files.
-:::
-
-## Format settings {#format-settings}
+## Format Settings {#format-settings}
 
 | Setting                                                                                                                                                                                               | Description                                                                                  | Default  |
 |-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------|----------|

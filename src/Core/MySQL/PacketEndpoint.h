@@ -3,9 +3,9 @@
 #include <boost/noncopyable.hpp>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
-#include <Core/MySQL/IMySQLReadPacket.h>
-#include <Core/MySQL/IMySQLWritePacket.h>
-#include <IO/MySQLPacketPayloadReadBuffer.h>
+#include "IMySQLReadPacket.h"
+#include "IMySQLWritePacket.h"
+#include "IO/MySQLPacketPayloadReadBuffer.h"
 
 namespace DB
 {

@@ -2,6 +2,15 @@
 
 #include <Interpreters/BlobStorageLog.h>
 
+#include "config.h"
+
+#if USE_AWS_S3
+
+namespace Aws::S3
+{
+    class S3Error;
+}
+
 namespace DB
 {
 
@@ -19,8 +28,7 @@ public:
 
     explicit BlobStorageLogWriter(BlobStorageLogPtr log_)
         : log(std::move(log_))
-    {
-    }
+    {}
 
     void addEvent(
         BlobStorageLogElement::EventType event_type,
@@ -28,8 +36,7 @@ public:
         const String & remote_path,
         const String & local_path,
         size_t data_size,
-        Int32 error_code,
-        const String & error_message,
+        const Aws::S3::S3Error * error,
         BlobStorageLogElement::EvenTime time_now = {});
 
     bool isInitialized() const { return log != nullptr; }
@@ -46,3 +53,5 @@ private:
 };
 
 }
+
+#endif

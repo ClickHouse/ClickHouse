@@ -3,16 +3,16 @@ description: 'Calculates the sum of the numbers with Kahan compensated summation
 sidebar_position: 197
 slug: /sql-reference/aggregate-functions/reference/sumkahan
 title: 'sumKahan'
-doc_type: 'reference'
 ---
 
 Calculates the sum of the numbers with [Kahan compensated summation algorithm](https://en.wikipedia.org/wiki/Kahan_summation_algorithm)
 Slower than [sum](./sum.md) function.
 The compensation works only for [Float](../../../sql-reference/data-types/float.md) types.
 
+
 **Syntax**
 
-```sql
+``` sql
 sumKahan(x)
 ```
 
@@ -28,13 +28,13 @@ sumKahan(x)
 
 Query:
 
-```sql
+``` sql
 SELECT sum(0.1), sumKahan(0.1) FROM numbers(10);
 ```
 
 Result:
 
-```text
+``` text
 ┌───────────sum(0.1)─┬─sumKahan(0.1)─┐
 │ 0.9999999999999999 │             1 │
 └────────────────────┴───────────────┘

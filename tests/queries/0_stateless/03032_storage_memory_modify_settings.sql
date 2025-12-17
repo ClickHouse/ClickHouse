@@ -1,4 +1,3 @@
--- Tags: memory-engine
 SET max_block_size = 65409; -- Default value
 
 SELECT 'TESTING MODIFY SMALLER BYTES';

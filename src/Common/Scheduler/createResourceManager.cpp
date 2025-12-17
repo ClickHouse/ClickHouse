@@ -1,6 +1,7 @@
+#include "Common/Scheduler/IResourceManager.h"
 #include <Common/Scheduler/createResourceManager.h>
 #include <Common/Scheduler/Nodes/CustomResourceManager.h>
-#include <Common/Scheduler/Nodes/WorkloadResourceManager.h>
+#include <Common/Scheduler/Nodes/IOResourceManager.h>
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -55,16 +56,6 @@ private:
                 return ResourceLink{};
         }
 
-        WorkloadSettings getWorkloadSettings(const String & resource_name) const override
-        {
-            for (const auto & classifier : classifiers)
-            {
-                if (classifier->has(resource_name))
-                    return classifier->getWorkloadSettings(resource_name);
-            }
-            return {};
-        }
-
     private:
         const ClassifierSettings settings;
         std::vector<ClassifierPtr> classifiers; // should be constant after initialization to avoid races
@@ -116,7 +107,7 @@ ResourceManagerPtr createResourceManager(const ContextMutablePtr & global_contex
 
     // NOTE: if the same resource is described by both managers, then manager added earlier will be used.
     dispatcher->addManager(std::make_shared<CustomResourceManager>());
-    dispatcher->addManager(std::make_shared<WorkloadResourceManager>(global_context->getWorkloadEntityStorage()));
+    dispatcher->addManager(std::make_shared<IOResourceManager>(global_context->getWorkloadEntityStorage()));
 
     return dispatcher;
 }

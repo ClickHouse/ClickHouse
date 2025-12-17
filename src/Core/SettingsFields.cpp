@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 
@@ -27,38 +26,23 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-bool stringToBool(const String & str)
-{
-    if (str == "0")
-        return false;
-    if (str == "1")
-        return true;
-    if (boost::iequals(str, "false"))
-        return false;
-    if (boost::iequals(str, "true"))
-        return true;
-    throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Cannot parse bool from string '{}'", str);
-}
 
 namespace
 {
-    template<typename T>
-    void validateFloatingPointSettingValue(T value)
-    {
-        if constexpr (std::is_floating_point_v<T>)
-        {
-            if (!std::isfinite(value))
-                throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER,
-                    "Float setting value must be finite, got {}", value);
-        }
-    }
-
     template <typename T>
     T stringToNumber(const String & str)
     {
         if constexpr (std::is_same_v<T, bool>)
         {
-            return stringToBool(str);
+            if (str == "0")
+                return false;
+            if (str == "1")
+                return true;
+            if (boost::iequals(str, "false"))
+                return false;
+            if (boost::iequals(str, "true"))
+                return true;
+            throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Cannot parse bool from string '{}'", str);
         }
         else
         {
@@ -132,7 +116,7 @@ namespace
 
         auto type_string = std::make_shared<DataTypeString>();
         DataTypeMap type_map(type_string, type_string);
-        auto serialization = type_map.getDefaultSerialization();
+        auto serialization = type_map.getSerialization(ISerialization::Kind::DEFAULT);
         auto column = type_map.createColumn();
 
         ReadBufferFromString buf(str);
@@ -152,22 +136,6 @@ namespace
         return f.safeGet<Map>();
     }
 
-}
-
-template <typename T>
-SettingFieldNumber<T>::SettingFieldNumber(Type x)
-{
-    validateFloatingPointSettingValue(x);
-    value = x;
-};
-
-template <typename T>
-SettingFieldNumber<T> & SettingFieldNumber<T>::operator=(Type x)
-{
-    validateFloatingPointSettingValue(x);
-    value = x;
-    changed = true;
-    return *this;
 }
 
 template <typename T>
@@ -429,7 +397,7 @@ String SettingFieldMap::toString() const
 {
     auto type_string = std::make_shared<DataTypeString>();
     DataTypeMap type_map(type_string, type_string);
-    auto serialization = type_map.getDefaultSerialization();
+    auto serialization = type_map.getSerialization(ISerialization::Kind::DEFAULT);
     auto column = type_map.createColumn();
     column->insert(value);
 
