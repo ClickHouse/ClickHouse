@@ -714,7 +714,7 @@ void optimizeTreeSecondPass(
 
             if (frame.next_child == 0)
             {
-                if (optimizeLazyMaterialization(root, stack, nodes, optimization_settings.max_limit_for_lazy_materialization))
+                if (optimizeLazyMaterialization(root, stack, nodes, optimization_settings))
                     break;
             }
 
