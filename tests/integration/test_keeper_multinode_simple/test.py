@@ -112,6 +112,8 @@ def test_watch_on_follower(started_cluster):
         node1_data = None
 
         def node1_callback(event):
+            if not keeper_utils.is_znode_watch_event(event):
+                return
             print("node1 data watch called")
             nonlocal node1_data
             node1_data = event
@@ -121,6 +123,8 @@ def test_watch_on_follower(started_cluster):
         node2_data = None
 
         def node2_callback(event):
+            if not keeper_utils.is_znode_watch_event(event):
+                return
             print("node2 data watch called")
             nonlocal node2_data
             node2_data = event
@@ -130,6 +134,8 @@ def test_watch_on_follower(started_cluster):
         node3_data = None
 
         def node3_callback(event):
+            if not keeper_utils.is_znode_watch_event(event):
+                return
             print("node3 data watch called")
             nonlocal node3_data
             node3_data = event
