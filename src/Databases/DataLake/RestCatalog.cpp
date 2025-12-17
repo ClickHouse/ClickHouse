@@ -545,7 +545,7 @@ DB::Names RestCatalog::getTables(const std::string & base_namespace, size_t limi
     const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encoded_namespace / "tables";
 
     auto buf = createReadBuffer(config.prefix / endpoint);
-    return parseTables(*buf, encoded_namespace, limit);
+    return parseTables(*buf, base_namespace, limit);
 }
 
 DB::Names RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & base_namespace, size_t limit) const
@@ -641,7 +641,7 @@ bool RestCatalog::getTableMetadataImpl(
         headers.emplace_back("X-Iceberg-Access-Delegation", "vended-credentials");
     }
 
-    const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / namespace_name / "tables" / table_name;
+    const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encodeNamespaceForURI(namespace_name) / "tables" / table_name;
     auto buf = createReadBuffer(config.prefix / endpoint, /* params */{}, headers);
 
     if (buf->eof())
