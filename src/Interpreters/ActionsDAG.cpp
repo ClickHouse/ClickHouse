@@ -1002,7 +1002,6 @@ Block ActionsDAG::updateHeader(const Block & header) const
         throw;
     }
 
-
     Block res;
     res.reserve(result_columns.size());
     for (auto & col : result_columns)
@@ -3030,14 +3029,6 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
             node.result_name = predicate->result_name;
             node.result_type = predicate->result_type;
             node.column = node.result_type->createColumnConst(0, 1);
-
-            const auto should_materialize = !predicate->column || !isColumnConst(*predicate->column);
-            if (should_materialize)
-            {
-                const auto & const_node = addNode(std::move(node));
-                const auto & materialized_node = materializeNodeWithoutRename(const_node, false);
-                node = createAlias(materialized_node, predicate->result_name);
-            }
 
             if (predicate->type != ActionType::INPUT)
                 *predicate = std::move(node);

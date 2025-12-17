@@ -3,6 +3,7 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
@@ -12,6 +13,8 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTProjectionDeclaration.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -33,15 +36,17 @@ StorageSystemProjections::StorageSystemProjections(const StorageID & table_id_)
     );
 
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(ColumnsDescription(
-        {
-            { "database", std::make_shared<DataTypeString>(), "Database name."},
-            { "table", std::make_shared<DataTypeString>(), "Table name."},
-            { "name", std::make_shared<DataTypeString>(), "Projection name."},
-            { "type", std::move(projection_type_datatype), "Projection type."},
-            { "sorting_key", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Projection sorting key."},
-            { "query", std::make_shared<DataTypeString>(), "Projection query."},
-        }));
+    storage_metadata.setColumns(ColumnsDescription({
+        {"database", std::make_shared<DataTypeString>(), "Database name."},
+        {"table", std::make_shared<DataTypeString>(), "Table name."},
+        {"name", std::make_shared<DataTypeString>(), "Projection name."},
+        {"type", std::move(projection_type_datatype), "Projection type."},
+        {"sorting_key", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Projection sorting key."},
+        {"query", std::make_shared<DataTypeString>(), "Projection query."},
+        {"settings",
+         std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()),
+         "Projection settings."},
+    }));
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -149,6 +154,23 @@ protected:
                     if (column_mask[src_index++])
                     {
                         res_columns[res_index++]->insert(projection.definition_ast->children.at(0)->formatForLogging());
+                    }
+                    // 'settings' column
+                    if (column_mask[src_index++])
+                    {
+                        Map settings_map;
+                        const auto & projection_definition = projection.definition_ast->as<ASTProjectionDeclaration &>();
+                        if (projection_definition.with_settings)
+                        {
+                            for (const auto & change : projection_definition.with_settings->changes)
+                            {
+                                Tuple pair;
+                                pair.push_back(change.name);
+                                pair.push_back(toString(change.value));
+                                settings_map.push_back(std::move(pair));
+                            }
+                        }
+                        res_columns[res_index++]->insert(settings_map);
                     }
                 }
             }

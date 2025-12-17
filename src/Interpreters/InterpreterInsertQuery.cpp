@@ -4,6 +4,8 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/EnabledQuota.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/QueryNode.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
@@ -37,6 +39,7 @@
 #include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/Transforms/ApplySquashingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -48,6 +51,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/ProfileEvents.h>
 #include <Common/quoteString.h>
+#include <Core/Field.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Storages/IStorageCluster.h>
@@ -64,6 +68,8 @@ namespace Setting
     extern const SettingsBool distributed_foreground_insert;
     extern const SettingsBool insert_null_as_default;
     extern const SettingsBool optimize_trivial_insert_select;
+    extern const SettingsBool insert_deduplicate;
+    extern const SettingsBoolAuto insert_select_deduplicate;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_insert_threads;
     extern const SettingsUInt64 min_insert_block_size_rows;
@@ -98,16 +104,19 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int DEDUPLICATION_IS_NOT_POSSIBLE;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int ILLEGAL_COLUMN;
     extern const int DUPLICATE_COLUMN;
     extern const int QUERY_IS_PROHIBITED;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
+    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
+    extern const int LOGICAL_ERROR;
 }
 
 InterpreterInsertQuery::InterpreterInsertQuery(
-    const ASTPtr & query_ptr_, ContextPtr context_, bool allow_materialized_, bool no_squash_, bool no_destination_, bool async_insert_)
-    : WithContext(context_)
+    const ASTPtr & query_ptr_, ContextMutablePtr context_, bool allow_materialized_, bool no_squash_, bool no_destination_, bool async_insert_)
+    : WithMutableContext(context_)
     , logger(getLogger("InterpreterInsertQuery"))
     , query_ptr(query_ptr_)
     , allow_materialized(allow_materialized_)
@@ -212,25 +221,6 @@ Block InterpreterInsertQuery::getSampleBlock(
     }
 
     return getSampleBlock(names, table, metadata_snapshot, no_destination, allow_materialized);
-}
-
-std::optional<Names> InterpreterInsertQuery::getInsertColumnNames() const
-{
-    auto const * insert_query = query_ptr->as<ASTInsertQuery>();
-    if (!insert_query || !insert_query->columns)
-        return std::nullopt;
-
-    auto table = DatabaseCatalog::instance().getTable(getDatabaseTable(), getContext());
-    const auto columns_ast = processColumnTransformers(getContext()->getCurrentDatabase(), table, table->getInMemoryMetadataPtr(), insert_query->columns);
-    Names names;
-    names.reserve(columns_ast->children.size());
-    for (const auto & identifier : columns_ast->children)
-    {
-        std::string current_name = identifier->getColumnName();
-        names.emplace_back(std::move(current_name));
-    }
-
-    return names;
 }
 
 Block InterpreterInsertQuery::getSampleBlock(
@@ -449,7 +439,9 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
         return counting;
     });
 
-    pipeline.resize(1);
+    auto select_streams = pipeline.getNumStreams();
+    if (select_streams != 1)
+        pipeline.resize(1);
 
     bool should_squash = shouldAddSquashingForStorage(table, context) && !no_squash && !async_insert;
     if (should_squash)
@@ -480,6 +472,36 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
         {
             return std::make_shared<DeduplicationToken::SetSourceBlockNumberTransform>(in_header);
         });
+    }
+
+    auto insert_select_deduplicate = [&] () -> bool
+    {
+        if (!settings[Setting::insert_select_deduplicate].is_auto)
+            return settings[Setting::insert_select_deduplicate].base;
+
+        if (select_query_sorted)
+            return settings[Setting::insert_deduplicate];
+
+        if (settings[Setting::insert_deduplicate])
+            LOG_INFO(logger, "INSERT SELECT deduplication is disabled because SELECT is not stable");
+
+        return false;
+    }();
+
+    if (!select_query_sorted && insert_select_deduplicate)
+        throw Exception(ErrorCodes::DEDUPLICATION_IS_NOT_POSSIBLE,
+            "Deduplication for INSERT SELECT with non-stable SELECT is not possible"
+            " (the SELECT part can return different results on each execution)."
+            " You can disable it by setting 'insert_deduplicate' or `async_insert_deduplicate` to 0."
+            " Or make SELECT query stable (for example, by adding ORDER BY all to the query)."
+            " select_query_sorted {} dedeplicate {} insert_select_deduplicate is auto {}",
+            select_query_sorted, insert_select_deduplicate, settings[Setting::insert_select_deduplicate].is_auto);
+
+    if (insert_select_deduplicate != bool(settings[Setting::insert_deduplicate]))
+    {
+        auto tmp_context = Context::createCopy(context);
+        tmp_context->setSetting("insert_deduplicate", Field{insert_select_deduplicate});
+        context = tmp_context;
     }
 
     auto insert_dependencies = InsertDependenciesBuilder::create(
@@ -564,14 +586,29 @@ static void applyTrivialInsertSelectOptimization(ASTInsertQuery & query, bool pr
     }
 }
 
+bool queryHasOrderByAll(const ASTPtr & select)
+{
+    if (auto * select_query = select->as<ASTSelectQuery>())
+    {
+        return select_query->order_by_all;
+    }
+    else if (auto * union_query = select->as<ASTSelectWithUnionQuery>())
+    {
+        if (union_query->list_of_selects->children.size() != 1)
+            return false;
+
+        if (auto * first_select_query = union_query->list_of_selects->children.front()->as<ASTSelectQuery>())
+            return first_select_query->order_by_all;
+    }
+    return false;
+}
 
 QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table)
 {
     ContextPtr select_context = getContext();
     applyTrivialInsertSelectOptimization(query, table->prefersLargeBlocks(), select_context);
 
-    QueryPipelineBuilder pipeline;
-
+    QueryPipelineBuilder pipeline = [&]()
     {
         auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
 
@@ -579,14 +616,22 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         if (settings[Setting::allow_experimental_analyzer])
         {
             InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, select_context, select_query_options);
-            pipeline = interpreter_select_analyzer.buildQueryPipeline();
+            return interpreter_select_analyzer.buildQueryPipeline();
         }
         else
         {
             InterpreterSelectWithUnionQuery interpreter_select(query.select, select_context, select_query_options);
-            pipeline = interpreter_select.buildQueryPipeline();
+            return interpreter_select.buildQueryPipeline();
         }
-    }
+    }();
+
+    select_query_sorted = queryHasOrderByAll(query.select);
+
+    if (select_query_sorted && pipeline.getNumStreams() > 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "INSERT SELECT expecting single stream for fully sorted SELECT query,"
+                " but got {} streams",
+                pipeline.getNumStreams());
 
     return addInsertToSelectPipeline(query, table, pipeline);
 }
@@ -634,8 +679,6 @@ static bool isInsertSelectTrivialEnoughForDistributedExecution(const ASTInsertQu
         /// TODO: replace with QueryTree analysis after switching to analyzer completely
         return (!select_query->distinct
             && !select_query->limit_with_ties
-            && !select_query->prewhere()
-            && !select_query->where()
             && !select_query->groupBy()
             && !select_query->having()
             && !select_query->orderBy()
@@ -701,6 +744,8 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
     auto query_sample_block
         = std::make_shared<const Block>(getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized));
+    if (query_sample_block->empty())
+        throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Empty list of columns to insert");
 
     // when insert is initiated from FileLog or similar storages
     // they are allowed to expose its virtuals columns to the dependent views
@@ -874,7 +919,7 @@ BlockIO InterpreterInsertQuery::execute()
     auto & query = query_ptr->as<ASTInsertQuery &>();
 
     StoragePtr table = getTable(query);
-
+    setInsertContextValues(table);
     if (context->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
         && query.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE
         && query.table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
@@ -973,6 +1018,27 @@ void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, cons
     extendQueryLogElemImpl(elem, context_);
 }
 
+void InterpreterInsertQuery::setInsertContextValues(StoragePtr table)
+{
+    auto const & insert_query = query_ptr->as<ASTInsertQuery &>();
+
+    std::optional<Names> insert_columns;
+    if (insert_query.columns)
+    {
+        const auto columns_ast = processColumnTransformers(getContext()->getCurrentDatabase(), table, table->getInMemoryMetadataPtr(), insert_query.columns);
+        Names names;
+        names.reserve(columns_ast->children.size());
+        for (const auto & identifier : columns_ast->children)
+        {
+            std::string current_name = identifier->getColumnName();
+            names.emplace_back(std::move(current_name));
+        }
+
+        insert_columns = std::move(names);
+    }
+
+    getContext()->setInsertionTable(insert_query.table_id, insert_columns, table->getInMemoryMetadataPtr()->columns);
+}
 
 void registerInterpreterInsertQuery(InterpreterFactory & factory)
 {
