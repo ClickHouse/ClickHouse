@@ -610,7 +610,7 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
 
         /// Verify that we deserialized data of this variant.
         if (variant_limits[i] && col.getVariantPtrByLocalDiscriminator(i)->empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Variant {} is empty, but expected to be read {} values", variant_names[i], variant_limits[i]);
+            throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Variant {} is empty, but expected to be read {} values", variant_names[i], variant_limits[i]);
     }
     settings.path.pop_back();
 
