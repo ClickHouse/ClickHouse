@@ -241,7 +241,7 @@ SortedBlocksWriter::PremergedFiles SortedBlocksWriter::premerge()
         files.emplace_back(flush(blocks));
 
     Pipes pipes;
-    pipes.reserve(num_files_for_merge);
+    pipes.reserve(std::min(num_files_for_merge, files.size()));
 
     /// Merge by parts to save memory. It's possible to exchange disk I/O and memory by num_files_for_merge.
     {
