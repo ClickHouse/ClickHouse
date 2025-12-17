@@ -331,7 +331,6 @@ def check_postgresql_java_client_is_available(postgresql_java_client_id):
     p.communicate()
     return p.returncode == 0
 
-
 def check_mysql_dotnet_client_is_available(postgresql_java_client_id):
     p = subprocess.Popen(
         docker_exec(postgresql_java_client_id, "dotnet", "--version"),
@@ -2012,7 +2011,7 @@ class ClickHouseCluster:
             with_remote_database_disk = False
 
         if not with_dolor and with_remote_database_disk is None:
-            with_remote_database_disk = int(os.getenv("CLICKHOUSE_USE_DATABASE_DISK"))
+            with_remote_database_disk = int(os.getenv("CLICKHOUSE_USE_DATABASE_DISK", "0"))
 
         if with_remote_database_disk:
             logging.debug(f"Instance {name}, with_remote_database_disk enabled")

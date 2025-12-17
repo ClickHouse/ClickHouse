@@ -1,20 +1,24 @@
 #include <Storages/ProjectionsDescription.h>
 
 #include <Columns/ColumnConst.h>
+#include <Common/iota.h>
 #include <Core/Defines.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/NestedUtils.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTProjectionSelectQuery.h>
-#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ParserCreateQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISink.h>
@@ -27,10 +31,6 @@
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <base/range.h>
-#include <Common/iota.h>
-#include <DataTypes/NestedUtils.h>
-
 
 namespace DB
 {
@@ -42,6 +42,15 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int NO_SUCH_PROJECTION_IN_TABLE;
+    extern const int UNKNOWN_SETTING;
+    extern const int BAD_ARGUMENTS;
+}
+
+namespace Setting
+{
+
+extern const SettingsBool enable_positional_arguments_for_projections;
+
 }
 
 bool ProjectionDescription::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
@@ -78,6 +87,8 @@ ProjectionDescription ProjectionDescription::clone() const
     other.primary_key_max_column_name = primary_key_max_column_name;
     other.partition_value_indices = partition_value_indices;
     other.with_parent_part_offset = with_parent_part_offset;
+    other.index_granularity = index_granularity;
+    other.index_granularity_bytes = index_granularity_bytes;
 
     return other;
 }
@@ -204,6 +215,31 @@ private:
 
 }
 
+void ProjectionDescription::loadSettings(const SettingsChanges & changes)
+{
+    for (const auto & [setting, value] : changes)
+    {
+        if (setting == "index_granularity")
+            index_granularity = value.safeGet<UInt64>();
+        else if (setting == "index_granularity_bytes")
+            index_granularity_bytes = value.safeGet<UInt64>();
+        else
+            throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}' for projections", setting);
+    }
+
+    /// These checks are permanent sensible safeguards: they apply both to projection creation and projection loading,
+    /// and are not expected to change in the future. Keeping them unconditional simplifies the implementation.
+
+    if (index_granularity && *index_granularity < 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "projection index_granularity: value {} makes no sense", *index_granularity);
+
+    if (index_granularity_bytes && *index_granularity_bytes > 0 && *index_granularity_bytes < 1024)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "projection index_granularity_bytes: {} is lower than 1024", *index_granularity_bytes);
+
+    if (index_granularity_bytes && *index_granularity_bytes == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "projection index_granularity_bytes cannot be 0, which leads to fixed granularity");
+}
+
 ProjectionDescription
 ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context)
 {
@@ -222,6 +258,9 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     result.definition_ast = projection_definition->clone();
     result.name = projection_definition->name;
 
+    if (projection_definition->with_settings)
+        result.loadSettings(projection_definition->with_settings->changes);
+
     auto query = projection_definition->query->as<ASTProjectionSelectQuery &>();
     result.query_ast = query.cloneToASTSelect();
 
@@ -233,11 +272,14 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     StoragePtr storage = std::make_shared<StorageProjectionSource>(columns);
 
     auto mut_context = Context::createCopy(query_context);
+    bool positional_arguments_for_projections = query_context->getSettingsRef()[Setting::enable_positional_arguments_for_projections];
     /// Disable positional arguments. Positional references are unsafe/unsupported in this context (e.g., within
     /// internal queries like those used for Projection definitions), as they rely on a fixed column order and alias
     /// resolution that is neither guaranteed nor sensible here.
-    mut_context->setSetting("enable_positional_arguments", Field(0));
-
+    ///
+    /// Setting `enable_positional_arguments_for_projections` may enable positional arguments for projections.
+    /// It is needed for compatibility with existing projections that use positional arguments to allow successful cluster upgrade.
+    mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
     InterpreterSelectQuery select(
         result.query_ast,
         mut_context,
@@ -460,11 +502,15 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context, 
     /// Now, projections do not support in on SELECT, and (with this change) should ignore on INSERT as well.
     mut_context->setSetting("aggregate_functions_null_for_empty", Field(0));
     mut_context->setSetting("transform_null_in", Field(0));
+    const bool positional_arguments_for_projections = context->getSettingsRef()[Setting::enable_positional_arguments_for_projections];
 
     /// Disable positional arguments. Positional references are unsafe/unsupported in this context (e.g., within
     /// internal queries like those used for Projection definitions), as they rely on a fixed column order and alias
     /// resolution that is neither guaranteed nor sensible here.
-    mut_context->setSetting("enable_positional_arguments", Field(0));
+    ///
+    /// Setting `enable_positional_arguments_for_projections` may enable positional arguments for projections.
+    /// It is needed for compatibility with existing projections that use positional arguments to allow successful cluster upgrade.
+    mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
 
     ASTPtr query_ast_copy = nullptr;
     /// Respect the _row_exists column.

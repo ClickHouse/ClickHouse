@@ -1070,6 +1070,18 @@ Result:
 └─────┴─────┴───────┘
 ```
 )", 0) \
+    DECLARE(Bool, enable_positional_arguments_for_projections, false, R"(
+Enables or disables supporting positional arguments in PROJECTION definitions. See also [enable_positional_arguments](#enable_positional_arguments) setting.
+
+:::note
+This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
+:::
+
+Possible values:
+
+- 0 — Positional arguments aren't supported.
+- 1 — Positional arguments are supported: column numbers can use instead of column names.
+)", 0) \
     DECLARE(Bool, enable_extended_results_for_datetime_functions, false, R"(
 Enables or disables returning results of type `Date32` with extended range (compared to type `Date`)
 or `DateTime64` with extended range (compared to type `DateTime`).
@@ -1441,6 +1453,26 @@ Split parts ranges into intersecting and non intersecting during FINAL optimizat
 )", 0) \
     DECLARE(Bool, split_intersecting_parts_ranges_into_layers_final, true, R"(
 Split intersecting parts ranges into layers during FINAL optimization
+)", 0) \
+    DECLARE(Bool, apply_row_policy_after_final, false, R"(
+When enabled, row policies and PREWHERE are applied after FINAL processing for *MergeTree tables. (Especially for ReplacingMergeTree)
+When disabled, row policies are applied before FINAL, which can cause different results when the policy
+filters out rows that should be used for deduplication in ReplacingMergeTree or similar engines.
+
+If the row policy expression depends only on columns in ORDER BY, it will still be applied before FINAL as an optimization,
+since such filtering cannot affect the deduplication result.
+
+Possible values:
+
+- 0 — Row policy and PREWHERE are applied before FINAL (default).
+- 1 — Row policy and PREWHERE are applied after FINAL.
+)", 0) \
+    DECLARE(Bool, apply_prewhere_after_final, false, R"(
+When enabled, PREWHERE conditions are applied after FINAL processing for ReplacingMergeTree and similar engines.
+This can be useful when PREWHERE references columns that may have different values across duplicate rows,
+and you want FINAL to select the winning row before filtering. When disabled, PREWHERE is applied during reading.
+Note: If apply_row_level_security_after_final is enabled and row policy uses non-sorting-key columns, PREWHERE will also
+be deferred to maintain correct execution order (row policy must be applied before PREWHERE).
 )", 0) \
     \
     DECLARE(UInt64, mysql_max_rows_to_insert, 65536, R"(
@@ -1896,7 +1928,16 @@ Possible values:
 <max_concurrent_queries_for_user>5</max_concurrent_queries_for_user>
 ```
 )", 0) \
-    \
+\
+    DECLARE(BoolAuto, insert_select_deduplicate, Field("auto"), R"(
+Enables or disables block deduplication of `INSERT SELECT` (for Replicated\* tables).
+The setting overrids `insert_deduplicate` for `INSERT SELECT` queries.
+That setting has three possible values:
+- 0 — Deduplication is disabled for `INSERT SELECT` query.
+- 1 — Deduplication is enabled for `INSERT SELECT` query. If select result is not stable, exception is thrown.
+- auto — Deduplication is enabled if `insert_deduplicate` is enable and select result is stable, otherwise disabled.
+    )", 0) \
+\
     DECLARE(Bool, insert_deduplicate, true, R"(
 Enables or disables block deduplication of `INSERT` (for Replicated\* tables).
 
@@ -2464,8 +2505,6 @@ Possible values:
 
 - 0 for turning off the timer.
 
-**Temporarily disabled in ClickHouse Cloud.**
-
 See also:
 
 - System table [trace_log](/operations/system-tables/trace_log)
@@ -2483,8 +2522,6 @@ Possible values:
             - 1000000000 (once a second) for cluster-wide profiling.
 
 - 0 for turning off the timer.
-
-**Temporarily disabled in ClickHouse Cloud.**
 
 See also:
 
@@ -3159,9 +3196,12 @@ Possible values:
 
 - direct
 
- This algorithm can be applied when the storage for the right table supports key-value requests.
+ The `direct` (also known as nested loop) algorithm performs a lookup in the right table using rows from the left table as keys.
+ It's supported by special storages such as [Dictionary](/engines/table-engines/special/dictionary), [EmbeddedRocksDB](../../engines/table-engines/integrations/embedded-rocksdb.md), and [MergeTree](/engines/table-engines/mergetree-family/mergetree) tables.
 
- The `direct` algorithm performs a lookup in the right table using rows from the left table as keys. It's supported only by special storage such as [Dictionary](/engines/table-engines/special/dictionary) or [EmbeddedRocksDB](../../engines/table-engines/integrations/embedded-rocksdb.md) and only the `LEFT` and `INNER` JOINs.
+ For MergeTree tables, the algorithm pushes join key filters directly to the storage layer. This can be more efficient when the key can use the table's primary key index for lookups, otherwise it performs full scans of the right table for each left table block.
+
+ Supports `INNER` and `LEFT` joins and only single-column equality join keys without other conditions.
 
 - auto
 
@@ -3169,7 +3209,7 @@ Possible values:
 
 - full_sorting_merge
 
- [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) with full sorting joined tables before joining.
+ [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) with full sorting of joined tables before joining.
 
 - prefer_partial_merge
 
@@ -3178,7 +3218,7 @@ Possible values:
 - default (deprecated)
 
  Legacy value, please don't use anymore.
- Same as `direct,hash`, i.e. try to use direct join and hash join join (in this order).
+ Same as `direct,hash`, i.e. try to use direct join and hash join (in this order).
 
 )", 0) \
     DECLARE(UInt64, cross_join_min_rows_to_compress, 10000000, R"(
@@ -4543,7 +4583,7 @@ Possible values:
 - 0 — The data types in column definitions are set to not `Nullable` by default.
 )", 0) \
     DECLARE(Bool, cast_keep_nullable, false, R"(
-Enables or disables keeping of the `Nullable` data type in [CAST](/sql-reference/functions/type-conversion-functions#cast) operations.
+Enables or disables keeping of the `Nullable` data type in [CAST](/sql-reference/functions/type-conversion-functions#CAST) operations.
 
 When the setting is enabled and the argument of `CAST` function is `Nullable`, the result is also transformed to `Nullable` type. When the setting is disabled, the result always has the destination type exactly.
 
@@ -4586,7 +4626,7 @@ Result:
 
 **See Also**
 
-- [CAST](/sql-reference/functions/type-conversion-functions#cast) function
+- [CAST](/sql-reference/functions/type-conversion-functions#CAST) function
 )", 0) \
     DECLARE(Bool, cast_ipv4_ipv6_default_on_conversion_error, false, R"(
 CAST operator into IPv4, CAST operator into IPV6 type, toIPv4, toIPv6 functions will return default value instead of throwing exception on conversion error.
@@ -6611,7 +6651,7 @@ Possible values:
 
     ClickHouse can parse the basic `YYYY-MM-DD HH:MM:SS` format and all [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) date and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
 
-- `'best_effort_us'` — Similar to `best_effort` (see the difference in [parseDateTimeBestEffortUS](../../sql-reference/functions/type-conversion-functions#parsedatetimebesteffortus)
+- `'best_effort_us'` — Similar to `best_effort` (see the difference in [parseDateTimeBestEffortUS](../../sql-reference/functions/type-conversion-functions#parseDateTimeBestEffortUS)
 
 - `'basic'` — Use basic parser.
 
@@ -6772,6 +6812,14 @@ Replace external dictionary sources to Null on restore. Useful for testing purpo
     DECLARE_WITH_ALIAS(UInt64, allow_experimental_parallel_reading_from_replicas, 0, R"(
 Use up to `max_parallel_replicas` the number of replicas from each shard for SELECT query execution. Reading is parallelized and coordinated dynamically. 0 - disabled, 1 - enabled, silently disable them in case of failure, 2 - enabled, throw an exception in case of failure
 )", BETA, enable_parallel_replicas) \
+    DECLARE(UInt64, automatic_parallel_replicas_mode, 0, R"(
+🚨 HIGHLY EXPERIMENTAL 🚨
+Enable automatic switching to execution with parallel replicas based on collected statistics. Requires enabling `parallel_replicas_local_plan` and providing `cluster_for_parallel_replicas`.
+0 - disabled, 1 - enabled, 2 - only statistics collection is enabled (switching to execution with parallel replicas is disabled).
+)", 0) \
+    DECLARE(UInt64, automatic_parallel_replicas_min_bytes_per_replica, 0, R"(
+Threshold of bytes to read per replica to enable parallel replicas automatically (applies only when `automatic_parallel_replicas_mode`=1). 0 means no threshold.
+)", 0) \
     DECLARE(NonZeroUInt64, max_parallel_replicas, 1000, R"(
 The maximum number of replicas for each shard when executing a query.
 
