@@ -73,11 +73,26 @@ YTsaurusNodeType YTsaurusClient::getNodeTypeFromAttributes(const Poco::JSON::Obj
     }
 }
 
-ReadBufferPtr YTsaurusClient::selectRows(const String & cypress_path)
+ReadBufferPtr YTsaurusClient::selectRows(const String & cypress_path, const String& columns_str = "*")
 {
-    YTsaurusQueryPtr select_rows_query(new YTsaurusSelectRowsQuery(cypress_path));
+    LOG_TRACE(log, "JOPA  {}", columns_str);
+
+    YTsaurusQueryPtr select_rows_query(new YTsaurusSelectRowsQuery(cypress_path, columns_str));
     return executeQuery(select_rows_query);
 }
+
+ReadBufferPtr YTsaurusClient::selectRows(const String & cypress_path, const ColumnsWithTypeAndName& columns)
+{
+    String columns_names_str;
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        columns_names_str += columns[i].name;
+        if (i + 1 != columns.size())
+            columns_names_str += ", ";
+    }
+    return selectRows(cypress_path, columns_names_str);
+}
+
 
 ReadBufferPtr YTsaurusClient::lookupRows(const String & cypress_path, const Block & lookup_block_input)
 {
