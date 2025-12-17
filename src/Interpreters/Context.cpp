@@ -856,7 +856,6 @@ struct ContextSharedPart : boost::noncopyable
         SHUTDOWN(log, "dictionaries loader", external_dictionaries_loader, enablePeriodicUpdates(false));
         SHUTDOWN(log, "UDFs loader", external_user_defined_executable_functions_loader, enablePeriodicUpdates(false));
         SHUTDOWN(log, "another UDFs storage", user_defined_sql_objects_storage, stopWatching());
-        SHUTDOWN(log, "workload entity storage", workload_entity_storage, stopWatching());
 
         LOG_TRACE(log, "Shutting down named sessions");
         Session::shutdownNamedSessions();
@@ -888,6 +887,9 @@ struct ContextSharedPart : boost::noncopyable
         SHUTDOWN(log, "common executor", common_executor, wait());
 
         TransactionLog::shutdownIfAny();
+
+        // Workload entity storage must be destructed when no queries or merges are running because PipelineExecutor may access it.
+        SHUTDOWN(log, "workload entity storage", workload_entity_storage, stopWatching());
 
         std::unique_ptr<SystemLogs> delete_system_logs;
         std::unique_ptr<EmbeddedDictionaries> delete_embedded_dictionaries;
@@ -3455,7 +3457,6 @@ const IUserDefinedSQLObjectsStorage & Context::getUserDefinedSQLObjectsStorage()
         shared->user_defined_sql_objects_storage = createUserDefinedSQLObjectsStorage(getGlobalContext());
     });
 
-    SharedLockGuard lock(shared->mutex);
     return *shared->user_defined_sql_objects_storage;
 }
 
@@ -3465,14 +3466,7 @@ IUserDefinedSQLObjectsStorage & Context::getUserDefinedSQLObjectsStorage()
         shared->user_defined_sql_objects_storage = createUserDefinedSQLObjectsStorage(getGlobalContext());
     });
 
-    std::lock_guard lock(shared->mutex);
     return *shared->user_defined_sql_objects_storage;
-}
-
-void Context::setUserDefinedSQLObjectsStorage(std::unique_ptr<IUserDefinedSQLObjectsStorage> storage)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->user_defined_sql_objects_storage = std::move(storage);
 }
 
 IWorkloadEntityStorage & Context::getWorkloadEntityStorage() const
@@ -3481,7 +3475,6 @@ IWorkloadEntityStorage & Context::getWorkloadEntityStorage() const
         shared->workload_entity_storage = createWorkloadEntityStorage(getGlobalContext());
     });
 
-    std::lock_guard lock(shared->mutex);
     return *shared->workload_entity_storage;
 }
 

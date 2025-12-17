@@ -415,7 +415,7 @@ Creates a value of type `Map(key, value)` from key-value pairs.
     };
     FunctionDocumentation::IntroducedIn introduced_in_map = {21, 1};
     FunctionDocumentation::Category category_map = FunctionDocumentation::Category::Map;
-    FunctionDocumentation documentation_map = {description_map, syntax_map, arguments_map, returned_value_map, examples_map, introduced_in_map, category_map};
+    FunctionDocumentation documentation_map = {description_map, syntax_map, arguments_map, {}, returned_value_map, examples_map, introduced_in_map, category_map};
     factory.registerFunction<FunctionMap>(documentation_map);
 
     /// mapFromArrays function documentation
@@ -435,7 +435,7 @@ The function is a convenient alternative to syntax `CAST([...], 'Map(key_type, v
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapFromArrays = {23, 3};
     FunctionDocumentation::Category category_mapFromArrays = FunctionDocumentation::Category::Map;
-    FunctionDocumentation documentation_mapFromArrays = {description_mapFromArrays, syntax_mapFromArrays, arguments_mapFromArrays, returned_value_mapFromArrays, examples_mapFromArrays, introduced_in_mapFromArrays, category_mapFromArrays};
+    FunctionDocumentation documentation_mapFromArrays = {description_mapFromArrays, syntax_mapFromArrays, arguments_mapFromArrays, {}, returned_value_mapFromArrays, examples_mapFromArrays, introduced_in_mapFromArrays, category_mapFromArrays};
     factory.registerFunction<FunctionMapFromArrays>(documentation_mapFromArrays);
     factory.registerAlias("MAP_FROM_ARRAYS", "mapFromArrays");
 
@@ -454,7 +454,7 @@ For two maps, returns the first map with values updated on the values for the co
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapUpdate = {22, 3};
     FunctionDocumentation::Category category_mapUpdate = FunctionDocumentation::Category::Map;
-    FunctionDocumentation documentation_mapUpdate = {description_mapUpdate, syntax_mapUpdate, arguments_mapUpdate, returned_value_mapUpdate, examples_mapUpdate, introduced_in_mapUpdate, category_mapUpdate};
+    FunctionDocumentation documentation_mapUpdate = {description_mapUpdate, syntax_mapUpdate, arguments_mapUpdate, {}, returned_value_mapUpdate, examples_mapUpdate, introduced_in_mapUpdate, category_mapUpdate};
     factory.registerFunction<FunctionMapUpdate>(documentation_mapUpdate);
 }
 

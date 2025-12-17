@@ -27,7 +27,6 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/UnionStep.h>
-#include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/Transforms/AggregatingTransform.h>
@@ -78,7 +77,6 @@ namespace Setting
     extern const SettingsString force_data_skipping_indices;
     extern const SettingsBool force_index_by_date;
     extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsInt64 max_partitions_to_read;
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_threads_for_indexes;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
@@ -104,13 +102,6 @@ namespace Setting
     extern const SettingsOverflowMode read_overflow_mode_leaf;
 }
 
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsUInt64 max_concurrent_queries;
-    extern const MergeTreeSettingsInt64 max_partitions_to_read;
-    extern const MergeTreeSettingsUInt64 min_marks_to_honor_max_concurrent_queries;
-}
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -119,15 +110,16 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_PARSE_TEXT;
-    extern const int TOO_MANY_PARTITIONS;
     extern const int TOO_MANY_ROWS;
     extern const int DUPLICATED_PART_UUIDS;
     extern const int INCORRECT_DATA;
 }
 
 
-MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & data_)
-    : data(data_), log(getLogger(data.getLogName() + " (SelectExecutor)"))
+MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & data_, ProjectionDescriptionRawPtr projection)
+    : data(data_)
+    , data_settings(data.getSettings(projection))
+    , log(getLogger(data.getLogName() + " (SelectExecutor)"))
 {
 }
 
@@ -1412,41 +1404,6 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     }
 }
 
-
-std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
-    const MergeTreeData & data,
-    const ReadFromMergeTree::AnalysisResult & result,
-    const ContextPtr & context)
-{
-    const auto & settings = context->getSettingsRef();
-    const auto data_settings = data.getSettings();
-    auto max_partitions_to_read = settings[Setting::max_partitions_to_read].changed
-        ? settings[Setting::max_partitions_to_read].value
-        : (*data_settings)[MergeTreeSetting::max_partitions_to_read].value;
-    if (max_partitions_to_read > 0)
-    {
-        std::set<String> partitions;
-        for (const auto & part_with_ranges : result.parts_with_ranges)
-            partitions.insert(part_with_ranges.data_part->info.getPartitionId());
-        if (partitions.size() > static_cast<size_t>(max_partitions_to_read))
-            throw Exception(
-                ErrorCodes::TOO_MANY_PARTITIONS,
-                "Too many partitions to read. Current {}, max {}",
-                partitions.size(),
-                max_partitions_to_read);
-    }
-
-    if ((*data_settings)[MergeTreeSetting::max_concurrent_queries] > 0
-        && (*data_settings)[MergeTreeSetting::min_marks_to_honor_max_concurrent_queries] > 0
-        && result.selected_marks >= (*data_settings)[MergeTreeSetting::min_marks_to_honor_max_concurrent_queries])
-    {
-        auto query_id = context->getCurrentQueryId();
-        if (!query_id.empty())
-            return data.getQueryIdHolder(query_id, (*data_settings)[MergeTreeSetting::max_concurrent_queries]);
-    }
-    return nullptr;
-}
-
 ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMarksToRead(
     RangesInDataParts parts,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
@@ -1473,11 +1430,13 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         num_streams,
         max_block_numbers_to_read,
         data,
+        data_settings,
         column_names_to_return,
         log,
         indexes,
         /*find_exact_ranges*/false,
-        /*is_parallel_reading_from_replicas*/false);
+        /*is_parallel_reading_from_replicas*/false,
+        /*use_query_condition_cache*/true);
 }
 
 QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
@@ -1511,6 +1470,7 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
         std::move(mutations_snapshot),
         column_names_to_return,
         data,
+        data_settings,
         query_info,
         storage_snapshot,
         context,

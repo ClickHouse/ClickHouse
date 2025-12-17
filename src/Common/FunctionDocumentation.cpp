@@ -131,6 +131,7 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
     result += "\n";
     return result;
 }
+}
 
 template <typename Type>
 String argumentsOrParametersAsString(const Type & arguments_or_parameters, const FunctionDocumentation::Syntax & syntax)
@@ -146,8 +147,6 @@ String argumentsOrParametersAsString(const Type & arguments_or_parameters, const
             result += mapTypesToTypesWithLinks(types, syntax);
     }
     return result;
-}
-
 }
 
 String FunctionDocumentation::argumentsAsString() const
@@ -279,5 +278,4 @@ String FunctionDocumentation::categoryAsString() const
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Category has no mapping to string");
 }
-
 }

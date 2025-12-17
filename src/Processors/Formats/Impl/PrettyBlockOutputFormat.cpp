@@ -32,6 +32,9 @@ PrettyBlockOutputFormat::PrettyBlockOutputFormat(
         if (isNumber(type))
             readable_number_tip = true;
     }
+    format_settings.pretty_format = true;
+    format_settings.json = FormatSettings::JSON{};
+    format_settings.json.pretty_print_indent_multiplier = 1;
 }
 
 bool PrettyBlockOutputFormat::cutInTheMiddle(size_t row_num, size_t num_rows, size_t max_rows)
