@@ -19,7 +19,9 @@ CREATE TABLE t_proj
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0;
+SETTINGS
+    index_granularity = 1, min_bytes_for_wide_part = 0,
+    min_bytes_for_full_part_storage = 0, enable_vertical_merge_algorithm = 0;
 INSERT INTO t_proj VALUES
     (1, 'eu', 101),
     (2, 'us', 102),
@@ -108,7 +110,9 @@ CREATE TABLE t_gran
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 16, min_bytes_for_wide_part = 0;
+SETTINGS
+    index_granularity = 16, min_bytes_for_wide_part = 0,
+    min_bytes_for_full_part_storage = 0, enable_vertical_merge_algorithm = 0;
 INSERT INTO t_gran VALUES (0, 'top');
 INSERT INTO t_gran SELECT number + 1, 'other' FROM numbers(6);
 INSERT INTO t_gran VALUES (7, 'mid');
@@ -178,7 +182,9 @@ CREATE TABLE t_partial
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS
+    index_granularity = 1, min_bytes_for_wide_part = 0,
+    min_bytes_for_full_part_storage = 0, enable_vertical_merge_algorithm = 0;
 INSERT INTO t_partial VALUES (1, 'us'), (2, 'eu'), (3, 'cn');
 ALTER TABLE t_partial ADD PROJECTION region_proj INDEX region TYPE basic;
 INSERT INTO t_partial VALUES (4, 'cn'), (5, 'ru'), (6, 'br');

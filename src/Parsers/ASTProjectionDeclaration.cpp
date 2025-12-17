@@ -53,7 +53,7 @@ void ASTProjectionDeclaration::formatImpl(
 
     if (with_settings)
     {
-        ostr << settings.nl_or_ws << indent_str << "WITH SETTINGS (";
+        ostr << " WITH SETTINGS (";
         with_settings->format(ostr, settings, state, frame);
         ostr << ")";
     }

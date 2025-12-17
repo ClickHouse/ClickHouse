@@ -22,7 +22,9 @@ CREATE TABLE t_proj
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0;
+SETTINGS
+    index_granularity = 1, min_bytes_for_wide_part = 0,
+    min_bytes_for_full_part_storage = 0, enable_vertical_merge_algorithm = 0;
 
 INSERT INTO t_proj VALUES
     (1, 'eu', 101),
@@ -73,7 +75,9 @@ CREATE TABLE t_gran
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 16, min_bytes_for_wide_part = 0;
+SETTINGS
+    index_granularity = 16, min_bytes_for_wide_part = 0,
+    min_bytes_for_full_part_storage = 0, enable_vertical_merge_algorithm = 0;
 
 INSERT INTO t_gran VALUES (0, 'top');
 INSERT INTO t_gran SELECT number + 1, 'other' FROM numbers(6);
@@ -116,7 +120,9 @@ CREATE TABLE t_partial
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS
+    index_granularity = 1, min_bytes_for_wide_part = 0,
+    min_bytes_for_full_part_storage = 0, enable_vertical_merge_algorithm = 0;
 
 INSERT INTO t_partial VALUES (1, 'us'), (2, 'eu'), (3, 'cn');
 
