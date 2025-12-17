@@ -339,37 +339,37 @@ void IAST::format(WriteBuffer & ostr, const FormatSettings & settings) const
 {
     FormatState state;
     FormatStateStacked frame;
-    if (parenthesed)
+    if (parenthesized)
         ostr.write('(');
     formatImpl(ostr, settings, state, std::move(frame));
-    if (parenthesed)
+    if (parenthesized)
         ostr.write(')');
 }
 
 void IAST::format(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    if (parenthesed)
+    if (parenthesized)
         ostr.write('(');
     formatImpl(ostr, settings, state, std::move(frame));
-    if (parenthesed)
+    if (parenthesized)
         ostr.write(')');
 }
 
 void IAST::format(FormattingBuffer out) const
 {
-    if (parenthesed)
+    if (parenthesized)
         out.ostr.write('(');
     formatImpl(out.ostr, out.settings, out.state, out.frame);
-    if (parenthesed)
+    if (parenthesized)
         out.ostr.write(')');
 }
 
 void IAST::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    if (parenthesed)
+    if (parenthesized)
         ostr.write('(');
     formatImpl(FormattingBuffer{ostr, settings, state, std::move(frame)});
-    if (parenthesed)
+    if (parenthesized)
         ostr.write(')');
 }
 

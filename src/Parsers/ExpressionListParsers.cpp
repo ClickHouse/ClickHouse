@@ -1303,7 +1303,7 @@ protected:
         if (!is_tuple && elements.size() == 1)
         {
             node = std::move(elements[0]);
-            node->parenthesed = true;
+            node->parenthesized = true;
         }
         else
             node = makeASTOperator("tuple", std::move(elements));

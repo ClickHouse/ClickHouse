@@ -35,7 +35,7 @@ public:
     ASTs children;
 
     /// If the element has extra parentheses around it, e.g., in "a + (b)", b has extra parentheses.
-    bool parenthesed = false;
+    bool parenthesized = false;
 
     virtual ~IAST();
     IAST() = default;
