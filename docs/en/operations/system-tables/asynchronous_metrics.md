@@ -318,7 +318,7 @@ The ratio of time spent running a virtual CPU for guest operating systems under 
 
 ### OSGuestNiceTimeNormalized {#osguestnicetimenormalized}
 
-The value is similar to `OSGuestNiceTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores. This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric.
+The value is similar to `OSGuestNiceTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores. This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric. If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, and in that case the value of this metric may exceed 1 at some moments.
 
 ### OSGuestTime {#osguesttime}
 
@@ -330,7 +330,7 @@ The ratio of time spent running a virtual CPU for guest operating systems under 
 
 ### OSGuestTimeNormalized {#osguesttimenormalized}
 
-The value is similar to `OSGuestTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores. This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric.
+The value is similar to `OSGuestTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores. This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric. If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, and in that case the value of this metric may exceed 1 at some moments.
 
 ### OSIOWaitTime {#osiowaittime}
 
@@ -342,7 +342,7 @@ The ratio of time the CPU core was not running the code but when the OS kernel d
 
 ### OSIOWaitTimeNormalized {#osiowaittimenormalized}
 
-The value is similar to `OSIOWaitTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores. This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric.
+The value is similar to `OSIOWaitTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores. This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric. If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, and in that case the value of this metric may exceed 1 at some moments.
 
 ### OSIdleTime {#osidletime}
 
@@ -354,7 +354,7 @@ The ratio of time the CPU core was idle (not even ready to run a process waiting
 
 ### OSIdleTimeNormalized {#osidletimenormalized}
 
-The value is similar to `OSIdleTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores. This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric.
+The value is similar to `OSIdleTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores. This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric. If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, and in that case the value of this metric may exceed 1 at some moments.
 
 ### OSInterrupts {#osinterrupts}
 
@@ -370,7 +370,7 @@ The ratio of time spent for running hardware interrupt requests on the CPU. This
 
 ### OSIrqTimeNormalized {#osirqtimenormalized}
 
-The value is similar to `OSIrqTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores. This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric.
+The value is similar to `OSIrqTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores. This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric. If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, and in that case the value of this metric may exceed 1 at some moments.
 
 ### OSMemoryAvailable {#osmemoryavailable}
 
@@ -406,7 +406,7 @@ The ratio of time the CPU core was running userspace code with higher priority. 
 
 ### OSNiceTimeNormalized {#osnicetimenormalized}
 
-The value is similar to `OSNiceTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores. This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric.
+The value is similar to `OSNiceTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores. This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric. If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, and in that case the value of this metric may exceed 1 at some moments.
 
 ### OSOpenFiles {#osopenfiles}
 
@@ -434,7 +434,7 @@ The ratio of time spent for running software interrupt requests on the CPU. This
 
 ### OSSoftIrqTimeNormalized {#ossoftirqtimenormalized}
 
-The value is similar to `OSSoftIrqTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores. This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric.
+The value is similar to `OSSoftIrqTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores. This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric. If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, and in that case the value of this metric may exceed 1 at some moments.
 
 ### OSStealTime {#osstealtime}
 
@@ -446,7 +446,7 @@ The ratio of time spent in other operating systems by the CPU when running in a 
 
 ### OSStealTimeNormalized {#osstealtimenormalized}
 
-The value is similar to `OSStealTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores. This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric.
+The value is similar to `OSStealTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores. This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric. If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, and in that case the value of this metric may exceed 1 at some moments.
 
 ### OSSystemTime {#ossystemtime}
 
@@ -458,7 +458,7 @@ The ratio of time the CPU core was running OS kernel (system) code. This is a sy
 
 ### OSSystemTimeNormalized {#ossystemtimenormalized}
 
-The value is similar to `OSSystemTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores. This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric.
+The value is similar to `OSSystemTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores. This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric. If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, and in that case the value of this metric may exceed 1 at some moments.
 
 ### OSThreadsRunnable {#osthreadsrunnable}
 
@@ -482,7 +482,7 @@ The ratio of time the CPU core was running userspace code. This is a system-wide
 
 ### OSUserTimeNormalized {#osusertimenormalized}
 
-The value is similar to `OSUserTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores. This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric.
+The value is similar to `OSUserTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores. This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric. If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, and in that case the value of this metric may exceed 1 at some moments.
 
 ### PostgreSQLThreads {#postgresqlthreads}
 

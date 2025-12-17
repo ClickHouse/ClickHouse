@@ -36,7 +36,7 @@ SELECT '';
 SELECT countMerge(cnt) FROM with_deduplication_mv;
 SELECT countMerge(cnt) FROM without_deduplication_mv;
 
--- Explicit insert is deduplicated
+-- Explicit insert is not deduplicated because insert has selectpart and select is not stable
 ALTER TABLE `.inner_id.00000510-1000-4000-8000-000000000001` DROP PARTITION ID 'all';
 ALTER TABLE `.inner_id.00000510-1000-4000-8000-000000000002` DROP PARTITION ID 'all';
 INSERT INTO `.inner_id.00000510-1000-4000-8000-000000000001` SELECT 0 AS dummy, arrayReduce('countState', [toUInt32(42)]) AS cnt;

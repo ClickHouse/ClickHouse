@@ -267,9 +267,11 @@ struct CheckWatchRequest : virtual Request
 {
     enum class CheckWatchType : int32_t
     {
-        ANY = 0,
-        DATA = 1,
-        CHILDREN = 2,
+        CHILDREN = 1,
+        DATA = 2,
+        ANY = 3,
+        PERSISTENT = 4,
+        PERSISTENT_RECURSIVE = 5
     };
 
     String path;
