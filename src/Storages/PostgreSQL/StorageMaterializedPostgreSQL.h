@@ -3,7 +3,7 @@
 #include "config.h"
 
 #if USE_LIBPQXX
-#include <Storages/PostgreSQL/PostgreSQLReplicationHandler.h>
+#include "PostgreSQLReplicationHandler.h"
 
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTCreateQuery.h>

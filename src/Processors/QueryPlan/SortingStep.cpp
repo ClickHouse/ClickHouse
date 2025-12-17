@@ -30,7 +30,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_block_size;
     extern const SettingsUInt64 max_bytes_before_external_sort;
     extern const SettingsDouble max_bytes_ratio_before_external_sort;
     extern const SettingsUInt64 max_bytes_before_remerge_sort;
@@ -89,7 +89,7 @@ size_t getMaxBytesInQueryBeforeExternalSort(double max_bytes_ratio_before_extern
     }
     else
     {
-        LOG_TRACE(getLogger("SortingStep"), "No system memory limits configured. Ignoring max_bytes_ratio_before_external_sort");
+        LOG_WARNING(getLogger("SortingStep"), "No system memory limits configured. Ignoring max_bytes_ratio_before_external_sort");
         return 0;
     }
 }
@@ -162,7 +162,7 @@ static ITransformingStep::Traits getTraits(size_t limit)
 }
 
 SortingStep::SortingStep(
-    const SharedHeader & input_header, SortDescription description_, UInt64 limit_, const Settings & settings_, bool is_sorting_for_merge_join_)
+    const Header & input_header, SortDescription description_, UInt64 limit_, const Settings & settings_, bool is_sorting_for_merge_join_)
     : ITransformingStep(input_header, input_header, getTraits(limit_))
     , type(Type::Full)
     , result_description(std::move(description_))
@@ -173,7 +173,7 @@ SortingStep::SortingStep(
 }
 
 SortingStep::SortingStep(
-        const SharedHeader & input_header,
+        const Header & input_header,
         const SortDescription & description_,
         const SortDescription & partition_by_description_,
         UInt64 limit_,
@@ -184,7 +184,7 @@ SortingStep::SortingStep(
 }
 
 SortingStep::SortingStep(
-    const SharedHeader & input_header,
+    const Header & input_header,
     SortDescription prefix_description_,
     SortDescription result_description_,
     size_t max_block_size_,
@@ -199,7 +199,7 @@ SortingStep::SortingStep(
 }
 
 SortingStep::SortingStep(
-    const SharedHeader & input_header,
+    const Header & input_header,
     SortDescription sort_description_,
     size_t max_block_size_,
     UInt64 limit_,
@@ -250,13 +250,13 @@ void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
             throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Parallelism limit exceeded in SortingStep: {} threads X {} streams, limit {}, try to reduce `max_threads` value",
                 threads, streams, connection_count_limit);
 
-        auto stream_header = pipeline.getSharedHeader();
+        Block stream_header = pipeline.getHeader();
 
         ColumnNumbers key_columns;
         key_columns.reserve(partition_by_description.size());
         for (auto & col : partition_by_description)
         {
-            key_columns.push_back(stream_header->getPositionByName(col.column_name));
+            key_columns.push_back(stream_header.getPositionByName(col.column_name));
         }
 
         pipeline.transform([&](OutputPortRawPtrs ports)
@@ -296,19 +296,19 @@ void SortingStep::finishSorting(
     QueryPipelineBuilder & pipeline, const SortDescription & input_sort_desc, const SortDescription & result_sort_desc, const UInt64 limit_)
 {
     pipeline.addSimpleTransform(
-        [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+        [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
 
-            return std::make_shared<PartialSortingTransform>(header, result_sort_desc, limit_, threshold_tracker);
+            return std::make_shared<PartialSortingTransform>(header, result_sort_desc, limit_);
         });
 
     bool increase_sort_description_compile_attempts = true;
 
     /// NOTE limits are not applied to the size of temporary sets in FinishSortingTransform
     pipeline.addSimpleTransform(
-        [&, increase_sort_description_compile_attempts](const SharedHeader & header) mutable -> ProcessorPtr
+        [&, increase_sort_description_compile_attempts](const Block & header) mutable -> ProcessorPtr
         {
             /** For multiple FinishSortingTransform we need to count identical comparators only once per QueryPlan
                   * To property support min_count_to_compile_sort_description.
@@ -330,25 +330,23 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
     {
         if (use_buffering && sort_settings.read_in_order_use_buffering)
         {
-            pipeline.addSimpleTransform([&](const SharedHeader & header)
+            pipeline.addSimpleTransform([&](const Block & header)
             {
                 return std::make_shared<BufferChunksTransform>(header, sort_settings.max_block_size, sort_settings.max_block_bytes, limit_);
             });
         }
 
         auto transform = std::make_shared<MergingSortedTransform>(
-            pipeline.getSharedHeader(),
+            pipeline.getHeader(),
             pipeline.getNumStreams(),
             result_sort_desc,
             sort_settings.max_block_size,
             /*max_block_size_bytes=*/0,
-            /*max_dynamic_subcolumns*/std::nullopt,
             SortingQueueStrategy::Batch,
             limit_,
             always_read_till_end,
-            /*out_row_sources_buf=*/ nullptr,
-            /*filter_column_name=*/ std::nullopt,
-            /*use_average_block_sizes=*/ false,
+            nullptr,
+            false,
             apply_virtual_row_conversions);
 
         pipeline.addTransform(std::move(transform));
@@ -356,7 +354,7 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
 }
 
 void SortingStep::mergeSorting(
-    QueryPipelineBuilder & pipeline, const Settings & sort_settings, const SortDescription & result_sort_desc, UInt64 limit_, TopKThresholdTrackerPtr threshold_tracker)
+    QueryPipelineBuilder & pipeline, const Settings & sort_settings, const SortDescription & result_sort_desc, UInt64 limit_)
 {
     bool increase_sort_description_compile_attempts = true;
 
@@ -369,7 +367,7 @@ void SortingStep::mergeSorting(
 
     pipeline.addSimpleTransform(
         [&, increase_sort_description_compile_attempts](
-            const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) mutable -> ProcessorPtr
+            const Block & header, QueryPipelineBuilder::StreamType stream_type) mutable -> ProcessorPtr
         {
             if (stream_type == QueryPipelineBuilder::StreamType::Totals)
                 return nullptr;
@@ -393,7 +391,7 @@ void SortingStep::mergeSorting(
                 sort_settings.max_bytes_in_block_before_external_sort / pipeline.getNumStreams(),
                 sort_settings.max_bytes_in_query_before_external_sort,
                 tmp_data_on_disk,
-                sort_settings.min_free_disk_space, threshold_tracker);
+                sort_settings.min_free_disk_space);
         });
 }
 
@@ -402,18 +400,17 @@ void SortingStep::fullSortStreams(
     const Settings & sort_settings,
     const SortDescription & result_sort_desc,
     const UInt64 limit_,
-    const bool skip_partial_sort,
-    TopKThresholdTrackerPtr threshold_tracker)
+    const bool skip_partial_sort)
 {
     if (!skip_partial_sort || limit_)
     {
         pipeline.addSimpleTransform(
-            [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+            [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
             {
                 if (stream_type != QueryPipelineBuilder::StreamType::Main)
                     return nullptr;
 
-                return std::make_shared<PartialSortingTransform>(header, result_sort_desc, limit_, threshold_tracker);
+                return std::make_shared<PartialSortingTransform>(header, result_sort_desc, limit_);
             });
 
         StreamLocalLimits limits;
@@ -421,7 +418,7 @@ void SortingStep::fullSortStreams(
         limits.size_limits = sort_settings.size_limits;
 
         pipeline.addSimpleTransform(
-            [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+            [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
             {
                 if (stream_type != QueryPipelineBuilder::StreamType::Main)
                     return nullptr;
@@ -430,7 +427,7 @@ void SortingStep::fullSortStreams(
             });
     }
 
-    mergeSorting(pipeline, sort_settings, result_sort_desc, limit_, threshold_tracker);
+    mergeSorting(pipeline, sort_settings, result_sort_desc, limit_);
 }
 
 void SortingStep::fullSort(
@@ -438,18 +435,17 @@ void SortingStep::fullSort(
 {
     scatterByPartitionIfNeeded(pipeline);
 
-    fullSortStreams(pipeline, sort_settings, result_sort_desc, limit_, skip_partial_sort, threshold_tracker);
+    fullSortStreams(pipeline, sort_settings, result_sort_desc, limit_, skip_partial_sort);
 
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1 && (partition_by_description.empty() || pipeline.getNumThreads() == 1))
     {
         auto transform = std::make_shared<MergingSortedTransform>(
-            pipeline.getSharedHeader(),
+            pipeline.getHeader(),
             pipeline.getNumStreams(),
             result_sort_desc,
             sort_settings.max_block_size,
             /*max_block_size_bytes=*/0,
-            /*max_dynamic_subcolumns*/std::nullopt,
             SortingQueueStrategy::Batch,
             limit_,
             always_read_till_end);
@@ -475,15 +471,6 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         bool need_finish_sorting = (prefix_description.size() < result_description.size());
         mergingSorted(pipeline, prefix_description, (need_finish_sorting ? 0 : limit));
 
-        if (need_finish_sorting)
-            finishSorting(pipeline, prefix_description, result_description, limit);
-
-        return;
-    }
-
-    if (type == Type::PartitionedFinishSorting)
-    {
-        bool need_finish_sorting = (prefix_description.size() < result_description.size());
         if (need_finish_sorting)
             finishSorting(pipeline, prefix_description, result_description, limit);
 

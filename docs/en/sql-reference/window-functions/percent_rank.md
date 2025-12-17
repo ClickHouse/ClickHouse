@@ -4,7 +4,6 @@ sidebar_label: 'percent_rank'
 sidebar_position: 8
 slug: /sql-reference/window-functions/percent_rank
 title: 'percent_rank'
-doc_type: 'reference'
 ---
 
 # percent_rank
@@ -28,6 +27,7 @@ The default and required window frame definition is `RANGE BETWEEN UNBOUNDED PRE
 For more detail on window function syntax see: [Window Functions - Syntax](./index.md/#syntax).
 
 **Example**
+
 
 Query:
 

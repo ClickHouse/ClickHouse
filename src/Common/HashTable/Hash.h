@@ -1,9 +1,9 @@
 #pragma once
 
 #include <city.h>
-#include <base/StringViewHash.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
+#include <base/StringRef.h>
 #include <base/types.h>
 #include <base/unaligned.h>
 
@@ -50,7 +50,7 @@ inline UInt64 intHash64(UInt64 x)
 #endif
 
 #if (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-#include <vec_crc32.h>
+#include "vec_crc32.h"
 #endif
 
 #if defined(__s390x__) && __BYTE_ORDER__==__ORDER_BIG_ENDIAN__
@@ -540,4 +540,4 @@ struct IntHash32
 };
 
 template <>
-struct DefaultHash<std::string_view> : public StringViewHash {};
+struct DefaultHash<StringRef> : public StringRefHash {};

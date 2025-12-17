@@ -35,8 +35,7 @@ LAYOUT(CACHE(SIZE_IN_CELLS 10));
 
 function thread1()
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
+    for _ in {1..50}
     do
         # This query will be ended with exception, because source dictionary has UUID as a key type.
         $CLICKHOUSE_CLIENT --query="SELECT dictGetFloat64('${CLICKHOUSE_DATABASE}.dict_datarace', 'value', toUInt64(1));"
@@ -46,18 +45,20 @@ function thread1()
 
 function thread2()
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
+    for _ in {1..50}
     do
         # This query will be ended with exception, because source dictionary has UUID as a key type.
         $CLICKHOUSE_CLIENT --query="SELECT dictGetFloat64('${CLICKHOUSE_DATABASE}.dict_datarace', 'value', toUInt64(2));"
     done
 }
 
+export -f thread1;
+export -f thread2;
+
 TIMEOUT=5
 
-thread1 > /dev/null 2>&1 &
-thread2 > /dev/null 2>&1 &
+timeout $TIMEOUT bash -c thread1 > /dev/null 2>&1 &
+timeout $TIMEOUT bash -c thread2 > /dev/null 2>&1 &
 
 wait
 

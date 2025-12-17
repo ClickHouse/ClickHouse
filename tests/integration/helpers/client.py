@@ -1,6 +1,5 @@
 import logging
 import os
-import signal
 import subprocess as sp
 import tempfile
 from threading import Timer
@@ -110,18 +109,8 @@ class Client:
             command += ["--password", password]
         if database is not None:
             command += ["--database", database]
-
         if host is not None:
-            replaced = False
-            for i, token in enumerate(command):
-                if token == "--host" and i + 1 < len(command):
-                    command[i + 1] = host
-                    replaced = True
-                    break
-            if not replaced:
-                # Should not happen normally, but keep fallback
-                command += ["--host", host]
-
+            command += ["--host", host]
         if query_id is not None:
             command += ["--query_id", query_id]
         if parse:
@@ -189,20 +178,21 @@ class QueryRuntimeException(Exception):
 
 class CommandRequest:
     def __init__(
-        self, command, stdin=None, timeout=None, ignore_error=False, parse=False, stdout_file_path=None, stderr_file_path=None, env = {}
+        self, command, stdin=None, timeout=None, ignore_error=False, parse=False
     ):
         # Write data to tmp file to avoid PIPEs and execution blocking
         stdin_file = tempfile.TemporaryFile(mode="w+")
         stdin_file.write(stdin)
         stdin_file.seek(0)
-        self.stdout_file = tempfile.TemporaryFile() if stdout_file_path is None else stdout_file_path
-        self.stderr_file = tempfile.TemporaryFile() if stderr_file_path is None else stderr_file_path
+        self.stdout_file = tempfile.TemporaryFile()
+        self.stderr_file = tempfile.TemporaryFile()
         self.ignore_error = ignore_error
         self.parse = parse
         # print " ".join(command)
 
         # we suppress stderror on client becase sometimes thread sanitizer
         # can print some debug information there
+        env = {}
         env["ASAN_OPTIONS"] = "use_sigaltstack=0"
         env["TSAN_OPTIONS"] = "use_sigaltstack=0 verbosity=0"
         self.process = sp.Popen(
@@ -314,9 +304,3 @@ class CommandRequest:
             raise QueryTimeoutExceedException("Client timed out!")
 
         return (stdout, stderr)
-
-    def pause_process(self):
-        self.process.send_signal(signal.SIGSTOP)
-
-    def resume_process(self):
-        self.process.send_signal(signal.SIGCONT)

@@ -5,7 +5,6 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 
@@ -56,7 +55,7 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     const ColumnsDescription & columns_,
     const std::string & format_)
     : format_name(format_)
-    , columns(columns_.toString(true))
+    , columns(columns_.toString())
     , mode(engine_settings[ObjectStorageQueueSetting::mode].toString())
     , last_processed_path(engine_settings[ObjectStorageQueueSetting::last_processed_path])
     , after_processing(engine_settings[ObjectStorageQueueSetting::after_processing])
@@ -98,10 +97,6 @@ ObjectStorageQueueAction ObjectStorageQueueTableMetadata::actionFromString(const
         return ObjectStorageQueueAction::KEEP;
     if (action == "delete")
         return ObjectStorageQueueAction::DELETE;
-    if (action == "move")
-        return ObjectStorageQueueAction::MOVE;
-    if (action == "tag")
-        return ObjectStorageQueueAction::TAG;
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected ObjectStorageQueue action: {}", action);
 }
 
@@ -113,10 +108,6 @@ std::string ObjectStorageQueueTableMetadata::actionToString(ObjectStorageQueueAc
             return "delete";
         case ObjectStorageQueueAction::KEEP:
             return "keep";
-        case ObjectStorageQueueAction::MOVE:
-            return "move";
-        case ObjectStorageQueueAction::TAG:
-            return "tag";
     }
 }
 
@@ -147,11 +138,11 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(const Poco::JSO
     , mode(json->getValue<String>("mode"))
     , last_processed_path(getOrDefault<String>(json, "last_processed_file", "s3queue_", ""))
     , after_processing(actionFromString(json->getValue<String>("after_processing")))
-    , loading_retries(getOrDefault(json, "loading_retries", "", 10ULL))
-    , processing_threads_num(getOrDefault(json, "processing_threads_num", "s3queue_", 1ULL))
-    , tracked_files_limit(getOrDefault(json, "tracked_files_limit", "s3queue_", 0ULL))
-    , tracked_files_ttl_sec(getOrDefault(json, "tracked_files_ttl_sec", "", getOrDefault(json, "tracked_file_ttl_sec", "s3queue_", 0ULL)))
-    , buckets(getOrDefault(json, "buckets", "", 0ULL))
+    , loading_retries(getOrDefault(json, "loading_retries", "", 10))
+    , processing_threads_num(getOrDefault(json, "processing_threads_num", "s3queue_", 1))
+    , tracked_files_limit(getOrDefault(json, "tracked_files_limit", "s3queue_", 0))
+    , tracked_files_ttl_sec(getOrDefault(json, "tracked_files_ttl_sec", "", getOrDefault(json, "tracked_file_ttl_sec", "s3queue_", 0)))
+    , buckets(getOrDefault(json, "buckets", "", 0))
 {
     validateMode(mode);
 }

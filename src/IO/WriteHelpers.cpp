@@ -36,7 +36,7 @@ std::array<char, 36> formatUUID(const UUID & uuid)
 
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
     const auto * src_ptr = reinterpret_cast<const UInt8 *>(&uuid);
-    const std::reverse_iterator<const UInt8 *> src(src_ptr + 16);
+    const std::reverse_iterator src(src_ptr + 16);
 #else
     const auto * src = reinterpret_cast<const UInt8 *>(&uuid);
 #endif
@@ -70,11 +70,11 @@ void writeIPv4Text(const IPv4 & ip, WriteBuffer & buf)
 
 void writeIPv6Text(const IPv6 & ip, WriteBuffer & buf)
 {
-    char addr[IPV6_MAX_TEXT_LENGTH] {};
+    char addr[IPV6_MAX_TEXT_LENGTH + 1] {};
     char * paddr = addr;
 
     formatIPv6(reinterpret_cast<const unsigned char *>(&ip), paddr);
-    buf.write(addr, paddr - addr);
+    buf.write(addr, paddr - addr - 1);
 }
 
 void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trace)
@@ -95,16 +95,13 @@ void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trac
 
 /// The same, but quotes apply only if there are characters that do not match the identifier without quotes
 template <typename F>
-static inline void writeProbablyQuotedStringImpl(std::string_view s, WriteBuffer & buf, F && write_quoted_string)
+static inline void writeProbablyQuotedStringImpl(StringRef s, WriteBuffer & buf, F && write_quoted_string)
 {
-    static constexpr std::string_view distinct_str = "distinct";
-    static constexpr std::string_view all_str = "all";
-    static constexpr std::string_view table_str = "table";
-    if (isValidIdentifier(s)
+    if (isValidIdentifier(s.toView())
         /// This are valid identifiers but are problematic if present unquoted in SQL query.
-        && !(s.size() == distinct_str.size() && 0 == strncasecmp(s.data(), "distinct", s.size()))
-        && !(s.size() == all_str.size() && 0 == strncasecmp(s.data(), "all", s.size()))
-        && !(s.size() == table_str.size() && 0 == strncasecmp(s.data(), "table", s.size())))
+        && !(s.size == strlen("distinct") && 0 == strncasecmp(s.data, "distinct", strlen("distinct")))
+        && !(s.size == strlen("all") && 0 == strncasecmp(s.data, "all", strlen("all")))
+        && !(s.size == strlen("table") && 0 == strncasecmp(s.data, "table", strlen("table"))))
     {
         writeString(s, buf);
     }
@@ -112,19 +109,19 @@ static inline void writeProbablyQuotedStringImpl(std::string_view s, WriteBuffer
         write_quoted_string(s, buf);
 }
 
-void writeProbablyBackQuotedString(std::string_view s, WriteBuffer & buf)
+void writeProbablyBackQuotedString(StringRef s, WriteBuffer & buf)
 {
-    writeProbablyQuotedStringImpl(s, buf, [](std::string_view s_, WriteBuffer & buf_) { writeBackQuotedString(s_, buf_); });
+    writeProbablyQuotedStringImpl(s, buf, [](StringRef s_, WriteBuffer & buf_) { writeBackQuotedString(s_, buf_); });
 }
 
-void writeProbablyDoubleQuotedString(std::string_view s, WriteBuffer & buf)
+void writeProbablyDoubleQuotedString(StringRef s, WriteBuffer & buf)
 {
-    writeProbablyQuotedStringImpl(s, buf, [](std::string_view s_, WriteBuffer & buf_) { writeDoubleQuotedString(s_, buf_); });
+    writeProbablyQuotedStringImpl(s, buf, [](StringRef s_, WriteBuffer & buf_) { writeDoubleQuotedString(s_, buf_); });
 }
 
-void writeProbablyBackQuotedStringMySQL(std::string_view s, WriteBuffer & buf)
+void writeProbablyBackQuotedStringMySQL(StringRef s, WriteBuffer & buf)
 {
-    writeProbablyQuotedStringImpl(s, buf, [](std::string_view s_, WriteBuffer & buf_) { writeBackQuotedStringMySQL(s_, buf_); });
+    writeProbablyQuotedStringImpl(s, buf, [](StringRef s_, WriteBuffer & buf_) { writeBackQuotedStringMySQL(s_, buf_); });
 }
 
 void writePointerHex(const void * ptr, WriteBuffer & buf)
