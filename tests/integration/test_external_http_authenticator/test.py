@@ -49,7 +49,7 @@ def run_echo_server():
 
 
 @pytest.fixture(scope="module")
-def started_cluster() -> typing.Generator[ClickHouseCluster, None]:
+def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
     try:
         cluster.start()
         run_echo_server()
