@@ -615,8 +615,16 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
         ? nullptr
         : bucket_holder_it->second.back().get();
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
     if (current_bucket_holder)
-        chassert(current_bucket_holder->checkBucketOwnership(ObjectStorageQueueMetadata::getZooKeeper(log)));
+    {
+        ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+        {
+            auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+            chassert(current_bucket_holder->checkBucketOwnership(zk_client));
+        });
+    }
+#endif
 
     auto current_processor = toString(processor);
 
