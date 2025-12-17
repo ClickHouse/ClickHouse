@@ -1,6 +1,7 @@
 #include <Storages/System/StorageSystemDataSkippingIndices.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
@@ -22,6 +23,13 @@ namespace DB
 StorageSystemDataSkippingIndices::StorageSystemDataSkippingIndices(const StorageID & table_id_)
     : IStorage(table_id_)
 {
+    auto creation_datatype = std::make_shared<DataTypeEnum8>(
+        DataTypeEnum8::Values
+        {
+            {"Explicit", static_cast<Int8>(0)},
+            {"Implicit", static_cast<Int8>(1)},
+        });
+
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription(
         {
@@ -34,7 +42,8 @@ StorageSystemDataSkippingIndices::StorageSystemDataSkippingIndices(const Storage
             { "granularity", std::make_shared<DataTypeUInt64>(), "The number of granules in the block."},
             { "data_compressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of compressed data, in bytes."},
             { "data_uncompressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of decompressed data, in bytes."},
-            { "marks_bytes", std::make_shared<DataTypeUInt64>(), "The size of marks, in bytes."}
+            { "marks_bytes", std::make_shared<DataTypeUInt64>(), "The size of marks, in bytes."},
+            { "creation", creation_datatype, "Whether the index was created implicitly (via add_minmax_index_for_numeric_columns or similar)"},
         }));
     setInMemoryMetadata(storage_metadata);
 }
@@ -163,6 +172,10 @@ protected:
                     /// 'marks_bytes' column
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(secondary_index_size.marks);
+
+                    /// 'implicit' column
+                    if (column_mask[src_index++])
+                        res_columns[res_index++]->insert(index.is_implicitly_created);
                 }
             }
         }
