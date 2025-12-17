@@ -66,9 +66,31 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
 
         /// Execute function on new arguments.
-        auto func_base = function_overload_resolver->build(new_arguments);
-        auto nested_result_type = func_base->getResultType();
-        auto nested_result = func_base->execute(new_arguments, nested_result_type, variant_column.size(), dry_run);
+        ColumnPtr nested_result;
+        DataTypePtr nested_result_type;
+        try
+        {
+            auto func_base = function_overload_resolver->build(new_arguments);
+            nested_result_type = func_base->getResultType();
+            nested_result = func_base->execute(new_arguments, nested_result_type, variant_column.size(), dry_run);
+        }
+        catch (const Exception & e)
+        {
+            /// If function execution fails for this variant type due to type mismatch,
+            /// return a column filled with NULLs. Only catch type-related errors.
+            if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT || e.code() == ErrorCodes::TYPE_MISMATCH
+                || e.code() == ErrorCodes::CANNOT_CONVERT_TYPE || e.code() == ErrorCodes::NO_COMMON_TYPE)
+            {
+                auto res = result_type->createColumn();
+                res->insertManyDefaults(variant_column.size());
+                return res;
+            }
+            else
+            {
+                /// Re-throw other exceptions
+                throw;
+            }
+        }
 
         /// If result is Nullable(Nothing), just return column filled with NULLs.
         if (nested_result_type->onlyNull())
@@ -106,59 +128,23 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
             return makeNullableSafe(nested_result);
         }
 
-        /// Result is Variant - build the result Variant column directly
-        /// Find which discriminator this result type corresponds to
-        auto result_column = result_type->createColumn();
-        auto & result_variant = assert_cast<ColumnVariant &>(*result_column);
-        const auto & result_variant_type = assert_cast<const DataTypeVariant &>(*result_type);
-        const auto & result_variants = result_variant_type.getVariants();
-
-        /// Find discriminator by name first (for custom types), then by equals()
-        std::optional<ColumnVariant::Discriminator> result_global_discr;
-        for (size_t i = 0; i < result_variants.size(); ++i)
+        /// Result is Variant - use castColumn to handle the conversion.
+        /// If nested result type is one of the variant types or a Variant type with a subset of resulting variants,
+        /// castColumn will handle it correctly.
+        try
         {
-            if (result_variants[i]->getName() == nested_result_type->getName())
-            {
-                result_global_discr = i;
-                break;
-            }
+            return castColumn(ColumnWithTypeAndName{nested_result, nested_result_type, ""}, result_type);
         }
-        if (!result_global_discr)
+        catch (const Exception & e)
         {
-            for (size_t i = 0; i < result_variants.size(); ++i)
-            {
-                if (result_variants[i]->equals(*nested_result_type))
-                {
-                    result_global_discr = i;
-                    break;
-                }
-            }
-        }
-
-        if (!result_global_discr)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Cannot find variant type {} in result Variant type {} during execution of {}",
+                "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
+                getName(),
                 nested_result_type->getName(),
                 result_type->getName(),
-                getName());
-
-        /// Set up the variant column with all rows pointing to this single variant
-        auto result_local_discr = result_variant.localDiscriminatorByGlobal(*result_global_discr);
-        result_variant.getVariantPtrByLocalDiscriminator(result_local_discr) = nested_result;
-
-        auto & discriminators = result_variant.getLocalDiscriminators();
-        auto & offsets = result_variant.getOffsets();
-        discriminators.reserve(variant_column.size());
-        offsets.reserve(variant_column.size());
-
-        for (size_t i = 0; i < variant_column.size(); ++i)
-        {
-            discriminators.push_back(result_local_discr);
-            offsets.push_back(i);
+                e.message());
         }
-
-        return result_column;
     }
 
     /// Second, check if this Variant column contains only 1 variant and NULLs.
@@ -194,20 +180,39 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
             }
             else
             {
-                ColumnWithTypeAndName arg{
-                    arguments[i].column->convertToFullColumnIfConst()->filter(filter, result_size_hint),
-                    arguments[i].type,
-                    arguments[i].name};
+                ColumnWithTypeAndName arg{arguments[i].column->filter(filter, result_size_hint), arguments[i].type, arguments[i].name};
 
                 new_arguments.push_back(std::move(arg));
             }
         }
 
         /// Execute function on new arguments.
-        auto func_base = function_overload_resolver->build(new_arguments);
-        auto nested_result_type = func_base->getResultType();
-        auto nested_result
-            = func_base->execute(new_arguments, nested_result_type, new_arguments[0].column->size(), dry_run)->convertToFullColumnIfConst();
+        ColumnPtr nested_result;
+        DataTypePtr nested_result_type;
+        try
+        {
+            auto func_base = function_overload_resolver->build(new_arguments);
+            nested_result_type = func_base->getResultType();
+            nested_result = func_base->execute(new_arguments, nested_result_type, new_arguments[0].column->size(), dry_run)
+                                ->convertToFullColumnIfConst();
+        }
+        catch (const Exception & e)
+        {
+            /// If function execution fails for this variant type due to type mismatch,
+            /// return a column filled with NULLs. Only catch type-related errors.
+            if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT || e.code() == ErrorCodes::TYPE_MISMATCH
+                || e.code() == ErrorCodes::CANNOT_CONVERT_TYPE || e.code() == ErrorCodes::NO_COMMON_TYPE)
+            {
+                auto res = result_type->createColumn();
+                res->insertManyDefaults(variant_column.size());
+                return res;
+            }
+            else
+            {
+                /// Re-throw other exceptions
+                throw;
+            }
+        }
 
         /// If result is Nullable(Nothing), just return column filled with NULLs.
         if (nested_result_type->onlyNull())
@@ -445,59 +450,58 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         {
             auto func_base = function_overload_resolver->build(variants_arguments[i]);
             auto nested_result_type = func_base->getResultType();
-            auto nested_result = func_base->execute(variants_arguments[i], nested_result_type, variants_arguments[i][0].column->size(), dry_run)
-                                     ->convertToFullColumnIfConst();
+            auto nested_result
+                = func_base->execute(variants_arguments[i], nested_result_type, variants_arguments[i][0].column->size(), dry_run)
+                      ->convertToFullColumnIfConst();
 
             variants_result_types.push_back(nested_result_type);
 
-        /// Append nullptr in case of only NULL values, we will insert NULL for rows of this selector.
-        if (nested_result_type->onlyNull())
-        {
-            variants_results.emplace_back();
-        }
-        /// If the result of the function is not Variant, it means that this function returns the same
-        /// type for all argument types (or similar types like FixedString or String).
-        /// In this case we return Nullable of this type (because Variant can contain NULLs).
-        else if (!isVariant(result_type))
-        {
-            /// If return types are not the same, they must be convertible to each other (like FixedString/String).
-            if (!removeNullable(result_type)->equals(*removeNullable(nested_result_type)))
+            /// Append nullptr in case of only NULL values, we will insert NULL for rows of this selector.
+            if (nested_result_type->onlyNull())
             {
-                try
+                variants_results.emplace_back();
+            }
+            /// If the result of the function is not Variant, it means that this function returns the same
+            /// type for all argument types (or similar types like FixedString or String).
+            /// In this case we return Nullable of this type (because Variant can contain NULLs).
+            else if (!isVariant(result_type))
+            {
+                /// If return types are not the same, they must be convertible to each other (like FixedString/String).
+                if (!removeNullable(result_type)->equals(*removeNullable(nested_result_type)))
                 {
-                    variants_results.push_back(castColumn(
-                        ColumnWithTypeAndName{makeNullableSafe(nested_result), makeNullableSafe(nested_result_type), ""}, result_type));
+                    try
+                    {
+                        variants_results.push_back(castColumn(
+                            ColumnWithTypeAndName{makeNullableSafe(nested_result), makeNullableSafe(nested_result_type), ""}, result_type));
+                    }
+                    catch (const Exception & e)
+                    {
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
+                            getName(),
+                            result_type->getName(),
+                            nested_result_type->getName(),
+                            e.message());
+                    }
                 }
-                catch (const Exception & e)
+                else
                 {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
-                        getName(),
-                        result_type->getName(),
-                        nested_result_type->getName(),
-                        e.message());
+                    variants_results.push_back(makeNullableSafe(nested_result));
                 }
             }
+            /// Result is Variant - keep the individual result columns, we'll build Variant manually
             else
             {
-                variants_results.push_back(makeNullableSafe(nested_result));
+                variants_results.push_back(nested_result);
             }
-        }
-        /// Result is Variant - keep the individual result columns, we'll build Variant manually
-        else
-        {
-            variants_results.push_back(nested_result);
-        }
         }
         catch (const Exception & e)
         {
             /// If function execution fails for this variant type due to type mismatch,
             /// treat those rows as NULL/not matching. Only catch type-related errors.
-            if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT ||
-                e.code() == ErrorCodes::TYPE_MISMATCH ||
-                e.code() == ErrorCodes::CANNOT_CONVERT_TYPE ||
-                e.code() == ErrorCodes::NO_COMMON_TYPE)
+            if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT || e.code() == ErrorCodes::TYPE_MISMATCH
+                || e.code() == ErrorCodes::CANNOT_CONVERT_TYPE || e.code() == ErrorCodes::NO_COMMON_TYPE)
             {
                 variants_result_types.push_back(nullptr);
                 variants_results.emplace_back();
@@ -700,10 +704,8 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
             /// If this combination of types is incompatible (e.g., Array(UInt32) vs UInt64),
             /// skip this alternative and treat it as if it doesn't participate in the result type.
             /// Only catch type-related errors.
-            if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT ||
-                e.code() == ErrorCodes::TYPE_MISMATCH ||
-                e.code() == ErrorCodes::CANNOT_CONVERT_TYPE ||
-                e.code() == ErrorCodes::NO_COMMON_TYPE)
+            if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT || e.code() == ErrorCodes::TYPE_MISMATCH
+                || e.code() == ErrorCodes::CANNOT_CONVERT_TYPE || e.code() == ErrorCodes::NO_COMMON_TYPE)
             {
                 /// Don't add this result type - it will be skipped
                 continue;
@@ -718,7 +720,8 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
 
     /// If no valid result types were found, all alternatives are incompatible
     if (result_types.empty())
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Cannot build function {} - all variant alternatives are incompatible with other arguments",
             function_overload_resolver->getName());
 
