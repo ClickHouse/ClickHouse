@@ -272,29 +272,6 @@ ColumnPtr deserializeTokensFrontCoding(ReadBuffer & istr, size_t num_tokens)
     return tokens_column;
 }
 
-DictionarySparseIndexPtr deserializeSparseIndex(ReadBuffer & istr, const MergeTreeIndexDeserializationState & state)
-{
-    /// Either retrieves a text index header from cache or from disk when cache is disabled.
-    const auto load_sparse_index = [&]
-    {
-        ProfileEvents::increment(ProfileEvents::TextIndexReadSparseIndexBlocks);
-
-        size_t num_sparse_index_tokens;
-        readVarUInt(num_sparse_index_tokens, istr);
-
-        auto tokens = deserializeTokensRaw(istr, num_sparse_index_tokens);
-        auto offsets = ColumnUInt64::create();
-
-        SerializationNumber<UInt64> serialization_number;
-        serialization_number.deserializeBinaryBulk(*offsets, istr, 0, num_sparse_index_tokens, 0.0);
-        return std::make_shared<DictionarySparseIndex>(std::move(tokens), std::move(offsets));
-    };
-
-    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
-    auto hash = TextIndexHeaderCache::hash(state.part.getDataPartStorage().getFullPath(), state.index.getFileName());
-    return condition_text.headerCache()->getOrSet(hash, load_sparse_index);
-}
-
 }
 
 void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state)
@@ -308,77 +285,23 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     if (!index_stream || !dictionary_stream || !postings_stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be deserialized with 3 streams: index, dictionary, postings. One of the streams is missing");
 
-    sparse_index = deserializeSparseIndex(*index_stream->getDataBuffer(), state);
+    readSparseIndex(*index_stream, state);
     analyzeDictionary(*dictionary_stream, state);
     readPostingsForRareTokens(*postings_stream, state);
 }
 
-DictionaryBlock MergeTreeIndexGranuleText::deserializeDictionaryBlock(ReadBuffer & istr)
+void MergeTreeIndexGranuleText::readSparseIndex(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state)
 {
-    ProfileEvents::increment(ProfileEvents::TextIndexReadDictionaryBlocks);
-
-    UInt64 tokens_format;
-    readVarUInt(tokens_format, istr);
-
-    size_t num_tokens = 0;
-    readVarUInt(num_tokens, istr);
-
-    ColumnPtr tokens_column;
-    switch (tokens_format)
+    /// Either retrieves a text index header from cache or from disk when cache is disabled.
+    const auto load_sparse_index = [&]
     {
-        case static_cast<UInt64>(TextIndexSerialization::TokensFormat::RawStrings):
-            tokens_column = deserializeTokensRaw(istr, num_tokens);
-            break;
-        case static_cast<UInt64>(TextIndexSerialization::TokensFormat::FrontCodedStrings):
-            tokens_column = deserializeTokensFrontCoding(istr, num_tokens);
-            break;
-        default:
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown tokens serialization format ({}) in dictionary block", tokens_format);
-    }
+        auto index = TextIndexSerialization::deserializeSparseIndex(*stream.getDataBuffer());
+        return std::make_shared<DictionarySparseIndex>(std::move(index));
+    };
 
-    std::vector<TokenPostingsInfo> token_infos;
-    token_infos.reserve(num_tokens);
-    using enum PostingsSerialization::Flags;
-
-    for (size_t i = 0; i < num_tokens; ++i)
-    {
-        TokenPostingsInfo info;
-
-        readVarUInt(info.header, istr);
-        readVarUInt(info.cardinality, istr);
-
-        if (info.header & EmbeddedPostings)
-        {
-            auto postings = PostingsSerialization::deserialize(istr, info.header, info.cardinality);
-            info.offsets.emplace_back(0);
-            info.ranges.emplace_back(postings->minimum(), postings->maximum());
-            info.embedded_postings = std::move(postings);
-        }
-        else
-        {
-            UInt64 num_postings_blocks = 1;
-
-            if (!(info.header & SingleBlock))
-                readVarUInt(num_postings_blocks, istr);
-
-            for (size_t j = 0; j < num_postings_blocks; ++j)
-            {
-                UInt64 offset_in_file;
-                RowsRange rows_range;
-
-                readVarUInt(offset_in_file, istr);
-                readVarUInt(rows_range.begin, istr);
-                readVarUInt(rows_range.end, istr);
-
-                info.offsets.emplace_back(offset_in_file);
-                info.ranges.emplace_back(std::move(rows_range));
-            }
-        }
-
-        token_infos.emplace_back(std::move(info));
-    }
-
-    return DictionaryBlock{std::move(tokens_column), std::move(token_infos)};
+    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
+    auto hash = TextIndexHeaderCache::hash(state.part.getDataPartStorage().getFullPath(), state.index.getFileName());
+    sparse_index = condition_text.headerCache()->getOrSet(hash, load_sparse_index);
 }
 
 void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state)
@@ -410,7 +333,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
         {
             UInt64 offset_in_file = sparse_index->getOffsetInFile(block_id);
             stream.seekToMark({offset_in_file, 0});
-            return std::make_shared<TextIndexDictionaryBlockCacheEntry>(deserializeDictionaryBlock(*data_buffer));
+            return std::make_shared<TextIndexDictionaryBlockCacheEntry>(TextIndexSerialization::deserializeDictionaryBlock(*data_buffer));
         };
 
         auto hash = TextIndexDictionaryBlockCache::hash(state.part.getDataPartStorage().getFullPath(), state.index.getFileName(), block_id);
@@ -463,15 +386,19 @@ PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
 
 void MergeTreeIndexGranuleText::readPostingsForRareTokens(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state)
 {
+    using enum PostingsSerialization::Flags;
+
     for (const auto & [token, token_info] : remaining_tokens)
     {
-        if (token_info.embedded_postings)
+        if (token_info.header & EmbeddedPostings)
         {
+            chassert(token_info.embedded_postings);
             rare_tokens_postings.emplace(token, token_info.embedded_postings);
             ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
         }
-        else if (token_info.offsets.size() == 1)
+        else if (token_info.header & SingleBlock)
         {
+            chassert(token_info.offsets.size() == 1);
             rare_tokens_postings.emplace(token, readPostingsBlock(stream, state, token_info, 0));
         }
     }
@@ -666,7 +593,7 @@ void serializeTokensFrontCoding(
 
 /// Split postings into smaller blocks without copying the data.
 /// We use the fact that the Roaring Bitmap is split into small
-/// containers that are are stored in contiguous memory and sorted
+/// containers that are stored in contiguous memory and sorted
 /// by the key. Therefore, to create a view to the smaller bitmap,
 /// we need only to adjust the pointers to the containers.
 std::vector<roaring::api::roaring_bitmap_t> splitPostings(const roaring::api::roaring_bitmap_t & postings, size_t block_size)
@@ -697,7 +624,7 @@ std::vector<roaring::api::roaring_bitmap_t> splitPostings(const roaring::api::ro
         total_cardinality += container_cardinality;
 
         /// The result block size may exceed the threshold, but that's ok,
-        /// since sizes of the containers are much smaller than the target block size.
+        /// since sizes of containers are much smaller than the target block size.
         if (total_cardinality >= block_size)
         {
             result.emplace_back(create_bitmap_view(begin_index, i - begin_index + 1));
@@ -706,7 +633,9 @@ std::vector<roaring::api::roaring_bitmap_t> splitPostings(const roaring::api::ro
         }
     }
 
-    result.emplace_back(create_bitmap_view(begin_index, container.size - begin_index));
+    if (begin_index < static_cast<size_t>(container.size))
+        result.emplace_back(create_bitmap_view(begin_index, container.size - begin_index));
+
     return result;
 }
 
@@ -830,6 +759,91 @@ void TextIndexSerialization::serializeSparseIndex(const DictionarySparseIndex & 
     writeVarUInt(sparse_index.tokens->size(), ostr);
     serialization_string.serializeBinaryBulk(*sparse_index.tokens, ostr, 0, sparse_index.tokens->size());
     serialization_number.serializeBinaryBulk(*sparse_index.offsets_in_file, ostr, 0, sparse_index.offsets_in_file->size());
+}
+
+DictionarySparseIndex TextIndexSerialization::deserializeSparseIndex(ReadBuffer & istr)
+{
+    ProfileEvents::increment(ProfileEvents::TextIndexReadSparseIndexBlocks);
+
+    size_t num_sparse_index_tokens;
+    readVarUInt(num_sparse_index_tokens, istr);
+
+    auto tokens = deserializeTokensRaw(istr, num_sparse_index_tokens);
+    auto offsets = ColumnUInt64::create();
+
+    SerializationNumber<UInt64> serialization_number;
+    serialization_number.deserializeBinaryBulk(*offsets, istr, 0, num_sparse_index_tokens, 0.0);
+    return DictionarySparseIndex(std::move(tokens), std::move(offsets));
+}
+
+TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr)
+{
+    using enum PostingsSerialization::Flags;
+    TokenPostingsInfo info;
+
+    readVarUInt(info.header, istr);
+    readVarUInt(info.cardinality, istr);
+
+    if (info.header & EmbeddedPostings)
+    {
+        auto postings = PostingsSerialization::deserialize(istr, info.header, info.cardinality);
+        info.offsets.emplace_back(0);
+        info.ranges.emplace_back(postings->minimum(), postings->maximum());
+        info.embedded_postings = std::move(postings);
+    }
+    else
+    {
+        UInt64 num_postings_blocks = 1;
+
+        if (!(info.header & SingleBlock))
+            readVarUInt(num_postings_blocks, istr);
+
+        for (size_t j = 0; j < num_postings_blocks; ++j)
+        {
+            UInt64 offset_in_file;
+            RowsRange rows_range;
+
+            readVarUInt(offset_in_file, istr);
+            readVarUInt(rows_range.begin, istr);
+            readVarUInt(rows_range.end, istr);
+
+            info.offsets.emplace_back(offset_in_file);
+            info.ranges.emplace_back(std::move(rows_range));
+        }
+    }
+    return info;
+}
+
+DictionaryBlock TextIndexSerialization::deserializeDictionaryBlock(ReadBuffer & istr)
+{
+    ProfileEvents::increment(ProfileEvents::TextIndexReadDictionaryBlocks);
+
+    UInt64 tokens_format;
+    readVarUInt(tokens_format, istr);
+
+    size_t num_tokens = 0;
+    readVarUInt(num_tokens, istr);
+
+    ColumnPtr tokens_column;
+    switch (tokens_format)
+    {
+        case static_cast<UInt64>(TextIndexSerialization::TokensFormat::RawStrings):
+            tokens_column = deserializeTokensRaw(istr, num_tokens);
+            break;
+        case static_cast<UInt64>(TextIndexSerialization::TokensFormat::FrontCodedStrings):
+            tokens_column = deserializeTokensFrontCoding(istr, num_tokens);
+            break;
+        default:
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown tokens serialization format ({}) in dictionary block", tokens_format);
+    }
+
+    std::vector<TokenPostingsInfo> token_infos;
+    token_infos.reserve(num_tokens);
+
+    for (size_t i = 0; i < num_tokens; ++i)
+        token_infos.emplace_back(TextIndexSerialization::deserializeTokenInfo(istr));
+
+    return DictionaryBlock{std::move(tokens_column), std::move(token_infos)};
 }
 
 template <typename Stream>

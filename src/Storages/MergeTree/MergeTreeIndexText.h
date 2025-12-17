@@ -227,6 +227,10 @@ struct TextIndexSerialization
     static void serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format);
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
     static void serializeSparseIndex(const DictionarySparseIndex & sparse_index, WriteBuffer & ostr);
+
+    static DictionarySparseIndex deserializeSparseIndex(ReadBuffer & istr);
+    static TokenPostingsInfo deserializeTokenInfo(ReadBuffer & istr);
+    static DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr);
 };
 
 
@@ -243,7 +247,6 @@ public:
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
     void deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state) override;
-    static DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr);
 
     bool empty() const override { return sparse_index->empty(); }
     size_t memoryUsageBytes() const override;
@@ -264,6 +267,7 @@ public:
         size_t block_idx);
 
 private:
+    void readSparseIndex(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
     /// Reads dictionary blocks and analyzes them for tokens.
     void analyzeDictionary(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
     void readPostingsForRareTokens(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
