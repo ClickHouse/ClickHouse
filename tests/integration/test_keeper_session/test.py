@@ -227,14 +227,14 @@ def test_create2_stats_match_get_and_exists(started_cluster):
             "cversion",
             "aversion",
             "ephemeralOwner",
-            "dataLength",
             "numChildren",
             "pzxid",
         ):
             assert getattr(create_stat, attr) == getattr(get_stat, attr)
             assert getattr(create_stat, attr) == getattr(exists_stat, attr)
 
-        assert create_stat.dataLength == len(data)
+        assert get_stat.dataLength == len(data)
+        assert exists_stat.dataLength == len(data)
     finally:
         if node1_zk is not None:
             try:
