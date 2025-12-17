@@ -102,27 +102,27 @@ DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInf
 {
 }
 
-void PostingsSerialization::serialize(const roaring::api::roaring_bitmap_t & bitmap, WriteBuffer & ostr)
-{
-    size_t num_bytes = roaring::api::roaring_bitmap_portable_size_in_bytes(&bitmap);
-    writeVarUInt(num_bytes, ostr);
-
-    std::vector<char> memory(num_bytes);
-    roaring::api::roaring_bitmap_portable_serialize(&bitmap, memory.data());
-    ostr.write(memory.data(), num_bytes);
-}
-
-void PostingsSerialization::serialize(PostingList & postings, UInt64 header, WriteBuffer & ostr)
+void PostingsSerialization::serialize(const roaring::api::roaring_bitmap_t & postings, UInt64 header, WriteBuffer & ostr)
 {
     if (header & RawPostings)
     {
-        for (const auto row_id : postings)
-            writeVarUInt(row_id, ostr);
+        roaring::api::roaring_uint32_iterator_t it;
+        roaring_iterator_init(&postings, &it);
+
+        while (it.has_value)
+        {
+            writeVarUInt(it.current_value, ostr);
+            roaring::api::roaring_uint32_iterator_advance(&it);
+        }
     }
     else
     {
-        postings.runOptimize();
-        serialize(postings.roaring, ostr);
+        size_t num_bytes = roaring::api::roaring_bitmap_portable_size_in_bytes(&postings);
+        writeVarUInt(num_bytes, ostr);
+
+        std::vector<char> memory(num_bytes);
+        roaring::api::roaring_bitmap_portable_serialize(&postings, memory.data());
+        ostr.write(memory.data(), num_bytes);
     }
 }
 
@@ -130,7 +130,8 @@ void PostingsSerialization::serialize(PostingListBuilder & postings, UInt64 head
 {
     if (postings.isLarge())
     {
-        serialize(postings.getLarge(), header, ostr);
+        postings.getLarge().runOptimize();
+        serialize(postings.getLarge().roaring, header, ostr);
     }
     else
     {
@@ -480,7 +481,8 @@ size_t MergeTreeIndexGranuleText::memoryUsageBytes() const
 {
     return sizeof(*this)
         + sparse_index->memoryUsageBytes()
-        + remaining_tokens.capacity() * sizeof(*remaining_tokens.begin());
+        + remaining_tokens.capacity() * sizeof(*remaining_tokens.begin())
+        + rare_tokens_postings.capacity() * sizeof(*rare_tokens_postings.begin());
 }
 
 bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query) const
@@ -513,7 +515,7 @@ bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query)
         /// We read postings only for tokens that has one block.
         /// Otherwise, assume that the token is not useful
         /// for filtering and is present in all granules.
-        auto postings = getPostingsForToken(token);
+        auto postings = getPostingsForRareToken(token);
         if (!postings)
             return true;
 
@@ -563,7 +565,7 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery &
         /// We read postings only for tokens that has one block.
         /// Otherwise, assume that the token is not useful
         /// for filtering and is present in all granules.
-        if (auto postings = getPostingsForToken(token))
+        if (auto postings = getPostingsForRareToken(token))
         {
             intersection &= *postings;
             if (intersection.cardinality() == 0)
@@ -574,7 +576,7 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery &
     return true;
 }
 
-PostingListPtr MergeTreeIndexGranuleText::getPostingsForToken(std::string_view token) const
+PostingListPtr MergeTreeIndexGranuleText::getPostingsForRareToken(std::string_view token) const
 {
     auto it = rare_tokens_postings.find(token);
     return it == rare_tokens_postings.end() ? nullptr : it->second;
@@ -747,7 +749,6 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
     {
         info.header |= RawPostings;
         info.header |= EmbeddedPostings;
-        info.header |= SingleBlock;
         return info;
     }
     else if (info.cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
@@ -779,7 +780,7 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
 
             info.offsets.emplace_back(postings_stream.plain_hashing.count());
             info.ranges.emplace_back(roaring::api::roaring_bitmap_minimum(&block), roaring::api::roaring_bitmap_maximum(&block));
-            PostingsSerialization::serialize(block, postings_stream.plain_hashing);
+            PostingsSerialization::serialize(block, info.header, postings_stream.plain_hashing);
         }
     }
 
@@ -804,17 +805,18 @@ void TextIndexSerialization::serializeTokenInfo(WriteBuffer & ostr, const TokenP
     writeVarUInt(token_info.header, ostr);
     writeVarUInt(token_info.cardinality, ostr);
 
+    /// Embedded postings will be serialized later into the dictionary block.
     if (token_info.header & EmbeddedPostings)
         return;
 
     if (!(token_info.header & SingleBlock))
         writeVarUInt(token_info.offsets.size(), ostr);
 
-    for (size_t j = 0; j < token_info.offsets.size(); ++j)
+    for (size_t i = 0; i < token_info.offsets.size(); ++i)
     {
-        writeVarUInt(token_info.offsets[j], ostr);
-        writeVarUInt(token_info.ranges[j].begin, ostr);
-        writeVarUInt(token_info.ranges[j].end, ostr);
+        writeVarUInt(token_info.offsets[i], ostr);
+        writeVarUInt(token_info.ranges[i].begin, ostr);
+        writeVarUInt(token_info.ranges[i].end, ostr);
     }
 }
 
@@ -941,7 +943,7 @@ MergeTreeIndexTextGranuleBuilder::MergeTreeIndexTextGranuleBuilder(
 }
 
 PostingListBuilder::PostingListBuilder(PostingList * posting_list)
-    : large(posting_list, roaring::BulkContext())
+    : large{posting_list, roaring::BulkContext()}
     , small_size(max_small_size)
 {
 }
@@ -963,17 +965,17 @@ void PostingListBuilder::add(UInt32 value, PostingListsHolder & postings_holder)
         if (small_size == max_small_size)
         {
             auto small_copy = std::move(small);
-            large.first = &postings_holder.emplace_back();
-            large.second = roaring::BulkContext();
+            large.postings = &postings_holder.emplace_back();
+            large.context = roaring::BulkContext();
 
             for (size_t i = 0; i < max_small_size; ++i)
-                large.first->addBulk(large.second, small_copy[i]);
+                large.postings->addBulk(large.context, small_copy[i]);
         }
     }
     else
     {
         /// Use addBulk to optimize consecutive insertions into the posting list.
-        large.first->addBulk(large.second, value);
+        large.postings->addBulk(large.context, value);
     }
 }
 

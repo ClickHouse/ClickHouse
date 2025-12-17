@@ -201,7 +201,7 @@ void MergeTreeReaderTextIndex::initializePostingStreams()
 
     for (const auto & [token, token_info] : remaining_tokens)
     {
-        if (granule_text.getPostingsForToken(token) || !useful_tokens.contains(token))
+        if (granule_text.getPostingsForRareToken(token) || !useful_tokens.contains(token))
             continue;
 
         large_postings_streams.emplace(token, make_stream());
@@ -449,7 +449,7 @@ PostingsMap MergeTreeReaderTextIndex::readPostingsIfNeeded(size_t mark)
 std::vector<PostingListPtr> MergeTreeReaderTextIndex::readPostingsBlocksForToken(std::string_view token, const TokenPostingsInfo & token_info, const RowsRange & range)
 {
     auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
-    auto read_postings = granule_text.getPostingsForToken(token);
+    auto read_postings = granule_text.getPostingsForRareToken(token);
 
     if (read_postings)
         return {read_postings};

@@ -27,7 +27,7 @@ namespace DB
   *
   * A text index is a skip index that is always calculated on the whole and has infinite granularity.
   * Granules are aggregated the same way as for other skip indexes
-  * Unlike of other skip indexes, text index can merged instead of rebuilding on merge of the data parts.
+  * Unlike other skip indexes, text index can be merged instead of rebuilt on merge of the data parts.
   *
   * Text index has three streams (files with data and marks for them):
   * - File with index granules (.idx)
@@ -55,7 +55,7 @@ namespace DB
   * - A binary serialized ColumnVector with offsets to dictionary blocks (see SerializationNumber::serializeBinaryBulk)
   *
   * Dictionary file consists of blocks. The format of dictionary block:
-  * - Format of tokens (VarUInt). Currently only RawStrings format is supported.
+  * - Format of tokens (VarUInt). Currently raw and front-coded string formats are supported.
   * - Number of tokens (VarUInt) in block.
   * - A binary serialized ColumnString with tokens.
   * - Information about posting lists for each token:
@@ -65,7 +65,7 @@ namespace DB
   *       b) Otherwise, number of blocks of the posting list (VarUInt), if SingleBlock flag is not set.
   *       c) For each posting list block, offset in file to the block and min-max range of the block. All numbers are encoded as VarUInt.
   *
-  * If size of posting list is less than a threshold, it is serialized as raw values encoded as VarUInt.
+  * If size of posting list is less than a threshold, it is serialized as raw values encoded as VarUInts.
   * Otherwise, the format is:
   * - Number of uncompressed bytes of the posting list (VarUInt).
   * - A binary serialized Roaring Bitmap (see Roaring::write and Roaring::read)
@@ -85,12 +85,10 @@ using PostingListPtr = std::shared_ptr<PostingList>;
 /// A struct for building a posting list with optimization for infrequent tokens.
 /// Tokens with cardinality less than max_small_size are stored in a raw array allocated on the stack.
 /// It avoids allocations of Roaring Bitmap for infrequent tokens without increasing the memory usage.
-
 struct PostingListBuilder
 {
 public:
     using PostingListsHolder = std::list<PostingList>;
-    using PostingListWithContext = std::pair<PostingList *, roaring::BulkContext>;
 
     /// sizeof(PostingListWithContext) == 24 bytes.
     /// Use small container of the same size to reuse this memory.
@@ -105,18 +103,24 @@ public:
     /// posting list is created in the postings_holder and reference to it is saved.
     void add(UInt32 value, PostingListsHolder & postings_holder);
 
-    size_t size() const { return isSmall() ? small_size : large.first->cardinality(); }
+    size_t size() const { return isSmall() ? small_size : large.postings->cardinality(); }
     bool isEmpty() const { return size() == 0; }
     bool isSmall() const { return small_size < max_small_size; }
     bool isLarge() const { return !isSmall(); }
-    UInt32 minimum() const { return isSmall() ? small[0] : large.first->minimum(); }
-    UInt32 maximum() const { return isSmall() ? small[small_size - 1] : large.first->maximum(); }
+    UInt32 minimum() const { return isSmall() ? small[0] : large.postings->minimum(); }
+    UInt32 maximum() const { return isSmall() ? small[small_size - 1] : large.postings->maximum(); }
 
     SmallContainer & getSmall() { return small; }
     const SmallContainer & getSmall() const { return small; }
-    PostingList & getLarge() const { return *large.first; }
+    PostingList & getLarge() const { return *large.postings; }
 
 private:
+    struct PostingListWithContext
+    {
+        PostingList * postings;
+        roaring::BulkContext context;
+    };
+
     union
     {
         SmallContainer small;
@@ -135,17 +139,17 @@ struct PostingsSerialization
     enum Flags : UInt64
     {
         /// If set, the posting list is serialized as raw UInt32 values encoded as VarUInt.
-        /// The minimal size of serialized Roaring Bitmap is 48 bytes, it doesn't make sense to use it for cardinality less than 16.
+        /// The minimal size of serialized Roaring Bitmap is 48 bytes,
+        /// it doesn't make sense to use it for cardinality less than MAX_CARDINALITY_FOR_RAW_POSTINGS.
         RawPostings = 1ULL << 0,
         /// If set, the posting list is embedded into the dictionary block to avoid additional random reads from disk.
         EmbeddedPostings = 1ULL << 1,
-        /// If set, the posting list is serialized as a single block.
+        /// If unset, the number of blocks is stored as an additional VarUInt.
         SingleBlock = 1ULL << 2,
     };
 
     static void serialize(PostingListBuilder & postings, UInt64 header, WriteBuffer & ostr);
-    static void serialize(PostingList & postings, UInt64 header, WriteBuffer & ostr);
-    static void serialize(const roaring::api::roaring_bitmap_t & bitmap, WriteBuffer & ostr);
+    static void serialize(const roaring::api::roaring_bitmap_t & postings, UInt64 header, WriteBuffer & ostr);
     static PostingListPtr deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality);
 };
 
@@ -249,7 +253,7 @@ public:
     bool hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const;
 
     const TokenToPostingsInfosMap & getRemainingTokens() const { return remaining_tokens; }
-    PostingListPtr getPostingsForToken(std::string_view token) const;
+    PostingListPtr getPostingsForRareToken(std::string_view token) const;
     void setCurrentRange(RowsRange range) { current_range = std::move(range); }
     void resetAfterAnalysis();
 

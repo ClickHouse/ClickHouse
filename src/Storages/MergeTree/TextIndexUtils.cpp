@@ -358,7 +358,10 @@ void MergeTextIndexesTask::flushDictionaryBlock()
         TextIndexSerialization::serializeTokenInfo(ostr, output_infos[i]);
 
         if (output_infos[i].header & PostingsSerialization::Flags::EmbeddedPostings)
-            PostingsSerialization::serialize(*output_infos[i].embedded_postings, output_infos[i].header, ostr);
+        {
+            const auto & roaring_bitmap = output_infos[i].embedded_postings->roaring;
+            PostingsSerialization::serialize(roaring_bitmap, output_infos[i].header, ostr);
+        }
     }
 
     output_tokens = ColumnString::create();
