@@ -2731,8 +2731,16 @@ CONV_FN(FetchStatement, fet)
     ExprToString(ret, fet.row_count());
     ret += " ";
     ret += RowsKeyword_Name(fet.rows()).substr(4);
-    ret += " ";
-    ret += fet.only() ? "ONLY" : "WITH TIES";
+}
+
+void LimitStatementToString(String & ret, const bool has_offset, const LimitStatement & lim)
+{
+    ret += "LIMIT ";
+    ExprToString(ret, lim.limit());
+    if (!has_offset && lim.with_ties())
+    {
+        ret += " WITH TIES";
+    }
 }
 
 void OffsetStatementToString(String & ret, const bool has_limit, const OffsetStatement & off)
@@ -2749,6 +2757,12 @@ void OffsetStatementToString(String & ret, const bool has_limit, const OffsetSta
     {
         ret += " ";
         FetchStatementToString(ret, off.fetch());
+        ret += " ";
+        ret += off.with_ties() ? "WITH TIES" : "ONLY";
+    }
+    else if (has_limit && off.comma() && off.with_ties())
+    {
+        ret += " WITH TIES";
     }
 }
 
@@ -2832,8 +2846,8 @@ CONV_FN(SelectStatementCore, ssc)
     }
     if (ssc.has_limit())
     {
-        ret += " LIMIT ";
-        ExprToString(ret, ssc.limit());
+        ret += " ";
+        LimitStatementToString(ret, ssc.has_offset(), ssc.limit());
     }
     if (ssc.has_offset() && (ssc.has_limit() || !ssc.has_limit_by()))
     {

@@ -198,7 +198,7 @@ length(nfc_normalized);
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation_nfc = {description_nfc, syntax_nfc, arguments_nfc, returned_value_nfc, examples_nfc, introduced_in, category};
+    FunctionDocumentation documentation_nfc = {description_nfc, syntax_nfc, arguments_nfc, {}, returned_value_nfc, examples_nfc, introduced_in, category};
 
     FunctionDocumentation::Description description_nfd = R"(
 Normalizes a UTF-8 string according to the [NFD normalization form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms).
@@ -225,7 +225,7 @@ SELECT
         )"
     }
     };
-    FunctionDocumentation documentation_nfd = {description_nfd, syntax_nfd, arguments_nfd, returned_value_nfd, examples_nfd, introduced_in, category};
+    FunctionDocumentation documentation_nfd = {description_nfd, syntax_nfd, arguments_nfd, {}, returned_value_nfd, examples_nfd, introduced_in, category};
 
     FunctionDocumentation::Description description_nfkc = R"(
 Normalizes a UTF-8 string according to the [NFKC normalization form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms).
@@ -250,7 +250,7 @@ SELECT
     )"
     }
     };
-    FunctionDocumentation documentation_nfkc = {description_nfkc, syntax_nfkc, arguments_nfkc, returned_value_nfkc, examples_nfkc, introduced_in, category};
+    FunctionDocumentation documentation_nfkc = {description_nfkc, syntax_nfkc, arguments_nfkc, {}, returned_value_nfkc, examples_nfkc, introduced_in, category};
 
     FunctionDocumentation::Description description_nfkd = R"(
 Normalizes a UTF-8 string according to the [NFKD normalization form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms).
@@ -275,7 +275,7 @@ SELECT
         )"
     }
     };
-    FunctionDocumentation documentation_nfkd = {description_nfkd, syntax_nfkd, arguments_nfkd, returned_value_nfkd, examples_nfkd, introduced_in, category};
+    FunctionDocumentation documentation_nfkd = {description_nfkd, syntax_nfkd, arguments_nfkd, {}, returned_value_nfkd, examples_nfkd, introduced_in, category};
 
     factory.registerFunction<FunctionNormalizeUTF8NFC>(documentation_nfc);
     factory.registerFunction<FunctionNormalizeUTF8NFD>(documentation_nfd);

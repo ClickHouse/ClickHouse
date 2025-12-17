@@ -215,7 +215,7 @@ def test_refreshable_mv_in_replicated_db(started_cluster, cleanup):
     for i in range(20):
         maybe_empty = " empty" if randint(0, 2) == 0 else ""
         nodes[randint(0, 1)].query(
-            f"create materialized view re.g refresh every 1 second (x Int64) engine ReplicatedMergeTree order by x{maybe_empty} as select 1 as x"
+            f"create materialized view if not exists re.g refresh every 1 second (x Int64) engine ReplicatedMergeTree order by x{maybe_empty} as select 1 as x"
         )
         r = randint(0, 5)
         if r == 0:
@@ -224,10 +224,11 @@ def test_refreshable_mv_in_replicated_db(started_cluster, cleanup):
             time.sleep(randint(0, 100) / 1000)
         else:
             time.sleep(randint(900, 1100) / 1000)
-        nodes[randint(0, 1)].query("drop table re.g")
+        nodes[randint(0, 1)].query("drop table if exists re.g")
 
     # Check that inner and temp tables were dropped.
     for node in nodes:
+        node.query("drop table if exists re.g")
         assert node.query("show tables from re") == ""
 
 
