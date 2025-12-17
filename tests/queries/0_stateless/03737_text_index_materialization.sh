@@ -9,7 +9,7 @@ function run_test()
     $CLICKHOUSE_CLIENT -q "
         SELECT secondary_indices_compressed_bytes > 0
         FROM system.parts
-        WHERE table = 't_text_index_materialization' AND active
+        WHERE database = currentDatabase() AND table = 't_text_index_materialization' AND active
         ORDER BY name
     "
 
