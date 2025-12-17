@@ -797,7 +797,7 @@ bool SQLTable::areInsertsAppends() const
 {
     return teng == TableEngineValues::MergeTree || isLogFamily() || isMemoryEngine() || isMySQLEngine() || isPostgreSQLEngine()
         || isSQLiteEngine() || isMongoDBEngine() || isRedisEngine() || isHudiEngine() || isAnyDeltaLakeEngine() || isAnyIcebergEngine()
-        || isDictionaryEngine() || isKeeperMapEngine();
+        || isDictionaryEngine();
 }
 
 bool SQLView::supportsFinal() const
