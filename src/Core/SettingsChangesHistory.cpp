@@ -81,6 +81,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_positional_arguments_for_projections", true, false, "New setting to control positional arguments in projections."},
             {"insert_select_deduplicate", Field{"auto"}, Field{"auto"}, "New setting"},
             {"output_format_pretty_named_tuples_as_json", false, true, "New setting to control whether named tuples in Pretty format are output as JSON objects"},
+            {"opentelemetry_keeper_spans_probability", 0.0, 0.0, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {

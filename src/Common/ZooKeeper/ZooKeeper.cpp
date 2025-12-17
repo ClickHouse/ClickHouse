@@ -1,9 +1,12 @@
+#include <Common/OpenTelemetryTracingContext.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/TestKeeper.h>
 
+#include <Core/Settings.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -13,12 +16,14 @@
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
+#include <Common/thread_local_rng.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerUUID.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 #include <base/getFQDNOrHostName.h>
 #include <base/sort.h>
+#include <base/scope_guard.h>
 
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/DNS.h>
@@ -26,6 +31,8 @@
 
 #include <chrono>
 #include <functional>
+#include <optional>
+#include <random>
 #include <ranges>
 #include <vector>
 
@@ -44,11 +51,63 @@ namespace ErrorCodes
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
 }
+
+namespace Setting
+{
+    extern const SettingsDouble opentelemetry_keeper_spans_probability;
+}
 }
 
 
 namespace zkutil
 {
+
+namespace
+{
+    bool shouldCreateOpenTelemetrySpans(size_t payload_size_bytes = 0, size_t num_requests = 0)
+    {
+        const auto & context = DB::OpenTelemetry::CurrentContext();
+        if (!context.isTraceEnabled())
+            return false;
+
+        if (!(context.trace_flags & DB::OpenTelemetry::TRACE_FLAG_SAMPLED))
+            return false;
+
+        const double sample_probability = [&] -> double
+        {
+            if (const auto global_context = DB::Context::getGlobalContextInstance())
+            {
+                const auto & settings = global_context->getSettingsRef();
+                if (auto opentelemetry_keeper_spans_probability = settings[DB::Setting::opentelemetry_keeper_spans_probability]; opentelemetry_keeper_spans_probability > 0.0)
+                    return opentelemetry_keeper_spans_probability.value;
+            }
+
+            if (payload_size_bytes < 10'000 && num_requests < 1)
+                return 1.0 / 10000;
+            if (payload_size_bytes < 100'000 && num_requests < 10)
+                return 1.0 / 1000;
+            if (payload_size_bytes < 1'000'000 && num_requests < 100)
+                return 1.0 / 100;
+            return 1.0 / 10;
+        }();
+        std::bernoulli_distribution should_sample(sample_probability);
+        return should_sample(thread_local_rng);
+    }
+
+    void maybeSetSpanStatus(std::optional<DB::OpenTelemetry::SpanHolder> & maybe_span, Coordination::Error code)
+    {
+        if (!maybe_span)
+            return;
+
+        if (code == Coordination::Error::ZOK)
+            maybe_span->status_code = DB::OpenTelemetry::SpanStatus::OK;
+        else
+        {
+            maybe_span->status_code = DB::OpenTelemetry::SpanStatus::ERROR;
+            maybe_span->status_message = std::string(Coordination::errorMessage(code));
+        }
+    }
+}
 
 const int CreateMode::Persistent = 0;
 const int CreateMode::Ephemeral = 1;
@@ -282,22 +341,38 @@ bool ZooKeeper::configChanged(const Poco::Util::AbstractConfiguration & config, 
     return args != new_args;
 }
 
-
 Coordination::Error ZooKeeper::getChildrenImpl(const std::string & path, Strings & res,
                                    Coordination::Stat * stat,
                                    Coordination::WatchCallbackPtrOrEventPtr watch_callback,
                                    Coordination::ListRequestType list_request_type)
 {
+    std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
+    if (shouldCreateOpenTelemetrySpans())
+    {
+        maybe_span.emplace(
+            "zookeeper.list",
+            DB::OpenTelemetry::SpanKind::CLIENT,
+            std::unordered_map<String, String>{
+                {"zk.path", path},
+            }
+        );
+        DB::OpenTelemetry::SetTraceFlagInCurrentContext(DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS, true);
+    }
+
     auto future_result = asyncTryGetChildrenNoThrow(path, watch_callback, list_request_type);
 
     if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
     {
+        maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
         impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::List, path));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
 
     auto response = future_result.get();
     Coordination::Error code = response.error;
+
+    maybeSetSpanStatus(maybe_span, code);
+
     if (code == Coordination::Error::ZOK)
     {
         res = response.names;
@@ -348,16 +423,33 @@ Coordination::Error ZooKeeper::tryGetChildrenWatch(
 
 Coordination::Error ZooKeeper::createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created)
 {
+    std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
+    if (shouldCreateOpenTelemetrySpans(data.size()))
+    {
+        maybe_span.emplace(
+            "zookeeper.create",
+            DB::OpenTelemetry::SpanKind::CLIENT,
+            std::unordered_map<String, String>{
+                {"zk.path", path},
+                {"zk.data.size_bytes", std::to_string(data.size())},
+            }
+        );
+        DB::OpenTelemetry::SetTraceFlagInCurrentContext(DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS, true);
+    }
+
     auto future_result = asyncTryCreateNoThrow(path, data, mode);
 
     if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
     {
+        maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
         impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::Create, path));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
 
     auto response = future_result.get();
     Coordination::Error code = response.error;
+
+    maybeSetSpanStatus(maybe_span, code);
     if (code == Coordination::Error::ZOK)
         path_created = response.path_created;
     return code;
@@ -494,17 +586,34 @@ void ZooKeeper::checkExistsAndGetCreateAncestorsOps(const std::string & path, Co
 
 Coordination::Error ZooKeeper::removeImpl(const std::string & path, int32_t version)
 {
-    auto future_result = asyncTryRemoveNoThrow(path, version);
+    std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
+    if (shouldCreateOpenTelemetrySpans())
+    {
+        maybe_span.emplace(
+            "zookeeper.remove",
+            DB::OpenTelemetry::SpanKind::CLIENT,
+            std::unordered_map<String, String>{
+                {"zk.path", path},
+            }
+        );
+        DB::OpenTelemetry::SetTraceFlagInCurrentContext(DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS, true);
+    }
 
+    auto future_result = asyncTryRemoveNoThrow(path, version);
 
     if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
     {
+        maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
         impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::Remove, path));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
 
     auto response = future_result.get();
-    return response.error;
+    Coordination::Error code = response.error;
+
+    maybeSetSpanStatus(maybe_span, code);
+
+    return code;
 }
 
 void ZooKeeper::remove(const std::string & path, int32_t version)
@@ -525,16 +634,32 @@ Coordination::Error ZooKeeper::tryRemove(const std::string & path, int32_t versi
 
 Coordination::Error ZooKeeper::existsImpl(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallbackPtrOrEventPtr watch_callback)
 {
+    std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
+    if (shouldCreateOpenTelemetrySpans())
+    {
+        maybe_span.emplace(
+            "zookeeper.exists",
+            DB::OpenTelemetry::SpanKind::CLIENT,
+            std::unordered_map<String, String>{
+                {"zk.path", path},
+            }
+        );
+        DB::OpenTelemetry::SetTraceFlagInCurrentContext(DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS, true);
+    }
+
     auto future_result = asyncTryExistsNoThrow(path, watch_callback);
 
     if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
     {
+        maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
         impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::Exists, path));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
 
     auto response = future_result.get();
     Coordination::Error code = response.error;
+
+    maybeSetSpanStatus(maybe_span, code);
     if (code == Coordination::Error::ZOK && stat)
         *stat = response.stat;
 
@@ -569,16 +694,32 @@ bool ZooKeeper::existsWatch(const std::string & path, Coordination::Stat * stat,
 Coordination::Error ZooKeeper::getImpl(
     const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallbackPtrOrEventPtr watch_callback)
 {
+    std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
+    if (shouldCreateOpenTelemetrySpans())
+    {
+        maybe_span.emplace(
+            "zookeeper.get",
+            DB::OpenTelemetry::SpanKind::CLIENT,
+            std::unordered_map<String, String>{
+                {"zk.path", path},
+            }
+        );
+        DB::OpenTelemetry::SetTraceFlagInCurrentContext(DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS, true);
+    }
+
     auto future_result = asyncTryGetNoThrow(path, watch_callback);
 
     if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
     {
+        maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
         impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::Get, path));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
 
     auto response = future_result.get();
     Coordination::Error code = response.error;
+
+    maybeSetSpanStatus(maybe_span, code);
     if (code == Coordination::Error::ZOK)
     {
         res = response.data;
@@ -638,16 +779,33 @@ bool ZooKeeper::tryGetWatch(
 Coordination::Error ZooKeeper::setImpl(const std::string & path, const std::string & data,
                            int32_t version, Coordination::Stat * stat)
 {
+    std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
+    if (shouldCreateOpenTelemetrySpans(data.size()))
+    {
+        maybe_span.emplace(
+            "zookeeper.set",
+            DB::OpenTelemetry::SpanKind::CLIENT,
+            std::unordered_map<String, String>{
+                {"zk.path", path},
+                {"zk.data.size_bytes", std::to_string(data.size())},
+            }
+        );
+        DB::OpenTelemetry::SetTraceFlagInCurrentContext(DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS, true);
+    }
+
     auto future_result = asyncTrySetNoThrow(path, data, version);
 
     if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
     {
+        maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
         impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::Set, path));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
 
     auto response = future_result.get();
     Coordination::Error code = response.error;
+
+    maybeSetSpanStatus(maybe_span, code);
     if (code == Coordination::Error::ZOK && stat)
         *stat = response.stat;
 
@@ -689,6 +847,24 @@ ZooKeeper::multiImpl(const Coordination::Requests & requests, Coordination::Resp
     if (requests.empty())
         return {Coordination::Error::ZOK, ""};
 
+    size_t total_size = 0;
+    for (const auto & request : requests)
+        total_size += request->bytesSize();
+
+    std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
+    if (shouldCreateOpenTelemetrySpans(total_size, requests.size()))
+    {
+        maybe_span.emplace(
+            "zookeeper.multi",
+            DB::OpenTelemetry::SpanKind::CLIENT,
+            std::unordered_map<String, String>{
+                {"zk.subrequests.size", std::to_string(requests.size())},
+                {"zk.subrequests.size_bytes", std::to_string(total_size)},
+            }
+        );
+        DB::OpenTelemetry::SetTraceFlagInCurrentContext(DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS, true);
+    }
+
     std::future<Coordination::MultiResponse> future_result;
     Coordination::Requests requests_with_check_session;
     if (check_session_valid)
@@ -705,6 +881,7 @@ ZooKeeper::multiImpl(const Coordination::Requests & requests, Coordination::Resp
     if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
     {
         auto & request = *requests[0];
+        maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
         impl->finalize(fmt::format(
             "Operation timeout on {} of {} requests. First ({}): {}",
             Coordination::OpNum::Multi,
@@ -735,6 +912,10 @@ ZooKeeper::multiImpl(const Coordination::Requests & requests, Coordination::Resp
         chassert(
             code == Coordination::Error::ZOK || Coordination::isHardwareError(code) || responses.back()->error != Coordination::Error::ZOK);
     }
+
+    maybeSetSpanStatus(maybe_span, code);
+    if (maybe_span && code != Coordination::Error::ZOK && !reason.empty())
+        maybe_span->status_message = reason;
 
     return {code, std::move(reason)};
 }
@@ -767,17 +948,35 @@ Coordination::Error ZooKeeper::tryMulti(const Coordination::Requests & requests,
 
 Coordination::Error ZooKeeper::syncImpl(const std::string & path, std::string & returned_path)
 {
+    std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
+    if (shouldCreateOpenTelemetrySpans())
+    {
+        maybe_span.emplace(
+            "zookeeper.sync",
+            DB::OpenTelemetry::SpanKind::CLIENT,
+            std::unordered_map<String, String>{
+                {"zk.path", path},
+            }
+        );
+        DB::OpenTelemetry::SetTraceFlagInCurrentContext(DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS, true);
+    }
+
     auto future_result = asyncTrySyncNoThrow(path);
 
     if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
     {
+        maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
         impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::Sync, path));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
 
     auto response = future_result.get();
     Coordination::Error code = response.error;
-    returned_path = std::move(response.path);
+
+    maybeSetSpanStatus(maybe_span, code);
+    if (code == Coordination::Error::ZOK)
+        returned_path = std::move(response.path);
+
     return code;
 }
 
@@ -930,6 +1129,19 @@ Coordination::Error ZooKeeper::tryRemoveRecursive(const std::string & path, uint
     if (!isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE))
         return fallback_method();
 
+    std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
+    if (shouldCreateOpenTelemetrySpans())
+    {
+        maybe_span.emplace(
+            "zookeeper.remove_recursive",
+            DB::OpenTelemetry::SpanKind::CLIENT,
+            std::unordered_map<String, String>{
+                {"zk.path", path},
+            }
+        );
+        DB::OpenTelemetry::SetTraceFlagInCurrentContext(DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS, true);
+    }
+
     auto promise = std::make_shared<std::promise<Coordination::RemoveRecursiveResponse>>();
     auto future = promise->get_future();
 
@@ -942,30 +1154,50 @@ Coordination::Error ZooKeeper::tryRemoveRecursive(const std::string & path, uint
 
     if (future.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
     {
+        maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
         impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::RemoveRecursive, path));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
 
     auto response = future.get();
+    Coordination::Error code = response.error;
 
-    if (response.error == Coordination::Error::ZNOTEMPTY) /// limit was too low, try without RemoveRecursive request
+    if (code == Coordination::Error::ZNOTEMPTY)
         return fallback_method();
 
-    return response.error;
+    maybeSetSpanStatus(maybe_span, code);
+
+    return code;
 }
 
 Coordination::Error ZooKeeper::getACLImpl(const std::string & path, Coordination::ACLs & res, Coordination::Stat * stat)
 {
+    std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
+    if (shouldCreateOpenTelemetrySpans())
+    {
+        maybe_span.emplace(
+            "zookeeper.get_acl",
+            DB::OpenTelemetry::SpanKind::CLIENT,
+            std::unordered_map<String, String>{
+                {"zk.path", path},
+            }
+        );
+        DB::OpenTelemetry::SetTraceFlagInCurrentContext(DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS, true);
+    }
+
     auto future_result = asyncTryGetACLNoThrow(path);
 
     if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
     {
+        maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
         impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::Sync, path));
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
 
     auto response = future_result.get();
     Coordination::Error code = response.error;
+
+    maybeSetSpanStatus(maybe_span, code);
     if (code == Coordination::Error::ZOK)
     {
         res = std::move(response.acl);
@@ -1098,15 +1330,30 @@ Coordination::ReconfigResponse ZooKeeper::reconfig(
     const std::string & new_members,
     int32_t version)
 {
+    std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
+    if (shouldCreateOpenTelemetrySpans())
+    {
+        maybe_span.emplace(
+            "zookeeper.reconfig",
+            DB::OpenTelemetry::SpanKind::CLIENT
+        );
+        DB::OpenTelemetry::SetTraceFlagInCurrentContext(DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS, true);
+    }
+
     auto future_result = asyncReconfig(joining, leaving, new_members, version);
 
     if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
     {
+        maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
         impl->finalize(fmt::format("Operation timeout on {}", Coordination::OpNum::Reconfig));
         throw KeeperException(Coordination::Error::ZOPERATIONTIMEOUT);
     }
 
-    return future_result.get();
+    auto response = future_result.get();
+
+    maybeSetSpanStatus(maybe_span, response.error);
+
+    return response;
 }
 
 ZooKeeperPtr ZooKeeper::create(ZooKeeperArgs args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_, std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_)
