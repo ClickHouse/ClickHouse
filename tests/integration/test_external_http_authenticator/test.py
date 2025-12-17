@@ -1,5 +1,6 @@
 import json
 import os
+import typing
 
 import pytest
 
@@ -33,7 +34,7 @@ def run_echo_server():
         user="root",
     )
 
-    def check_server():
+    def check_server() -> str:
         return instance.exec_in_container(
             ["curl", "-s", f"http://localhost:8000/health"],
             nothrow=True,
@@ -48,7 +49,7 @@ def run_echo_server():
 
 
 @pytest.fixture(scope="module")
-def started_cluster():
+def started_cluster() -> typing.Generator[ClickHouseCluster, None]:
     try:
         cluster.start()
         run_echo_server()
@@ -57,7 +58,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_user_from_config_basic_auth_pass(started_cluster):
+def test_user_from_config_basic_auth_pass(started_cluster: ClickHouseCluster):
     assert (
         instance.query("SHOW CREATE USER good_user")
         == "CREATE USER good_user IDENTIFIED WITH http SERVER \\'basic_server\\' SCHEME \\'BASIC\\' SETTINGS PROFILE `default`\n"
@@ -70,7 +71,7 @@ def test_user_from_config_basic_auth_pass(started_cluster):
     )
 
 
-def test_user_create_basic_auth_pass(started_cluster):
+def test_user_create_basic_auth_pass(started_cluster: ClickHouseCluster):
     instance.query(
         "CREATE USER basic_user IDENTIFIED WITH HTTP SERVER 'basic_server' SCHEME 'BASIC'"
     )
@@ -89,13 +90,13 @@ def test_user_create_basic_auth_pass(started_cluster):
     instance.query("DROP USER basic_user")
 
 
-def test_basic_auth_failed(started_cluster):
+def test_basic_auth_failed(started_cluster: ClickHouseCluster):
     assert "good_user: Authentication failed" in instance.query_and_get_error(
         "SELECT currentUser()", user="good_user", password="bad_password"
     )
 
 
-def test_header_failed(started_cluster):
+def test_header_failed(started_cluster: ClickHouseCluster):
     for header_name in ["Custom-Header", "CUSTOM-HEADER", "custom-header"]:
         ping_response = instance.exec_in_container(
             [
@@ -114,7 +115,7 @@ def test_header_failed(started_cluster):
         assert ping_response == "4\n"
 
 
-def test_session_settings_from_auth_response(started_cluster):
+def test_session_settings_from_auth_response(started_cluster: ClickHouseCluster):
     for user, response in USER_RESPONSES.items():
         query_id = f"test_query_{user}"
         assert (
