@@ -10,6 +10,8 @@ from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from .test import check_expected_result_polling
 
+pytestmark = pytest.mark.timeout(1200)
+
 DEFAULT_TIMEOUT_SEC = 120
 CLICKHOUSE_VIEW_TIMEOUT_SEC = 120
 
