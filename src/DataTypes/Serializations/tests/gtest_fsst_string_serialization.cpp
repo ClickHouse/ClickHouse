@@ -5,9 +5,12 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include "Common/assert_cast.h"
 #include <Common/MemoryTracker.h>
 #include <Common/ThreadStatus.h>
+#include "Columns/ColumnFSST.h"
 #include "Columns/IColumn_fwd.h"
+#include "Core/Field.h"
 #include "DataTypes/SerializationStringFsst.h"
 #include "DataTypes/Serializations/ISerialization.h"
 #include "DataTypes/Serializations/SerializationString.h"
@@ -15,9 +18,26 @@
 
 using namespace DB;
 
-bool Equals(const ColumnString & a, const ColumnString & b)
+bool Equals(const ColumnString & a, const ColumnFSST & b)
 {
-    return a.size() == b.size() && a.getOffsets() == b.getOffsets() && a.getChars() == b.getChars();
+    if (a.size() != b.size())
+    {
+        return false;
+    }
+
+    for (size_t ind = 0; ind < a.size(); ind++)
+    {
+        Field field_a;
+        Field field_b;
+        a.get(ind, field_a);
+        b.get(ind, field_b);
+        if (field_a != field_b)
+        {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 int main()
@@ -42,7 +62,7 @@ int main()
 
     {
         ISerialization::SerializeBinaryBulkSettings settings;
-        ISerialization::SerializeBinaryBulkStatePtr state = std::make_shared<SerializeFsstState>();
+        ISerialization::SerializeBinaryBulkStatePtr state;
         settings.getter = [&buffers, &writers](const ISerialization::SubstreamPath & path)
         {
             auto & w = writers[path.toString()];
@@ -57,9 +77,10 @@ int main()
             w->finalize();
         }
     }
-/*
-    auto dst_column = ColumnString::create();
-    ColumnPtr column_ptr = std::move(dst_column);
+
+    auto nested_column = ColumnString::create();
+    auto column_fsst_ptr = ColumnFSST::create(std::move(nested_column));
+    ColumnPtr column_ptr = std::move(column_fsst_ptr);
     {
         ISerialization::DeserializeBinaryBulkSettings settings;
         ISerialization::DeserializeBinaryBulkStatePtr state;
@@ -73,7 +94,8 @@ int main()
         serialization->deserializeBinaryBulkWithMultipleStreams(column_ptr, 0, rows, settings, state, nullptr);
     }
 
-    if(!Equals(*src_column, *dst_column)) {
+    if (!Equals(*src_column, assert_cast<const ColumnFSST &>(*column_ptr)))
+    {
         throw std::runtime_error("fuck");
-    }*/
+    }
 }
