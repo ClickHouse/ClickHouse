@@ -64,7 +64,7 @@ public:
 
         /// Check that `countDistinct` function has single COLUMN argument
         auto & count_distinct_arguments_nodes = function_node->getArguments().getNodes();
-        if (count_distinct_arguments_nodes.size() != 1 && count_distinct_arguments_nodes[0]->getNodeType() != QueryTreeNodeType::COLUMN)
+        if (count_distinct_arguments_nodes.size() != 1 || count_distinct_arguments_nodes[0]->getNodeType() != QueryTreeNodeType::COLUMN)
             return;
 
         auto & count_distinct_argument_column = count_distinct_arguments_nodes[0];
