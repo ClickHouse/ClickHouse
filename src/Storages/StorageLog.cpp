@@ -202,8 +202,7 @@ Chunk LogSource::generate()
         try
         {
             column = name_type_on_disk.type->createColumn();
-            /// Use both name and type as the key for caches, so string_column and string_column.size are treated differently
-            readData(name_type_on_disk, column, max_rows_to_read, caches[name_type_on_disk.dump()]);
+            readData(name_type_on_disk, column, max_rows_to_read, caches[name_type_on_disk.getNameInStorage()]);
         }
         catch (Exception & e)
         {
@@ -258,7 +257,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
             size_t offset = stream_for_prefix ? 0 : offsets[data_file.index];
             size_t file_size = file_sizes[data_file.index];
 
-            auto it = streams.try_emplace(name_and_type.dump(), storage.disk, data_file.path, offset, file_size, limited_by_file_sizes, read_settings).first;
+            auto it = streams.try_emplace(data_file_name, storage.disk, data_file.path, offset, file_size, limited_by_file_sizes, read_settings).first;
             return &it->second.compressed.value();
         };
     };
