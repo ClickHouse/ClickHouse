@@ -153,7 +153,7 @@ struct IdentifierResolveResult
         return resolve_place == IdentifierResolvePlace::CTE;
     }
 
-    void dump(WriteBuffer & buffer) const
+    void dump(WriteBuffer & buffer, bool dump_query_tree = false) const
     {
         if (!resolved_identifier)
         {
@@ -161,13 +161,16 @@ struct IdentifierResolveResult
             return;
         }
 
-        buffer << resolved_identifier->formatASTForErrorMessage() << " place " << toString(resolve_place);
+        if (dump_query_tree)
+            buffer << resolved_identifier->dumpTree() << "\nplace " << toString(resolve_place);
+        else
+            buffer << resolved_identifier->formatASTForErrorMessage() << " place " << toString(resolve_place);
     }
 
-    [[maybe_unused]] String dump() const
+    [[maybe_unused]] String dump(bool dump_query_tree = false) const
     {
         WriteBufferFromOwnString buffer;
-        dump(buffer);
+        dump(buffer, dump_query_tree);
 
         return buffer.str();
     }
