@@ -143,6 +143,7 @@ struct FormatSettings
         bool read_json_as_string = false;
         bool write_json_as_string = false;
         bool read_bool_field_as_int = false;
+        UInt64 max_object_size = 100000;
     } binary{};
 
     struct

@@ -657,7 +657,7 @@ Possible values:
 
     ClickHouse can parse the basic `YYYY-MM-DD HH:MM:SS` format and all [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) date and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
 
-- `'best_effort_us'` — Similar to `best_effort` (see the difference in [parseDateTimeBestEffortUS](../../sql-reference/functions/type-conversion-functions#parsedatetimebesteffortus)
+- `'best_effort_us'` — Similar to `best_effort` (see the difference in [parseDateTimeBestEffortUS](../../sql-reference/functions/type-conversion-functions#parseDateTimeBestEffortUS)
 
 - `'basic'` — Use basic parser.
 
@@ -755,6 +755,9 @@ The maximum allowed size for String in RowBinary format. It prevents allocating 
 )", 0) \
     DECLARE(UInt64, format_binary_max_array_size, 1_GiB, R"(
 The maximum allowed size for Array in RowBinary format. It prevents allocating large amount of memory in case of corrupted data. 0 means there is no limit
+)", 0) \
+    DECLARE(UInt64, format_binary_max_object_size, 100000, R"(
+The maximum allowed number of paths in a single Object for JSON type RowBinary format. It prevents allocating large amount of memory in case of corrupted data. 0 means there is no limit
 )", 0) \
     DECLARE(Bool, input_format_binary_decode_types_in_binary_format, false, R"(
 Read data types in binary format instead of type names in RowBinaryWithNamesAndTypes input format

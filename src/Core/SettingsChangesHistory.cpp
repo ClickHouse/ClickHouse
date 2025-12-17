@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.12",
         {
+            {"format_binary_max_object_size", 100000, 100000, "New setting that limits the maximum size of object during JSON type binary deserialization"},
             {"max_streams_for_files_processing_in_cluster_functions", 0, 0, "Add a new setting that allows to limit number of streams for files processing in *Cluster table functions"},
             {"max_reverse_dictionary_lookup_cache_size_bytes", 100 * 1024 * 1024, 100 * 1024 * 1024, "New setting. Maximum size in bytes of the per-query reverse dictionary lookup cache used by the function `dictGetKeys`. The cache stores serialized key tuples per attribute value to avoid re-scanning the dictionary within the same query."},
             {"query_plan_remove_unused_columns", false, true, "New setting. Add optimization to remove unused columns in query plan."},
@@ -62,6 +63,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"aggregate_function_input_format", "state", "state", "New setting to control AggregateFunction input format during INSERT operations. Setting Value set to state by default"},
             {"delta_lake_snapshot_start_version", -1, -1, "New setting."},
             {"delta_lake_snapshot_end_version", -1, -1, "New setting."},
+            {"apply_row_policy_after_final", false, false, "New setting to control if row policies and PREWHERE are applied after FINAL processing for *MergeTree tables"},
+            {"apply_prewhere_after_final", false, false, "New setting. When enabled, PREWHERE conditions are applied after FINAL processing."},
             {"compatibility_s3_presigned_url_query_in_path", false, false, "New setting."},
             {"serialize_string_in_memory_with_zero_byte", true, true, "New setting"},
             {"optimize_inverse_dictionary_lookup", false, true, "New setting"},
@@ -76,6 +79,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_use_clients_cache_for_write", false, false, "New setting"},
             {"allow_experimental_database_paimon_rest_catalog", false, false, "New setting"},
             {"enable_positional_arguments_for_projections", true, false, "New setting to control positional arguments in projections."},
+            {"insert_select_deduplicate", Field{"auto"}, Field{"auto"}, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
