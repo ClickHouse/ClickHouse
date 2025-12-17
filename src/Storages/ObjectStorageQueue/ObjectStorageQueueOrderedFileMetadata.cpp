@@ -117,12 +117,12 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
 
     if (code == Coordination::Error::ZOK)
     {
-        LOG_TEST(log, "Released bucket {}", bucket_info->bucket);
+        LOG_TRACE(log, "Released bucket {}", bucket_info->bucket);
         return;
     }
     else if (zk_retry.isRetry() && code == Coordination::Error::ZNONODE)
     {
-        LOG_TEST(log, "Released bucket {} (has zk session loss)", bucket_info->bucket);
+        LOG_TRACE(log, "Released bucket {} (has zk session loss)", bucket_info->bucket);
         return;
     }
 
