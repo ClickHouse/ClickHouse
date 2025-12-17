@@ -126,6 +126,11 @@ public:
             dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint), isSharedDictionary());
     }
 
+    void filter(const Filter & filt) override
+    {
+        idx.getIndexesPtr()->filter(filt);
+    }
+
     void expand(const Filter & mask, bool inverted) override
     {
         idx.expand(mask, inverted);

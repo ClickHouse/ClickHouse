@@ -131,7 +131,7 @@ CIDB statistics: [cidb]({result.get_hlabel_link('cidb')})
 
 Test output:
 ```
-{result.get_info_truncated(truncate_from_top=False, max_info_lines_cnt=50, max_line_length=200)}
+{result.get_info_truncated(truncate_from_top=False, max_info_lines_cnt=50, max_line_length=0)}
 ```
 """
         labels = [IssueLabels.CI_ISSUE, IssueLabels.FLAKY_TEST]
@@ -157,6 +157,8 @@ Test output:
 
     @classmethod
     def can_process(cls, job_result, test_result):
+        if any(key in job_result.name for key in ("Unit",)):
+            return True
         if job_result.is_error() or test_result.is_error():
             print(f"Cannot handle error status in job [{job_result.name}] - skip")
             return False
@@ -173,10 +175,14 @@ Test output:
                 return True
         if any(
             key in job_result.name
-            for key in ("Performance", "Stress", "Finish", "Bugfix", "Docker")
+            for key in ("Performance", "Finish", "Bugfix", "Docker")
         ):
             print("Job type is not supported yet")
             return False
+        if any(key in job_result.name for key in ("Stress",)) and not any(
+            key in test_result.name for key in ("Server died",)
+        ):
+            return True
         if "OOM" in test_result.name:
             print("Cannot handle OOM errors - skip")
             return False
@@ -191,11 +197,17 @@ Test output:
     @classmethod
     def repr_result(cls, result):
         res = f"\n - test output:\n"
+        # For ERROR status (typically job-level failures), meaningful output is usually at the end,
+        # so we truncate from the top to preserve the error details.
+        # For other statuses (test failures), the relevant information is often at the beginning,
+        # so we truncate from the bottom to preserve the initial context.
         res += result.get_info_truncated(
-            truncate_from_top=False, max_info_lines_cnt=20, max_line_length=200
+            truncate_from_top=result.status == Result.Status.ERROR,
+            max_info_lines_cnt=20,
+            max_line_length=200,
         )
         res += f"\n - flags: {', '.join(result.get_labels()) or 'not flaged'}"
-        res += f"\n - cidb: {result.get_hlabel_link("cidb") or 'not found'}"
+        res += f"\n - cidb: {result.get_hlabel_link('cidb') or 'not found'}"
         return res
 
     @classmethod
@@ -208,7 +220,7 @@ Test output:
         """
         if any(key in job_name for key in ("Stateless", "Integration")):
             issue_url = cls.create_gh_issue_on_flaky_or_broken_test(result, job_name)
-        elif any(key in job_name for key in ("Buzz", "AST")):
+        elif any(key in job_name for key in ("Buzz", "AST", "Stress")):
             issue_url = cls.create_gh_issue_on_fuzzer_or_stress_finding(
                 result, job_name
             )
@@ -235,7 +247,9 @@ Test output:
         ci_failure_flags = UserPrompt.get_string(
             "Enter the CI failure flag associated with this failure type.\n"
             "Available options: 'retry_ok' (for transient failures that may succeed on retry) or leave empty for none",
-            validator=lambda x: x in ("retry_ok", "") and result.has_label(x),
+            validator=lambda x: (
+                x in ("retry_ok", "") and result.has_label(x) if x else True
+            ),
         )
         # support only one flag for now, in future we may need to support multiple flags
         ci_failure_flags = [ci_failure_flags] if ci_failure_flags else []
@@ -261,9 +275,8 @@ Test output:
                 f"Enter SQL LIKE pattern to match job names affected by this failure.\n"
                 f"Current job: '{job_name}'\n"
                 f"Use '%' as wildcard (e.g., '%Stateless%' matches any job containing 'Stateless')",
-                validator=lambda x: all(
-                    part in job_name for part in x.split("%") if part
-                ),
+                validator=lambda x: x
+                and all(part in job_name for part in x.split("%") if part),
             )
             or "%"
         )
@@ -295,7 +308,7 @@ Test pattern: {test_pattern}
 CI report example: [{job_name}]({cls.get_job_report_url(pr_number, head_sha, job_name)})
 Test output example:
 ```
-{result.get_info_truncated(truncate_from_top=False, max_info_lines_cnt=50, max_line_length=200)}
+{result.get_info_truncated(truncate_from_top=result.status == Result.Status.ERROR, max_info_lines_cnt=50, max_line_length=0)}
 ```
 """
         labels = [IssueLabels.CI_ISSUE, IssueLabels.INFRASTRUCTURE]
@@ -600,7 +613,6 @@ def main():
         known_failures = []
         unknown_failures = []
 
-        workflow_result.dump()
         for result in workflow_result.results:
             if result.has_label("issue"):
                 known_failures.append((result.name, result))

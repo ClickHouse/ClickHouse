@@ -756,6 +756,9 @@ The maximum allowed size for String in RowBinary format. It prevents allocating 
     DECLARE(UInt64, format_binary_max_array_size, 1_GiB, R"(
 The maximum allowed size for Array in RowBinary format. It prevents allocating large amount of memory in case of corrupted data. 0 means there is no limit
 )", 0) \
+    DECLARE(UInt64, format_binary_max_object_size, 100000, R"(
+The maximum allowed number of paths in a single Object for JSON type RowBinary format. It prevents allocating large amount of memory in case of corrupted data. 0 means there is no limit
+)", 0) \
     DECLARE(Bool, input_format_binary_decode_types_in_binary_format, false, R"(
 Read data types in binary format instead of type names in RowBinaryWithNamesAndTypes input format
 )", 0) \
@@ -1309,6 +1312,9 @@ The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`
 )", 0) \
     DECLARE(UInt64, output_format_pretty_fallback_to_vertical_min_columns, 5, R"(
 The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`) will be activated only if the number of columns is greater than the specified value.
+)", 0) \
+    DECLARE(Bool, output_format_pretty_named_tuples_as_json, true, R"(
+        Controls whether named tuples in Pretty format are output as pretty-printed JSON objects.
 )", 0) \
     DECLARE(Bool, insert_distributed_one_random_shard, false, R"(
 Enables or disables random shard insertion into a [Distributed](/engines/table-engines/special/distributed) table when there is no distributed key.

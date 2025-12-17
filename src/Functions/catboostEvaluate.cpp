@@ -224,7 +224,7 @@ See [Training and applying models](https://catboost.ai/docs/features/training.ht
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionCatBoostEvaluate>(documentation);
 }
