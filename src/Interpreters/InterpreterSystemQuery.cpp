@@ -920,9 +920,19 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::WAIT_FAILPOINT:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
-            LOG_TRACE(log, "Waiting for failpoint {}", query.fail_point_name);
-            FailPointInjection::pauseFailPoint(query.fail_point_name);
-            LOG_TRACE(log, "Finished waiting for failpoint {}", query.fail_point_name);
+            if (query.fail_point_action == ASTSystemQuery::FailPointAction::PAUSE)
+            {
+                LOG_TRACE(log, "Waiting for failpoint {} to pause", query.fail_point_name);
+                FailPointInjection::waitForPause(query.fail_point_name);
+                LOG_TRACE(log, "Failpoint {} has paused", query.fail_point_name);
+            }
+            else if (query.fail_point_action == ASTSystemQuery::FailPointAction::RESUME)
+            {
+                LOG_TRACE(log, "Waiting for failpoint {} to resume", query.fail_point_name);
+                FailPointInjection::waitForResume(query.fail_point_name);
+                LOG_TRACE(log, "Failpoint {} has resumed", query.fail_point_name);
+            }
+
             break;
         }
         case Type::NOTIFY_FAILPOINT:

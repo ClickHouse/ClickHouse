@@ -55,7 +55,14 @@ public:
 
     static void notifyFailPoint(const String & fail_point_name);
 
-    static void wait(const String & fail_point_name);
+    /// Notify test code that this thread has paused, then wait for resume notification
+    static void notifyPauseAndWaitForResume(const String & fail_point_name);
+
+    /// Wait for target code to reach and pause at the failpoint
+    static void waitForPause(const String & fail_point_name);
+
+    /// Wait for the failpoint to be notified and threads to resume
+    static void waitForResume(const String & fail_point_name);
 
 private:
     static std::mutex mu;
