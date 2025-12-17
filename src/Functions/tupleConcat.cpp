@@ -110,7 +110,7 @@ Combines tuples passed as arguments.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Tuple;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTupleConcat>(documentation);
 }

@@ -36,7 +36,7 @@ SELECT toUnixTimestamp64Second(dt64);
     };
     FunctionDocumentation::IntroducedIn introduced_in_toUnixTimestamp64Second = {24, 12};
     FunctionDocumentation::Category category_toUnixTimestamp64Second = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUnixTimestamp64Second = {description_toUnixTimestamp64Second, syntax_toUnixTimestamp64Second, arguments_toUnixTimestamp64Second, returned_value_toUnixTimestamp64Second, examples_toUnixTimestamp64Second, introduced_in_toUnixTimestamp64Second, category_toUnixTimestamp64Second};
+    FunctionDocumentation documentation_toUnixTimestamp64Second = {description_toUnixTimestamp64Second, syntax_toUnixTimestamp64Second, arguments_toUnixTimestamp64Second, {}, returned_value_toUnixTimestamp64Second, examples_toUnixTimestamp64Second, introduced_in_toUnixTimestamp64Second, category_toUnixTimestamp64Second};
 
     factory.registerFunction("toUnixTimestamp64Second",
         [](ContextPtr){ return std::make_shared<FunctionToUnixTimestamp64>(0, "toUnixTimestamp64Second"); }, documentation_toUnixTimestamp64Second);
