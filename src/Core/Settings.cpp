@@ -236,16 +236,20 @@ Possible values:
 The maximum number of threads process indices.
 )", 0) \
     DECLARE(MaxThreads, max_threads, 0, R"(
-The maximum number of query processing threads, excluding threads for retrieving data from remote servers (see the 'max_distributed_connections' parameter).
+The maximum number of query processing threads, excluding threads for retrieving data from remote servers (see the ['max_distributed_connections'](/operations/settings/settings#max_distributed_connections) parameter).
 
 This parameter applies to threads that perform the same stages of the query processing pipeline in parallel.
-For example, when reading from a table, if it is possible to evaluate expressions with functions, filter with WHERE and pre-aggregate for GROUP BY in parallel using at least 'max_threads' number of threads, then 'max_threads' are used.
+For example, when reading from a table, if it is possible to evaluate expressions with functions, filter with `WHERE` and pre-aggregate for `GROUP BY` in parallel using at least 'max_threads' number of threads, then 'max_threads' are used.
 
-For queries that are completed quickly because of a LIMIT, you can set a lower 'max_threads'. For example, if the necessary number of entries are located in every block and max_threads = 8, then 8 blocks are retrieved, although it would have been enough to read just one.
-
+For queries that are completed quickly because of a LIMIT, you can set a lower 'max_threads'.
+For example, if the necessary number of entries are located in every block and max_threads = 8, then 8 blocks are retrieved, although it would have been enough to read just one.
 The smaller the `max_threads` value, the less memory is consumed.
 
-Cloud default value: `auto(3)`
+The `max_threads` setting by default matches the number of hardware threads available to ClickHouse.
+Without SMT (e.g. Intel HyperThreading), this corresponds to the number of CPU cores.
+
+For ClickHouse Cloud users, the default value will display as `auto(N)` where N matches the vCPU size of your service e.g. 2vCPU/8GiB, 4vCPU/16GiB etc.
+See the settings tab in the Cloud console for a list of all service sizes.
 )", 0) \
     DECLARE(Bool, use_concurrency_control, true, R"(
 Respect the server's concurrency control (see the `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores` global server settings). If disabled, it allows using a larger number of threads even if the server is overloaded (not recommended for normal usage, and needed mostly for tests).
@@ -5766,7 +5770,7 @@ Enable multithreading after evaluating window functions to allow parallel stream
     DECLARE(Bool, query_plan_optimize_lazy_materialization, true, R"(
 Use query plan for lazy materialization optimization.
 )", 0) \
-    DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 100, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
+    DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10000, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0) \
     DECLARE(Bool, enable_lazy_columns_replication, true, R"(
 Enables lazy columns replication in JOIN and ARRAY JOIN, it allows to avoid unnecessary copy of the same rows multiple times in memory.

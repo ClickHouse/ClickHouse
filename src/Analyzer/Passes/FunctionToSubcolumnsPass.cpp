@@ -201,6 +201,18 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
     return NameAndTypePair{toString(index), std::make_shared<const DataTypeFixedString>((data_type_qbit.getDimension() + 7) / 8)};
 }
 
+std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const DataTypeObject & data_type_object)
+{
+    if (value.getType() == Field::Types::String)
+    {
+        const auto & name = value.safeGet<String>();
+        if (auto type = data_type_object.tryGetSubcolumnType(name))
+            return NameAndTypePair{name, type};
+    }
+
+    return {};
+}
+
 template <typename DataType>
 void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
 {
@@ -380,6 +392,9 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
     },
     {
         {TypeIndex::Object, "distinctJSONPaths"}, optimizeDistinctJSONPaths,
+=======
+        {TypeIndex::Object, "tupleElement"}, optimizeTupleOrVariantElement<DataTypeObject>,
+>>>>>>> 1c42187909285aed53217fa1071925cf2da7fd14
     },
 };
 
