@@ -5114,6 +5114,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         new_projection_nodes.reserve(scope.used_column_names->size());
         NamesAndTypes new_projection_columns;
         new_projection_columns.reserve(scope.used_column_names->size());
+
         for (const auto & used_column_name : *scope.used_column_names)
         {
             auto identifier_lookup = IdentifierLookup{Identifier(used_column_name), IdentifierLookupContext::EXPRESSION};
@@ -5138,11 +5139,11 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                     const auto & source_expression = column_node.getColumnSource();
                     if (source_expression == query_node)
                     {
-                        for (size_t i = 0; i < projection_nodes.size(); ++i)
+                        for (size_t i = 0; i < projected_column_nodes.size(); ++i)
                         {
                             if (projected_column_nodes[i]->isEqual(column_node))
                             {
-                                replacement_map[current_node.get()] = projected_column_nodes[i];
+                                replacement_map[current_node.get()] = projection_nodes[i];
                                 break;
                             }
                         }
@@ -5156,7 +5157,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             }
 
             auto new_projection_node = resolve_result.resolved_identifier->cloneAndReplace(replacement_map);
-            LOG_DEBUG(getLogger(__func__), "Resolved identifier {} result:\n{}", used_column_name, resolve_result.dump());
             new_projection_columns.emplace_back(used_column_name, new_projection_node->getResultType());
             new_projection_nodes.push_back(std::move(new_projection_node));
         }
