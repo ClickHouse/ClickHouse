@@ -18,7 +18,7 @@
 #include <IO/S3/Requests.h>
 
 #include <fmt/ranges.h>
-#include <base/defines.h>
+
 
 namespace ProfileEvents
 {
@@ -155,7 +155,8 @@ namespace
             if (blob_storage_log)
                 blob_storage_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadCreate,
                                            dest_bucket, dest_key, /* local_path_ */ {}, /* data_size */ 0,
-                                           outcome.IsSuccess() ? nullptr : &outcome.GetError());
+                                           outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
+                                           outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
 
             if (!outcome.IsSuccess())
             {
@@ -204,7 +205,8 @@ namespace
                 if (blob_storage_log)
                     blob_storage_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadComplete,
                                                dest_bucket, dest_key, /* local_path_ */ {}, /* data_size */ 0,
-                                               outcome.IsSuccess() ? nullptr : &outcome.GetError());
+                                               outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
+                                               outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
 
                 if (outcome.IsSuccess())
                 {
@@ -238,7 +240,8 @@ namespace
             if (blob_storage_log)
                 blob_storage_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadAbort,
                                            dest_bucket, dest_key, /* local_path_ */ {}, /* data_size */ 0,
-                                           outcome.IsSuccess() ? nullptr : &outcome.GetError());
+                                           outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
+                                           outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
         }
 
         void checkObjectAfterUpload()
@@ -480,7 +483,8 @@ namespace
                 if (blob_storage_log)
                     blob_storage_log->addEvent(BlobStorageLogElement::EventType::Upload,
                                                dest_bucket, dest_key, /* local_path_ */ {}, size,
-                                               outcome.IsSuccess() ? nullptr : &outcome.GetError());
+                                               outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
+                                               outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
 
                 if (outcome.IsSuccess())
                 {
@@ -565,7 +569,8 @@ namespace
             if (blob_storage_log)
                 blob_storage_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadWrite,
                                            dest_bucket, dest_key, /* local_path_ */ {}, size,
-                                           outcome.IsSuccess() ? nullptr : &outcome.GetError());
+                                           outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
+                                           outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
 
             if (!outcome.IsSuccess())
             {
