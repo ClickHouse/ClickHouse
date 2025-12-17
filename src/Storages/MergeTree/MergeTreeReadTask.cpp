@@ -1,14 +1,18 @@
-#include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <IO/Operators.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <Storages/MergeTree/MergeTreeReaderIndex.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Storages/MergeTree/MergeTreeReaderIndex.h>
 #include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
+#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
-#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Common/Exception.h>
-#include <IO/Operators.h>
+#include <Processors/Transforms/LazilyMaterializingTransform.h>
+
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 namespace DB
 {
@@ -69,13 +73,15 @@ MergeTreeReadTask::MergeTreeReadTask(
     MarkRanges mark_ranges_,
     std::vector<MarkRanges> patches_mark_ranges_,
     const BlockSizeParams & block_size_params_,
-    MergeTreeBlockSizePredictorPtr size_predictor_)
+    MergeTreeBlockSizePredictorPtr size_predictor_,
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
     : info(std::move(info_))
     , readers(std::move(readers_))
     , mark_ranges(std::move(mark_ranges_))
     , patches_mark_ranges(std::move(patches_mark_ranges_))
     , block_size_params(block_size_params_)
     , size_predictor(std::move(size_predictor_))
+    , updater(std::move(updater_))
 {
 }
 
@@ -268,6 +274,7 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
 void MergeTreeReadTask::initializeReadersChain(
     const PrewhereExprInfo & prewhere_actions,
     MergeTreeIndexBuildContextPtr index_build_context,
+    LazyMaterializingRowsPtr lazy_materializing_rows,
     const ReadStepsPerformanceCounters & read_steps_performance_counters)
 {
     if (readers_chain.isInitialized())
@@ -275,8 +282,8 @@ void MergeTreeReadTask::initializeReadersChain(
 
     PrewhereExprInfo all_prewhere_actions;
 
-    if (index_build_context)
-        initializeIndexReader(*index_build_context);
+    if (index_build_context || lazy_materializing_rows)
+        initializeIndexReader(index_build_context, lazy_materializing_rows);
 
     for (const auto & step : info->mutation_steps)
         all_prewhere_actions.steps.push_back(step);
@@ -287,14 +294,24 @@ void MergeTreeReadTask::initializeReadersChain(
     readers_chain = createReadersChain(readers, all_prewhere_actions, read_steps_performance_counters);
 }
 
-void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContext & index_build_context)
+void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContextPtr & index_build_context, const LazyMaterializingRowsPtr & lazy_materializing_rows)
 {
     /// Optionally initialize the index filter for the current read task. If the build context exists and contains
     /// relevant read ranges for the current part, retrieve or construct index filter for all involved skip indexes.
     /// This filter will later be used to filter granules during the first reading step.
-    auto index_read_result = index_build_context.getPreparedIndexReadResult(*this);
-    if (index_read_result)
-        readers.prepared_index = std::make_unique<MergeTreeReaderIndex>(readers.main.get(), std::move(index_read_result));
+    MergeTreeIndexReadResultPtr index_read_result;
+    if (index_build_context)
+        index_read_result = index_build_context->getPreparedIndexReadResult(*this);
+
+    const PaddedPODArray<UInt64> * part_rows = nullptr;
+    if (lazy_materializing_rows)
+    {
+        part_rows = &lazy_materializing_rows->rows_in_parts[getInfo().part_index_in_query];
+        // std::cerr << "Initialized index for part " << getInfo().part_index_in_query << " with " << part_rows->size() << " rows\n";
+    }
+
+    if (index_read_result || lazy_materializing_rows)
+        readers.prepared_index = std::make_unique<MergeTreeReaderIndex>(readers.main.get(), std::move(index_read_result), part_rows);
 }
 
 UInt64 MergeTreeReadTask::estimateNumRows() const
@@ -382,6 +399,9 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
         }
         block = sample_block.cloneWithColumns(read_result.columns);
     }
+
+    if (updater)
+        updater->recordInputColumns(block.getColumnsWithTypeAndName(), info->data_part->getColumnSizes(), num_read_bytes);
 
     BlockAndProgress res = {
         .block = std::move(block),

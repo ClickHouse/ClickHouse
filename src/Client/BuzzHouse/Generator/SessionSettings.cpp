@@ -24,6 +24,33 @@ static const auto setSetting = CHSetting(
 
 std::unordered_map<String, CHSetting> hotSettings;
 
+static String settingCombinations(RandomGenerator & rg, DB::Strings && choices)
+{
+    String res;
+
+    if (rg.nextBool())
+    {
+        /// Pick just one
+        res = rg.pickRandomly(choices);
+    }
+    else
+    {
+        /// Pick a combination of some or none
+        const uint32_t nalgo = rg.randomInt<uint32_t>(0, static_cast<uint32_t>(choices.size()));
+
+        std::shuffle(choices.begin(), choices.end(), rg.generator);
+        for (uint32_t i = 0; i < nalgo; i++)
+        {
+            if (i != 0)
+            {
+                res += ",";
+            }
+            res += choices[i];
+        }
+    }
+    return "'" + res + "'";
+}
+
 std::unordered_map<String, CHSetting> performanceSettings
     = {{"allow_aggregate_partitions_independently", trueOrFalseSetting},
        {"allow_execute_multiif_columnar", trueOrFalseSetting},
@@ -65,37 +92,17 @@ std::unordered_map<String, CHSetting> performanceSettings
         CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)
             {
-                String res;
-                DB::Strings choices
-                    = {"auto",
-                       "default",
-                       "direct",
-                       "full_sorting_merge",
-                       "grace_hash",
-                       "hash",
-                       "parallel_hash",
-                       "partial_merge",
-                       "prefer_partial_merge"};
-
-                if (rg.nextBool())
-                {
-                    res = rg.pickRandomly(choices);
-                }
-                else
-                {
-                    const uint32_t nalgo = rg.randomInt<uint32_t>(0, static_cast<uint32_t>(choices.size()));
-
-                    std::shuffle(choices.begin(), choices.end(), rg.generator);
-                    for (uint32_t i = 0; i < nalgo; i++)
-                    {
-                        if (i != 0)
-                        {
-                            res += ",";
-                        }
-                        res += choices[i];
-                    }
-                }
-                return "'" + res + "'";
+                return settingCombinations(
+                    rg,
+                    {"auto",
+                     "default",
+                     "direct",
+                     "full_sorting_merge",
+                     "grace_hash",
+                     "hash",
+                     "parallel_hash",
+                     "partial_merge",
+                     "prefer_partial_merge"});
             },
             {"'default'",
              "'grace_hash'",
@@ -187,16 +194,21 @@ std::unordered_map<String, CHSetting> performanceSettings
         CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)
             {
-                static const DB::Strings & choices = {"'false'", "'true'", "'auto'"};
+                static const DB::Strings & choices = {"0", "1", "'auto'"};
                 return rg.pickRandomly(choices);
             },
-            {"'false'", "'true'", "'auto'"},
+            {"0", "1", "'auto'"},
             false)},
        {"query_plan_lift_up_array_join", trueOrFalseSetting},
        {"query_plan_lift_up_union", trueOrFalseSetting},
        {"query_plan_merge_expressions", trueOrFalseSetting},
        {"query_plan_merge_filter_into_join_condition", trueOrFalseSetting},
        {"query_plan_merge_filters", trueOrFalseSetting},
+       {"query_plan_optimize_join_order_algorithm",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"greedy", "dpsize"}); },
+            {"'greedy'", "'dpsize'"},
+            false)},
        {"query_plan_optimize_lazy_materialization", trueOrFalseSetting},
        {"query_plan_optimize_prewhere", trueOrFalseSetting},
        {"query_plan_push_down_limit", trueOrFalseSetting},
@@ -297,8 +309,11 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"allow_unrestricted_reads_from_keeper", trueOrFalseSettingNoOracle},
     {"analyze_index_with_space_filling_curves", trueOrFalseSetting},
     {"analyzer_compatibility_join_using_top_level_identifier", trueOrFalseSetting},
+    {"apply_deleted_mask", trueOrFalseSettingNoOracle},
     {"apply_mutations_on_fly", trueOrFalseSettingNoOracle},
     {"apply_patch_parts", trueOrFalseSetting},
+    {"apply_prewhere_after_final", trueOrFalseSettingNoOracle},
+    {"apply_row_policy_after_final", trueOrFalseSettingNoOracle},
     {"apply_settings_from_server", trueOrFalseSettingNoOracle},
     {"any_join_distinct_right_table_keys", trueOrFalseSetting},
     {"asterisk_include_alias_columns", trueOrFalseSettingNoOracle},
@@ -309,6 +324,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"async_insert_use_adaptive_busy_timeout", trueOrFalseSettingNoOracle},
     {"async_query_sending_for_remote", trueOrFalseSetting},
     {"async_socket_for_remote", trueOrFalseSetting},
+    {"automatic_parallel_replicas_mode", CHSetting(zeroOneTwo, {"0", "1", "2"}, false)},
     {"cache_warmer_threads", threadSetting},
     {"calculate_text_stack_trace", trueOrFalseSettingNoOracle},
     {"cancel_http_readonly_queries_on_client_close", trueOrFalseSettingNoOracle},
@@ -415,16 +431,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
          {},
          false)},
     /// ClickHouse cloud setting
-    {"distributed_cache_pool_behaviour_on_limit",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &)
-         {
-             static const DB::Strings & choices = {"'wait'", "'allocate_bypassing_pool'"};
-             return rg.pickRandomly(choices);
-         },
-         {},
-         false)},
-    /// ClickHouse cloud setting
     {"distributed_cache_prefer_bigger_buffer_size", trueOrFalseSettingNoOracle},
     /// ClickHouse cloud setting
     {"distributed_cache_read_only_from_current_az", trueOrFalseSettingNoOracle},
@@ -479,6 +485,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"enable_named_columns_in_function_tuple", trueOrFalseSettingNoOracle},
     {"enable_parallel_blocks_marshalling", trueOrFalseSetting},
     {"enable_parsing_to_custom_serialization", trueOrFalseSetting},
+    {"enable_positional_arguments_for_projections", trueOrFalseSettingNoOracle},
     {"enable_reads_from_query_cache", trueOrFalseSetting},
     {"enable_s3_requests_logging", trueOrFalseSettingNoOracle},
     {"enable_scalar_subquery_optimization", trueOrFalseSetting},
@@ -497,27 +504,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     /// {"exact_rows_before_limit", trueOrFalseSetting}, cannot use with generateRandom
     {"except_default_mode", setSetting},
     {"exclude_materialize_skip_indexes_on_insert",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &)
-         {
-             String res;
-             std::vector<uint32_t> choices = {0, 1, 2, 3, 4};
-             const uint32_t nchoices = rg.randomInt<uint32_t>(0, static_cast<uint32_t>(choices.size()));
-
-             std::shuffle(choices.begin(), choices.end(), rg.generator);
-             for (uint32_t i = 0; i < nchoices; i++)
-             {
-                 if (i != 0)
-                 {
-                     res += ",";
-                 }
-                 res += "i";
-                 res += std::to_string(choices[i]);
-             }
-             return "'" + res + "'";
-         },
-         {},
-         false)},
+     CHSetting([](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"i0", "i1", "i2", "i3"}); }, {}, false)},
     {"extremes", trueOrFalseSettingNoOracle},
     {"fallback_to_stale_replicas_for_distributed_queries", trueOrFalseSetting},
     {"filesystem_cache_allow_background_download", trueOrFalseSettingNoOracle},
@@ -708,9 +695,26 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"input_format_values_deduce_templates_of_expressions", trueOrFalseSettingNoOracle},
     {"insert_allow_materialized_columns", trueOrFalseSettingNoOracle},
     {"insert_deduplicate", trueOrFalseSettingNoOracle},
+    {"insert_select_deduplicate",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings & choices = {"0", "1", "'auto'"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
     {"insert_distributed_one_random_shard", trueOrFalseSettingNoOracle},
     {"insert_null_as_default", trueOrFalseSettingNoOracle},
-    {"insert_quorum", CHSetting(zeroOneTwo, {}, false)},
+    {"insert_quorum",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings & choices = {"0", "1", "2", "'auto'"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
     {"insert_quorum_parallel", trueOrFalseSettingNoOracle},
     {"insert_shard_id",
      CHSetting(
@@ -749,6 +753,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
          },
          {},
          false)},
+    {"lightweight_deletes_sync", CHSetting(zeroToThree, {}, false)},
     {"load_balancing",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
@@ -817,7 +822,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"multiple_joins_try_to_keep_original_names", trueOrFalseSetting},
     {"mutations_execute_nondeterministic_on_initiator", trueOrFalseSetting},
     {"mutations_execute_subqueries_on_initiator", trueOrFalseSetting},
-    {"mutations_sync", CHSetting(zeroOneTwo, {}, false)},
+    {"mutations_sync", CHSetting(zeroToThree, {}, false)},
     {"mysql_map_fixed_string_to_text_in_show_columns", trueOrFalseSettingNoOracle},
     {"mysql_map_string_to_text_in_show_columns", trueOrFalseSettingNoOracle},
     {"normalize_function_names", trueOrFalseSetting},
@@ -951,7 +956,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings & choices = {"'0'", "'1'", "'auto'"};
+             static const DB::Strings & choices = {"0", "1", "'auto'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -972,6 +977,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"page_cache_inject_eviction", trueOrFalseSetting},
     {"parallel_distributed_insert_select", CHSetting(zeroOneTwo, {}, false)},
     {"parallel_replicas_allow_in_with_subquery", trueOrFalseSetting},
+    {"parallel_replicas_allow_materialized_views", trueOrFalseSettingNoOracle},
     {"parallel_replicas_custom_key_range_lower", CHSetting(highRange, {}, false)},
     {"parallel_replicas_custom_key_range_upper", CHSetting(highRange, {}, false)},
     {"parallel_replicas_for_cluster_engines", trueOrFalseSetting},
@@ -1316,6 +1322,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
            "max_number_of_partitions_for_independent_aggregation",
            "max_projection_rows_to_use_projection_index",
            "max_rows_to_transfer",
+           "max_streams_for_files_processing_in_cluster_functions",
            "merge_tree_max_rows_to_use_cache",
            "merge_tree_min_read_task_size",
            "merge_tree_min_rows_for_concurrent_read",
@@ -1346,14 +1353,12 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     if (!fc.allow_query_oracles)
     {
         serverSettings.insert(
-            {{"apply_deleted_mask", trueOrFalseSettingNoOracle}, /// gives issue with dump table oracle
-             {"deduplicate_blocks_in_dependent_materialized_views", trueOrFalseSettingNoOracle},
+            {{"deduplicate_blocks_in_dependent_materialized_views", trueOrFalseSettingNoOracle},
              {"describe_compact_output", trueOrFalseSettingNoOracle},
              {"empty_result_for_aggregation_by_empty_set", trueOrFalseSettingNoOracle}, /// the oracle doesn't get output
              {"external_table_functions_use_nulls", trueOrFalseSettingNoOracle},
              {"external_table_strict_query", trueOrFalseSettingNoOracle},
              {"ignore_data_skipping_indices", trueOrFalseSettingNoOracle},
-             {"lightweight_deletes_sync", CHSetting(zeroOneTwo, {}, false)},
              {"optimize_using_constraints", trueOrFalseSettingNoOracle},
              {"parallel_replica_offset",
               CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.nextSmallNumber() - 1); }, {}, false)},
@@ -1361,7 +1366,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
               CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.nextSmallNumber() - 1); }, {}, false)},
              {"remote_filesystem_read_method",
               CHSetting([](RandomGenerator & rg, FuzzConfig &) { return rg.nextBool() ? "'read'" : "'threadpool'"; }, {}, false)},
-             {"wait_for_async_insert", trueOrFalseSettingNoOracle}});
+             {"wait_for_async_insert", trueOrFalseSettingNoOracle}}); /// breaks table dump oracle
         max_bytes_values.insert(
             max_bytes_values.end(),
             {"max_bytes_in_distinct",
@@ -1472,6 +1477,31 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              {"timeout_overflow_mode_leaf", overflowSetting},
              {"transfer_overflow_mode", overflowSetting}});
     }
+    if (fc.enable_compatibility_settings)
+    {
+        serverSettings.insert(
+            {{"compatibility",
+              CHSetting(
+                  [&](RandomGenerator & rg, FuzzConfig &)
+                  {
+                      /// The first release with the new analyzer enabled
+                      const uint32_t minYear = 24;
+                      const uint32_t minMonth = 3;
+                      const std::chrono::year_month_day ymd{std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now())};
+                      const uint32_t currentYear
+                          = std::max<uint32_t>(minYear, static_cast<uint32_t>(static_cast<int>(ymd.year()) % 100)); /// YY
+                      const uint32_t currentMonth = static_cast<uint32_t>(ymd.month()); /// 1–12
+
+                      /// Map (year, month) to a linear month index
+                      const uint32_t startIndex = minYear * 12 + (minMonth - 1); /// 23.1
+                      const uint32_t total = (currentYear * 12 + (currentMonth - 1)) - startIndex + 1;
+                      const uint32_t randomIndex = startIndex + rg.randomInt<uint32_t>(0, total - 1);
+                      /// Convert back from linear month index to (year, month)
+                      return fmt::format("'{}.{}'", randomIndex / 12, (randomIndex % 12) + 1);
+                  },
+                  {},
+                  false)}});
+    }
 
     /// Set hot settings
     for (const auto & entry : fc.hot_settings)
@@ -1514,6 +1544,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
               },
               {},
               false)},
+         {"format_capn_proto_max_message_size", CHSetting(bytesRange, {}, false)},
          {"format_csv_allow_double_quotes", trueOrFalseSettingNoOracle},
          {"format_csv_allow_single_quotes", trueOrFalseSettingNoOracle},
          {"format_csv_delimiter", CHSetting(nastyStrings, {}, false)},
