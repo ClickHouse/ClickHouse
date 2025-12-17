@@ -1080,7 +1080,12 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
                 object_metadata = *metadata;
             }
             else
-                object_metadata = object_storage->getObjectMetadata(key, with_tags);
+            {
+                if (object_storage->tryGetObjectMetadata(key, with_tags))
+                    object_metadata = object_storage->getObjectMetadata(key, with_tags);
+                else
+                    return nullptr;
+            }
         }
 
         if (file_progress_callback)
