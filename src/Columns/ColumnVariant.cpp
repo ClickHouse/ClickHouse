@@ -48,7 +48,6 @@ std::string ColumnVariant::getName() const
     return res.str();
 }
 
-
 void ColumnVariant::initIdentityGlobalToLocalDiscriminatorsMapping()
 {
     local_to_global_discriminators.reserve(variants.size());
@@ -57,6 +56,45 @@ void ColumnVariant::initIdentityGlobalToLocalDiscriminatorsMapping()
     {
         local_to_global_discriminators.push_back(i);
         global_to_local_discriminators.push_back(i);
+    }
+}
+
+void ColumnVariant::constructOffsetsFromDiscriminators()
+{
+    const ColumnDiscriminators * discriminators_concrete = typeid_cast<const ColumnDiscriminators *>(local_discriminators.get());
+    Offsets & offsets_data = typeid_cast<ColumnOffsets *>(offsets.get())->getData();
+    offsets_data.clear();
+    offsets_data.reserve(discriminators_concrete->size());
+    /// If we have only NULLs, offsets column will not contain any real offsets.
+    if (hasOnlyNulls())
+    {
+        offsets_data.resize(discriminators_concrete->size());
+    }
+    /// If we have only one non empty variant and no NULLs,
+    /// offsets column will contain just sequential offsets 0, 1, 2, ...
+    else if (getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
+    {
+        for (size_t i = 0; i != discriminators_concrete->size(); ++i)
+            offsets_data.push_back(i);
+    }
+    /// Otherwise we should iterate through discriminators and
+    /// remember current offset for each variant column.
+    else
+    {
+        std::vector<Offset> nested_offsets;
+        nested_offsets.resize(variants.size());
+        for (Discriminator discr : discriminators_concrete->getData())
+        {
+            if (discr == NULL_DISCRIMINATOR)
+            {
+                offsets_data.emplace_back();
+            }
+            else
+            {
+                offsets_data.push_back(nested_offsets[discr]);
+                ++nested_offsets[discr];
+            }
+        }
     }
 }
 
@@ -149,34 +187,7 @@ ColumnVariant::ColumnVariant(DB::MutableColumnPtr local_discriminators_, DB::Mut
     {
         /// If no offsets column was provided, construct offsets based on discriminators.
         offsets = ColumnOffsets::create();
-        Offsets & offsets_data = typeid_cast<ColumnOffsets *>(offsets.get())->getData();
-        offsets_data.reserve(discriminators_concrete->size());
-        /// If we have only NULLs, offsets column will not contain any real offsets.
-        if (hasOnlyNulls())
-        {
-            offsets_data.resize(discriminators_concrete->size());
-        }
-        /// If we have only one non empty variant and no NULLs,
-        /// offsets column will contain just sequential offsets 0, 1, 2, ...
-        else if (getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
-        {
-            for (size_t i = 0; i != discriminators_concrete->size(); ++i)
-                offsets_data.push_back(i);
-        }
-        /// Otherwise we should iterate through discriminators and
-        /// remember current offset for each variant column.
-        else
-        {
-            std::vector<Offset> nested_offsets;
-            nested_offsets.resize(variants.size());
-            for (Discriminator discr : discriminators_concrete->getData())
-            {
-                if (discr == NULL_DISCRIMINATOR)
-                    offsets_data.emplace_back();
-                else
-                    offsets_data.push_back(nested_offsets[discr]++);
-            }
-        }
+        constructOffsetsFromDiscriminators();
     }
 
     /// Empty global_discriminators means that variants are already in global order.
@@ -972,6 +983,67 @@ ColumnPtr ColumnVariant::filter(const Filter & filt, ssize_t result_size_hint) c
     /// We cannot use filtered offsets column, as it will be incorrect.
     /// It will be reconstructed on ColumnVariant creation according to new local_discriminators.
     return ColumnVariant::create(local_discriminators->filter(filt, result_size_hint), new_variants, local_to_global_discriminators);
+}
+
+void ColumnVariant::filter(const Filter & filt)
+{
+    if (size() != filt.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size());
+
+    ColumnDiscriminators * discriminators_concrete = typeid_cast<ColumnDiscriminators *>(local_discriminators.get());
+    if (!discriminators_concrete)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "discriminator column must be a ColumnUInt8");
+
+    /// If we have only NULLs, just filter local_discriminators column.
+    if (hasOnlyNulls())
+    {
+        discriminators_concrete->filter(filt);
+        /// In case of all NULL values offsets doesn't contain any useful values, just resize it.
+        size_t pop_back_count = size() - discriminators_concrete->size();
+        offsets->popBack(pop_back_count);
+        return;
+    }
+
+    /// Optimization for case when there is only 1 non-empty variant and no NULLs.
+    /// In this case we can just filter this variant and resize discriminators/offsets.
+    if (auto non_empty_discr = getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
+    {
+        variants[*non_empty_discr]->filter(filt);
+        size_t pop_back_count = size() - variants[*non_empty_discr]->size();
+        discriminators_concrete->popBack(pop_back_count);
+        offsets->popBack(pop_back_count);
+        return;
+    }
+
+    /// We should create filter for each variant
+    /// according to local_discriminators and given filter.
+    const size_t num_variants = variants.size();
+    std::vector<Filter> nested_filters(num_variants);
+    for (size_t i = 0; i != num_variants; ++i)
+        nested_filters[i].reserve_exact(variants[i]->size());
+
+    std::vector<bool> variant_result_is_empty(num_variants, true);
+
+    const auto & local_discriminators_data = getLocalDiscriminators();
+    for (size_t i = 0; i != local_discriminators_data.size(); ++i)
+    {
+        Discriminator discr = local_discriminators_data[i];
+        if (discr != NULL_DISCRIMINATOR)
+        {
+            nested_filters[discr].push_back(filt[i]);
+            variant_result_is_empty[discr] = variant_result_is_empty[discr] && !filt[i];
+        }
+    }
+
+    for (size_t i = 0; i != num_variants; ++i)
+    {
+        /// It make sense to call filter() on variant only if the result size is not 0.
+        if (!variant_result_is_empty[i])
+            variants[i]->filter(nested_filters[i]);
+    }
+
+    discriminators_concrete->filter(filt);
+    constructOffsetsFromDiscriminators();
 }
 
 void ColumnVariant::expand(const Filter & mask, bool inverted)

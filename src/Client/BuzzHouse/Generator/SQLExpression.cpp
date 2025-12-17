@@ -1508,7 +1508,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     {
         /// Dictionary functions
         SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-        const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(has_dictionary_lambda)).get();
+        const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(has_dictionary_lambda));
         const auto dfunc = rg.pickRandomly(dictFuncs);
 
         sfc->mutable_func()->set_catalog_func(dfunc);

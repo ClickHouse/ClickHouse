@@ -1258,6 +1258,9 @@ The server successfully detected this situation and will download merged part fr
     \
     M(LoadedStatisticsMicroseconds, "Elapsed time of loading statistics from parts", ValueType::Microseconds) \
     \
+    M(RuntimeDataflowStatisticsInputBytes, "Collected statistics on the number of bytes replicas would read if the query was executed with parallel replicas", ValueType::Number) \
+    M(RuntimeDataflowStatisticsOutputBytes, "Collected statistics on the number of bytes replicas would send to the initiator if the query was executed with parallel replicas", ValueType::Number) \
+    \
     M(S3CachedCredentialsProvidersReused, "Total number of reused credentials provider from the cache", ValueType::Number) \
     M(S3CachedCredentialsProvidersAdded, "Total number of newly added credentials providers to the cache", ValueType::Number) \
 
@@ -1355,9 +1358,9 @@ Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
     return res;
 }
 
-const char * getName(Event event)
+std::string_view getName(Event event)
 {
-    static const char * strings[] =
+    static std::string_view strings[] =
     {
     #define M(NAME, DOCUMENTATION, VALUE_TYPE) #NAME,
         APPLY_FOR_EVENTS(M)
@@ -1369,14 +1372,14 @@ const char * getName(Event event)
 
 const char * getDocumentation(Event event)
 {
-    static const char * strings[] =
+    static std::string_view strings[] =
     {
     #define M(NAME, DOCUMENTATION, VALUE_TYPE) DOCUMENTATION,
         APPLY_FOR_EVENTS(M)
     #undef M
     };
 
-    return strings[event];
+    return strings[event].data();
 }
 
 ValueType getValueType(Event event)
