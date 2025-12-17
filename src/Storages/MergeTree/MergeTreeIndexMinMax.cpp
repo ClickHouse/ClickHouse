@@ -230,9 +230,11 @@ MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(const MergeTree
     return {0 /* unknown */, {}};
 }
 
-MergeTreeIndexBulkGranulesMinMax::MergeTreeIndexBulkGranulesMinMax(const String & index_name_, const Block & index_sample_block_, int direction_, size_t size_hint_, bool store_map_) :
+MergeTreeIndexBulkGranulesMinMax::MergeTreeIndexBulkGranulesMinMax(const String & index_name_, const Block & index_sample_block_,
+                                                                   size_t index_granularity_, int direction_, size_t size_hint_, bool store_map_) :
     index_name(index_name_)
     , index_sample_block(index_sample_block_)
+    , index_granularity(index_granularity_)
     , direction(direction_)
     , store_map(store_map_)
 {
@@ -259,9 +261,15 @@ void MergeTreeIndexBulkGranulesMinMax::deserializeBinary(size_t granule_num, Rea
         serialization->deserializeBinary(scratch, istr, format_settings);
         serialization->deserializeBinary(value, istr, format_settings);
     }
-    granules.emplace_back(MinMaxGranule{granule_num, value});
-    if (store_map)
-        granules_map.emplace(granule_num, granules.size() - 1);
+    /// If index granularity is not 1, we insert the same value as the min
+    /// or max for all the corresponding granules. For our top-K purporse,this
+    /// is safe and maybe lead to false positives, but never wrong results.
+    for (size_t i = 0; i < index_granularity; ++i)
+    {
+        granules.emplace_back(MinMaxGranule{granule_num, value});
+        if (store_map)
+            granules_map.emplace(granule_num, granules.size() - 1);
+    }
     empty = false;
 }
 

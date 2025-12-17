@@ -764,7 +764,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     std::vector<std::vector<MergeTreeIndexBulkGranulesMinMax::MinMaxGranule>> parts_top_k_granules(
                     parts_with_ranges.size(), std::vector<MergeTreeIndexBulkGranulesMinMax::MinMaxGranule>());
 
-    bool perform_top_k_optimization = top_k_filter_info && skip_indexes.skip_index_for_top_k_filtering && !top_k_filter_info->where_clause;
+    /// Perform top-K optimization during index analysis itself?
+    const bool perform_top_k_optimization = top_k_filter_info && skip_indexes.skip_index_for_top_k_filtering && !top_k_filter_info->where_clause &&
+                                            top_k_filter_info->num_sort_columns == 1 && skip_indexes.skip_index_for_top_k_filtering->index.granularity == 1;
 
     size_t num_threads = std::min<size_t>(num_streams, parts_with_ranges.size());
     if (settings[Setting::max_threads_for_indexes])
@@ -2444,7 +2446,8 @@ MergeTreeIndexBulkGranulesMinMaxPtr MergeTreeDataSelectExecutor::getMinMaxIndexG
             reader_settings);
 
     auto min_max_granules = std::make_shared<MergeTreeIndexBulkGranulesMinMax>(skip_index_minmax->index.name,
-                                    skip_index_minmax->index.sample_block, direction, index_ranges.getNumberOfMarks(), access_by_mark);
+                                    skip_index_minmax->index.sample_block, index_granularity, direction,
+                                    index_ranges.getNumberOfMarks(), access_by_mark);
     auto bulk_granules = std::dynamic_pointer_cast<IMergeTreeIndexBulkGranules>(min_max_granules);
 
     for (auto index_range : index_ranges)
