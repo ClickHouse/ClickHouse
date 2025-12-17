@@ -4931,26 +4931,31 @@ private:
     template <typename T>
     WrapperType createArrayToQBitWrapper(const DataTypeArray & from_array_type, const DataTypeQBit & to_qbit_type) const
     {
-        const DataTypePtr & nested_type = from_array_type.getNestedType();
+        const DataTypePtr & from_nested_type = from_array_type.getNestedType();
+        const DataTypePtr & to_nested_type = to_qbit_type.getElementType();
+        const size_t dimension = to_qbit_type.getDimension();
+        const size_t element_size = to_qbit_type.getElementSize();
 
-        if (!nested_type->equals(*to_qbit_type.getElementType()))
-            throw Exception(
-                ErrorCodes::TYPE_MISMATCH,
-                "Cannot convert from Array({}) to QBit({}, {})",
-                nested_type->getName(),
-                to_qbit_type.getElementType()->getName(),
-                to_qbit_type.getDimension());
-
-        /// Number of elements in the vector and width (in bits) of each element
-        size_t n = to_qbit_type.getDimension();
-        size_t size = to_qbit_type.getElementSize();
-
-        return [n, size](
+        return [nested_function = prepareUnpackDictionaries(from_nested_type, to_nested_type),
+                from_nested_type,
+                to_nested_type,
+                to_array_type = std::make_shared<DataTypeArray>(to_nested_type),
+                dimension,
+                element_size](
                    ColumnsWithTypeAndName & arguments,
                    const DataTypePtr & result_type,
                    const ColumnNullable * nullable_source,
                    size_t /* input_rows_count */) -> ColumnPtr
-        { return convertArrayToQBit<T>(arguments, result_type, nullable_source, n, size); };
+        {
+            const auto & col_array = assert_cast<const ColumnArray &>(*arguments.front().column);
+
+            ColumnsWithTypeAndName nested_columns{{col_array.getDataPtr(), from_nested_type, ""}};
+            auto converted_nested = nested_function(nested_columns, to_nested_type, nullable_source, nested_columns.front().column->size());
+            auto converted_array = ColumnArray::create(converted_nested, col_array.getOffsetsPtr());
+            ColumnsWithTypeAndName converted_arguments{{std::move(converted_array), std::make_shared<DataTypeArray>(to_nested_type), ""}};
+
+            return convertArrayToQBit<T>(converted_arguments, result_type, nullable_source, dimension, element_size);
+        };
     }
 
     /// The case of: tuple([key1, key2, ..., key_n], [value1, value2, ..., value_n])

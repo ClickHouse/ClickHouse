@@ -347,6 +347,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.bson.skip_fields_with_unsupported_types_in_schema_inference = settings[Setting::input_format_bson_skip_fields_with_unsupported_types_in_schema_inference];
     format_settings.binary.max_binary_string_size = settings[Setting::format_binary_max_string_size];
     format_settings.binary.max_binary_array_size = settings[Setting::format_binary_max_array_size];
+    format_settings.binary.max_object_size = settings[Setting::format_binary_max_object_size];
     format_settings.binary.encode_types_in_binary_format = settings[Setting::output_format_binary_encode_types_in_binary_format];
     format_settings.binary.decode_types_in_binary_format = settings[Setting::input_format_binary_decode_types_in_binary_format];
     format_settings.binary.write_json_as_string = settings[Setting::output_format_binary_write_json_as_string];

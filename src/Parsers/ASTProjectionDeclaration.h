@@ -7,14 +7,16 @@ namespace DB
 {
 
 class ASTFunction;
+class ASTSetQuery;
 
 class ASTProjectionDeclaration : public IAST
 {
 public:
     String name;
-    IAST * query;
-    IAST * index;
-    ASTFunction * type;
+    IAST * query = nullptr;
+    IAST * index = nullptr;
+    ASTFunction * type = nullptr;
+    ASTSetQuery * with_settings = nullptr;
 
     String getID(char) const override { return "Projection"; }
 
@@ -25,6 +27,7 @@ public:
         f(reinterpret_cast<void **>(&query));
         f(reinterpret_cast<void **>(&index));
         f(reinterpret_cast<void **>(&type));
+        f(reinterpret_cast<void **>(&with_settings));
     }
 
 protected:

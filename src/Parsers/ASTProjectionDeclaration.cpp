@@ -2,6 +2,7 @@
 
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
 
 namespace DB
 {
@@ -16,10 +17,14 @@ ASTPtr ASTProjectionDeclaration::clone() const
         res->set(res->index, index->clone());
     if (type)
         res->set(res->type, type->clone());
+    if (with_settings)
+        res->set(res->with_settings, with_settings->clone());
     return res;
 }
 
-void ASTProjectionDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+
+void ASTProjectionDeclaration::formatImpl(
+    WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     settings.writeIdentifier(ostr, name, /*ambiguous=*/false);
     if (query)
@@ -45,6 +50,12 @@ void ASTProjectionDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettin
         ostr << " TYPE ";
         type->format(ostr, settings, state, frame);
     }
-}
 
+    if (with_settings)
+    {
+        ostr << settings.nl_or_ws << indent_str << "WITH SETTINGS (";
+        with_settings->format(ostr, settings, state, frame);
+        ostr << ")";
+    }
+}
 }

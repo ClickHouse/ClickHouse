@@ -865,6 +865,7 @@ class ResultInfo:
     TIMEOUT = "Timeout"
 
     GH_STATUS_ERROR = "Failed to set GH commit status"
+    OPEN_ISSUES_CHECK_ERROR = "Failed to check open issues"
 
     NOT_FINALIZED = (
         "Job failed to produce Result due to a script error or CI runner issue"

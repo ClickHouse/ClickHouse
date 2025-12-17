@@ -75,6 +75,9 @@ struct ProjectionDescription
 
     ProjectionIndexPtr index;
 
+    std::optional<UInt64> index_granularity;
+    std::optional<UInt64> index_granularity_bytes;
+
     /// Parse projection from definition AST
     static ProjectionDescription
     getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context);
@@ -102,6 +105,8 @@ struct ProjectionDescription
     ProjectionDescription & operator=(ProjectionDescription && other) = default;
 
     ProjectionDescription clone() const;
+
+    void loadSettings(const SettingsChanges & changes);
 
     bool operator==(const ProjectionDescription & other) const;
     bool operator!=(const ProjectionDescription & other) const { return !(*this == other); }

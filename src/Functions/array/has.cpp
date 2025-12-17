@@ -11,7 +11,14 @@ using FunctionHas = FunctionArrayIndex<HasAction, NameHas>;
 
 REGISTER_FUNCTION(Has)
 {
-    FunctionDocumentation::Description description = "Returns whether the array contains the specified element.";
+    FunctionDocumentation::Description description
+        = "Returns whether the array contains the specified element.\n\n"
+          "When the first argument is a constant array and the second argument is a column or expression, "
+          "`has(constant_array, column)` behaves like `column IN (constant_array)` and can use primary key "
+          "and data-skipping indexes for optimization. For example, `has([1, 10, 100], id)` can leverage "
+          "the primary key index if `id` is part of the `PRIMARY KEY`.\n\n"
+          "This optimization also applies when the column is wrapped in monotonic functions (e.g., `has([...], toDate(ts))`).";
+
     FunctionDocumentation::Syntax syntax = "has(arr, x)";
     FunctionDocumentation::Arguments arguments = {
         {"arr", "The source array.", {"Array(T)"}},
