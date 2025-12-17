@@ -77,7 +77,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int NO_ZOOKEEPER;
-    extern const int INVALID_CONFIG_PARAMETER;
 }
 
 constexpr const char * TASK_PROCESSED_OUT_REASON = "Task has been already processed";
@@ -1394,8 +1393,10 @@ void DDLWorker::markReplicasActive(bool /*reinitialized*/)
         {
             const auto & cluster = it.second;
             if (!cluster->getHostIDs().empty())
-                throw Exception(
-                    ErrorCodes::INVALID_CONFIG_PARAMETER, "There are clusters with host ids but no local host found for this replica.");
+            {
+                LOG_WARNING(log, "There are clusters with host ids but no local host found for this replica.");
+                break;
+            }
         }
     }
 }
