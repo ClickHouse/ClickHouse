@@ -392,11 +392,17 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
     },
     {
         {TypeIndex::Object, "distinctJSONPaths"}, optimizeDistinctJSONPaths,
-=======
+    },
+    {
         {TypeIndex::Object, "tupleElement"}, optimizeTupleOrVariantElement<DataTypeObject>,
->>>>>>> 1c42187909285aed53217fa1071925cf2da7fd14
     },
 };
+
+bool canOptimizeWithWherePrewhereOrGroupBy(const String & function_name)
+{
+    /// Optimization for distinctJSONPaths works correctly only if we request distinct JSON paths across whole table.
+    return function_name != "distinctJSONPaths";
+}
 
 std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimization(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
@@ -484,6 +490,7 @@ public:
         {
             if (query_node->isGroupByWithCube() || query_node->isGroupByWithRollup() || query_node->isGroupByWithGroupingSets())
                 can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef()[Setting::group_by_use_nulls];
+            has_where_prewhere_or_group_by = query_node->hasWhere() || query_node->hasPrewhere() || query_node->hasGroupBy();
             return;
         }
     }
@@ -536,6 +543,7 @@ private:
 
     NameSet processed_tables;
     bool can_wrap_result_columns_with_nullable = false;
+    bool has_where_prewhere_or_group_by = false;
 
     void enterImpl(const TableNode & table_node)
     {
@@ -595,6 +603,9 @@ private:
         const auto & column = first_argument_column_node.getColumn();
         auto table_name = table_node.getStorage()->getStorageID().getFullTableName();
         Identifier qualified_name({table_name, column.name});
+
+        if (has_where_prewhere_or_group_by && !canOptimizeWithWherePrewhereOrGroupBy(function_node.getFunctionName()))
+            return;
 
         if (node_transformers.contains({column.type->getTypeId(), function_node.getFunctionName()}))
             ++optimized_identifiers_count[qualified_name];
