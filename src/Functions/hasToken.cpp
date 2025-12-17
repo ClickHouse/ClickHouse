@@ -48,7 +48,7 @@ A token is defined as the longest possible sub-sequence of consecutive character
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     FunctionDocumentation::Description description_or_null = R"(
 Like [`hasToken`](#hasToken) but returns null if token is ill-formed.
@@ -72,7 +72,7 @@ Like [`hasToken`](#hasToken) but returns null if token is ill-formed.
     };
     FunctionDocumentation::IntroducedIn introduced_in_or_null = {20, 1};
     FunctionDocumentation::Category category_or_null = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation_or_null = {description_or_null, syntax_or_null, arguments_or_null, returned_value_or_null, examples_or_null, introduced_in_or_null, category_or_null};
+    FunctionDocumentation documentation_or_null = {description_or_null, syntax_or_null, arguments_or_null, {}, returned_value_or_null, examples_or_null, introduced_in_or_null, category_or_null};
 
     factory.registerFunction<FunctionHasToken>(documentation);
     factory.registerFunction<FunctionHasTokenOrNull>(documentation_or_null);
