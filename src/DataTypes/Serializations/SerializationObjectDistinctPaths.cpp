@@ -113,7 +113,7 @@ void SerializationObjectDistinctPaths::serializeBinaryBulkStatePrefix(
     const IColumn &, ISerialization::SerializeBinaryBulkSettings &, ISerialization::SerializeBinaryBulkStatePtr &) const
 {
     throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED, "Method serializeBinaryBulkStatePrefix is not implemented for SerializationSubObjectSharedData");
+        ErrorCodes::NOT_IMPLEMENTED, "Method serializeBinaryBulkStatePrefix is not implemented for SerializationObjectDistinctPaths");
 }
 
 void SerializationObjectDistinctPaths::serializeBinaryBulkWithMultipleStreams(
@@ -121,14 +121,14 @@ void SerializationObjectDistinctPaths::serializeBinaryBulkWithMultipleStreams(
 {
     throw Exception(
         ErrorCodes::NOT_IMPLEMENTED,
-        "Method serializeBinaryBulkWithMultipleStreams is not implemented for SerializationSubObjectSharedData");
+        "Method serializeBinaryBulkWithMultipleStreams is not implemented for SerializationObjectDistinctPaths");
 }
 
 void SerializationObjectDistinctPaths::serializeBinaryBulkStateSuffix(
     ISerialization::SerializeBinaryBulkSettings &, ISerialization::SerializeBinaryBulkStatePtr &) const
 {
     throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED, "Method serializeBinaryBulkStateSuffix is not implemented for SerializationSubObjectSharedData");
+        ErrorCodes::NOT_IMPLEMENTED, "Method serializeBinaryBulkStateSuffix is not implemented for SerializationObjectDistinctPaths");
 }
 
 
