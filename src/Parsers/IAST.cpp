@@ -335,4 +335,47 @@ std::string IAST::dumpTree(size_t indent) const
     return wb.str();
 }
 
+void IAST::format(WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    FormatState state;
+    FormatStateStacked frame;
+    if (parenthesed)
+        ostr.write('(');
+    formatImpl(ostr, settings, state, std::move(frame));
+    if (parenthesed)
+        ostr.write(')');
+}
+
+void IAST::format(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    if (parenthesed)
+        ostr.write('(');
+    formatImpl(ostr, settings, state, std::move(frame));
+    if (parenthesed)
+        ostr.write(')');
+}
+
+void IAST::format(FormattingBuffer out) const
+{
+    if (parenthesed)
+        out.ostr.write('(');
+    formatImpl(out.ostr, out.settings, out.state, out.frame);
+    if (parenthesed)
+        out.ostr.write(')');
+}
+
+void IAST::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    if (parenthesed)
+        ostr.write('(');
+    formatImpl(FormattingBuffer{ostr, settings, state, std::move(frame)});
+    if (parenthesed)
+        ostr.write(')');
+}
+
+void IAST::formatImpl(FormattingBuffer /*out*/) const
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown element in AST: {}", getID());
+}
+
 }
