@@ -5,4 +5,5 @@ DROP TABLE IF EXISTS test_s3;
 set s3_truncate_on_insert = 1;
 CREATE TABLE test_s3 (c0 Int) ENGINE = S3(s3_conn, filename = 'file.csv');
 SELECT * FROM test_s3;
+ALTER TABLE test_s3 MODIFY ORDER BY (c0); -- { serverError NOT_IMPLEMENTED }
 DROP TABLE test_s3;
