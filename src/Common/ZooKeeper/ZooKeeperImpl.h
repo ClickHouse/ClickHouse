@@ -90,6 +90,12 @@ namespace CurrentMetrics
 namespace DB
 {
     class ZooKeeperLog;
+    class AggregatedZooKeeperLog;
+}
+
+namespace HistogramMetrics
+{
+    struct Metric;
 }
 
 namespace Coordination
@@ -109,7 +115,8 @@ public:
     ZooKeeper(
         const zkutil::ShuffleHosts & nodes,
         const zkutil::ZooKeeperArgs & args_,
-        std::shared_ptr<ZooKeeperLog> zk_log_);
+        std::shared_ptr<ZooKeeperLog> zk_log_,
+        std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log_);
 
     ~ZooKeeper() override;
 
@@ -214,11 +221,14 @@ public:
 
     void finalize(const String & reason)  override { finalize(false, false, reason); }
 
-    void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
+    std::shared_ptr<ZooKeeperLog> getZooKeeperLog();
+    std::shared_ptr<AggregatedZooKeeperLog> getAggregatedZooKeeperLog();
 
     void setServerCompletelyStarted();
 
     const KeeperFeatureFlags * getKeeperFeatureFlags() const override { return &keeper_feature_flags; }
+
+    int64_t getLastZXIDSeen() const override { return last_zxid_seen.load(std::memory_order_relaxed); }
 
 private:
     const Int32 send_receive_os_threads_nice_value;
@@ -269,12 +279,11 @@ private:
         ZooKeeperRequestPtr request;
         ResponseCallback callback;
         WatchCallbackPtrOrEventPtr watch;
-        clock::time_point time;
     };
 
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
 
-    RequestsQueue requests_queue{1024, "zookeeper-client"};
+    RequestsQueue requests_queue{1024};
     void pushRequest(RequestInfo && info);
 
     using Operations = std::map<XID, RequestInfo>;
@@ -343,13 +352,18 @@ private:
 
     void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_microseconds = 0);
 
+    /// Observes the operation in Aggregated ZooKeeper Log.
+    void observeOperation(const ZooKeeperRequest * request, const ZooKeeperResponse * response, UInt64 elapsed_microseconds);
+
     std::optional<String> tryGetSystemZnode(const std::string & path, const std::string & description);
 
     void initFeatureFlags();
 
-
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
     std::shared_ptr<ZooKeeperLog> zk_log;
+    std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log;
+
+    std::atomic<int64_t> last_zxid_seen;
 
     DB::KeeperFeatureFlags keeper_feature_flags;
 };

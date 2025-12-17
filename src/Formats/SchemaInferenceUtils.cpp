@@ -12,7 +12,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/transformTypesRecursively.h>
-#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <IO/ReadBufferFromString.h>
@@ -791,7 +790,7 @@ namespace
 
         ReadBufferFromString buf(field);
         DayNum tmp;
-        return tryReadDateText(tmp, buf, DateLUT::instance(), /*allowed_delimiters=*/"-/:") && buf.eof();
+        return tryReadDateText(tmp, buf, DateLUT::instance(), /*allowed_delimiters=*/"-/:", /*saturate_on_overflow=*/false) && buf.eof();
     }
 
     DataTypePtr tryInferDateTimeOrDateTime64(std::string_view field, const FormatSettings & settings)
@@ -827,7 +826,7 @@ namespace
             switch (settings.date_time_input_format)
             {
                 case FormatSettings::DateTimeInputFormat::Basic:
-                    if (tryReadDateTimeText(tmp, buf, DateLUT::instance(), /*allowed_date_delimiters=*/"-/:", /*allowed_time_delimiters=*/":") && buf.eof())
+                    if (tryReadDateTimeText(tmp, buf, DateLUT::instance(), /*allowed_date_delimiters=*/"-/:", /*allowed_time_delimiters=*/":", /*saturate_on_overflow=*/false) && buf.eof())
                         return std::make_shared<DataTypeDateTime>();
                     break;
                 case FormatSettings::DateTimeInputFormat::BestEffort:
@@ -846,7 +845,7 @@ namespace
         switch (settings.date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
-                if (tryReadDateTime64Text(tmp, 9, buf, DateLUT::instance(), /*allowed_date_delimiters=*/"-/:", /*allowed_time_delimiters=*/":") && buf.eof())
+                if (tryReadDateTime64Text(tmp, 9, buf, DateLUT::instance(), /*allowed_date_delimiters=*/"-/:", /*allowed_time_delimiters=*/":", /*saturate_on_overflow=*/false) && buf.eof())
                     return std::make_shared<DataTypeDateTime64>(9);
                 break;
             case FormatSettings::DateTimeInputFormat::BestEffort:
@@ -1292,21 +1291,12 @@ namespace
 
         if (key_types.empty())
         {
-            if constexpr (is_json)
-            {
-                if (settings.json.allow_deprecated_object_type)
-                    return std::make_shared<DataTypeObjectDeprecated>("json", true);
-            }
-
             /// Empty Map is Map(Nothing, Nothing)
             return std::make_shared<DataTypeMap>(std::make_shared<DataTypeNothing>(), std::make_shared<DataTypeNothing>());
         }
 
         if constexpr (is_json)
         {
-            if (settings.json.allow_deprecated_object_type)
-                return std::make_shared<DataTypeObjectDeprecated>("json", true);
-
             if (settings.json.read_objects_as_strings)
                 return std::make_shared<DataTypeString>();
 
@@ -1360,7 +1350,7 @@ namespace
         {
             if constexpr (is_json)
             {
-                if (!settings.json.allow_deprecated_object_type && settings.json.try_infer_objects_as_tuples)
+                if (settings.json.try_infer_objects_as_tuples)
                     return tryInferJSONPaths(buf, settings, json_info, depth);
             }
 
@@ -1629,7 +1619,7 @@ DataTypePtr tryInferDataTypeForSingleJSONField(std::string_view field, const For
     return type;
 }
 
-DataTypePtr makeNullableRecursively(DataTypePtr type, const FormatSettings & settings)
+static DataTypePtr adjustNullableRecursively(DataTypePtr type, bool make_nullable, const FormatSettings & settings)
 {
     if (!type)
         return nullptr;
@@ -1637,12 +1627,17 @@ DataTypePtr makeNullableRecursively(DataTypePtr type, const FormatSettings & set
     WhichDataType which(type);
 
     if (which.isNullable())
-        return type;
+        return make_nullable ? type : removeNullable(type);
+
+    /// Leave named compound types unchanged.
+    /// E.g. don't turn `Point` into `Tuple(Nullable(Float64), Nullable(Float64))`.
+    if (type->hasCustomName())
+        return makeNullableSafe(type);
 
     if (which.isArray())
     {
         const auto * array_type = assert_cast<const DataTypeArray *>(type.get());
-        auto nested_type = makeNullableRecursively(array_type->getNestedType(), settings);
+        auto nested_type = adjustNullableRecursively(array_type->getNestedType(), make_nullable, settings);
         return nested_type ? std::make_shared<DataTypeArray>(nested_type) : nullptr;
     }
 
@@ -1652,8 +1647,8 @@ DataTypePtr makeNullableRecursively(DataTypePtr type, const FormatSettings & set
         DataTypes nested_types;
         for (const auto & nested_type: variant_type->getVariants())
         {
-            if (!nested_type->lowCardinality() && nested_type->haveSubtypes())
-                nested_types.push_back(makeNullableRecursively(nested_type, settings));
+            if (!make_nullable || (!nested_type->lowCardinality() && nested_type->haveSubtypes()))
+                nested_types.push_back(adjustNullableRecursively(nested_type, make_nullable, settings));
             else
                 nested_types.push_back(nested_type);
         }
@@ -1666,7 +1661,7 @@ DataTypePtr makeNullableRecursively(DataTypePtr type, const FormatSettings & set
         DataTypes nested_types;
         for (const auto & element : tuple_type->getElements())
         {
-            auto nested_type = makeNullableRecursively(element, settings);
+            auto nested_type = adjustNullableRecursively(element, make_nullable, settings);
             if (!nested_type)
                 return nullptr;
             nested_types.push_back(nested_type);
@@ -1681,54 +1676,39 @@ DataTypePtr makeNullableRecursively(DataTypePtr type, const FormatSettings & set
     if (which.isMap())
     {
         const auto * map_type = assert_cast<const DataTypeMap *>(type.get());
-        auto key_type = makeNullableRecursively(map_type->getKeyType(), settings);
-        auto value_type = makeNullableRecursively(map_type->getValueType(), settings);
+        auto key_type = adjustNullableRecursively(map_type->getKeyType(), make_nullable, settings);
+        auto value_type = adjustNullableRecursively(map_type->getValueType(), make_nullable, settings);
         return key_type && value_type ? std::make_shared<DataTypeMap>(removeNullable(key_type), value_type) : nullptr;
     }
 
     if (which.isLowCardinality())
     {
         const auto * lc_type = assert_cast<const DataTypeLowCardinality *>(type.get());
-        auto nested_type = makeNullableRecursively(lc_type->getDictionaryType(), settings);
+        auto nested_type = adjustNullableRecursively(lc_type->getDictionaryType(), make_nullable, settings);
         return nested_type ? std::make_shared<DataTypeLowCardinality>(nested_type) : nullptr;
-    }
-
-    if (which.isObjectDeprecated())
-    {
-        const auto * object_type = assert_cast<const DataTypeObjectDeprecated *>(type.get());
-        if (object_type->hasNullableSubcolumns())
-            return type;
-        return std::make_shared<DataTypeObjectDeprecated>(object_type->getSchemaFormat(), true);
     }
 
     if (which.isObject() && !settings.schema_inference_make_json_columns_nullable)
         return type;
 
-    return makeNullableSafe(type);
+    return make_nullable ? makeNullableSafe(type) : type;
+}
+
+DataTypePtr makeNullableRecursively(DataTypePtr type, const FormatSettings & settings)
+{
+    return adjustNullableRecursively(type, true, settings);
+}
+
+DataTypePtr removeNullableRecursively(DataTypePtr type, const FormatSettings & settings)
+{
+    return adjustNullableRecursively(type, false, settings);
 }
 
 NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header, const FormatSettings & settings)
 {
     NamesAndTypesList result;
-
-    std::unordered_map<String, DataTypeCustomDescPtr> custom_descs;
-    const auto & prev_schema = header.getNamesAndTypesList();
-    for (const auto & [name, type] : prev_schema)
-        if (type->hasCustomName() && (type->getTypeId() == TypeIndex::Tuple || type->getTypeId() == TypeIndex::Array))
-            custom_descs[name] = std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomFixedName>(type->getCustomName()->getName()));
-
     for (auto & [name, type] : header.getNamesAndTypesList())
         result.emplace_back(name, makeNullableRecursively(type, settings));
-
-    for (auto & [name, type] : result)
-    {
-        auto it = custom_descs.find(name);
-        if (it != custom_descs.end())
-        {
-            type->setCustomization(std::move(it->second));
-        }
-    }
-
     return result;
 }
 

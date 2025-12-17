@@ -4,6 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Poco/Message.h>
+#include <Common/setThreadName.h>
 #include <Storages/ColumnsDescription.h>
 
 namespace DB
@@ -16,7 +17,7 @@ struct TextLogElement
     time_t event_time{};
     Decimal64 event_time_microseconds{};
 
-    String thread_name;
+    ThreadName thread_name;
     UInt64 thread_id{};
 
     Message::Priority level = Message::PRIO_TRACE;

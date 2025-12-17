@@ -18,11 +18,12 @@ set(DBMS_FUNCTIONS
     checkHyperscanRegexp.cpp # checkHyperscanRegexp (Used by MultiMatchAnyImpl.h, multiMatchAny.cpp)
     CastOverloadResolver.cpp # createInternalCast (Used by WindowTransform.cpp, KeyCondition.cpp...)
     FunctionsConversion.cpp # createFunctionBaseCast (Used by CastOverloadResolver.cpp)
-    searchAnyAll.cpp # FunctionSearchImpl (Used by MergeTreeIndexGin.cpp)
+    hasAnyAllTokens.cpp # FunctionSearchImpl (Used by MergeTreeIndexConditionText.cpp)
     FunctionsConversion_impl0.cpp
     FunctionsConversion_impl1.cpp
     FunctionsConversion_impl2.cpp
     FunctionsConversion_impl3.cpp
+    FunctionTopKFilter.cpp # createInternalFunctionTopKFilterResolver used from optimizeTopK.cpp
     extractTimeZoneFromFunctionArguments.cpp # extractTimeZoneFromFunctionArguments (DateTimeTransforms.h, FunctionsConversion.cpp)
     generateSnowflakeID.cpp
 )
@@ -63,6 +64,7 @@ list (APPEND PRIVATE_LIBS
         boost::filesystem
         divide_impl
         ch_contrib::xxHash
+        ch_contrib::stringzilla
 )
 
 if (TARGET OpenSSL::Crypto)

@@ -63,7 +63,7 @@ public:
     };
 
     SerializationObject(
-        std::unordered_map<String, SerializationPtr> typed_path_serializations_,
+        const std::unordered_map<String, DataTypePtr> & typed_paths_types_,
         const std::unordered_set<String> & paths_to_skip_,
         const std::vector<String> & path_regexps_to_skip_,
         const DataTypePtr & dynamic_type_);
@@ -106,6 +106,8 @@ public:
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+
+    void serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
 
     virtual void deserializeObject(IColumn & column, std::string_view object, const FormatSettings & settings) const = 0;
 
@@ -159,7 +161,8 @@ private:
 protected:
     bool shouldSkipPath(const String & path) const;
 
-    std::unordered_map<String, SerializationPtr> typed_path_serializations;
+    std::unordered_map<String, DataTypePtr> typed_paths_types;
+    std::unordered_map<std::string_view, SerializationPtr> typed_paths_serializations;
     std::unordered_set<String> paths_to_skip;
     std::vector<String> sorted_paths_to_skip;
     std::list<re2::RE2> path_regexps_to_skip;

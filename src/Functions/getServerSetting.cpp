@@ -69,7 +69,7 @@ private:
                             "The argument of function {} should be a constant string with the name of a setting",
                             String{name});
 
-        std::string_view setting_name{column->getDataAt(0).toView()};
+        std::string_view setting_name{column->getDataAt(0)};
 
         return getContext()->getServerSettings().get(setting_name);
     }
@@ -102,7 +102,7 @@ SELECT getServerSetting('allow_use_jemalloc_memory');
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionGetServerSetting>(documentation, FunctionFactory::Case::Sensitive);
 }

@@ -25,25 +25,24 @@ public:
         ContextPtr context_,
         const DictionaryStructure & dict_struct_,
         std::shared_ptr<YTsaurusStorageConfiguration> configuration_,
-        Block sample_block_,
-        SharedHeader table_sample_block_);
+        const Block & sample_block_);
 
     YTsarususDictionarySource(const YTsarususDictionarySource & other);
 
     ~YTsarususDictionarySource() override;
 
-    QueryPipeline loadAll() override;
+    BlockIO loadAll() override;
 
-    QueryPipeline loadUpdatedAll() override
+    BlockIO loadUpdatedAll() override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for YTsarususDictionarySource");
     }
 
     bool supportsSelectiveLoad() const override;
 
-    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
+    BlockIO loadIds(const std::vector<UInt64> & ids) override;
 
-    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    BlockIO loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override { return true; }
 
@@ -58,8 +57,7 @@ private:
     ContextPtr context;
     const DictionaryStructure dict_struct;
     const std::shared_ptr<YTsaurusStorageConfiguration> configuration;
-    Block sample_block;
-    SharedHeader table_sample_block;
+    SharedHeader sample_block;
     YTsaurusClientPtr client;
 };
 

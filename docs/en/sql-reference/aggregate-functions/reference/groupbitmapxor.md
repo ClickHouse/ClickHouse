@@ -4,6 +4,7 @@ description: 'Calculates the XOR of a bitmap column, and returns the cardinality
 sidebar_position: 151
 slug: /sql-reference/aggregate-functions/reference/groupbitmapxor
 title: 'groupBitmapXor'
+doc_type: 'reference'
 ---
 
 # groupBitmapXor

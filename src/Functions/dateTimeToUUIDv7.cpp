@@ -132,17 +132,54 @@ private:
 
 REGISTER_FUNCTION(DateTimeToUUIDv7)
 {
-    FunctionDocumentation::Description description = R"(Converts a [DateTime](../data-types/datetime.md) value to the first [UUIDv7](https://en.wikipedia.org/wiki/UUID#Version_7) at the giving time.)";
-    FunctionDocumentation::Syntax syntax = "dateTimeToUUIDv7(value)";
-    FunctionDocumentation::Arguments arguments = {
+    /// dateTimeToUUIDv7 documentation
+    FunctionDocumentation::Description description_dateTimeToUUIDv7 = R"(
+Converts a [DateTime](../data-types/datetime.md) value to a [UUIDv7](https://en.wikipedia.org/wiki/UUID#Version_7) at the given time.
+
+See section ["UUIDv7 generation"](#uuidv7-generation) for details on UUID structure, counter management, and concurrency guarantees.
+
+:::note
+As of September 2025, version 7 UUIDs are in draft status and their layout may change in future.
+:::
+    )";
+    FunctionDocumentation::Syntax syntax_dateTimeToUUIDv7 = "dateTimeToUUIDv7(value)";
+    FunctionDocumentation::Arguments arguments_dateTimeToUUIDv7 = {
         {"value", "Date with time.", {"DateTime"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Input value converted to", {"UUID"}};
-    FunctionDocumentation::Examples examples = {{"simple", "SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))", "6832626392367104000"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::UUID;
+    FunctionDocumentation::ReturnedValue returned_value_dateTimeToUUIDv7 = {"Returns a UUIDv7.", {"UUID"}};
+    FunctionDocumentation::Examples examples_dateTimeToUUIDv7 = {
+    {
+        "Usage example",
+        R"(
+SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'));
+        )",
+        R"(
+┌─dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))─┐
+│ 018f05af-f4a8-778f-beee-1bedbc95c93b                                   │
+└─────────────────────────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "multiple UUIDs for the same timestamp",
+        R"(
+SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56'));
+SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56'));
+        )",
+        R"(
+┌─dateTimeToUUIDv7(t⋯08-15 18:57:56'))─┐
+│ 017b4b2d-7720-76ed-ae44-bbcc23a8c550 │
+└──────────────────────────────────────┘
+┌─dateTimeToUUIDv7(t⋯08-15 18:57:56'))─┐
+│ 017b4b2d-7720-76ed-ae44-bbcf71ed0fd3 │
+└──────────────────────────────────────┘
+       )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_dateTimeToUUIDv7 = {25, 9};
+    FunctionDocumentation::Category category_dateTimeToUUIDv7 = FunctionDocumentation::Category::UUID;
+    FunctionDocumentation documentation_dateTimeToUUIDv7 = {description_dateTimeToUUIDv7, syntax_dateTimeToUUIDv7, arguments_dateTimeToUUIDv7, {}, returned_value_dateTimeToUUIDv7, examples_dateTimeToUUIDv7, introduced_in_dateTimeToUUIDv7, category_dateTimeToUUIDv7};
 
-    factory.registerFunction<FunctionDateTimeToUUIDv7>({description, syntax, arguments, returned_value, examples, introduced_in, category});
+    factory.registerFunction<FunctionDateTimeToUUIDv7>(documentation_dateTimeToUUIDv7);
 
 }
 }

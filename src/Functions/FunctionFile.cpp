@@ -122,7 +122,7 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            std::string_view filename = column_src->getDataAt(row).toView();
+            std::string_view filename = column_src->getDataAt(row);
             fs::path file_path(filename.data(), filename.data() + filename.size());
 
             if (file_path.is_relative())
@@ -189,7 +189,7 @@ INSERT INTO table SELECT file('a.txt'), file('b.txt');
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 3};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionFile>(documentation);
 }

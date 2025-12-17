@@ -86,6 +86,7 @@ void EvictionCandidates::add(
     it->second.candidates.push_back(candidate);
     candidate->setEvictingFlag(locked_key, lock);
     ++candidates_size;
+    candidates_bytes += candidate->size();
 }
 
 void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::Lock & lock)
@@ -263,6 +264,7 @@ void EvictionCandidates::finalize(
     {
         auto iterator = queue_entries_to_invalidate.back();
         iterator->invalidate();
+        iterator->check(lock);
         queue_entries_to_invalidate.pop_back();
 
         /// Remove entry from per query priority queue.
