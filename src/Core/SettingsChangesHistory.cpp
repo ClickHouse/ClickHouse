@@ -79,6 +79,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_use_clients_cache_for_write", false, false, "New setting"},
             {"enable_positional_arguments_for_projections", true, false, "New setting to control positional arguments in projections."},
             {"insert_select_deduplicate", Field{"auto"}, Field{"auto"}, "New setting"},
+            {"output_format_pretty_named_tuples_as_json", false, true, "New setting to control whether named tuples in Pretty format are output as JSON objects"},
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
