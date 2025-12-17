@@ -11,7 +11,7 @@ $CLICKHOUSE_CLIENT -q "SELECT count() >= 0 AS has_tasks FROM system.background_s
 function get_background_schedule_pool_with_retries()
 {
   for _ in {1..100}; do
-    res="$($CLICKHOUSE_CLIENT -q "SELECT pool, database, table, table_uuid != toUUIDOrDefault(0) AS has_uuid, log_name FROM system.background_schedule_pool WHERE database = currentDatabase()")"
+    res="$($CLICKHOUSE_CLIENT -q "SELECT pool, database, table, table_uuid != toUUIDOrDefault(0) AS has_uuid, log_name FROM system.background_schedule_pool WHERE database = currentDatabase() ORDER BY ALL")"
     if [ -n "$res" ]; then
       echo "$res"
       return
@@ -40,6 +40,7 @@ $CLICKHOUSE_CLIENT -nmq "
   DROP TABLE IF EXISTS test_merge_tree_03745;
   CREATE TABLE test_merge_tree_03745 (x UInt64, y String) ENGINE = MergeTree() ORDER BY x;
   INSERT INTO test_merge_tree_03745 VALUES (1, 'a'), (2, 'b');
+  ALTER TABLE test_merge_tree_03745 DELETE WHERE x = 1 SETTINGS mutations_sync = 2;
 "
 get_background_schedule_pool_with_retries
 $CLICKHOUSE_CLIENT -nmq "

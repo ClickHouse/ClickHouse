@@ -29,8 +29,8 @@ static struct InitFiu
 /// We should define different types of failpoints here. There are four types of them:
 /// - ONCE: the failpoint will only be triggered once.
 /// - REGULAR: the failpoint will always be triggered until disableFailPoint is called.
-/// - PAUSEABLE_ONCE: the failpoint will be blocked one time when pauseFailPoint is called, util disableFailPoint is called.
-/// - PAUSEABLE: the failpoint will be blocked every time when pauseFailPoint is called, util disableFailPoint is called.
+/// - PAUSEABLE_ONCE: the failpoint will be blocked one time when pauseFailPoint is called, until disableFailPoint is called.
+/// - PAUSEABLE: the failpoint will be blocked every time when pauseFailPoint is called, until disableFailPoint is called.
 
 #define APPLY_FOR_FAILPOINTS(ONCE, REGULAR, PAUSEABLE_ONCE, PAUSEABLE) \
     ONCE(replicated_merge_tree_commit_zk_fail_after_op) \
@@ -125,7 +125,8 @@ static struct InitFiu
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
     PAUSEABLE_ONCE(rmt_mutate_task_pause_in_prepare) \
     PAUSEABLE_ONCE(rmt_merge_selecting_task_pause_when_scheduled) \
-    ONCE(parallel_replicas_reading_response_timeout)
+    ONCE(parallel_replicas_reading_response_timeout) \
+    REGULAR(storage_merge_tree_background_schedule_merge_fail)
 
 
 namespace FailPoints

@@ -66,6 +66,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char storage_merge_tree_background_clear_old_parts_pause[];
+    extern const char storage_merge_tree_background_schedule_merge_fail[];
 }
 
 namespace Setting
@@ -129,6 +130,7 @@ namespace ActionLocks
     extern const StorageActionBlockType PartsMerge;
     extern const StorageActionBlockType PartsTTLMerge;
     extern const StorageActionBlockType PartsMove;
+    extern const StorageActionBlockType Cleanup;
 }
 
 static MergeTreeTransactionPtr tryGetTransactionForMutation(const MergeTreeMutationEntry & mutation, LoggerPtr log = nullptr)
@@ -180,6 +182,7 @@ StorageMergeTree::StorageMergeTree(
           mode)
     , writer(*this)
     , merger_mutator(*this)
+    , cleanup_thread(*this)
     , support_transaction(supportTransaction(getDisks(), log.load()))
 {
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
@@ -220,6 +223,7 @@ void StorageMergeTree::startup()
 
     try
     {
+        cleanup_thread.start();
         background_operations_assignee.start();
         startBackgroundMovesIfNeeded();
         startOutdatedAndUnexpectedDataPartsLoadingTask();
@@ -267,6 +271,7 @@ void StorageMergeTree::shutdown(bool)
 
     background_operations_assignee.finish();
     background_moves_assignee.finish();
+    cleanup_thread.stop();
 
     if (deduplication_log)
         deduplication_log->shutdown();
@@ -1559,6 +1564,8 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
     assert(!isStaticStorage());
 
+    cleanup_thread.wakeupEarlierIfNeeded();
+
     auto metadata_snapshot = getInMemoryMetadataPtr();
     MergeMutateSelectedEntryPtr merge_entry;
     MergeMutateSelectedEntryPtr mutate_entry;
@@ -1625,6 +1632,12 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         /// in MergePlainMergeTreeTask. So, this slot will never be freed.
         if (!scheduled && isTTLMergeType(merge_entry->future_part->merge_type))
             getContext()->getMergeList().cancelMergeWithTTL();
+
+        fiu_do_on(FailPoints::storage_merge_tree_background_schedule_merge_fail,
+        {
+            scheduled = false;
+        });
+
         return scheduled;
     }
     if (mutate_entry)
@@ -1646,39 +1659,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         mutation_wait_event.notify_all();
     }
 
-    bool scheduled = false;
-    if (auto lock = time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(
-            (*getSettings())[MergeTreeSetting::merge_tree_clear_old_temporary_directories_interval_seconds]))
-    {
-        assignee.scheduleCommonTask(std::make_shared<ExecutableLambdaAdapter>(
-            [this, shared_lock] ()
-            {
-                return clearOldTemporaryDirectories((*getSettings())[MergeTreeSetting::temporary_directories_lifetime].totalSeconds());
-            }, common_assignee_trigger, getStorageID()), /* need_trigger */ false);
-        scheduled = true;
-    }
-
-    if (auto lock = time_after_previous_cleanup_parts.compareAndRestartDeferred(
-            (*getSettings())[MergeTreeSetting::merge_tree_clear_old_parts_interval_seconds]))
-    {
-        assignee.scheduleCommonTask(std::make_shared<ExecutableLambdaAdapter>(
-            [this, shared_lock] ()
-            {
-                /// All use relative_data_path which changes during rename
-                /// so execute under share lock.
-                size_t cleared_count = 0;
-                cleared_count += clearOldPartsFromFilesystem(/* force */ false, /* with_pause_point */true);
-                cleared_count += clearOldMutations();
-                cleared_count += clearEmptyParts();
-                cleared_count += clearUnusedPatchParts();
-                cleared_count += unloadPrimaryKeysAndClearCachesOfOutdatedParts();
-                return cleared_count;
-                /// TODO maybe take into account number of cleared objects when calculating backoff
-            }, common_assignee_trigger, getStorageID()), /* need_trigger */ false);
-        scheduled = true;
-    }
-
-    return scheduled;
+    return false;
 }
 
 UInt64 StorageMergeTree::getCurrentMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /*currently_processing_in_background_mutex_lock*/) const
@@ -2659,6 +2640,8 @@ ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type)
         return merger_mutator.ttl_merges_blocker.cancel();
     if (action_type == ActionLocks::PartsMove)
         return parts_mover.moves_blocker.cancel();
+    if (action_type == ActionLocks::Cleanup)
+        return cleanup_thread.getCleanupLock();
 
     return {};
 }
@@ -2669,6 +2652,8 @@ void StorageMergeTree::onActionLockRemove(StorageActionBlockType action_type)
         background_operations_assignee.trigger();
     else if (action_type == ActionLocks::PartsMove)
         background_moves_assignee.trigger();
+    else if (action_type == ActionLocks::Cleanup)
+        cleanup_thread.wakeup();
 }
 
 IStorage::DataValidationTasksPtr StorageMergeTree::getCheckTaskList(
