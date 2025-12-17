@@ -679,8 +679,6 @@ static bool isInsertSelectTrivialEnoughForDistributedExecution(const ASTInsertQu
         /// TODO: replace with QueryTree analysis after switching to analyzer completely
         return (!select_query->distinct
             && !select_query->limit_with_ties
-            && !select_query->prewhere()
-            && !select_query->where()
             && !select_query->groupBy()
             && !select_query->having()
             && !select_query->orderBy()

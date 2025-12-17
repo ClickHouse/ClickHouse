@@ -308,7 +308,7 @@ SELECT toDecimalString(CAST(123.456 AS Decimal(10,3)), 2) AS decimal_val,
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDecimalString = {23, 3};
     FunctionDocumentation::Category category_toDecimalString = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDecimalString = {description_toDecimalString, syntax_toDecimalString, arguments_toDecimalString, returned_value_toDecimalString, examples_toDecimalString, introduced_in_toDecimalString, category_toDecimalString};
+    FunctionDocumentation documentation_toDecimalString = {description_toDecimalString, syntax_toDecimalString, arguments_toDecimalString, {}, returned_value_toDecimalString, examples_toDecimalString, introduced_in_toDecimalString, category_toDecimalString};
 
     factory.registerFunction<FunctionToDecimalString>(documentation_toDecimalString, FunctionFactory::Case::Insensitive);
 }

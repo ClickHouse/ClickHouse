@@ -610,30 +610,28 @@ class Runner:
 
         workflow_result = None
 
+        is_final_job = job.name == Settings.FINISH_WORKFLOW_JOB_NAME
+        if workflow.enable_open_issues_check:
+            # should be done before HtmlRunnerHooks.post_run(workflow, job, info_errors)
+            #   to upload updated job and workflow results to S3
+            try:
+                if is_final_job:
+                    # re-check entire workflow in the final job as some new issues may appear
+                    workflow_result = Result.from_fs(workflow.name)
+                    _check_and_link_open_issues(workflow_result, job_name="")
+                else:
+                    _check_and_link_open_issues(result, job_name=job.name)
+            except Exception as e:
+                print(f"ERROR: failed to check open issues: {e}")
+                traceback.print_exc()
+                if is_final_job:
+                    env.add_info(ResultInfo.OPEN_ISSUES_CHECK_ERROR)
+
         # always in the end
         if workflow.enable_report:
             print(f"Run html report hook")
             HtmlRunnerHooks.post_run(workflow, job, info_errors)
-            workflow_result = Result.from_fs(workflow.name)
-            is_final_job = job.name == Settings.FINISH_WORKFLOW_JOB_NAME
-
-            if workflow.enable_open_issues_check:
-                if is_final_job:
-                    result_to_check = workflow_result
-                    job_name_to_check = ""
-                else:
-                    result_to_check = result
-                    job_name_to_check = job.name
-                try:
-                    _check_and_link_open_issues(
-                        result_to_check, job_name=job_name_to_check
-                    )
-                except Exception as e:
-                    print(f"ERROR: failed to check open issues: {e}")
-                    traceback.print_exc()
-                    if is_final_job:
-                        workflow_result.set_info("Open issues check failed")
-
+            workflow_result = workflow_result or Result.from_fs(workflow.name)
             if is_final_job and ci_db:
                 # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data
                 workflow_storage_usage = StorageUsage.from_dict(

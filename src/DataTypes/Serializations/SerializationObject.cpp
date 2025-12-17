@@ -24,6 +24,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 SerializationObject::SerializationObject(
@@ -1118,6 +1119,14 @@ void SerializationObject::deserializeBinary(Field & field, ReadBuffer & istr, co
     Object object;
     size_t number_of_paths;
     readVarUInt(number_of_paths, istr);
+    if (settings.binary.max_object_size && number_of_paths > settings.binary.max_object_size)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "Too many paths in a single object: {}. The maximum is: {}. To increase the maximum, use setting "
+            "format_binary_max_object_size",
+            number_of_paths,
+            settings.binary.max_object_size);
+
     /// Read pairs (path, value).
     for (size_t i = 0; i != number_of_paths; ++i)
     {

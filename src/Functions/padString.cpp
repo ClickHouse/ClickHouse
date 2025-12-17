@@ -358,7 +358,7 @@ Pads a string from the left with spaces or with a specified string (multiple tim
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation_left = {description_left, syntax_left, arguments_left, returned_value_left, examples_left, introduced_in, category};
+    FunctionDocumentation documentation_left = {description_left, syntax_left, arguments_left, {}, returned_value_left, examples_left, introduced_in, category};
 
     FunctionDocumentation::Description description_left_utf8 = R"(
 Pads a UTF8 string from the left with spaces or a specified string (multiple times, if needed) until the resulting string reaches the given length.
@@ -376,7 +376,7 @@ Unlike [`leftPad`](#leftPad) which measures the string length in bytes, the stri
         )"
     }
     };
-    FunctionDocumentation documentation_left_utf8 = {description_left_utf8, syntax_left_utf8, arguments_left, returned_value_left, examples_left_utf8, introduced_in, category};
+    FunctionDocumentation documentation_left_utf8 = {description_left_utf8, syntax_left_utf8, arguments_left, {}, returned_value_left, examples_left_utf8, introduced_in, category};
 
     FunctionDocumentation::Description description_right = R"(
 Pads a string from the right with spaces or with a specified string (multiple times, if needed) until the resulting string reaches the specified `length`.
@@ -394,7 +394,7 @@ Pads a string from the right with spaces or with a specified string (multiple ti
         )"
     }
     };
-    FunctionDocumentation documentation_right = {description_right, syntax_right, arguments_left, returned_value_right, examples_right, introduced_in, category};
+    FunctionDocumentation documentation_right = {description_right, syntax_right, arguments_left, {}, returned_value_right, examples_right, introduced_in, category};
 
     FunctionDocumentation::Description description_right_utf8 = R"(
 Pads the string from the right with spaces or a specified string (multiple times, if needed) until the resulting string reaches the given length.
@@ -412,7 +412,7 @@ Unlike [`rightPad`](#rightPad) which measures the string length in bytes, the st
 └──────────────────────────────┴─────────────────────────┘
         )"}
     };
-    FunctionDocumentation documentation_right_utf8 = {description_right_utf8, syntax_right_utf8, arguments_left, returned_value_right_utf8, examples_right_utf8, introduced_in, category};
+    FunctionDocumentation documentation_right_utf8 = {description_right_utf8, syntax_right_utf8, arguments_left, {}, returned_value_right_utf8, examples_right_utf8, introduced_in, category};
 
     factory.registerFunction<FunctionPadString<false, false>>(documentation_left);
     factory.registerFunction<FunctionPadString<false, true>>(documentation_left_utf8);
