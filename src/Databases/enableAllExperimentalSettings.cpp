@@ -67,6 +67,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     /// clickhouse-private settings
     context->setSetting("allow_experimental_shared_set_join", 1);
     context->setSetting("allow_experimental_qbit_type", 1);
+    context->setSetting("allow_experimental_nullable_tuple_type", 1);
 }
 
 }

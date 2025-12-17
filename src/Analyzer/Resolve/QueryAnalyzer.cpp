@@ -1663,7 +1663,9 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
 
         while (true)
         {
-            if (const auto * array_type = typeid_cast<const DataTypeArray *>(result_type.get()))
+            if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(result_type.get()))
+                result_type = nullable_type->getNestedType();
+            else if (const auto * array_type = typeid_cast<const DataTypeArray *>(result_type.get()))
                 result_type = array_type->getNestedType();
             else if (const auto * map_type = typeid_cast<const DataTypeMap *>(result_type.get()))
                 result_type = map_type->getNestedType();
