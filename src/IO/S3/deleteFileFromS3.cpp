@@ -47,7 +47,8 @@ void deleteFileFromS3(
         blob_storage_log->addEvent(BlobStorageLogElement::EventType::Delete,
                                    bucket, key,
                                    local_path_for_blob_storage_log, file_size_for_blob_storage_log,
-                                   outcome.IsSuccess() ? nullptr : &outcome.GetError());
+                                   outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
+                                   outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
     }
     else
     {
@@ -143,7 +144,6 @@ void deleteFilesFromS3(
 
             if (blob_storage_log)
             {
-                const auto * outcome_error = outcome.IsSuccess() ? nullptr : &outcome.GetError();
                 auto time_now = std::chrono::system_clock::now();
                 LOG_TRACE(log, "Writing Delete operation for blobs [{}]", comma_separated_keys);
                 for (size_t i = first_position; i < current_position; ++i)
@@ -154,7 +154,9 @@ void deleteFilesFromS3(
                     blob_storage_log->addEvent(BlobStorageLogElement::EventType::Delete,
                                                bucket, keys[i],
                                                local_path_for_blob_storage_log, file_size_for_blob_storage_log,
-                                               outcome_error, time_now);
+                                               outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
+                                               outcome.IsSuccess() ? "" : outcome.GetError().GetMessage(),
+                                               time_now);
                 }
             }
             else
