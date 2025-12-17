@@ -692,20 +692,13 @@ class Utils:
                     verbose=True,
                     strict=True,
                 )
-            elif path_obj.exists():
-                # file or link
+            elif path_obj.is_file():
                 path_out = f"{path}.zst"
                 Shell.check(
                     f"rm -f '{path_out}' && zstd -c '{path}' > '{path_out}'",
                     verbose=True,
                     strict=True,
                 )
-            elif not path_obj.exists():
-                raise RuntimeError(
-                    f"Failed to compress file [{path}]: path does not exist"
-                )
-            else:
-                raise RuntimeError(f"Failed to compress file [{path}]")
         return path_out
 
     @classmethod
