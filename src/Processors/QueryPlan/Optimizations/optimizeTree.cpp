@@ -335,7 +335,7 @@ void considerEnablingParallelReplicas(
         return;
 
     // Some tests fail because on uninitialized `MergeTreeData::SnapshotData`
-    if (optimization_settings.allow_experimental_full_text_index)
+    if (optimization_settings.enable_full_text_index)
         return;
 
     Stack stack;
