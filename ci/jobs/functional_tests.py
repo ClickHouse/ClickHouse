@@ -238,8 +238,6 @@ def main():
         config_installs_args += " --encrypted-storage"
         runner_options += f" --encrypted-storage"
 
-    if is_llvm_coverage:
-        os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}.profraw"
     if is_bugfix_validation:
         os.environ["GLOBAL_TAGS"] = "no-random-settings"
         ch_path = temp_dir
@@ -399,6 +397,9 @@ def main():
         step_name = "Start ClickHouse Server"
         print(step_name)
 
+        if is_llvm_coverage:
+            os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-server-%m.profraw"
+
         def start():
             res = CH.start_minio(test_type="stateless") and CH.start_azurite()
             res = res and CH.start()
@@ -435,6 +436,8 @@ def main():
         )
         res = results[-1].is_ok()
 
+    if is_llvm_coverage:
+        os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%m.profraw"
     test_result = None
     if res and JobStages.TEST in stages:
         stop_watch_ = Utils.Stopwatch()

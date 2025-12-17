@@ -355,7 +355,7 @@ def main():
         # "LLVM_PROFILE_FILE" :f"it-{batch_num}.profraw"
     }
     if is_llvm_coverage:
-        test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}.profraw"
+        test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}-%m.profraw"
         print(
             f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
         )
@@ -464,7 +464,7 @@ def main():
         is_flaky_check or is_bugfix_validation or is_targeted_check or info.is_local_run
     ):
         if is_llvm_coverage:
-            test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}-rerun.profraw"
+            test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}-rerun-%m.profraw"
             print(
                 f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
             )
