@@ -4075,9 +4075,10 @@ void Context::updateParquetMetadataCacheConfiguration(const Poco::Util::Abstract
 
 std::shared_ptr<ParquetMetadataCache> Context::getParquetMetadataCache() const
 {
+    SharedLockGuard lock(shared->mutex);
+
     if (!shared->parquet_metadata_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Parquet metadata cache was not created yet.");
-    std::lock_guard lock(shared->mutex);
     return shared->parquet_metadata_cache;
 }
 
