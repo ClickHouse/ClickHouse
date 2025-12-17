@@ -138,7 +138,7 @@ void asyncCopy(
 {
     if (from_disk.existsFile(from_path))
     {
-        runner(
+        runner.enqueueAndKeepTrack(
             [&from_disk, from_path, &to_disk, to_path, &read_settings, &write_settings, &cancellation_hook] {
                 from_disk.copyFile(
                     from_path, to_disk, to_path, read_settings, write_settings, cancellation_hook);

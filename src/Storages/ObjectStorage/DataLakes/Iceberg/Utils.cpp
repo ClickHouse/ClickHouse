@@ -935,6 +935,22 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
         }
     }
 
+    if (metadata_files_with_versions.empty())
+    {
+        if (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
+        {
+            throw Exception(
+                ErrorCodes::FILE_DOESNT_EXIST,
+                "The metadata file for Iceberg table with path {} and table UUID {} doesn't exist",
+                table_path,
+                table_uuid.value());
+        }
+        throw Exception(
+            ErrorCodes::FILE_DOESNT_EXIST,
+            "The metadata file for Iceberg table with path {} doesn't exist",
+            table_path);
+    }
+
     /// Get the latest version of metadata file: v<V>.metadata.json
     const ShortMetadataFileInfo & latest_metadata_file_info = [&]()
     {
@@ -1072,10 +1088,13 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::J
 
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::JSON::Object::Ptr & metadata_object)
 {
+    /// we have two ways to get current schema id
+    /// 1. check field schema, which is required in V1 format, and there is schema-id in schema
+    /// 2. check "schemas" and "current-schema-id", which is required in V2 format, but can also exist in V1.
     if (!metadata_object->has(f_schema))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in metadata", f_schema);
     Poco::JSON::Object::Ptr schema = metadata_object->getObject(f_schema);
-    if (!metadata_object->has(f_schema_id))
+    if (!schema->has(f_schema_id))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in schema", f_schema_id);
     auto current_schema_id = schema->getValue<int>(f_schema_id);
     return {schema, current_schema_id};

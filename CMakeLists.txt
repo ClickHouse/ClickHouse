@@ -101,6 +101,18 @@ if (ENABLE_BUZZHOUSE)
     set (ENABLE_PROTOBUF 1)
 endif()
 
+option (ENABLE_XRAY "Enable LLVM XRay" ON)
+
+if (NOT ENABLE_XRAY)
+    message (STATUS "Not using LLVM XRay because it's disabled")
+    set (ENABLE_XRAY 0)
+endif()
+
+if (NOT ((ARCH_AMD64 OR ARCH_AARCH64) AND OS_LINUX) OR SANITIZE OR USE_MUSL)
+    message (STATUS "Not using LLVM XRay, only Linux on amd64 and aarch64 is supported without sanitizers")
+    set (ENABLE_XRAY 0)
+endif()
+
 # Global libraries
 # See:
 # - default_libs.cmake
@@ -108,8 +120,6 @@ endif()
 add_library(global-libs INTERFACE)
 
 include (cmake/sanitize.cmake)
-
-include (cmake/xray_instrumentation.cmake)
 
 option(ENABLE_COLORED_BUILD "Enable colors in compiler output" ON)
 
@@ -197,7 +207,7 @@ endif ()
 # Add a section with the hash of the compiled machine code for integrity checks.
 # Only for official builds, because adding a section can be time consuming (rewrite of several GB).
 # And cross compiled binaries are not supported (since you cannot execute clickhouse hash-binary)
-if (CLICKHOUSE_OFFICIAL_BUILD AND NOT CMAKE_CROSSCOMPILING AND NOT ENABLE_CLANG_TIDY)
+if (CLICKHOUSE_OFFICIAL_BUILD AND OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND NOT ENABLE_CLANG_TIDY)
     message(STATUS "Official build: A checksum hash will be added to the clickhouse executable")
     set (USE_BINARY_HASH 1 CACHE STRING "Calculate binary hash and store it in the separate section")
 else ()
@@ -477,6 +487,11 @@ endfunction (add_native_target)
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
 
+# We can only include XRay flags and defines once we know that we're building LLVM
+if (ENABLE_XRAY)
+    include (cmake/xray_instrumentation.cmake)
+endif()
+
 # Sets dummy launchers to suppress linking. Used for clang-tidy builds.
 enable_dummy_launchers_if_needed()
 
@@ -667,6 +682,7 @@ if (NATIVE_BUILD_TARGETS
             # Avoid overriding .cargo/config.toml with native toolchain.
             "-DENABLE_RUST=OFF"
             "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=${ENABLE_CLICKHOUSE_SELF_EXTRACTING}"
+            "-DUSE_BINARY_HASH=${USE_BINARY_HASH}"
         ${PROJECT_SOURCE_DIR}
         WORKING_DIRECTORY "${NATIVE_BUILD_DIR}"
         COMMAND_ECHO STDOUT

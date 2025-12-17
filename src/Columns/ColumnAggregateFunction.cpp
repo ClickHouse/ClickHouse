@@ -331,6 +331,37 @@ ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_
     return res;
 }
 
+void ColumnAggregateFunction::filter(const Filter & filt)
+{
+    size_t size = data.size();
+    if (size != filt.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+                        "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
+
+    if (size == 0)
+        return;
+
+    const auto need_destroy = !src && !func->hasTrivialDestructor();
+    size_t write_pos = 0;
+
+    /// Filter in place by moving elements
+    for (size_t read_pos = 0; read_pos < size; ++read_pos)
+    {
+        if (filt[read_pos])
+        {
+            data[write_pos] = data[read_pos];
+            ++write_pos;
+        }
+        else if (need_destroy)
+        {
+            func->destroy(data[read_pos]);
+        }
+    }
+
+    /// Resize to the new size
+    data.resize_assume_reserved(write_pos);
+}
+
 void ColumnAggregateFunction::expand(const Filter & mask, bool inverted)
 {
     ensureOwnership();
@@ -600,7 +631,8 @@ void ColumnAggregateFunction::insertDefault()
     pushBackAndCreateState(data, arena, func.get());
 }
 
-std::string_view ColumnAggregateFunction::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin) const
+std::string_view ColumnAggregateFunction::serializeValueIntoArena(
+    size_t n, Arena & arena, const char *& begin, const IColumn::SerializationSettings *) const
 {
     WriteBufferFromArena out(arena, begin);
     func->serialize(data[n], out, version);
@@ -608,7 +640,7 @@ std::string_view ColumnAggregateFunction::serializeValueIntoArena(size_t n, Aren
     return out.complete();
 }
 
-void ColumnAggregateFunction::deserializeAndInsertFromArena(ReadBuffer & in)
+void ColumnAggregateFunction::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings *)
 {
     ensureOwnership();
 

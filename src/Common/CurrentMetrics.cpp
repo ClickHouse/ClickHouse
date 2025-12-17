@@ -69,6 +69,7 @@
     M(EphemeralNode, "Number of ephemeral nodes hold in ZooKeeper.") \
     M(ZooKeeperSession, "Number of sessions (connections) to ZooKeeper. Should be no more than one, because using more than one connection to ZooKeeper may lead to bugs due to lack of linearizability (stale reads) that ZooKeeper consistency model allows.") \
     M(ZooKeeperSessionExpired, "Number of expired global ZooKeeper sessions.") \
+    M(ZooKeeperConnectionLossStartedTimestampSeconds, "Unix timestamp in seconds when ZooKeeper connection was lost, or 0 if connected successfully.") \
     M(ZooKeeperWatch, "Number of watches (event subscriptions) in ZooKeeper.") \
     M(ZooKeeperRequest, "Number of requests to ZooKeeper in fly.") \
     M(DelayedInserts, "Number of INSERT queries that are throttled due to high number of active data parts for partition in a MergeTree table.") \
@@ -382,11 +383,14 @@
     M(SharedMergeTreeBrokenCondemnedPartsInKeeper, "How many broken condemned part records stored in keeper") \
     M(CacheWarmerBytesInProgress, "Total size of remote file segments waiting to be asynchronously loaded into filesystem cache.") \
     M(DistrCacheOpenedConnections, "Number of open connections to Distributed Cache") \
+    M(DistrCacheSharedLimitCount, "Number of opened connections according to DistributedCache::ConnectionPool::SharedLimit") \
     M(DistrCacheUsedConnections, "Number of currently used connections to Distributed Cache") \
     M(DistrCacheAllocatedConnections, "Number of currently allocated connections to Distributed Cache connection pool") \
     M(DistrCacheBorrowedConnections, "Number of currently borrowed connections to Distributed Cache connection pool") \
     M(DistrCacheReadRequests, "Number of executed Read requests to Distributed Cache") \
     M(DistrCacheWriteRequests, "Number of executed Write requests to Distributed Cache") \
+    M(DistrCacheWriteBuffers, "Number of distributed cache write buffers") \
+    M(DistrCacheReadBuffers, "Number of distributed cache read buffers") \
     M(DistrCacheServerConnections, "Number of open connections to ClickHouse server from Distributed Cache") \
     M(DistrCacheRegisteredServers, "Number of distributed cache registered servers") \
     M(DistrCacheRegisteredServersCurrentAZ, "Number of distributed cache registered servers in current az") \
