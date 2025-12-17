@@ -33,7 +33,7 @@ SELECT sum(x) FROM test_03765_CaseDB.t1; -- 1
 CREATE DATABASE test_03765_DbAmbA ENGINE = Atomic;
 CREATE DATABASE test_03765_dBaMbA ENGINE = Atomic;
 SET enable_case_insensitive_databases = 1;
-SELECT 1 FROM test_03765_dBAmBa.nonexistent; -- { serverError AMBIGUOUS_IDENTIFIER }
+SELECT 1 FROM test_03765_dBAmBa.nonexistent; -- { serverError UNKNOWN_DATABASE }
 SET enable_case_insensitive_databases = 0;
 SELECT 1 FROM test_03765_dBAmBa.nonexistent; -- { serverError UNKNOWN_DATABASE }
 
