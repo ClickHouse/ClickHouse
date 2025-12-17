@@ -22,13 +22,15 @@
 #include <Analyzer/Identifier.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
-#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
+#include <IO/WriteHelpers.h>
 
 #include <stack>
+
+
 namespace DB
 {
 namespace Setting
