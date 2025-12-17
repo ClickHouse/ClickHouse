@@ -621,10 +621,53 @@ public:
         }
     }
 
+    void setFlightDescriptorMapLocked(const String & flight_descriptor, const String & query_id) TSA_REQUIRES(mutex)
+    {
+        flight_descriptor_to_query_id[flight_descriptor] = query_id;
+        query_id_to_flight_descriptors[query_id].insert(flight_descriptor);
+    }
+
+    std::optional<String> getQueryIdFromFlightDescriptor(const String & flight_descriptor)
+    {
+        std::lock_guard lock{mutex};
+        if (flight_descriptor_to_query_id.contains(flight_descriptor))
+            return flight_descriptor_to_query_id[flight_descriptor];
+        return std::nullopt;
+    }
+
+    void eraseFlightDescriptorMapByQueryIdLocked(const String & query_id) TSA_REQUIRES(mutex)
+    {
+        auto it = query_id_to_flight_descriptors.find(query_id);
+        if (it == query_id_to_flight_descriptors.end())
+            return;
+        for (const auto & flight_descriptor : it->second)
+            flight_descriptor_to_query_id.erase(flight_descriptor);
+        query_id_to_flight_descriptors.erase(it);
+    }
+
+    void eraseFlightDescriptorMapByQueryId(const String & query_id)
+    {
+        std::lock_guard lock{mutex};
+        eraseFlightDescriptorMapByQueryIdLocked(query_id);
+    }
+
+    void eraseFlightDescriptorMapByDescriptorLocked(const String & flight_descriptor) TSA_REQUIRES(mutex)
+    {
+        if (!flight_descriptor_to_query_id.contains(flight_descriptor))
+            return;
+        eraseFlightDescriptorMapByQueryIdLocked(flight_descriptor_to_query_id[flight_descriptor]);
+    }
+
+    void eraseFlightDescriptorMapByDescriptor(const String & flight_descriptor)
+    {
+        std::lock_guard lock{mutex};
+        eraseFlightDescriptorMapByDescriptorLocked(flight_descriptor);
+    }
+
     /// Creates a poll descriptor.
     /// Poll descriptors are returned by method PollFlightInfo to get subsequent results from a long-running query.
     std::shared_ptr<const PollDescriptorInfo>
-    createPollDescriptor(std::unique_ptr<PollSession> poll_session, std::shared_ptr<const PollDescriptorInfo> previous_info)
+    createPollDescriptor(std::unique_ptr<PollSession> poll_session, std::shared_ptr<const PollDescriptorInfo> previous_info, std::optional<String> query_id = std::nullopt)
     {
         String poll_descriptor;
         if (previous_info)
@@ -634,6 +677,7 @@ public:
             if (!previous_info->next_poll_descriptor)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding a poll descriptor while the previous poll descriptor is final");
             poll_descriptor = *previous_info->next_poll_descriptor;
+            query_id =  getQueryIdFromFlightDescriptor(previous_info->poll_descriptor);
         }
         else
         {
@@ -658,6 +702,8 @@ public:
             chassert(inserted); /// Poll descriptors are unique.
             updateNextExpirationTime();
         }
+        if (query_id)
+            setFlightDescriptorMapLocked(poll_descriptor, *query_id);
         return info;
     }
 
@@ -667,6 +713,16 @@ public:
         auto it = poll_descriptors.find(poll_descriptor);
         if (it == poll_descriptors.end())
             return arrow::Status::KeyError("Poll descriptor ", quoteString(poll_descriptor), " not found");
+        return it->second;
+    }
+
+    /// Finds query id for a specified flight descriptor.
+    std::optional<String> getQueryIdByFlightDescriptor(const String & flight_descriptor) const
+    {
+        std::lock_guard lock{mutex};
+        auto it = flight_descriptor_to_query_id.find(flight_descriptor);
+        if (it == flight_descriptor_to_query_id.end())
+            return std::nullopt;
         return it->second;
     }
 
@@ -926,6 +982,9 @@ private:
     std::unordered_map<String, std::shared_ptr<const PollDescriptorInfo>> poll_descriptors TSA_GUARDED_BY(mutex);
     std::unordered_map<String, std::unique_ptr<PollSession>> poll_sessions TSA_GUARDED_BY(mutex);
     std::condition_variable evaluation_ended;
+    /// assosiates flight descriptors with query id
+    std::unordered_map<String, String> flight_descriptor_to_query_id TSA_GUARDED_BY(mutex);
+    std::unordered_map<String, std::unordered_set<String>> query_id_to_flight_descriptors TSA_GUARDED_BY(mutex);
     /// `tickets_by_expiration_time` and `poll_descriptors_by_expiration_time` are sorted by `expiration_time` so `std::set` is used.
     std::set<std::pair<Timestamp, String>> tickets_by_expiration_time TSA_GUARDED_BY(mutex);
     std::set<std::pair<Timestamp, String>> poll_descriptors_by_expiration_time TSA_GUARDED_BY(mutex);
@@ -1035,6 +1094,9 @@ void ArrowFlightHandler::stop()
             auto status = Shutdown();
             if (!status.ok())
                 LOG_ERROR(log, "Failed to shutdown Arrow Flight: {}", status.ToString());
+            status = Wait();
+            if (!status.ok())
+                LOG_ERROR(log, "Failed to wait for shutdown Arrow Flight: {}", status.ToString());
         }
         catch (...)
         {
@@ -1052,6 +1114,7 @@ void ArrowFlightHandler::stop()
             cleanup_thread->join();
             cleanup_thread.reset();
         }
+        calls_data.reset();
     }
 }
 
@@ -1296,7 +1359,7 @@ commandSelector(const google::protobuf::Any & any_msg, bool schema_only = false)
                             ARROW_RETURN_NOT_OK(builder_int32_append(info_name, arrow::flight::protocol::sql::SQL_SUPPORTED_TRANSACTION_NONE));
                             break;
                         case SqlInfo::FLIGHT_SQL_SERVER_CANCEL:
-                            ARROW_RETURN_NOT_OK(builder_boolean_append(info_name, false));
+                            ARROW_RETURN_NOT_OK(builder_boolean_append(info_name, true));
                             break;
                         case SqlInfo::FLIGHT_SQL_SERVER_STATEMENT_TIMEOUT:
                         case SqlInfo::FLIGHT_SQL_SERVER_TRANSACTION_TIMEOUT:
@@ -1758,7 +1821,7 @@ arrow::Status ArrowFlightHandler::PollFlightInfo(
                 auto poll_session = std::make_unique<PollSession>(query_context, thread_group, std::move(block_io), schema_modifier, block_modifier);
                 schema = poll_session->getSchema();
 
-                auto next_info = calls_data->createPollDescriptor(std::move(poll_session), /* previous_info = */ nullptr);
+                auto next_info = calls_data->createPollDescriptor(std::move(poll_session), /* previous_info = */ nullptr, query_context->getCurrentQueryId());
                 next_poll_descriptor = *next_info;
             }
             catch (...)
@@ -1878,7 +1941,9 @@ arrow::Status ArrowFlightHandler::evaluatePollDescriptor(const String & poll_des
     auto info_res = calls_data->getPollDescriptorInfo(poll_descriptor);
     ARROW_RETURN_NOT_OK(info_res);
     const auto & info = info_res.ValueOrDie();
-    if (!last)
+    if (last)
+        calls_data->eraseFlightDescriptorMapByDescriptor(poll_descriptor);
+    else
         calls_data->createPollDescriptor(std::move(poll_session), info);
 
     return arrow::Status::OK();
@@ -2085,10 +2150,18 @@ arrow::Status ArrowFlightHandler::DoAction(
 
         if (action.type == arrow::flight::ActionType::kCancelFlightInfo.type)
         {
-//            auto request = arrow::flight::CancelFlightInfoRequest::Deserialize({action.body->data_as<char>(), static_cast<size_t>(action.body->size())}).ValueOrDie();
-//            auto& process_list = server.context()->getProcessList();
-//            process_list.sendCancelToQuery(query_id, "", true);
-            return arrow::Status::OK();
+            auto request = arrow::flight::CancelFlightInfoRequest::Deserialize({action.body->data_as<char>(), static_cast<size_t>(action.body->size())}).ValueOrDie();
+            auto query_id = calls_data->getQueryIdFromFlightDescriptor(request.info->descriptor().cmd);
+            if (query_id)
+            {
+                calls_data->eraseFlightDescriptorMapByQueryId(*query_id);
+                auto& process_list = server.context()->getProcessList();
+                auto cancel_result = process_list.sendCancelToQuery(*query_id, auth.username());
+                if (cancel_result == CancellationCode::CancelSent)
+                    return arrow::Status::OK();
+                return arrow::Status::UnknownError("Attempt to cancel query ", *query_id, " returned ", magic_enum::enum_name(cancel_result));
+            }
+            return arrow::Status::UnknownError("Can't cancel query ", *query_id, " - query is not registered with FlightDescriptor ", request.info->descriptor().cmd);
         }
 
         return arrow::Status::NotImplemented(action.type, " is not supported");
