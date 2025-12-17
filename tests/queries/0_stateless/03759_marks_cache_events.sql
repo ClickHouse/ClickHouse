@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-async-insert
 
 drop table if exists data;
 create table data (key Int) engine=MergeTree() order by () settings prewarm_mark_cache=0;
@@ -12,7 +12,7 @@ insert into data values (1);
 select * from data format Null settings load_marks_asynchronously=0;
 select * from data format Null settings load_marks_asynchronously=0;
 -- drop marks cache
-detach table data;
+detach table data sync;
 attach table data;
 select * from data format Null settings load_marks_asynchronously=1;
 select * from data format Null settings load_marks_asynchronously=1;
@@ -30,7 +30,7 @@ select query_kind, Settings['load_marks_asynchronously'] load_marks_asynchronous
 -- only hits
 optimize table data final;
 -- drop marks cache to trigger misses
-detach table data;
+detach table data sync;
 attach table data;
 optimize table data final;
 
