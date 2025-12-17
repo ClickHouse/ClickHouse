@@ -294,11 +294,7 @@ def test_yt_range_hashed(started_cluster, primary_key_value, layout, dict_key):
     yt.remove_table(path)
 
 
-<<<<<<< HEAD
-def test_yt_dictionary_with_query(started_cluster):
-=======
 def test_dictionary_xml_config(started_cluster):
->>>>>>> master
     yt = YTsaurusCLI(started_cluster, instance, yt_uri_helper.host, yt_uri_helper.port)
     path = "//tmp/table"
 

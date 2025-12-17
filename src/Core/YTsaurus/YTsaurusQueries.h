@@ -82,7 +82,7 @@ struct YTsaurusGetQuery : public IYTsaurusQuery
 // https://ytsaurus.tech/docs/en/api/commands#select_rows
 struct YTsaurusSelectRowsQuery : public IYTsaurusHeavyQuery
 {
-    explicit YTsaurusSelectRowsQuery(const String & table_path_, const String& columns_str_)
+    explicit YTsaurusSelectRowsQuery(const String & table_path_, const String & columns_str_)
         : table_path(table_path_) , column_names_str(columns_str_) {}
 
     String getQueryName() const override

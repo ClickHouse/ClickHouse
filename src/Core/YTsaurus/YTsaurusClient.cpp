@@ -73,13 +73,13 @@ YTsaurusNodeType YTsaurusClient::getNodeTypeFromAttributes(const Poco::JSON::Obj
     }
 }
 
-ReadBufferPtr YTsaurusClient::selectRows(const String & cypress_path, const String& columns_str = "*")
+ReadBufferPtr YTsaurusClient::selectRows(const String & cypress_path, const String & columns_str = "*")
 {
     YTsaurusQueryPtr select_rows_query(new YTsaurusSelectRowsQuery(cypress_path, columns_str));
     return executeQuery(select_rows_query);
 }
 
-ReadBufferPtr YTsaurusClient::selectRows(const String & cypress_path, const ColumnsWithTypeAndName& columns)
+ReadBufferPtr YTsaurusClient::selectRows(const String & cypress_path, const ColumnsWithTypeAndName & columns)
 {
     String columns_names_str;
     for (size_t i = 0; i < columns.size(); ++i)

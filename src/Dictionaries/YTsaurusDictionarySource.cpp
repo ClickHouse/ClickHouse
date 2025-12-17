@@ -141,8 +141,8 @@ BlockIO YTsarususDictionarySource::loadAll()
     io.pipeline = QueryPipeline(YTsaurusSourceFactory::createSource(client, {
         .cypress_path = configuration->cypress_path,
         .settings = configuration->settings,
-        .check_types_allow_nullable = true,
         .select_rows_columns = configuration->ytsaurus_columns_description,
+        .check_types_allow_nullable = true,
     }, sample_block, max_block_size));
     return io;
 }
