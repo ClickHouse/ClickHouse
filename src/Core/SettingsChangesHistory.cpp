@@ -73,6 +73,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_use_clients_cache_for_read", true, true, "New setting"},
             {"distributed_cache_use_clients_cache_for_write", false, false, "New setting"},
             {"enable_positional_arguments_for_projections", true, false, "New setting to control positional arguments in projections."},
+            {"enable_full_text_index", false, false, "Text index was moved to Beta."},
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {

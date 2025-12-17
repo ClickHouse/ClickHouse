@@ -7266,9 +7266,9 @@ Allows defining columns with [statistics](../../engines/table-engines/mergetree-
 )", EXPERIMENTAL, allow_experimental_statistic) \
     DECLARE(Bool, use_statistics_cache, false, R"(Use statistics cache in a query to avoid the overhead of loading statistics of every parts)", EXPERIMENTAL) \
     \
-    DECLARE(Bool, allow_experimental_full_text_index, false, R"(
-If set to true, allow using the experimental text index.
-)", EXPERIMENTAL) \
+    DECLARE_WITH_ALIAS(Bool, enable_full_text_index, false, R"(
+If set to true, allow using the text index.
+)", BETA, allow_experimental_full_text_index) \
     DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
 Allow to perform full text search filtering using only the inverted text index in query plan.
 )", 0) \
