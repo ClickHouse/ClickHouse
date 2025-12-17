@@ -168,14 +168,14 @@ struct QualifiedTable
 
 using QualifiedTables = std::vector<QualifiedTable>;
 
-static IdentifierResolveResult tryResolveTableIdentifierFallback(
+IdentifierResolveResult tryResolveTableIdentifierFallback(
     const Identifier & table_identifier,
     const ContextPtr & context,
     const std::exception_ptr & swallowed_exception)
 {
     const auto & settings = context->getSettingsRef();
 
-    auto parts = table_identifier.getParts();
+    const auto & parts = table_identifier.getParts();
     QualifiedTable requested_table;
     if (parts.size() == 1)
     {
@@ -245,6 +245,21 @@ static IdentifierResolveResult tryResolveTableIdentifierFallback(
                     fmt::join(ci_dbs, ", "));
             }
 
+            // We do this by trying to resolve the table in the CI-matched database directly
+            if (!ci_tables_on && ci_dbs.size() == 1)
+            {
+                const auto & resolved_db = ci_dbs.front();
+
+                Identifier canonical {{ resolved_db, requested_table.table }};
+                if (auto resolved = IdentifierResolver::tryResolveTableIdentifier(canonical, context))
+                    return { .resolved_identifier = std::move(resolved), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
+
+                // Table not found
+                StorageID storage_id(resolved_db, requested_table.table);
+                DatabaseCatalog::instance().getTable(storage_id, context); // always throws if table doesn't exist
+                UNREACHABLE();
+            }
+
             db_candidates = std::move(ci_dbs);
         }
     }
@@ -256,7 +271,7 @@ static IdentifierResolveResult tryResolveTableIdentifierFallback(
 
     /// in selected DB collect case-insensitive table candidates
     QualifiedTables ci_table_candidates;
-    String requested_table_lower = "";
+    String requested_table_lower;
     if (ci_tables_on)
         requested_table_lower = Poco::toLower(requested_table.table);
 
@@ -268,15 +283,23 @@ static IdentifierResolveResult tryResolveTableIdentifierFallback(
 
         for (const auto & tbl_name : db_ptr->getAllTableNames(context))
         {
-            if (db_name == requested_table.database && tbl_name == requested_table.table) // -- full case-sensitive table name match
+            if (tbl_name == requested_table.table)
             {
-                Identifier canonical{{ db_name, tbl_name }};
-                if (auto resolved = IdentifierResolver::tryResolveTableIdentifier(canonical, context))
-                    return { .resolved_identifier = std::move(resolved), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
-                return {};
+                // DB is exact match -> return immediately
+                // DB is CI match -> we still need to check other DBs for ambiguity
+                if (db_name == requested_table.database)
+                {
+                    Identifier canonical{{ db_name, tbl_name }};
+                    if (auto resolved = IdentifierResolver::tryResolveTableIdentifier(canonical, context))
+                        return { .resolved_identifier = std::move(resolved), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
+                    return {};
+                }
+                ci_table_candidates.push_back({db_name, tbl_name});
             }
-            if (ci_tables_on && Poco::toLower(tbl_name) == requested_table_lower) /// -- case-insensitive match
+            else if (ci_tables_on && Poco::toLower(tbl_name) == requested_table_lower)
+            {
                 ci_table_candidates.push_back({ db_name, tbl_name });
+            }
         }
     }
 
