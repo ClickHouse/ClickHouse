@@ -29,11 +29,11 @@ name:                    clicks_idx
 type:                    minmax
 type_full:               minmax
 expr:                    clicks
+creation:                Explicit
 granularity:             1
 data_compressed_bytes:   58
 data_uncompressed_bytes: 6
 marks_bytes:             48
-creation:                Explicit
 
 Row 2:
 ──────
@@ -43,9 +43,9 @@ name:                    contacts_null_idx
 type:                    minmax
 type_full:               minmax
 expr:                    assumeNotNull(contacts_null)
+creation:                Explicit
 granularity:             1
 data_compressed_bytes:   58
 data_uncompressed_bytes: 6
 marks_bytes:             48
-creation:                Explicit
 ```

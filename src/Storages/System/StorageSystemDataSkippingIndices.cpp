@@ -39,11 +39,11 @@ StorageSystemDataSkippingIndices::StorageSystemDataSkippingIndices(const Storage
             { "type", std::make_shared<DataTypeString>(), "Index type."},
             { "type_full", std::make_shared<DataTypeString>(), "Index type expression from create statement."},
             { "expr", std::make_shared<DataTypeString>(), "Expression for the index calculation."},
+            { "creation", creation_datatype, "Whether the index was created implicitly (via add_minmax_index_for_numeric_columns or similar)"},
             { "granularity", std::make_shared<DataTypeUInt64>(), "The number of granules in the block."},
             { "data_compressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of compressed data, in bytes."},
             { "data_uncompressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of decompressed data, in bytes."},
             { "marks_bytes", std::make_shared<DataTypeUInt64>(), "The size of marks, in bytes."},
-            { "creation", creation_datatype, "Whether the index was created implicitly (via add_minmax_index_for_numeric_columns or similar)"},
         }));
     setInMemoryMetadata(storage_metadata);
 }
@@ -154,6 +154,11 @@ protected:
                         else
                             res_columns[res_index++]->insertDefault();
                     }
+
+                    /// 'creation' column
+                    if (column_mask[src_index++])
+                        res_columns[res_index++]->insert(index.is_implicitly_created);
+
                     // 'granularity' column
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(index.granularity);
@@ -165,17 +170,12 @@ protected:
                         res_columns[res_index++]->insert(secondary_index_size.data_compressed);
 
                     // 'uncompressed bytes' column
-
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(secondary_index_size.data_uncompressed);
 
                     /// 'marks_bytes' column
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(secondary_index_size.marks);
-
-                    /// 'implicit' column
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(index.is_implicitly_created);
                 }
             }
         }
