@@ -849,6 +849,7 @@ static NameSet collectFilesToSkip(
     auto skip_index = [&files_to_skip, &mrk_extension](const MergeTreeIndexPtr & index)
     {
         auto index_substreams = index->getSubstreams();
+
         for (const auto & index_substream : index_substreams)
         {
             files_to_skip.insert(index->getFileName() + index_substream.suffix + index_substream.extension);
@@ -939,16 +940,21 @@ static NameToNameVector collectFilesForRenames(
     {
         if (command.type == MutationCommand::Type::DROP_INDEX)
         {
-            static const std::array<String, 2> suffixes = {".idx2", ".idx"};
-            for (const auto & suffix : suffixes)
-            {
-                const String filename = INDEX_FILE_PREFIX + command.column_name + suffix;
-                const String filename_mrk = INDEX_FILE_PREFIX + command.column_name + mrk_extension;
+            static const std::array<String, 2> extensions = {".idx2", ".idx"};
+            static const std::array<String, 3> substreams = {"", ".dct", ".pst"};
 
-                if (source_part->checksums.has(filename))
+            for (const auto & substream : substreams)
+            {
+                for (const auto & extension : extensions)
                 {
-                    add_rename(filename, "");
-                    add_rename(filename_mrk, "");
+                    const String filename = INDEX_FILE_PREFIX + command.column_name + substream + extension;
+                    const String filename_mrk = INDEX_FILE_PREFIX + command.column_name + substream + mrk_extension;
+
+                    if (source_part->checksums.has(filename))
+                    {
+                        add_rename(filename, "");
+                        add_rename(filename_mrk, "");
+                    }
                 }
             }
         }

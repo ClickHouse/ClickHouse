@@ -596,10 +596,11 @@ void serializeTokensFrontCoding(
 /// containers that are stored in contiguous memory and sorted
 /// by the key. Therefore, to create a view to the smaller bitmap,
 /// we need only to adjust the pointers to the containers.
-std::vector<roaring::api::roaring_bitmap_t> splitPostings(const roaring::api::roaring_bitmap_t & postings, size_t block_size)
+std::vector<roaring::api::roaring_bitmap_t> splitPostings(const PostingList & postings, size_t block_size)
 {
     std::vector<roaring::api::roaring_bitmap_t> result;
-    const auto & container = postings.high_low_container;
+    result.reserve((postings.cardinality() + block_size - 1) / block_size);
+    const auto & container = postings.roaring.high_low_container;
 
     auto create_bitmap_view = [&](size_t begin, size_t size)
     {
@@ -700,7 +701,7 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
     {
         chassert(postings.isLarge());
         postings.getLarge().runOptimize();
-        auto blocks = splitPostings(postings.getLarge().roaring, posting_list_block_size);
+        auto blocks = splitPostings(postings.getLarge(), posting_list_block_size);
 
         for (const auto & block : blocks)
         {
