@@ -12,8 +12,8 @@
             --text-color: #000;
             --tile-background: #f9f9f9;
             --info-background: #e4e4e4;
-            --footer-background: #f1f1f1;
-            --footer-text-color: #000;
+            --footer-background: #333;
+            --footer-text-color: #fff;
             --status-width: 300px;
             --pending-bar-color: #f5e6a3;
             --skipped-bar-color: #ccc;
@@ -1986,6 +1986,10 @@
         const savedTheme = localStorage.getItem('theme');
         if (savedTheme === 'night') {
             document.body.classList.add('night-theme');
+        }
+        // Set sortByStatus to true by default if not set
+        if (localStorage.getItem('sortByStatus') === null) {
+            localStorage.setItem('sortByStatus', 'true');
         }
         await init();
         toggleStatusFilter(true);
