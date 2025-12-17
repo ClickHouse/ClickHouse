@@ -82,6 +82,7 @@ namespace Setting
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
 }
 
 namespace ErrorCodes
@@ -192,14 +193,21 @@ IStorageURLBase::IStorageURLBase(
 
     auto & storage_columns = storage_metadata.columns;
 
+    const auto sample_path = getSampleURI(uri, context_);
     std::tie(hive_partition_columns_to_read_from_file_path, file_columns) = HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
         storage_columns,
-        getSampleURI(uri, context_),
+        sample_path,
         columns_.empty(),
         format_settings,
         context_);
 
-    auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns);
+    auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(
+        storage_metadata.columns,
+        context_,
+        format_settings,
+        PartitionStrategyFactory::StrategyType::NONE,
+        sample_path);
+
     if (!storage_metadata.getColumns().has("_headers"))
     {
         virtual_columns_desc.addEphemeral(
@@ -706,6 +714,7 @@ void StorageURLSink::finalizeBuffers()
     catch (...)
     {
         /// Stop ParallelFormattingOutputFormat correctly.
+        cancelBuffers();
         releaseBuffers();
         throw;
     }
@@ -1197,6 +1206,9 @@ void IStorageURLBase::read(
     size_t max_block_size,
     size_t num_streams)
 {
+    if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
+        num_streams = local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
+
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
     auto read_from_format_info = prepareReadingFromFormat(
         column_names,

@@ -617,6 +617,8 @@ def test_system_tables(started_cluster):
             node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`")
         )
 
+    assert CATALOG_NAME in node.query("SHOW DATABASES")
+    assert table_name in node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
     # system.tables
     assert int(node.query(f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = true").strip()) == 4
     assert int(node.query(f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%'").strip()) == 0

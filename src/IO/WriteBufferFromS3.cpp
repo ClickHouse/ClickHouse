@@ -432,7 +432,8 @@ void WriteBufferFromS3::createMultipartUpload()
     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
     if (blob_log)
         blob_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadCreate, bucket, key, {}, 0,
-                           outcome.IsSuccess() ? nullptr : &outcome.GetError());
+                           outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
+                           outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
 
     if (!outcome.IsSuccess())
     {
@@ -481,7 +482,8 @@ void WriteBufferFromS3::abortMultipartUpload()
 
     if (blob_log)
         blob_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadAbort, bucket, key, {}, 0,
-                           outcome.IsSuccess() ? nullptr : &outcome.GetError());
+                           outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
+                           outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
 
     if (!outcome.IsSuccess())
     {
@@ -589,7 +591,8 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
         {
             blob_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadWrite,
                 /* bucket = */ bucket, /* remote_path = */ key, /* local_path = */ {}, /* data_size */ data_size,
-                outcome.IsSuccess() ? nullptr : &outcome.GetError());
+                               outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
+                               outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
         }
 
         if (!outcome.IsSuccess())
@@ -663,7 +666,8 @@ void WriteBufferFromS3::completeMultipartUpload()
 
         if (blob_log)
             blob_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadComplete, bucket, key, {}, 0,
-                               outcome.IsSuccess() ? nullptr : &outcome.GetError());
+                               outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
+                               outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
 
         if (outcome.IsSuccess())
         {
@@ -754,7 +758,8 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
             ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
             if (blob_log)
                 blob_log->addEvent(BlobStorageLogElement::EventType::Upload, bucket, key, {}, request.GetContentLength(),
-                                   outcome.IsSuccess() ? nullptr : &outcome.GetError());
+                                   outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
+                                   outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
 
             if (outcome.IsSuccess())
             {

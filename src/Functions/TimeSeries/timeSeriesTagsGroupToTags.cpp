@@ -131,7 +131,7 @@ public:
     static std::vector<size_t> extractGroups(const IColumn & column_groups)
     {
         std::string_view data = column_groups.getRawData();
-        chassert(data.size() == column_groups.size() * sizeof(UInt64));  /// NOLINT(bugprone-sizeof-expression,cert-arr39-c)
+        chassert(data.size() == column_groups.size() * sizeof(UInt64));
         const UInt64 * begin = reinterpret_cast<const UInt64 *>(data.data());
         return std::vector<size_t>(begin, begin + column_groups.size());
     }
@@ -147,7 +147,7 @@ REGISTER_FUNCTION(TimeSeriesTagsGroupToTags)
     FunctionDocumentation::Examples examples = {{"Example", "SELECT timeSeriesStoreTags(8374283493092, [('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS id, timeSeriesIdToTagsGroup(id) AS group, timeSeriesTagsGroupToTags(group)", "8374283493092    0    [('__name__', ''http_requests_count''), ('env', 'dev'), ('region', 'eu')]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTimeSeriesTagsGroupToTags>(documentation);
 }

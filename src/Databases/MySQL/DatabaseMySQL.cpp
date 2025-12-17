@@ -86,7 +86,7 @@ DatabaseMySQL::DatabaseMySQL(
     mysqlxx::PoolWithFailover && pool,
     bool attach,
     UUID uuid)
-    : IDatabase(database_name_)
+    : DatabaseWithAltersOnDiskBase(database_name_)
     , WithContext(context_->getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
@@ -250,15 +250,15 @@ time_t DatabaseMySQL::getObjectMetadataModificationTime(const String & table_nam
     return time_t(local_tables_cache[table_name].first);
 }
 
-ASTPtr DatabaseMySQL::getCreateDatabaseQuery() const
+ASTPtr DatabaseMySQL::getCreateDatabaseQueryImpl() const
 {
     const auto & create_query = std::make_shared<ASTCreateQuery>();
-    create_query->setDatabase(getDatabaseName());
+    create_query->setDatabase(database_name);
     create_query->set(create_query->storage, database_engine_define);
     create_query->uuid = db_uuid;
 
-    if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
-        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
+    if (!comment.empty())
+        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment));
 
     return create_query;
 }
@@ -404,7 +404,7 @@ void DatabaseMySQL::drop(ContextPtr)
 
 void DatabaseMySQL::cleanOutdatedTables()
 {
-    setThreadName("MySQLDBCleaner");
+    DB::setThreadName(ThreadName::MYSQL_DATABASE_CLEANUP);
 
     std::unique_lock lock{mutex};
 
@@ -468,11 +468,6 @@ StoragePtr DatabaseMySQL::detachTable(ContextPtr /* context */, const String & t
 
     remove_or_detach_tables.emplace(table_name);
     return local_tables_cache[table_name].second;
-}
-
-void DatabaseMySQL::alterDatabaseComment(const AlterCommand & command, ContextPtr query_context)
-{
-    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command, query_context);
 }
 
 String DatabaseMySQL::getMetadataPath() const

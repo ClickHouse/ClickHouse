@@ -130,7 +130,7 @@ public:
     static std::vector<IDType> extractIDs(const IColumn & column_ids)
     {
         std::string_view data = column_ids.getRawData();
-        chassert(data.size() == column_ids.size() * sizeof(IDType));  /// NOLINT(bugprone-sizeof-expression,cert-arr39-c)
+        chassert(data.size() == column_ids.size() * sizeof(IDType));
         const IDType * begin = reinterpret_cast<const IDType *>(data.data());
         return std::vector<IDType>(begin, begin + column_ids.size());
     }
@@ -146,7 +146,7 @@ REGISTER_FUNCTION(TimeSeriesIdToTagsGroup)
     FunctionDocumentation::Examples examples = {{"Example", "SELECT timeSeriesStoreTags(8374283493092, [('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS id, timeSeriesIdToTagsGroup(id)", "8374283493092    0"}};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTimeSeriesIdToTagsGroup>(documentation);
 }

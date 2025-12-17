@@ -362,6 +362,9 @@ void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidatio
         if (query_node_typed.hasInterpolate())
             validate_group_by_columns_visitor.visit(query_node_typed.getInterpolate());
 
+        if (query_node_typed.hasLimitBy())
+            validate_group_by_columns_visitor.visit(query_node_typed.getLimitByNode());
+
         validate_group_by_columns_visitor.visit(query_node_typed.getProjectionNode());
     }
 
