@@ -1,2 +1,2 @@
-select (-(42))[3]; -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
-select(-('a')).1; -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+explain syntax select (-(42))[3];
+explain syntax select(-('a')).1;

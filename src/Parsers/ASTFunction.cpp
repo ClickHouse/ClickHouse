@@ -468,7 +468,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     ostr << '(';
 
                 /// Don't allow moving operators like '-' before parents,
-                /// otherwise (-42)[3] will be formatted as -(42)[3] that will be parsed as -(42[3]);
+                /// otherwise (-(42))[3] will be formatted as -(42)[3] that will be parsed as -(42[3]);
                 nested_need_parens.allow_moving_operators_before_parens = false;
                 arguments->children[0]->format(ostr, settings, state, nested_need_parens);
                 ostr << '[';
@@ -523,6 +523,8 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                         if (frame.need_parens)
                             ostr << '(';
 
+                        /// Don't allow moving operators like '-' before parents,
+                        /// otherwise (-(42)).1 will be formatted as -(42).1 that will be parsed as -((42).1)
                         nested_need_parens.allow_moving_operators_before_parens = false;
                         arguments->children[0]->format(ostr, settings, state, nested_need_parens);
                         ostr << ".";
