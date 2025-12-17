@@ -11,7 +11,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_BACKUP_SETTINGS;
 }
 
-SettingFieldOptionalString::operator Field() const { return Field(value ? toString(*value) : ""); }
+SettingFieldOptionalString::operator Field() const { return Field(value.value_or("")); }
 
 SettingFieldOptionalString::SettingFieldOptionalString(const Field & field)
 {
