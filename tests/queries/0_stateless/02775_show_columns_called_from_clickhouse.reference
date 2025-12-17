@@ -38,6 +38,7 @@ ls	LowCardinality(String)	NO		\N
 m	Map(Int32, String)	NO		\N	
 m_complex	Map(Int32, Map(Int32, LowCardinality(Nullable(String))))	NO		\N	
 mpg	MultiPolygon	NO		\N	
+ndec32	Nullable(Decimal(9, 2))	YES		\N	
 ndt64	Nullable(DateTime64(3))	YES		\N	
 ndt64_tz	Nullable(DateTime64(3, \'Asia/Shanghai\'))	YES		\N	
 nested.col1	Array(String)	NO		\N	
