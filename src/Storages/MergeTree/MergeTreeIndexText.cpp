@@ -752,6 +752,8 @@ void TextIndexSerialization::serializeTokenInfo(WriteBuffer & ostr, const TokenP
 
 void TextIndexSerialization::serializeSparseIndex(const DictionarySparseIndex & sparse_index, WriteBuffer & ostr)
 {
+    UInt64 version = static_cast<UInt64>(SparseIndexVersion::Initial);
+    writeVarUInt(version, ostr);
     chassert(sparse_index.tokens->size() == sparse_index.offsets_in_file->size());
 
     SerializationString serialization_string;
@@ -765,6 +767,12 @@ void TextIndexSerialization::serializeSparseIndex(const DictionarySparseIndex & 
 DictionarySparseIndex TextIndexSerialization::deserializeSparseIndex(ReadBuffer & istr)
 {
     ProfileEvents::increment(ProfileEvents::TextIndexReadSparseIndexBlocks);
+
+    UInt64 version;
+    readVarUInt(version, istr);
+
+    if (version != static_cast<UInt64>(SparseIndexVersion::Initial))
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Unsupported version of sparse index ({})", version);
 
     size_t num_sparse_index_tokens;
     readVarUInt(num_sparse_index_tokens, istr);

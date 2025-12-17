@@ -213,6 +213,11 @@ using DictionarySparseIndexPtr = std::shared_ptr<DictionarySparseIndex>;
 
 struct TextIndexSerialization
 {
+    enum class SparseIndexVersion
+    {
+        Initial = 0,
+    };
+
     enum class TokensFormat : UInt64
     {
         RawStrings = 0,
