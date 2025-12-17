@@ -2,6 +2,7 @@
 #include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
+#include <Databases/DatabaseReplicated.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -190,6 +191,11 @@ ZooKeeperPtr DDLWorker::getAndSetZooKeeper()
         current_zookeeper = context->getZooKeeper();
 
     return current_zookeeper;
+}
+
+void DDLWorker::notifyHostIDsUpdated()
+{
+    host_ids_updated = true;
 }
 
 
@@ -1222,7 +1228,8 @@ void DDLWorker::runMainThread()
             }
 
             // We mark the replica active periodically in case there are changes in DNS.
-            if (current_time_seconds - mark_replicas_active_interval_seconds >= last_mark_replicas_active_time_seconds)
+            if (host_ids_updated.exchange(false)
+                || current_time_seconds - mark_replicas_active_interval_seconds >= last_mark_replicas_active_time_seconds)
             {
                 markReplicasActive(/*reinitialized=*/false);
                 last_mark_replicas_active_time_seconds = current_time_seconds;
@@ -1286,19 +1293,7 @@ void DDLWorker::runMainThread()
 void DDLWorker::initializeReplication()
 {
     auto zookeeper = getZooKeeper();
-
     zookeeper->createAncestors(fs::path(replicas_dir) / "");
-
-    NameSet host_id_set;
-    for (const auto & it : context->getClusters())
-    {
-        auto cluster = it.second;
-        for (const auto & host_ids : cluster->getHostIDs())
-            for (const auto & host_id : host_ids)
-                host_id_set.emplace(host_id);
-    }
-
-    createReplicaDirs(zookeeper, host_id_set);
 }
 
 void DDLWorker::createReplicaDirs(const ZooKeeperPtr & zookeeper, const NameSet & host_ids)
@@ -1313,6 +1308,9 @@ void DDLWorker::createReplicaDirs(const ZooKeeperPtr & zookeeper, const NameSet 
 void DDLWorker::markReplicasActive(bool reinitialized)
 {
     auto zookeeper = getZooKeeper();
+
+    auto all_host_ids = getAllHostIDsFromClusters();
+    createReplicaDirs(zookeeper, all_host_ids);
 
     if (reinitialized)
     {
@@ -1504,4 +1502,31 @@ void DDLWorker::runCleanupThread()
     }
 }
 
+NameSet DDLWorker::getAllHostIDsFromClusters() const
+{
+    NameSet host_id_set;
+    for (const auto & it : context->getClusters())
+    {
+        auto cluster = it.second;
+        for (const auto & host_ids : cluster->getHostIDs())
+            for (const auto & host_id : host_ids)
+                host_id_set.emplace(host_id);
+    }
+
+    auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+    for (const auto & database : databases)
+    {
+        if (const auto * replicated_db = dynamic_cast<const DatabaseReplicated *>(database.second.get()))
+        {
+            auto cluster = replicated_db->tryGetAllGroupsCluster();
+            if (!cluster)
+                continue;
+
+            for (const auto & host_ids : cluster->getHostIDs())
+                for (const auto & host_id : host_ids)
+                    host_id_set.emplace(host_id);
+        }
+    }
+    return host_id_set;
+}
 }

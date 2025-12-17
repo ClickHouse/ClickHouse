@@ -1,7 +1,10 @@
 #pragma once
 
+#include <Core/Names.h>
+#include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
+#include <Poco/Event.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
@@ -9,8 +12,6 @@
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Interpreters/Context_fwd.h>
-#include <Poco/Event.h>
 
 #include <atomic>
 #include <list>
@@ -94,6 +95,8 @@ public:
     /// Should be called in `initializeMainThread` only, so if it is expired, `runMainThread` will reinitialized the state.
     ZooKeeperPtr getAndSetZooKeeper();
 
+    void notifyHostIDsUpdated();
+
 protected:
 
     class ConcurrentSet
@@ -173,6 +176,8 @@ protected:
     void runMainThread();
     void runCleanupThread();
 
+    NameSet getAllHostIDsFromClusters() const;
+
     ContextMutablePtr context;
     LoggerPtr log;
 
@@ -210,6 +215,7 @@ protected:
     /// Cleaning starts after new node event is received if the last cleaning wasn't made sooner than N seconds ago
     Int64 cleanup_delay_period = 60; // minute (in seconds)
     Int64 mark_replicas_active_interval_seconds = 60;
+    std::atomic_bool host_ids_updated{false};
     /// Delete node if its age is greater than that
     Int64 task_max_lifetime = 7 * 24 * 60 * 60; // week (in seconds)
     /// How many tasks could be in the queue
