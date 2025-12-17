@@ -192,91 +192,96 @@ static IdentifierResolveResult tryResolveTableIdentifierFallback(
         return {};
     }
 
-    String db_candidate;
+    const bool ci_databases_on = settings[Setting::enable_case_insensitive_databases];
+    const bool ci_tables_on = settings[Setting::enable_case_insensitive_tables];
+
+    Strings db_candidates;
 
     if (parts.size() == 2)
     {
-        /// Prefer exact database name if it exists
+        /// Check if exact database exists
         if (DatabaseCatalog::instance().isDatabaseExist(requested_table.database))
         {
-            db_candidate = requested_table.database;
+            db_candidates.push_back(requested_table.database);
+
+            /// If both DB CI and table CI are enabled, we check other CI-matching DBs
+            /// to detect cross-database table ambiguity (for example a.t and A.t, where we need a.T)
+            if (ci_databases_on && ci_tables_on)
+            {
+                auto ci_dbs = DatabaseCatalog::instance().getDatabasesCaseInsensitive(requested_table.database);
+                for (const auto & db : ci_dbs)
+                {
+                    if (db != requested_table.database)
+                        db_candidates.push_back(db);
+                }
+            }
         }
         else
         {
-            /// If database CI is disabled, don't attempt CI lookup here
-            // * ci -- case insensitivity *
-            if (!settings[Setting::enable_case_insensitive_databases])
+            /// Database doesn't exist exactly
+            if (!ci_databases_on)
             {
                 if (swallowed_exception)
                     std::rethrow_exception(swallowed_exception);
                 return {};
             }
 
-            auto ci_candidates = DatabaseCatalog::instance().getDatabasesCaseInsensitive(requested_table.database);
-
-            if (ci_candidates.empty())
+            auto ci_dbs = DatabaseCatalog::instance().getDatabasesCaseInsensitive(requested_table.database);
+            if (ci_dbs.empty())
             {
                 if (swallowed_exception)
                     std::rethrow_exception(swallowed_exception);
                 return {};
             }
 
-            if (ci_candidates.size() > 1)
+            /// for DB-only ambiguity
+            if (!ci_tables_on && ci_dbs.size() > 1)
             {
-                std::sort(ci_candidates.begin(), ci_candidates.end());
+                std::sort(ci_dbs.begin(), ci_dbs.end());
                 throw Exception(
                     ErrorCodes::AMBIGUOUS_IDENTIFIER,
                     "Database '{}' does not have a case-sensitive match. But it case-insensitively matches multiple databases: {}",
                     requested_table.database,
-                    fmt::join(ci_candidates, ", "));
+                    fmt::join(ci_dbs, ", "));
             }
 
-            db_candidate = ci_candidates.front();
-            // matched DB via case-insensitiveness
+            db_candidates = std::move(ci_dbs);
         }
     }
     else
     {
         /// work within current database only
-        db_candidate = requested_table.database;
+        db_candidates.push_back(requested_table.database);
     }
 
     /// in selected DB collect case-insensitive table candidates
     QualifiedTables ci_table_candidates;
-
-    auto db_ptr = DatabaseCatalog::instance().tryGetDatabase(db_candidate);
-    if (!db_ptr)
-        return {};
-
-    const bool ci_tables_on = settings[Setting::enable_case_insensitive_tables];
-
     String requested_table_lower = "";
     if (ci_tables_on)
         requested_table_lower = Poco::toLower(requested_table.table);
 
-    for (const auto & name : db_ptr->getAllTableNames(context))
+    for (const auto & db_name : db_candidates)
     {
-        if (name == requested_table.table) /// -- we found the case-sensitive table name match
+        auto db_ptr = DatabaseCatalog::instance().tryGetDatabase(db_name);
+        if (!db_ptr)
+            continue;
+
+        for (const auto & tbl_name : db_ptr->getAllTableNames(context))
         {
-            Identifier canonical{{ db_candidate, name }};
-            if (auto resolved = IdentifierResolver::tryResolveTableIdentifier(canonical, context))
-                return { .resolved_identifier = std::move(resolved), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
-            return {};
+            if (db_name == requested_table.database && tbl_name == requested_table.table) // -- full case-sensitive table name match
+            {
+                Identifier canonical{{ db_name, tbl_name }};
+                if (auto resolved = IdentifierResolver::tryResolveTableIdentifier(canonical, context))
+                    return { .resolved_identifier = std::move(resolved), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
+                return {};
+            }
+            if (ci_tables_on && Poco::toLower(tbl_name) == requested_table_lower) /// -- case-insensitive match
+                ci_table_candidates.push_back({ db_name, tbl_name });
         }
-        if (ci_tables_on && Poco::toLower(name) == requested_table_lower) /// -- we found the case-insensitive match
-            ci_table_candidates.push_back({ db_candidate, name });
     }
 
     if (ci_table_candidates.empty())
     {
-        /// If we have resolved database via CI but table CI is OFF
-        /// we delegate to catalog to get the UNKNOWN_TABLE
-        if (!ci_tables_on && db_ptr)
-        {
-            StorageID storage_id(db_candidate, requested_table.table);
-            (void)DatabaseCatalog::instance().getTable(storage_id, context); // throw UNKNOWN_TABLE with standard message
-            return {};
-        }
         if (swallowed_exception)
             std::rethrow_exception(swallowed_exception);
         return {};
