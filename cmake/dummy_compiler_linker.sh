@@ -8,7 +8,7 @@ for arg in "$@"; do
             continue
         fi
     else
-        echo "Generating dummy file $PWD/$arg"
+        echo "Generating dummy file $arg"
         touch $arg
         exit 0
     fi
