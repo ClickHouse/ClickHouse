@@ -254,6 +254,9 @@ using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadRespon
 
 using BlockMarshallingCallback = std::function<Block(const Block & block)>;
 
+class RuntimeDataflowStatisticsCacheUpdater;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
+
 struct QueryPlanAndSets;
 using QueryPlanDeserializationCallback = std::function<std::shared_ptr<QueryPlanAndSets>()>;
 
@@ -391,6 +394,8 @@ protected:
     UUID parallel_replicas_group_uuid{UUIDHelpers::Nil};
 
     BlockMarshallingCallback block_marshalling_callback;
+
+    mutable RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater;
 
     bool is_under_restore = false;
 
@@ -1065,7 +1070,6 @@ public:
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader();
     const IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage() const;
     IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage();
-    void setUserDefinedSQLObjectsStorage(std::unique_ptr<IUserDefinedSQLObjectsStorage> storage);
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
 
     IWorkloadEntityStorage & getWorkloadEntityStorage() const;
@@ -1440,7 +1444,7 @@ public:
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
-    std::shared_ptr<PartLog> getPartLog(const String & part_database) const;
+    std::shared_ptr<PartLog> getPartLog() const;
 
     std::shared_ptr<BackgroundSchedulePoolLog> getBackgroundSchedulePoolLog() const;
 
@@ -1604,6 +1608,8 @@ public:
 
     BlockMarshallingCallback getBlockMarshallingCallback() const;
     void setBlockMarshallingCallback(BlockMarshallingCallback && callback);
+
+    RuntimeDataflowStatisticsCacheUpdaterPtr getRuntimeDataflowStatisticsCacheUpdater() const;
 
     UUID getParallelReplicasGroupUUID() const;
     void setParallelReplicasGroupUUID(UUID uuid);

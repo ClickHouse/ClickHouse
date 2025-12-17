@@ -153,6 +153,7 @@ public:
     void updateHashFast(SipHash & hash) const override;
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+    void filter(const Filter & filt) override;
     void expand(const Filter & mask, bool inverted) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
@@ -282,8 +283,12 @@ public:
     /// Insert all the data from shared data with specified path to dynamic column.
     static void fillPathColumnFromSharedData(IColumn & path_column, std::string_view path, const ColumnPtr & shared_data_column, size_t start, size_t end);
 
-    /// Validate that all dynamic paths have correct sizes and that shared data doesn't contain any dynamic paths.
-    void validateDynamicPathsAndSharedData(size_t shared_data_offset = 0) const;
+    /// Due to previous bugs we can have an invalid state where we have some path
+    /// both in shared data and in dynamic paths and only one value is not NULL.
+    /// This methods repairs the column and removes this duplicate by removing path
+    /// and value from shared data and keeping only dynamic path containing non-Null value.
+    /// offset argument - is the offset from which we should check for duplicates.
+    void repairDuplicatesInDynamicPathsAndSharedData(size_t offset = 0);
 
     /// Class that allows to iterate over paths inside single row in ColumnObject in sorted order.
     class SortedPathsIterator

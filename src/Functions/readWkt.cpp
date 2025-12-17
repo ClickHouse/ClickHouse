@@ -95,7 +95,7 @@ public:
 
     explicit FunctionReadWKTCommon() = default;
 
-    static constexpr const char * name = "readWkt";
+    static constexpr const char * name = "readWKT";
 
     String getName() const override { return name; }
 
@@ -312,18 +312,21 @@ Parses a Well-Known Text (WKT) representation of a MultiLineString geometry and 
         .description = R"(
 Parses a Well-Known Text (WKT) representation of Geometry and returns it in the internal ClickHouse format.
 )",
-        .syntax = "readWkt(wkt_string)",
+        .syntax = "readWKT(wkt_string)",
         .arguments{{"wkt_string", "The input WKT string representing a LineString geometry.", {"String"}}},
         .returned_value = {"The function returns a ClickHouse internal representation of the Geometry."},
         .examples{
-            {"first call", "SELECT readWkt('LINESTRING (1 1, 2 2, 3 3, 1 1)');", R"(
-┌─readWkt('LINESTRING (1 1, 2 2, 3 3, 1 1)')─┐
+            {"first call", "SELECT readWKT('LINESTRING (1 1, 2 2, 3 3, 1 1)');", R"(
+┌─readWKT('LINESTRING (1 1, 2 2, 3 3, 1 1)')─┐
 │ [(1,1),(2,2),(3,3),(1,1)]                  │
 └────────────────────────────────────────────┘
             )"},
         },
         .introduced_in = {25, 7},
         .category = FunctionDocumentation::Category::Geo});
+
+    /// This was initially added by mistake, but we have to keep it:
+    factory.registerAlias("readWkt", "readWKT");
 }
 
 }

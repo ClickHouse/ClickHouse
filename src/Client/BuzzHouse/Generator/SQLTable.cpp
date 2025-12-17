@@ -1063,15 +1063,13 @@ void StatementGenerator::generateMergeTreeEngineDetails(
             /// Replicated table params must come first when set
             std::vector<TableEngineParam> temp_params;
             const uint32_t nopt = rg.nextSmallNumber();
-            const std::function<bool(const SQLTable &)> replicated_tables = [](const SQLTable & t)
+            static const auto & replicated_tables = [](const SQLTable & t)
             { return t.isAttached() && t.isReplicatedOrSharedMergeTree() && (t.shard_counter > 0 || t.replica_counter > 0); };
-            const bool has_tables = collectionHas<SQLTable>(replicated_tables);
 
-            if (has_tables && nopt < 7)
+            if (collectionHas<SQLTable>(replicated_tables) && nopt < 7)
             {
-                /// Add as a replica to another database
-                const uint32_t dname = rg.pickRandomly(filterCollection<SQLTable>(replicated_tables)).get().tname;
-                SQLTable & t = this->tables.at(dname);
+                /// Add as a replica to another table
+                SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(replicated_tables));
 
                 b.shard_counter = rg.nextBool() ? t.shard_counter++ : t.shard_counter;
                 b.replica_counter = rg.nextBool() ? t.replica_counter++ : t.replica_counter;
@@ -1491,7 +1489,8 @@ void StatementGenerator::generateEngineDetails(
     {
         const auto & engineSettings = allTableSettings.at(b.teng);
 
-        if (!engineSettings.empty() && (!b.isJoinEngine() || !b.isShared()) && rg.nextBool())
+        if (!engineSettings.empty() && (!b.isJoinEngine() || !b.isShared())
+            && ((!b.isJoinEngine() && !b.isSetEngine()) || !b.is_deterministic) && rg.nextBool())
         {
             /// Add table engine settings
             svs = svs ? svs : te->mutable_setting_values();
@@ -1814,7 +1813,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             buf += has_paren ? "(" : "";
             if (has_paren && next_tokenizer == "ngrams" && rg.nextBool())
             {
-                buf += std::to_string(rg.randomInt<uint32_t>(2, 8));
+                buf += std::to_string(rg.randomInt<uint32_t>(1, 8));
             }
             else if (has_paren && next_tokenizer == "splitByString" && rg.nextBool())
             {
@@ -2759,15 +2758,13 @@ void StatementGenerator::generateDatabaseEngineDetails(RandomGenerator & rg, SQL
     if (d.isReplicatedDatabase())
     {
         const uint32_t nopt = rg.nextSmallNumber();
-        const std::function<bool(const std::shared_ptr<SQLDatabase> &)> replicated_databases = [](const std::shared_ptr<SQLDatabase> & db)
+        static const auto & replicated_databases = [](const std::shared_ptr<SQLDatabase> & db)
         { return db->isAttached() && db->isReplicatedOrSharedDatabase() && (db->shard_counter > 0 || db->replica_counter > 0); };
-        const bool has_databases = collectionHas<std::shared_ptr<SQLDatabase>>(replicated_databases);
 
-        if (has_databases && nopt < 7)
+        if (collectionHas<std::shared_ptr<SQLDatabase>>(replicated_databases) && nopt < 7)
         {
             /// Add as a replica to another database
-            const uint32_t dname = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(replicated_databases)).get()->dname;
-            std::shared_ptr<SQLDatabase> & db = this->databases.at(dname);
+            std::shared_ptr<SQLDatabase> & db = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(replicated_databases));
 
             d.shard_counter = rg.nextBool() ? db->shard_counter++ : db->shard_counter;
             d.replica_counter = rg.nextBool() ? db->replica_counter++ : db->replica_counter;
