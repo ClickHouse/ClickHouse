@@ -335,11 +335,11 @@ bool GlueCatalog::tryGetTableMetadata(
             }
             else if (const auto & location = table_outcome.GetStorageDescriptor().GetLocation(); !location.empty())
             {
-                std::string location_with_slash = location;
+                String location_with_slash = location;
                 if (!location_with_slash.ends_with('/'))
                     location_with_slash += '/';
 
-                std::string resolved_metadata_path = resolveMetadataPathFromTableLocation(location_with_slash, result);
+                String resolved_metadata_path = resolveMetadataPathFromTableLocation(location_with_slash, result);
                 if (resolved_metadata_path.empty())
                 {
                     result.setTableIsNotReadable(fmt::format("Could not determine metadata_location of table `{}`. ",

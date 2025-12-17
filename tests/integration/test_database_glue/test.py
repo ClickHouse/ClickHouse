@@ -702,6 +702,10 @@ def test_table_without_metadata_location(started_cluster):
 
     create_clickhouse_glue_database(started_cluster, node, db_name)
 
+    # Verify SHOW TABLES FROM works
+    tables_result = node.query(f"SHOW TABLES FROM {db_name} LIKE '%{table_name}%'")
+    assert table_name in tables_result, f"Table {table_name} not found in SHOW TABLES: {tables_result}"
+
     # Query should work even without metadata_location in Glue
     result = node.query(f"SELECT id, value FROM {db_name}.`{root_namespace}.{table_name}` ORDER BY id")
     assert result == "row1\t1.5\nrow2\t2.5\nrow3\t3.5\n", f"Unexpected result: {result}"
