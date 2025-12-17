@@ -1,8 +1,9 @@
-#include <Columns/ColumnSparse.h>
 #include <Common/Arena.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/SipHash.h>
+#include <Common/ThreadPool.h>
 #include <Common/assert_cast.h>
 
 #include <Core/Block.h>
@@ -21,14 +22,19 @@
 #include <Interpreters/Cache/ReverseLookupCache.h>
 #include <Interpreters/Context.h>
 
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+
+#include <mutex>
 
 namespace DB
 {
@@ -36,6 +42,7 @@ namespace DB
 namespace Setting
 {
 extern const SettingsNonZeroUInt64 max_block_size;
+extern const SettingsMaxThreads max_threads;
 }
 
 
@@ -152,9 +159,8 @@ private:
     using HashToBucket = HashMap<UInt128, size_t, HashCRC32<UInt128>>;
 
     /// For constant path, it's simple algorithm:
-    ///  Step 1. Compute the hash of the const value column.
-    ///  Step 2. Scan the dictionary and store the matching rows keys directly into the result column.
-    ///  Step 3. Format the result column into appropriate format: tuple for multi-key dictionary or single value otherwise.
+    ///  Step 1. Scan the dictionary and store the matching rows keys directly into the result column.
+    ///  Step 2. Format the result column into appropriate format: tuple for multi-key dictionary or single value otherwise.
     ColumnPtr executeConstPath(
         const String & dict_name,
         const String & attr_name,
@@ -168,16 +174,103 @@ private:
         const auto & attribute_column_type = structure.getAttribute(attr_name).type;
         ColumnPtr values_column = castColumnAccurate(argument_values_column, attribute_column_type);
 
+        if (const auto * values_const_col = checkAndGetColumn<ColumnConst>(values_column.get()))
+            values_column = values_const_col->getDataColumnPtr();
+
         chassert(values_column != nullptr);
         chassert(!values_column->empty());
+        chassert(values_column->size() == 1);
 
         /// Step 1
-        const UInt128 values_column_value_hash = sipHash128AtRow(*values_column, 0);
-
-        /// Step 2
-        MutableColumns result_cols;
         const auto key_types = structure.getKeyTypes();
         chassert(!key_types.empty());
+        const size_t num_keys = key_types.size();
+
+        Names column_names = structure.getKeysNames();
+        column_names.push_back(attr_name);
+
+        const auto & settings = helper.getContext()->getSettingsRef();
+
+        auto pipe = dict->read(column_names, settings[Setting::max_block_size], settings[Setting::max_threads]);
+        const size_t parallel_streams = pipe.maxParallelStreams();
+
+        QueryPipeline pipeline(std::move(pipe));
+        pipeline.setNumThreads(parallel_streams);
+
+        auto progress_cb = helper.getContext()->getProgressCallback();
+        if (progress_cb)
+            pipeline.setProgressCallback(progress_cb);
+
+        PullingAsyncPipelineExecutor executor(pipeline);
+
+        struct TaskResult
+        {
+            MutableColumns columns;
+            size_t matched_rows = 0;
+        };
+
+        std::vector<std::optional<TaskResult>> task_results;
+        std::mutex task_mutex;
+        size_t task_index = 0;
+
+        ThreadPool pool(CurrentMetrics::end(), CurrentMetrics::end(), CurrentMetrics::end(), settings[Setting::max_threads]);
+
+        Chunk chunk;
+        while (executor.pull(chunk))
+        {
+            /// It can happen if dictionary is empty
+            if (chunk.getNumRows() == 0)
+                continue;
+
+            chassert(chunk.getColumns().size() == num_keys + 1);
+
+            const size_t current_task_index = task_index++;
+
+            pool.scheduleOrThrowOnError(
+                [&, task_idx = current_task_index, chunk_columns = chunk.detachColumns()]() mutable
+                {
+                    ColumnPtr attr_col = removeSpecialRepresentations(chunk_columns[num_keys]);
+                    chassert(attr_col != nullptr);
+
+                    Columns key_columns(num_keys);
+                    for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
+                    {
+                        key_columns[key_pos] = removeSpecialRepresentations(chunk_columns[key_pos]);
+                        chassert(key_columns[key_pos] != nullptr);
+                    }
+
+                    const size_t rows_in_chunk = attr_col->size();
+
+                    TaskResult result;
+                    result.columns.reserve(num_keys);
+                    for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
+                        result.columns.emplace_back(key_columns[key_pos]->cloneEmpty());
+
+                    for (size_t row_id = 0; row_id < rows_in_chunk; ++row_id)
+                    {
+                        if (attr_col->compareAt(row_id, 0, *values_column, 1) != 0)
+                            continue;
+
+                        for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
+                            result.columns[key_pos]->insertFrom(*key_columns[key_pos], row_id);
+
+                        ++result.matched_rows;
+                    }
+
+                    if (result.matched_rows)
+                    {
+                        std::lock_guard lock(task_mutex);
+                        if (task_results.size() <= task_idx)
+                            task_results.resize(task_idx + 1);
+                        task_results[task_idx] = std::move(result);
+                    }
+                });
+        }
+
+        pool.wait();
+
+        MutableColumns result_cols;
+        result_cols.reserve(num_keys);
 
         for (const auto & key_type : key_types)
         {
@@ -189,45 +282,19 @@ private:
         auto & offsets = offsets_col->getData();
         offsets.resize(1);
 
-        const size_t num_keys = key_types.size();
-
-        Names column_names = structure.getKeysNames();
-        column_names.push_back(attr_name);
-
-        auto pipe = dict->read(column_names, helper.getContext()->getSettingsRef()[Setting::max_block_size], 1);
-        QueryPipeline pipeline(std::move(pipe));
-        PullingPipelineExecutor executor(pipeline);
-
-        Block block;
-        size_t out_offset = 0;
-        while (executor.pull(block))
+        offsets[0] = 0;
+        for (auto & task_result_opt : task_results)
         {
-            ColumnPtr attr_col = removeSpecialRepresentations(block.getByPosition(num_keys).column);
+            if (!task_result_opt || task_result_opt->matched_rows == 0)
+                continue;
 
-            std::vector<ColumnPtr> key_columns(num_keys);
             for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
-                key_columns[key_pos] = removeSpecialRepresentations(block.getByPosition(key_pos).column);
+                result_cols[key_pos]->insertRangeFrom(*task_result_opt->columns[key_pos], 0, task_result_opt->columns[key_pos]->size());
 
-            const size_t rows_in_block = attr_col->size();
-            for (size_t row_id = 0; row_id < rows_in_block; ++row_id)
-            {
-                const UInt128 value_hash = sipHash128AtRow(*attr_col, row_id);
-
-                /// Probability of hash collision of Sip128 is extremely astronomically low. As a result, for the sake of simplicity and efficiency,
-                /// let's assume it never happens
-                if (value_hash != values_column_value_hash)
-                    continue;
-
-                for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
-                {
-                    result_cols[key_pos]->insertFrom(*key_columns[key_pos], row_id);
-                }
-                ++out_offset;
-            }
+            offsets[0] += task_result_opt->matched_rows;
         }
-        offsets[0] = out_offset;
 
-        /// Step 3
+        /// Step 2
         if (num_keys == 1)
         {
             auto array_column = ColumnArray::create(std::move(result_cols[0]), std::move(offsets_col));
@@ -333,7 +400,6 @@ private:
                 }
             }
         }
-
 
         /// Step 4
         const size_t num_keys = key_types.size();
@@ -452,25 +518,30 @@ private:
         QueryPipeline pipeline(std::move(pipe));
         PullingPipelineExecutor executor(pipeline);
 
+        auto progress_cb = helper.getContext()->getProgressCallback();
+        if (progress_cb)
+            pipeline.setProgressCallback(progress_cb);
+
         /// The arena will not own anything, just used for temporary allocations during serialization
         /// of keys. Then rollback after use to free memory for next use.
         Arena arena;
-        Block block;
-        while (executor.pull(block))
+        Chunk chunk;
+        while (executor.pull(chunk))
         {
-            chassert(block.columns() >= num_keys + 1);
+            Columns columns = chunk.detachColumns();
+            chassert(columns.size() >= num_keys + 1);
 
-            ColumnPtr attr_col = removeSpecialRepresentations(block.getByPosition(num_keys).column);
-            const size_t rows_in_block = attr_col->size();
+            ColumnPtr attr_col = removeSpecialRepresentations(columns[num_keys]);
+            const size_t rows_in_chunk = attr_col->size();
 
             std::vector<ColumnPtr> key_columns(num_keys);
             for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
             {
-                key_columns[key_pos] = removeSpecialRepresentations(block.getByPosition(key_pos).column);
-                chassert(key_columns[key_pos]->size() == rows_in_block);
+                key_columns[key_pos] = removeSpecialRepresentations(columns[key_pos]);
+                chassert(key_columns[key_pos]->size() == rows_in_chunk);
             }
 
-            for (size_t row_id = 0; row_id < rows_in_block; ++row_id)
+            for (size_t row_id = 0; row_id < rows_in_chunk; ++row_id)
             {
                 const UInt128 value_hash = sipHash128AtRow(*attr_col, row_id);
 
@@ -520,8 +591,6 @@ private:
                 }
             }
         }
-        /// Ideally, we should be `shrink_to_fit` each `mapped` in `out` here to save memory.
-        /// However, since saved memory is typically small, we skip it for performance consideration.
     }
 };
 
