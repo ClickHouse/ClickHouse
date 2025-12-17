@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -9,14 +8,15 @@ mkdir -p ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/
 rm -rf ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}/*
 chmod 777 ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/
 
+database_name="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 # parallel_distributed_insert_select is disabled be able execute INSERT SELECTs with parallel replicas run
 # Otherwise, INSERT SELECTs fail with enabled parallel replicas and parallel_distributed_insert_select=2 since they try to open the same npy file in parallel
 ${CLICKHOUSE_CLIENT} --parallel_distributed_insert_select=0 -q --ignore-error "
-    DROP DATABASE IF EXISTS npy_output_02895;
-    CREATE DATABASE IF NOT EXISTS npy_output_02895;
+    DROP DATABASE IF EXISTS $database_name;
+    CREATE DATABASE IF NOT EXISTS $database_name;
 
     SELECT '-- test data types --';
-    CREATE TABLE IF NOT EXISTS npy_output_02895.data_types
+    CREATE TABLE IF NOT EXISTS $database_name.data_types
     (
         i1 Int8,
         i2 Int16,
@@ -32,20 +32,20 @@ ${CLICKHOUSE_CLIENT} --parallel_distributed_insert_select=0 -q --ignore-error "
         s String
     ) Engine = MergeTree ORDER BY i1;
 
-    INSERT INTO npy_output_02895.data_types VALUES (1, 1, 1, 1, 1, 1, 1, 1, 0.1, 0.01, 'npy', 'npy'), (-1, -1, -1, -1, 0, 0, 0, 0, 0.2, 0.02, 'npy', 'npynpy');
+    INSERT INTO $database_name.data_types VALUES (1, 1, 1, 1, 1, 1, 1, 1, 0.1, 0.01, 'npy', 'npy'), (-1, -1, -1, -1, 0, 0, 0, 0, 0.2, 0.02, 'npy', 'npynpy');
 
-    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int8.npy') SELECT i1 FROM npy_output_02895.data_types;
-    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int16.npy') SELECT i2 FROM npy_output_02895.data_types;
-    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int32.npy') SELECT i4 FROM npy_output_02895.data_types;
-    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int64.npy') SELECT i8 FROM npy_output_02895.data_types;
-    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint8.npy') SELECT u1 FROM npy_output_02895.data_types;
-    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint16.npy') SELECT u2 FROM npy_output_02895.data_types;
-    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint32.npy') SELECT u4 FROM npy_output_02895.data_types;
-    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint64.npy') SELECT u8 FROM npy_output_02895.data_types;
-    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_float32.npy') SELECT f4 FROM npy_output_02895.data_types;
-    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_float64.npy') SELECT f8 FROM npy_output_02895.data_types;
-    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_fixedstring.npy') SELECT fs FROM npy_output_02895.data_types;
-    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_string.npy') SELECT s FROM npy_output_02895.data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int8.npy') SELECT i1 FROM $database_name.data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int16.npy') SELECT i2 FROM $database_name.data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int32.npy') SELECT i4 FROM $database_name.data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int64.npy') SELECT i8 FROM $database_name.data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint8.npy') SELECT u1 FROM $database_name.data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint16.npy') SELECT u2 FROM $database_name.data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint32.npy') SELECT u4 FROM $database_name.data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_uint64.npy') SELECT u8 FROM $database_name.data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_float32.npy') SELECT f4 FROM $database_name.data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_float64.npy') SELECT f8 FROM $database_name.data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_fixedstring.npy') SELECT fs FROM $database_name.data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_string.npy') SELECT s FROM $database_name.data_types;
 
     SELECT * FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int8.npy');
     SELECT * FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_int16.npy');
@@ -73,18 +73,18 @@ ${CLICKHOUSE_CLIENT} --parallel_distributed_insert_select=0 -q --ignore-error "
     DESC file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_dtype_string.npy');
 
     SELECT '-- test nested data types --';
-    CREATE TABLE IF NOT EXISTS npy_output_02895.nested_data_types
+    CREATE TABLE IF NOT EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}.nested_data_types
     (
         i4 Array(Array(Array(Int8))),
         f8 Array(Array(Float64)),
         s Array(String),
     ) Engine = MergeTree ORDER BY i4;
 
-    INSERT INTO npy_output_02895.nested_data_types VALUES ([[[1], [2]], [[3], [4]]], [[0.1], [0.2]], ['a', 'bb']), ([[[1], [2]], [[3], [4]]], [[0.1], [0.2]], ['ccc', 'dddd']);
+    INSERT INTO ${CLICKHOUSE_TEST_UNIQUE_NAME}.nested_data_types VALUES ([[[1], [2]], [[3], [4]]], [[0.1], [0.2]], ['a', 'bb']), ([[[1], [2]], [[3], [4]]], [[0.1], [0.2]], ['ccc', 'dddd']);
 
-    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_nested_dtype_int32.npy') SELECT i4 FROM npy_output_02895.nested_data_types;
-    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_nested_dtype_float64.npy') SELECT f8 FROM npy_output_02895.nested_data_types;
-    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_nested_dtype_string.npy') SELECT s FROM npy_output_02895.nested_data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_nested_dtype_int32.npy') SELECT i4 FROM $database_name.nested_data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_nested_dtype_float64.npy') SELECT f8 FROM $database_name.nested_data_types;
+    INSERT INTO TABLE FUNCTION file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_nested_dtype_string.npy') SELECT s FROM $database_name.nested_data_types;
 
     SELECT * FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_nested_dtype_int32.npy');
     SELECT * FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_nested_dtype_float64.npy');
@@ -94,7 +94,7 @@ ${CLICKHOUSE_CLIENT} --parallel_distributed_insert_select=0 -q --ignore-error "
     DESC file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/02895_nested_dtype_string.npy');
 
     SELECT '-- test exceptions --';
-    CREATE TABLE IF NOT EXISTS npy_output_02895.exceptions
+    CREATE TABLE IF NOT EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}.exceptions
     (
         unsupported_u UInt256,
         unsupported_date Date,
@@ -104,16 +104,16 @@ ${CLICKHOUSE_CLIENT} --parallel_distributed_insert_select=0 -q --ignore-error "
         zero_dimension Array(Int16)
     ) Engine = MergeTree ORDER BY unsupported_u;
 
-    INSERT INTO npy_output_02895.exceptions VALUES (1, '2019-01-01', (1, 1), [1, 1], [1, 1], []), (0, '2019-01-01', (0, 0), [0, 0], [0], [0]);
+    INSERT INTO $database_name.exceptions VALUES (1, '2019-01-01', (1, 1), [1, 1], [1, 1], []), (0, '2019-01-01', (0, 0), [0, 0], [0], [0]);
 
-    SELECT * FROM npy_output_02895.exceptions FORMAT Npy; -- { clientError TOO_MANY_COLUMNS }
-    SELECT unsupported_u FROM npy_output_02895.exceptions FORMAT Npy; -- { clientError BAD_ARGUMENTS }
-    SELECT unsupported_date FROM npy_output_02895.exceptions FORMAT Npy; -- { clientError BAD_ARGUMENTS }
-    SELECT unsupported_tuple FROM npy_output_02895.exceptions FORMAT Npy; -- { clientError BAD_ARGUMENTS }
-    SELECT unsupported_nested_i FROM npy_output_02895.exceptions FORMAT Npy; -- { clientError BAD_ARGUMENTS }
-    SELECT ragged_dimention FROM npy_output_02895.exceptions FORMAT Npy; -- { clientError ILLEGAL_COLUMN }
-    SELECT zero_dimension FROM npy_output_02895.exceptions FORMAT Npy; -- { clientError ILLEGAL_COLUMN }
+    SELECT * FROM $database_name.exceptions FORMAT Npy; -- { clientError TOO_MANY_COLUMNS }
+    SELECT unsupported_u FROM $database_name.exceptions FORMAT Npy; -- { clientError BAD_ARGUMENTS }
+    SELECT unsupported_date FROM $database_name.exceptions FORMAT Npy; -- { clientError BAD_ARGUMENTS }
+    SELECT unsupported_tuple FROM $database_name.exceptions FORMAT Npy; -- { clientError BAD_ARGUMENTS }
+    SELECT unsupported_nested_i FROM $database_name.exceptions FORMAT Npy; -- { clientError BAD_ARGUMENTS }
+    SELECT ragged_dimention FROM $database_name.exceptions FORMAT Npy; -- { clientError ILLEGAL_COLUMN }
+    SELECT zero_dimension FROM $database_name.exceptions FORMAT Npy; -- { clientError ILLEGAL_COLUMN }
 
-    DROP DATABASE IF EXISTS npy_output_02895;"
+    DROP DATABASE IF EXISTS $database_name;"
 
 rm -rf ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}
