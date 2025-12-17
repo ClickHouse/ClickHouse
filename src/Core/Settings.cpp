@@ -247,7 +247,7 @@ The smaller the `max_threads` value, the less memory is consumed.
 
 The `max_threads` setting by default matches the number of hardware threads available to ClickHouse.
 Without SMT (e.g. Intel HyperThreading), this corresponds to the number of CPU cores.
-    
+
 For ClickHouse Cloud users, the default value will display as `auto(N)` where N matches the vCPU size of your service e.g. 2vCPU/8GiB, 4vCPU/16GiB etc.
 See the settings tab in the Cloud console for a list of all service sizes.
 )", 0) \
