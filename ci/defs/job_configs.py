@@ -545,13 +545,13 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
         Job.ParamSet(
-            parameter="amd_tsan, s3 storage, parallel",
+            parameter="amd_tsan, s3 storage, compatibility, parallel",
             runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_TSAN],
         ),
         *[
             Job.ParamSet(
-                parameter=f"amd_tsan, s3 storage, sequential, {batch}/{total_batches}",
+                parameter=f"amd_tsan, s3 storage, compatibility, sequential, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_SMALL_MEM,
                 requires=[ArtifactNames.CH_AMD_TSAN],
             )

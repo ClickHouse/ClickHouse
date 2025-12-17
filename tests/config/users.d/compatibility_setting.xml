@@ -1,0 +1,8 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <compatibility>23.12</compatibility>
+            <enable_analyzer>1</enable_analyzer>
+        </default>
+    </profiles>
+</clickhouse>
