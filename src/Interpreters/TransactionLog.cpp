@@ -5,8 +5,8 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TransactionLog.h>
-#include <Interpreters/TransactionVersionMetadata.h>
 #include <Interpreters/TransactionsInfoLog.h>
+#include <base/defines.h>
 #include <base/sort.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -408,8 +408,11 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
     auto state_guard = txn->beforeCommit();
 
     CSN allocated_csn = Tx::UnknownCSN;
+    Coordination::Requests requests;
+    txn->takeRequestOnCommit(requests);
     if (txn->isReadOnly())
     {
+        chassert(requests.empty());
         /// Don't need to allocate CSN in ZK for readonly transactions, it's safe to use snapshot/start_csn as "commit" timestamp
         LOG_TEST(log, "Closing readonly transaction {}", txn->tid);
     }
@@ -423,7 +426,6 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
         {
             Coordination::SimpleFaultInjection fault(fault_probability_before_commit, fault_probability_after_commit, "commit");
 
-            Coordination::Requests requests;
             requests.push_back(zkutil::makeCreateRequest(zookeeper_path_log + "/csn-", serializeTID(txn->tid), zkutil::CreateMode::PersistentSequential));
 
             /// Commit point
