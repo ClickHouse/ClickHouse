@@ -15,7 +15,7 @@ insert into metric_log_{{ v }} select * from generateRandom() limit 1 settings m
 optimize table metric_log_{{ v }} final;
 truncate table metric_log_{{ v }};
 alter table metric_log_{{ v }} modify setting min_bytes_for_wide_part=0;
-insert into metric_log_{{ v }} select * from generateRandom() limit 1 settings max_memory_usage = '{{ 200 if v == 1 else 4000 }}Mi' /* w/o adaptive buffers uses ~3, w/ 150MiB */;
+insert into metric_log_{{ v }} select * from generateRandom() limit 1 settings max_memory_usage = '{{ 400 if v == 1 else 6000 }}Mi' /* w/o adaptive buffers uses ~3 (for regular) and ~5-6 (for encrypted disks), w/ 100MiB for regular and ~200-400MiB for encrypted disks */;
 optimize table metric_log_{{ v }} final;
 drop table metric_log_{{ v }};
 {% endfor %}
@@ -29,9 +29,10 @@ select
   max2(
     peak_memory_usage,
     multiIf(
-      part_type = 'Compact', 200e6,
-      table = 'metric_log_1', 200e6,
-      table = 'metric_log_0', 4e9,
+      -- see comments for max_memory_usage
+      part_type = 'Compact', 400e6,
+      table = 'metric_log_1', 400e6,
+      table = 'metric_log_0', 6e9,
       0.
     )
   )
