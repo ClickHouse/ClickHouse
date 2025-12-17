@@ -25,8 +25,12 @@ namespace
 /// Call set process for certificate.
 int callSetCertificate(SSL * ssl, void * arg)
 {
+    LOG_INFO(getLogger("CertificateReloader"), "callSetCertificate INVOKED - arg={}", arg != nullptr);
     if (!arg)
+    {
+        LOG_ERROR(getLogger("CertificateReloader"), "callSetCertificate: arg is NULL!");
         return -1;
+    }
 
     const CertificateReloader::MultiData * pdata = reinterpret_cast<CertificateReloader::MultiData *>(arg);
     return CertificateReloader::instance().setCertificate(ssl, pdata);
@@ -37,52 +41,67 @@ int callSetCertificate(SSL * ssl, void * arg)
 /// This is callback for OpenSSL. It will be called on every connection to obtain a certificate and private key.
 int CertificateReloader::setCertificate(SSL * ssl, const CertificateReloader::MultiData * pdata)
 {
+    LOG_INFO(log, "setCertificate callback INVOKED");
     auto current = pdata->data.get();
 
     if (!current)
+    {
+        LOG_ERROR(log, "setCertificate: current data is NULL!");
         return -1;
+    }
+    LOG_INFO(log, "setCertificate: current data is valid, calling setCertificateCallback");
     return setCertificateCallback(ssl, current.get(), log);
 }
 
 int setCertificateCallback(SSL * ssl, const CertificateReloader::Data * current_data, LoggerPtr log)
 {
+    LOG_INFO(log, "🔍 setCertificateCallback called, certs_chain.size={}", current_data->certs_chain.size());
+
     if (current_data->certs_chain.empty())
+    {
+        LOG_ERROR(log, "❌ certs_chain is EMPTY!");
         return -1;
+    }
 
     if (auto err = SSL_clear_chain_certs(ssl); err != 1)
     {
-        LOG_ERROR(log, "Clear certificates {}", Poco::Net::Utility::getLastError());
+        LOG_ERROR(log, "❌ Clear certificates failed: {}", Poco::Net::Utility::getLastError());
         return -1;
     }
+    LOG_DEBUG(log, "✅ SSL_clear_chain_certs succeeded");
 
     const auto * root_certificate = static_cast<const X509 *>(current_data->certs_chain.front());
     if (auto err = SSL_use_certificate(ssl, const_cast<X509 *>(root_certificate)); err != 1)
     {
-        LOG_ERROR(log, "Use certificate {}", Poco::Net::Utility::getLastError());
+        LOG_ERROR(log, "❌ Use certificate failed: {}", Poco::Net::Utility::getLastError());
         return -1;
     }
+    LOG_DEBUG(log, "✅ SSL_use_certificate succeeded");
 
     for (auto cert = current_data->certs_chain.begin() + 1; cert != current_data->certs_chain.end(); cert++)
     {
         const auto * certificate = static_cast<const X509 *>(*cert);
         if (auto err = SSL_add1_chain_cert(ssl, const_cast<X509 *>(certificate)); err != 1)
         {
-            LOG_ERROR(log, "Add certificate to chain {}", Poco::Net::Utility::getLastError());
+            LOG_ERROR(log, "❌ Add certificate to chain failed: {}", Poco::Net::Utility::getLastError());
             return -1;
         }
     }
+    LOG_DEBUG(log, "✅ Added {} chain certificates", current_data->certs_chain.size() - 1);
 
     if (auto err = SSL_use_PrivateKey(ssl, const_cast<EVP_PKEY *>(static_cast<const EVP_PKEY *>(current_data->key))); err != 1)
     {
-        LOG_ERROR(log, "Use private key {}", Poco::Net::Utility::getLastError());
+        LOG_ERROR(log, "❌ Use private key failed: {}", Poco::Net::Utility::getLastError());
         return -1;
     }
+    LOG_DEBUG(log, "✅ SSL_use_PrivateKey succeeded");
 
     if (auto err = SSL_check_private_key(ssl); err != 1)
     {
-        LOG_ERROR(log, "Unusable key-pair {}", Poco::Net::Utility::getLastError());
+        LOG_ERROR(log, "❌ Unusable key-pair: {}", Poco::Net::Utility::getLastError());
         return -1;
     }
+    LOG_INFO(log, "✅✅✅ setCertificateCallback completed SUCCESSFULLY");
 
     return 1;
 }
@@ -193,7 +212,7 @@ void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & 
     /// no processing required
     if (new_cert_path.empty() || new_key_path.empty())
     {
-        LOG_INFO(log, "One of paths is empty. Cannot apply new configuration for certificates. Fill all paths and try again.");
+        LOG_INFO(log, "One of paths is empty. Cannot apply new configuration for certificates. Fill all paths and try again: {}.", prefix);
         return;
     }
 
