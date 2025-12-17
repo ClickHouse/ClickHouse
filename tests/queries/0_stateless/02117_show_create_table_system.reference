@@ -123,7 +123,8 @@ CREATE TABLE system.data_skipping_indices
     `granularity` UInt64,
     `data_compressed_bytes` UInt64,
     `data_uncompressed_bytes` UInt64,
-    `marks_bytes` UInt64
+    `marks_bytes` UInt64,
+    `creation` Enum8('Explicit' = 0, 'Implicit' = 1)
 )
 ENGINE = SystemDataSkippingIndices
 COMMENT 'Contains all the information about all the data skipping indices in tables, similar to system.columns.'
