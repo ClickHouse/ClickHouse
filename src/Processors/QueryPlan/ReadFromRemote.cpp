@@ -312,7 +312,7 @@ static ASTPtr tryBuildAdditionalFilterAST(
             /// It depends on the predicate and query stage.
 
             std::string_view r;
-            for(auto token : node->result_name | std::views::split('.'))
+            for (auto token : node->result_name | std::views::split('.'))
                 r = std::string_view(&*token.begin(), std::ranges::distance(token));
 
             std::string result_name{r};
