@@ -151,7 +151,7 @@ SELECT getServerPort('tcp_port');
     };
     FunctionDocumentation::IntroducedIn introduced_in_getServerPort = {21, 10};
     FunctionDocumentation::Category category_getServerPort = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_getServerPort = {description_getServerPort, syntax_getServerPort, arguments_getServerPort, returned_value_getServerPort, examples_getServerPort, introduced_in_getServerPort, category_getServerPort};
+    FunctionDocumentation documentation_getServerPort = {description_getServerPort, syntax_getServerPort, arguments_getServerPort, {}, returned_value_getServerPort, examples_getServerPort, introduced_in_getServerPort, category_getServerPort};
 
     factory.registerFunction<GetServerPortOverloadResolver>(documentation_getServerPort);
 }

@@ -345,6 +345,12 @@ ColumnPtr ColumnNullable::filter(const Filter & filt, ssize_t result_size_hint) 
     return ColumnNullable::create(filtered_data, filtered_null_map);
 }
 
+void ColumnNullable::filter(const Filter & filt)
+{
+    getNestedColumn().filter(filt);
+    getNullMapColumn().filter(filt);
+}
+
 void ColumnNullable::expand(const IColumn::Filter & mask, bool inverted)
 {
     nested_column->expand(mask, inverted);
