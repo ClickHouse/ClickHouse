@@ -1,10 +1,13 @@
 #pragma once
 
+#include <cstddef>
+#include <memory>
 #include "Common/COW.h"
 #include "Common/WeakHash.h"
 #include <Common/PODArray.h>
 #include "Columns/IColumn.h"
-#include "fsst.h"
+#include "DataTypes/SerializationStringFsst.h"
+#include "base/types.h"
 
 namespace DB
 {
@@ -16,30 +19,25 @@ extern const int INCORRECT_DATA;
 extern const int LOGICAL_ERROR;
 }
 
+struct fsst_decoder_t;
+
 class ColumnFSST final : public COWHelper<IColumnHelper<ColumnFSST>, ColumnFSST>
 {
 private:
     friend class COWHelper<IColumnHelper<ColumnFSST>, ColumnFSST>;
     friend class COW<IColumn>;
 
+    struct BatchDsc {
+        std::shared_ptr<fsst_decoder_t> decoder;
+        size_t batch_start_index;
+    };
+
     WrappedPtr string_column;
-
-    fsst_decoder_t fsst_decoder;
-    fsst_encoder_t * fsst_encoder;
-
-    // offsets of compressed strings in buffer
-    Offsets offsets;
-    // strings lgtnths before compression
-    Offsets origin_lengths;
-
-    // is column in compressed state
-    // since for fsst build we need some data, column will save data in uncompressed state
-    // until fsst is built
-    bool is_compressed;
+    PODArray<UInt64> origin_lengths;
+    std::vector<BatchDsc> decoders;
 
     explicit ColumnFSST(MutableColumnPtr && _string_column)
         : string_column(std::move(_string_column))
-        , is_compressed(false)
     {
     }
 
@@ -56,8 +54,7 @@ private:
     // size = expected size of the Field after operation
     void decompressField(Field & x, size_t size) const;
 
-    void compressColumn();
-
+    std::optional<size_t> batchByRow(size_t row) const;
 public:
     std::string getName() const override { return "FixedString(FSST)"; }
     const char * getFamilyName() const override { return "FixedString"; }
@@ -149,12 +146,8 @@ public:
 
     WrappedPtr getStringColumn() const { return string_column; }
 
-    fsst_decoder_t & getFsst() { return fsst_decoder; }
-    const fsst_decoder_t & getFsst() const { return fsst_decoder; }
-
-    Offsets & getOffsets() { return offsets; }
-    const Offsets & getOffsets() const { return offsets; }
-
+    void append(const CompressedField& x);
+    void appendNewBatch(const CompressedField& x, std::shared_ptr<fsst_decoder_t> decoder);
 
     [[noreturn]] static void throwNotImplemented()
     {
