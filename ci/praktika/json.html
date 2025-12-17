@@ -1,4 +1,10 @@
-<!DOCTYPE html><html lang=en><head><meta charset=UTF-8><meta name=viewport content="width=device-width, initial-scale=1.0"><title>praktika report</title><style>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>praktika report</title>
+    <style>
 
         /* Default (Day Theme) */
         :root {
@@ -57,6 +63,8 @@
             --link-hover-color: #ffaa00;
             --file-link-color: #007efc;
             --file-link-hover-color: #004d9a;
+            --footer-background: #1F1F1C;
+            --footer-text-color: #fff;
         }
 
         #status-container {
@@ -125,9 +133,6 @@
             text-decoration: none;
         }
 
-        .json-key {
-            font-weight: bold;
-        }
         .external-link {
             color: var(--file-link-color);
             font-family: 'Source Code Pro', monospace, sans-serif;
@@ -185,8 +190,8 @@
             bottom: 0;
             left: 0;
             right: 0;
-            background-color: #1F1F1C;
-            color: white;
+            background-color: var(--footer-background);
+            color: var(--footer-text-color);
             font-size: 14px;
             display: flex;
             justify-content: space-between; /* Ensure the .left expands, and .right and .settings are aligned to the right */
@@ -194,7 +199,7 @@
         }
 
         #footer a {
-            color: white;
+            color: var(--footer-text-color);
             text-decoration: none;
         }
 
@@ -228,7 +233,7 @@
 
         #theme-toggle, #status-filter-toggle, #sort-toggle {
             cursor: pointer;
-            color: white;
+            color: var(--footer-text-color);
             margin-left: 10px;
         }
 
@@ -339,7 +344,22 @@
             color: grey;
             font-weight: bold;
         }
-    </style></head><body><div id=status-container></div><div id=result-container></div><button id=toggle-status-bar onclick=toggleStatusBar()>‖</button><footer id=footer><div class=left></div><div class=right></div><div class=settings><span id=status-filter-toggle></span><span id=sort-toggle>🔼</span><span id=theme-toggle>🔆️</span></div></footer><script>
+    </style>
+</head>
+<body>
+    <div id="status-container"></div>
+    <div id="result-container"></div>
+    <button id="toggle-status-bar">‖</button>
+    <footer id="footer">
+        <div class="left"></div>
+        <div class="right"></div>
+        <div class="settings">
+            <span id="status-filter-toggle"></span>
+            <span id="sort-toggle">🔼</span>
+            <span id="theme-toggle">🔆️</span>
+        </div>
+    </footer>
+    <script>
     // Track all interval timers for cleanup
     const activeTimers = {
         intervals: [],
@@ -478,6 +498,7 @@
     document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
     document.getElementById('status-filter-toggle').addEventListener('click', toggleStatusFilter);
     document.getElementById('sort-toggle').addEventListener('click', toggleSortByStatus);
+    document.getElementById('toggle-status-bar').addEventListener('click', toggleStatusBar);
 
     function toggleSortByStatus() {
         const current = localStorage.getItem('sortByStatus');
@@ -785,9 +806,7 @@
 
         const currentLabel = document.createElement("div");
         currentLabel.style.textAlign = "left";
-        currentLabel.textContent = `duration: ${formatDuration(duration)}`;
-
-        topLabelBox.appendChild(currentLabel);
+        currentLabel.textContent = `duration: ${formatDurationMs(duration)}`;
 
         topLabelBox.appendChild(currentLabel);
         chartWrapper.appendChild(topLabelBox);
@@ -817,10 +836,10 @@
         bottomLabels.style.color = "#444";
 
         const minLabel = document.createElement("div");
-        minLabel.textContent = formatDuration(minValue);
+        minLabel.textContent = formatDurationMs(minValue);
 
         const maxLabel = document.createElement("div");
-        maxLabel.textContent = formatDuration(maxValue);
+        maxLabel.textContent = formatDurationMs(maxValue);
 
         bottomLabels.appendChild(minLabel);
         bottomLabels.appendChild(maxLabel);
@@ -829,7 +848,7 @@
         // --- Final assemble
         statusContainer.appendChild(chartWrapper);
 
-        function formatDuration(ms) {
+        function formatDurationMs(ms) {
             const s = Math.floor(ms / 1000);
             const h = Math.floor(s / 3600);
             const m = Math.floor((s % 3600) / 60);
@@ -1846,8 +1865,6 @@
     let closedInfoCnt = 0;
 
     async function renderResultsAuto(PR, REF, sha, nameParams, base_url) {
-        let autoRefreshTimer = null; // Store the main refresh interval timer
-
         function clearPage() {
             // First, clean up any existing timers and event listeners
             activeTimers.clearAll();
@@ -1923,7 +1940,7 @@
         await checkForUpdatesAndRender(true);
 
         // Setup periodic refresh using our timer management
-        autoRefreshTimer = activeTimers.addInterval(setInterval(() => {
+        activeTimers.addInterval(setInterval(() => {
             checkForUpdatesAndRender(false);
         }, 30000));
 
@@ -2019,4 +2036,6 @@
         link.href = faviconURL;
     }
     createFavicon();
-</script></body></html>
+    </script>
+</body>
+</html>
