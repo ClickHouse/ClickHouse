@@ -255,7 +255,7 @@ public:
     template <TargetArch Arch, typename FunctionImpl, typename ...Args>
     void registerImplementation(Args &&... args)
     {
-        if ((Arch == TargetArch::Default) || isArchSupported(Arch))
+        if (isArchSupported(Arch))
         {
             if (function_implementation.empty() || function_implementation == detail::getImplementationTag<FunctionImpl>(Arch))
             {
