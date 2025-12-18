@@ -43,6 +43,8 @@
 
 #include <boost/algorithm/string.hpp>
 
+#include <Server/arrowFlightProto.h>
+
 #include <arrow/array/builder_base.h>
 #include <arrow/array/builder_binary.h>
 #include <arrow/array/builder_nested.h>
@@ -2049,6 +2051,29 @@ arrow::Status ArrowFlightHandler::DoPut(
                 any_msg.UnpackTo(&command);
                 sql = command.query();
             }
+            else if (any_msg.Is<arrow::flight::protocol::sql::CommandStatementIngest>())
+            {
+                using CommandStatementIngest = arrow::flight::protocol::sql::CommandStatementIngest;
+                CommandStatementIngest command;
+                any_msg.UnpackTo(&command);
+                if (command.has_table_definition_options())
+                {
+                    const auto & options = command.table_definition_options();
+                    if (options.if_not_exist() != CommandStatementIngest::TableDefinitionOptions::TABLE_NOT_EXIST_OPTION_FAIL ||
+                        options.if_exists() != CommandStatementIngest::TableDefinitionOptions::TABLE_EXISTS_OPTION_APPEND)
+                    {
+                        return arrow::Status::NotImplemented("Only appending to existing tables is supported (TABLE_NOT_EXIST_OPTION_FAIL + TABLE_EXISTS_OPTION_APPEND)");
+                    }
+                }
+                
+                if (command.has_catalog())
+                    return arrow::Status::NotImplemented("Catalogs are not supported.");
+
+                if (command.temporary())
+                    return arrow::Status::NotImplemented("Implicit temporary tables are not supported.");
+
+                sql = "INSERT INTO " + (command.has_schema() ? command.schema() + "." : "") + command.table() + " FORMAT Arrow";
+            }
         }
 
         if (sql.empty())
@@ -2060,7 +2085,6 @@ arrow::Status ArrowFlightHandler::DoPut(
 
         const auto & auth = AuthMiddleware::get(context);
         auto session = authenticate(auth, server.context());
-
         /// Close session (if any) after processing the request
         bool close_session = auth.sessionClose() && server.config().getBool("enable_arrow_close_session", true);
         SCOPE_EXIT_SAFE({ releaseOrCloseSession(session, auth.sessionId(), close_session); });
