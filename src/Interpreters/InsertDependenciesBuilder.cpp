@@ -114,13 +114,12 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
-<<<<<<< HEAD
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_insert_block_size_bytes;
-=======
     extern const SettingsBool async_insert_deduplicate;
     extern const SettingsBool insert_deduplicate;
->>>>>>> cd71aff2adca205d4a5eb25ee9e0b9338570dd02
+    extern const SettingsBool async_insert_deduplicate;
+    extern const SettingsBool insert_deduplicate;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 min_insert_block_size_rows_for_materialized_views;
