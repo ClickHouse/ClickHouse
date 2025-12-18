@@ -2955,7 +2955,7 @@ class ClickHouseCluster:
         try:
             resp = requests.get(f"http://{self.rabbitmq_ip}:{self.rabbitmq_management_port}/api/overview",
                                 auth=("root", "clickhouse"))
-            logging.debug(f"RabbitMQ statistics:\n{resp.json()}")
+            logging.debug(f"RabbitMQ statistics:\n{json.dumps(resp.json(), indent=2)}")
         except:
             pass
         logging.debug("Resetting RabbitMQ by restarting container")
