@@ -17,8 +17,8 @@ void runFFORPackUnpackTest(UInt16 bits)
 
     // Generate random input data
     const T max_value = (T{1} << std::min<UInt16>(bits, sizeof(T) * 8u - 1)) - T{1};
-    std::default_random_engine rng(0xC0FFEEULL); // Fixed seed for reproducibility
-    std::uniform_int_distribution<T> dist(0, max_value);
+    std::default_random_engine rng(T{42}); // NOLINT
+    std::uniform_int_distribution<T> dist(T{0}, max_value);
     T base = dist(rng);
     for (auto & i : in)
         i = base + dist(rng);
