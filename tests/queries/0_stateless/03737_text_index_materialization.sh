@@ -1,4 +1,5 @@
 #!/bin/bash
+# Tags: no-parallel-replicas,
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -13,9 +14,9 @@ function run_test()
         ORDER BY name
     "
 
-    $CLICKHOUSE_CLIENT -q "SELECT count() FROM t_text_index_materialization WHERE text LIKE '%v322%'"
+    $CLICKHOUSE_CLIENT --enable_analyzer 1 -q "SELECT count() FROM t_text_index_materialization WHERE text LIKE '%v322%'"
 
-    $CLICKHOUSE_CLIENT -q "
+    $CLICKHOUSE_CLIENT --enable_analyzer 1  -q "
         SELECT trim(explain) FROM
         (
             EXPLAIN actions = 1 SELECT count() FROM t_text_index_materialization WHERE text LIKE '%v322%'
@@ -23,7 +24,7 @@ function run_test()
         WHERE explain ILIKE '%filter column%'
     "
 
-    $CLICKHOUSE_CLIENT -q "
+    $CLICKHOUSE_CLIENT --enable_analyzer 1 -q "
         SELECT trim(explain) FROM
         (
             EXPLAIN indexes = 1 SELECT count() FROM t_text_index_materialization WHERE text LIKE '%v322%'
