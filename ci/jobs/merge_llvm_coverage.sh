@@ -4,6 +4,13 @@ set -e
 
 echo "Merging LLVM coverage files..."
 
+# Debug: List available llvm tools
+echo "Available LLVM tools:"
+command -v llvm-profdata-21 || echo "llvm-profdata-21: not found"
+command -v llvm-cov-21 || echo "llvm-cov-21: not found"
+command -v llvm-profdata || echo "llvm-profdata: not found"
+command -v llvm-cov || echo "llvm-cov: not found"
+
 # Auto-detect available LLVM tools
 if [ -z "$LLVM_PROFDATA" ]; then
   for ver in 21 20 18 19 17 16 ""; do
@@ -23,7 +30,18 @@ if [ -z "$LLVM_COV" ]; then
   done
 fi
 
-echo "Using LLVM tools: $LLVM_PROFDATA, $LLVM_COV"
+echo "Using LLVM tools: LLVM_PROFDATA=$LLVM_PROFDATA, LLVM_COV=$LLVM_COV"
+
+# Check if tools were found
+if [ -z "$LLVM_PROFDATA" ]; then
+  echo "ERROR: llvm-profdata not found in PATH"
+  exit 1
+fi
+
+if [ -z "$LLVM_COV" ]; then
+  echo "ERROR: llvm-cov not found in PATH"
+  exit 1
+fi
 
 # Merge profdata files from all jobs
 "$LLVM_PROFDATA" merge -sparse *.profdata -o merged.profdata
