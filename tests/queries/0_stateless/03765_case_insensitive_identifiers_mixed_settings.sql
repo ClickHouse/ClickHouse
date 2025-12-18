@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 SET allow_experimental_analyzer = 1;
 
 DROP DATABASE IF EXISTS test_03765_miX SYNC;

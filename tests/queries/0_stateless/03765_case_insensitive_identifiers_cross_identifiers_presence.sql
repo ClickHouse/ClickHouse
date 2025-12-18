@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 SET allow_experimental_analyzer = 1;
 
 DROP DATABASE IF EXISTS test_03765_tblpick SYNC;
@@ -10,7 +12,7 @@ SET enable_case_insensitive_tables = 1;
 -- only one table that matches lower('ta') exists -> resolves uniquely
 SELECT count() FROM test_03765_tblpick.ta; -- 0
 
--- add another table that collides by ASCII-lower -> becomes ambiguous
+-- add another table that collides by lower -> becomes ambiguous
 CREATE TABLE test_03765_tblpick.tA (x UInt8) ENGINE = Memory;
 SELECT count() FROM test_03765_tblpick.ta; -- { serverError AMBIGUOUS_IDENTIFIER }
 

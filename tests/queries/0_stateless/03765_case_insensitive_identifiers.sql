@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 SET allow_experimental_analyzer = 1;
 
 DROP DATABASE IF EXISTS test_03765_DbAmbA SYNC;
@@ -29,7 +31,7 @@ SET enable_case_insensitive_tables = 1;
 SELECT sum(x) FROM test_03765_casedb.t1; -- { serverError UNKNOWN_DATABASE }
 SELECT sum(x) FROM test_03765_CaseDB.t1; -- 1
 
--- database ambiguity (two DBs with same ASCII-lower)
+-- database ambiguity (two DBs with same lowercase)
 CREATE DATABASE test_03765_DbAmbA ENGINE = Atomic;
 CREATE DATABASE test_03765_dBaMbA ENGINE = Atomic;
 SET enable_case_insensitive_databases = 1;
@@ -72,7 +74,7 @@ SELECT foo FROM test_03765_col_db.ct; -- { serverError UNKNOWN_IDENTIFIER }
 SET enable_case_insensitive_columns = 1;
 SELECT foo FROM test_03765_col_db.ct; -- 1
 
--- column CI ambiguity (two columns with same ASCII-lower, no exact for query)
+-- column CI ambiguity (two columns with same lowercase, no exact for query)
 CREATE TABLE test_03765_col_db.ct2 (Score Int32, sCOrE Int32) ENGINE = Memory;
 SET enable_case_insensitive_columns = 1;
 -- no rows yet; just exercise resolution path

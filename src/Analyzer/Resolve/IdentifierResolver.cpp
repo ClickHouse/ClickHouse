@@ -33,6 +33,7 @@
 #include <Core/Joins.h>
 #include <iostream>
 #include <ranges>
+#include <set>
 
 
 namespace DB
@@ -166,7 +167,7 @@ struct QualifiedTable
     }
 };
 
-using QualifiedTables = std::vector<QualifiedTable>;
+using QualifiedTableSet = std::set<QualifiedTable>;
 
 IdentifierResolveResult tryResolveTableIdentifierFallback(
     const Identifier & table_identifier,
@@ -195,37 +196,25 @@ IdentifierResolveResult tryResolveTableIdentifierFallback(
     const bool ci_databases_on = settings[Setting::enable_case_insensitive_databases];
     const bool ci_tables_on = settings[Setting::enable_case_insensitive_tables];
 
-    Strings db_candidates;
+    std::set<String> db_candidates;
 
     if (parts.size() == 2)
     {
         /// Check if exact database exists
         if (DatabaseCatalog::instance().isDatabaseExist(requested_table.database))
         {
-            db_candidates.push_back(requested_table.database);
+            db_candidates.insert(requested_table.database);
 
             /// If both DB CI and table CI are enabled, we check other CI-matching DBs
             /// to detect cross-database table ambiguity (for example a.t and A.t, where we need a.T)
             if (ci_databases_on && ci_tables_on)
             {
                 auto ci_dbs = DatabaseCatalog::instance().getDatabasesCaseInsensitive(requested_table.database);
-                for (const auto & db : ci_dbs)
-                {
-                    if (db != requested_table.database)
-                        db_candidates.push_back(db);
-                }
+                db_candidates.insert(ci_dbs.begin(), ci_dbs.end());
             }
         }
         else
         {
-            /// Database doesn't exist exactly
-            if (!ci_databases_on)
-            {
-                if (swallowed_exception)
-                    std::rethrow_exception(swallowed_exception);
-                return {};
-            }
-
             auto ci_dbs = DatabaseCatalog::instance().getDatabasesCaseInsensitive(requested_table.database);
             if (ci_dbs.empty())
             {
@@ -233,22 +222,22 @@ IdentifierResolveResult tryResolveTableIdentifierFallback(
                     std::rethrow_exception(swallowed_exception);
                 return {};
             }
+            db_candidates.insert(ci_dbs.begin(), ci_dbs.end());
 
             /// for DB-only ambiguity
-            if (!ci_tables_on && ci_dbs.size() > 1)
+            if (!ci_tables_on && db_candidates.size() > 1)
             {
-                std::sort(ci_dbs.begin(), ci_dbs.end());
                 throw Exception(
                     ErrorCodes::AMBIGUOUS_IDENTIFIER,
                     "Database '{}' does not have a case-sensitive match. But it case-insensitively matches multiple databases: {}",
                     requested_table.database,
-                    fmt::join(ci_dbs, ", "));
+                    fmt::join(db_candidates, ", "));
             }
 
             // We do this by trying to resolve the table in the CI-matched database directly
-            if (!ci_tables_on && ci_dbs.size() == 1)
+            if (!ci_tables_on && db_candidates.size() == 1)
             {
-                const auto & resolved_db = ci_dbs.front();
+                const auto & resolved_db = *db_candidates.begin();
 
                 Identifier canonical {{ resolved_db, requested_table.table }};
                 if (auto resolved = IdentifierResolver::tryResolveTableIdentifier(canonical, context))
@@ -259,21 +248,17 @@ IdentifierResolveResult tryResolveTableIdentifierFallback(
                 DatabaseCatalog::instance().getTable(storage_id, context); // always throws if table doesn't exist
                 UNREACHABLE();
             }
-
-            db_candidates = std::move(ci_dbs);
         }
     }
     else
     {
         /// work within current database only
-        db_candidates.push_back(requested_table.database);
+        db_candidates.insert(requested_table.database);
     }
 
     /// in selected DB collect case-insensitive table candidates
-    QualifiedTables ci_table_candidates;
-    String requested_table_lower;
-    if (ci_tables_on)
-        requested_table_lower = Poco::toLower(requested_table.table);
+    QualifiedTableSet ci_table_candidates;
+    String requested_table_lower = Poco::toLower(requested_table.table);
 
     for (const auto & db_name : db_candidates)
     {
@@ -294,11 +279,12 @@ IdentifierResolveResult tryResolveTableIdentifierFallback(
                         return { .resolved_identifier = std::move(resolved), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
                     return {};
                 }
-                ci_table_candidates.push_back({db_name, tbl_name});
+                ci_table_candidates.insert({ db_name, tbl_name });
+                break;
             }
             else if (ci_tables_on && Poco::toLower(tbl_name) == requested_table_lower)
             {
-                ci_table_candidates.push_back({ db_name, tbl_name });
+                ci_table_candidates.insert({ db_name, tbl_name });
             }
         }
     }
@@ -313,8 +299,6 @@ IdentifierResolveResult tryResolveTableIdentifierFallback(
     /// no exact matches -> case-insensitive matches in exception
     if (ci_table_candidates.size() > 1)
     {
-        std::sort(ci_table_candidates.begin(), ci_table_candidates.end());
-
         std::vector<String> ci_str;
         ci_str.reserve(ci_table_candidates.size());
         for (const auto & qt : ci_table_candidates)
@@ -327,7 +311,8 @@ IdentifierResolveResult tryResolveTableIdentifierFallback(
             fmt::join(ci_str, ", "));
     }
 
-    Identifier canonical{{ ci_table_candidates.front().database, ci_table_candidates.front().table }};
+    const auto & match = *ci_table_candidates.begin();
+    Identifier canonical {{ match.database, match.table }};
     if (auto resolved = IdentifierResolver::tryResolveTableIdentifier(canonical, context))
         return { .resolved_identifier = std::move(resolved), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
     return {};
