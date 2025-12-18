@@ -19,6 +19,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool log_queries;
+    extern const SettingsString default_dictionary_database;
 }
 
 namespace ErrorCodes
@@ -180,9 +181,8 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
     if (!qualified_name)
         return res;
 
-    std::string default_database_name = local_context->getDefaultDictionaryDatabase();
-    bool is_empty_qualified_name = qualified_name->database.empty();
-    if (is_empty_qualified_name)
+    std::string default_database_name = local_context->getSettingsRef()[Setting::default_dictionary_database];
+    if (qualified_name->database.empty() && !default_database_name.empty())
     {
         /// Either database name is not specified and we should use default or current one
         qualified_name->database = default_database_name;
@@ -194,7 +194,7 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
         const_pointer_cast<Context>(getContext()));
 
     std::string current_database_name = local_context->getCurrentDatabase();
-    if (is_empty_qualified_name && !db)
+    if (qualified_name->database.empty() && !db)
     {
         res = name;
         bool is_xml_dictionary = has(name);
@@ -204,11 +204,9 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
         qualified_name->database = current_database_name;
         res = current_database_name + '.' + name;
 
-        auto [db_, table_] = DatabaseCatalog::instance().tryGetDatabaseAndTable(
+        std::tie(db, table) = DatabaseCatalog::instance().tryGetDatabaseAndTable(
             {qualified_name->database, qualified_name->table},
             const_pointer_cast<Context>(getContext()));
-        db = std::move(db_);
-        table = std::move(table_);
     }
 
     if (!db)
