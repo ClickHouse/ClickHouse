@@ -2083,7 +2083,7 @@ For testing of `PartsSplitter` - split read ranges into intersecting and non int
     DECLARE(Bool, enable_http_compression, true, R"(
 Enables or disables data compression in the response to an HTTP request.
 
-For more information, read the [HTTP interface description](../../interfaces/http.md).
+For more information, read the [HTTP interface description](/interfaces/http).
 
 Possible values:
 
@@ -2099,7 +2099,7 @@ Possible values: Numbers from 1 to 9.
     DECLARE(Bool, http_native_compression_disable_checksumming_on_decompress, false, R"(
 Enables or disables checksum verification when decompressing the HTTP POST data from the client. Used only for ClickHouse native compression format (not used with `gzip` or `deflate`).
 
-For more information, read the [HTTP interface description](../../interfaces/http.md).
+For more information, read the [HTTP interface description](/interfaces/http).
 
 Possible values:
 
@@ -2161,7 +2161,7 @@ Possible values:
     DECLARE(Bool, send_progress_in_http_headers, false, R"(
 Enables or disables `X-ClickHouse-Progress` HTTP response headers in `clickhouse-server` responses.
 
-For more information, read the [HTTP interface description](../../interfaces/http.md).
+For more information, read the [HTTP interface description](/interfaces/http).
 
 Possible values:
 

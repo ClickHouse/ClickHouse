@@ -14,7 +14,7 @@ Specific format might be used either for convenience, integration with other sys
 
 ## Default Format {#default-format}
 
-If the `FORMAT` clause is omitted, the default format is used, which depends on both the settings and the interface used for accessing the ClickHouse server. For the [HTTP interface](../../../interfaces/http.md) and the [command-line client](../../../interfaces/cli.md) in batch mode, the default format is `TabSeparated`. For the command-line client in interactive mode, the default format is `PrettyCompact` (it produces compact human-readable tables).
+If the `FORMAT` clause is omitted, the default format is used, which depends on both the settings and the interface used for accessing the ClickHouse server. For the [HTTP interface](/interfaces/http) and the [command-line client](../../../interfaces/cli.md) in batch mode, the default format is `TabSeparated`. For the command-line client in interactive mode, the default format is `PrettyCompact` (it produces compact human-readable tables).
 
 ## Implementation Details {#implementation-details}
 
