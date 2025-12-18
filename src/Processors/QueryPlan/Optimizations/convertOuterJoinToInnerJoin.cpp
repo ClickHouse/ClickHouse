@@ -101,12 +101,37 @@ size_t tryConvertAnyOuterJoinToInnerJoin(
 
     NameSet join_keys_interesting_side;
 
-    const auto handle_interesting_side_key = [&join_keys_interesting_side, check_left_stream](const JoinActionRef & left_side, const JoinActionRef & right_side)
+    const auto add_key_recursively = [&](const ActionsDAG::Node * node) -> void
+    {
+        if (node->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            std::stack<const ActionsDAG::Node *> nodes_to_process;
+            nodes_to_process.push(node);
+            while (!nodes_to_process.empty())
+            {
+                const auto * current_node = nodes_to_process.top();
+                nodes_to_process.pop();
+
+                join_keys_interesting_side.insert(current_node->result_name);
+
+                if (current_node->type == ActionsDAG::ActionType::FUNCTION && current_node->function_base->isInjective({}))
+                {
+                    for (const auto * child : current_node->children)
+                        nodes_to_process.push(child);
+                }
+            }
+            return;
+        }
+
+        join_keys_interesting_side.insert(node->result_name);
+    };
+
+    const auto handle_interesting_side_key = [&](const JoinActionRef & left_side, const JoinActionRef & right_side)
     {
         if (check_left_stream)
-            join_keys_interesting_side.insert(left_side.getNode()->result_name);
+            add_key_recursively(left_side.getNode());
         else
-            join_keys_interesting_side.insert(right_side.getNode()->result_name);
+            add_key_recursively(right_side.getNode());
     };
 
     for (const auto & expr : join_step->getJoinOperator().expression)
@@ -114,7 +139,6 @@ size_t tryConvertAnyOuterJoinToInnerJoin(
         auto [predicate_op, lhs, rhs] = expr.asBinaryPredicate();
         if (predicate_op != JoinConditionOperator::Equals)
             continue;
-
 
         if (lhs.fromLeft() && rhs.fromRight())
             handle_interesting_side_key(lhs, rhs);
