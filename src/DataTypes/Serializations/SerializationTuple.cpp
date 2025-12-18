@@ -308,7 +308,9 @@ void SerializationTuple::serializeTextJSONPretty(const IColumn & column, size_t 
         }
 
         writeChar('\n', ostr);
-        writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, ostr);
+        const auto final_indent = indent * settings.json.pretty_print_indent_multiplier;
+        if (final_indent > 1)
+            writeChar(settings.json.pretty_print_indent, final_indent, ostr);
         writeChar('}', ostr);
     }
     else
