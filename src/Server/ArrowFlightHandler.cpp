@@ -984,7 +984,7 @@ private:
     std::unordered_map<String, std::shared_ptr<const PollDescriptorInfo>> poll_descriptors TSA_GUARDED_BY(mutex);
     std::unordered_map<String, std::unique_ptr<PollSession>> poll_sessions TSA_GUARDED_BY(mutex);
     std::condition_variable evaluation_ended;
-    /// assosiates flight descriptors with query id
+    /// associates flight descriptors with query id
     std::unordered_map<String, String> flight_descriptor_to_query_id TSA_GUARDED_BY(mutex);
     std::unordered_map<String, std::unordered_set<String>> query_id_to_flight_descriptors TSA_GUARDED_BY(mutex);
     /// `tickets_by_expiration_time` and `poll_descriptors_by_expiration_time` are sorted by `expiration_time` so `std::set` is used.
@@ -2065,7 +2065,7 @@ arrow::Status ArrowFlightHandler::DoPut(
                         return arrow::Status::NotImplemented("Only appending to existing tables is supported (TABLE_NOT_EXIST_OPTION_FAIL + TABLE_EXISTS_OPTION_APPEND)");
                     }
                 }
-                
+
                 if (command.has_catalog())
                     return arrow::Status::NotImplemented("Catalogs are not supported.");
 

@@ -144,20 +144,6 @@ def get_parallel_sequential_tests_to_run(
 
     return parallel_tests, sequential_tests
 
-def install_runtime_requirements():
-    """Install additional Python requirements at runtime to avoid Docker image rebuilds"""
-    runtime_requirements_file = "./tests/integration/requirements.txt"
-    if Path(runtime_requirements_file).exists():
-        print("Installing additional runtime requirements...")
-        try:
-            Shell.check(
-                f"python3 -m pip install --no-cache-dir -r {runtime_requirements_file}",
-                verbose=True,
-                strict=True
-            )
-            print("Runtime requirements installed successfully")
-        except Exception as e:
-            print(f"Warning: Failed to install runtime requirements: {e}")
 
 def main():
     sw = Utils.Stopwatch()
@@ -327,9 +313,6 @@ def main():
     if not Shell.check("docker info > /dev/null", verbose=True):
         _start_docker_in_docker()
     Shell.check("docker info > /dev/null", verbose=True, strict=True)
-
-    # Install runtime requirements before test execution
-    install_runtime_requirements()
 
     parallel_test_modules, sequential_test_modules = (
         get_parallel_sequential_tests_to_run(
