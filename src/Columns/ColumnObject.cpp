@@ -1998,8 +1998,8 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
             /// and we cannot repair it anyhow. Throw logical error exception in this case.
             else
             {
-                auto value = shared_data_values->getDataAt(j);
-                ReadBufferFromMemory buf(value.data, value.size);
+                auto value = shared_data_values->getDataAt(j).toView();
+                ReadBufferFromMemory buf(value.data(), value.size());
                 auto type_from_shared_data = decodeDataType(buf);
                 if (!isNothing(type_from_shared_data))
                 {
