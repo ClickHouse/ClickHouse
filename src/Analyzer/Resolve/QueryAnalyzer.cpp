@@ -5126,6 +5126,10 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                     used_column_name,
                     scope.scope_node->formatASTForErrorMessage());
 
+            LOG_DEBUG(getLogger(__func__), "Resolving used column '{}' from projection columns. Resolved node: {}",
+                used_column_name,
+                resolve_result.resolved_identifier->dumpTree());
+
             IQueryTreeNode::ReplacementMap replacement_map;
             QueryTreeNodes nodes_to_process = { resolve_result.resolved_identifier };
             while (!nodes_to_process.empty())
@@ -5152,7 +5156,10 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 else
                 {
                     for (const auto & child : current_node->getChildren())
-                        nodes_to_process.push_back(child);
+                    {
+                        if (child)
+                            nodes_to_process.push_back(child);
+                    }
                 }
             }
 
