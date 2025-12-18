@@ -46,9 +46,9 @@ public:
 
     Exception(const Exception & exc);
     /// Copy constructor.
-    ///
 
     Exception(Exception && exc);
+    /// Move constructor.
 
     ~Exception() throw();
     /// Destroys the exception and deletes the nested exception.
