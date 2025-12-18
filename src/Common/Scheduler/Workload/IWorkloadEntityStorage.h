@@ -7,8 +7,6 @@
 
 #include <Parsers/IAST_fwd.h>
 
-#include <Poco/Util/AbstractConfiguration.h>
-
 
 namespace DB
 {
@@ -30,14 +28,12 @@ class IWorkloadEntityStorage
 public:
     virtual ~IWorkloadEntityStorage() = default;
 
-    virtual std::string_view getName() const = 0;
-
     /// Whether this storage can replicate entities to another node.
     virtual bool isReplicated() const { return false; }
     virtual String getReplicationID() const { return ""; }
 
     /// Loads all entities. Can be called once - if entities are already loaded the function does nothing.
-    virtual void loadEntities(const Poco::Util::AbstractConfiguration & config) = 0;
+    virtual void loadEntities() = 0;
 
     /// Get entity by name. If no entity stored with entity_name throws exception.
     virtual ASTPtr get(const String & entity_name) const = 0;
@@ -47,6 +43,12 @@ public:
 
     /// Check if entity with entity_name is stored.
     virtual bool has(const String & entity_name) const = 0;
+
+    /// Get all entity names.
+    virtual std::vector<String> getAllEntityNames() const = 0;
+
+    /// Get all entity names of specified type.
+    virtual std::vector<String> getAllEntityNames(WorkloadEntityType entity_type) const = 0;
 
     /// Get all entities.
     virtual std::vector<std::pair<String, ASTPtr>> getAllEntities() const = 0;
@@ -84,15 +86,6 @@ public:
 
     /// Gets all current entries, pass them through `handler` and subscribes for all later changes.
     virtual scope_guard getAllEntitiesAndSubscribe(const OnChangedHandler & handler) = 0;
-
-    /// Returns the name of resource used for CPU scheduling of the master query threads
-    virtual String getMasterThreadResourceName() = 0;
-
-    /// Returns the name of resource used for CPU scheduling of the additional query threads
-    virtual String getWorkerThreadResourceName() = 0;
-
-    /// Returns the name of resource used for query slot scheduling
-    virtual String getQueryResourceName() = 0;
 };
 
 }

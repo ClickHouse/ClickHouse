@@ -81,8 +81,8 @@ public:
 
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override;
 
-    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
-    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
+    std::optional<UInt64> totalRows(const Settings & settings) const override;
+    std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
     using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
     DatabaseTablesIterators getDatabaseIterators(ContextPtr context) const;
@@ -167,7 +167,7 @@ public:
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
-        SharedHeader common_header_,
+        Block common_header_,
         size_t max_block_size,
         size_t num_streams,
         StoragePtr storage,
@@ -190,7 +190,7 @@ public:
 private:
     const size_t required_max_block_size;
     const size_t requested_num_streams;
-    SharedHeader common_header;
+    Block common_header;
 
     StorageListWithLocks selected_tables;
     Names all_column_names;

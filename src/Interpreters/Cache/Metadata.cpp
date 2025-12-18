@@ -2,7 +2,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Context.h>
-#include <Common/ProfileEvents.h>
+#include "Common/ProfileEvents.h"
 #include <Common/logger_useful.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <filesystem>
@@ -346,10 +346,7 @@ void CacheMetadata::removeAllKeys(bool if_releasable, const UserID & user_id)
         for (auto it = bucket.begin(); it != bucket.end();)
         {
             if (!it->second->checkAccess(user_id))
-            {
-                ++it;
                 continue;
-            }
 
             auto locked_key = it->second->lockNoStateCheck();
             if (locked_key->getKeyState() == KeyMetadata::KeyState::ACTIVE)
@@ -410,7 +407,7 @@ CacheMetadata::removeEmptyKey(
 
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheKeys);
 
-    LOG_TEST(log, "Key {} is removed from metadata", key);
+    LOG_DEBUG(log, "Key {} is removed from metadata", key);
 
     const fs::path key_directory = getKeyPath(key, locked_key.getKeyMetadata()->user);
     const fs::path key_prefix_directory = key_directory.parent_path();
@@ -654,7 +651,6 @@ void CacheMetadata::downloadThreadFunc(const bool & stop_flag)
                 chassert(file_segment.assertCorrectness());
 
                 downloadImpl(file_segment, memory);
-                holder->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
             }
             catch (...)
             {
@@ -760,10 +756,7 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
         }
     }
 
-    /// Reset reader to avoid
-    /// Logical error: 'remote_fs_segment_reader->getFileOffsetOfBufferEnd() == file_segment.getCurrentWriteOffset()'
     file_segment.resetRemoteFileReader();
-    file_segment.completePartAndResetDownloader();
 
     LOG_TEST(log, "Downloaded file segment: {}", file_segment.getInfoForLog());
 }
@@ -929,16 +922,6 @@ bool LockedKey::removeAllFileSegments(bool if_releasable)
         it = removeFileSegment(file_segment->offset(), file_segment->lock());
     }
     return removed_all;
-}
-
-KeyMetadata::iterator LockedKey::removeFileSegmentIfExists(size_t offset, bool can_be_broken, bool invalidate_queue_entry)
-{
-    auto it = key_metadata->find(offset);
-    if (it == key_metadata->end())
-        return {};
-
-    auto file_segment = it->second->file_segment;
-    return removeFileSegmentImpl(it, file_segment->lock(), can_be_broken, invalidate_queue_entry);
 }
 
 KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, bool can_be_broken, bool invalidate_queue_entry)

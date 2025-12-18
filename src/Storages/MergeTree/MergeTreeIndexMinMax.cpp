@@ -22,8 +22,7 @@ namespace ErrorCodes
 MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(const String & index_name_, const Block & index_sample_block_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
-{
-}
+{}
 
 MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(
     const String & index_name_,
@@ -31,9 +30,7 @@ MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(
     std::vector<Range> && hyperrectangle_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
-    , hyperrectangle(std::move(hyperrectangle_))
-{
-}
+    , hyperrectangle(std::move(hyperrectangle_)) {}
 
 void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
 {
@@ -56,7 +53,6 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
     Field min_val;
     Field max_val;
 
-    FormatSettings format_settings;
     for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
         const DataTypePtr & type = index_sample_block.getByPosition(i).type;
@@ -67,8 +63,8 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
             case 1:
                 if (!type->isNullable())
                 {
-                    serialization->deserializeBinary(min_val, istr, format_settings);
-                    serialization->deserializeBinary(max_val, istr, format_settings);
+                    serialization->deserializeBinary(min_val, istr, {});
+                    serialization->deserializeBinary(max_val, istr, {});
                 }
                 else
                 {
@@ -82,8 +78,8 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
                     readBinary(is_null, istr);
                     if (!is_null)
                     {
-                        serialization->deserializeBinary(min_val, istr, format_settings);
-                        serialization->deserializeBinary(max_val, istr, format_settings);
+                        serialization->deserializeBinary(min_val, istr, {});
+                        serialization->deserializeBinary(max_val, istr, {});
                     }
                     else
                     {
@@ -95,8 +91,8 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
 
             /// New format with proper Nullable support for values that includes Null values
             case 2:
-                serialization->deserializeBinary(min_val, istr, format_settings);
-                serialization->deserializeBinary(max_val, istr, format_settings);
+                serialization->deserializeBinary(min_val, istr, {});
+                serialization->deserializeBinary(max_val, istr, {});
 
                 // NULL_LAST
                 if (min_val.isNull())
@@ -116,8 +112,7 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
 MergeTreeIndexAggregatorMinMax::MergeTreeIndexAggregatorMinMax(const String & index_name_, const Block & index_sample_block_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
-{
-}
+{}
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorMinMax::getGranuleAndReset()
 {
@@ -178,23 +173,16 @@ MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
 
 bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
 {
-    return rpnEvaluatesAlwaysUnknownOrTrue(
-        condition.getRPN(),
-        {KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE,
-         KeyCondition::RPNElement::FUNCTION_IN_RANGE,
-         KeyCondition::RPNElement::FUNCTION_IN_SET,
-         KeyCondition::RPNElement::FUNCTION_NOT_IN_SET,
-         KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE,
-         KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON,
-         KeyCondition::RPNElement::FUNCTION_IS_NULL,
-         KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL,
-         KeyCondition::RPNElement::ALWAYS_FALSE});
+    return condition.alwaysUnknownOrTrue();
 }
 
 bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
-    const MergeTreeIndexGranuleMinMax & granule = typeid_cast<const MergeTreeIndexGranuleMinMax &>(*idx_granule);
-    return condition.checkInHyperrectangle(granule.hyperrectangle, index_data_types).can_be_true;
+    std::shared_ptr<MergeTreeIndexGranuleMinMax> granule
+        = std::dynamic_pointer_cast<MergeTreeIndexGranuleMinMax>(idx_granule);
+    if (!granule)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Minmax index condition got a granule with the wrong type.");
+    return condition.checkInHyperrectangle(granule->hyperrectangle, index_data_types).can_be_true;
 }
 
 
@@ -204,7 +192,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexMinMax::createIndexGranule() const
 }
 
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
 {
     return std::make_shared<MergeTreeIndexAggregatorMinMax>(index.name, index.sample_block);
 }
@@ -216,13 +204,13 @@ MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
     return std::make_shared<MergeTreeIndexConditionMinMax>(index, filter_dag, context);
 }
 
-MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & relative_path_prefix) const
+MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const
 {
-    if (checksums.files.contains(relative_path_prefix + ".idx2"))
-        return {2, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}};
-    if (checksums.files.contains(relative_path_prefix + ".idx"))
-        return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
-    return {0 /* unknown */, {}};
+    if (data_part_storage.existsFile(relative_path_prefix + ".idx2"))
+        return {2, ".idx2"};
+    if (data_part_storage.existsFile(relative_path_prefix + ".idx"))
+        return {1, ".idx"};
+    return {0 /* unknown */, ""};
 }
 
 MergeTreeIndexPtr minmaxIndexCreator(

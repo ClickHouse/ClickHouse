@@ -4,7 +4,6 @@ description: 'Computes quantile of a numeric data sequence using linear interpol
 sidebar_position: 176
 slug: /sql-reference/aggregate-functions/reference/quantileInterpolatedWeighted
 title: 'quantileInterpolatedWeighted'
-doc_type: 'reference'
 ---
 
 # quantileInterpolatedWeighted
@@ -17,7 +16,7 @@ When using multiple `quantile*` functions with different levels in a query, the 
 
 **Syntax**
 
-```sql
+``` sql
 quantileInterpolatedWeighted(level)(expr, weight)
 ```
 
@@ -43,7 +42,7 @@ Type:
 
 Input table:
 
-```text
+``` text
 ┌─n─┬─val─┐
 │ 0 │   3 │
 │ 1 │   2 │
@@ -54,13 +53,13 @@ Input table:
 
 Query:
 
-```sql
+``` sql
 SELECT quantileInterpolatedWeighted(n, val) FROM t
 ```
 
 Result:
 
-```text
+``` text
 ┌─quantileInterpolatedWeighted(n, val)─┐
 │                                    1 │
 └──────────────────────────────────────┘

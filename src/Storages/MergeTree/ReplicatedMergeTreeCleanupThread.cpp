@@ -206,7 +206,6 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
 
         cleaned_other += clearOldMutations();
         cleaned_part_like += storage.clearEmptyParts();
-        cleaned_part_like += storage.clearUnusedPatchParts();
     }
 
     cleaned_part_like += storage.unloadPrimaryKeysAndClearCachesOfOutdatedParts();

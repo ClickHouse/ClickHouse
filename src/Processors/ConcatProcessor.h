@@ -1,11 +1,12 @@
 #pragma once
 
-#include <Core/Block_fwd.h>
 #include <Processors/IProcessor.h>
 
 
 namespace DB
 {
+
+class Block;
 
 /** Has arbitrary non zero number of inputs and one output.
   * All of them have the same structure.
@@ -17,7 +18,7 @@ namespace DB
 class ConcatProcessor final : public IProcessor
 {
 public:
-    ConcatProcessor(SharedHeader header, size_t num_inputs);
+    ConcatProcessor(const Block & header, size_t num_inputs);
 
     String getName() const override { return "Concat"; }
 

@@ -4,7 +4,6 @@ import logging
 import os
 import random
 import string
-import uuid
 
 import minio
 import pytest
@@ -245,9 +244,9 @@ def test_upload_s3_fail_upload_part_when_multi_part_upload(
 @pytest.mark.parametrize(
     "action_and_message",
     [
-        ("slow_down", "DB::Exception: Slow Down"),
-        ("qps_limit_exceeded", "DB::Exception: Please reduce your request rate"),
-        ("total_qps_limit_exceeded", "DB::Exception: Please reduce your request rate"),
+        ("slow_down", "DB::Exception: Slow Down."),
+        ("qps_limit_exceeded", "DB::Exception: Please reduce your request rate."),
+        ("total_qps_limit_exceeded", "DB::Exception: Please reduce your request rate."),
         (
             "connection_refused",
             "Poco::Exception. Code: 1000, e.code() = 111, Connection refused",
@@ -729,7 +728,7 @@ def test_no_key_found_disk(cluster, broken_s3):
     error = node.query_and_get_error("SELECT * FROM no_key_found_disk").strip()
 
     assert (
-        "DB::Exception: The specified key does not exist. This error happened for S3 disk"
+        "DB::Exception: The specified key does not exist. This error happened for S3 disk."
         in error
     )
 
@@ -891,110 +890,3 @@ def test_exception_in_onFinish(cluster, broken_s3):
     )
 
     assert count_from_query_log == "1\n"
-
-
-def test_exception_in_MV(cluster, broken_s3):
-    node = cluster.instances["node_with_query_log_on_s3"]
-
-    node.query(
-        """
-        DROP VIEW IF EXISTS source_sink_mv
-        """
-    )
-
-    node.query(
-        """
-        DROP TABLE IF EXISTS source_sink
-        """
-    )
-
-    node.query(
-        """
-        DROP TABLE IF EXISTS source
-        """
-    )
-
-    node.query(
-        """
-        CREATE TABLE source (i Int64)
-            ENGINE = MergeTree()
-            ORDER BY ()
-        """
-    )
-
-    node.query(
-        """
-        CREATE TABLE source_sink
-            ENGINE = MergeTree()
-            ORDER BY ()
-            SETTINGS storage_policy='broken_s3'
-            EMPTY AS
-            SELECT *
-            FROM source
-        """
-    )
-
-    node.query(
-        """
-        CREATE MATERIALIZED VIEW source_sink_mv TO source_sink AS
-            SELECT *
-            FROM source
-        """
-    )
-
-    node.query(
-        """
-        -- INSERT
-        INSERT INTO source SETTINGS materialized_views_ignore_errors=1 VALUES (1)
-        """
-    )
-
-    broken_s3.setup_at_object_upload(count=100, after=0)
-
-    query_id = uuid.uuid4().hex
-    node.query(
-        """
-        INSERT INTO source SETTINGS materialized_views_ignore_errors=1 VALUES (2)
-        """,
-        query_id=query_id
-    )
-
-    count_from_source = node.query(
-        """
-        SELECT count() from source
-        """
-    )
-
-    assert count_from_source == "2\n"
-
-    count_from_sink= node.query(
-        """
-        SELECT count() from source_sink
-        """
-    )
-
-    assert count_from_sink == "1\n"
-
-    count_from_sink= node.query(
-        """
-        SYSTEM FLUSH LOGS query_log, query_views_log
-        """
-    )
-
-    query_view_log = node.query(
-        f"""
-        SELECT
-            view_name,
-            status,
-            exception_code,
-            exception,
-            view_target,
-            view_query
-        FROM system.query_views_log
-        WHERE initial_query_id = '{query_id}'
-        ORDER BY view_name ASC
-        """
-    )
-
-    assert 'ExceptionName: ExpectedError Message: mock s3 injected unretryable error' in query_view_log
-    assert 'ExceptionWhileProcessing' in query_view_log

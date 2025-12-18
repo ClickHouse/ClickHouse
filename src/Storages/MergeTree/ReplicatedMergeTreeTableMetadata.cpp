@@ -250,6 +250,7 @@ ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parse(const S
     return metadata;
 }
 
+
 static void handleTableMetadataMismatch(
     const std::string & table_name_for_error_message,
     std::string_view differs_in,
@@ -284,7 +285,6 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(
     ContextPtr context,
     bool check_index_granularity) const
 {
-
     if (data_format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         if (date_column != from_zk.date_column)
@@ -408,7 +408,7 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(
     bool check_index_granularity) const
 {
     checkImmutableFieldsEquals(from_zk, columns, table_name_for_error_message, context, check_index_granularity);
-
+ 
     Diff diff;
 
     if (sorting_key != from_zk.sorting_key)
@@ -467,7 +467,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
                 order_by_ast = new_sorting_key_expr_list->children[0];
             else
             {
-                auto tuple = makeASTOperator("tuple");
+                auto tuple = makeASTFunction("tuple");
                 tuple->arguments->children = new_sorting_key_expr_list->children;
                 order_by_ast = tuple;
             }

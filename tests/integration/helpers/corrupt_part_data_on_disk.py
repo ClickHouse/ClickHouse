@@ -1,5 +1,4 @@
 def corrupt_part_data_on_disk(node, table, part_name, file_ext=".bin", database=None):
-    assert part_name
     part_path = node.query(
         "SELECT path FROM system.parts WHERE table = '{}' and name = '{}' {}".format(
             table,
@@ -7,7 +6,6 @@ def corrupt_part_data_on_disk(node, table, part_name, file_ext=".bin", database=
             f"AND database = '{database}'" if database is not None else "",
         )
     ).strip()
-    assert part_path
 
     corrupt_part_data_by_path(node, part_path, file_ext)
 

@@ -81,8 +81,6 @@ struct QueryLogElement
     std::unordered_set<String> used_functions;
     std::unordered_set<String> used_storages;
     std::unordered_set<String> used_table_functions;
-    std::unordered_set<String> used_executable_user_defined_functions;
-    std::unordered_set<String> used_sql_user_defined_functions;
     std::set<String> used_row_policies;
     std::unordered_set<String> used_privileges;
     std::unordered_set<String> missing_privileges;
@@ -102,8 +100,6 @@ struct QueryLogElement
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
     std::shared_ptr<AsyncReadCounters> async_read_counters;
     std::shared_ptr<Settings> query_settings;
-
-    bool is_internal;
 
     TransactionID tid;
 

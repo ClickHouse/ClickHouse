@@ -1,13 +1,12 @@
 ---
 description: 'Guide to backing up and restoring ClickHouse databases and tables'
-sidebar_label: 'Backup and restore'
+sidebar_label: 'Backup and Restore'
 sidebar_position: 10
 slug: /operations/backup
-title: 'Backup and restore'
-doc_type: 'guide'
+title: 'Backup and Restore'
 ---
 
-# Backup and restore
+# Backup and Restore
 
 - [Backup to a local disk](#backup-to-a-local-disk)
 - [Configuring backup/restore to use an S3 endpoint](#configuring-backuprestore-to-use-an-s3-endpoint)
@@ -19,17 +18,17 @@ doc_type: 'guide'
 ```bash
  BACKUP|RESTORE
   TABLE [db.]table_name [AS [db.]table_name_in_backup]
-    [PARTITION[S] partition_expr [, ...]] |
+    [PARTITION[S] partition_expr [,...]] |
   DICTIONARY [db.]dictionary_name [AS [db.]name_in_backup] |
   DATABASE database_name [AS database_name_in_backup]
     [EXCEPT TABLES ...] |
   TEMPORARY TABLE table_name [AS table_name_in_backup] |
-  VIEW view_name [AS view_name_in_backup] |
-  ALL [EXCEPT {TABLES|DATABASES}...] } [, ...]
+  VIEW view_name [AS view_name_in_backup]
+  ALL TEMPORARY TABLES [EXCEPT ...] |
+  ALL [EXCEPT ...] } [,...]
   [ON CLUSTER 'cluster_name']
   TO|FROM File('<path>/<filename>') | Disk('<disk_name>', '<path>/') | S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')
   [SETTINGS base_backup = File('<path>/<filename>') | Disk(...) | S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')]
-  [SYNC|ASYNC]
 
 ```
 
@@ -39,7 +38,7 @@ Prior to version 23.4 of ClickHouse, `ALL` was only applicable to the `RESTORE` 
 
 ## Background {#background}
 
-While [replication](../engines/table-engines/mergetree-family/replication.md) provides protection from hardware failures, it does not protect against human errors: accidental deletion of data, deletion of the wrong table or a table on the wrong cluster, and software bugs that result in incorrect data processing or data corruption. In many cases, mistakes like these will affect all replicas. ClickHouse has built-in safeguards to prevent some types of mistakes — for example, by default [you can't just drop tables with a MergeTree-like engine containing more than 50 Gb of data](/operations/settings/settings#max_table_size_to_drop). However, these safeguards do not cover all possible cases and can be circumvented.
+While [replication](../engines/table-engines/mergetree-family/replication.md) provides protection from hardware failures, it does not protect against human errors: accidental deletion of data, deletion of the wrong table or a table on the wrong cluster, and software bugs that result in incorrect data processing or data corruption. In many cases mistakes like these will affect all replicas. ClickHouse has built-in safeguards to prevent some types of mistakes — for example, by default [you can't just drop tables with a MergeTree-like engine containing more than 50 Gb of data](/operations/settings/settings#max_table_size_to_drop). However, these safeguards do not cover all possible cases and can be circumvented.
 
 In order to effectively mitigate possible human errors, you should carefully prepare a strategy for backing up and restoring your data **in advance**.
 
@@ -84,18 +83,17 @@ The BACKUP and RESTORE statements take a list of DATABASE and TABLE names, a des
 - ASYNC: backup or restore asynchronously
 - PARTITIONS: a list of partitions to restore
 - SETTINGS:
-  - `id`: the identifier of a backup or restore operation. If it's unset or empty then a randomly generated UUID will be used.
-  If it's explicitly set to a nonempty string then it should be different each time. This `id` is used to find rows in table `system.backups` related to a specific backup or restore operation.
-  - [`compression_method`](/sql-reference/statements/create/table#column_compression_codec) and compression_level
-  - `password` for the file on disk
-  - `base_backup`: the destination of the previous backup of this source.  For example, `Disk('backups', '1.zip')`
-  - `use_same_s3_credentials_for_base_backup`: whether base backup to S3 should inherit credentials from the query. Only works with `S3`.
-  - `use_same_password_for_base_backup`: whether base backup archive should inherit the password from the query.
-  - `structure_only`: if enabled, allows to only backup or restore the CREATE statements without the data of tables
-  - `storage_policy`: storage policy for the tables being restored. See [Using Multiple Block Devices for Data Storage](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes). This setting is only applicable to the `RESTORE` command. The specified storage policy applies only to tables with an engine from the `MergeTree` family.
-  - `s3_storage_class`: the storage class used for S3 backup. For example, `STANDARD`
-  - `azure_attempt_to_create_container`: when using Azure Blob Storage, whether the specified container will try to be created if it doesn't exist. Default: true.
-  - [core settings](/operations/settings/settings) can be used here too
+    - `id`: id of backup or restore operation, randomly generated UUID is used, if not specified manually. If there is already running operation with the same `id` exception is thrown.
+    - [`compression_method`](/sql-reference/statements/create/table#column_compression_codec) and compression_level
+    - `password` for the file on disk
+    - `base_backup`: the destination of the previous backup of this source.  For example, `Disk('backups', '1.zip')`
+    - `use_same_s3_credentials_for_base_backup`: whether base backup to S3 should inherit credentials from the query. Only works with `S3`.
+    - `use_same_password_for_base_backup`: whether base backup archive should inherit the password from the query.
+    - `structure_only`: if enabled, allows to only backup or restore the CREATE statements without the data of tables
+    - `storage_policy`: storage policy for the tables being restored. See [Using Multiple Block Devices for Data Storage](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes). This setting is only applicable to the `RESTORE` command. The specified storage policy applies only to tables with an engine from the `MergeTree` family.
+    - `s3_storage_class`: the storage class used for S3 backup. For example, `STANDARD`
+    - `azure_attempt_to_create_container`: when using Azure Blob Storage, whether the specified container will try to be created if it doesn't exist. Default: true.
+    - [core settings](/operations/settings/settings) can be used here too
 
 ### Usage examples {#usage-examples}
 
@@ -198,6 +196,7 @@ BACKUP TABLE test.table TO Disk('backups', '1.tar.gz')
 
 The supported compression file suffixes are `tar.gz`, `.tgz` `tar.bz2`, `tar.lzma`, `.tar.zst`, `.tzst` and `.tar.xz`.
 
+
 ### Check the status of backups {#check-the-status-of-backups}
 
 The backup command returns an `id` and `status`, and that `id` can be used to get the status of the backup.  This is very useful to check the progress of long ASYNC backups.  The example below shows a failure that happened when trying to overwrite an existing backup file:
@@ -216,7 +215,7 @@ BACKUP TABLE helloworld.my_first_table TO Disk('backups', '1.zip') ASYNC
 SELECT
     *
 FROM system.backups
-WHERE id='7678b0b3-f519-4e6e-811f-5a0781a4eb52'
+where id='7678b0b3-f519-4e6e-811f-5a0781a4eb52'
 FORMAT Vertical
 ```
 ```response
@@ -396,7 +395,7 @@ SELECT throwIf((
         FROM data3
     ), 'Data does not match after BACKUP/RESTORE')
 ```
-## BACKUP/RESTORE using an S3 disk {#backuprestore-using-an-s3-disk}
+## BACKUP/RESTORE Using an S3 Disk {#backuprestore-using-an-s3-disk}
 
 It is also possible to `BACKUP`/`RESTORE` to S3 by configuring an S3 disk in the ClickHouse storage configuration.  Configure the disk like this by adding a file to `/etc/clickhouse-server/config.d`:
 
@@ -438,10 +437,10 @@ RESTORE TABLE data AS data_restored FROM Disk('s3_plain', 'cloud_backup');
 :::note
 But keep in mind that:
 - This disk should not be used for `MergeTree` itself, only for `BACKUP`/`RESTORE`
-- If your tables are backed by S3 storage, then it will try to use the S3 server-side copy with `CopyObject` calls to copy parts to the destination bucket using its credentials. If an authentication error occurs, it will fallback to the copy with buffer method (download parts and upload them) which is very inefficient. In this case, you may want to ensure you have `read` permissions on the source bucket with the credentials of the destination bucket.
+- If your tables are backed by S3 storage and types of the disks are different, it doesn't use `CopyObject` calls to copy parts to the destination bucket, instead, it downloads and uploads them, which is very inefficient. Prefer to use `BACKUP ... TO S3(<endpoint>)` syntax for this use-case.
 :::
 
-## Using named collections {#using-named-collections}
+## Using Named Collections {#using-named-collections}
 
 Named collections can be used for `BACKUP/RESTORE` parameters. See [here](./named-collections.md#named-collections-for-backups) for an example.
 
@@ -449,17 +448,17 @@ Named collections can be used for `BACKUP/RESTORE` parameters. See [here](./name
 
 ClickHouse stores data on disk, and there are many ways to backup disks.  These are some alternatives that have been used in the past, and that may fit in well in your environment.
 
-### Duplicating source data somewhere else {#duplicating-source-data-somewhere-else}
+### Duplicating Source Data Somewhere Else {#duplicating-source-data-somewhere-else}
 
 Often data that is ingested into ClickHouse is delivered through some sort of persistent queue, such as [Apache Kafka](https://kafka.apache.org). In this case it is possible to configure an additional set of subscribers that will read the same data stream while it is being written to ClickHouse and store it in cold storage somewhere. Most companies already have some default recommended cold storage, which could be an object store or a distributed filesystem like [HDFS](https://hadoop.apache.org/docs/stable/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html).
 
-### Filesystem snapshots {#filesystem-snapshots}
+### Filesystem Snapshots {#filesystem-snapshots}
 
 Some local filesystems provide snapshot functionality (for example, [ZFS](https://en.wikipedia.org/wiki/ZFS)), but they might not be the best choice for serving live queries. A possible solution is to create additional replicas with this kind of filesystem and exclude them from the [Distributed](../engines/table-engines/special/distributed.md) tables that are used for `SELECT` queries. Snapshots on such replicas will be out of reach of any queries that modify data. As a bonus, these replicas might have special hardware configurations with more disks attached per server, which would be cost-effective.
 
 For smaller volumes of data, a simple `INSERT INTO ... SELECT ...` to remote tables might work as well.
 
-### Manipulations with parts {#manipulations-with-parts}
+### Manipulations with Parts {#manipulations-with-parts}
 
 ClickHouse allows using the `ALTER TABLE ... FREEZE PARTITION ...` query to create a local copy of table partitions. This is implemented using hardlinks to the `/var/lib/clickhouse/shadow/` folder, so it usually does not consume extra disk space for old data. The created copies of files are not handled by ClickHouse server, so you can just leave them there: you will have a simple backup that does not require any additional external system, but it will still be prone to hardware issues. For this reason, it's better to remotely copy them to another location and then remove the local copies. Distributed filesystems and object stores are still a good options for this, but normal attached file servers with a large enough capacity might work as well (in this case the transfer will occur via the network filesystem or maybe [rsync](https://en.wikipedia.org/wiki/Rsync)).
 Data can be restored from backup using the `ALTER TABLE ... ATTACH PARTITION ...`
@@ -510,11 +509,11 @@ RESTORE TABLE data AS data_restored FROM AzureBlobStorage('DefaultEndpointsProto
 
 System tables can also be included in your backup and restore workflows, but their inclusion depends on your specific use case.
 
-### Backing up log tables {#backing-up-log-tables}
+### Backing Up Log Tables {#backing-up-log-tables}
 
 System tables that store historic data, such as those with a _log suffix (e.g., `query_log`, `part_log`), can be backed up and restored like any other table. If your use case relies on analyzing historic data—for example, using query_log to track query performance or debug issues—it's recommended to include these tables in your backup strategy. However, if historic data from these tables is not required, they can be excluded to save backup storage space.
 
-### Backing up access management tables {#backing-up-access-management-tables}
+### Backing Up Access Management Tables {#backing-up-access-management-tables}
 
 System tables related to access management, such as users, roles, row_policies, settings_profiles, and quotas, receive special treatment during backup and restore operations. When these tables are included in a backup, their content is exported to a special `accessXX.txt` file, which encapsulates the equivalent SQL statements for creating and configuring the access entities. Upon restoration, the restore process interprets these files and re-applies the SQL commands to recreate the users, roles, and other configurations.
 

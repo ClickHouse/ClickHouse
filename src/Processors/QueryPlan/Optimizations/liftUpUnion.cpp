@@ -51,7 +51,7 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
             expr_node.step = std::make_unique<ExpressionStep>(
                 expr_node.children.front()->step->getOutputHeader(),
                 expression->getExpression().clone());
-            expr_node.step->setStepDescription(*expression);
+            expr_node.step->setStepDescription(expression->getStepDescription());
         }
 
         ///       - Expression - Something
@@ -89,8 +89,6 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
                 distinct->getLimitHint(),
                 distinct->getColumnNames(),
                 distinct->isPreliminary());
-
-            distinct_node.step->setStepDescription(*distinct);
         }
 
         ///       - Distinct - Something

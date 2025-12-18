@@ -13,21 +13,22 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
+    extern const int ILLEGAL_COLUMN;
 }
 
-JSONAsRowInputFormat::JSONAsRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_) :
+JSONAsRowInputFormat::JSONAsRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_) :
     JSONEachRowRowInputFormat(in_, header_, std::move(params_), format_settings_, false)
 {
-    if (header_->columns() > 1)
+    if (header_.columns() > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "This input format is only suitable for tables with a single column of type String or Object, but the number of columns is {}",
-            header_->columns());
+            header_.columns());
 }
 
 bool JSONAsRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 {
-    chassert(columns.size() == 1);
-    chassert(serializations.size() == 1);
+    assert(columns.size() == 1);
+    assert(serializations.size() == 1);
 
     if (!allow_new_rows)
         return false;
@@ -59,19 +60,19 @@ bool JSONAsRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 }
 
 JSONAsStringRowInputFormat::JSONAsStringRowInputFormat(
-    SharedHeader header_, ReadBuffer & in_, IRowInputFormat::Params params_, const FormatSettings & format_settings_)
+    const Block & header_, ReadBuffer & in_, IRowInputFormat::Params params_, const FormatSettings & format_settings_)
     : JSONAsStringRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_, format_settings_)
 {
 }
 
 JSONAsStringRowInputFormat::JSONAsStringRowInputFormat(
-    SharedHeader header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & format_settings_)
+    const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & format_settings_)
     : JSONAsRowInputFormat(header_, *buf_, params_, format_settings_), buf(std::move(buf_))
 {
-    if (!isString(removeNullable(removeLowCardinality(header_->getByPosition(0).type))))
+    if (!isString(removeNullable(removeLowCardinality(header_.getByPosition(0).type))))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "This input format is only suitable for tables with a single column of type String but the column type is {}",
-            header_->getByPosition(0).type->getName());
+            header_.getByPosition(0).type->getName());
 }
 
 void JSONAsStringRowInputFormat::setReadBuffer(ReadBuffer & in_)
@@ -165,11 +166,11 @@ void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
 
 
 JSONAsObjectRowInputFormat::JSONAsObjectRowInputFormat(
-    SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
+    const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : JSONAsRowInputFormat(header_, in_, params_, format_settings_)
 {
-    const auto & type = header_->getByPosition(0).type;
-    if (!isObject(type))
+    const auto & type = header_.getByPosition(0).type;
+    if (!isObject(type) && !isObjectDeprecated(type))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Input format JSONAsObject is only suitable for tables with a single column of type JSON but the column type is {}",
             type->getName());
@@ -189,6 +190,11 @@ Chunk JSONAsObjectRowInputFormat::getChunkForCount(size_t rows)
 
 JSONAsObjectExternalSchemaReader::JSONAsObjectExternalSchemaReader(const FormatSettings & settings_) : settings(settings_)
 {
+    if (!settings.json.allow_deprecated_object_type && !settings.json.allow_json_type)
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Cannot infer the data structure in JSONAsObject format because experimental JSON type is not allowed. Set setting "
+            "enable_json_type = 1 in order to allow it");
 }
 
 void registerInputFormatJSONAsString(FormatFactory & factory)
@@ -199,7 +205,7 @@ void registerInputFormatJSONAsString(FormatFactory & factory)
             const RowInputFormatParams & params,
             const FormatSettings & format_settings)
     {
-        return std::make_shared<JSONAsStringRowInputFormat>(std::make_unique<const Block>(sample), buf, params, format_settings);
+        return std::make_shared<JSONAsStringRowInputFormat>(sample, buf, params, format_settings);
     });
 }
 
@@ -229,7 +235,7 @@ void registerInputFormatJSONAsObject(FormatFactory & factory)
         IRowInputFormat::Params params,
         const FormatSettings & settings)
     {
-        return std::make_shared<JSONAsObjectRowInputFormat>(std::make_unique<const Block>(sample), buf, std::move(params), settings);
+        return std::make_shared<JSONAsObjectRowInputFormat>(sample, buf, std::move(params), settings);
     });
 }
 

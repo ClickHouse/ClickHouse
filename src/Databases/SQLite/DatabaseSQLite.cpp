@@ -1,16 +1,13 @@
-#include <Databases/SQLite/DatabaseSQLite.h>
+#include "DatabaseSQLite.h"
 
 #if USE_SQLITE
 
-#include <Storages/AlterCommands.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
@@ -39,7 +36,7 @@ DatabaseSQLite::DatabaseSQLite(
         const ASTStorage * database_engine_define_,
         bool is_attach_,
         const String & database_path_)
-    : DatabaseWithAltersOnDiskBase("SQLite")
+    : IDatabase("SQLite")
     , WithContext(context_->getGlobalContext())
     , database_engine_define(database_engine_define_->clone())
     , database_path(database_path_)
@@ -170,17 +167,18 @@ StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr loca
 }
 
 
-ASTPtr DatabaseSQLite::getCreateDatabaseQueryImpl() const
+ASTPtr DatabaseSQLite::getCreateDatabaseQuery() const
 {
     const auto & create_query = std::make_shared<ASTCreateQuery>();
-    create_query->setDatabase(database_name);
+    create_query->setDatabase(getDatabaseName());
     create_query->set(create_query->storage, database_engine_define);
 
-    if (!comment.empty())
-        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment));
+    if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
+        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
 
     return create_query;
 }
+
 
 ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
 {

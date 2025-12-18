@@ -2,7 +2,6 @@
 description: 'Guide to using the format utility for working with ClickHouse data formats'
 slug: /operations/utilities/clickhouse-format
 title: 'clickhouse-format'
-doc_type: 'reference'
 ---
 
 # clickhouse-format utility
@@ -13,7 +12,7 @@ Keys:
 
 - `--help` or`-h` — Produce help message.
 - `--query` — Format queries of any length and complexity.
-- `--hilite` or `--highlight` — Add syntax highlight with ANSI terminal escape sequences.
+- `--hilite` — Add syntax highlight with ANSI terminal escape sequences.
 - `--oneline` — Format in single line.
 - `--max_line_length` — Format in single line queries with length less than specified.
 - `--comments` — Keep comments in the output.
@@ -22,7 +21,6 @@ Keys:
 - `--obfuscate` — Obfuscate instead of formatting.
 - `--seed <string>` — Seed arbitrary string that determines the result of obfuscation.
 - `--backslash` — Add a backslash at the end of each line of the formatted query. Can be useful when you copy a query from web or somewhere else with multiple lines, and want to execute it in command line.
-- `--semicolons_inline` — In multiquery mode, write semicolons on last line of query instead of a new line.
 
 ## Examples {#examples}
 

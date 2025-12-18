@@ -34,7 +34,8 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {}) const override;
+        std::optional<size_t> read_hint = {},
+        std::optional<size_t> file_size = {}) const override;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
@@ -63,11 +64,15 @@ public:
         IObjectStorage & object_storage_to,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
+    std::unique_ptr<IObjectStorage> cloneObjectStorage(
+        const std::string & new_namespace,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        ContextPtr context) override;
+
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
-    ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
-
-    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override;
+    ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
     void shutdown() override;
 
@@ -118,11 +123,6 @@ public:
     std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const override
     {
         return object_storage->getAzureBlobStorageClient();
-    }
-
-    AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const override
-    {
-        return object_storage->getAzureBlobStorageAuthMethod();
     }
 #endif
 

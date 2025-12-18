@@ -1,10 +1,11 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/IAST.h>
-#include <Parsers/IAST_erase.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Common/quoteString.h>
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
+
+#include <base/EnumReflection.h>
 
 
 namespace DB
@@ -94,14 +95,14 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 {
     auto print_identifier = [&](const String & identifier) -> WriteBuffer &
     {
-        ostr << backQuoteIfNeed(identifier)
-                     ;
+        ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(identifier)
+                      << (settings.hilite ? hilite_none : "");
         return ostr;
     };
 
     auto print_keyword = [&](const auto & keyword) -> WriteBuffer &
     {
-        ostr << keyword;
+        ostr << (settings.hilite ? hilite_keyword : "") << keyword << (settings.hilite ? hilite_none : "");
         return ostr;
     };
 
@@ -115,20 +116,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
         chassert(table);
         table->format(ostr, settings, state, frame);
-
-        if (if_exists)
-            print_keyword(" IF EXISTS");
-
-        return ostr;
-    };
-
-    auto print_restore_database_replica = [&]() -> WriteBuffer &
-    {
-        chassert(database);
-
-        ostr << " ";
-        print_identifier(getDatabase());
-
         return ostr;
     };
 
@@ -163,7 +150,13 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
     print_keyword("SYSTEM") << " ";
     print_keyword(typeToString(type));
-    if (!cluster.empty())
+
+    std::unordered_set<Type> queries_with_on_cluster_at_end = {
+        Type::DROP_FILESYSTEM_CACHE,
+        Type::SYNC_FILESYSTEM_CACHE,
+    };
+
+    if (!queries_with_on_cluster_at_end.contains(type) && !cluster.empty())
         formatOnCluster(ostr, settings);
 
     switch (type)
@@ -243,7 +236,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
             if (query_settings)
             {
-                ostr << settings.nl_or_ws << "SETTINGS ";
+                ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SETTINGS " << (settings.hilite ? hilite_none : "");
                 query_settings->format(ostr, settings, state, frame);
             }
 
@@ -281,12 +274,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::SYNC_DATABASE_REPLICA:
         {
             ostr << ' ';
-            database->format(ostr, settings, state, frame);
-            if (sync_replica_mode != SyncReplicaMode::DEFAULT)
-            {
-                ostr << ' ';
-                print_keyword(magic_enum::enum_name(sync_replica_mode));
-            }
+            print_identifier(database->as<ASTIdentifier>()->name());
             break;
         }
         case Type::DROP_REPLICA:
@@ -294,14 +282,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::DROP_CATALOG_REPLICA:
         {
             print_drop_replica();
-            break;
-        }
-        case Type::RESTORE_DATABASE_REPLICA:
-        {
-            if (database)
-            {
-                print_restore_database_replica();
-            }
             break;
         }
         case Type::SUSPEND:
@@ -346,12 +326,16 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
+        case Type::DROP_DISTRIBUTED_CACHE_CONNECTIONS:
+        {
+            break;
+        }
         case Type::DROP_DISTRIBUTED_CACHE:
         {
             if (distributed_cache_drop_connections)
                 print_keyword(" CONNECTIONS");
-            else if (!distributed_cache_server_id.empty())
-                ostr << " " << distributed_cache_server_id;
+            else if (!distributed_cache_servive_id.empty())
+                ostr << (settings.hilite ? hilite_none : "") << " " << distributed_cache_servive_id;
             break;
         }
         case Type::UNFREEZE:
@@ -363,11 +347,8 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::UNLOCK_SNAPSHOT:
         {
             ostr << quoteString(backup_name);
-            if (backup_source)
-            {
-                print_keyword(" FROM ");
-                backup_source->format(ostr, settings);
-            }
+            print_keyword(" FROM ");
+            backup_source->format(ostr, settings);
             break;
         }
         case Type::START_LISTEN:
@@ -454,21 +435,17 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
-        case Type::FLUSH_ASYNC_INSERT_QUEUE:
         case Type::FLUSH_LOGS:
         {
             bool comma = false;
-            for (const auto & cur_log : tables)
+            for (const auto & cur_log : logs)
             {
                 if (comma)
                     ostr << ',';
                 else
                     comma = true;
                 ostr << ' ';
-
-                if (!cur_log.first.empty())
-                    print_identifier(cur_log.first) << ".";
-                print_identifier(cur_log.second);
+                print_identifier(cur_log);
             }
             break;
         }
@@ -484,20 +461,15 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
-        case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
-        case Type::DROP_TEXT_INDEX_DICTIONARY_CACHE:
-        case Type::DROP_TEXT_INDEX_HEADER_CACHE:
-        case Type::DROP_TEXT_INDEX_POSTINGS_CACHE:
-        case Type::DROP_TEXT_INDEX_CACHES:
+        case Type::DROP_SKIPPING_INDEX_CACHE:
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
         case Type::DROP_S3_CLIENT_CACHE:
-        case Type::DROP_ICEBERG_METADATA_CACHE:
         case Type::RESET_COVERAGE:
         case Type::RESTART_REPLICAS:
         case Type::JEMALLOC_PURGE:
-        case Type::JEMALLOC_FLUSH_PROFILE:
         case Type::JEMALLOC_ENABLE_PROFILE:
         case Type::JEMALLOC_DISABLE_PROFILE:
+        case Type::JEMALLOC_FLUSH_PROFILE:
         case Type::SYNC_TRANSACTION_LOG:
         case Type::SYNC_FILE_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
@@ -510,6 +482,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::RELOAD_CONFIG:
         case Type::RELOAD_USERS:
         case Type::RELOAD_ASYNCHRONOUS_METRICS:
+        case Type::FLUSH_ASYNC_INSERT_QUEUE:
         case Type::START_THREAD_FUZZER:
         case Type::STOP_THREAD_FUZZER:
         case Type::START_VIEWS:
@@ -517,12 +490,14 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::DROP_PAGE_CACHE:
         case Type::STOP_REPLICATED_DDL_QUERIES:
         case Type::START_REPLICATED_DDL_QUERIES:
-        case Type::RECONNECT_ZOOKEEPER:
             break;
         case Type::UNKNOWN:
         case Type::END:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown SYSTEM command");
     }
+
+    if (queries_with_on_cluster_at_end.contains(type) && !cluster.empty())
+        formatOnCluster(ostr, settings);
 }
 
 

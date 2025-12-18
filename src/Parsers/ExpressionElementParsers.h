@@ -291,13 +291,10 @@ protected:
   */
 class ParserStringLiteral : public IParserBase
 {
-public:
-    explicit ParserStringLiteral(Highlight color_ = Highlight::string) : color(color_) {}
 protected:
     const char * getName() const override { return "string literal"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-    Highlight highlight() const override { return color; }
-    Highlight color;
+    Highlight highlight() const override { return Highlight::string; }
 };
 
 
@@ -504,7 +501,7 @@ protected:
 };
 
 /** Element of TTL expression - same as expression element, but in addition,
-  * TO DISK 'xxx' | TO VOLUME 'xxx' | DELETE could be specified
+ *   TO DISK 'xxx' | TO VOLUME 'xxx' | DELETE could be specified
   */
 class ParserTTLElement : public IParserBase
 {
