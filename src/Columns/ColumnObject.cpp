@@ -2123,7 +2123,7 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
         size_t shared_data_end = shared_data_offsets[i];
         for (size_t j = shared_data_start; j < shared_data_end; ++j)
         {
-            auto path = shared_data_paths->getDataAt(j);
+            auto path = shared_data_paths->getDataAt(j).toView();
             auto it = dynamic_paths.find(path);
             if (it == dynamic_paths.end())
             {
