@@ -73,9 +73,9 @@ YTsaurusNodeType YTsaurusClient::getNodeTypeFromAttributes(const Poco::JSON::Obj
     }
 }
 
-ReadBufferPtr YTsaurusClient::selectRows(const String & cypress_path, const String & columns_str = "*")
+ReadBufferPtr YTsaurusClient::selectRows(const String & cypress_path, const String & column_names_str = "*")
 {
-    YTsaurusQueryPtr select_rows_query(new YTsaurusSelectRowsQuery(cypress_path, columns_str));
+    YTsaurusQueryPtr select_rows_query(new YTsaurusSelectRowsQuery(cypress_path, column_names_str));
     return executeQuery(select_rows_query);
 }
 
