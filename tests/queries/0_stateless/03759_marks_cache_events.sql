@@ -13,7 +13,7 @@ insert into data values (1);
 select * from data format Null settings load_marks_asynchronously=0;
 select * from data format Null settings load_marks_asynchronously=0;
 -- drop marks cache
-detach table data sync;
+detach table data;
 attach table data;
 select * from data format Null settings load_marks_asynchronously=1;
 select * from data format Null settings load_marks_asynchronously=1;
@@ -31,7 +31,7 @@ select query_kind, Settings['load_marks_asynchronously'] load_marks_asynchronous
 -- only hits
 optimize table data final;
 -- drop marks cache to trigger misses
-detach table data sync;
+detach table data;
 attach table data;
 optimize table data final;
 
