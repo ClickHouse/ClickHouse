@@ -207,6 +207,9 @@ protected:
     mutable std::vector<StackTrace::FramePointers> capture_thread_frame_pointers;
 };
 
+/// Most common exception constructor (just a string). Forward declare to avoid many unnecessary instantiations
+extern template Exception::Exception(int, FormatStringHelperImpl<>);
+
 [[noreturn]] void abortOnFailedAssertion(const String & description, std::string_view format_string, void * const * trace, size_t trace_offset, size_t trace_size);
 [[noreturn]] void abortOnFailedAssertion(const String & description);
 

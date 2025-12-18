@@ -97,6 +97,8 @@ static size_t handle_error_code(
     return ErrorCodes::increment(code, remote, msg, std::string(format_string), trace);
 }
 
+template Exception::Exception(int, FormatStringHelperImpl<>);
+
 
 Exception::MessageMasked::MessageMasked(const std::string & msg_, std::string format_string_)
     : msg(msg_)
