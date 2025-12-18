@@ -28,6 +28,7 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
@@ -1521,72 +1522,31 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     const RPNBuilderTreeNode & key_arg = func.getArgumentAt(1);
 
     /// First argument of has() must be a constant array
-    Field array_value;
-    DataTypePtr array_type;
-    if (!array_arg.tryGetConstant(array_value, array_type))
+    if (!array_arg.isConstant())
         return false;
 
-    if (array_value.getType() != Field::Types::Array)
+    auto column = array_arg.getConstantColumn();
+
+    const auto * array_data_type = typeid_cast<const DataTypeArray *>(column.type.get());
+    if (!array_data_type)
         return false;
 
-    const auto * array_data_type = typeid_cast<const DataTypeArray *>(array_type.get());
-    chassert(array_data_type);
+    const auto * const_column = assert_cast<const ColumnConst *>(column.column.get());
+    const auto * array_col = assert_cast<const ColumnArray *>(const_column->getDataColumnPtr().get());
 
-    const Array & values = array_value.safeGet<Array>();
-    if (values.empty())
+    const DataTypePtr & array_nested_type = array_data_type->getNestedType();
+
+    const auto array_elements = array_col->getDataPtr();
+    if (array_elements->empty())
     {
         /// has([], x) is always false – we can mark the condition as always false
         out.function = RPNElement::ALWAYS_FALSE;
         return true;
     }
 
-    Columns set_columns;
-    DataTypes set_types;
-
-    const DataTypePtr & array_nested_type = array_data_type->getNestedType();
-
-    if (isTuple(array_nested_type))
-    {
-        /// Array of tuples: Array(Tuple(...), Tuple(...), ...)
-        const auto & tuple_type = assert_cast<const DataTypeTuple &>(*array_nested_type);
-        const auto & element_types = tuple_type.getElements();
-        size_t tuple_size = element_types.size();
-
-        MutableColumns tuple_columns;
-        tuple_columns.reserve(tuple_size);
-        for (size_t i = 0; i < tuple_size; ++i)
-            tuple_columns.emplace_back(element_types[i]->createColumn());
-
-        for (const auto & value : values)
-        {
-            chassert(value.getType() == Field::Types::Tuple);
-
-            const auto & tuple_value = value.safeGet<Tuple>();
-
-            chassert(tuple_value.size() == tuple_size);
-
-            for (size_t i = 0; i < tuple_size; ++i)
-                tuple_columns[i]->insert(tuple_value[i]);
-        }
-
-        auto column_tuple = ColumnTuple::create(std::move(tuple_columns));
-        set_columns.emplace_back(std::move(column_tuple));
-        set_types.push_back(array_nested_type);
-    }
-    else
-    {
-        /// Array(T)
-        MutableColumnPtr column = array_nested_type->createColumn();
-        column->reserve(values.size());
-
-        for (const auto & value : values)
-        {
-            column->insert(value);
-        }
-
-        set_columns.emplace_back(std::move(column));
-        set_types.push_back(array_nested_type);
-    }
+    /// We do not need to unpack tuples inside, because `tryPrepareSetColumnsForIndex` will do it
+    Columns set_columns = {array_elements};
+    DataTypes set_types = {array_nested_type};
 
     std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
     std::vector<MonotonicFunctionsChain> set_transforming_chains;
