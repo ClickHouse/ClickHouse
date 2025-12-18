@@ -558,14 +558,32 @@ JoinActionRef toBoolIfNeeded(JoinActionRef condition)
 
 bool canPushDownFromOn(const JoinOperator & join_operator, std::optional<JoinTableSide> side = {})
 {
-    /// Filter pushdown for PASTE JOIN is *disabled* to preserve positional alignment
-    bool is_suitable_kind = join_operator.kind == JoinKind::Inner
-        || join_operator.kind == JoinKind::Cross
-        || join_operator.kind == JoinKind::Comma
-        || (side == JoinTableSide::Left && join_operator.kind == JoinKind::Right)
-        || (side == JoinTableSide::Right && join_operator.kind == JoinKind::Left);
+    switch (join_operator.strictness)
+    {
+        case JoinStrictness::Any:
+            return (side == JoinTableSide::Left && join_operator.kind == JoinKind::Left)
+                || (side == JoinTableSide::Right && join_operator.kind == JoinKind::Right);
+        case JoinStrictness::All:
+        {
+            /// Filter pushdown for PASTE JOIN is *disabled* to preserve positional alignment
+            bool is_suitable_kind = join_operator.kind == JoinKind::Inner
+                || join_operator.kind == JoinKind::Cross
+                || join_operator.kind == JoinKind::Comma
+                || (side == JoinTableSide::Left && join_operator.kind == JoinKind::Right)
+                || (side == JoinTableSide::Right && join_operator.kind == JoinKind::Left);
 
-    return is_suitable_kind && join_operator.strictness == JoinStrictness::All;
+            return is_suitable_kind;
+        }
+        case JoinStrictness::Semi:
+            /// We can push down to both sides for LEFT SEMI and RIGHT SEMI joins
+            return true;
+        case JoinStrictness::Anti:
+            /// We can push down to both sides for LEFT ANTI and RIGHT ANTI joins
+            return true;
+        default:
+            /// TODO: Support RightAny strictness?
+            return false;
+    }
 }
 
 using NameViewToNodeMapping = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
@@ -1324,14 +1342,10 @@ void JoinStepLogical::buildPhysicalJoin(
 
 std::optional<ActionsDAG::ActionsForFilterPushDown> JoinStepLogical::getFilterActions(JoinTableSide side, const SharedHeader & stream_header)
 {
-    if (join_operator.strictness != JoinStrictness::All)
-        return {};
-
-    auto & join_expression = join_operator.expression;
-
     if (!canPushDownFromOn(join_operator, side))
         return {};
 
+    auto & join_expression = join_operator.expression;
     if (auto filter_condition = concatConditions(join_expression, side))
         return ActionsDAG::createActionsForConjunction({filter_condition.getNode()}, stream_header->getColumnsWithTypeAndName());
 
