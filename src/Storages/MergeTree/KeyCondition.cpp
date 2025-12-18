@@ -1029,8 +1029,52 @@ bool applyFunctionChainToColumn(
         return false;
     }
 
-    // And cast it to the argument type of the first function in the chain
-    auto in_argument_type = removeLowCardinality(getArgumentTypeOfMonotonicFunction(*functions[0]));
+    /// Fast-path: consume leading CAST(...) that are either no-op for current type
+    /// or can be applied directly to the CAST result type.
+    size_t first_func = 0;
+    while (first_func < functions.size())
+    {
+        const auto & func = functions[first_func];
+
+        if (func->getName() != "CAST")
+            break;
+
+        auto cast_result_type = removeLowCardinality(func->getResultType());
+
+        /// Avoid the round-trip. Additionally, some round trip might not be safely possible. Like String -> Dynamic -> String
+        if (result_type->equals(*cast_result_type))
+        {
+            ++first_func;
+            continue;
+        }
+
+        /// Short-circuit: if we can directly cast to the result type, do it
+        if (canBeSafelyCast(result_type, cast_result_type))
+        {
+            result_column = castColumnAccurate({result_column, result_type, ""}, cast_result_type);
+            result_column = result_column->convertToFullColumnIfLowCardinality();
+            result_type = cast_result_type;
+            ++first_func;
+            continue;
+        }
+
+        /// Otherwise keep the old behavior (it may be more permissive than direct cast).
+        break;
+    }
+
+    /// `functions` only contain one or more CASTs that were no-ops or could be applied directly
+    if (first_func == functions.size())
+    {
+        out_column = result_column;
+        out_data_type = result_type;
+        return true;
+    }
+
+    if (functions[first_func]->getArgumentTypes().empty())
+        return false;
+
+    /// And cast it to the argument type of the first function in the chain
+    auto in_argument_type = removeLowCardinality(getArgumentTypeOfMonotonicFunction(*functions[first_func]));
     if (canBeSafelyCast(result_type, in_argument_type))
     {
         result_column = castColumnAccurate({result_column, result_type, ""}, in_argument_type);
@@ -1059,10 +1103,30 @@ bool applyFunctionChainToColumn(
         result_type = removeNullable(in_argument_type);
     }
 
-    for (const auto & func : functions)
+    for (size_t func_pos = first_func; func_pos < functions.size(); ++func_pos)
     {
+        const auto & func = functions[func_pos];
+
         if (func->getArgumentTypes().empty())
             return false;
+
+        if (func->getName() == "CAST")
+        {
+            auto cast_result_type = removeLowCardinality(func->getResultType());
+
+            /// Avoid the round-trip. Additionally, some round trip might not be safely possible. Like String -> Dynamic -> String.
+            if (result_type->equals(*cast_result_type))
+                continue;
+
+            /// Short-circuit: if we can directly cast to the result type, do it
+            if (canBeSafelyCast(result_type, cast_result_type))
+            {
+                result_column = castColumnAccurate({result_column, result_type, ""}, cast_result_type);
+                result_column = result_column->convertToFullColumnIfLowCardinality();
+                result_type = cast_result_type;
+                continue;
+            }
+        }
 
         auto argument_type = removeLowCardinality(getArgumentTypeOfMonotonicFunction(*func));
         if (!canBeSafelyCast(result_type, argument_type))
