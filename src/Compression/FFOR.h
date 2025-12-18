@@ -18,8 +18,6 @@ extern const int BAD_ARGUMENTS;
 
 namespace Compression::FFOR
 {
-constexpr UInt16 DEFAULT_VALUES = 1024;
-
 namespace Details
 {
 template <typename T>
@@ -31,14 +29,15 @@ consteval UInt16 get_width()
     return sizeof(T) * 8;
 }
 
-template <UnsignedInteger T, UInt16 values = DEFAULT_VALUES>
+template <UnsignedInteger T, UInt16 values>
 consteval UInt16 get_iterations()
 {
     constexpr UInt16 width = get_width<T>();
+    static_assert(values % width == 0);
     return values / width;
 }
 
-template <UnsignedInteger T, UInt16 bits, UInt16 step, UInt16 values = DEFAULT_VALUES>
+template <UnsignedInteger T, UInt16 bits, UInt16 step, UInt16 values>
 ALWAYS_INLINE void bitPackStep(const T * __restrict in, T * __restrict out, const T base, const UInt16 index, T & agg)
 {
     constexpr UInt16 width = get_width<T>();
@@ -91,7 +90,7 @@ ALWAYS_INLINE void bitPackStep(const T * __restrict in, T * __restrict out, cons
     }
 }
 
-template <UnsignedInteger T, UInt16 bits, UInt16 values = DEFAULT_VALUES>
+template <UnsignedInteger T, UInt16 bits, UInt16 values>
 void bitPack(const T * __restrict in, T * __restrict out, const T base)
 {
     if constexpr (bits == 0)
@@ -112,7 +111,7 @@ void bitPack(const T * __restrict in, T * __restrict out, const T base)
     }
 }
 
-template <UnsignedInteger T, UInt16 bits, UInt16 step, UInt16 values = DEFAULT_VALUES>
+template <UnsignedInteger T, UInt16 bits, UInt16 step, UInt16 values>
 ALWAYS_INLINE void bitUnpackStep(const T * __restrict in, T * __restrict out, const T base, const UInt16 index, T & pack)
 {
     constexpr UInt16 width = get_width<T>();
@@ -164,7 +163,7 @@ ALWAYS_INLINE void bitUnpackStep(const T * __restrict in, T * __restrict out, co
     }
 }
 
-template <UnsignedInteger T, UInt16 bits, UInt16 values = DEFAULT_VALUES>
+template <UnsignedInteger T, UInt16 bits, UInt16 values>
 void bitUnpack(const T * __restrict in, T * __restrict out, const T base)
 {
     constexpr UInt16 width = get_width<T>();
@@ -182,6 +181,8 @@ void bitUnpack(const T * __restrict in, T * __restrict out, const T base)
     }
 }
 }
+
+constexpr UInt16 DEFAULT_VALUES = 1024;
 
 template <UInt16 values = DEFAULT_VALUES>
 void bitPack(const UInt32 * __restrict in, UInt32 * __restrict out, const UInt16 bits, const UInt32 base)
@@ -221,7 +222,7 @@ void bitPack(const UInt32 * __restrict in, UInt32 * __restrict out, const UInt16
         case 30: Details::bitPack<UInt32, 30, values>(in, out, base); break;
         case 31: Details::bitPack<UInt32, 31, values>(in, out, base); break;
         case 32: Details::bitPack<UInt32, 32, values>(in, out, base); break;
-        default: throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid bit width for bit-packing: {}", bits);
+        default: throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid bits for packing: {}", bits);
     }
 }
 
@@ -263,7 +264,7 @@ void bitUnpack(const UInt32 * __restrict in, UInt32 * __restrict out, const UInt
         case 30: Details::bitUnpack<UInt32, 30, values>(in, out, base); break;
         case 31: Details::bitUnpack<UInt32, 31, values>(in, out, base); break;
         case 32: Details::bitUnpack<UInt32, 32, values>(in, out, base); break;
-        default: throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid bit width for bit-unpacking: {}", bits);
+        default: throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid bits for unpacking: {}", bits);
     }
 }
 
@@ -337,7 +338,7 @@ void bitPack(const UInt64 * __restrict in, UInt64 * __restrict out, const UInt16
         case 62: Details::bitPack<UInt64, 62, values>(in, out, base); break;
         case 63: Details::bitPack<UInt64, 63, values>(in, out, base); break;
         case 64: Details::bitPack<UInt64, 64, values>(in, out, base); break;
-        default: throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid bit width for bit-packing: {}", bits);
+        default: throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid bits for packing: {}", bits);
     }
 }
 
@@ -411,7 +412,7 @@ void bitUnpack(const UInt64 * __restrict in, UInt64 * __restrict out, const UInt
         case 62: Details::bitUnpack<UInt64, 62, values>(in, out, base); break;
         case 63: Details::bitUnpack<UInt64, 63, values>(in, out, base); break;
         case 64: Details::bitUnpack<UInt64, 64, values>(in, out, base); break;
-        default: throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid bit width for bit-unpacking: {}", bits);
+        default: throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid bits for unpacking: {}", bits);
     }
 }
 

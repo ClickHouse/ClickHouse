@@ -8,50 +8,62 @@ using namespace DB;
 
 namespace
 {
-template <typename T>
+template <typename T, UInt16 values>
 void runFFORPackUnpackTest(UInt16 bits)
 {
-    alignas(64) T in[Compression::FFOR::DEFAULT_VALUES];
-    alignas(64) T coded[Compression::FFOR::DEFAULT_VALUES];
-    alignas(64) T decoded[Compression::FFOR::DEFAULT_VALUES];
+    if (bits > sizeof(T) * 8)
+        GTEST_SKIP() << "Skipping invalid bit width for " << typeid(T).name() << ": " << bits;
+
+    alignas(64) T in[values];
+    alignas(64) T coded[values];
+    alignas(64) T decoded[values];
 
     // Generate random input data
-    const T max_value = (T{1} << std::min<UInt16>(bits, sizeof(T) * 8u - 1)) - T{1};
+    const T max_value = (T{1} << std::min<UInt16>(bits, sizeof(T) * 8 - 1)) - T{1};
     std::default_random_engine rng(T{42}); // NOLINT
-    std::uniform_int_distribution<T> dist(T{0}, max_value);
-    T base = dist(rng);
+    std::uniform_int_distribution<T> in_dist(T{0}, max_value);
+    T base = in_dist(rng);
     for (auto & i : in)
-        i = base + dist(rng);
+        i = base + in_dist(rng);
 
     // Encode
-    Compression::FFOR::bitPack(in, coded, bits, base);
+    Compression::FFOR::bitPack<values>(in, coded, bits, base);
 
-    // Set unused bits to zero to ensure decoder does not rely on them
-    const UInt16 used_bytes = Compression::FFOR::calculateBitpackedBytes(bits);
-    std::memset(reinterpret_cast<char*>(coded) + used_bytes, 0, sizeof(coded) - used_bytes);
+    // Set unused bytes to random values to ensure decoder does not rely on them
+    const UInt16 used_bytes = Compression::FFOR::calculateBitpackedBytes<values>(bits);
+    std::uniform_int_distribution<UInt16> byte_dist(0, 255);
+    char * coded_bytes = reinterpret_cast<char *>(coded);
+    for (UInt32 i = used_bytes; i < sizeof(coded); ++i)
+        coded_bytes[i] = static_cast<char>(byte_dist(rng));
 
     // Decode
-    Compression::FFOR::bitUnpack(coded, decoded, bits, base);
+    Compression::FFOR::bitUnpack<values>(coded, decoded, bits, base);
 
     // Verify
-    for (UInt16 i = 0; i < Compression::FFOR::DEFAULT_VALUES; ++i)
+    for (UInt16 i = 0; i < values; ++i)
         ASSERT_EQ(decoded[i], in[i]) << "bits=" << bits << " index=" << i;
 }
 
 class FFORTest : public ::testing::TestWithParam<UInt16> { };
 
-TEST_P(FFORTest, UInt32PackUnpack)
+TEST_P(FFORTest, UInt32PackUnpack1024Values)
 {
-    const UInt16 bits = GetParam();
-    if (bits > 32)
-        GTEST_SKIP() << "Skipping invalid bit width for UInt32: " << bits;
-
-    runFFORPackUnpackTest<UInt32>(bits);
+    runFFORPackUnpackTest<UInt32, 1024>(GetParam());
 }
 
-TEST_P(FFORTest, UInt64PackUnpack)
+TEST_P(FFORTest, UInt32PackUnpack2048Values)
 {
-    runFFORPackUnpackTest<UInt64>(GetParam());
+    runFFORPackUnpackTest<UInt32, 2048>(GetParam());
+}
+
+TEST_P(FFORTest, UInt64PackUnpack1024Values)
+{
+    runFFORPackUnpackTest<UInt64, 1024>(GetParam());
+}
+
+TEST_P(FFORTest, UInt64PackUnpack2048Values)
+{
+    runFFORPackUnpackTest<UInt64, 2048>(GetParam());
 }
 
 INSTANTIATE_TEST_SUITE_P(FFORTest, FFORTest, ::testing::Range<UInt16>(0, 65));
