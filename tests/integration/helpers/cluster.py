@@ -2938,9 +2938,7 @@ class ClickHouseCluster:
         raise RuntimeError("Cannot wait RabbitMQ container")
 
     @contextmanager
-    def pause_rabbitmq(self, monitor=None, timeout=120):
-        if monitor is not None:
-            monitor.stop()
+    def pause_rabbitmq(self, timeout=120):
         run_rabbitmqctl(
             self.rabbitmq_docker_id, self.rabbitmq_cookie, "stop_app", timeout
         )
@@ -2952,10 +2950,11 @@ class ClickHouseCluster:
                 self.rabbitmq_docker_id, self.rabbitmq_cookie, "start_app", timeout
             )
             self.wait_rabbitmq_to_start(timeout)
-            if monitor is not None:
-                monitor.start(self)
 
     def reset_rabbitmq(self, timeout=120):
+        resp = requests.get(f"http://{self.rabbitmq_ip}:{self.rabbitmq_management_port}/api/overview",
+                            auth=("root", "clickhouse"))
+        logging.debug(f"RabbitMQ statistics:\n{resp.json()}")
         logging.debug("Resetting RabbitMQ by restarting container")
         run_and_check(
             f"docker stop --time {timeout} {self.rabbitmq_docker_id}",
