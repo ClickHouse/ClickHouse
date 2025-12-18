@@ -116,6 +116,8 @@ struct MergeTreeIndexBulkGranulesMinMax final : public IMergeTreeIndexBulkGranul
     void getTopKMarks(size_t n, std::vector<MinMaxGranule> & result);
     static void getTopKMarks(int direction, size_t n, const std::vector<std::vector<MinMaxGranule>> & parts, std::vector<MarkRanges> & result);
 
+    static void getTopKMarksWithTies(std::vector<MinMaxGranule> & index_granules, size_t n, 
+
     std::vector<MinMaxGranule> granules;
     std::unordered_map<size_t, size_t> granules_map;
 

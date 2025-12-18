@@ -273,6 +273,31 @@ void MergeTreeIndexBulkGranulesMinMax::deserializeBinary(size_t granule_num, Rea
     empty = false;
 }
 
+void MergeTreeIndexBulkGranulesMinMax::getTopKMarksWithTies(
+                std::vector<MinMaxGranuleItem> & index_granules,
+                size_t n, std::vector<MinMaxGranule> & result)
+{
+    std::sort(index_granules.begin(), index_granules.end());
+
+    auto i = n;
+    if (direction == 1)
+    {
+        auto threshold = index_granules[n - 1].min_or_max_value;
+	while (index_granules[i].min_or_max_value == threshold)
+            ++i;
+        result.insert(result.end(), index_granules.begin(), index_granules.begin() + i);
+        return;
+    }
+    else
+    {
+        auto threshold = index_granules[granules.size() - n].min_or_max_value;
+	while (index_granules[i].min_or_max_value == threshold)
+            --i;
+        result.insert(result.end(), index_granules.begin() + i, index_granules.end());
+        return;
+    }
+}
+
 void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(size_t n, std::vector<MinMaxGranule> & result)
 {
     if (n >= granules.size())
