@@ -10,8 +10,10 @@
 #include <Common/ThreadPool.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <base/range.h>
 #include <base/sleep.h>
+
 
 namespace
 {
