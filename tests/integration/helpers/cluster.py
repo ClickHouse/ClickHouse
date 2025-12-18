@@ -2952,9 +2952,12 @@ class ClickHouseCluster:
             self.wait_rabbitmq_to_start(timeout)
 
     def reset_rabbitmq(self, timeout=120):
-        resp = requests.get(f"http://{self.rabbitmq_ip}:{self.rabbitmq_management_port}/api/overview",
-                            auth=("root", "clickhouse"))
-        logging.debug(f"RabbitMQ statistics:\n{resp.json()}")
+        try:
+            resp = requests.get(f"http://{self.rabbitmq_ip}:{self.rabbitmq_management_port}/api/overview",
+                                auth=("root", "clickhouse"))
+            logging.debug(f"RabbitMQ statistics:\n{resp.json()}")
+        except:
+            pass
         logging.debug("Resetting RabbitMQ by restarting container")
         run_and_check(
             f"docker stop --time {timeout} {self.rabbitmq_docker_id}",
