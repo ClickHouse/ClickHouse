@@ -3,9 +3,89 @@
 namespace BuzzHouse
 {
 
+bool SQLColumn::canBeInserted() const
+{
+    return !dmod.has_value() || dmod.value() == DModifier::DEF_DEFAULT;
+}
+
 String SQLColumn::getColumnName() const
 {
     return "c" + std::to_string(cname);
+}
+
+void SQLDatabase::setRandomDatabase(RandomGenerator & rg, SQLDatabase & d)
+{
+    d.random_engine = rg.nextMediumNumber() < 4;
+}
+
+void SQLDatabase::setName(Database * db, const uint32_t name)
+{
+    db->set_database("d" + std::to_string(name));
+}
+
+bool SQLDatabase::isAtomicDatabase() const
+{
+    return deng == DatabaseEngineValues::DAtomic;
+}
+
+bool SQLDatabase::isMemoryDatabase() const
+{
+    return deng == DatabaseEngineValues::DMemory;
+}
+
+bool SQLDatabase::isReplicatedDatabase() const
+{
+    return deng == DatabaseEngineValues::DReplicated;
+}
+
+bool SQLDatabase::isSharedDatabase() const
+{
+    return deng == DatabaseEngineValues::DShared;
+}
+
+bool SQLDatabase::isLazyDatabase() const
+{
+    return deng == DatabaseEngineValues::DLazy;
+}
+
+bool SQLDatabase::isOrdinaryDatabase() const
+{
+    return deng == DatabaseEngineValues::DOrdinary;
+}
+
+bool SQLDatabase::isDataLakeCatalogDatabase() const
+{
+    return deng == DatabaseEngineValues::DDataLakeCatalog;
+}
+
+bool SQLDatabase::isReplicatedOrSharedDatabase() const
+{
+    return isReplicatedDatabase() || isSharedDatabase();
+}
+
+const std::optional<String> & SQLDatabase::getCluster() const
+{
+    return cluster;
+}
+
+bool SQLDatabase::isAttached() const
+{
+    return attached == DetachStatus::ATTACHED;
+}
+
+bool SQLDatabase::isDettached() const
+{
+    return attached != DetachStatus::ATTACHED;
+}
+
+void SQLDatabase::setName(Database * db) const
+{
+    SQLDatabase::setName(db, dname);
+}
+
+String SQLDatabase::getName() const
+{
+    return "d" + std::to_string(dname);
 }
 
 void SQLDatabase::finishDatabaseSpecification(DatabaseEngine * de)
@@ -62,6 +142,253 @@ String SQLDatabase::getSparkCatalogName() const
     return (catalog == LakeCatalog::None && format == LakeFormat::DeltaLake) ? "spark_catalog" : getName();
 }
 
+void SQLBase::setDeterministic(const FuzzConfig & fc, RandomGenerator & rg, SQLBase & b)
+{
+    b.is_deterministic = rg.nextMediumNumber() <= fc.deterministic_prob;
+    b.random_engine = !b.is_deterministic && rg.nextMediumNumber() < 6;
+}
+
+bool SQLBase::supportsFinal(const TableEngineValues teng)
+{
+    return teng >= TableEngineValues::ReplacingMergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree;
+}
+
+bool SQLBase::isMergeTreeFamily() const
+{
+    return teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree;
+}
+
+bool SQLBase::isLogFamily() const
+{
+    return teng >= TableEngineValues::StripeLog && teng <= TableEngineValues::TinyLog;
+}
+
+bool SQLBase::isSharedMergeTree() const
+{
+    return isMergeTreeFamily() && toption.has_value() && toption.value() == TableEngineOption::TShared;
+}
+
+bool SQLBase::isReplicatedMergeTree() const
+{
+    return isMergeTreeFamily() && toption.has_value() && toption.value() == TableEngineOption::TReplicated;
+}
+
+bool SQLBase::isReplicatedOrSharedMergeTree() const
+{
+    return isReplicatedMergeTree() || isSharedMergeTree();
+}
+
+bool SQLBase::isShared() const
+{
+    return toption.has_value() && toption.value() == TableEngineOption::TShared;
+}
+
+bool SQLBase::isFileEngine() const
+{
+    return teng == TableEngineValues::File;
+}
+
+bool SQLBase::isJoinEngine() const
+{
+    return teng == TableEngineValues::Join;
+}
+
+bool SQLBase::isNullEngine() const
+{
+    return teng == TableEngineValues::Null;
+}
+
+bool SQLBase::isSetEngine() const
+{
+    return teng == TableEngineValues::Set;
+}
+
+bool SQLBase::isBufferEngine() const
+{
+    return teng == TableEngineValues::Buffer;
+}
+
+bool SQLBase::isRocksEngine() const
+{
+    return teng == TableEngineValues::EmbeddedRocksDB;
+}
+
+bool SQLBase::isMemoryEngine() const
+{
+    return teng == TableEngineValues::Memory;
+}
+
+bool SQLBase::isMySQLEngine() const
+{
+    return teng == TableEngineValues::MySQL || (isExternalDistributedEngine() && sub == TableEngineValues::MySQL);
+}
+
+bool SQLBase::isPostgreSQLEngine() const
+{
+    return teng == TableEngineValues::PostgreSQL || teng == TableEngineValues::MaterializedPostgreSQL
+        || (isExternalDistributedEngine() && (sub == TableEngineValues::PostgreSQL || sub == TableEngineValues::MaterializedPostgreSQL));
+}
+
+bool SQLBase::isSQLiteEngine() const
+{
+    return teng == TableEngineValues::SQLite;
+}
+
+bool SQLBase::isMongoDBEngine() const
+{
+    return teng == TableEngineValues::MongoDB;
+}
+
+bool SQLBase::isRedisEngine() const
+{
+    return teng == TableEngineValues::Redis;
+}
+
+bool SQLBase::isS3Engine() const
+{
+    return teng == TableEngineValues::S3;
+}
+
+bool SQLBase::isS3QueueEngine() const
+{
+    return teng == TableEngineValues::S3Queue;
+}
+
+bool SQLBase::isAnyS3Engine() const
+{
+    return isS3Engine() || isS3QueueEngine();
+}
+
+bool SQLBase::isAzureEngine() const
+{
+    return teng == TableEngineValues::AzureBlobStorage;
+}
+
+bool SQLBase::isAzureQueueEngine() const
+{
+    return teng == TableEngineValues::AzureQueue;
+}
+
+bool SQLBase::isAnyAzureEngine() const
+{
+    return isAzureEngine() || isAzureQueueEngine();
+}
+
+bool SQLBase::isAnyQueueEngine() const
+{
+    return isS3QueueEngine() || isAzureQueueEngine();
+}
+
+bool SQLBase::isHudiEngine() const
+{
+    return teng == TableEngineValues::Hudi;
+}
+
+bool SQLBase::isDeltaLakeS3Engine() const
+{
+    return teng == TableEngineValues::DeltaLakeS3;
+}
+
+bool SQLBase::isDeltaLakeAzureEngine() const
+{
+    return teng == TableEngineValues::DeltaLakeAzure;
+}
+
+bool SQLBase::isDeltaLakeLocalEngine() const
+{
+    return teng == TableEngineValues::DeltaLakeLocal;
+}
+
+bool SQLBase::isAnyDeltaLakeEngine() const
+{
+    return teng >= TableEngineValues::DeltaLakeS3 && teng <= TableEngineValues::DeltaLakeLocal;
+}
+
+bool SQLBase::isIcebergS3Engine() const
+{
+    return teng == TableEngineValues::IcebergS3;
+}
+
+bool SQLBase::isIcebergAzureEngine() const
+{
+    return teng == TableEngineValues::IcebergAzure;
+}
+
+bool SQLBase::isIcebergLocalEngine() const
+{
+    return teng == TableEngineValues::IcebergLocal;
+}
+
+bool SQLBase::isAnyIcebergEngine() const
+{
+    return teng >= TableEngineValues::IcebergS3 && teng <= TableEngineValues::IcebergLocal;
+}
+
+bool SQLBase::isOnS3() const
+{
+    return isIcebergS3Engine() || isDeltaLakeS3Engine() || isAnyS3Engine();
+}
+
+bool SQLBase::isOnAzure() const
+{
+    return isIcebergAzureEngine() || isDeltaLakeAzureEngine() || isAnyAzureEngine();
+}
+
+bool SQLBase::isOnLocal() const
+{
+    return isIcebergLocalEngine() || isDeltaLakeLocalEngine();
+}
+
+bool SQLBase::isMergeEngine() const
+{
+    return teng == TableEngineValues::Merge;
+}
+
+bool SQLBase::isDistributedEngine() const
+{
+    return teng == TableEngineValues::Distributed;
+}
+
+bool SQLBase::isDictionaryEngine() const
+{
+    return teng == TableEngineValues::Dictionary;
+}
+
+bool SQLBase::isGenerateRandomEngine() const
+{
+    return teng == TableEngineValues::GenerateRandom;
+}
+
+bool SQLBase::isURLEngine() const
+{
+    return teng == TableEngineValues::URL;
+}
+
+bool SQLBase::isKeeperMapEngine() const
+{
+    return teng == TableEngineValues::KeeperMap;
+}
+
+bool SQLBase::isExternalDistributedEngine() const
+{
+    return teng == TableEngineValues::ExternalDistributed;
+}
+
+bool SQLBase::isMaterializedPostgreSQLEngine() const
+{
+    return teng == TableEngineValues::MaterializedPostgreSQL;
+}
+
+bool SQLBase::isArrowFlightEngine() const
+{
+    return teng == TableEngineValues::ArrowFlight;
+}
+
+bool SQLBase::isAliasEngine() const
+{
+    return teng == TableEngineValues::Alias;
+}
+
 bool SQLBase::isNotTruncableEngine() const
 {
     return isNullEngine() || isSetEngine() || isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isRedisEngine()
@@ -85,6 +412,31 @@ bool SQLBase::hasDatabasePeer() const
 {
     chassert(is_deterministic || peer_table == PeerTableDatabase::None);
     return peer_table != PeerTableDatabase::None;
+}
+
+bool SQLBase::hasMySQLPeer() const
+{
+    return peer_table == PeerTableDatabase::MySQL;
+}
+
+bool SQLBase::hasPostgreSQLPeer() const
+{
+    return peer_table == PeerTableDatabase::PostgreSQL;
+}
+
+bool SQLBase::hasSQLitePeer() const
+{
+    return peer_table == PeerTableDatabase::SQLite;
+}
+
+bool SQLBase::hasClickHousePeer() const
+{
+    return peer_table == PeerTableDatabase::ClickHouse;
+}
+
+const std::optional<String> & SQLBase::getCluster() const
+{
+    return cluster;
 }
 
 bool SQLBase::isAttached() const
@@ -372,6 +724,49 @@ String SQLBase::getMetadataPath(const FuzzConfig & fc) const
     return has_metadata ? fmt::format("{}/metadatat{}", fc.server_file_path.generic_string(), tname) : "";
 }
 
+LakeCatalog SQLBase::getLakeCatalog() const
+{
+    return db ? db->catalog : LakeCatalog::None;
+}
+
+LakeStorage SQLBase::getPossibleLakeStorage() const
+{
+    return db ? db->storage : LakeStorage::All;
+}
+
+LakeFormat SQLBase::getPossibleLakeFormat() const
+{
+    return db ? db->format : LakeFormat::All;
+}
+
+void SQLBase::setName(
+    ExprSchemaTable * est, const String & prefix, const bool setdbname, std::shared_ptr<SQLDatabase> database, const uint32_t name)
+{
+    String res;
+
+    if (database || setdbname)
+    {
+        est->mutable_database()->set_database("d" + (database ? std::to_string(database->dname) : "efault"));
+    }
+    if (database && database->catalog != LakeCatalog::None)
+    {
+        res += "test.";
+    }
+    res += prefix + std::to_string(name);
+    est->mutable_table()->set_table(std::move(res));
+}
+
+void SQLBase::setName(ExprSchemaTable * est, const bool setdbname) const
+{
+    SQLBase::setName(est, this->prefix, setdbname, db, tname);
+}
+
+void SQLBase::setName(TableEngine * te) const
+{
+    te->add_params()->mutable_database()->set_database(getDatabaseName());
+    te->add_params()->mutable_table()->set_table(getTableName());
+}
+
 size_t SQLTable::numberOfInsertableColumns(const bool all) const
 {
     size_t res = 0;
@@ -381,6 +776,58 @@ size_t SQLTable::numberOfInsertableColumns(const bool all) const
         res += entry.second.canBeInserted() || all ? 1 : 0;
     }
     return res;
+}
+
+bool SQLTable::supportsFinal() const
+{
+    return SQLBase::supportsFinal(teng) || isBufferEngine() || (isDistributedEngine() && SQLBase::supportsFinal(sub));
+}
+
+bool SQLTable::hasSignColumn() const
+{
+    return teng >= TableEngineValues::CollapsingMergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree;
+}
+
+bool SQLTable::hasVersionColumn() const
+{
+    return teng == TableEngineValues::VersionedCollapsingMergeTree;
+}
+
+bool SQLTable::areInsertsAppends() const
+{
+    return teng == TableEngineValues::MergeTree || isLogFamily() || isMemoryEngine() || isMySQLEngine() || isPostgreSQLEngine()
+        || isSQLiteEngine() || isMongoDBEngine() || isRedisEngine() || isHudiEngine() || isAnyDeltaLakeEngine() || isAnyIcebergEngine()
+        || isDictionaryEngine();
+}
+
+bool SQLView::supportsFinal() const
+{
+    return !this->is_materialized;
+}
+
+bool SQLDictionary::supportsFinal() const
+{
+    return false;
+}
+
+const std::optional<String> & SQLFunction::getCluster() const
+{
+    return cluster;
+}
+
+void SQLFunction::setName(Function * f) const
+{
+    f->set_function("f" + std::to_string(fname));
+}
+
+const String & ColumnPathChain::getBottomName() const
+{
+    return path[path.size() - 1].cname;
+}
+
+SQLType * ColumnPathChain::getBottomType() const
+{
+    return path[path.size() - 1].tp;
 }
 
 String ColumnPathChain::columnPathRef(const String & quote) const

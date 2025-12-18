@@ -9,10 +9,10 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/JoinLazyColumnsStep.h>
 #include <Poco/Logger.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
-
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 #include <memory>
@@ -372,7 +372,9 @@ void considerEnablingParallelReplicas(
         while (reading_step && !reading_step->children.empty())
         {
             // TODO(nickitat): support multiple read steps with parallel replicas
-            if (reading_step->children.size() > 1)
+            const auto * lazy_joining = typeid_cast<const JoinLazyColumnsStep *>(reading_step->step.get());
+
+            if (!lazy_joining && reading_step->children.size() > 1)
                 return;
             reading_step = reading_step->children.front();
         }
@@ -439,7 +441,7 @@ void considerEnablingParallelReplicas(
                 return;
             }
 
-            query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(plan_with_parallel_replicas));
+            query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*plan_with_parallel_replicas));
         }
     }
     else
@@ -657,7 +659,7 @@ void optimizeTreeSecondPass(
             local_plan->optimize(optimization_settings);
 
             auto * local_plan_node = frame.node;
-            query_plan.replaceNodeWithPlan(local_plan_node, std::move(local_plan));
+            query_plan.replaceNodeWithPlan(local_plan_node, std::move(*local_plan));
 
             // after applying optimize() we still can have several expression in a row,
             // so merge them to make plan more concise
@@ -714,7 +716,7 @@ void optimizeTreeSecondPass(
 
             if (frame.next_child == 0)
             {
-                if (optimizeLazyMaterialization(root, stack, nodes, optimization_settings.max_limit_for_lazy_materialization))
+                if (optimizeLazyMaterialization2(*frame.node, query_plan, nodes, optimization_settings, optimization_settings.max_limit_for_lazy_materialization))
                     break;
             }
 

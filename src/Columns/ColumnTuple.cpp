@@ -461,6 +461,22 @@ ColumnPtr ColumnTuple::filter(const Filter & filt, ssize_t result_size_hint) con
     return ColumnTuple::create(new_columns);
 }
 
+void ColumnTuple::filter(const Filter & filt)
+{
+    if (columns.empty())
+    {
+        column_length = countBytesInFilter(filt);
+        return;
+    }
+
+    const size_t tuple_size = columns.size();
+
+    for (size_t i = 0; i < tuple_size; ++i)
+        columns[i]->filter(filt);
+
+    column_length = columns[0]->size();
+}
+
 void ColumnTuple::expand(const Filter & mask, bool inverted)
 {
     if (columns.empty())

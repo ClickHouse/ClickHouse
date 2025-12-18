@@ -1313,6 +1313,9 @@ The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`
     DECLARE(UInt64, output_format_pretty_fallback_to_vertical_min_columns, 5, R"(
 The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`) will be activated only if the number of columns is greater than the specified value.
 )", 0) \
+    DECLARE(Bool, output_format_pretty_named_tuples_as_json, true, R"(
+        Controls whether named tuples in Pretty format are output as pretty-printed JSON objects.
+)", 0) \
     DECLARE(Bool, insert_distributed_one_random_shard, false, R"(
 Enables or disables random shard insertion into a [Distributed](/engines/table-engines/special/distributed) table when there is no distributed key.
 
