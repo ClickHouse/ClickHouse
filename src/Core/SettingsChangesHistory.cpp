@@ -54,6 +54,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_statistic_optimize", false, true, "Enable this optimization by default."},
             {"query_plan_text_index_add_hint", true, true, "New setting"},
             {"query_plan_read_in_order_through_join", false, true, "New setting"},
+            {"query_plan_max_limit_for_lazy_materialization", 10, 10000, "Increase the limit after performance improvement"},
             {"text_index_hint_max_selectivity", 0.2, 0.2, "New setting"},
             {"allow_experimental_time_time64_type", false, true, "Enable Time and Time64 type by default"},
             {"enable_time_time64_type", false, true, "Enable Time and Time64 type by default"},
@@ -78,6 +79,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_use_clients_cache_for_read", true, true, "New setting"},
             {"distributed_cache_use_clients_cache_for_write", false, false, "New setting"},
             {"enable_positional_arguments_for_projections", true, false, "New setting to control positional arguments in projections."},
+            {"enable_shared_storage_snapshot_in_query", false, true, "Enable share storage snapshot in query by default"},
             {"insert_select_deduplicate", Field{"auto"}, Field{"auto"}, "New setting"},
             {"output_format_pretty_named_tuples_as_json", false, true, "New setting to control whether named tuples in Pretty format are output as JSON objects"},
         });
