@@ -226,7 +226,7 @@ IdentifierResolveResult tryResolveTableIdentifierFallback(
     }
 
     // We do this by trying to resolve the table in the CI-matched database directly
-    if (!ci_tables_on && db_candidates.size() == 1)
+    if (!ci_tables_on && db_candidates.size() == 1 && parts.size() != 1)
     {
         const auto & resolved_db = *db_candidates.begin();
 
@@ -364,6 +364,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabas
 {
     const auto & settings = context->getSettingsRef();
     std::exception_ptr swallowed_exception; /// to preserve original message/hints
+    bool do_fallback;
     /// try exact resolution first, only swallow 'not found' cases to allow CI fallback
     try
     {
@@ -372,7 +373,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabas
     }
     catch (const Exception & e)
     {
-        bool do_fallback =
+        do_fallback =
             (e.code() == ErrorCodes::UNKNOWN_DATABASE && settings[Setting::enable_case_insensitive_databases]) ||
             (e.code() == ErrorCodes::UNKNOWN_TABLE && settings[Setting::enable_case_insensitive_tables]);
 
@@ -382,7 +383,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabas
         swallowed_exception = std::current_exception();
     }
 
-    return tryResolveTableIdentifierFallback(table_identifier, context, swallowed_exception);
+    if (do_fallback)
+        return tryResolveTableIdentifierFallback(table_identifier, context, swallowed_exception);
+    return {};
 }
 
 /// Resolve identifier from compound expression

@@ -42,7 +42,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
 
         addSettingsChanges(settings_changes_history, "26.1",
         {
-
+            {"enable_case_insensitive_columns", false, false, "New setting"},
+            {"enable_case_insensitive_tables", false, false, "New setting"},
+            {"enable_case_insensitive_databases", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
@@ -83,9 +85,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"parallel_replicas_allow_materialized_views", false, true, "Allow usage of materialized views with parallel replicas"},
             {"distributed_cache_use_clients_cache_for_read", true, true, "New setting"},
             {"distributed_cache_use_clients_cache_for_write", false, false, "New setting"},
-            {"enable_case_insensitive_columns", false, false, "New setting"},
-            {"enable_case_insensitive_tables", false, false, "New setting"},
-            {"enable_case_insensitive_databases", false, false, "New setting"},
             {"enable_positional_arguments_for_projections", true, false, "New setting to control positional arguments in projections."},
             {"enable_full_text_index", false, false, "Text index was moved to Beta."},
             {"enable_shared_storage_snapshot_in_query", false, true, "Enable share storage snapshot in query by default"},
