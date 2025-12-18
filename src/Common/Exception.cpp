@@ -26,6 +26,8 @@
 
 #include <Poco/String.h>
 
+static_assert(STD_EXCEPTION_HAS_STACK_TRACE == 1);
+
 namespace fs = std::filesystem;
 
 namespace DB
@@ -147,12 +149,10 @@ Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
     capture_thread_frame_pointers = getThreadFramePointers();
-#ifdef STD_EXCEPTION_HAS_STACK_TRACE
     auto * stack_trace_frames = exc.get_stack_trace_frames();
     auto stack_trace_size = exc.get_stack_trace_size();
     __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
     set_stack_trace(stack_trace_frames, stack_trace_size);
-#endif
 }
 
 static int getCodeForSTDException(const std::exception & exc)
@@ -170,12 +170,10 @@ Exception::Exception(CreateFromSTDTag, const std::exception & exc)
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
     capture_thread_frame_pointers = getThreadFramePointers();
-#ifdef STD_EXCEPTION_HAS_STACK_TRACE
     auto * stack_trace_frames = exc.get_stack_trace_frames();
     auto stack_trace_size = exc.get_stack_trace_size();
     __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
     set_stack_trace(stack_trace_frames, stack_trace_size);
-#endif
 }
 
 void Exception::addMessage(const MessageMasked & msg_masked)
@@ -188,16 +186,10 @@ void Exception::addMessage(const MessageMasked & msg_masked)
 
 std::string getExceptionStackTraceString(const std::exception & e)
 {
-#ifdef STD_EXCEPTION_HAS_STACK_TRACE
     auto * stack_trace_frames = e.get_stack_trace_frames();
     auto stack_trace_size = e.get_stack_trace_size();
     __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
     return StackTrace::toString(stack_trace_frames, 0, stack_trace_size);
-#else
-    if (const auto * db_exception = dynamic_cast<const Exception *>(&e))
-        return db_exception->getStackTraceString();
-    return {};
-#endif
 }
 
 std::string getExceptionStackTraceString(std::exception_ptr e)
@@ -219,7 +211,6 @@ std::string getExceptionStackTraceString(std::exception_ptr e)
 
 std::string Exception::getStackTraceString() const
 {
-#ifdef STD_EXCEPTION_HAS_STACK_TRACE
     auto * stack_trace_frames = get_stack_trace_frames();
     auto stack_trace_size = get_stack_trace_size();
     __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
@@ -234,34 +225,17 @@ std::string Exception::getStackTraceString() const
     );
 
     return StackTrace::toString(stack_trace_frames, 0, stack_trace_size) + thread_stack_trace;
-#else
-    return trace.toString();
-#endif
 }
 
 Exception::Trace Exception::getStackFramePointers() const
 {
     Trace frame_pointers;
-#ifdef STD_EXCEPTION_HAS_STACK_TRACE
+    frame_pointers.resize(get_stack_trace_size());
+    for (size_t i = 0; i < frame_pointers.size(); ++i)
     {
-        frame_pointers.resize(get_stack_trace_size());
-        for (size_t i = 0; i < frame_pointers.size(); ++i)
-        {
-            frame_pointers[i] = get_stack_trace_frames()[i];
-        }
-        __msan_unpoison(frame_pointers.data(), frame_pointers.size() * sizeof(frame_pointers[0]));
+        frame_pointers[i] = get_stack_trace_frames()[i];
     }
-#else
-    {
-        size_t stack_trace_size = trace.getSize();
-        size_t stack_trace_offset = trace.getOffset();
-        frame_pointers.reserve(stack_trace_size - stack_trace_offset);
-        for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
-        {
-            frame_pointers.push_back(trace.getFramePointers()[i]);
-        }
-    }
-#endif
+    __msan_unpoison(frame_pointers.data(), frame_pointers.size() * sizeof(frame_pointers[0]));
     return frame_pointers;
 }
 
@@ -310,7 +284,7 @@ bool Exception::isErrorCodeImportant() const
 Exception::~Exception()
 try
 {
-    if (logged != nullptr && !logged->load(std::memory_order_relaxed) && isErrorCodeImportant())
+    if (!logged.load(std::memory_order_relaxed) && isErrorCodeImportant())
     {
         LOG_ERROR(getLogger("ForcedCriticalErrorsLogger"), "{}", getExceptionMessage(*this, /*with_stacktrace=*/ true));
     }

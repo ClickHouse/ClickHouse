@@ -14,10 +14,6 @@
 #include <fmt/format.h>
 #include <Poco/Exception.h>
 
-#ifndef STD_EXCEPTION_HAS_STACK_TRACE
-#include <Common/StackTrace.h>
-#endif
-
 namespace Poco
 {
 class Channel;
@@ -64,14 +60,63 @@ public:
             std::terminate();
         capture_thread_frame_pointers = getThreadFramePointers();
         message_format_string = msg.format_string;
-        message_format_string_args = msg.format_string_args;
+        message_format_string_args = std::move(msg.format_string_args);
     }
 
     ~Exception() override;
-    Exception(const Exception &) = default;
-    Exception & operator=(const Exception &) = default;
-    Exception(Exception &&) = default;
-    Exception & operator=(Exception &&) = default;
+
+    Exception(const Exception & o)
+        : Poco::Exception(o)
+    {
+        remote = o.remote;
+        logged.store(o.logged.load());
+        error_index = o.error_index;
+        message_format_string = o.message_format_string;
+        message_format_string_args = o.message_format_string_args;
+        capture_thread_frame_pointers = o.capture_thread_frame_pointers;
+    }
+
+    Exception(Exception && o) noexcept
+        : Poco::Exception(std::move(o))
+    {
+        remote = o.remote;
+        logged.store(o.logged.load());
+        error_index = o.error_index;
+        message_format_string = o.message_format_string;
+        message_format_string_args = std::move(o.message_format_string_args);
+        capture_thread_frame_pointers = std::move(o.capture_thread_frame_pointers);
+    }
+
+    Exception & operator=(const Exception & o)
+    {
+        if (this != &o)
+        {
+            Poco::Exception::operator=(o);
+            remote = o.remote;
+            logged.store(o.logged.load());
+            error_index = o.error_index;
+            message_format_string = o.message_format_string;
+            message_format_string_args = o.message_format_string_args;
+            capture_thread_frame_pointers = o.capture_thread_frame_pointers;
+        }
+        return *this;
+    }
+
+
+    Exception & operator=(Exception && o) noexcept
+    {
+        if (this != &o)
+        {
+            Poco::Exception::operator=(std::move(o));
+            remote = o.remote;
+            logged.store(o.logged.load());
+            error_index = o.error_index;
+            message_format_string = o.message_format_string;
+            message_format_string_args = std::move(o.message_format_string_args);
+            capture_thread_frame_pointers = std::move(o.capture_thread_frame_pointers);
+        }
+        return *this;
+    }
 
     /// Collect call stacks of all previous jobs' schedulings leading to this thread job's execution
     static thread_local bool enable_job_stack_trace;
@@ -180,23 +225,14 @@ public:
 
     std::vector<std::string> getMessageFormatStringArgs() const { return message_format_string_args; }
 
-    void markAsLogged()
-    {
-        if (logged)
-        {
-            logged->store(true, std::memory_order_relaxed);
-        }
-    }
+    void markAsLogged() { logged.store(true, std::memory_order_relaxed); }
 
     /// Indicates if the error code triggers alerts in ClickHouse Cloud
     bool isErrorCodeImportant() const;
 
 private:
-#ifndef STD_EXCEPTION_HAS_STACK_TRACE
-    StackTrace trace;
-#endif
     bool remote = false;
-    std::shared_ptr<std::atomic<bool>> logged = std::make_shared<std::atomic<bool>>(false);
+    std::atomic<bool> logged = false;
 
     /// Number of this error among other errors with the same code and the same `remote` flag since the program startup.
     size_t error_index = static_cast<size_t>(-1);
