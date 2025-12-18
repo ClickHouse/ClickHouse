@@ -247,7 +247,7 @@ def test_persistent_recursive_watch_event_fields(started_cluster):
     CHILD_NODE = f"{NODE_PATH}/child"
     OTHER_PATH = "/testEventFieldsOther2"
 
-    for path in [NODE_PATH, CHILD_NODE, OTHER_PATH]:
+    for path in [CHILD_NODE, NODE_PATH, OTHER_PATH]:
         if client.exists(path):
             client.delete(path)
 
