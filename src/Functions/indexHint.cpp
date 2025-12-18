@@ -43,7 +43,7 @@ ClickHouse does only one thing:
 
 1. Uses the index to find which granules might contain key = 123 and returns all rows from those granules **without** filtering.
 
-It returns all 8,192 rows, including rows where key = 456, key = 789, etc. (Everything that happened to be stored in the same granule.)
+It returns all 8,192 rows, including rows where `key = 456`, `key = 789`, etc. (Everything that happened to be stored in the same granule.)
 `indexHint()` is not for performance. It's for debugging and understanding how ClickHouse's index works:
 - Which granules does my condition select?
 - How many rows are in those granules?
