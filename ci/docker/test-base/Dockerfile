@@ -44,6 +44,18 @@ RUN apt-get update \
 RUN test -f /usr/bin/llvm-symbolizer-${LLVM_VERSION}
 RUN ln -s /usr/bin/llvm-symbolizer-${LLVM_VERSION} /usr/bin/llvm-symbolizer
 
+# Install LLVM tools for code coverage (llvm-profdata, llvm-cov)
+ENV LLVM_COVERAGE_VERSION=20
+RUN echo "deb https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_COVERAGE_VERSION} main" >> /etc/apt/sources.list.d/llvm-coverage.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        llvm-${LLVM_COVERAGE_VERSION} \
+        clang-${LLVM_COVERAGE_VERSION} \
+    && ln -s /usr/bin/llvm-profdata-${LLVM_COVERAGE_VERSION} /usr/bin/llvm-profdata \
+    && ln -s /usr/bin/llvm-cov-${LLVM_COVERAGE_VERSION} /usr/bin/llvm-cov \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+
 # Install cmake 3.20+ for Rust support
 # Used https://askubuntu.com/a/1157132 as reference
 RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor - > /etc/apt/trusted.gpg.d/kitware.gpg && \
