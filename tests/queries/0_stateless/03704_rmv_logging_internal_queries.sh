@@ -7,6 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Test that some internal queries from refreshable materialized views are logged correctly
 
+$CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS testdb"
 $CLICKHOUSE_CLIENT --query "CREATE DATABASE testdb"
 $CLICKHOUSE_CLIENT --query "CREATE VIEW testdb.one_proxy AS SELECT * FROM system.one"
 $CLICKHOUSE_CLIENT --query "
