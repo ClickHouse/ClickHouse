@@ -36,6 +36,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Processors/Transforms/MaterializingAliasesTransform.h>
 #include <Server/TCPServer.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
@@ -2508,11 +2509,20 @@ void TCPHandler::initBlockInput(QueryState & state)
         else if (state.need_receive_data_for_input)
             header = state.input_header;
 
+        Block column_aliases_header;
+        if (state.query_context->hasInsertionTableColumnsDescription())
+        {
+            for (const auto & column_with_type_and_name : MaterializingAliasesTransform::getColumnAliases(*state.query_context->getInsertionTableColumnsDescription()))
+                column_aliases_header.insert(column_with_type_and_name);
+        }
+
         state.block_in = std::make_unique<NativeReader>(
             *state.maybe_compressed_in,
             header,
             client_tcp_protocol_version,
-            getFormatSettings(state.query_context));
+            getFormatSettings(state.query_context),
+            static_cast<BlockMissingValues *>(nullptr),
+            std::make_optional(std::move(column_aliases_header)));
     }
 }
 

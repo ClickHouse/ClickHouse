@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <Formats/FormatSettings.h>
 #include <Formats/IndexForNativeFormat.h>
 #include <Formats/MarkInCompressedFile.h>
@@ -33,7 +34,8 @@ public:
         const Block & header_,
         UInt64 server_revision_,
         std::optional<FormatSettings> format_settings_ = std::nullopt,
-        BlockMissingValues * block_missing_values_ = nullptr);
+        BlockMissingValues * block_missing_values_ = nullptr,
+        std::optional<Block> column_aliases_header_ = std::nullopt);
 
     /// For cases when we have an index. It allows to skip columns. Only columns specified in the index will be read.
     NativeReader(ReadBuffer & istr_, UInt64 server_revision_,
@@ -58,6 +60,7 @@ public:
 private:
     ReadBuffer & istr;
     Block header;
+    std::optional<Block> column_aliases_header;
     UInt64 server_revision;
     std::optional<FormatSettings> format_settings = std::nullopt;
     BlockMissingValues * block_missing_values = nullptr;

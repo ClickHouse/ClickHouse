@@ -63,7 +63,8 @@ private:
         const StoragePtr & table,
         const StorageMetadataPtr & metadata_snapshot,
         bool allow_virtuals,
-        bool allow_materialized);
+        bool allow_materialized,
+        bool add_aliases);
 
     LoggerPtr logger;
     ASTPtr query_ptr;

@@ -46,9 +46,11 @@ NativeReader::NativeReader(
     const Block & header_,
     UInt64 server_revision_,
     std::optional<FormatSettings> format_settings_,
-    BlockMissingValues * block_missing_values_)
+    BlockMissingValues * block_missing_values_,
+    std::optional<Block> column_aliases_header_)
     : istr(istr_)
     , header(header_)
+    , column_aliases_header(column_aliases_header_)
     , server_revision(server_revision_)
     , format_settings(std::move(format_settings_))
     , block_missing_values(block_missing_values_)
@@ -321,7 +323,7 @@ Block NativeReader::read()
             }
             else
             {
-                if (format_settings && !format_settings->skip_unknown_fields)
+                if (format_settings && !format_settings->skip_unknown_fields && (!column_aliases_header.has_value() || !column_aliases_header->has(column.name)))
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown column with name {} found while reading data in Native format", column.name);
                 use_in_result = false;
             }

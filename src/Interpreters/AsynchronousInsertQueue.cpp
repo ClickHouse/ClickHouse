@@ -28,6 +28,8 @@
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Processors/Transforms/MaterializingAliasesTransform.h>
+#include <Processors/Transforms/CompositeSimpleTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -374,9 +376,9 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
         query,
         insert_context,
         query_context->getSettingsRef()[Setting::insert_allow_materialized_columns],
-        /* no_squash */ false,
-        /* no_destination */ false,
-        /* async_insert */ false);
+        /* no_squash= */ false,
+        /* no_destination= */ false,
+        /* async_insert= */ false);
 
     auto table = interpreter.getTable(insert_query);
     auto sample_block = InterpreterInsertQuery::getSampleBlock(insert_query, table, table->getInMemoryMetadataPtr(), query_context);
@@ -1170,13 +1172,33 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     String current_exception;
 
     auto format = getInputFormatFromASTInsertQuery(key.query, false, header, insert_context, nullptr);
-    std::shared_ptr<ISimpleTransform> adding_defaults_transform;
 
-    if (insert_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && insert_context->hasInsertionTableColumnsDescription())
+    std::shared_ptr<ISimpleTransform> transformer;
+    if (insert_context->hasInsertionTableColumnsDescription())
     {
         const auto & columns = insert_context->getInsertionTableColumnsDescription().value();
         if (columns.hasDefaults())
-            adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(std::make_shared<const Block>(header), columns, *format, insert_context);
+        {
+            auto shared_header = std::make_shared<const Block>(header);
+
+            if (insert_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields])
+            {
+                auto adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(
+                    shared_header, columns, *format, insert_context);
+
+                auto materializing_aliases_transform = std::make_shared<MaterializingAliasesTransform>(
+                    shared_header, columns.getDefaults(), *format);
+
+                transformer = std::make_shared<CompositeSimpleTransform>(shared_header, std::vector<CompositeSimpleTransform::SimpleTransformPtr>
+                {
+                    std::move(materializing_aliases_transform),
+                    std::move(adding_defaults_transform),
+                });
+            }
+            else
+                transformer = std::make_shared<MaterializingAliasesTransform>(
+                    shared_header, columns.getDefaults(), *format);
+        }
     }
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
@@ -1199,7 +1221,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         std::move(on_error),
         data->size_in_bytes,
         data->entries.size(),
-        std::move(adding_defaults_transform));
+        std::move(transformer));
     auto chunk_info = std::make_shared<AsyncInsertInfo>();
 
     for (const auto & entry : data->entries)

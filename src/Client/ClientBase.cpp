@@ -9,6 +9,7 @@
 #include <Client/TestTags.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/sortBlock.h>
+#include <Processors/Transforms/MaterializingAliasesTransform.h>
 
 #if USE_CLIENT_AI
 #include <Client/AI/AISQLGenerator.h>
@@ -2052,6 +2053,11 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
         pipe.addSimpleTransform([&](const SharedHeader & header)
         {
             return std::make_shared<AddingDefaultsTransform>(header, columns_description, *source, client_context);
+        });
+
+        pipe.addSimpleTransform([&, columns_defaults = columns_description.getDefaults()](const SharedHeader & header)
+        {
+            return std::make_shared<MaterializingAliasesTransform>(header, columns_defaults, *source);
         });
     }
 
