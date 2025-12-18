@@ -1307,7 +1307,8 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
         DataTypes & data_types,
         size_t & args_count,
         const BuildInfo & info,
-        bool allow_constant_transformation)
+        bool allow_constant_transformation,
+        bool * out_disable_exact_set_evaluation)
 {
     auto get_key_tuple_position_mapping = [&](const RPNBuilderTreeNode & node, size_t tuple_index)
     {
@@ -1324,7 +1325,7 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
             data_types.push_back(data_type);
             set_transforming_chains.push_back(set_transforming_chain);
         }
-        // For partition index, checking if set can be transformed to prune any partitions
+        /// For partition index, checking if set can be transformed to prune any partitions
         else if (
             single_point && allow_constant_transformation
             && canSetValuesBeWrappedByFunctions(node, info, index_mapping.key_index, data_type, set_transforming_chain))
@@ -1332,6 +1333,19 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
             indexes_mapping.push_back(index_mapping);
             data_types.push_back(data_type);
             set_transforming_chains.push_back(set_transforming_chain);
+        }
+        /// For non single point case, we can still benefit from deterministic functions chain of ORDER BY key columns.
+        /// For example, if a hash function is used in ORDER BY key, we can still use it to filter values in set index.
+        /// In this case, since we do not guarantee that wrapped functions are injective, we have to relax `can_be_false` of this
+        /// RPN element to avoid false negatives in `set->checkInRange`.
+        else if (
+            (out_disable_exact_set_evaluation != nullptr) && allow_constant_transformation
+            && canSetValuesBeWrappedByFunctions(node, info, index_mapping.key_index, data_type, set_transforming_chain))
+        {
+            indexes_mapping.push_back(index_mapping);
+            data_types.push_back(data_type);
+            set_transforming_chains.push_back(set_transforming_chain);
+            *out_disable_exact_set_evaluation = true;
         }
     };
 
@@ -1530,7 +1544,8 @@ bool KeyCondition::tryPrepareSetIndexForIn(
         data_types,
         left_args_count,
         info,
-        allow_constant_transformation);
+        allow_constant_transformation,
+        nullptr);
 
     if (indexes_mapping.empty())
         return false;
@@ -1596,7 +1611,7 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     size_t key_args_count = 0;
 
     analyzeKeyExpressionForSetIndex(
-        key_arg, indexes_mapping, set_transforming_chains, data_types, key_args_count, info, allow_constant_transformation);
+        key_arg, indexes_mapping, set_transforming_chains, data_types, key_args_count, info, allow_constant_transformation, &out.disable_exact_set_evaluation);
 
     if (indexes_mapping.empty())
         return false;
@@ -3611,6 +3626,13 @@ BoolMask KeyCondition::checkInHyperrectangle(
             if (rpn_stack.back().can_be_true && element.bloom_filter_data)
             {
                 rpn_stack.back().can_be_true = mayExistOnBloomFilter(*element.bloom_filter_data, column_index_to_column_bf);
+            }
+
+            /// In this case, can_be_false is not reliable because the set values were transformed by non-injective
+            /// deterministic functions (e.g. hash functions).
+            if (element.disable_exact_set_evaluation)
+            {
+                rpn_stack.back().can_be_false = true;
             }
 
             if (element.function == RPNElement::FUNCTION_NOT_IN_SET)

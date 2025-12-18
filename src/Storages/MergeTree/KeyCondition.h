@@ -248,6 +248,11 @@ public:
         /// Whether to relax the key condition (e.g., for LIKE queries without a perfect prefix).
         bool relaxed = false;
 
+        /// Set to true if we transform set elements through deterministic key functions of ORDER BY keys
+        /// without proving injectivity. In this case we must not return BoolMask{*, can_be_false=false}
+        /// for the has atom, otherwise NOT has (...) can produce false negatives.
+        bool disable_exact_set_evaluation = false;
+
         /// For FUNCTION_IN_RANGE and FUNCTION_NOT_IN_RANGE.
         Range range = Range::createWholeUniverse();
 
@@ -433,7 +438,8 @@ private:
         DataTypes & data_types,
         size_t & args_count,
         const BuildInfo & info,
-        bool allow_constant_transformation);
+        bool allow_constant_transformation,
+        bool * out_disable_exact_set_evaluation);
 
     /// Checks that the index can not be used.
     ///
