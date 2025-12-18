@@ -2046,25 +2046,21 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
     const Settings & settings = client_context->getSettingsRef();
 
     /// Setting value from cmd arg overrides one from config.
-    const auto & max_insert_block_size_rows_setting = settings[Setting::max_insert_block_size];
-    size_t insert_format_max_block_size_rows =  max_insert_block_size_rows_setting.changed ? 
-                                                max_insert_block_size_rows_setting : 
-                                                insert_format_max_block_size_rows_from_config.value_or(max_insert_block_size_rows_setting);
+    size_t insert_format_max_block_size_rows =  settings[Setting::max_insert_block_size].changed ? 
+                                                settings[Setting::max_insert_block_size] : 
+                                                insert_format_max_block_size_rows_from_config.value_or(settings[Setting::max_insert_block_size]);
+ 
+    size_t insert_format_max_block_size_bytes = settings[Setting::max_insert_block_size_bytes].changed ?
+                                                settings[Setting::max_insert_block_size_bytes]:
+                                                insert_format_max_block_size_bytes_from_config.value_or(settings[Setting::max_insert_block_size_bytes]);
 
-    const auto & max_insert_block_size_bytes_setting = settings[Setting::max_insert_block_size_bytes]; 
-    size_t insert_format_max_block_size_bytes = max_insert_block_size_bytes_setting.changed ?
-                                                max_insert_block_size_bytes_setting :
-                                                insert_format_max_block_size_bytes_from_config.value_or(max_insert_block_size_bytes_setting);
+    size_t insert_format_min_block_size_rows =  settings[Setting::min_insert_block_size_rows].changed ?
+                                                settings[Setting::min_insert_block_size_rows] :
+                                                insert_format_min_block_size_rows_from_config.value_or(settings[Setting::min_insert_block_size_rows]);
 
-    const auto & min_insert_block_size_rows_setting = settings[Setting::min_insert_block_size_rows];
-    size_t insert_format_min_block_size_rows =  min_insert_block_size_rows_setting.changed ?
-                                                min_insert_block_size_rows_setting :
-                                                insert_format_min_block_size_rows_from_config.value_or(min_insert_block_size_rows_setting);
-
-    const auto & min_insert_block_size_bytes_setting = settings[Setting::min_insert_block_size_bytes];
-    size_t insert_format_min_block_size_bytes = min_insert_block_size_bytes_setting.changed ?
-                                                min_insert_block_size_bytes_setting :
-                                                insert_format_min_block_size_bytes_from_config.value_or(min_insert_block_size_bytes_setting);
+    size_t insert_format_min_block_size_bytes = settings[Setting::min_insert_block_size_bytes].changed ?
+                                                settings[Setting::min_insert_block_size_bytes] :
+                                                insert_format_min_block_size_bytes_from_config.value_or(settings[Setting::min_insert_block_size_bytes]);
 
     auto source = client_context->getInputFormat(current_format, 
                                                  buf, 

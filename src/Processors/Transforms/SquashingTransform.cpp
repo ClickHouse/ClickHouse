@@ -57,10 +57,9 @@ void SquashingTransform::work()
 }
 
 SimpleSquashingChunksTransform::SimpleSquashingChunksTransform(
-    SharedHeader header, size_t min_block_size_rows)
+    SharedHeader header, size_t min_block_size_rows, size_t min_block_size_bytes)
     : IInflatingTransform(header, header)
-    , squashing(header, min_block_size_rows, min_block_size_bytes,
-                max_block_size_rows, max_block_size_bytes)
+    , squashing(header, min_block_size_rows, min_block_size_bytes)
 {
 }
 

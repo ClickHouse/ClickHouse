@@ -859,7 +859,9 @@ std::vector<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllS
                     std::make_shared<PlanSquashingTransform>(
                         output_header,
                         table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
-                        table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL));
+                        table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL,
+                        settings[Setting::max_insert_block_size],
+                        settings[Setting::max_insert_block_size_bytes]));
 
                 if (squashing_context.num_squashing_transforms > 1)
                 {
@@ -1307,7 +1309,9 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDPrivate view_id) const
                 std::make_shared<PlanSquashingTransform>(
                     output_header,
                     table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
-                    table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL));
+                    table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL,
+                    settings[Setting::max_insert_block_size],
+                    settings[Setting::max_insert_block_size_bytes]));
         }
         else
         {

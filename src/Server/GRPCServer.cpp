@@ -1146,10 +1146,10 @@ namespace
 
         auto source
             = query_context->getInputFormat(input_format, *read_buffer, header, 
-                             settings[Setting::max_insert_block_size], std::nullopt,
-                       settings[Setting::max_insert_block_size_bytes],
-                        settings[Setting::min_insert_block_size_rows],
-                       settings[Setting::min_insert_block_size_bytes]);
+                                            settings[Setting::max_insert_block_size], std::nullopt,
+                                      settings[Setting::max_insert_block_size_bytes],
+                                       settings[Setting::min_insert_block_size_rows],
+                                      settings[Setting::min_insert_block_size_bytes]);
 
         pipeline = std::make_unique<QueryPipeline>(std::move(source));
         pipeline_executor = std::make_unique<PullingPipelineExecutor>(*pipeline);
