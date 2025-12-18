@@ -1518,8 +1518,22 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     chassert(func.getFunctionName() == "has");
     chassert(func.getArgumentsSize() == 2);
 
-    const RPNBuilderTreeNode & array_arg = func.getArgumentAt(0);
+    /// Check if key usable
     const RPNBuilderTreeNode & key_arg = func.getArgumentAt(1);
+
+    std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
+    std::vector<MonotonicFunctionsChain> set_transforming_chains;
+    DataTypes data_types;
+    size_t key_args_count = 0;
+
+    analyzeKeyExpressionForSetIndex(
+        key_arg, indexes_mapping, set_transforming_chains, data_types, key_args_count, info, allow_constant_transformation);
+
+    if (indexes_mapping.empty())
+        return false;
+
+    /// Check if array argument is usable
+    const RPNBuilderTreeNode & array_arg = func.getArgumentAt(0);
 
     /// First argument of has() must be a constant array
     if (!array_arg.isConstant())
@@ -1547,17 +1561,6 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     /// We do not need to unpack tuples inside, because `tryPrepareSetColumnsForIndex` will do it
     Columns set_columns = {array_elements};
     DataTypes set_types = {array_nested_type};
-
-    std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
-    std::vector<MonotonicFunctionsChain> set_transforming_chains;
-    DataTypes data_types;
-    size_t key_args_count = 0;
-
-    analyzeKeyExpressionForSetIndex(
-        key_arg, indexes_mapping, set_transforming_chains, data_types, key_args_count, info, allow_constant_transformation);
-
-    if (indexes_mapping.empty())
-        return false;
 
     bool is_constant_transformed = false;
     if (!tryPrepareSetColumnsForIndex(
