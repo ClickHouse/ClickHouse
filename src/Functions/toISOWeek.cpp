@@ -49,7 +49,7 @@ SELECT toDate('2025-12-29') AS date, toISOWeek(date) AS isoWeek, toYear(date) AS
     };
     FunctionDocumentation::IntroducedIn introduced_in_toISOWeek = {20, 1};
     FunctionDocumentation::Category category_toISOWeek = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_toISOWeek = {description_toISOWeek, syntax_toISOWeek, arguments_toISOWeek, returned_value_toISOWeek, examples_toISOWeek, introduced_in_toISOWeek, category_toISOWeek};
+    FunctionDocumentation documentation_toISOWeek = {description_toISOWeek, syntax_toISOWeek, arguments_toISOWeek, {}, returned_value_toISOWeek, examples_toISOWeek, introduced_in_toISOWeek, category_toISOWeek};
 
     factory.registerFunction<FunctionToISOWeek>(documentation_toISOWeek);
 }
