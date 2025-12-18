@@ -198,62 +198,46 @@ IdentifierResolveResult tryResolveTableIdentifierFallback(
 
     std::set<String> db_candidates;
 
-    if (parts.size() == 2)
+    if (!ci_databases_on && DatabaseCatalog::instance().isDatabaseExist(requested_table.database)) // works for specified DB and for current DB
     {
-        /// Check if exact database exists
-        if (DatabaseCatalog::instance().isDatabaseExist(requested_table.database))
-        {
-            db_candidates.insert(requested_table.database);
-
-            /// If both DB CI and table CI are enabled, we check other CI-matching DBs
-            /// to detect cross-database table ambiguity (for example a.t and A.t, where we need a.T)
-            if (ci_databases_on && ci_tables_on)
-            {
-                auto ci_dbs = DatabaseCatalog::instance().getDatabasesCaseInsensitive(requested_table.database);
-                db_candidates.insert(ci_dbs.begin(), ci_dbs.end());
-            }
-        }
-        else
-        {
-            auto ci_dbs = DatabaseCatalog::instance().getDatabasesCaseInsensitive(requested_table.database);
-            if (ci_dbs.empty())
-            {
-                if (swallowed_exception)
-                    std::rethrow_exception(swallowed_exception);
-                return {};
-            }
-            db_candidates.insert(ci_dbs.begin(), ci_dbs.end());
-
-            /// for DB-only ambiguity
-            if (!ci_tables_on && db_candidates.size() > 1)
-            {
-                throw Exception(
-                    ErrorCodes::AMBIGUOUS_IDENTIFIER,
-                    "Database '{}' does not have a case-sensitive match. But it case-insensitively matches multiple databases: {}",
-                    requested_table.database,
-                    fmt::join(db_candidates, ", "));
-            }
-
-            // We do this by trying to resolve the table in the CI-matched database directly
-            if (!ci_tables_on && db_candidates.size() == 1)
-            {
-                const auto & resolved_db = *db_candidates.begin();
-
-                Identifier canonical {{ resolved_db, requested_table.table }};
-                if (auto resolved = IdentifierResolver::tryResolveTableIdentifier(canonical, context))
-                    return { .resolved_identifier = std::move(resolved), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
-
-                // Table not found
-                StorageID storage_id(resolved_db, requested_table.table);
-                DatabaseCatalog::instance().getTable(storage_id, context); // always throws if table doesn't exist
-                UNREACHABLE();
-            }
-        }
-    }
-    else
-    {
-        /// work within current database only
         db_candidates.insert(requested_table.database);
+    }
+    else if (ci_databases_on)
+    {
+        auto ci_dbs = DatabaseCatalog::instance().getDatabasesCaseInsensitive(requested_table.database);
+        db_candidates.insert(ci_dbs.begin(), ci_dbs.end());
+    }
+
+    /// for DB-only ambiguity
+    if (!ci_tables_on && db_candidates.size() > 1)
+    {
+        throw Exception(
+            ErrorCodes::AMBIGUOUS_IDENTIFIER,
+            "Database '{}' does not have a case-sensitive match. But it case-insensitively matches multiple databases: {}",
+            requested_table.database,
+            fmt::join(db_candidates, ", "));
+    }
+
+    if (db_candidates.empty())
+    {
+        if (swallowed_exception)
+            std::rethrow_exception(swallowed_exception);
+        return {};
+    }
+
+    // We do this by trying to resolve the table in the CI-matched database directly
+    if (!ci_tables_on && db_candidates.size() == 1)
+    {
+        const auto & resolved_db = *db_candidates.begin();
+
+        Identifier canonical {{ resolved_db, requested_table.table }};
+        if (auto resolved = IdentifierResolver::tryResolveTableIdentifier(canonical, context))
+            return { .resolved_identifier = std::move(resolved), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
+
+        // Table not found
+        StorageID storage_id(resolved_db, requested_table.table);
+        DatabaseCatalog::instance().getTable(storage_id, context); // always throws if table doesn't exist
+        UNREACHABLE();
     }
 
     /// in selected DB collect case-insensitive table candidates
@@ -270,15 +254,7 @@ IdentifierResolveResult tryResolveTableIdentifierFallback(
         {
             if (tbl_name == requested_table.table)
             {
-                // DB is exact match -> return immediately
-                // DB is CI match -> we still need to check other DBs for ambiguity
-                if (db_name == requested_table.database)
-                {
-                    Identifier canonical{{ db_name, tbl_name }};
-                    if (auto resolved = IdentifierResolver::tryResolveTableIdentifier(canonical, context))
-                        return { .resolved_identifier = std::move(resolved), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
-                    return {};
-                }
+                // table is full match and DB is CI match -> we still need to check other DBs for ambiguity
                 ci_table_candidates.insert({ db_name, tbl_name });
                 break;
             }
@@ -804,10 +780,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     if (!result_expression)
     {
         /// case-insensitive fallback for columns
-        const auto & settings = scope.context->getSettingsRef();
-        bool ci_columns_enabled = settings[Setting::enable_case_insensitive_columns];
+        bool ci_columns_enabled = scope.context->getSettingsRef()[Setting::enable_case_insensitive_columns];
 
-        Strings ci_col_name_matches;
+        std::set<String> ci_col_name_matches;
         ColumnNodePtr ci_match_column;
         if (ci_columns_enabled && !table_expression_data.column_name_to_column_node.empty())
         {
@@ -816,39 +791,34 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
             {
                 if (Poco::toLower(col_name) == wanted_full_l)
                 {
-                    ci_col_name_matches.push_back(col_name);
-                    if (!ci_match_column)
-                        ci_match_column = col_node;
+                    ci_col_name_matches.insert(col_name);
+                    ci_match_column = col_node;
                 }
             }
+        }
 
-            if (!ci_col_name_matches.empty())
+        if (ci_col_name_matches.size() == 1)
+        {
+            result_expression = ci_match_column;
+            /// If nested path exists (like a.b), resolve it via compound if needed
+            if (!identifier_without_column_qualifier.isShort())                     // TODO: move this if up
             {
-                if (ci_col_name_matches.size() == 1)
-                {
-                    result_expression = ci_match_column;
-                    /// If nested path exists (like a.b), resolve it via compound if needed
-                    if (!identifier_without_column_qualifier.isShort())
-                    {
-                        size_t identifier_bind_size = identifier_column_qualifier_parts + 1;
-                        result_expression = tryResolveIdentifierFromCompoundExpression(
-                            identifier, identifier_bind_size, result_expression, table_expression_source, scope, can_be_not_found);
-                        if (can_be_not_found && !result_expression)
-                            return {};
-                        clone_is_needed = false;
-                    }
-                }
-                else if (ci_col_name_matches.size() > 1)
-                {
-                    std::sort(ci_col_name_matches.begin(), ci_col_name_matches.end());
-                    throw Exception(
-                        ErrorCodes::AMBIGUOUS_IDENTIFIER,
-                        "Identifier '{}' does not match any column case-sensitively, but it case-insensitively matches multiple columns: {}. In scope {}",
-                        identifier.getFullName(),
-                        fmt::join(ci_col_name_matches, ", "),
-                        scope.scope_node->formatASTForErrorMessage());
-                }
+                size_t identifier_bind_size = identifier_column_qualifier_parts + 1;
+                result_expression = tryResolveIdentifierFromCompoundExpression(
+                    identifier, identifier_bind_size, result_expression, table_expression_source, scope, can_be_not_found);
+                if (can_be_not_found && !result_expression)
+                    return {};
+                clone_is_needed = false;
             }
+        }
+        else if (ci_col_name_matches.size() > 1)
+        {
+            throw Exception(
+                ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                "Identifier '{}' does not match any column case-sensitively, but it case-insensitively matches multiple columns: {}. In scope {}",
+                identifier.getFullName(),
+                fmt::join(ci_col_name_matches, ", "),
+                scope.scope_node->formatASTForErrorMessage());
         }
 
         if (!result_expression)
@@ -973,30 +943,28 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
             return lookup_result;
     }
 
-    if (identifier.getPartsSize() == 1)
+    /// case-insensitive fallback for single-part identifiers against this table expression
+    bool ci_enabled = scope.context->getSettingsRef()[Setting::enable_case_insensitive_columns];
+    if (identifier.getPartsSize() == 1 && ci_enabled)
     {
-        /// case-insensitive fallback for single-part identifiers against this table expression
-        const auto & settings = scope.context->getSettingsRef();
-        bool ci_enabled = settings[Setting::enable_case_insensitive_columns];
-        std::vector<std::string> matches;
+        std::set<String> matches;
         ColumnNodePtr match_column;
         for (const auto & [col_name, col_node] : table_expression_data.column_name_to_column_node)
         {
             if (Poco::toLower(col_name) == Poco::toLower(identifier.getParts().front()))
             {
-                matches.push_back(col_name);
+                matches.insert(col_name);
                 match_column = col_node;
             }
         }
 
-        if (ci_enabled && matches.size() == 1)
+        if (matches.size() == 1)
         {
             auto result = std::static_pointer_cast<IQueryTreeNode>(match_column);
             return { .resolved_identifier = std::move(result), .resolve_place = IdentifierResolvePlace::JOIN_TREE };
         }
-        else if (ci_enabled && matches.size() > 1)
+        else if (matches.size() > 1)
         {
-            std::sort(matches.begin(), matches.end());
             throw Exception(
                 ErrorCodes::AMBIGUOUS_IDENTIFIER,
                 "Identifier '{}' does not match any column case-sensitively, but it case-insensitively matches multiple columns: {}. In scope {}",
