@@ -30,7 +30,7 @@ For arguments in the range `[-1, 1]` it returns the value in the range of `[-pi(
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
-    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, argument, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionAsin>(documentation, FunctionFactory::Case::Insensitive);
 }
 

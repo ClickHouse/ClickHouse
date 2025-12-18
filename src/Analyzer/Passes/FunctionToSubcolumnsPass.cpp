@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeQBit.h>
+#include <DataTypes/DataTypeObject.h>
 
 #include <Storages/IStorage.h>
 
@@ -21,13 +22,15 @@
 #include <Analyzer/Identifier.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
-#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
+#include <IO/WriteHelpers.h>
 
 #include <stack>
+
+
 namespace DB
 {
 namespace Setting
@@ -151,6 +154,21 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
         return NameAndTypePair{names[index - 1], types[index - 1]};
     }
 
+    /// Maybe negative index
+    if (value.getType() == Field::Types::Int64)
+    {
+        ssize_t index = value.safeGet<Int64>();
+        ssize_t size = types.size();
+
+        if (index == 0 || std::abs(index) > size)
+            return {};
+
+        if (index > 0)
+            return NameAndTypePair{names[index - 1], types[index - 1]};
+        else
+            return NameAndTypePair{names[size + index], types[size + index]};
+    }
+
     return {};
 }
 
@@ -181,6 +199,18 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
         return {};
 
     return NameAndTypePair{toString(index), std::make_shared<const DataTypeFixedString>((data_type_qbit.getDimension() + 7) / 8)};
+}
+
+std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const DataTypeObject & data_type_object)
+{
+    if (value.getType() == Field::Types::String)
+    {
+        const auto & name = value.safeGet<String>();
+        if (auto type = data_type_object.tryGetSubcolumnType(name))
+            return NameAndTypePair{name, type};
+    }
+
+    return {};
 }
 
 template <typename DataType>
@@ -338,6 +368,9 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
     },
     {
         {TypeIndex::QBit, "tupleElement"}, optimizeTupleOrVariantElement<DataTypeQBit>, /// QBit uses tupleElement for subcolumns
+    },
+    {
+        {TypeIndex::Object, "tupleElement"}, optimizeTupleOrVariantElement<DataTypeObject>,
     },
 };
 
