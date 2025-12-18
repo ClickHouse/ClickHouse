@@ -1,6 +1,44 @@
--- Tags: no-replicated-database, no-parallel-replicas
--- no-replicated-database: EXPLAIN output differs for replicated database.
--- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
+DROP FUNCTION IF EXISTS explain_lines;
+DROP FUNCTION IF EXISTS explain_index_pos;
+DROP FUNCTION IF EXISTS explain_index_condition_line;
+DROP FUNCTION IF EXISTS explain_index_granules_line;
+DROP FUNCTION IF EXISTS explain_index_granules_read;
+DROP FUNCTION IF EXISTS explain_index_granules_total;
+DROP FUNCTION IF EXISTS explain_index_granules_pruned;
+DROP FUNCTION IF EXISTS explain_index;
+
+CREATE FUNCTION explain_lines AS (pairs) ->
+    arrayMap(t -> trimLeft(t.2), arraySort(pairs));
+
+CREATE FUNCTION explain_index_pos AS (pairs, idx) ->
+    arrayFirstIndex(x -> x = idx, explain_lines(pairs));
+
+CREATE FUNCTION explain_index_condition_line AS (pairs, idx) ->
+    arrayFirst(
+        x -> startsWith(x, 'Description:'),
+        arraySlice(explain_lines(pairs), explain_index_pos(pairs, idx) + 1)
+    );
+
+CREATE FUNCTION explain_index_granules_line AS (pairs, idx) ->
+    arrayFirst(
+        x -> startsWith(x, 'Granules:'),
+        arraySlice(explain_lines(pairs), explain_index_pos(pairs, idx) + 1)
+    );
+
+CREATE FUNCTION explain_index_granules_read AS (pairs, idx) ->
+    toUInt64OrZero(extract(explain_index_granules_line(pairs, idx), 'Granules: ([0-9]+)'));
+
+CREATE FUNCTION explain_index_granules_total AS (pairs, idx) ->
+    toUInt64OrZero(extract(explain_index_granules_line(pairs, idx), 'Granules: [0-9]+/([0-9]+)'));
+
+CREATE FUNCTION explain_index_granules_pruned AS (pairs, idx) ->
+    explain_index_granules_read(pairs, idx) < explain_index_granules_total(pairs, idx);
+
+CREATE FUNCTION explain_index AS (pairs, idx) ->
+[
+    explain_index_condition_line(pairs, idx),
+    concat('Granules: ', if(explain_index_granules_pruned(pairs, idx), 'read < total_granules', 'read >= total_granules'))
+];
 
 -- { echoOn }
 
@@ -23,10 +61,12 @@ SELECT number,
        toString(number)
 FROM numbers(100000);
 
-EXPLAIN indexes = 1
-SELECT count()
-FROM test_has_skip_minmax
-WHERE has([5432, 7432, 9999], key_col);
+WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
+    EXPLAIN indexes = 1
+    SELECT count()
+    FROM test_has_skip_minmax
+    WHERE has([5432, 7432, 9999], key_col)
+)) AS plan SELECT arrayJoin(explain_index(plan, 'Skip')) AS explain;
 
 SELECT count()
 FROM test_has_skip_minmax
@@ -53,10 +93,12 @@ SELECT
     now() - INTERVAL number MINUTE AS event_time
 FROM numbers(100000);
 
-EXPLAIN indexes = 1
-SELECT count() 
-FROM test_has_skip_set 
-WHERE has([10, 20, 30], user_id);
+WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
+    EXPLAIN indexes = 1
+    SELECT count() 
+    FROM test_has_skip_set 
+    WHERE has([10, 20, 30], user_id)
+)) AS plan SELECT arrayJoin(explain_index(plan, 'Skip')) AS explain;
 
 SELECT count() 
 FROM test_has_skip_set 
@@ -85,10 +127,12 @@ SELECT number,
        toString(number)
 FROM numbers(100000);
 
-EXPLAIN indexes = 1
-SELECT count()
-FROM test_has_skip_bloom
-WHERE has(['v_12345', 'v_54321', 'v_99999'], key_str);
+WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
+    EXPLAIN indexes = 1
+    SELECT count()
+    FROM test_has_skip_bloom
+    WHERE has(['v_12345', 'v_54321', 'v_99999'], key_str)
+)) AS plan SELECT arrayJoin(explain_index(plan, 'Skip')) AS explain;
 
 SELECT count()
 FROM test_has_skip_bloom
