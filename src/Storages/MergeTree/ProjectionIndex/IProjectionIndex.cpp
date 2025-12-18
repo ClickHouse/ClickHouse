@@ -2,6 +2,7 @@
 
 #include <numeric>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTProjectionDeclaration.h>
 #include <Storages/MergeTree/ProjectionIndex/BasicProjectionIndex.h>
 
 namespace DB
@@ -14,15 +15,15 @@ namespace ErrorCodes
 
 IProjectionIndex::~IProjectionIndex() = default;
 
-ProjectionIndexPtr ProjectionIndexFactory::get(const ASTFunction & type) const
+ProjectionIndexPtr ProjectionIndexFactory::get(const ASTProjectionDeclaration & proj) const
 {
-    auto it = creators.find(type.name);
+    auto it = creators.find(proj.type->name);
     if (it == creators.end())
     {
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
             "Unknown projection index type '{}'. Available projection index types: {}",
-            type.name,
+            proj.type->name,
             std::accumulate(
                 creators.cbegin(),
                 creators.cend(),
@@ -35,7 +36,7 @@ ProjectionIndexPtr ProjectionIndexFactory::get(const ASTFunction & type) const
                 }));
     }
 
-    return it->second(type);
+    return it->second(proj);
 }
 
 ProjectionIndexFactory::ProjectionIndexFactory()

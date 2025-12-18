@@ -15,7 +15,7 @@ struct ProjectionDescription;
 
 using IColumnPermutation = PaddedPODArray<size_t>;
 
-class ASTFunction;
+class ASTProjectionDeclaration;
 
 /// Base interface for projection index implementations.
 class IProjectionIndex
@@ -41,9 +41,9 @@ class ProjectionIndexFactory : private boost::noncopyable
 public:
     static ProjectionIndexFactory & instance();
 
-    using Creator = std::function<ProjectionIndexPtr(const ASTFunction & type)>;
+    using Creator = std::function<ProjectionIndexPtr(const ASTProjectionDeclaration & proj)>;
 
-    ProjectionIndexPtr get(const ASTFunction & type) const;
+    ProjectionIndexPtr get(const ASTProjectionDeclaration & proj) const;
 
     template <typename ProjectionIndex>
     void registerProjectionIndex()

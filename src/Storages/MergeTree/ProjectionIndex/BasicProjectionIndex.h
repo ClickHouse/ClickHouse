@@ -10,7 +10,7 @@ class BasicProjectionIndex : public IProjectionIndex
 public:
     static constexpr auto name = "basic";
 
-    static ProjectionIndexPtr create(const ASTFunction & /* type */)
+    static ProjectionIndexPtr create(const ASTProjectionDeclaration & /* proj */)
     {
         return std::make_shared<BasicProjectionIndex>();
     }
