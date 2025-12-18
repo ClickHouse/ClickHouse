@@ -18,7 +18,7 @@
 #define Foundation_Exception_INCLUDED
 
 
-#include <stdexcept>
+#include <exception>
 #include "Poco/Foundation.h"
 
 
