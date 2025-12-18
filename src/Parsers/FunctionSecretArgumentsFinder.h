@@ -56,8 +56,6 @@ public:
         /// `azureBlobStorage('DefaultEndpointsProtocol=https;AccountKey=secretkey;...', ...)` should be replaced with
         /// `azureBlobStorage('DefaultEndpointsProtocol=https;AccountKey=[HIDDEN];...', ...)`.
         std::string replacement;
-        /// Whether to wrap a result using full argument replacement in quotes.
-        bool quote_replacement = true;
 
         bool hasSecrets() const
         {
@@ -104,8 +102,7 @@ protected:
         }
         else if ((function->name() == "s3") || (function->name() == "cosn") || (function->name() == "oss") ||
                  (function->name() == "deltaLake") || (function->name() == "hudi") || (function->name() == "iceberg") ||
-                 (function->name() == "gcs") || (function->name() == "icebergS3") || (function->name() == "paimon") ||
-                 (function->name() == "paimonS3"))
+                 (function->name() == "gcs") || (function->name() == "icebergS3"))
         {
             /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ false);
@@ -118,7 +115,7 @@ protected:
             findS3FunctionSecretArguments(/* is_cluster_function= */ true);
         }
         else if ((function->name() == "azureBlobStorage") || (function->name() == "deltaLakeAzure") ||
-                 (function->name() == "icebergAzure") || (function->name() == "paimonAzure"))
+                 (function->name() == "icebergAzure"))
         {
             /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure)
             findAzureBlobStorageFunctionSecretArguments(/* is_cluster_function= */ false);
@@ -148,7 +145,7 @@ protected:
         {
             findYTsaurusStorageTableEngineSecretArguments();
         }
-        else if ((function->name() == "arrowFlight") || (function->name() == "arrowflight"))
+        else if (function->name() == "arrowflight")
         {
             findArrowFlightSecretArguments();
         }
@@ -179,9 +176,7 @@ protected:
                 return;
 
             /// MongoDB(named_collection, ..., uri = 'mongodb://username:password@127.0.0.1:27017', ...)
-            if (findNamedArgument(&uri, "uri", 1) == -1)
-                return;
-
+            findNamedArgument(&uri, "uri", 1);
             result.are_named = true;
             result.start = 1;
         }
@@ -680,10 +675,6 @@ protected:
         {
             findDataLakeCatalogSecretArguments();
         }
-        else if (engine_name == "Backup")
-        {
-            findBackupDatabaseSecretArguments();
-        }
     }
 
     void findMySQLDatabaseSecretArguments()
@@ -722,46 +713,6 @@ protected:
         findS3DatabaseSecretArguments();
     }
 
-    void findBackupDatabaseSecretArguments()
-    {
-        auto storage_arg = function->arguments->at(1);
-        auto storage_function = storage_arg->getFunction();
-
-        /// Backup('', S3('url', 'access_key_id', 'secret_access_key'))
-        if (storage_function && storage_function->name() == "S3" && storage_function->arguments->size() >= 3)
-        {
-            std::string replacement = "S3(";
-
-            for (size_t i = 0; i < storage_function->arguments->size(); ++i)
-            {
-                if (i > 0)
-                {
-                    replacement += ", ";
-                }
-
-                if (i == 2) // Secret key position
-                {
-                    replacement += "'[HIDDEN]'";
-                }
-                else
-                {
-                    String arg_value;
-                    if (!storage_function->arguments->at(i)->tryGetString(&arg_value, true))
-                    {
-                        return;
-                    }
-                    replacement += "'" + arg_value + "'";
-                }
-            }
-            replacement += ")";
-
-            result.start = 1;
-            result.count = 1;
-            result.replacement = std::move(replacement);
-            result.quote_replacement = false;
-        }
-    }
-
     void findBackupNameSecretArguments()
     {
         const String & engine_name = function->name();
@@ -787,7 +738,7 @@ protected:
 
     /// Looks for an argument with a specified name. This function looks for arguments in format `key=value` where the key is specified.
     /// Returns -1 if no argument was found.
-    ssize_t findNamedArgument(String * res, std::string_view key, size_t start = 0)
+    ssize_t findNamedArgument(String * res, const std::string_view & key, size_t start = 0)
     {
         for (size_t i = start; i < function->arguments->size(); ++i)
         {
@@ -815,7 +766,7 @@ protected:
 
     /// Looks for a secret argument with a specified name. This function looks for arguments in format `key=value` where the key is specified.
     /// If the argument is found, it is marked as a secret.
-    bool findSecretNamedArgument(std::string_view key, size_t start = 0)
+    bool findSecretNamedArgument(const std::string_view & key, size_t start = 0)
     {
         ssize_t arg_idx = findNamedArgument(nullptr, key, start);
         if (arg_idx >= 0)

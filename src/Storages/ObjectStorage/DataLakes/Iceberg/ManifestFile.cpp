@@ -160,7 +160,6 @@ ManifestFileContent::ManifestFileContent(
         DB::IcebergMetadataLogLevel::ManifestFileMetadata,
         common_path,
         path_to_manifest_file,
-        std::nullopt,
         std::nullopt);
 
     for (const auto & column_name : {f_status, f_data_file})
@@ -196,7 +195,6 @@ ManifestFileContent::ManifestFileContent(
             "Cannot read Iceberg table: manifest file '{}' doesn't have field '{}' in its metadata",
             manifest_file_name,
             f_schema);
-
     Poco::Dynamic::Var json = parser.parse(*schema_json_string);
     const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
     Int32 manifest_schema_id = schema_object->getValue<int>(f_schema_id);
@@ -237,8 +235,7 @@ ManifestFileContent::ManifestFileContent(
             DB::IcebergMetadataLogLevel::ManifestFileEntry,
             common_path,
             path_to_manifest_file,
-            i,
-            std::nullopt);
+            i);
         FileContentType content_type = FileContentType::DATA;
         if (format_version_ > 1)
             content_type = FileContentType(manifest_file_deserializer.getValueFromRowByName(i, c_data_file_content, TypeIndex::Int32).safeGet<UInt64>());
@@ -415,23 +412,12 @@ ManifestFileContent::ManifestFileContent(
                     break;
             }
         }
-        std::optional<Int32> sort_order_id;
-        if (manifest_file_deserializer.hasPath(c_data_file_sort_order_id))
-        {
-            auto sort_order_id_value = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_sort_order_id);
-            if (sort_order_id_value.isNull())
-                sort_order_id = std::nullopt;
-            else
-                sort_order_id = sort_order_id_value.safeGet<Int32>();
-        }
-
         switch (content_type)
         {
             case FileContentType::DATA:
                 this->data_files_without_deleted.emplace_back(
                     file_path_key,
                     file_path,
-                    i,
                     status,
                     added_sequence_number,
                     snapshot_id,
@@ -441,8 +427,7 @@ ManifestFileContent::ManifestFileContent(
                     columns_infos,
                     file_format,
                     /*reference_data_file = */ std::nullopt,
-                    /*equality_ids*/ std::nullopt,
-                    sort_order_id);
+                    /*equality_ids*/ std::nullopt);
                 break;
             case FileContentType::POSITION_DELETE:
             {
@@ -459,7 +444,6 @@ ManifestFileContent::ManifestFileContent(
                 this->position_deletes_files_without_deleted.emplace_back(
                     file_path_key,
                     file_path,
-                    i,
                     status,
                     added_sequence_number,
                     snapshot_id,
@@ -488,7 +472,6 @@ ManifestFileContent::ManifestFileContent(
                 this->equality_deletes_files.emplace_back(
                     file_path_key,
                     file_path,
-                    i,
                     status,
                     added_sequence_number,
                     snapshot_id,
@@ -553,22 +536,6 @@ bool ManifestFileContent::hasBoundsInfoInManifests() const
 const std::set<Int32> & ManifestFileContent::getColumnsIDsWithBounds() const
 {
     return column_ids_which_have_bounds;
-}
-
-bool ManifestFileContent::areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const
-{
-    for (const auto & file : data_files_without_deleted)
-    {
-        // Treat missing sort_order_id as "not sorted by the expected order".
-        // This can happen if:
-        // 1. The field is not present in older Iceberg format versions.
-        // 2. The data file was written without sort order information.
-        if (!file.sort_order_id.has_value() || (*file.sort_order_id != sort_order_id))
-            return false;
-    }
-    /// Empty manifest (no data files) is considered sorted by definition
-    return true;
-
 }
 
 size_t ManifestFileContent::getSizeInMemory() const

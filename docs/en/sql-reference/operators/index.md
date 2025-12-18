@@ -1,5 +1,6 @@
 ---
 description: 'Documentation for Operators'
+displayed_sidebar: 'sqlreference'
 sidebar_label: 'Operators'
 sidebar_position: 38
 slug: /sql-reference/operators/
@@ -21,17 +22,17 @@ ClickHouse transforms operators to their corresponding functions at the query pa
 
 `-a` – The `negate (a)` function.
 
-For tuple negation: [tupleNegate](../../sql-reference/functions/tuple-functions.md#tupleNegate).
+For tuple negation: [tupleNegate](../../sql-reference/functions/tuple-functions.md#tuplenegate).
 
 ## Multiplication and Division Operators {#multiplication-and-division-operators}
 
 `a * b` – The `multiply (a, b)` function.
 
-For multiplying tuple by number: [tupleMultiplyByNumber](../../sql-reference/functions/tuple-functions.md#tupleMultiplyByNumber), for scalar product: [dotProduct](/sql-reference/functions/array-functions#arrayDotProduct).
+For multiplying tuple by number: [tupleMultiplyByNumber](../../sql-reference/functions/tuple-functions.md#tuplemultiplybynumber), for scalar product: [dotProduct](/sql-reference/functions/array-functions#arrayDotProduct).
 
 `a / b` – The `divide(a, b)` function.
 
-For dividing tuple by number: [tupleDivideByNumber](../../sql-reference/functions/tuple-functions.md#tupleDivideByNumber).
+For dividing tuple by number: [tupleDivideByNumber](../../sql-reference/functions/tuple-functions.md#tupledividebynumber).
 
 `a % b` – The `modulo(a, b)` function.
 
@@ -39,11 +40,11 @@ For dividing tuple by number: [tupleDivideByNumber](../../sql-reference/function
 
 `a + b` – The `plus(a, b)` function.
 
-For tuple addiction: [tuplePlus](../../sql-reference/functions/tuple-functions.md#tuplePlus).
+For tuple addiction: [tuplePlus](../../sql-reference/functions/tuple-functions.md#tupleplus).
 
 `a - b` – The `minus(a, b)` function.
 
-For tuple subtraction: [tupleMinus](../../sql-reference/functions/tuple-functions.md#tupleMinus).
+For tuple subtraction: [tupleMinus](../../sql-reference/functions/tuple-functions.md#tupleminus).
 
 ## Comparison Operators {#comparison-operators}
 
@@ -70,52 +71,18 @@ For tuple subtraction: [tupleMinus](../../sql-reference/functions/tuple-function
 `a > b` – The `greater(a, b)` function.
 
 ### like function {#like-function}
-`a LIKE b` – The `like(a, b)` function.
+`a LIKE s` – The `like(a, b)` function.
 
 ### notLike function {#notlike-function}
-`a NOT LIKE b` – The `notLike(a, b)` function.
+`a NOT LIKE s` – The `notLike(a, b)` function.
 
 ### ilike function {#ilike-function}
-`a ILIKE b` – The `ilike(a, b)` function.
+`a ILIKE s` – The `ilike(a, b)` function.
 
 ### BETWEEN function {#between-function}
 `a BETWEEN b AND c` – The same as `a >= b AND a <= c`.
 
 `a NOT BETWEEN b AND c` – The same as `a < b OR a > c`.
-
-### is not distinct from operator (`<=>`) {#is-not-distinct-from}
-
-:::note
-From 25.10 you can use `<=>` in the same way as any other operator.
-Before 25.10 it could only be used in JOIN expressions, for example:
-
-```sql
-CREATE TABLE a (x String) ENGINE = Memory;
-INSERT INTO a VALUES ('ClickHouse');
-
-SELECT * FROM a AS a1 JOIN a AS a2 ON a1.x <=> a2.x;
-
-┌─x──────────┬─a2.x───────┐
-│ ClickHouse │ ClickHouse │
-└────────────┴────────────┘
-```
-:::
-
-The `<=>` operator is the `NULL`-safe equality operator, equivalent to `IS NOT DISTINCT FROM`.
-It works like the regular equality operator (`=`), but it treats `NULL` values as comparable. 
-Two `NULL` values are considered equal, and a `NULL` compared to any non-`NULL` value returns 0 (false) rather than `NULL`.
-
-```sql
-SELECT
-  'ClickHouse' <=> NULL,
-  NULL <=> NULL
-```
-
-```response
-┌─isNotDistinc⋯use', NULL)─┬─isNotDistinc⋯NULL, NULL)─┐
-│                        0 │                        1 │
-└──────────────────────────┴──────────────────────────┘
-```
 
 ## Operators for Working with Data Sets {#operators-for-working-with-data-sets}
 

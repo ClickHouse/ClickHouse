@@ -372,7 +372,7 @@ StorageKeeperMap::StorageKeeperMap(
 
     WriteBufferFromOwnString out;
     out << "KeeperMap metadata format version: 1\n"
-        << "columns: " << metadata.columns.toString(true)
+        << "columns: " << metadata.columns.toString()
         << "primary key: " << formattedAST(metadata.getPrimaryKey().expression_list_ast) << "\n";
     metadata_string = out.str();
 

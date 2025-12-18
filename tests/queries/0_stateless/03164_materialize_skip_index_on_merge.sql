@@ -1,6 +1,8 @@
 -- Tests merge tree 'setting' materialize_skip_indexes_on_merge
 
 SET enable_analyzer = 1;
+-- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
+SET use_skip_indexes_on_data_read = 0;
 
 DROP TABLE IF EXISTS tab;
 
@@ -25,7 +27,7 @@ SELECT count() FROM tab WHERE a >= 110 AND a < 130 AND b = 2;
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT count() FROM tab WHERE a >= 110 AND a < 130 AND b = 2
 )
-WHERE explain LIKE '%Skip%' OR explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
+WHERE explain ILIKE '%Skip%' OR explain ILIKE '%Name:%' OR explain ILIKE '%Granules:%';
 
 SELECT database, table, name, data_compressed_bytes FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab';
 
@@ -44,7 +46,7 @@ SELECT count() FROM tab WHERE a >= 110 AND a < 130 AND b = 2;
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT count() FROM tab WHERE a >= 110 AND a < 130 AND b = 2
 )
-WHERE explain LIKE '%Skip%' OR explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
+WHERE explain ILIKE '%Skip%' OR explain ILIKE '%Name:%' OR explain ILIKE '%Granules:%';
 
 SELECT database, table, name, data_compressed_bytes FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab';
 
@@ -65,7 +67,7 @@ SELECT count() FROM tab WHERE a >= 110 AND a < 130 AND b = 2;
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT count() FROM tab WHERE a >= 110 AND a < 130 AND b = 2
 )
-WHERE explain LIKE '%Skip%' OR explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
+WHERE explain ILIKE '%Skip%' OR explain ILIKE '%Name:%' OR explain ILIKE '%Granules:%';
 SELECT database, table, name, data_compressed_bytes FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab';
 
 SELECT 'Merge after resetting materialize_skip_indexes_on_merge to default';
@@ -81,7 +83,7 @@ SELECT count() FROM tab WHERE a >= 110 AND a < 130 AND b = 2;
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT count() FROM tab WHERE a >= 110 AND a < 130 AND b = 2
 )
-WHERE explain LIKE '%Skip%' OR explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
+WHERE explain ILIKE '%Skip%' OR explain ILIKE '%Name:%' OR explain ILIKE '%Granules:%';
 SELECT database, table, name, data_compressed_bytes FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab';
 
 DROP TABLE tab;

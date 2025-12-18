@@ -13,10 +13,8 @@
 #include <base/getThreadId.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/FailPoint.h>
-#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <Common/setThreadName.h>
 
 
 namespace ProfileEvents
@@ -71,7 +69,7 @@ MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
     MergeTreePrefetchedReadPool & read_prefetch)
     : is_valid(true)
     , readers(std::move(readers_))
-    , prefetch_runner(pool, ThreadName::PREFETCH_READER)
+    , prefetch_runner(pool, "ReadPrepare")
 {
     prefetch_runner(read_prefetch.createPrefetchedTask(readers.main.get(), priority_));
 
@@ -89,16 +87,12 @@ MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
 
 void MergeTreePrefetchedReadPool::PrefetchedReaders::wait()
 {
-    OpenTelemetry::SpanHolder span("MergeTreePrefetchedReadPool::PrefetchedReaders::wait");
-
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::WaitPrefetchTaskMicroseconds);
     prefetch_runner.waitForAllToFinish();
 }
 
 MergeTreeReadTask::Readers MergeTreePrefetchedReadPool::PrefetchedReaders::get()
 {
-    OpenTelemetry::SpanHolder span("MergeTreePrefetchedReadPool::PrefetchedReaders::get");
-
     SCOPE_EXIT({ is_valid = false; });
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::WaitPrefetchTaskMicroseconds);
 
@@ -176,8 +170,6 @@ void MergeTreePrefetchedReadPool::createPrefetchedReadersForTask(ThreadTask & ta
 
 void MergeTreePrefetchedReadPool::startPrefetches()
 {
-    OpenTelemetry::SpanHolder span("MergeTreePrefetchedReadPool::startPrefetches");
-
     if (prefetch_queue.empty())
         return;
 
@@ -204,8 +196,6 @@ void MergeTreePrefetchedReadPool::startPrefetches()
 
 MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t task_idx, MergeTreeReadTask * previous_task)
 {
-    OpenTelemetry::SpanHolder span("MergeTreePrefetchedReadPool::getTask");
-
     std::lock_guard lock(mutex);
 
     if (per_thread_tasks.empty())
