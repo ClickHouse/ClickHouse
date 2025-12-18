@@ -39,6 +39,56 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+
+        addSettingsChanges(settings_changes_history, "26.1",
+        {
+
+        });
+        addSettingsChanges(settings_changes_history, "25.12",
+        {
+            {"format_binary_max_object_size", 100000, 100000, "New setting that limits the maximum size of object during JSON type binary deserialization"},
+            {"max_streams_for_files_processing_in_cluster_functions", 0, 0, "Add a new setting that allows to limit number of streams for files processing in *Cluster table functions"},
+            {"max_reverse_dictionary_lookup_cache_size_bytes", 100 * 1024 * 1024, 100 * 1024 * 1024, "New setting. Maximum size in bytes of the per-query reverse dictionary lookup cache used by the function `dictGetKeys`. The cache stores serialized key tuples per attribute value to avoid re-scanning the dictionary within the same query."},
+            {"query_plan_remove_unused_columns", false, true, "New setting. Add optimization to remove unused columns in query plan."},
+            {"query_plan_optimize_join_order_limit", 1, 10, "Allow JOIN reordering with more tables by default"},
+            {"iceberg_insert_max_partitions", 100, 100, "New setting."},
+            {"check_query_single_value_result", true, false, "Changed setting to make CHECK TABLE more useful"},
+            {"use_paimon_partition_pruning", false, false, "New setting."},
+            {"use_skip_indexes_for_disjunctions", false, true, "New setting"},
+            {"allow_statistics_optimize", false, true, "Enable this optimization by default."},
+            {"allow_statistic_optimize", false, true, "Enable this optimization by default."},
+            {"query_plan_text_index_add_hint", true, true, "New setting"},
+            {"query_plan_read_in_order_through_join", false, true, "New setting"},
+            {"query_plan_max_limit_for_lazy_materialization", 10, 10000, "Increase the limit after performance improvement"},
+            {"text_index_hint_max_selectivity", 0.2, 0.2, "New setting"},
+            {"allow_experimental_time_time64_type", false, true, "Enable Time and Time64 type by default"},
+            {"enable_time_time64_type", false, true, "Enable Time and Time64 type by default"},
+            {"use_skip_indexes_for_top_k", false, false, "New setting."},
+            {"use_top_k_dynamic_filtering", false, false, "New setting."},
+            {"query_plan_max_limit_for_top_k_optimization", 0, 1000, "New setting."},
+            {"aggregate_function_input_format", "state", "state", "New setting to control AggregateFunction input format during INSERT operations. Setting Value set to state by default"},
+            {"delta_lake_snapshot_start_version", -1, -1, "New setting."},
+            {"delta_lake_snapshot_end_version", -1, -1, "New setting."},
+            {"apply_row_policy_after_final", false, false, "New setting to control if row policies and PREWHERE are applied after FINAL processing for *MergeTree tables"},
+            {"apply_prewhere_after_final", false, false, "New setting. When enabled, PREWHERE conditions are applied after FINAL processing."},
+            {"compatibility_s3_presigned_url_query_in_path", false, false, "New setting."},
+            {"serialize_string_in_memory_with_zero_byte", true, true, "New setting"},
+            {"optimize_inverse_dictionary_lookup", false, true, "New setting"},
+            {"automatic_parallel_replicas_mode", 0, 0, "New setting"},
+            {"automatic_parallel_replicas_min_bytes_per_replica", 0, 0, "New setting"},
+            {"type_json_skip_invalid_typed_paths", false, false, "Allow skipping typed paths that fail type coercion in JSON columns"},
+            {"query_plan_optimize_join_order_algorithm", "greedy", "greedy", "New experimental setting."},
+            {"s3_path_filter_limit", 0, 1000, "New setting"},
+            {"format_capn_proto_max_message_size", 0, 1_GiB, "Prevent allocating large amount of memory"},
+            {"parallel_replicas_allow_materialized_views", false, true, "Allow usage of materialized views with parallel replicas"},
+            {"distributed_cache_use_clients_cache_for_read", true, true, "New setting"},
+            {"distributed_cache_use_clients_cache_for_write", false, false, "New setting"},
+            {"enable_positional_arguments_for_projections", true, false, "New setting to control positional arguments in projections."},
+            {"enable_full_text_index", false, false, "Text index was moved to Beta."},
+            {"enable_shared_storage_snapshot_in_query", false, true, "Enable share storage snapshot in query by default"},
+            {"insert_select_deduplicate", Field{"auto"}, Field{"auto"}, "New setting"},
+            {"output_format_pretty_named_tuples_as_json", false, true, "New setting to control whether named tuples in Pretty format are output as JSON objects"},
+        });
         addSettingsChanges(settings_changes_history, "25.11",
         {
             {"query_plan_max_limit_for_lazy_materialization", 10, 100, "More optimal"},
@@ -50,7 +100,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"into_outfile_create_parent_directories", false, false, "New setting"},
             {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
             {"use_statistics_cache", 0, 0, "New setting"},
-            {"enable_shared_storage_snapshot_in_query", false, true, "Better consistency guarantees."},
             {"input_format_parquet_use_native_reader_v3", false, true, "Seems stable"},
             {"max_projection_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
             {"min_table_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
@@ -69,6 +118,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"database_shared_drop_table_delay_seconds", 8 * 60 * 60, 8 * 60 * 60, "New setting."},
             {"filesystem_cache_allow_background_download", true, true, "New setting to control background downloads in filesystem cache per query."},
             {"show_processlist_include_internal", false, true, "New setting."},
+            {"enable_positional_arguments_for_projections", true, false, "New setting to control positional arguments in projections."},
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {
@@ -105,6 +155,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_receive_timeout_ms", 3000, 3000, "New setting"},
             {"distributed_cache_send_timeout_ms", 3000, 3000, "New setting"},
             {"distributed_cache_tcp_keep_alive_timeout_ms", 2900, 2900, "New setting"},
+            {"enable_positional_arguments_for_projections", true, false, "New setting to control positional arguments in projections."},
         });
         addSettingsChanges(settings_changes_history, "25.9",
         {
@@ -188,7 +239,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_ytsaurus_table_function", false, false, "New setting."},
             {"allow_experimental_ytsaurus_dictionary_source", false, false, "New setting."},
             {"per_part_index_stats", false, false, "New setting."},
-            {"allow_experimental_iceberg_compaction", 0, 0, "New setting "},
+            {"allow_experimental_iceberg_compaction", 0, 0, "New setting"},
             {"delta_lake_snapshot_version", -1, -1, "New setting"},
             {"use_roaring_bitmap_iceberg_positional_deletes", false, false, "New setting"},
             {"iceberg_metadata_compression_method", "", "", "New setting"},
@@ -200,6 +251,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_lightweight_update", false, true, "Lightweight updates were moved to Beta. Added an alias for setting 'allow_experimental_lightweight_update'."},
             {"allow_experimental_lightweight_update", false, true, "Lightweight updates were moved to Beta."},
             {"s3_slow_all_threads_after_retryable_error", false, false, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
+            {"serialize_string_in_memory_with_zero_byte", true, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
@@ -943,6 +995,17 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.1",
+        {
+            {"min_columns_to_activate_adaptive_write_buffer", 500, 500, "New setting"},
+        });
+        addSettingsChanges(merge_tree_settings_changes_history, "25.12",
+        {
+            {"alter_column_secondary_index_mode", "compatibility", "rebuild", "Change the behaviour to allow ALTER `column` when they have dependent secondary indices"},
+            {"merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once", false, false, "New setting"},
+            {"merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent", 5, 5, "New setting"},
+            {"nullable_serialization_version", "basic", "basic", "New setting"},
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.11",
         {
             {"merge_max_dynamic_subcolumns_in_wide_part", "auto", "auto", "Add a new setting to limit number of dynamic subcolumns in Wide part after merge regardless the parameters specified in the data type"},

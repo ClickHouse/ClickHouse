@@ -5,11 +5,11 @@
 #if USE_AWS_S3
 
 #include <IO/ReadBufferFromS3.h>
+#include <IO/WriteHelpers.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/Requests.h>
 
 #include <Common/Stopwatch.h>
-#include <Common/Throttler.h>
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -192,8 +192,11 @@ bool ReadBufferFromS3::nextImpl()
     if (!next_result)
     {
         read_all_range_successfully = true;
-        stop_reason = fmt::format("EOF (read offset: {}/{}, restricted seek: {})",
-                                  offset.load(), read_until_position.load(), restricted_seek);
+        stop_reason = fmt::format(
+            "EOF (read offset: {}/{}, file size: {}, restricted seek: {})",
+            offset.load(), read_until_position.load(),
+            file_size.has_value() ? toString(*file_size) : "Unknown", restricted_seek);
+
         release_reason = stop_reason;
         // release result to free pooled HTTP session for reuse
         impl->releaseResult();
@@ -214,8 +217,10 @@ bool ReadBufferFromS3::nextImpl()
     if (stream_eof || is_read_until_position)
     {
         release_reason = fmt::format(
-            "{} ({}/{})", stream_eof ? "stream EOF" : "read until position reached",
-            offset.load(), read_until_position.load());
+            "{} (read {}/{}, file size: {}, restricted seek: {})",
+            impl->isStreamEof() ? "stream EOF" : "read until position reached",
+            offset.load(), read_until_position.load(),
+            file_size.has_value() ? toString(*file_size) : "Unknown", restricted_seek);
 
         impl->releaseResult();
     }
@@ -458,7 +463,7 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     if (!version_id.empty())
         req.SetVersionId(version_id);
 
-    req.SetAdditionalCustomHeaderValue("clickhouse-request", fmt::format("attempt={}", attempt));
+    S3::setClickhouseAttemptNumber(req, attempt);
 
     if (range_end_incl)
     {
