@@ -1,0 +1,346 @@
+00:17:05 Yauhen Mayorau: Hey guys
+00:17:06 Michelle Baird: Hey Pablo!
+00:17:12 László Szabó: hi
+00:17:18 Michael Doherty: Hello
+00:17:19 Dario Rafael: Hi everyone
+00:17:20 Artem Vozhegov: Hi
+00:17:21 Stephane Renou: Hi
+00:17:22 Angel Supervia: Hi
+00:17:22 Tuomo Tilli: Hi
+00:17:26 Lev Galaktionov: Hi
+00:17:30 Akhil Chhibber: Hello everyone!
+00:17:30 Ata Yavuzyilmaz: Hello
+00:17:33 Luis San Martin: Hello everyone!
+00:17:35 Johannes Mundorf: hi all
+00:17:35 Tuan Lam: Hello
+00:17:42 Pavel Maminov: Hi everyone!
+00:17:42 Dario Rafael: Can you share the course link?
+00:17:45 Mustafa Yalçın: Hi
+00:17:50 Beyan AYDIN: hi
+00:17:51 Dima Lytvyn: Hello everyone!
+00:17:51 Carlos Garcia-Marquez: Hello
+00:17:55 Anders Zommarin: Hi!
+00:18:01 Nils Hasenbanck: Hi!
+00:18:06 Mert Paker: Hi!
+00:18:10 Hellmar Becker: Hi Pablo!
+00:18:16 Pablo Musa: Hi everyone, welcome!!
+00:18:38 Mikhail Sotnikov: Hallo
+00:18:58 Andreas Vilinski: hi
+00:19:03 Dario G: Hello
+00:19:07 Anton Barr: Hola :)
+00:19:08 Pablo Musa: To get started, please fill out this anonymous survey. It should take you less than 2m. https://forms.gle/p1nDJLKbdVMnyFME7
+00:19:10 Rezart Lohja: Ciao
+00:19:14 Luis San Martin: just wondering: will this session be recorded? I might need to drop earlier
+00:19:26 Amzath Rahumathullah: Hi
+00:19:58 Muhammad Awan: Thumbs up
+00:19:59 Michelle Baird: 
+00:20:00 Vasilii Artemev: 
+00:20:00 Willie Abrams: Thumbs up
+00:20:01 esther rothman: we hear you
+00:20:01 Michael Doherty: 
+00:20:03 Rodrigo Aguirregabiria Herrero: We can!
+00:20:03 Álvaro Porto: we hear you
+00:20:05 Idowu Sodiq: 
+00:20:05 Yauhen Mayorau: +
+00:20:06 Aleksandr Dargeev: +
+00:20:07 Anton Barr: 
+00:20:11 oscar henriksson: +
+00:20:12 Hellmar Becker: +
+00:20:14 Steven Van Loo: All good here.
+00:20:22 Amzath Rahumathullah: 
+00:20:22 Pablo Musa: To get started, please fill out this anonymous survey. It should take you less than 2m. https://forms.gle/p1nDJLKbdVMnyFME7
+00:20:25 Stef De Heus: Jep! Everything is visible, loud and clear
+00:22:24 Pablo Musa: To get started, please fill out this anonymous survey. It should take you less than 2m. https://forms.gle/p1nDJLKbdVMnyFME7
+00:23:23 Dario Rafael: Hi Pablo can you share the link to the clickhouse training?
+00:23:43 Anton Barr: Wondering if anyone knows MUCH about OTel, it seems to have a steep learning curve.
+00:24:04 Dario Rafael: I need to leave in 30 min for a meeting and wouldn't want to loose the link, sorry for the press
+00:28:17 Stephane Renou: You referred to extra 2 hours training on observability coming after this one, how can we find those to go further?
+00:31:31 Luis San Martin: how much cardinality can handle a single node of clickstack? is it possible to configure thesedays clickhouse as a remote write for prometheus?
+00:33:09 Ata Yavuzyilmaz: How does ClickHouse compare in terms of footprint compared to other TSDB like Prometheus?
+00:33:26 Robert Damian: Can I create aggregates across different sources (logs, metrics, traces)? How do you handle aggregations with streaming data?
+00:35:41 Dale McDiarmid: >how much cardinality can handle a single node of clickstack? is it possible to configure thesedays clickhouse as a remote write for prometheus?
+00:35:43 Dale McDiarmid: Cardinality isnt really bounded in clickhouse - its a per column level and provided you arent sorting (using in your PK) your data by this column its not really restricted - 100k per column is fine.
+00:35:48 Dale McDiarmid: > Can I create aggregates across different sources (logs, metrics, traces)? How do you handle aggregations with streaming data?
+00:35:52 Dale McDiarmid: Yes you can join tables and aggregate, we fully support all JOINS - with huge leaps in performance recently. Alternatively store these events in a single table as wide events and just agg i.e. GROUP BY
+00:36:02 Dale McDiarmid: > How does ClickHouse compare in terms of footprint compared to other TSDB like Prometheus?
+00:36:19 Dale McDiarmid: I dont have a compression to hand, but Compression is typically 10x-20x from raw
+00:36:25 Dale McDiarmid: Sorry comparison to hand*
+00:36:59 Alex T: Would you suggest using materialised views to cover different query patterns?  @Dale
+00:38:17 Dale McDiarmid: Sometimes, it currently forces the end user to switch sources (in hynperdx) or tables in grafana. This can be tricky and requires the user to understand. For really common access patterns yes. IF its just a need to support a different access pattern, and there are a few of these, lean towards projections
+00:38:35 Dale McDiarmid: This will increase storage footprint, but if using s3 its a low cost
+00:39:06 Usman Yasin: How is the query concurrency in case of hundreds of consumers sending in complex queries in parallel?
+00:39:18 Ata Yavuzyilmaz: Would you recommend using Time Series Engine for production? Because we might need Prometheus connection for our existing systems
+00:39:25 Robert Damian: How much of the observability stack does click house already cover? So if I currently have a mobile app that I want to track, what are the pieces of the puzzle I need to put together to achieve both streaming and historical views on the OTel data generated by the app? What are the pieces of infra I would need to deploy for that? For example do you use kafka for queuing the messages? What is the streaming engine I would use?
+00:39:42 Dale McDiarmid: We support unto 1000 concurrent queries per node, coming from a real-time analytics background its rare we’re tested on o11y query workloads which are usually much lower
+00:40:12 Luis San Martin: what if I need to add metadata to metrics/logs/traces? Im trying to create a source of truth but I also need to relate systems which are not implictly related
+00:40:30 Ahmed Abdelhamid: Any recommended visualization tools?
+00:40:41 Olukorede Fawemimo: Hyperdx
+00:40:53 Willie Abrams: @Luis OTEL has attribute options for metadata.
+00:41:00 Dario G: Luis: you can add contextual data in your open-telemetry traces afaik
+00:41:09 Nick Sturzenegger: If we want to use Traces can OTEL also send them? Or Do we need some other Tools like Te,po or Jaeger for that
+00:41:11 Andreas Vilinski: is there a good example for how to configure nginx reverse proxy for hyperdx?
+00:42:04 Dale McDiarmid: > How much of the observability stack does click house already cover? So if I currently have a mobile app that I want to track, what are the pieces of the puzzle I need to put together to achieve both streaming and historical views on the OTel data generated by the app? What are the pieces of infra I would need to deploy for that? For example do you use kafka for queuing the messages? What is the streaming engine I would use?
+Data collection, storage/querying and visualization.
+anything you can instruement with Otel SDKs you can use.
+you can treat streamning and histgorical data the same - just insert into a table.
+Typically for each piece:
+- pod for hyperdx UI
+- otel collector pod - acting as the data insertion point from SDKs
+- Clickhouse - two nodes is enough, one for HA, 1 replicas is enoguh to get started or just use Cloud.
+00:42:07 Olukorede Fawemimo: how do i configure alert using webhook for microsoft team in hyperdx, it not working
+00:42:43 Ata Yavuzyilmaz: I think they only have webhook for Slack
+00:42:47 Luis San Martin: > @Luis OTEL has attribute options for metadata.
+00:42:58 Dale McDiarmid: > what if I need to add metadata to metrics/logs/traces? Im trying to create a source of truth but I also need to relate systems which are not implictly related
+You can enrich data either at the collector layer or using Materialized views and dictionaries in clickhouse. dictionaries act as index/query time lookups for metadata
+00:43:17 Dale McDiarmid: > Any recommended visualization tools? HyperDX - Pablo will explain. OSS. Download and fully integrated into clickhouse!
+00:43:24 Rinat Ataullin: Do you plan to develop a Terraform provider for automating the management of dashboards and alerts? Also, do you plan to publish ready-made dashboard templates?
+00:43:31 Dale McDiarmid: > is there a good example for how to configure nginx reverse proxy for hyperdx? We don’t right now, noting we need docs
+00:43:35 Lev Galaktionov: What about network costs of otlp protocol in large deployments / cross-regional deployments? Isn’t zstd compression better than gzip? And a lot of observability solutions support zstd, but otlp doesn’t.
+00:43:49 Willie Abrams: Terraform question is a good one.
+00:44:05 Dale McDiarmid: > how do i configure alert using webhook for microsoft team in hyperdx, it not working 
+Please bring this to the community slack and tag me, we can take a look!
+00:44:49 Dale McDiarmid: > Do you plan to develop a Terraform provider for automating the management of dashboards and alerts? Also, do you plan to publish ready-made dashboard templates?
+Config as code is on our roadmap this quarter. 
+Dashboard templates - yes we're looking at it, and a means to contribute.
+00:45:03 Dario G: Does clickstack support microsecond/nanosecond tracing display?
+00:45:19 Luis San Martin: @Willie @Dario thanks! maybe I need to start there
+00:45:45 Dale McDiarmid: >What about network costs of otlp protocol in large deployments / cross-regional deployments? Isn’t zstd compression better than gzip? And a lot of observability solutions support zstd, but otlp doesn’t.
+also supports arrow flight..should work, not tested but this is the way to go i think https://opentelemetry.io/blog/2024/otel-arrow-production/
+00:46:08 Dale McDiarmid: > Does clickstack support microsecond/nanosecond tracing display? We support unto nanosecond in clickhouse DateTIme64(9)
+00:46:17 Lev Galaktionov: > also supports arrow flight..should work, not tested but this is the way to go i think
+00:46:29 Lev Galaktionov: Won’t it make infrastructure more complex and complicated?
+00:46:33 Nick Sturzenegger: If we want to use Traces can OTEL also send them? Or Do we need some other Tools like Tempo or Jaeger for that
+00:46:35 Mikhail Sotnikov: > what if I need to add metadata to metrics/logs/traces? Im trying to create a source of truth but I also need to relate systems which are not implictly related. 
+It can store any JSON data in two field scopeAttributes and  LogAttributes
+00:46:50 Alain Lefebvre: Are there any updates with GH issue 57545 which aims to add PromQL support to Clickhouse?  Also, are there any plans to add in the ability for clickhouse to trigger alerts and send notifications to alertmanager?
+00:46:55 Dario G: Yes, Dale about the nanosecond, I do use nanosecond precision in clickhouse already, but grafana doesn’t support displaying nanoseconds in the traces
+00:47:04 Dale McDiarmid: Its just a transmission protocol you have to change, few lines of config to change com protocol
+00:47:22 Dale McDiarmid: Have you tried hyperdx dario?
+00:48:42 Dale McDiarmid: Checking with the developer for our plugin on grafana, Dario
+00:48:59 Dale McDiarmid: He wakes up in an hr, so stay posted. Ping me on community slack if you drop off and need a follow up
+00:50:08 Nemanja Lukic: About Clickhouse+HyperDX, is there a plan to support the profile signal soon?
+00:50:26 Ata Yavuzyilmaz: Can we connect Time Series Engine to HyperDX?
+00:51:36 Dale McDiarmid: We currently aren’t working on profiling, Nemanja in hyperdx. We’d welcome a PR on the collector itself for support, but otherwise its not something on the short term roadmap.
+00:51:45 Anton Barr: Wondering if anyone is using/thinking of using Data Observability like ClickStack for Data Quality - adding another pillar or silo. Examples of data quality solutions: Elementary (my favorite), GX, Soda, Metaplane. 
+In my exp, it often happens that you see a data issue, and it's route cause is some data warehouse CDC, or dbt or Airflow etc. It would be great to add the quality pillar to such stack.
+00:52:17 Nemanja Lukic: Thanks Dale. Yes, it’s at very early stage…
+00:52:26 Alain Lefebvre: Also, do you have any benchmarks for searching over massive amounts of otel logs?   I'm curious to know how well queries perform over massive datasets (100 billions+ rows), especially those doing full-text searches on the "Body" field.   I've heard of some users reporting the search performance wasn't so great in some cases.
+00:52:46 Dale McDiarmid: > Can we connect Time Series Engine to HyperDX? Not actually tried this, I suspect no as the schema is alittle different to the metrics schema we use for otel in hyperdx. It might work but ive honestly not tried - I’ll ask. We plan to unify these schemas though with promql support
+00:53:39 Dale McDiarmid: <> Also, do you have any benchmarks for searching over massive amounts of otel logs?   I'm curious to know how well queries perform over massive datasets (100 billions+ rows), especially those doing full-text searches on the "Body" field.   I've heard of some users reporting the search performance wasn't so great in some cases.
+Top of our content task list this month is t-shirt sizes with benchmarks for this and how to tune.
+00:54:21 Dale McDiarmid: > How does ClickHouse Cloud fit ClickStack architecture?
+Cloud hosts clickhouse, with seperation of storage and compute, and we also havbe hyperdx hosted (private preview). Ingestion endpoint for OTLP is coming...
+00:54:36 Todd Yocum: Any publicly stated plans to get rid of the MongoDB dependency? I can’t imagine Alexey will want that around for long.
+00:54:47 Ata Yavuzyilmaz: Thanks Dale. So does this mean that the ClickHouse exporter will write to CH in a schema similar to TS engine?
+00:55:56 Dale McDiarmid: > Thanks Dale. So does this mean that the ClickHouse exporter will write to CH in a schema similar to TS engine?
+It already does yes. But i can't recall the specific diffewrences. Basically we need to unify. Time series engine is experimental for this and other reasons.
+00:57:19 Dale McDiarmid: > Any publicly stated plans to get rid of the MongoDB dependency? I can’t imagine Alexey will want that around for long.
+Haha. not that im aware of, but im checking with the team. Its just for app state so its a small footprint, but ill ask.
+00:57:42 Muhammad Awan: how do you rest password in HyperDX?
+00:59:43 Thiago Hora: Is there any view like APM?
+00:59:43 Lev Galaktionov: Is Clickstack capable of multi-tenancy and cross-tenant requests?
+00:59:49 Dale McDiarmid: Good question Muhammed, im checking
+00:59:51 Rafi Rubin: Does it support using otel without key or auth?
+01:01:22 Dale McDiarmid: > Is Clickstack capable of multi-tenancy and cross-tenant requests?
+I'm not quite clear whaty you mean here. We don't hjave a multi-tenant service in clickhouse cloud - you have your own dedicated service for now. Later in the year we will.
+Nothing stops you running multuple hyperdx instances on the same clickhouse instance with different users.
+01:02:20 Dale McDiarmid: > Does it support using otel without key or auth?
+You can ingest into Clickhouse with your own otel collector config - instead of our distribution of the collector which securtes the ingestion. IF you configure your own collector though, bypassing this with the clickhouse exporter, it will work.
+01:02:45 Rafi Rubin: Thanks
+01:03:13 Dale McDiarmid: > Is there any view like APM?
+There is a services dashboard (presets) right hand side, which is what i think you mean.
+01:03:22 Dale McDiarmid: Sorry left hand side :soz
+01:04:13 Pablo Musa: https://learn.clickhouse.com/visitor_catalog_class/show/1786751
+01:04:18 Pablo Musa: Lab Link ^
+01:05:31 Mikhail Sotnikov: @Willie Abrams https://clickhouse.com/docs/use-cases/observability/clickstack/ingesting-data/otel-collector#enabling-json-support
+01:06:16 Dale McDiarmid: if JSON support docs arent clear, let me know, maybe we need a specific guide
+01:06:29 Muhammad Awan: sharing
+01:06:30 Satyajit Rout: shared
+01:06:35 Johannes Mundorf: seeing lab 1.1
+01:08:25 Karthik Kallam: Here is live public Demo site - https://play.hyperdx.io/
+01:08:49 Sigismond McLaughlin: Can you resend the link please? I got disconnected
+01:09:04 Narayanappa K: it is keep on restarting
+01:09:44 Narayanappa K: after registering
+01:09:58 Pablo Musa: What is restarting?
+01:10:02 Dale McDiarmid: or play-clickstack.clickhouse.com <- both click “Connect to Demo server”
+01:10:46 Yauhen Mayorau: Could anybody sent a direct link to clickstack course lab?
+01:10:56 Luis San Martin: https://learn.clickhouse.com/learner_modules/list/1786751
+01:11:01 Vivek Pandey: how is this better than data dog?
+my estate sits on azure, aws, onprem SQLs, and databricks
+how can i use clickstack for observability? dont we have see agents to install? plug and play kind of thing? like data dog
+01:11:25 Vivek Pandey: have*
+01:12:20 Yauhen Mayorau: “Only a learner can perform this action.” Hmhmhmh. It seems I missed some action
+01:12:33 Karthik Kallam: Clickhouse planning to keep the clickstack opensource?
+01:12:33 Luis San Martin: one year I saw a bill increasing 2x from datadog. our director wasn’t happy
+01:12:50 Alexander Smirnoff: datadog is really for reachy boys :)
+01:13:35 Vivek Pandey: thanks Pablo to be honest, i really appreciate that. but can it cater to the estate which i mentioned? also, jfyi; we use tons of resources in both azure and aws.
+01:13:45 Dale McDiarmid: we consider the open source to be one of the main differenitators!
+01:14:22 Dale McDiarmid: we have no plans to become just another proprietary vendor - there are plenty of those
+01:14:49 Marc Fournier: Pablo, we can't hear you !
+01:14:52 Johannes Mundorf: I agree, most observability backends are closed source.
+01:14:54 Karthik Kallam: Thank you
+01:15:03 Alexander Smirnoff: Pablo, what about terraform provider for ClickStack? Is that in roadmap?
+01:15:17 Satyajit Rout: Do we have metrics sample data to see in HDX?
+01:15:34 Alexander Smirnoff: we hear
+01:15:35 Karthik Kallam: I can hear you
+01:15:39 Muhammad Awan: loud and clear
+01:16:16 Karthik Kallam: Can you provide roadmap link for the clickstack?
+01:16:18 Nick Sturzenegger: can OTEL send Traces?
+01:16:53 Dale McDiarmid: yes traces are the most mature signal in otel
+01:17:45 Dale McDiarmid: > Can you provide roadmap link for the clickstack? great question, let me action adding a public roadmap to the docs
+01:18:18 Satyajit Rout: Nice. Its just that on the “search” view dropdown metrics option was not there
+01:18:49 Satyajit Rout: gotcha
+01:19:45 Pablo Musa: https://forms.gle/p1nDJLKbdVMnyFME7
+01:19:58 Nick Sturzenegger: So for now its only Getting started or are you gonna say something again? Like is more theory comming today?
+01:20:38 Nick Sturzenegger: perfect :)
+01:20:50 Johannes Mundorf: lab 1.1 done, worked fine
+01:21:20 Dario Rafael: back, paulo can you share the link to thetraining?
+01:21:20 Nemanja Lukic: The last time I was trying out HyperDX (at about the time ClickHouse acquired it), I had issues with somewhat limited functionality. I seem to remember I had issues with it running behind a reverse proxy (nginx). Is that a supported scenario these days?
+01:21:37 Dario Rafael: Pablo*
+01:21:49 Karthik Kallam: We have docker cluster, from document its not recommended to go production. Is it possible to extend like HA with clickstack?
+01:22:09 Pablo Musa: https://learn.clickhouse.com/visitor_catalog_class/show/1786751
+01:22:10 Dale McDiarmid: the nginx reverse proxy question is something we’ll look into and should docuemnt
+01:22:35 Nemanja Lukic: Thanks!
+01:22:50 Francis Masha: Curious to know how you monitor a self hosted clickhouse cluster. What are the metrics to check, and issues to watch for the cluster to run smoothly.
+01:23:28 Karthik Kallam: Thank you
+01:24:11 Todd Yocum: Does HyperDX support a ‘light’ mode? I find the black background with white text hard to read.
+01:24:41 Luis San Martin: is there any onsite training planned in Amsterdam? I’d like to convince a few folks
+01:24:57 Willie Abrams: Todd — click on your user, preferences=theme
+01:25:49 Vivek Pandey: Dale could you please response to my query as well?
+01:26:56 Dale McDiarmid: can you repeat vivek so i answer the right one, sorry top ask
+01:27:21 Todd Yocum: Thanks Willie! Much better for me.
+01:27:38 Vivek Pandey: thanks Pablo to be honest, i really appreciate that. but can it cater to the estate which i mentioned? also, jfyi; we use tons of resources in both azure and aws.
+01:27:39 Dale McDiarmid: yes to light mode
+01:27:52 Dale McDiarmid: go to bottom left, user preferences
+01:30:29 Dale McDiarmid: > thanks Pablo to be honest, i really appreciate that. but can it cater to the estate which i mentioned? also, jfyi; we use tons of resources in both azure and aws.
+Ok so to cater to a datadog audience - potentially yes. For developers they just use the SDKs and send data to the endpoint. For SREs and infrastructure managers, you need to manage the clickhouse instance (unless you use our cloud). But this still leaves you needing to understand your access patterns and adding the right indexes on the table. You need to have some basic db skills and understanding of CH.
+Later next year, we'll have a fully managed offering -where you just send data and we auto-optimize and configure. THis will be closer to the DD experience - albeit they have alot more features.
+01:31:23 Nemanja Lukic: Is there a way to deploy HyperDX in a decoupled way? That is, different components running in different places. For instance, to deploy HyperDX on one node/machine, gateway separately, then agents apart, to reutilise existing CH deployment, etc.
+01:32:22 Bakhtiyar Garashov: Can we ingest logs from Vector daemon to CH ? Potentially for people who are already in Datadog and looking for alternative
+01:32:36 Dale McDiarmid: > Is there a way to deploy HyperDX in a decoupled way? That is, different components running in different places. For instance, to deploy HyperDX on one node/machine, gateway separately, then agents apart, to reutilise existing CH deployment, etc.
+Each component in the stack can be deployed indepdently. Clickhouse, HyperDX and the collectors. Loosely coupled. Scaled independently.
+01:32:53 Nemanja Lukic: 
+01:33:06 Dale McDiarmid: > Can we ingest logs from Vector daemon to CH ? Potentially for people who are already in Datadog and looking for alternative
+You can. We have an example in our docs for filebeat -> vector.
+You DONT have to use Otel events. We just need a timestamp. Otel is just simpler.
+01:33:33 Dale McDiarmid: and automated. Just configure a source and configure the fields. Only mandatory one is timestamp (and maybe body)
+01:33:44 Vivek Pandey: do you have any other  session only around clickhouse? we are more interested in the core product
+potentially migrating from azure databricks to clickhouse
+01:34:35 Francis Masha: How does Clickstack compare to Elasticsearch (ELK) for doing log monitoring?
+01:36:43 Pablo Musa: https://jsonbench.com/
+01:37:04 Pablo Musa: https://clickhouse.com/blog/json-bench-clickhouse-vs-mongodb-elasticsearch-duckdb-postgresql
+01:37:17 Pablo Musa: https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse
+01:38:19 Vikas Desai: Is there json size limitations??
+01:38:55 Dale McDiarmid: > do you have any other  session only around clickhouse? we are more interested in the core product
+potentially migrating from azure databricks to clickhouse
+Yes we have free trainings on the core product https://clickhouse.com/learn. All free.
+01:39:42 Mikhail Sotnikov: It is not safe to depend on only one API key that can be changed in the interface in a couple clicks. If it happens you have to change this var in all  environments asap.
+01:39:52 Dale McDiarmid: > How does Clickstack compare to Elasticsearch (ELK) for doing log monitoring?
+Similar:
+Kibana = HyperDX
+Elasticsearch = ClickHouse
+Beats/Logstash = OTEL
+THe primary difference is the core engine. ClickHouse compresseses data 10x-20x and is designed for PB scale usecases.
+01:40:38 Dale McDiarmid: > Is there json size limitations??
+Number of unique JSON paths. For the first N paths (canm't recall default), we create a dedicated column. After this, we create a catch all with hints. This catch all column will be slower to access.
+01:40:43 Rinat Ataullin: What options are available for collecting AWS metrics from cloudwatch in a self-hosted setup?
+01:41:51 Dale McDiarmid: > It is not safe to depend on only one API key that can be changed in the interface in a couple clicks. If it happens you have to change this var in all  environments asap.
+Yeh noted. If you have all your agents sending directly this is a valid concern. PRobably a reason to have a centralized otel gateway. We should make this extremely hard to rotate - permissions based. We're working on RBAC right now - so we'll feed this back toi product.
+01:43:11 Rafi Rubin: At least a view of existing keys with add and revoke with "are you sure" dialogs.
+01:43:19 Stephane Renou: I felt opentelemtry mentra was one single integration for all integration, but here you are showing a specific library for python for example, any good reason to use this compared to standard otel?
+01:44:30 Dale McDiarmid: > At least a view of existing keys with add and revoke with "are you sure" dialogs.
+agreed.
+01:44:39 Rafi Rubin: Last time I tried JSON with some typed fields, I ran into an issue with needing to specify the types everywhere (multiple tables, materialized views etc.) Hopefully whatever that issue was things are or will get better over time.
+01:45:06 Bakhtiyar Garashov: @Stephane vendor provided libraries are better to get started, mostly faster and easier to learn. But you lock in yourself in this way, telling from my experience who moved from Ddtrace to Opentelemetry sdk
+01:45:10 Mikhail Sotnikov: Thanks. Better to have a few keys to be able to rotate smoothly
+01:45:23 Dale McDiarmid: > I felt opentelemtry mentra was one single integration for all integration, but here you are showing a specific library for python for example, any good reason to use this compared to standard otel?
+So our SDKs fork the default otel. Two main differences: 1. in some cases we make them alittle easier to use - lower the barrier to entry 2. We add instrumentation.
+In the case of Python i think they are very close tbh. Generally you can use either.
+01:46:23 Dale McDiarmid: > Last time I tried JSON with some typed fields, I ran into an issue with needing to specify the types everywhere (multiple tables, materialized views etc.) Hopefully whatever that issue was things are or will get better over time.
+yes addressed with the JSON type. It dynamically infers the types for you.
+01:47:19 Pablo Musa: https://learn.clickhouse.com/visitor_catalog_class/show/1786751
+01:47:24 Ata Yavuzyilmaz: Maybe I missed it, do you have RBAC support in HyperDX or is it in development?
+01:47:42 Dale McDiarmid: under development!
+01:48:05 Ata Yavuzyilmaz: Is it going to be available for the OSS version?
+01:50:14 Dale McDiarmid: > Is it going to be available for the OSS version? I think we havent made any final decision, but my understanding is basic RBAC yes. Some more enterprise features which integrate with our cloud auth likely no
+01:51:08 Ata Yavuzyilmaz: Thanks
+01:55:01 Rinat Ataullin: What options are available for collecting AWS metrics from cloudwatch ?
+01:56:21 Lev Galaktionov: Am I the only one who doesn’t have “Metrics” source in the lab?
+01:56:54 Satyajit Rout: Nope, you can find Metrics in the Chart Explorer section.
+01:57:06 Satyajit Rout: On search, it is not available
+01:57:08 Stephane Renou: from what I saw Clickhouse main product has the support for multi tenancy on the same table, can that feature also be used with OTEL and hyperdx, if so how can we configure the tenant information to go to the table?
+01:58:03 Dale McDiarmid: > What options are available for collecting AWS metrics from cloudwatch ?
+so you can write to kenesis - clickpipes in our cloud supports reading from this.
+OSS - i think you can exporter cloud watch data to s3, in which case we have an s3queue in oss for importing data from s3.
+01:59:01 Alex T: Can you just search for 2019-01-22 in Body ?
+02:02:35 Alex T: It is super cool - thanks a lot Pablo (and Dale) .. have to drop - will be waiting for part2 !
+02:03:12 Dale McDiarmid: > Any publicly stated plans to get rid of the MongoDB dependency? I can’t imagine Alexey will want that around for long.
+The team has discussed this in the past and more recently as we started working on how we're going to implement alerts in ClickStack cloud. DocumentDB is compatible fwiw. Its under consideration is the answer.
+02:03:22 Dale McDiarmid: > how do you rest password in HyperDX?
+hah I don't think there is an option to do that in v2! I'll create a ticket
+02:03:27 oscar henriksson: Is there ready build dashboards?
+02:03:34 Dale McDiarmid: yes left side, presets
+02:05:44 Pablo Musa: https://play-clickstack.clickhouse.com/
+02:06:29 Pablo Musa: https://docs.google.com/forms/d/e/1FAIpQLSfrz2ckErewbw5DjzTZw6gY433usAE9kwI9NnHWTJXDuAL9jw/viewform?usp=dialog
+02:06:33 Willie Abrams: How do you look at the query that is being used in a preset dashboard
+02:06:51 Nemanja Lukic: The form requires permissions to fill in.
+02:06:56 Nemanja Lukic: (that is, to open)
+02:07:00 Rodrigo Aguirregabiria Herrero: Cannot fill the form
+02:07:43 Dale McDiarmid: > How do you look at the query that is being used in a preset dashboard
+We should expose. Good question.
+02:07:52 Diana Todea: We need access for the form
+02:08:10 Johannes Mundorf: Thank you so much for the training!
+02:08:24 Luis San Martin: Thank you !!!
+02:08:32 Narayanappa K: Thank you all
+02:08:34 Tuan Lam: Thank you
+02:08:35 Johannes Mundorf: yes, can Access now
+02:08:35 Pablo Musa: https://docs.google.com/forms/d/e/1FAIpQLSfrz2ckErewbw5DjzTZw6gY433usAE9kwI9NnHWTJXDuAL9jw/viewform?usp=dialog
+02:08:36 Nemanja Lukic: all good
+02:08:37 Nemanja Lukic: works now
+02:08:45 Rinat Ataullin: Thank you Pablo and Dale
+02:09:07 Nemanja Lukic: Thank you Pablo, and thank you for attending all the questions Dale. Much appreciated.
+02:09:31 Lev Galaktionov: Thank you a lot
+02:09:36 Wouter Stolk: Thank you!
+02:09:43 David Muñoz Vicente: thank you very much
+02:09:53 Marc Fournier: Many thanks, awesome product, congrats to the team !
+02:09:55 Luis San Martin: Im only curious where I could get subscribed for onsite trainings in EU
+02:09:58 Michael Doherty: Thanks very much, Pablo, Dale and team
+02:10:01 Anatoly Lebedev: Thank you! Looking forward to seeing new similar events
+02:10:08 Diana Todea: Thank you!
+02:10:09 Andreas Vilinski: 
+02:10:16 Luis San Martin: 
+02:10:21 Hellmar Becker: Thank you!
+02:10:21 oscar henriksson: Is the clickhouse stack included in clickhouse cloud?
+02:10:27 Amzath Rahumathullah: Thanks !
+02:10:33 Rafi Rubin: Thank you.
+02:10:41 Vikas Desai: On one of the screen you were showing to connect either AWS or Google Cloud, is it not integrated with Azure yet?
+02:10:52 Abdugaffor Erkinboev: When this video will be available on Youtube?
+02:10:59 Dale McDiarmid: > Is the clickhouse stack included in clickhouse cloud? HyperDX and clickhouse yes. The collector currently youstill need to run. We’ll add soon(ish).
+02:11:12 Dale McDiarmid: Azure supported
+02:11:22 Todd Yocum: Was there a link to these slides? I might want to use some of them for s shorter version for internal training to my team.
+02:11:34 Willie Abrams: I’m so used to, from New Relic,  popping into a place and running some NRQL to generate a chart and I feel like that usability is hard here.
+02:11:45 Dale McDiarmid: https://clickhouse.com/cloud/clickstack-private-preview
+02:12:12 oscar henriksson: Ok thanx!
+02:12:28 Pablo Musa: https://learn.clickhouse.com/visitor_catalog_class/show/1786751
+02:12:41 Narayanappa K: Thank you so much!!
+02:13:02 Todd Yocum: K, thx!
+02:13:17 Mikhail Sotnikov: So, hyperdx has their own SDKs, but CH site doesn’t tell about it at all. Is there plans to support it in the future or the plan is to migrate to OTEL totally?
+02:13:19 Vikas Desai: will the below link accessible after this sessin as well?
+https://learn.clickhouse.com/learner_module/show/1786751?lesson_id=9521473&section_id=87906357
+02:13:50 Dale McDiarmid: > So, hyperdx has their own SDKs, but CH site doesn’t tell about it at all. Is there plans to support it in the future or the plan is to migrate to OTEL totally?    https://clickhouse.com/docs/use-cases/observability/clickstack/sdks plan is to support and enrich
+02:14:19 Andreas Vilinski: is rust and dotnet on the plan too?
+02:14:23 Dale McDiarmid: all are forks, with differing degrees of enhancement
+02:14:32 Dale McDiarmid: both can be used
+02:15:02 Willie Abrams: I’d love a way to approximate Apdex from New Relic in a HyperDX dashboard: https://en.wikipedia.org/wiki/Apdex#Apdex_method
+02:15:35 Mikhail Sotnikov: Got it, thanks. Thank you Pablo and Dale.
+02:15:44 Kin Shah: The click stack .. any options for onprem ?
+02:15:48 Michael Doherty: 
+02:16:27 Aleksei Stepanenko: Thank you!
+02:16:31 Dale McDiarmid: > I’m so used to, from New Relic,  popping into a place and running some NRQL to generate a chart and I feel like that usability is hard here. Our chart explorer is defn not as mature, you can build a chart there but not from a single SQL query. But you can use SQL and grafana!
+02:16:32 Kin Shah: Can u please post GitHub link
+02:16:38 Rezart Lohja: thank you
+02:16:40 Satyajit Rout: Possible to connect Databricks to CH?
+02:16:44 Kin Shah: clickstack
+02:18:10 Pablo Musa: https://clickhouse.com/docs/use-cases/data-lake
+02:18:11 Satyajit Rout: Thanks
+02:18:32 Pablo Musa: https://github.com/hyperdxio/hyperdx
