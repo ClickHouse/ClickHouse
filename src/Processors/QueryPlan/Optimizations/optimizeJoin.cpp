@@ -505,12 +505,6 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
 
     graph.inputs.push_back(node);
     RelationStats stats = estimateReadRowsCount(*node);
-    if (!label.empty() && !graph.context->dummy_stats.empty())
-    {
-        auto dummy_stats = getDummyStats(graph.context->dummy_stats, label);
-        if (!dummy_stats.table_name.empty())
-            stats = std::move(dummy_stats);
-    }
 
     std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
     if (num_rows_from_cache)
