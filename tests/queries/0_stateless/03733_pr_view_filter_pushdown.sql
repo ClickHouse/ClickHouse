@@ -9,10 +9,10 @@ SET enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_paralle
 insert into t_03733 select number, toString(number) from numbers(10);
 
 SELECT * FROM v_03733 WHERE a = 0;
-select substring(trimLeft(explain), 1, 6) from (explain select * from v_03733 where a = 0) where explain ilike '%Filter%';
+select trimLeft(explain) from (explain description=0 select * from v_03733 where a = 0) where explain ilike '%Filter%';
 
 SELECT a FROM v_03733 WHERE a = 0;
-select substring(trimLeft(explain), 1, 6) from (explain select a from v_03733 where a = 0 settings parallel_replicas_local_plan=1) where explain ilike '%Filter%';
+select trimLeft(explain) from (explain description=0 select a from v_03733 where a = 0 settings parallel_replicas_local_plan=1) where explain ilike '%Filter%';
 
 SELECT b FROM v_03733 WHERE a = 0;
-select substring(trimLeft(explain), 1, 6) from (explain select b from v_03733 where a = 0) where explain ilike '%Filter%';
+select trimLeft(explain) from (explain description=0 select b from v_03733 where a = 0) where explain ilike '%Filter%';
