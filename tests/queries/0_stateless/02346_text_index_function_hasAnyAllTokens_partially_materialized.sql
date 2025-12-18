@@ -84,7 +84,7 @@ VALUES
     (2, 'abc def bar#'),
     (3, 'abc baz foo');
 
-ALTER TABLE tab ADD INDEX  idx(`message`) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1;
+ALTER TABLE tab ADD INDEX  idx(`message`) TYPE text(tokenizer = 'splitByNonAlpha');
 
 INSERT INTO tab(id, message)
 VALUES

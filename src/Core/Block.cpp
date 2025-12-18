@@ -325,20 +325,19 @@ const ColumnWithTypeAndName * Block::findByName(const std::string & name, bool c
 
 std::optional<ColumnWithTypeAndName> Block::findSubcolumnByName(const std::string & name) const
 {
-    auto [name_in_storage, subcolumn_name] = Nested::splitName(name);
-    if (subcolumn_name.empty())
-        return std::nullopt;
+    for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
+    {
+        const auto * column = findByName(column_name, false);
+        if (!column)
+            continue;
 
-    const auto * column = findByName(name_in_storage, false);
-    if (!column)
-        return std::nullopt;
+        auto subcolumn_type = column->type->tryGetSubcolumnType(subcolumn_name);
+        auto subcolumn = column->type->tryGetSubcolumn(subcolumn_name, column->column);
+        if (subcolumn_type && subcolumn)
+            return ColumnWithTypeAndName(subcolumn, subcolumn_type, name);
+    }
 
-    auto subcolumn_type = column->type->tryGetSubcolumnType(subcolumn_name);
-    auto subcolumn = column->type->tryGetSubcolumn(subcolumn_name, column->column);
-    if (!subcolumn_type || !subcolumn)
-        return std::nullopt;
-
-    return ColumnWithTypeAndName(subcolumn, subcolumn_type, name);
+    return std::nullopt;
 }
 
 std::optional<ColumnWithTypeAndName> Block::findColumnOrSubcolumnByName(const std::string & name) const

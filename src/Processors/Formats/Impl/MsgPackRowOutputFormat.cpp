@@ -98,25 +98,25 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
         case TypeIndex::Int128:
         {
             packer.pack_bin(static_cast<unsigned>(sizeof(Int128)));
-            packer.pack_bin_body(column.getDataAt(row_num).data, sizeof(Int128));
+            packer.pack_bin_body(column.getDataAt(row_num).data(), sizeof(Int128)); /// NOLINT(bugprone-suspicious-stringview-data-usage)
             return;
         }
         case TypeIndex::UInt128:
         {
             packer.pack_bin(static_cast<unsigned>(sizeof(UInt128)));
-            packer.pack_bin_body(column.getDataAt(row_num).data, sizeof(UInt128));
+            packer.pack_bin_body(column.getDataAt(row_num).data(), sizeof(UInt128)); /// NOLINT(bugprone-suspicious-stringview-data-usage)
             return;
         }
         case TypeIndex::Int256:
         {
             packer.pack_bin(static_cast<unsigned>(sizeof(Int256)));
-            packer.pack_bin_body(column.getDataAt(row_num).data, sizeof(Int256));
+            packer.pack_bin_body(column.getDataAt(row_num).data(), sizeof(Int256)); /// NOLINT(bugprone-suspicious-stringview-data-usage)
             return;
         }
         case TypeIndex::UInt256:
         {
             packer.pack_bin(static_cast<unsigned>(sizeof(UInt256)));
-            packer.pack_bin_body(column.getDataAt(row_num).data, sizeof(UInt256));
+            packer.pack_bin_body(column.getDataAt(row_num).data(), sizeof(UInt256)); /// NOLINT(bugprone-suspicious-stringview-data-usage)
             return;
         }
         case TypeIndex::Float32:
@@ -147,32 +147,32 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
         case TypeIndex::Decimal128:
         {
             packer.pack_bin(static_cast<unsigned>(sizeof(Decimal128)));
-            packer.pack_bin_body(column.getDataAt(row_num).data, sizeof(Decimal128));
+            packer.pack_bin_body(column.getDataAt(row_num).data(), sizeof(Decimal128)); /// NOLINT(bugprone-suspicious-stringview-data-usage)
             return;
         }
         case TypeIndex::Decimal256:
         {
             packer.pack_bin(static_cast<unsigned>(sizeof(Decimal256)));
-            packer.pack_bin_body(column.getDataAt(row_num).data, sizeof(Decimal256));
+            packer.pack_bin_body(column.getDataAt(row_num).data(), sizeof(Decimal256)); /// NOLINT(bugprone-suspicious-stringview-data-usage)
             return;
         }
         case TypeIndex::String:
         {
-            const std::string_view & string = assert_cast<const ColumnString &>(column).getDataAt(row_num).toView();
+            const std::string_view & string = assert_cast<const ColumnString &>(column).getDataAt(row_num);
             packer.pack_bin(static_cast<unsigned>(string.size()));
             packer.pack_bin_body(string.data(), static_cast<unsigned>(string.size()));
             return;
         }
         case TypeIndex::FixedString:
         {
-            const std::string_view & string = assert_cast<const ColumnFixedString &>(column).getDataAt(row_num).toView();
+            const std::string_view & string = assert_cast<const ColumnFixedString &>(column).getDataAt(row_num);
             packer.pack_bin(static_cast<unsigned>(string.size()));
             packer.pack_bin_body(string.data(), static_cast<unsigned>(string.size()));
             return;
         }
         case TypeIndex::IPv6:
         {
-            const std::string_view & data = assert_cast<const ColumnIPv6 &>(column).getDataAt(row_num).toView();
+            const std::string_view & data = assert_cast<const ColumnIPv6 &>(column).getDataAt(row_num);
             packer.pack_bin(static_cast<unsigned>(data.size()));
             packer.pack_bin_body(data.data(), static_cast<unsigned>(data.size()));
             return;

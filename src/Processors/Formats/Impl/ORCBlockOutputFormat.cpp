@@ -252,7 +252,7 @@ void ORCBlockOutputFormat::writeStrings(
     string_orc_column.length.resize(string_column.size());
     for (size_t i = 0; i != string_column.size(); ++i)
     {
-        const std::string_view & string = string_column.getDataAt(i).toView();
+        const std::string_view string = string_column.getDataAt(i);
         string_orc_column.data[i] = (null_bytemap && (*null_bytemap)[i]) ? nullptr : const_cast<char *>(string.data());
         string_orc_column.length[i] = string.size();
     }

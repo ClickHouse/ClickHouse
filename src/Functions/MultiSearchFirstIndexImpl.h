@@ -98,7 +98,7 @@ struct MultiSearchFirstIndexImpl
 
             for (size_t j = prev_needles_offset; j < needles_offsets[i]; ++j)
             {
-                needles.emplace_back(needles_data_string.getDataAt(j).toView());
+                needles.emplace_back(needles_data_string.getDataAt(j));
             }
 
             auto searcher = Impl::createMultiSearcherInBigHaystack(needles); // sub-optimal
