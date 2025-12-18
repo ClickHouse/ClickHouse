@@ -40,4 +40,4 @@ WHERE is_internal = 1 AND current_database IN [currentDatabase(), 'default']
 "
 
 $CLICKHOUSE_CLIENT --query "DROP VIEW testdb.rmv_test"
-$CLICKHOUSE_CLIENT --query "DROP DATABASE testdb.rmv_test"
+$CLICKHOUSE_CLIENT --query "DROP DATABASE testdb"
