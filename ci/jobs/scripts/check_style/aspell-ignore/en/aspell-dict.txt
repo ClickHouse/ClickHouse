@@ -681,6 +681,7 @@ MMappedFiles
 MSSQL
 MSan
 MVCC
+MacAddress
 MacBook
 MacOS
 Mainnet
@@ -3297,6 +3298,9 @@ toJSONString
 toLastDayOfMonth
 toLastDayOfWeek
 toLowCardinality
+toMacAddress
+toMacAddressOrNull
+toMacAddressOrZero
 toMillisecond
 toMinute
 toModifiedJulianDay
