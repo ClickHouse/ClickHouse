@@ -147,7 +147,7 @@ SELECT * FROM t_partial WHERE region = 'cn' ORDER BY ALL;
 DROP TABLE t_partial;
 
 ------------------------------------------------------------------------------
--- 4. ReplicatedMergeTree consistency test
+-- 4. (Replicated)MergeTree consistency test
 ------------------------------------------------------------------------------
 
 DROP TABLE IF EXISTS t_repl SYNC;
