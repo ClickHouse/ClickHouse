@@ -46,7 +46,7 @@ def run_with_cpu_limit(cmd, *args):
         #   [1]: https://github.com/ClickHouse/ClickHouse/issues/32806
         args += (
             "--volume",
-            f"{online_cpu.name}:/sys/devices/system/cpu/online",
+            f"{online_cpu.name}:/sys/devices/system/cpu/online:ro",
         )
 
         return run_command_in_container(cmd, *args)
@@ -88,17 +88,20 @@ def test_jemalloc_percpu_arena():
     assert int(result) == int(1), result
 
     # should fail because of abort_conf:true
+    # This needs to pin the CPU > 0 manually because docked doesn't do it and
+    # /sys/devices/system/cpu/online is not enough.
     with pytest.raises(subprocess.CalledProcessError):
         run_with_cpu_limit(
-            'clickhouse local -q "select 1"', "--env", "MALLOC_CONF=abort_conf:true"
+            'clickhouse local -q "select 1"',
+            "--cpuset-cpus", f"{CPU_ID}",
+            "--env", "MALLOC_CONF=abort_conf:true",
         )
 
     # should not fail even with abort_conf:true, due to explicit narenas
     # NOTE: abort:false to make it compatible with debug build
     run_with_cpu_limit(
         'clickhouse local -q "select 1"',
-        "--env",
-        f"MALLOC_CONF=abort_conf:true,abort:false,narenas:{all_cpus}",
+        "--env", f"MALLOC_CONF=abort_conf:true,abort:false,narenas:{all_cpus}",
     )
 
 
