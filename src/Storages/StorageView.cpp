@@ -19,6 +19,8 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/SelectQueryDescription.h>
 
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
 #include <Core/Settings.h>
@@ -179,6 +181,9 @@ void StorageView::read(
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         auto view_context = getViewContext(context, storage_snapshot);
+        LOG_DEBUG(getLogger(__func__),
+                  "Using Analyzer for VIEW subquery: {}",
+                  toString(column_names));
         InterpreterSelectQueryAnalyzer interpreter(current_inner_query, view_context, options, column_names);
         interpreter.addStorageLimits(*query_info.storage_limits);
         query_plan = std::move(interpreter).extractQueryPlan();
