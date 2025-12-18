@@ -10,7 +10,7 @@ if __name__ == "__main__":
     else:
         command_launcher = ""
 
-    os.environ["LLVM_PROFILE_FILE"] = "unit-test.profraw"
+    os.environ["LLVM_PROFILE_FILE"] = "unit-test-%m.profraw"
     Result.from_gtest_run(
         unit_tests_path="./ci/tmp/unit_tests_dbms",
         command_launcher=command_launcher,
