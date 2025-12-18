@@ -1,4 +1,3 @@
-#include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>

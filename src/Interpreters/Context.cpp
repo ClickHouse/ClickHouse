@@ -6933,9 +6933,4 @@ Poco::Timespan HTTPContext::getSendTimeout() const
     return context->getSettingsRef()[Setting::http_send_timeout];
 }
 
-String Coordination::Context::getDefaultDictionaryDatabase() const
-{
-    return getSettingsRef()[Setting::default_dictionary_database];
-}
-
 }
