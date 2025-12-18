@@ -994,6 +994,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once", false, false, "New setting"},
             {"merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent", 5, 5, "New setting"},
             {"nullable_serialization_version", "basic", "basic", "New setting"},
+            {"object_serialization_version", "v2", "v3", "Enable v3 serialization version for JSON by default to use advanced shared data serialization"},
+            {"dynamic_serialization_version", "v2", "v3", "Enable v3 serialization version for Dynamic by default for better serialization/deserialization"},
+            {"object_shared_data_serialization_version", "map", "advanced", "Enable advanced shared data serialization version by default"},
+            {"object_shared_data_serialization_version_for_zero_level_parts", "map", "map_with_buckets", "Enable map_with_buckets shared data serialization version for zero level parts by default"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.11",
         {
