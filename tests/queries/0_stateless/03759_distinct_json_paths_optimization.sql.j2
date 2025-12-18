@@ -1,3 +1,5 @@
+-- Tags: long
+
 {% for (min_bytes, shared_data_serialization) in [(0, 'map'), (1000000000, 'map'), (0, 'map_with_buckets'), (1000000000, 'map_with_buckets'), (0, 'advanced'), (1000000000, 'advanced')] -%}
 
     DROP TABLE IF EXISTS test;
