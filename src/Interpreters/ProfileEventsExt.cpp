@@ -49,7 +49,7 @@ void dumpToMapColumn(const Counters::Snapshot & counters, DB::IColumn * column, 
             continue;
 
         std::string_view desc = getName(event);
-        key_column.insertData(desc);
+        key_column.insertData(desc.data(), desc.size());
         value_column.getData().push_back(value);
         size++;
     }
