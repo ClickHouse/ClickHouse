@@ -3,7 +3,7 @@
 #include <boost/program_options.hpp>
 #include <Common/filesystemHelpers.h>
 
-#include <signal.h>
+#include <csignal>
 #include <sys/stat.h>
 
 #if defined(OS_LINUX)
