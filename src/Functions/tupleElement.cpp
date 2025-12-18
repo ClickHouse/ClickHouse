@@ -6,11 +6,13 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeQBit.h>
+#include <DataTypes/DataTypeObject.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnQBit.h>
+#include <Columns/ColumnObject.h>
 #include <Common/assert_cast.h>
 #include <memory>
 
@@ -43,6 +45,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForDynamic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -66,34 +69,36 @@ public:
         {
             std::optional<size_t> index = getTupleElementIndex(arguments[1].column, *tuple, number_of_arguments);
             if (index.has_value())
-            {
-                DataTypePtr return_type = tuple->getElements()[index.value()];
+                return wrapInArrays(tuple->getElements()[index.value()], count_arrays);
 
-                for (; count_arrays; --count_arrays)
-                    return_type = std::make_shared<DataTypeArray>(return_type);
-
-                return return_type;
-            }
             return arguments[2].type;
         }
         else if (const DataTypeQBit * qbit = checkAndGetDataType<DataTypeQBit>(input_type))
         {
             std::optional<size_t> index = getQBitElementIndex(arguments[1].column, *qbit, number_of_arguments);
             if (index.has_value())
-            {
-                DataTypePtr return_type = qbit->getNestedTupleElementType();
+                return wrapInArrays(qbit->getNestedTupleElementType(), count_arrays);
 
-                for (; count_arrays; --count_arrays)
-                    return_type = std::make_shared<DataTypeArray>(return_type);
-
-                return return_type;
-            }
             return arguments[2].type;
+        }
+        else if (const DataTypeObject * object = checkAndGetDataType<DataTypeObject>(input_type))
+        {
+            if (number_of_arguments != 2)
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} with {} first argument doesn't match: passed {}, should be 2",
+                getName(), input_type->getName(), number_of_arguments);
+
+            const auto * subcolumn_name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
+            if (!subcolumn_name_col)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument of {} with {} first argument must be a constant String", getName(), input_type->getName());
+
+            auto subcolumn_name = subcolumn_name_col->getValue<String>();
+            return wrapInArrays(object->getSubcolumnType(subcolumn_name), count_arrays);
         }
 
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "First argument for function {} must be Tuple, array of Tuple, QBit or array of QBit. Actual {}",
+            "First argument for function {} must be Tuple, QBit, JSON or array of Tuple, QBit, JSON. Actual {}",
             getName(),
             arguments[0].type->getName());
     }
@@ -121,58 +126,53 @@ public:
             array_offsets.push_back(array_col->getOffsetsPtr());
         }
 
-
-        const DataTypeTuple * input_type_as_tuple = checkAndGetDataType<DataTypeTuple>(input_type);
-        const ColumnTuple * input_col_as_tuple = checkAndGetColumn<ColumnTuple>(input_col);
-
-        if (input_type_as_tuple && input_col_as_tuple)
+        ColumnPtr res;
+        if (const DataTypeTuple * input_type_as_tuple = checkAndGetDataType<DataTypeTuple>(input_type))
         {
+            const ColumnTuple & input_col_as_tuple = checkAndGetColumn<ColumnTuple>(*input_col);
             std::optional<size_t> index = getTupleElementIndex(arguments[1].column, *input_type_as_tuple, arguments.size());
 
             if (!index.has_value())
                 return arguments[2].column;
 
-            ColumnPtr res = input_col_as_tuple->getColumnPtr(index.value());
-
-            /// Wrap into Arrays
-            for (auto it = array_offsets.rbegin(); it != array_offsets.rend(); ++it)
-                res = ColumnArray::create(res, *it);
-
-            if (input_arg_is_const)
-                res = ColumnConst::create(res, input_rows_count);
-
-            return res;
+            res = input_col_as_tuple.getColumnPtr(index.value());
         }
-
-
-        const DataTypeQBit * input_type_as_qbit = checkAndGetDataType<DataTypeQBit>(input_type);
-        const ColumnQBit * input_col_as_qbit = checkAndGetColumn<ColumnQBit>(input_col);
-
-        if (input_type_as_qbit && input_col_as_qbit)
+        else if (const DataTypeQBit * input_type_as_qbit = checkAndGetDataType<DataTypeQBit>(input_type))
         {
+            const ColumnQBit & input_col_as_qbit = checkAndGetColumn<ColumnQBit>(*input_col);
             std::optional<size_t> index = getQBitElementIndex(arguments[1].column, *input_type_as_qbit, arguments.size());
 
             if (!index.has_value())
                 return arguments[2].column;
 
-            ColumnPtr res = assert_cast<const ColumnTuple &>(input_col_as_qbit->getTupleColumn()).getColumnPtr(index.value());
+            res = assert_cast<const ColumnTuple &>(input_col_as_qbit.getTupleColumn()).getColumnPtr(index.value());
+        }
+        else if (const DataTypeObject * input_type_as_object = checkAndGetDataType<DataTypeObject>(input_type))
+        {
+            const auto * subcolumn_name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
+            if (!subcolumn_name_col)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument of {} with {} first argument must be a constant String", getName(), input_type->getName());
 
-            /// Wrap into Arrays
-            for (auto it = array_offsets.rbegin(); it != array_offsets.rend(); ++it)
-                res = ColumnArray::create(res, *it);
-
-            if (input_arg_is_const)
-                res = ColumnConst::create(res, input_rows_count);
-
-            return res;
+            auto subcolumn_name = subcolumn_name_col->getValue<String>();
+            res = input_type_as_object->getSubcolumn(subcolumn_name, arguments[0].column);
+        }
+        else
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for function {} must be Tuple, QBit, JSON or array of Tuple, QBit, JSON. Actual {}",
+                getName(),
+                input_arg.type->getName());
         }
 
+        /// Wrap into Arrays
+        for (auto it = array_offsets.rbegin(); it != array_offsets.rend(); ++it)
+            res = ColumnArray::create(res, *it);
 
-        throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "First argument for function {} must be Tuple, array of Tuple, QBit or array of QBit. Actual {}",
-            getName(),
-            input_arg.type->getName());
+        if (input_arg_is_const)
+            res = ColumnConst::create(res, input_rows_count);
+
+        return res;
     }
 
 private:
@@ -240,6 +240,14 @@ private:
         }
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument to {} must be a constant UInt", getName());
     }
+
+    DataTypePtr wrapInArrays(DataTypePtr nested_type, size_t count_arrays) const
+    {
+        for (; count_arrays; --count_arrays)
+            nested_type = std::make_shared<DataTypeArray>(nested_type);
+
+        return nested_type;
+    }
 };
 
 }
@@ -300,7 +308,7 @@ SELECT tupleElement(values, 'name') FROM example;
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Tuple;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTupleElement>(documentation);
 }

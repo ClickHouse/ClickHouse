@@ -9,10 +9,10 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/JoinLazyColumnsStep.h>
 #include <Poco/Logger.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
-
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 #include <memory>
@@ -198,6 +198,12 @@ void traverseQueryPlan(Stack & stack, QueryPlan::Node & root, Func1 && on_enter,
     }
 }
 
+void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void optimizeExchanges(QueryPlan::Node & root);
+
 /// Find the top node of the parallel replicas plan. E.g.:
 ///
 /// Expression ((Project names + Projection))
@@ -335,7 +341,7 @@ void considerEnablingParallelReplicas(
         return;
 
     // Some tests fail because on uninitialized `MergeTreeData::SnapshotData`
-    if (optimization_settings.allow_experimental_full_text_index)
+    if (optimization_settings.enable_full_text_index)
         return;
 
     Stack stack;
@@ -372,7 +378,9 @@ void considerEnablingParallelReplicas(
         while (reading_step && !reading_step->children.empty())
         {
             // TODO(nickitat): support multiple read steps with parallel replicas
-            if (reading_step->children.size() > 1)
+            const auto * lazy_joining = typeid_cast<const JoinLazyColumnsStep *>(reading_step->step.get());
+
+            if (!lazy_joining && reading_step->children.size() > 1)
                 return;
             reading_step = reading_step->children.front();
         }
@@ -439,7 +447,7 @@ void considerEnablingParallelReplicas(
                 return;
             }
 
-            query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(plan_with_parallel_replicas));
+            query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*plan_with_parallel_replicas));
         }
     }
     else
@@ -560,6 +568,17 @@ void optimizeTreeSecondPass(
 
             if (optimization_settings.distinct_in_order)
                 optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
+        },
+        [&](auto & frame_node)
+        {
+            /// After all children were processed, try to apply distributed read, join and aggregation optimizations.
+            if (optimization_settings.make_distributed_plan)
+            {
+                tryMakeDistributedJoin(frame_node, nodes, optimization_settings);
+                tryMakeDistributedAggregation(frame_node, nodes, optimization_settings);
+                tryMakeDistributedSorting(frame_node, nodes, optimization_settings);
+                tryMakeDistributedRead(frame_node, nodes, optimization_settings);
+            }
         });
 
     stack.push_back({.node = &root});
@@ -657,7 +676,7 @@ void optimizeTreeSecondPass(
             local_plan->optimize(optimization_settings);
 
             auto * local_plan_node = frame.node;
-            query_plan.replaceNodeWithPlan(local_plan_node, std::move(local_plan));
+            query_plan.replaceNodeWithPlan(local_plan_node, std::move(*local_plan));
 
             // after applying optimize() we still can have several expression in a row,
             // so merge them to make plan more concise
@@ -670,6 +689,9 @@ void optimizeTreeSecondPass(
     // local plan can contain redundant sorting
     if (read_from_local_parallel_replica_plan && optimization_settings.remove_redundant_sorting)
         tryRemoveRedundantSorting(&root);
+    /// Optimize exchanges
+    if (optimization_settings.make_distributed_plan && optimization_settings.distributed_plan_optimize_exchanges)
+        optimizeExchanges(root);
 
     /// Vector search first pass optimization sets up everything for vector index usage.
     /// In the 2nd pass, we optimize further by attempting to do an "index-only scan".
@@ -714,7 +736,7 @@ void optimizeTreeSecondPass(
 
             if (frame.next_child == 0)
             {
-                if (optimizeLazyMaterialization(root, stack, nodes, optimization_settings.max_limit_for_lazy_materialization))
+                if (optimizeLazyMaterialization2(*frame.node, query_plan, nodes, optimization_settings, optimization_settings.max_limit_for_lazy_materialization))
                     break;
             }
 

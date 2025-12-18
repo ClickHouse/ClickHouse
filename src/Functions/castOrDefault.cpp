@@ -372,7 +372,7 @@ SELECT accurateCastOrDefault('abc', 'UInt32')
     };
     FunctionDocumentation::IntroducedIn accurateCastOrDefault_introduced_in = {21, 1};
     FunctionDocumentation::Category accurateCastOrDefault_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation accurateCastOrDefault_documentation = {accurateCastOrDefault_description, accurateCastOrDefault_syntax, accurateCastOrDefault_arguments, accurateCastOrDefault_returned_value, accurateCastOrDefault_examples, accurateCastOrDefault_introduced_in, accurateCastOrDefault_category};
+    FunctionDocumentation accurateCastOrDefault_documentation = {accurateCastOrDefault_description, accurateCastOrDefault_syntax, accurateCastOrDefault_arguments, {}, accurateCastOrDefault_returned_value, accurateCastOrDefault_examples, accurateCastOrDefault_introduced_in, accurateCastOrDefault_category};
 
     factory.registerFunction<FunctionCastOrDefault>(accurateCastOrDefault_documentation);
 
@@ -392,7 +392,7 @@ If no `default` value is passed then `0` is returned in case of an error.
     };
     FunctionDocumentation::Category toUInt8OrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn toUInt8OrDefault_introduced_in = {21, 11};
-    FunctionDocumentation toUInt8OrDefault_documentation = {toUInt8OrDefault_description, toUInt8OrDefault_syntax, toUInt8OrDefault_arguments, toUInt8OrDefault_returned_value, toUInt8OrDefault_examples, toUInt8OrDefault_introduced_in, toUInt8OrDefault_category};
+    FunctionDocumentation toUInt8OrDefault_documentation = {toUInt8OrDefault_description, toUInt8OrDefault_syntax, toUInt8OrDefault_arguments, {}, toUInt8OrDefault_returned_value, toUInt8OrDefault_examples, toUInt8OrDefault_introduced_in, toUInt8OrDefault_category};
 
     factory.registerFunction("toUInt8OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt8OrDefault", std::make_shared<DataTypeUInt8>()); },
@@ -413,7 +413,7 @@ If no `default` value is passed then `0` is returned in case of an error.
     };
     FunctionDocumentation::Category toUInt16OrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn toUInt16OrDefault_introduced_in = {21, 11};
-    FunctionDocumentation toUInt16OrDefault_documentation = {toUInt16OrDefault_description, toUInt16OrDefault_syntax, toUInt16OrDefault_arguments, toUInt16OrDefault_returned_value, toUInt16OrDefault_examples, toUInt16OrDefault_introduced_in, toUInt16OrDefault_category};
+    FunctionDocumentation toUInt16OrDefault_documentation = {toUInt16OrDefault_description, toUInt16OrDefault_syntax, toUInt16OrDefault_arguments, {}, toUInt16OrDefault_returned_value, toUInt16OrDefault_examples, toUInt16OrDefault_introduced_in, toUInt16OrDefault_category};
 
     factory.registerFunction("toUInt16OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt16OrDefault", std::make_shared<DataTypeUInt16>()); },
@@ -434,7 +434,7 @@ If no `default` value is passed then `0` is returned in case of an error.
     };
     FunctionDocumentation::Category toUInt32OrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn toUInt32OrDefault_introduced_in = {21, 11};
-    FunctionDocumentation toUInt32OrDefault_documentation = {toUInt32OrDefault_description, toUInt32OrDefault_syntax, toUInt32OrDefault_arguments, toUInt32OrDefault_returned_value, toUInt32OrDefault_examples, toUInt32OrDefault_introduced_in, toUInt32OrDefault_category};
+    FunctionDocumentation toUInt32OrDefault_documentation = {toUInt32OrDefault_description, toUInt32OrDefault_syntax, toUInt32OrDefault_arguments, {}, toUInt32OrDefault_returned_value, toUInt32OrDefault_examples, toUInt32OrDefault_introduced_in, toUInt32OrDefault_category};
 
     factory.registerFunction("toUInt32OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt32OrDefault", std::make_shared<DataTypeUInt32>()); },
@@ -455,7 +455,7 @@ If no `default` value is passed then `0` is returned in case of an error.
     };
     FunctionDocumentation::Category toUInt64OrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn toUInt64OrDefault_introduced_in = {21, 11};
-    FunctionDocumentation toUInt64OrDefault_documentation = {toUInt64OrDefault_description, toUInt64OrDefault_syntax, toUInt64OrDefault_arguments, toUInt64OrDefault_returned_value, toUInt64OrDefault_examples, toUInt64OrDefault_introduced_in, toUInt64OrDefault_category};
+    FunctionDocumentation toUInt64OrDefault_documentation = {toUInt64OrDefault_description, toUInt64OrDefault_syntax, toUInt64OrDefault_arguments, {}, toUInt64OrDefault_returned_value, toUInt64OrDefault_examples, toUInt64OrDefault_introduced_in, toUInt64OrDefault_category};
 
     factory.registerFunction("toUInt64OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt64OrDefault", std::make_shared<DataTypeUInt64>()); },
@@ -476,7 +476,7 @@ If no `default` value is passed then `0` is returned in case of an error.
     };
     FunctionDocumentation::Category toUInt128OrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn toUInt128OrDefault_introduced_in = {21, 11};
-    FunctionDocumentation toUInt128OrDefault_documentation = {toUInt128OrDefault_description, toUInt128OrDefault_syntax, toUInt128OrDefault_arguments, toUInt128OrDefault_returned_value, toUInt128OrDefault_examples, toUInt128OrDefault_introduced_in, toUInt128OrDefault_category};
+    FunctionDocumentation toUInt128OrDefault_documentation = {toUInt128OrDefault_description, toUInt128OrDefault_syntax, toUInt128OrDefault_arguments, {}, toUInt128OrDefault_returned_value, toUInt128OrDefault_examples, toUInt128OrDefault_introduced_in, toUInt128OrDefault_category};
 
     factory.registerFunction("toUInt128OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt128OrDefault", std::make_shared<DataTypeUInt128>()); },
@@ -497,7 +497,7 @@ If no `default` value is passed then `0` is returned in case of an error.
     };
     FunctionDocumentation::Category toUInt256OrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn toUInt256OrDefault_introduced_in = {21, 11};
-    FunctionDocumentation toUInt256OrDefault_documentation = {toUInt256OrDefault_description, toUInt256OrDefault_syntax, toUInt256OrDefault_arguments, toUInt256OrDefault_returned_value, toUInt256OrDefault_examples, toUInt256OrDefault_introduced_in, toUInt256OrDefault_category};
+    FunctionDocumentation toUInt256OrDefault_documentation = {toUInt256OrDefault_description, toUInt256OrDefault_syntax, toUInt256OrDefault_arguments, {}, toUInt256OrDefault_returned_value, toUInt256OrDefault_examples, toUInt256OrDefault_introduced_in, toUInt256OrDefault_category};
 
     factory.registerFunction("toUInt256OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt256OrDefault", std::make_shared<DataTypeUInt256>()); },
@@ -519,7 +519,7 @@ If no `default` value is passed then `0` is returned in case of an error.
     };
     FunctionDocumentation::Category toInt8OrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn toInt8OrDefault_introduced_in = {21, 11};
-    FunctionDocumentation toInt8OrDefault_documentation = {toInt8OrDefault_description, toInt8OrDefault_syntax, toInt8OrDefault_arguments, toInt8OrDefault_returned_value, toInt8OrDefault_examples, toInt8OrDefault_introduced_in, toInt8OrDefault_category};
+    FunctionDocumentation toInt8OrDefault_documentation = {toInt8OrDefault_description, toInt8OrDefault_syntax, toInt8OrDefault_arguments, {}, toInt8OrDefault_returned_value, toInt8OrDefault_examples, toInt8OrDefault_introduced_in, toInt8OrDefault_category};
 
     factory.registerFunction("toInt8OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt8OrDefault", std::make_shared<DataTypeInt8>()); },
@@ -540,7 +540,7 @@ If no `default` value is passed then `0` is returned in case of an error.
     };
     FunctionDocumentation::Category toInt16OrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn toInt16OrDefault_introduced_in = {21, 11};
-    FunctionDocumentation toInt16OrDefault_documentation = {toInt16OrDefault_description, toInt16OrDefault_syntax, toInt16OrDefault_arguments, toInt16OrDefault_returned_value, toInt16OrDefault_examples, toInt16OrDefault_introduced_in, toInt16OrDefault_category};
+    FunctionDocumentation toInt16OrDefault_documentation = {toInt16OrDefault_description, toInt16OrDefault_syntax, toInt16OrDefault_arguments, {}, toInt16OrDefault_returned_value, toInt16OrDefault_examples, toInt16OrDefault_introduced_in, toInt16OrDefault_category};
 
     factory.registerFunction("toInt16OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt16OrDefault", std::make_shared<DataTypeInt16>()); },
@@ -561,7 +561,7 @@ If no `default` value is passed then `0` is returned in case of an error.
     };
     FunctionDocumentation::Category toInt32OrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn toInt32OrDefault_introduced_in = {21, 11};
-    FunctionDocumentation toInt32OrDefault_documentation = {toInt32OrDefault_description, toInt32OrDefault_syntax, toInt32OrDefault_arguments, toInt32OrDefault_returned_value, toInt32OrDefault_examples, toInt32OrDefault_introduced_in, toInt32OrDefault_category};
+    FunctionDocumentation toInt32OrDefault_documentation = {toInt32OrDefault_description, toInt32OrDefault_syntax, toInt32OrDefault_arguments, {}, toInt32OrDefault_returned_value, toInt32OrDefault_examples, toInt32OrDefault_introduced_in, toInt32OrDefault_category};
 
     factory.registerFunction("toInt32OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt32OrDefault", std::make_shared<DataTypeInt32>()); },
@@ -582,7 +582,7 @@ If no `default` value is passed then `0` is returned in case of an error.
     };
     FunctionDocumentation::Category toInt64OrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn toInt64OrDefault_introduced_in = {21, 11};
-    FunctionDocumentation toInt64OrDefault_documentation = {toInt64OrDefault_description, toInt64OrDefault_syntax, toInt64OrDefault_arguments, toInt64OrDefault_returned_value, toInt64OrDefault_examples, toInt64OrDefault_introduced_in, toInt64OrDefault_category};
+    FunctionDocumentation toInt64OrDefault_documentation = {toInt64OrDefault_description, toInt64OrDefault_syntax, toInt64OrDefault_arguments, {}, toInt64OrDefault_returned_value, toInt64OrDefault_examples, toInt64OrDefault_introduced_in, toInt64OrDefault_category};
 
     factory.registerFunction("toInt64OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt64OrDefault", std::make_shared<DataTypeInt64>()); },
@@ -603,7 +603,7 @@ If no `default` value is passed then `0` is returned in case of an error.
     };
     FunctionDocumentation::Category toInt128OrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn toInt128OrDefault_introduced_in = {21, 11};
-    FunctionDocumentation toInt128OrDefault_documentation = {toInt128OrDefault_description, toInt128OrDefault_syntax, toInt128OrDefault_arguments, toInt128OrDefault_returned_value, toInt128OrDefault_examples, toInt128OrDefault_introduced_in, toInt128OrDefault_category};
+    FunctionDocumentation toInt128OrDefault_documentation = {toInt128OrDefault_description, toInt128OrDefault_syntax, toInt128OrDefault_arguments, {}, toInt128OrDefault_returned_value, toInt128OrDefault_examples, toInt128OrDefault_introduced_in, toInt128OrDefault_category};
 
     factory.registerFunction("toInt128OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt128OrDefault", std::make_shared<DataTypeInt128>()); },
@@ -624,7 +624,7 @@ If no `default` value is passed then `0` is returned in case of an error.
     };
     FunctionDocumentation::Category toInt256OrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn toInt256OrDefault_introduced_in = {21, 11};
-    FunctionDocumentation toInt256OrDefault_documentation = {toInt256OrDefault_description, toInt256OrDefault_syntax, toInt256OrDefault_arguments, toInt256OrDefault_returned_value, toInt256OrDefault_examples, toInt256OrDefault_introduced_in, toInt256OrDefault_category};
+    FunctionDocumentation toInt256OrDefault_documentation = {toInt256OrDefault_description, toInt256OrDefault_syntax, toInt256OrDefault_arguments, {}, toInt256OrDefault_returned_value, toInt256OrDefault_examples, toInt256OrDefault_introduced_in, toInt256OrDefault_category};
 
     factory.registerFunction("toInt256OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt256OrDefault", std::make_shared<DataTypeInt256>()); },
@@ -646,7 +646,7 @@ If no `default` value is passed then `0` is returned in case of an error.
     };
     FunctionDocumentation::Category toFloat32OrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn toFloat32OrDefault_introduced_in = {21, 11};
-    FunctionDocumentation toFloat32OrDefault_documentation = {toFloat32OrDefault_description, toFloat32OrDefault_syntax, toFloat32OrDefault_arguments, toFloat32OrDefault_returned_value, toFloat32OrDefault_examples, toFloat32OrDefault_introduced_in, toFloat32OrDefault_category};
+    FunctionDocumentation toFloat32OrDefault_documentation = {toFloat32OrDefault_description, toFloat32OrDefault_syntax, toFloat32OrDefault_arguments, {}, toFloat32OrDefault_returned_value, toFloat32OrDefault_examples, toFloat32OrDefault_introduced_in, toFloat32OrDefault_category};
 
     factory.registerFunction("toFloat32OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toFloat32OrDefault", std::make_shared<DataTypeFloat32>()); },
@@ -667,7 +667,7 @@ If no `default` value is passed then `0` is returned in case of an error.
     };
     FunctionDocumentation::Category toFloat64OrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn toFloat64OrDefault_introduced_in = {21, 11};
-    FunctionDocumentation toFloat64OrDefault_documentation = {toFloat64OrDefault_description, toFloat64OrDefault_syntax, toFloat64OrDefault_arguments, toFloat64OrDefault_returned_value, toFloat64OrDefault_examples, toFloat64OrDefault_introduced_in, toFloat64OrDefault_category};
+    FunctionDocumentation toFloat64OrDefault_documentation = {toFloat64OrDefault_description, toFloat64OrDefault_syntax, toFloat64OrDefault_arguments, {}, toFloat64OrDefault_returned_value, toFloat64OrDefault_examples, toFloat64OrDefault_introduced_in, toFloat64OrDefault_category};
 
     factory.registerFunction("toFloat64OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toFloat64OrDefault", std::make_shared<DataTypeFloat64>()); },
@@ -688,7 +688,7 @@ Like [toDate](#toDate) but if unsuccessful, returns a default value which is eit
     };
     FunctionDocumentation::Category toDateOrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn toDateOrDefault_introduced_in = {21, 11};
-    FunctionDocumentation toDateOrDefault_documentation = {toDateOrDefault_description, toDateOrDefault_syntax, toDateOrDefault_arguments, toDateOrDefault_returned_value, toDateOrDefault_examples, toDateOrDefault_introduced_in, toDateOrDefault_category};
+    FunctionDocumentation toDateOrDefault_documentation = {toDateOrDefault_description, toDateOrDefault_syntax, toDateOrDefault_arguments, {}, toDateOrDefault_returned_value, toDateOrDefault_examples, toDateOrDefault_introduced_in, toDateOrDefault_category};
 
     factory.registerFunction("toDateOrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDateOrDefault", std::make_shared<DataTypeDate>()); },
@@ -708,7 +708,7 @@ Converts the argument to the [Date32](../data-types/date32.md) data type. If the
     };
     FunctionDocumentation::Category toDate32OrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn toDate32OrDefault_introduced_in = {21, 11};
-    FunctionDocumentation toDate32OrDefault_documentation = {toDate32OrDefault_description, toDate32OrDefault_syntax, toDate32OrDefault_arguments, toDate32OrDefault_returned_value, toDate32OrDefault_examples, toDate32OrDefault_introduced_in, toDate32OrDefault_category};
+    FunctionDocumentation toDate32OrDefault_documentation = {toDate32OrDefault_description, toDate32OrDefault_syntax, toDate32OrDefault_arguments, {}, toDate32OrDefault_returned_value, toDate32OrDefault_examples, toDate32OrDefault_introduced_in, toDate32OrDefault_category};
 
     factory.registerFunction("toDate32OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDate32OrDefault", std::make_shared<DataTypeDate32>()); },
@@ -729,7 +729,7 @@ Like [toDateTime](#toDateTime) but if unsuccessful, returns a default value whic
     };
     FunctionDocumentation::Category toDateTimeOrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn toDateTimeOrDefault_introduced_in = {21, 11};
-    FunctionDocumentation toDateTimeOrDefault_documentation = {toDateTimeOrDefault_description, toDateTimeOrDefault_syntax, toDateTimeOrDefault_arguments, toDateTimeOrDefault_returned_value, toDateTimeOrDefault_examples, toDateTimeOrDefault_introduced_in, toDateTimeOrDefault_category};
+    FunctionDocumentation toDateTimeOrDefault_documentation = {toDateTimeOrDefault_description, toDateTimeOrDefault_syntax, toDateTimeOrDefault_arguments, {}, toDateTimeOrDefault_returned_value, toDateTimeOrDefault_examples, toDateTimeOrDefault_introduced_in, toDateTimeOrDefault_category};
     factory.registerFunction("toDateTimeOrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDateTimeOrDefault", std::make_shared<DataTypeDateTime>()); },
         toDateTimeOrDefault_documentation);
@@ -752,7 +752,7 @@ or the provided default if an invalid argument is received.
     };
     FunctionDocumentation::Category toDateTime64OrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn toDateTime64OrDefault_introduced_in = {21, 11};
-    FunctionDocumentation toDateTime64OrDefault_documentation = {toDateTime64OrDefault_description, toDateTime64OrDefault_syntax, toDateTime64OrDefault_arguments, toDateTime64OrDefault_returned_value, toDateTime64OrDefault_examples, toDateTime64OrDefault_introduced_in, toDateTime64OrDefault_category};
+    FunctionDocumentation toDateTime64OrDefault_documentation = {toDateTime64OrDefault_description, toDateTime64OrDefault_syntax, toDateTime64OrDefault_arguments, {}, toDateTime64OrDefault_returned_value, toDateTime64OrDefault_examples, toDateTime64OrDefault_introduced_in, toDateTime64OrDefault_category};
 
     factory.registerFunction("toDateTime64OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDateTime64OrDefault", std::make_shared<DataTypeDateTime64>(3)); },
@@ -774,7 +774,7 @@ Like [`toDecimal32`](#toDecimal32), this function converts an input value to a v
     };
     FunctionDocumentation::Category toDecimal32OrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn toDecimal32OrDefault_introduced_in = {21, 11};
-    FunctionDocumentation toDecimal32OrDefault_documentation = {toDecimal32OrDefault_description, toDecimal32OrDefault_syntax, toDecimal32OrDefault_arguments, toDecimal32OrDefault_returned_value, toDecimal32OrDefault_examples, toDecimal32OrDefault_introduced_in, toDecimal32OrDefault_category};
+    FunctionDocumentation toDecimal32OrDefault_documentation = {toDecimal32OrDefault_description, toDecimal32OrDefault_syntax, toDecimal32OrDefault_arguments, {}, toDecimal32OrDefault_returned_value, toDecimal32OrDefault_examples, toDecimal32OrDefault_introduced_in, toDecimal32OrDefault_category};
 
     factory.registerFunction("toDecimal32OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDecimal32OrDefault", createDecimalMaxPrecision<Decimal32>(0)); },
@@ -796,7 +796,7 @@ Like [`toDecimal64`](#toDecimal64), this function converts an input value to a v
     };
     FunctionDocumentation::Category toDecimal64OrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn toDecimal64OrDefault_introduced_in = {21, 11};
-    FunctionDocumentation toDecimal64OrDefault_documentation = {toDecimal64OrDefault_description, toDecimal64OrDefault_syntax, toDecimal64OrDefault_arguments, toDecimal64OrDefault_returned_value, toDecimal64OrDefault_examples, toDecimal64OrDefault_introduced_in, toDecimal64OrDefault_category};
+    FunctionDocumentation toDecimal64OrDefault_documentation = {toDecimal64OrDefault_description, toDecimal64OrDefault_syntax, toDecimal64OrDefault_arguments, {}, toDecimal64OrDefault_returned_value, toDecimal64OrDefault_examples, toDecimal64OrDefault_introduced_in, toDecimal64OrDefault_category};
 
     factory.registerFunction("toDecimal64OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDecimal64OrDefault", createDecimalMaxPrecision<Decimal64>(0)); },
@@ -818,7 +818,7 @@ Like [`toDecimal128`](#toDecimal128), this function converts an input value to a
     };
     FunctionDocumentation::Category toDecimal128OrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn toDecimal128OrDefault_introduced_in = {21, 11};
-    FunctionDocumentation toDecimal128OrDefault_documentation = {toDecimal128OrDefault_description, toDecimal128OrDefault_syntax, toDecimal128OrDefault_arguments, toDecimal128OrDefault_returned_value, toDecimal128OrDefault_examples, toDecimal128OrDefault_introduced_in, toDecimal128OrDefault_category};
+    FunctionDocumentation toDecimal128OrDefault_documentation = {toDecimal128OrDefault_description, toDecimal128OrDefault_syntax, toDecimal128OrDefault_arguments, {}, toDecimal128OrDefault_returned_value, toDecimal128OrDefault_examples, toDecimal128OrDefault_introduced_in, toDecimal128OrDefault_category};
 
     factory.registerFunction("toDecimal128OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDecimal128OrDefault", createDecimalMaxPrecision<Decimal128>(0)); },
@@ -840,7 +840,7 @@ Like [`toDecimal256`](#toDecimal256), this function converts an input value to a
     };
     FunctionDocumentation::Category toDecimal256OrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn toDecimal256OrDefault_introduced_in = {21, 11};
-    FunctionDocumentation toDecimal256OrDefault_documentation = {toDecimal256OrDefault_description, toDecimal256OrDefault_syntax, toDecimal256OrDefault_arguments, toDecimal256OrDefault_returned_value, toDecimal256OrDefault_examples, toDecimal256OrDefault_introduced_in, toDecimal256OrDefault_category};
+    FunctionDocumentation toDecimal256OrDefault_documentation = {toDecimal256OrDefault_description, toDecimal256OrDefault_syntax, toDecimal256OrDefault_arguments, {}, toDecimal256OrDefault_returned_value, toDecimal256OrDefault_examples, toDecimal256OrDefault_introduced_in, toDecimal256OrDefault_category};
 
     factory.registerFunction("toDecimal256OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDecimal256OrDefault", createDecimalMaxPrecision<Decimal256>(0)); },
@@ -887,7 +887,7 @@ SELECT toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0
     };
     FunctionDocumentation::IntroducedIn toUUIDOrDefault_introduced_in = {21, 1};
     FunctionDocumentation::Category toUUIDOrDefault_category = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation toUUIDOrDefault_documentation = {toUUIDOrDefault_description, toUUIDOrDefault_syntax, toUUIDOrDefault_arguments, toUUIDOrDefault_returned_value, toUUIDOrDefault_examples, toUUIDOrDefault_introduced_in, toUUIDOrDefault_category};
+    FunctionDocumentation toUUIDOrDefault_documentation = {toUUIDOrDefault_description, toUUIDOrDefault_syntax, toUUIDOrDefault_arguments, {}, toUUIDOrDefault_returned_value, toUUIDOrDefault_examples, toUUIDOrDefault_introduced_in, toUUIDOrDefault_category};
 
     factory.registerFunction("toUUIDOrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUUIDOrDefault", std::make_shared<DataTypeUUID>()); }, toUUIDOrDefault_documentation);
@@ -925,7 +925,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn toIPv4OrDefault_introduced_in = {22, 3};
     FunctionDocumentation::Category toIPv4OrDefault_category = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation toIPv4OrDefault_documentation = {toIPv4OrDefault_description, toIPv4OrDefault_syntax, toIPv4OrDefault_arguments, toIPv4OrDefault_returned_value, toIPv4OrDefault_examples, toIPv4OrDefault_introduced_in, toIPv4OrDefault_category};
+    FunctionDocumentation toIPv4OrDefault_documentation = {toIPv4OrDefault_description, toIPv4OrDefault_syntax, toIPv4OrDefault_arguments, {}, toIPv4OrDefault_returned_value, toIPv4OrDefault_examples, toIPv4OrDefault_introduced_in, toIPv4OrDefault_category};
 
     factory.registerFunction("toIPv4OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toIPv4OrDefault", std::make_shared<DataTypeIPv4>()); },
@@ -963,7 +963,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn toIPv6OrDefault_introduced_in = {22, 3};
     FunctionDocumentation::Category toIPv6OrDefault_category = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation toIPv6OrDefault_documentation = {toIPv6OrDefault_description, toIPv6OrDefault_syntax, toIPv6OrDefault_arguments, toIPv6OrDefault_returned_value, toIPv6OrDefault_examples, toIPv6OrDefault_introduced_in, toIPv6OrDefault_category};
+    FunctionDocumentation toIPv6OrDefault_documentation = {toIPv6OrDefault_description, toIPv6OrDefault_syntax, toIPv6OrDefault_arguments, {}, toIPv6OrDefault_returned_value, toIPv6OrDefault_examples, toIPv6OrDefault_introduced_in, toIPv6OrDefault_category};
 
     factory.registerFunction("toIPv6OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toIPv6OrDefault", std::make_shared<DataTypeIPv6>()); },

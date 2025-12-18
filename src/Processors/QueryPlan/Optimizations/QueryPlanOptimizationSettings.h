@@ -121,7 +121,7 @@ struct QueryPlanOptimizationSettings
 
     /// If full text search using index in payload is enabled.
     bool direct_read_from_text_index;
-    bool allow_experimental_full_text_index;
+    bool enable_full_text_index;
 
     bool use_skip_indexes_for_top_k;
     bool use_top_k_dynamic_filtering;

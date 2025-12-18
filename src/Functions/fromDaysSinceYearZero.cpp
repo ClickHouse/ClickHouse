@@ -138,7 +138,7 @@ fromDaysSinceYearZero(toDaysSinceYearZero(toDate('2023-09-08'))) AS date2
     };
     FunctionDocumentation::IntroducedIn introduced_in_fromDaysSinceYearZero = {23, 11};
     FunctionDocumentation::Category category_fromDaysSinceYearZero = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_fromDaysSinceYearZero = {description_fromDaysSinceYearZero, syntax_fromDaysSinceYearZero, arguments_fromDaysSinceYearZero, returned_value_fromDaysSinceYearZero, examples_fromDaysSinceYearZero, introduced_in_fromDaysSinceYearZero, category_fromDaysSinceYearZero};
+    FunctionDocumentation documentation_fromDaysSinceYearZero = {description_fromDaysSinceYearZero, syntax_fromDaysSinceYearZero, arguments_fromDaysSinceYearZero, {}, returned_value_fromDaysSinceYearZero, examples_fromDaysSinceYearZero, introduced_in_fromDaysSinceYearZero, category_fromDaysSinceYearZero};
     factory.registerFunction<FunctionFromDaysSinceYearZero<DateTraits>>(documentation_fromDaysSinceYearZero);
 
     FunctionDocumentation::Description description_fromDaysSinceYearZero32 = R"(
@@ -168,7 +168,7 @@ fromDaysSinceYearZero32(toDaysSinceYearZero(toDate('2023-09-08'))) AS date2
     };
     FunctionDocumentation::IntroducedIn introduced_in_fromDaysSinceYearZero32 = {23, 11};
     FunctionDocumentation::Category category_fromDaysSinceYearZero32 = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_fromDaysSinceYearZero32 = {description_fromDaysSinceYearZero32, syntax_fromDaysSinceYearZero32, arguments_fromDaysSinceYearZero32, returned_value_fromDaysSinceYearZero32, examples_fromDaysSinceYearZero32, introduced_in_fromDaysSinceYearZero32, category_fromDaysSinceYearZero32};
+    FunctionDocumentation documentation_fromDaysSinceYearZero32 = {description_fromDaysSinceYearZero32, syntax_fromDaysSinceYearZero32, arguments_fromDaysSinceYearZero32, {}, returned_value_fromDaysSinceYearZero32, examples_fromDaysSinceYearZero32, introduced_in_fromDaysSinceYearZero32, category_fromDaysSinceYearZero32};
     factory.registerFunction<FunctionFromDaysSinceYearZero<DateTraits32>>(documentation_fromDaysSinceYearZero32);
 
     factory.registerAlias("FROM_DAYS", FunctionFromDaysSinceYearZero<DateTraits>::name, FunctionFactory::Case::Insensitive);
