@@ -87,9 +87,15 @@ static void filterColumns(Columns & columns, const FilterWithCachedCount & filte
                     column->size(), filter.size());
 
             if (canInplaceFilter(column, filter.getColumn()))
-                column->assumeMutable()->filter(filter_data);
+            {
+                auto mutable_column = IColumn::mutate(std::move(column));
+                mutable_column->filter(filter_data);
+                column = std::move(mutable_column);
+            }
             else
+            {
                 column = column->filter(filter_data, filter.countBytesInFilter());
+            }
 
             if (column->empty())
             {
