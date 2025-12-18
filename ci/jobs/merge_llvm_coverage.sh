@@ -6,7 +6,7 @@ echo "Merging LLVM coverage files..."
 
 # Auto-detect available LLVM tools
 if [ -z "$LLVM_PROFDATA" ]; then
-  for ver in 20 18 19 17 16 ""; do
+  for ver in 21 20 18 19 17 16 ""; do
     if command -v "llvm-profdata${ver:+-$ver}" &> /dev/null; then
       LLVM_PROFDATA="llvm-profdata${ver:+-$ver}"
       break
@@ -15,7 +15,7 @@ if [ -z "$LLVM_PROFDATA" ]; then
 fi
 
 if [ -z "$LLVM_COV" ]; then
-  for ver in 20 18 19 17 16 ""; do
+  for ver in 21 20 18 19 17 16 ""; do
     if command -v "llvm-cov${ver:+-$ver}" &> /dev/null; then
       LLVM_COV="llvm-cov${ver:+-$ver}"
       break
