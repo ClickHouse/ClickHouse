@@ -11,6 +11,7 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Logger.h>
 #include <Common/SensitiveDataMasker.h>
+#include <Common/StackTrace.h>
 #include <Common/config_version.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/formatReadable.h>
@@ -63,7 +64,7 @@ void abortOnFailedAssertion(const String & description)
 bool terminate_on_any_exception = false;
 std::atomic_bool abort_on_logical_error = false;
 static int terminate_status_code = 128 + SIGABRT;
-std::function<void(std::string_view format_string, int code, bool remote, const Exception::FramePointers & trace)> Exception::callback = {};
+std::function<void(std::string_view format_string, int code, bool remote, const Exception::Trace & trace)> Exception::callback = {};
 
 constexpr bool debug_or_sanitizer_build =
 #ifdef DEBUG_OR_SANITIZER_BUILD
@@ -77,7 +78,7 @@ false
 /// - Aborts the process if error code is LOGICAL_ERROR.
 /// - Increments error codes statistics.
 static size_t handle_error_code(
-    const std::string & msg, std::string_view format_string, int code, bool remote, const Exception::FramePointers & trace)
+    const std::string & msg, std::string_view format_string, int code, bool remote, const Exception::Trace & trace)
 {
     // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
     // Log the message before we fail.
@@ -224,7 +225,7 @@ std::string Exception::getStackTraceString() const
     __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
     String thread_stack_trace;
     std::for_each(capture_thread_frame_pointers.rbegin(), capture_thread_frame_pointers.rend(),
-        [&thread_stack_trace](StackTrace::FramePointers & frame_pointers)
+        [&thread_stack_trace](FramePointers & frame_pointers)
         {
             thread_stack_trace +=
                 "\nJob's origin stack trace:\n" +
@@ -238,9 +239,9 @@ std::string Exception::getStackTraceString() const
 #endif
 }
 
-Exception::FramePointers Exception::getStackFramePointers() const
+Exception::Trace Exception::getStackFramePointers() const
 {
-    FramePointers frame_pointers;
+    Trace frame_pointers;
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
     {
         frame_pointers.resize(get_stack_trace_size());

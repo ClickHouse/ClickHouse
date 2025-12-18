@@ -2,8 +2,8 @@
 
 #include <base/defines.h>
 #include <base/errnoToString.h>
+#include <Common/FramePointers.h>
 #include <Common/LoggingFormatStringHelpers.h>
-#include <Common/StackTrace.h>
 #include <Core/LogsLevel.h>
 
 #include <atomic>
@@ -14,6 +14,9 @@
 #include <fmt/format.h>
 #include <Poco/Exception.h>
 
+#ifndef STD_EXCEPTION_HAS_STACK_TRACE
+#include <Common/StackTrace.h>
+#endif
 
 namespace Poco
 {
@@ -37,7 +40,7 @@ extern std::atomic_bool abort_on_logical_error;
 class Exception : public Poco::Exception
 {
 public:
-    using FramePointers = std::vector<void *>;
+    using Trace = std::vector<void *>;
 
     Exception()
     {
@@ -72,7 +75,7 @@ public:
 
     /// Collect call stacks of all previous jobs' schedulings leading to this thread job's execution
     static thread_local bool enable_job_stack_trace;
-    using ThreadFramePointersBase = std::vector<StackTrace::FramePointers>;
+    using ThreadFramePointersBase = std::vector<FramePointers>;
 
     /// If thread is going to use thread_frame_pointers then this initializer should be called at the beginning of a thread function.
     /// It is necessary to force thread_frame_pointers to be initialized - static thread_local members are lazy initializable.
@@ -86,7 +89,7 @@ public:
     static void clearThreadFramePointers();
 
     /// Callback for any exception
-    static std::function<void(std::string_view format_string, int code, bool remote, const Exception::FramePointers & trace)> callback;
+    static std::function<void(std::string_view format_string, int code, bool remote, const Exception::Trace & trace)> callback;
 
 protected:
     static thread_local bool can_use_thread_frame_pointers;
@@ -171,7 +174,7 @@ public:
 
     std::string getStackTraceString() const;
     /// Used for system.errors
-    FramePointers getStackFramePointers() const;
+    Trace getStackFramePointers() const;
 
     std::string_view tryGetMessageFormatString() const { return message_format_string; }
 
@@ -204,7 +207,7 @@ protected:
     std::string_view message_format_string;
     std::vector<std::string> message_format_string_args;
     /// Local copy of static per-thread thread_frame_pointers, should be mutable to be unpoisoned on printout
-    mutable std::vector<StackTrace::FramePointers> capture_thread_frame_pointers;
+    mutable std::vector<FramePointers> capture_thread_frame_pointers;
 };
 
 /// Most common exception constructor (just a string). Forward declare to avoid many unnecessary instantiations

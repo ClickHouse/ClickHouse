@@ -1,4 +1,5 @@
 #include <Common/LoggingFormatStringHelpers.h>
+#include <Common/StackTrace.h>
 #include <Common/thread_local_rng.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
