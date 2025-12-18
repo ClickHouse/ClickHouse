@@ -375,6 +375,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"set_smt_disk", [&](const JSONObjectType & value) { set_smt_disk = value.getBool(); }},
         {"allow_query_oracles", [&](const JSONObjectType & value) { allow_query_oracles = value.getBool(); }},
         {"allow_health_check", [&](const JSONObjectType & value) { allow_health_check = value.getBool(); }},
+        {"enable_compatibility_settings", [&](const JSONObjectType & value) { enable_compatibility_settings = value.getBool(); }},
         {"max_reconnection_attempts",
          [&](const JSONObjectType & value)
          { max_reconnection_attempts = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},

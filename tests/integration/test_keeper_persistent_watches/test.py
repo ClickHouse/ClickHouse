@@ -1,13 +1,9 @@
 import struct
 import time
 
+import logging
 import pytest
-import docker
 import os
-import sys
-import subprocess
-from kazoo.exceptions import NoNodeError
-import helpers.keeper_utils as ku
 import threading
 import re
 
@@ -16,10 +12,7 @@ from helpers.cluster import ClickHouseCluster
 
 from kazoo.protocol.states import (
     AddWatchMode,
-    KazooState,
-    KeeperState,
     WatcherType,
-    EventType,
 )
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -34,24 +27,6 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1", main_configs=["configs/keeper_config1.xml"], stay_alive=True
 )
-node2 = cluster.add_instance(
-    "node2", main_configs=["configs/keeper_config2.xml"], stay_alive=True
-)
-node3 = cluster.add_instance(
-    "node3", main_configs=["configs/keeper_config3.xml"], stay_alive=True
-)
-
-bool_struct = struct.Struct("B")
-int_struct = struct.Struct("!i")
-int_int_struct = struct.Struct("!ii")
-int_int_long_struct = struct.Struct("!iiq")
-
-int_long_int_long_struct = struct.Struct("!iqiq")
-long_struct = struct.Struct("!q")
-multiheader_struct = struct.Struct("!iBi")
-reply_header_struct = struct.Struct("!iqi")
-stat_struct = struct.Struct("!qqqqiiiqiiq")
-
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -100,10 +75,15 @@ def parse_watch_stats():
     return conn_count, watch_path_count, watch_count
 
 def test_persistent_watch(started_cluster):
+    node1.restart_clickhouse()
     keeper_utils.wait_until_connected(cluster, node1)
     client = get_fake_zk(node1)
     NODE_PATH = "/testPersistentWatch2"
     FAKE_PATH = "/fakeNode"
+
+    for path in [NODE_PATH, FAKE_PATH]:
+        if client.exists(path):
+            client.delete(path)
 
     events = []
     event_lock = threading.Event()
@@ -116,14 +96,12 @@ def test_persistent_watch(started_cluster):
     client.create(FAKE_PATH, b"1")
 
     client.add_watch(NODE_PATH, callback, AddWatchMode.PERSISTENT)
-    with pytest.raises(Exception) as err:
-        client.add_watch(NODE_PATH, callback, AddWatchMode.PERSISTENT)
+    client.add_watch(NODE_PATH, callback, AddWatchMode.PERSISTENT)
 
     conn_count, watch_path_count, watch_count = parse_watch_stats()
-    # there could be connection to system node.
-    if conn_count == 1:
-        assert watch_path_count == 1
-        assert watch_count == 1
+    assert conn_count == 1
+    assert watch_path_count == 2
+    assert watch_count == 2
 
     full_path = client.chroot + NODE_PATH
     assert len(client._persistent_watchers[full_path]) == 1
@@ -152,6 +130,7 @@ def test_persistent_watch(started_cluster):
     client.delete(FAKE_PATH)
 
 def test_persistent_recursive_watch(started_cluster):
+    node1.restart_clickhouse()
     keeper_utils.wait_until_connected(cluster, node1)
     client = get_fake_zk(node1)
 
@@ -159,6 +138,10 @@ def test_persistent_recursive_watch(started_cluster):
     NODE_PATH = "/testPersistentWatch2"
     CHILD_NODE = "/testPersistentWatch2/child"
     FAKE_PATH = "/fakeNode"
+
+    for path in [NODE_PATH, CHILD_NODE, FAKE_PATH]:
+        if client.exists(path):
+            client.delete(path)
 
     events = []
     event_lock = threading.Event()
@@ -172,13 +155,12 @@ def test_persistent_recursive_watch(started_cluster):
     client.create(FAKE_PATH, b"1")
 
     client.add_watch(NODE_PATH, callback, AddWatchMode.PERSISTENT_RECURSIVE)
-    with pytest.raises(Exception) as err:
-        client.add_watch(NODE_PATH, callback, AddWatchMode.PERSISTENT_RECURSIVE)
+    client.add_watch(NODE_PATH, callback, AddWatchMode.PERSISTENT_RECURSIVE)
 
     conn_count, watch_path_count, watch_count = parse_watch_stats()
-    if conn_count == 1:
-        assert watch_path_count == 1
-        assert watch_count == 1
+    assert conn_count == 1
+    assert watch_path_count == 1
+    assert watch_count == 1
 
     event_lock.clear()
     client.set(NODE_PATH, b"2")

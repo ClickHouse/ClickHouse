@@ -309,6 +309,17 @@ ColumnPtr ColumnReplicated::filter(const Filter & filt, ssize_t result_size_hint
     return create(filtered_nested_column, std::move(filtered_indexes));
 }
 
+void ColumnReplicated::filter(const Filter & filt)
+{
+    if (size() != filt.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size());
+
+    indexes.getIndexesPtr()->filter(filt);
+    auto mutable_nested = nested_column->assumeMutable();
+    indexes.removeUnusedRowsInIndexedData(mutable_nested);
+    insertion_cache.clear();
+}
+
 void ColumnReplicated::expand(const Filter & mask, bool inverted)
 {
     indexes.expand(mask, inverted);
