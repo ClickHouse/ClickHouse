@@ -72,7 +72,16 @@ void ReplicatedMergeTreeCleanupThread::run()
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
         if (e.code == Coordination::Error::ZSESSIONEXPIRED)
+        {
+            /// Do not return early without rescheduling - this can cause the cleanup thread
+            /// to stop permanently if ZK reconnects before the restarting thread runs.
+            /// Race condition: if ZK reconnects quickly, runImpl() in ReplicatedMergeTreeRestartingThread
+            /// may see !is_readonly && !expired() and return early without calling cleanup_thread.start().
+            /// Instead, reschedule with max delay. If the table goes into readonly mode,
+            /// partialShutdown() will deactivate this task anyway.
+            task->scheduleAfter((*storage_settings)[MergeTreeSetting::max_cleanup_delay_period] * 1000);
             return;
+        }
     }
     catch (...)
     {
