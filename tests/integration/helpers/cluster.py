@@ -744,6 +744,7 @@ class ClickHouseCluster:
         self.rabbitmq_ip = None
         self.rabbitmq_port = 5672
         self.rabbitmq_secure_port = 5671
+        self.rabbitmq_management_port = 15672
         self.rabbitmq_dir = p.abspath(p.join(self.instances_dir, "rabbitmq"))
         self.rabbitmq_cookie_file = os.path.join(self.rabbitmq_dir, "erlang.cookie")
         self.rabbitmq_logs_dir = os.path.join(self.rabbitmq_dir, "logs")
@@ -1552,6 +1553,7 @@ class ClickHouseCluster:
         env_variables["RABBITMQ_HOST"] = self.rabbitmq_host
         env_variables["RABBITMQ_PORT"] = str(self.rabbitmq_port)
         env_variables["RABBITMQ_SECURE_PORT"] = str(self.rabbitmq_secure_port)
+        env_variables["RABBITMQ_MANAGEMENT_PORT"] = str(self.rabbitmq_management_port)
         env_variables["RABBITMQ_LOGS"] = self.rabbitmq_logs_dir
         env_variables["RABBITMQ_LOGS_FS"] = "bind"
         env_variables["RABBITMQ_COOKIE_FILE"] = self.rabbitmq_cookie_file
