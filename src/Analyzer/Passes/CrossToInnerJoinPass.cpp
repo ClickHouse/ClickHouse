@@ -152,8 +152,8 @@ public:
             /// If there is common key type, we can join on this condition
             if (common_key_type)
             {
-                auto left_src = getExpressionSource(lhs_equi_argument).first;
-                auto right_src = getExpressionSource(rhs_equi_argument).first;
+                auto left_src = getExpressionSource(lhs_equi_argument);
+                auto right_src = getExpressionSource(rhs_equi_argument);
 
                 if (left_src && right_src)
                 {
@@ -375,7 +375,6 @@ private:
             return nodes.front();
 
         auto function_node = std::make_shared<FunctionNode>("and");
-        function_node->markAsOperator();
         for (const auto & node : nodes)
             function_node->getArguments().getNodes().push_back(node);
 

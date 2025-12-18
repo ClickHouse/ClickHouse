@@ -5,13 +5,12 @@ description: 'This engine provides integration with the Apache Hadoop ecosystem 
 sidebar_label: 'HDFS'
 sidebar_position: 80
 slug: /engines/table-engines/integrations/hdfs
-title: 'HDFS table engine'
-doc_type: 'reference'
+title: 'HDFS'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# HDFS table engine
+# HDFS
 
 <CloudNotSupportedBadge/>
 

@@ -4,7 +4,6 @@ description: 'quantileExact, quantileExactLow, quantileExactHigh, quantileExactE
 sidebar_position: 173
 slug: /sql-reference/aggregate-functions/reference/quantileexact
 title: 'quantileExact Functions'
-doc_type: 'reference'
 ---
 
 # quantileExact functions
@@ -47,6 +46,8 @@ SELECT
     toTypeName(quantileExact(number::Float64)) AS `quantile_float64`,
     toTypeName(quantileExact(number::Int64)) AS `quantile_int64`
 FROM numbers(1)
+
+
    ┌─quantile─┬─quantile_int32─┬─quantile_float32─┬─quantile_float64─┬─quantile_int64─┐
 1. │ UInt64   │ Int32          │ Float32          │ Float64          │ Int64          │
    └──────────┴────────────────┴──────────────────┴──────────────────┴────────────────┘

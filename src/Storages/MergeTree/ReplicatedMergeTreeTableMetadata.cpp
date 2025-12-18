@@ -97,8 +97,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
 
     ttl_table = formattedASTNormalized(metadata_snapshot->getTableTTLs().definition_ast);
 
-    /// We only store skip indices that are explicitly defined by user
-    skip_indices = metadata_snapshot->getSecondaryIndices().explicitToString();
+    skip_indices = metadata_snapshot->getSecondaryIndices().toString();
 
     projections = metadata_snapshot->getProjections().toString();
 
@@ -370,17 +369,11 @@ bool ReplicatedMergeTreeTableMetadata::checkEquals(
         is_equal = false;
     }
 
-    String parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, context).explicitToString();
+    String parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, context).toString();
     if (skip_indices != parsed_zk_skip_indices)
     {
-        String all_parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, context).allToString();
-        // Backward compatibility: older replicas included implicit indices in metadata,
-        // while newer ones exclude them. This check allows comparison between both formats.
-        if (skip_indices != all_parsed_zk_skip_indices)
-        {
-            handleTableMetadataMismatch(table_name_for_error_message, "skip indexes", from_zk.skip_indices, parsed_zk_skip_indices, skip_indices, strict_check, logger);
-            is_equal = false;
-        }
+        handleTableMetadataMismatch(table_name_for_error_message, "skip indexes", from_zk.skip_indices, parsed_zk_skip_indices, skip_indices, strict_check, logger);
+        is_equal = false;
     }
 
     String parsed_zk_projections = ProjectionsDescription::parse(from_zk.projections, columns, context).toString();
@@ -474,7 +467,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
                 order_by_ast = new_sorting_key_expr_list->children[0];
             else
             {
-                auto tuple = makeASTOperator("tuple");
+                auto tuple = makeASTFunction("tuple");
                 tuple->arguments->children = new_sorting_key_expr_list->children;
                 order_by_ast = tuple;
             }
