@@ -209,7 +209,7 @@ void FailPointInjection::notifyFailPoint(const String & fail_point_name)
     if (auto iter = fail_point_wait_channels.find(fail_point_name); iter != fail_point_wait_channels.end())
     {
         /// Increment resume_epoch to mark a new notification cycle
-         ++iter->second->resume_epoch;
+        ++iter->second->resume_epoch;
         iter->second->resume_cv.notify_all();
     }
     else
