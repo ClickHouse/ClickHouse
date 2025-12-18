@@ -5,6 +5,7 @@
 #include <fmt/base.h>
 
 #include <type_traits>
+#include <vector>
 
 struct PreformattedMessage;
 consteval void formatStringCheckArgsNumImpl(std::string_view str, size_t nargs);
