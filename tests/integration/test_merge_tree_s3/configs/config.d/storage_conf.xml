@@ -157,7 +157,7 @@
     <merge_tree>
         <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
         <ratio_of_defaults_for_sparse_serialization>1.0</ratio_of_defaults_for_sparse_serialization>
-        <serialization_info_version>default</serialization_info_version>
+        <serialization_info_version>basic</serialization_info_version>
         <min_bytes_for_full_part_storage>0</min_bytes_for_full_part_storage>
         <disable_freeze_partition_for_zero_copy_replication>0</disable_freeze_partition_for_zero_copy_replication>
         <disable_detach_partition_for_zero_copy_replication>0</disable_detach_partition_for_zero_copy_replication>

@@ -196,7 +196,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                 const ActionsDAG::Node * prewhere_node = prewhere_info
                     ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
                     : nullptr;
-                auto relation_profile = estimator_->estimateRelationProfile(filter, prewhere_node);
+                auto relation_profile = estimator_->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
                 RelationStats stats {.estimated_rows = relation_profile.rows, .column_stats = relation_profile.column_stats, .table_name = table_display_name};
                 LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
                 return stats;
@@ -505,12 +505,6 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
 
     graph.inputs.push_back(node);
     RelationStats stats = estimateReadRowsCount(*node);
-    if (!label.empty() && !graph.context->dummy_stats.empty())
-    {
-        auto dummy_stats = getDummyStats(graph.context->dummy_stats, label);
-        if (!dummy_stats.table_name.empty())
-            stats = std::move(dummy_stats);
-    }
 
     std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
     if (num_rows_from_cache)
@@ -566,6 +560,8 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
         join_expression_sources.set(total_inputs - 1, false);
         query_graph.join_kinds[total_inputs - 1] = std::make_pair(std::move(join_expression_sources), join_kind);
     }
+    if (join_kind == JoinKind::Cross || join_kind == JoinKind::Comma)
+        query_graph.join_kinds[0] = std::make_pair(BitSet{}, JoinKind::Cross);
 
     chassert(lhs_count && rhs_count && lhs_count + rhs_count == total_inputs && query_graph.relation_stats.size() == total_inputs);
 
@@ -749,7 +745,9 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
     if (!global_actions_dag)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global expression actions DAG is not set");
 
-    auto optimized = optimizeJoinOrder(std::move(query_graph));
+    const auto & optimization_settings = query_graph_builder.context->optimization_settings;
+
+    auto optimized = optimizeJoinOrder(std::move(query_graph), optimization_settings);
     auto sequence = getJoinTreePostOrderSequence(optimized);
 
     if (sequence.empty())
@@ -822,7 +820,6 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
         input_node_map[input] = input_idx;
     }
 
-    const auto & optimization_settings = query_graph_builder.context->optimization_settings;
     for (size_t entry_idx = 0; entry_idx < sequence.size(); ++entry_idx)
     {
         auto * entry = sequence[entry_idx];
@@ -890,10 +887,6 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             const auto & right_header = *right_header_ptr;
 
             ActionsDAG::NodeRawConstPtrs required_output_nodes;
-            for (const auto & action : join_operator.expression)
-                required_output_nodes.push_back(action.getNode());
-            for (const auto & action : join_operator.residual_filter)
-                required_output_nodes.push_back(action.getNode());
 
             /// input pos -> new input node
             std::unordered_map<size_t, const ActionsDAG::Node *> current_step_type_changes;
@@ -929,6 +922,11 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
                 /// add input (possibly which changed type) to required output
                 required_output_nodes.push_back(out_node);
             }
+
+            for (const auto & action : join_operator.expression)
+                required_output_nodes.push_back(action.getNode());
+            for (const auto & action : join_operator.residual_filter)
+                required_output_nodes.push_back(action.getNode());
 
             if (entry_idx == sequence.size() - 1)
             {

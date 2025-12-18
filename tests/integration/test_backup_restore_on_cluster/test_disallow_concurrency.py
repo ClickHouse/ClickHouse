@@ -1,76 +1,29 @@
-import concurrent
-import os.path
-import tempfile
-import re
-import time
-from random import randint
+from typing import List
 
 import pytest
 
-from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV, assert_eq_with_retry
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.test_tools import assert_eq_with_retry
+
+from .concurrency_helper import (
+    add_nodes_to_cluster,
+    create_test_table,
+    generate_cluster_def,
+)
 
 cluster = ClickHouseCluster(__file__)
 
 num_nodes = 2
 
 
-def generate_cluster_def():
-    dir = os.path.dirname(os.path.realpath(__file__))
-    path = os.path.join(dir, "./_gen/cluster_for_test_disallow_concurrency.xml")
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-
-    # Atomic write of the temporary file (since this code can be run in parallel for tests discovery)
-    temp_path = None
-    with tempfile.NamedTemporaryFile(mode='w', dir=dir, delete=False) as f:
-        temp_path = f.name
-        f.write(
-            """
-        <clickhouse>
-            <remote_servers>
-                <cluster>
-                    <shard>
-        """
-        )
-        for i in range(num_nodes):
-            f.write(
-                """
-                        <replica>
-                            <host>node"""
-                + str(i)
-                + """</host>
-                            <port>9000</port>
-                        </replica>
-            """
-            )
-        f.write(
-            """
-                    </shard>
-                </cluster>
-            </remote_servers>
-        </clickhouse>
-        """
-        )
-    os.rename(temp_path, path)
-    return path
-
-
-main_configs = ["configs/disallow_concurrency.xml", generate_cluster_def()]
+main_configs = [
+    "configs/disallow_concurrency.xml",
+    generate_cluster_def(__file__, num_nodes),
+]
 # No [Zoo]Keeper retries for tests with concurrency
 user_configs = ["configs/allow_database_types.xml"]
 
-nodes = []
-for i in range(num_nodes):
-    nodes.append(
-        cluster.add_instance(
-            f"node{i}",
-            main_configs=main_configs,
-            user_configs=user_configs,
-            external_dirs=["/backups/"],
-            macros={"replica": f"node{i}", "shard": "shard1"},
-            with_zookeeper=True,
-        )
-    )
+nodes = add_nodes_to_cluster(cluster, num_nodes, main_configs, user_configs)
 
 node0 = nodes[0]
 
@@ -100,21 +53,16 @@ def drop_after_test():
 backup_id_counter = 0
 
 
+def create_and_fill_table() -> None:
+    create_test_table(node0)
+    for node in nodes:
+        node.query("INSERT INTO tbl SELECT number FROM numbers(40000000)")
+
+
 def new_backup_name():
     global backup_id_counter
     backup_id_counter += 1
     return f"Disk('backups', '{backup_id_counter}')"
-
-
-def create_and_fill_table():
-    node0.query(
-        "CREATE TABLE tbl ON CLUSTER 'cluster' ("
-        "x UInt64"
-        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
-        "ORDER BY x"
-    )
-    for i in range(num_nodes):
-        nodes[i].query(f"INSERT INTO tbl SELECT number FROM numbers(40000000)")
 
 
 def get_status_and_error(node, backup_or_restore_id):

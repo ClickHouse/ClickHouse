@@ -31,7 +31,7 @@ def test_writes_from_zero(started_cluster_iceberg_with_spark, format_version, st
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES (456);", settings={"allow_experimental_insert_into_iceberg": 1})
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '123\n456\n'
 
-    if storage_type != "local":
+    if storage_type == "azure":
         return
 
     default_download_directory(

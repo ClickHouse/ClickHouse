@@ -143,7 +143,7 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
         ColumnsDescription columns;
 
         if (const auto access_object = getSourceAccessObject())
-            context->getAccess()->checkAccessWithFilter(AccessType::READ, toStringSource(*access_object), getFunctionURI());
+            context->getAccess()->checkAccessWithFilter(AccessType::READ, toStringSource(*access_object), getFunctionURINormalized());
         if (format == "auto")
         {
             columns = StorageURL::getTableStructureAndFormatFromData(

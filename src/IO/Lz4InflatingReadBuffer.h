@@ -27,13 +27,7 @@ private:
 
     LZ4F_dctx* dctx;
 
-    void * in_data;
-    void * out_data;
-
-    size_t in_available;
-    size_t out_available;
-
-    bool eof_flag = false;
+    bool in_eof = false;
 };
 
 }

@@ -11,6 +11,8 @@
 #include <Common/Allocator.h>
 #include <Common/NamePrompter.h>
 
+#include <Processors/Formats/IInputFormat.h>
+
 #include <boost/noncopyable.hpp>
 
 #include <functional>
@@ -96,6 +98,10 @@ private:
             const RowInputFormatParams & params,
             const FormatSettings & settings)>;
 
+    using FileBucketInfoCreator = std::function<FileBucketInfoPtr()>;
+
+    using BucketSplitterCreator = std::function<BucketSplitter()>;
+
     // Incompatible with FileSegmentationEngine.
     using RandomAccessInputCreator = std::function<InputFormatPtr(
         ReadBuffer & buf,
@@ -144,6 +150,8 @@ private:
     {
         String name;
         InputCreator input_creator;
+        FileBucketInfoCreator file_bucket_info_creator;
+        BucketSplitterCreator bucket_splitter_creator;
         RandomAccessInputCreator random_access_input_creator;
         OutputCreator output_creator;
         FileSegmentationEngineCreator file_segmentation_engine_creator;
@@ -180,7 +188,7 @@ public:
         UInt64 max_block_size,
         const std::optional<FormatSettings> & format_settings = std::nullopt,
         FormatParserSharedResourcesPtr parser_shared_resources = nullptr,
-        FormatFilterInfoPtr format_filter_info = std::make_shared<FormatFilterInfo>(),
+        FormatFilterInfoPtr format_filter_info = nullptr,
         // affects things like buffer sizes and parallel reading
         bool is_remote_fs = false,
         // allows to do: buf -> parallel read -> decompression,
@@ -204,6 +212,9 @@ public:
         const ContextPtr & context,
         const std::optional<FormatSettings> & _format_settings = std::nullopt,
         FormatFilterInfoPtr format_filter_info = nullptr) const;
+
+    /// Creates a standalone JSONEachRow output format for debugging or testing.
+    OutputFormatPtr getDefaultJSONEachRowOutputFormat(WriteBuffer & buf, const Block & sample) const;
 
     /// Content-Type to set when sending HTTP response with this output format.
     String getContentType(const String & name, const std::optional<FormatSettings> & settings) const;
@@ -287,6 +298,11 @@ public:
     /// Check that format with specified name exists and throw an exception otherwise.
     void checkFormatName(const String & name) const;
     bool exists(const String & name) const;
+
+    FileBucketInfoPtr getFileBucketInfo(const String & format);
+    void registerFileBucketInfo(const String & format, FileBucketInfoCreator bucket_info);
+    void registerSplitter(const String & format, BucketSplitterCreator splitter);
+    BucketSplitter getSplitter(const String & format);
 
 private:
     FormatsDictionary dict;

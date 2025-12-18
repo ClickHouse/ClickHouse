@@ -2,7 +2,7 @@
 #include <algorithm>
 
 #include <Disks/IO/createReadBufferFromFileBase.h>
-#include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <IO/BoundedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
@@ -83,9 +83,11 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     , cache_log(settings.enable_filesystem_cache_log ? cache_log_ : nullptr)
 {
     LOG_TEST(
-        log, "Boundary alignment: {}, external buffer: {}, allow seeks after first read: {}",
+        log, "Cache key: {}, source file path: {}, boundary alignment: {}, "
+        "external buffer: {}, allow seeks after first read: {}, file size: {}",
+        cache_key.toString(), source_file_path,
         settings.filesystem_cache_boundary_alignment.has_value() ? DB::toString(settings.filesystem_cache_boundary_alignment.value()) : "None",
-        use_external_buffer, allow_seeks_after_first_read);
+        use_external_buffer, allow_seeks_after_first_read, file_size_);
 }
 
 void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
@@ -1048,7 +1050,9 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         bool download_current_segment_succeeded = false;
         if (download_current_segment)
         {
-            chassert(file_offset_of_buffer_end + size - 1 <= file_segment.range().right);
+            chassert(
+                file_offset_of_buffer_end + size - 1 <= file_segment.range().right,
+                fmt::format("Offset: {}, size: {}, file segment range: {}, impl offset: {}", file_offset_of_buffer_end, size, file_segment.range().toString(), implementation_buffer->getPosition()));
 
             std::string failure_reason;
             bool success = file_segment.reserve(size, settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds, failure_reason);
@@ -1273,7 +1277,7 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
         resetWorkingBuffer();
 
     first_offset = file_offset_of_buffer_end = new_pos;
-    file_segments.reset();
+    file_segments = nullptr;
     implementation_buffer.reset();
     cache_file_reader.reset();
     initialized = false;
@@ -1309,7 +1313,7 @@ void CachedOnDiskReadBufferFromFile::setReadUntilPosition(size_t position)
 
     file_offset_of_buffer_end = getPosition();
     resetWorkingBuffer();
-    file_segments.reset();
+    file_segments = nullptr;
     implementation_buffer.reset();
     initialized = false;
     cache_file_reader.reset();

@@ -372,7 +372,7 @@ Signed input integers are first casted to an unsigned integer.
     };
     FunctionDocumentation::IntroducedIn bitPositionsToArray_introduced_in = {21, 7};
     FunctionDocumentation::Category bitPositionsToArray_category = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation bitPositionsToArray_documentation = {bitPositionsToArray_description, bitPositionsToArray_syntax, bitPositionsToArray_arguments, bitPositionsToArray_returned_value, bitPositionsToArray_examples, bitPositionsToArray_introduced_in, bitPositionsToArray_category};
+    FunctionDocumentation bitPositionsToArray_documentation = {bitPositionsToArray_description, bitPositionsToArray_syntax, bitPositionsToArray_arguments, {}, bitPositionsToArray_returned_value, bitPositionsToArray_examples, bitPositionsToArray_introduced_in, bitPositionsToArray_category};
 
     FunctionDocumentation::Description bitmaskToArray_description = R"(
 This function decomposes an integer into a sum of powers of two.
@@ -403,7 +403,7 @@ The powers of two are returned as an ascendingly ordered array.
     };
     FunctionDocumentation::IntroducedIn bitmaskToArray_introduced_in = {1, 1};
     FunctionDocumentation::Category bitmaskToArray_category = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation bitmaskToArray_documentation = {bitmaskToArray_description, bitmaskToArray_syntax, bitmaskToArray_arguments, bitmaskToArray_returned_value, bitmaskToArray_examples, bitmaskToArray_introduced_in, bitmaskToArray_category};
+    FunctionDocumentation bitmaskToArray_documentation = {bitmaskToArray_description, bitmaskToArray_syntax, bitmaskToArray_arguments, {}, bitmaskToArray_returned_value, bitmaskToArray_examples, bitmaskToArray_introduced_in, bitmaskToArray_category};
 
     FunctionDocumentation::Description bitmaskToList_description = R"(
 Like bitmaskToArray but returns the powers of two as a comma-separated string.
@@ -425,7 +425,7 @@ Like bitmaskToArray but returns the powers of two as a comma-separated string.
     };
     FunctionDocumentation::IntroducedIn bitmaskToList_introduced_in = {1, 1};
     FunctionDocumentation::Category bitmaskToList_category = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation bitmaskToList_documentation = {bitmaskToList_description, bitmaskToList_syntax, bitmaskToList_arguments, bitmaskToList_returned_value, bitmaskToList_examples, bitmaskToList_introduced_in, bitmaskToList_category};
+    FunctionDocumentation bitmaskToList_documentation = {bitmaskToList_description, bitmaskToList_syntax, bitmaskToList_arguments, {}, bitmaskToList_returned_value, bitmaskToList_examples, bitmaskToList_introduced_in, bitmaskToList_category};
 
     factory.registerFunction<FunctionBitPositionsToArray>(bitPositionsToArray_documentation);
     factory.registerFunction<FunctionBitmaskToArray>(bitmaskToArray_documentation);

@@ -4,7 +4,7 @@ from ci.jobs.scripts.workflow_hooks.new_tests_check import (
     has_new_functional_tests,
     has_new_integration_tests,
 )
-from ci.jobs.scripts.workflow_hooks.pr_description import Labels
+from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.info import Info
 
 
@@ -57,6 +57,14 @@ def should_skip_job(job_name):
     changed_files = _info_cache.get_kv_data("changed_files")
     if not changed_files:
         print("WARNING: no changed files found for PR - do not filter jobs")
+        return False, ""
+
+    if job_name == JobNames.PR_BODY:
+        # Run the job if AI assistant is explicitly enabled in the PR body
+        if "disable ai pr formatting assistant: true" in _info_cache.pr_body.lower():
+            return True, "AI PR assistant is explicitly disabled in the PR body"
+        if "Reverts ClickHouse/" in _info_cache.pr_body:
+            return True, "Skipped for revert PRs"
         return False, ""
 
     if (

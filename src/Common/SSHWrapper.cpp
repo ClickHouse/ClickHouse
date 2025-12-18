@@ -21,36 +21,14 @@ namespace ErrorCodes
 
 namespace
 {
-
-class SSHString
+struct SSHStringDeleter
 {
-public:
-    explicit SSHString(std::string_view input)
-    {
-        if (string = ssh_string_new(input.size()); string == nullptr)
-            throw Exception(ErrorCodes::LIBSSH_ERROR, "Can't create SSHString");
-        if (int rc = ssh_string_fill(string, input.data(), input.size()); rc != SSH_OK)
-            throw Exception(ErrorCodes::LIBSSH_ERROR, "Can't create SSHString");
-    }
-
-    explicit SSHString(ssh_string other) { string = other; }
-
-    ssh_string get() { return string; }
-
-    String toString()
-    {
-        return {ssh_string_get_char(string), ssh_string_len(string)};
-    }
-
-    ~SSHString()
-    {
-        ssh_string_free(string);
-    }
-
-private:
-    ssh_string string;
+    void operator()(char * ptr) const { ssh_string_free_char(ptr); }
 };
-
+struct CStringDeleter
+{
+    void operator()(char * ptr) const { std::free(ptr); }
+};
 }
 
 SSHKey SSHKeyFactory::makePrivateKeyFromFile(String filename, String passphrase)
@@ -119,20 +97,31 @@ bool SSHKey::isEqual(const SSHKey & other) const
 
 String SSHKey::signString(std::string_view input) const
 {
-    SSHString input_str(input);
-    ssh_string output = nullptr;
-    if (int rc = pki_sign_string(key, input_str.get(), &output); rc != SSH_OK)
-        throw Exception(ErrorCodes::LIBSSH_ERROR, "Error singing with ssh key");
-    SSHString output_str(output);
-    return output_str.toString();
+    char * signature = nullptr;
+    if (int rc = sshsig_sign(input.data(), input.size(), key, nullptr, "clickhouse", SSHSIG_DIGEST_SHA2_256, &signature); rc != SSH_OK)
+        throw Exception(ErrorCodes::LIBSSH_ERROR, "Error signing with ssh key");
+    std::unique_ptr<char, SSHStringDeleter> sig_ptr(signature);
+    return String(sig_ptr.get());
 }
 
 bool SSHKey::verifySignature(std::string_view signature, std::string_view original) const
 {
-    SSHString sig(signature);
-    SSHString orig(original);
-    int rc = pki_verify_string(key, sig.get(), orig.get());
-    return rc == SSH_OK;
+    ssh_key verify_key = nullptr;
+    String sig_str(signature);
+    int rc = sshsig_verify(original.data(), original.size(), sig_str.c_str(), "clickhouse", &verify_key);
+    if (rc != SSH_OK)
+    {
+        if (verify_key != nullptr)
+            ssh_key_free(verify_key);
+        return false;
+    }
+    bool keys_match = false;
+    if (verify_key != nullptr)
+    {
+        keys_match = (ssh_key_cmp(key, verify_key, SSH_KEY_CMP_PUBLIC) == 0);
+        ssh_key_free(verify_key);
+    }
+    return keys_match;
 }
 
 bool SSHKey::isPrivate() const
@@ -143,14 +132,6 @@ bool SSHKey::isPrivate() const
 bool SSHKey::isPublic() const
 {
     return ssh_key_is_public(key);
-}
-
-namespace
-{
-    struct CStringDeleter
-    {
-        void operator()(char * ptr) const { std::free(ptr); }
-    };
 }
 
 String SSHKey::getBase64() const

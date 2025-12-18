@@ -34,7 +34,7 @@ def test_writes_field_partitioning(started_cluster_iceberg_with_spark, storage_t
         '@capibarsci'
     );""", settings={"allow_experimental_insert_into_iceberg": 1})
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '1\t-123\t123\t2025-08-27\t2025-08-27\t-123456789\t123456789\t2025-08-27 12:34:56.000000\t3.14\t2.718281828\t@capibarsci\n'
-    if storage_type != "local":
+    if storage_type == "azure":
         return
 
     default_download_directory(
