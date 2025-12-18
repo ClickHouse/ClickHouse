@@ -97,7 +97,7 @@ UInt32 getSupportedArchs();
 inline ALWAYS_INLINE bool isArchSupported(TargetArch arch)
 {
     static UInt32 arches = getSupportedArchs();
-    return arches & static_cast<UInt32>(arch);
+    return arch == TargetArch::Default || (arches & static_cast<UInt32>(arch));
 }
 
 String toString(TargetArch arch);
