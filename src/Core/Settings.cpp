@@ -136,27 +136,26 @@ The block size should not be too small to avoid noticeable costs when processing
 The maximum size of blocks (in a count of rows) to form for insertion into a table.
 
 This setting controls block formation in two contexts:
-1. **Format parsing**: When the server parses row-based input formats (CSV, TSV, JSONEachRow, etc.) from any interface (HTTP, clickhouse-client with inline data, gRPC, PostgreSQL wire protocol), it uses this setting to determine when to emit a block. 
+1. Format parsing: When the server parses row-based input formats (CSV, TSV, JSONEachRow, etc.) from any interface (HTTP, clickhouse-client with inline data, gRPC, PostgreSQL wire protocol), it uses this setting to determine when to emit a block. 
 Note: When using clickhouse-client or clickhouse-local to read from a file, the client itself parses the data and this setting applies on the client side.
-2. **INSERT operations**: During INSERT...SELECT queries and when data flows through materialized views, blocks are squashed based on this setting before writing to storage.
+2. INSERT operations: During INSERT...SELECT queries and when data flows through materialized views, blocks are squashed based on this setting before writing to storage.
 
-A block is emitted when **either** condition is met:
-- **Min thresholds (AND)**: Both `min_insert_block_size_rows` AND `min_insert_block_size_bytes` are reached
-- **Max thresholds (OR)**: Either `max_insert_block_size_rows` OR `max_insert_block_size_bytes` is reached
+A block is emitted when either condition is met:
+- Min thresholds (AND): Both min_insert_block_size_rows AND min_insert_block_size_bytes are reached
+- Max thresholds (OR): Either max_insert_block_size_rows OR max_insert_block_size_bytes is reached
 
-The default is slightly more than `max_block_size`. The reason for this is that certain table engines (`*MergeTree`) form a data part on the disk for each inserted block, which is a fairly large entity. Similarly, `*MergeTree` tables sort data during insertion, and a large enough block size allow sorting more data in RAM.
+The default is slightly more than max_block_size. The reason for this is that certain table engines (`*MergeTree`) form a data part on the disk for each inserted block, which is a fairly large entity. Similarly, `*MergeTree` tables sort data during insertion, and a large enough block size allow sorting more data in RAM.
 )", 0, max_insert_block_size_rows) \
 DECLARE(UInt64, max_insert_block_size_bytes, DEFAULT_INSERT_BLOCK_SIZE, R"(
 The maximum size of blocks (in bytes) to form for insertion into a table.
 
-This setting works together with `max_insert_block_size_rows` and controls block formation in the same contexts (format parsing and INSERT operations). See `max_insert_block_size_rows` for detailed information about when and how these settings are applied.
+This setting works together with max_insert_block_size_rows and controls block formation in the same contexts (format parsing and INSERT operations). See max_insert_block_size_rows for detailed information about when and how these settings are applied.
 
-A block is emitted when **either** condition is met:
-- **Min thresholds (AND)**: Both `min_insert_block_size_rows` AND `min_insert_block_size_bytes` are reached
-- **Max thresholds (OR)**: Either `max_insert_block_size_rows` OR `max_insert_block_size_bytes` is reached
+A block is emitted when either condition is met:
+- Min thresholds (AND): Both min_insert_block_size_rows AND min_insert_block_size_bytes are reached
+- Max thresholds (OR): Either max_insert_block_size_rows OR max_insert_block_size_bytes is reached
 
 Set to 0 to disable byte-based maximum limit (only row-based limit will apply).
-
 )", 0) \
 DECLARE(UInt64, min_insert_block_size_rows, DEFAULT_INSERT_BLOCK_SIZE, R"(
 Sets the minimum number of rows in the block that can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones.
