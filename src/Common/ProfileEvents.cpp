@@ -1359,9 +1359,9 @@ Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
     return res;
 }
 
-const char * getName(Event event)
+std::string_view getName(Event event)
 {
-    static const char * strings[] =
+    static std::string_view strings[] =
     {
     #define M(NAME, DOCUMENTATION, VALUE_TYPE) #NAME,
         APPLY_FOR_EVENTS(M)
@@ -1373,14 +1373,14 @@ const char * getName(Event event)
 
 const char * getDocumentation(Event event)
 {
-    static const char * strings[] =
+    static std::string_view strings[] =
     {
     #define M(NAME, DOCUMENTATION, VALUE_TYPE) DOCUMENTATION,
         APPLY_FOR_EVENTS(M)
     #undef M
     };
 
-    return strings[event];
+    return strings[event].data();
 }
 
 ValueType getValueType(Event event)

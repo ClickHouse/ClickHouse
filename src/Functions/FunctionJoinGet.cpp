@@ -31,14 +31,14 @@ namespace
 {
 
 template <bool or_null>
-class ExecutableFunctionJoinGet final : public IExecutableFunction, WithContext
+class ExecutableFunctionJoinGet final : public IExecutableFunction
 {
 public:
     ExecutableFunctionJoinGet(ContextPtr context_,
                               TableLockHolder table_lock_,
                               StorageJoinPtr storage_join_,
                               const DB::Block & result_columns_)
-        : WithContext(context_)
+        : context(context_)
         , table_lock(std::move(table_lock_))
         , storage_join(std::move(storage_join_))
         , result_columns(result_columns_)
@@ -55,13 +55,14 @@ public:
     String getName() const override { return name; }
 
 private:
+    ContextPtr context;
     TableLockHolder table_lock;
     StorageJoinPtr storage_join;
     DB::Block result_columns;
 };
 
 template <bool or_null>
-class FunctionJoinGet final : public IFunctionBase, WithContext
+class FunctionJoinGet final : public IFunctionBase
 {
 public:
     static constexpr auto name = or_null ? "joinGetOrNull" : "joinGet";
@@ -70,7 +71,7 @@ public:
                     TableLockHolder table_lock_,
                     StorageJoinPtr storage_join_, String attr_name_,
                     DataTypes argument_types_, DataTypePtr return_type_)
-        : WithContext(context_)
+        : context(context_)
         , table_lock(std::move(table_lock_))
         , storage_join(storage_join_)
         , attr_name(std::move(attr_name_))
@@ -89,6 +90,7 @@ public:
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override;
 
 private:
+    ContextPtr context;
     TableLockHolder table_lock;
     StorageJoinPtr storage_join;
     const String attr_name;
@@ -129,14 +131,14 @@ ColumnPtr ExecutableFunctionJoinGet<or_null>::executeImpl(const ColumnsWithTypeA
         auto key = arguments[i];
         keys.emplace_back(std::move(key));
     }
-    return storage_join->joinGet(keys, result_columns, getContext()).column;
+    return storage_join->joinGet(keys, result_columns, context).column;
 }
 
 template <bool or_null>
 ExecutableFunctionPtr FunctionJoinGet<or_null>::prepare(const ColumnsWithTypeAndName &) const
 {
     Block result_columns {{return_type->createColumn(), return_type, attr_name}};
-    return std::make_unique<ExecutableFunctionJoinGet<or_null>>(getContext(), table_lock, storage_join, result_columns);
+    return std::make_unique<ExecutableFunctionJoinGet<or_null>>(context, table_lock, storage_join, result_columns);
 }
 
 std::pair<std::shared_ptr<StorageJoin>, String>
@@ -263,7 +265,7 @@ SELECT joinGet(some_table, 'name', 1, 11);
     };
     FunctionDocumentation::IntroducedIn introduced_in_joinGet = {18, 16};
     FunctionDocumentation::Category category_joinGet = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_joinGet = {description_joinGet, syntax_joinGet, arguments_joinGet, returned_value_joinGet, examples_joinGet, introduced_in_joinGet, category_joinGet};
+    FunctionDocumentation documentation_joinGet = {description_joinGet, syntax_joinGet, arguments_joinGet, {}, returned_value_joinGet, examples_joinGet, introduced_in_joinGet, category_joinGet};
 
     FunctionDocumentation::Description description_joinGetOrNull = R"(
 Allows you to extract data from a table the same way as from a dictionary.
@@ -299,7 +301,7 @@ SELECT joinGetOrNull(db_test.id_val, 'val', toUInt32(1)), joinGetOrNull(db_test.
     };
     FunctionDocumentation::IntroducedIn introduced_in_joinGetOrNull = {20, 4};
     FunctionDocumentation::Category category_joinGetOrNull = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_joinGetOrNull = {description_joinGetOrNull, syntax_joinGetOrNull, arguments_joinGetOrNull, returned_value_joinGetOrNull, examples_joinGetOrNull, introduced_in_joinGetOrNull, category_joinGetOrNull};
+    FunctionDocumentation documentation_joinGetOrNull = {description_joinGetOrNull, syntax_joinGetOrNull, arguments_joinGetOrNull, {}, returned_value_joinGetOrNull, examples_joinGetOrNull, introduced_in_joinGetOrNull, category_joinGetOrNull};
 
     // joinGet
     factory.registerFunction<JoinGetOverloadResolver<false>>(documentation_joinGet);

@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int INCORRECT_DATA;
 }
 
 void SerializationNullable::enumerateStreams(
@@ -153,6 +154,16 @@ void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
 
     if (use_default_null_map)
         col.getNullMapData().resize_fill(col.getNestedColumn().size());
+
+    auto null_map = col.getNullMapColumnPtr();
+    auto nested_column = col.getNestedColumnPtr();
+    if (null_map->size() != nested_column->size())
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Sizes of nested column and null map of Nullable column are not equal after deserialization (null map size = {}, nested "
+            "column size = {})",
+            null_map->size(),
+            nested_column->size());
 }
 
 

@@ -101,7 +101,7 @@ REGISTER_FUNCTION(FilterContains)
     FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
 
-    factory.registerFunction<FunctionApplyFilter>({description, syntax, arguments, returned_value, examples, introduced_in, category}, FunctionFactory::Case::Sensitive);
+    factory.registerFunction<FunctionApplyFilter>({description, syntax, arguments, {}, returned_value, examples, introduced_in, category}, FunctionFactory::Case::Sensitive);
 }
 
 }
