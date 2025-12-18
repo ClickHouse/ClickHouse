@@ -1,10 +1,11 @@
 #pragma once
 
+#include <Core/LogsLevel.h>
 #include <base/defines.h>
 #include <base/errnoToString.h>
+#include <base/types.h>
 #include <Common/FramePointers.h>
 #include <Common/LoggingFormatStringHelpers.h>
-#include <Core/LogsLevel.h>
 
 #include <atomic>
 #include <cerrno>
