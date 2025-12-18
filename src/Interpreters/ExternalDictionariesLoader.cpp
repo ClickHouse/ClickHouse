@@ -159,13 +159,13 @@ std::string ExternalDictionariesLoader::resolveDictionaryName(const std::string 
 {
     if (has(dictionary_name))
         return dictionary_name;
-    
+
     std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name, local_context);
-    
+
     if (has(resolved_name))
         return resolved_name;
 
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary ({}) not dounfd", backQuote(dictionary_name));
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary ({}) not found", backQuote(dictionary_name));
 }
 
 std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog(const std::string & name, ContextPtr local_context) const
