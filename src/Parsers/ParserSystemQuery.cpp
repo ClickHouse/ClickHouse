@@ -302,7 +302,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 res->fail_point_action = ASTSystemQuery::FailPointAction::PAUSE;
             else if (ParserKeyword(Keyword::RESUME).ignore(pos, expected))
                 res->fail_point_action = ASTSystemQuery::FailPointAction::RESUME;
-            /// If neither PAUSE nor RESUME is specified, fail_point_action remains UNSPECIFIED (legacy behavior)
 
             break;
         }

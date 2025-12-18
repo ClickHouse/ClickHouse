@@ -926,7 +926,7 @@ BlockIO InterpreterSystemQuery::execute()
                 FailPointInjection::waitForPause(query.fail_point_name);
                 LOG_TRACE(log, "Failpoint {} has paused", query.fail_point_name);
             }
-            else if (query.fail_point_action == ASTSystemQuery::FailPointAction::RESUME)
+            else
             {
                 LOG_TRACE(log, "Waiting for failpoint {} to resume", query.fail_point_name);
                 FailPointInjection::waitForResume(query.fail_point_name);
