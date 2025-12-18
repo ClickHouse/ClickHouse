@@ -1,3 +1,4 @@
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <Functions/FunctionVariantAdaptor.h>
@@ -77,19 +78,14 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         catch (const Exception & e)
         {
             /// If function execution fails for this variant type due to type mismatch,
-            /// return a column filled with NULLs. Only catch type-related errors.
-            if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT || e.code() == ErrorCodes::TYPE_MISMATCH
-                || e.code() == ErrorCodes::CANNOT_CONVERT_TYPE || e.code() == ErrorCodes::NO_COMMON_TYPE)
-            {
-                auto res = result_type->createColumn();
-                res->insertManyDefaults(variant_column.size());
-                return res;
-            }
-            else
-            {
-                /// Re-throw other exceptions
+            /// return a column filled with NULLs. Only catch type-related errors - re-throw everything else.
+            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
                 throw;
-            }
+
+            auto res = result_type->createColumn();
+            res->insertManyDefaults(variant_column.size());
+            return res;
         }
 
         /// If result is Nullable(Nothing), just return column filled with NULLs.
@@ -199,19 +195,14 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         catch (const Exception & e)
         {
             /// If function execution fails for this variant type due to type mismatch,
-            /// return a column filled with NULLs. Only catch type-related errors.
-            if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT || e.code() == ErrorCodes::TYPE_MISMATCH
-                || e.code() == ErrorCodes::CANNOT_CONVERT_TYPE || e.code() == ErrorCodes::NO_COMMON_TYPE)
-            {
-                auto res = result_type->createColumn();
-                res->insertManyDefaults(variant_column.size());
-                return res;
-            }
-            else
-            {
-                /// Re-throw other exceptions
+            /// return a column filled with NULLs. Only catch type-related errors - re-throw everything else.
+            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
                 throw;
-            }
+
+            auto res = result_type->createColumn();
+            res->insertManyDefaults(variant_column.size());
+            return res;
         }
 
         /// If result is Nullable(Nothing), just return column filled with NULLs.
@@ -262,12 +253,26 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
             return nested_result;
         }
 
-        /// If the result of nested function is Variant type, we need to expand it
+        /// If the result of nested function is Variant type, expand it and cast to result type
+        /// The nested Variant may have a subset of types compared to the result Variant
         if (isVariant(nested_result_type))
         {
             nested_result->assumeMutable()->expand(filter, false);
-            /// Result is already the right Variant type (we use input type as return type)
-            return nested_result;
+            /// Cast to result type (handles case where nested Variant is a subset)
+            try
+            {
+                return castColumn(ColumnWithTypeAndName{nested_result, nested_result_type, ""}, result_type);
+            }
+            catch (const Exception & e)
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
+                    getName(),
+                    nested_result_type->getName(),
+                    result_type->getName(),
+                    e.message());
+            }
         }
 
         /// If the result of nested function is not Variant, we create Variant column with this type as one of the variants.
@@ -499,18 +504,13 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         catch (const Exception & e)
         {
             /// If function execution fails for this variant type due to type mismatch,
-            /// treat those rows as NULL/not matching. Only catch type-related errors.
-            if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT || e.code() == ErrorCodes::TYPE_MISMATCH
-                || e.code() == ErrorCodes::CANNOT_CONVERT_TYPE || e.code() == ErrorCodes::NO_COMMON_TYPE)
-            {
-                variants_result_types.push_back(nullptr);
-                variants_results.emplace_back();
-            }
-            else
-            {
-                /// Re-throw other exceptions
+            /// treat those rows as NULL/not matching. Only catch type-related errors - re-throw everything else.
+            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
                 throw;
-            }
+
+            variants_result_types.push_back(nullptr);
+            variants_results.emplace_back();
         }
     }
 
@@ -634,11 +634,8 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
     {
         if (isVariant(arguments[i]))
         {
-            if (!first_variant_index.has_value())
-            {
                 first_variant_index = i;
                 break;
-            }
         }
     }
 
@@ -657,17 +654,6 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
     /// For each alternative in the Variant, build the function and get the actual result type.
     DataTypes result_types;
     result_types.reserve(variant_alternatives.size());
-
-    /// Check if there are other Variant arguments besides the one at variant_argument_index
-    bool has_other_variants = false;
-    for (size_t i = 0; i < arguments.size(); ++i)
-    {
-        if (i != variant_argument_index && isVariant(arguments[i]))
-        {
-            has_other_variants = true;
-            break;
-        }
-    }
 
     for (const auto & alternative : variant_alternatives)
     {
@@ -688,52 +674,39 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
         DataTypePtr alt_return_type;
         try
         {
-            if (has_other_variants)
-            {
-                auto func_base = function_overload_resolver->build(alt_columns_with_type);
-                alt_return_type = func_base->getResultType();
-            }
-            else
-            {
-                alt_return_type = function_overload_resolver->getReturnType(alt_columns_with_type);
-            }
-            result_types.push_back(alt_return_type);
+            const auto func_base = function_overload_resolver->build(alt_columns_with_type);
+            result_types.push_back(func_base->getResultType());
         }
         catch (const Exception & e)
         {
             /// If this combination of types is incompatible (e.g., Array(UInt32) vs UInt64),
             /// skip this alternative and treat it as if it doesn't participate in the result type.
-            /// Only catch type-related errors.
-            if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT || e.code() == ErrorCodes::TYPE_MISMATCH
-                || e.code() == ErrorCodes::CANNOT_CONVERT_TYPE || e.code() == ErrorCodes::NO_COMMON_TYPE)
-            {
-                /// Don't add this result type - it will be skipped
-                continue;
-            }
-            else
-            {
-                /// Re-throw other exceptions
+            /// Only catch type-related errors - re-throw everything else.
+            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
                 throw;
-            }
+            /// Otherwise, skip this alternative
         }
     }
 
     /// If no valid result types were found, all alternatives are incompatible
+    /// Return Nullable(Nothing) to indicate NULL result for all rows
     if (result_types.empty())
-        throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Cannot build function {} - all variant alternatives are incompatible with other arguments",
-            function_overload_resolver->getName());
+    {
+        return_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+        return;
+    }
 
     /// If all result types are the same (ignoring Nullable), return Nullable(common).
     /// Otherwise, return Variant(R0, R1, ...) in the same order.
+    /// Compare by name to handle custom types correctly (like Geometry subtypes)
     bool all_same = true;
     DataTypePtr common_type = removeNullable(result_types[0]);
 
     for (size_t i = 1; i < result_types.size(); ++i)
     {
         DataTypePtr current_type = removeNullable(result_types[i]);
-        if (!common_type->equals(*current_type))
+        if (common_type->getName() != current_type->getName())
         {
             all_same = false;
             break;
@@ -743,7 +716,23 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
     if (all_same)
         return_type = makeNullableSafe(common_type);
     else
-        return_type = std::make_shared<DataTypeVariant>(result_types);
+    {
+        /// If we have Variant types in result_types, we need to flatten them
+        /// because Variant inside Variant is not supported
+        DataTypes flattened_types;
+        for (const auto & type : result_types)
+        {
+            if (const auto * vt = typeid_cast<const DataTypeVariant *>(type.get()))
+            {
+                /// Extract inner variants and add them to flattened list
+                const auto & inner_variants = vt->getVariants();
+                flattened_types.insert(flattened_types.end(), inner_variants.begin(), inner_variants.end());
+            }
+            else
+                flattened_types.push_back(type);
+        }
+        return_type = std::make_shared<DataTypeVariant>(flattened_types);
+    }
 }
 
 }
