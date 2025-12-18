@@ -133,13 +133,11 @@ def test_persistent_recursive_watch(started_cluster):
     node1.restart_clickhouse()
     keeper_utils.wait_until_connected(cluster, node1)
     client = get_fake_zk(node1)
-
-    client = get_fake_zk(node1)
     NODE_PATH = "/testPersistentWatch2"
     CHILD_NODE = "/testPersistentWatch2/child"
     FAKE_PATH = "/fakeNode"
 
-    for path in [NODE_PATH, CHILD_NODE, FAKE_PATH]:
+    for path in [CHILD_NODE, NODE_PATH, FAKE_PATH]:
         if client.exists(path):
             client.delete(path)
 
@@ -311,7 +309,9 @@ def test_persistent_watches_cleanup_on_close(started_cluster):
     client.add_watch(NODE_PATH, cb, AddWatchMode.PERSISTENT_RECURSIVE)
 
     destroy_zk_client(client)
-    time.sleep(1)
-
-    data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="mntr")
+    for _ in range(20):
+        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="mntr")
+        if "zk_watch_count\t0" in data:
+            break
+        time.sleep(0.1)
     assert "zk_watch_count\t0" in data
