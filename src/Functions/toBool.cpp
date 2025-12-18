@@ -24,9 +24,11 @@ namespace
     public:
         static constexpr auto name = "toBool";
 
-        static FunctionPtr create(ContextPtr)
+        explicit FunctionToBool(ContextPtr context_) : context(context_) {}
+
+        static FunctionPtr create(ContextPtr context)
         {
-            return std::make_shared<FunctionToBool>();
+            return std::make_shared<FunctionToBool>(context);
         }
 
         std::string getName() const override
