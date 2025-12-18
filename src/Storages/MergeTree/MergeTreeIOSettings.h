@@ -56,6 +56,8 @@ struct MergeTreeReaderSettings
     bool adjust_read_buffer_size = true;
     /// If true, it's allowed to read the whole part without reading marks.
     bool can_read_part_without_marks = false;
+    /// If true, the data stream is compressed.
+    bool is_compressed = true;
     /// If we should write/read to/from the query condition cache.
     bool use_query_condition_cache = false;
     bool query_condition_cache_store_conditions_as_plaintext = false;
@@ -66,9 +68,16 @@ struct MergeTreeReaderSettings
     UInt64 merge_tree_min_rows_for_seek = 0;
     size_t filesystem_prefetches_limit = 0;
     bool enable_analyzer = false;
+    bool load_marks_asynchronously = false;
 
+    static MergeTreeReaderSettings createFromContext(const ContextPtr & context);
     /// Note storage_settings used only in private, do not remove
-    static MergeTreeReaderSettings create(const ContextPtr & context, const MergeTreeSettings & storage_settings, const SelectQueryInfo & query_info);
+    static MergeTreeReaderSettings createForQuery(const ContextPtr & context, const MergeTreeSettings & storage_settings, const SelectQueryInfo & query_info);
+    static MergeTreeReaderSettings createForMergeMutation(ReadSettings read_settings);
+    static MergeTreeReaderSettings createFromSettings(ReadSettings read_settings = {});
+
+private:
+    MergeTreeReaderSettings() = default;
 };
 
 struct MergeTreeWriterSettings

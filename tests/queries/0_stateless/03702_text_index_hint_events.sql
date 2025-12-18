@@ -1,4 +1,5 @@
 -- Tags: no-parallel-replicas
+-- Random settings limits: index_granularity=(128, None)
 
 SET enable_analyzer = 1;
 SET allow_experimental_full_text_index = 1;
@@ -10,7 +11,7 @@ DROP TABLE IF EXISTS t_text_index_hint_events;
 CREATE TABLE t_text_index_hint_events
 (
     s String,
-    INDEX idx_s (s) TYPE text(tokenizer = ngrams(3)) GRANULARITY 4
+    INDEX idx_s (s) TYPE text(tokenizer = ngrams(3))
 )
 ENGINE = MergeTree ORDER BY tuple();
 

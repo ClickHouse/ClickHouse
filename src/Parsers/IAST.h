@@ -251,6 +251,7 @@ public:
         size_t list_element_index = 0;
         std::string create_engine_name;
         const IAST * current_select = nullptr;
+        const IAST * current_function = nullptr;  /// Pointer to the function whose arguments are being formatted
     };
 
     void format(WriteBuffer & ostr, const FormatSettings & settings) const

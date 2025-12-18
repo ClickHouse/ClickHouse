@@ -17,15 +17,17 @@ public:
         JSON = 0,
     };
 
+    static constexpr size_t MAX_TYPED_PATHS = 1000;
+    static constexpr size_t MAX_DYNAMIC_PATHS_LIMIT = 10000;
     /// Don't change this constant, it can break backward compatibility.
-    static constexpr size_t DEFAULT_MAX_SEPARATELY_STORED_PATHS = 1024;
+    static constexpr size_t DEFAULT_MAX_DYNAMIC_PATHS = 1024;
 
     explicit DataTypeObject(
         const SchemaFormat & schema_format_,
         std::unordered_map<String, DataTypePtr> typed_paths_ = {},
         std::unordered_set<String> paths_to_skip_ = {},
         std::vector<String> path_regexps_to_skip_ = {},
-        size_t max_dynamic_paths_ = DEFAULT_MAX_SEPARATELY_STORED_PATHS,
+        size_t max_dynamic_paths_ = DEFAULT_MAX_DYNAMIC_PATHS,
         size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES);
 
     DataTypeObject(const SchemaFormat & schema_format_, size_t max_dynamic_paths_, size_t max_dynamic_types_);
