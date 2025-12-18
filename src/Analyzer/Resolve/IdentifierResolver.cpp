@@ -943,10 +943,13 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
             return lookup_result;
     }
 
-    /// case-insensitive fallback for single-part identifiers against this table expression
-    bool ci_enabled = scope.context->getSettingsRef()[Setting::enable_case_insensitive_columns];
-    if (identifier.getPartsSize() == 1 && ci_enabled)
+    if (identifier.getPartsSize() == 1)
     {
+        /// case-insensitive fallback for single-part identifiers against this table expression
+        bool ci_enabled = scope.context->getSettingsRef()[Setting::enable_case_insensitive_columns];
+        if (!ci_enabled)
+            return {};
+
         std::set<String> matches;
         ColumnNodePtr match_column;
         for (const auto & [col_name, col_node] : table_expression_data.column_name_to_column_node)
