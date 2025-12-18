@@ -17,7 +17,7 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_full_text_index;
+    extern const SettingsBool enable_full_text_index;
 }
 
 namespace ErrorCodes
@@ -34,7 +34,7 @@ FunctionPtr FunctionHasAnyAllTokens<HasTokensTraits>::create(ContextPtr context)
 
 template <class HasTokensTraits>
 FunctionHasAnyAllTokens<HasTokensTraits>::FunctionHasAnyAllTokens(ContextPtr context)
-    : allow_experimental_full_text_index(context->getSettingsRef()[Setting::allow_experimental_full_text_index])
+    : enable_full_text_index(context->getSettingsRef()[Setting::enable_full_text_index])
 {
 }
 
@@ -126,10 +126,10 @@ TokensWithPosition extractTokensFromString(std::string_view value)
 template <class HasTokensTraits>
 DataTypePtr FunctionHasAnyAllTokens<HasTokensTraits>::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
-    if (!allow_experimental_full_text_index)
+    if (!enable_full_text_index)
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
-            "Enable the setting 'allow_experimental_full_text_index' to use function {}", getName());
+            "Enable the setting 'enable_full_text_index' to use function {}", getName());
 
     FunctionArgumentDescriptors mandatory_args{
         {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedStringOrArrayOfStringOrFixedString), nullptr, "String, FixedString, Array(String) or Array(FixedString)"},
@@ -551,7 +551,7 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
     };
     FunctionDocumentation::IntroducedIn introduced_in_hasAnyTokens = {25, 10};
     FunctionDocumentation::Category category_hasAnyTokens = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation_hasAnyTokens = {description_hasAnyTokens, syntax_hasAnyTokens, arguments_hasAnyTokens, returned_value_hasAnyTokens, examples_hasAnyTokens, introduced_in_hasAnyTokens, category_hasAnyTokens};
+    FunctionDocumentation documentation_hasAnyTokens = {description_hasAnyTokens, syntax_hasAnyTokens, arguments_hasAnyTokens, {}, returned_value_hasAnyTokens, examples_hasAnyTokens, introduced_in_hasAnyTokens, category_hasAnyTokens};
 
     factory.registerFunction<FunctionHasAnyAllTokens<traits::HasAnyTokensTraits>>(documentation_hasAnyTokens);
     factory.registerAlias("hasAnyToken", traits::HasAnyTokensTraits::name);
@@ -685,7 +685,7 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
     };
     FunctionDocumentation::IntroducedIn introduced_in_hasAllTokens = {25, 10};
     FunctionDocumentation::Category category_hasAllTokens = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation_hasAllTokens = {description_hasAllTokens, syntax_hasAllTokens, arguments_hasAllTokens, returned_value_hasAllTokens, examples_hasAllTokens, introduced_in_hasAllTokens, category_hasAllTokens};
+    FunctionDocumentation documentation_hasAllTokens = {description_hasAllTokens, syntax_hasAllTokens, arguments_hasAllTokens, {}, returned_value_hasAllTokens, examples_hasAllTokens, introduced_in_hasAllTokens, category_hasAllTokens};
 
     factory.registerFunction<FunctionHasAnyAllTokens<traits::HasAllTokensTraits>>(documentation_hasAllTokens);
     factory.registerAlias("hasAllToken", traits::HasAllTokensTraits::name);
