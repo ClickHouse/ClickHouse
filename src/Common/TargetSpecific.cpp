@@ -1,4 +1,3 @@
-#include <base/defines.h>
 #include <Common/TargetSpecific.h>
 
 #include <Common/CPUID.h>
