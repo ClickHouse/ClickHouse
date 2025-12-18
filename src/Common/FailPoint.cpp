@@ -141,15 +141,14 @@ std::mutex FailPointInjection::mu;
 
 struct FailPointChannel
 {
-    /// Condition variable for target code threads to wait when paused at failpoint
-    /// Also used by test code (waitForPause) to wait for target code to pause
+    /// Condition variable for target threads to wait when paused at failpoint
     std::condition_variable pause_cv;
 
-    /// Condition variable for target code threads to wait for resume notification
-    /// Also used by test code (waitForResume) to wait for target code to resume
+    /// Condition variable for target threads to wait for resume notification
     std::condition_variable resume_cv;
 
-    size_t pause_count = 0;   /// Number of threads currently paused at this failpoint
+    /// Number of threads currently paused at this failpoint
+    size_t pause_count = 0;
 
     /// Resume epoch: incremented on each notify or disable to wake up waiting threads.
     /// Threads record the epoch when they start waiting, and only wake up
@@ -196,7 +195,6 @@ void FailPointInjection::disableFailPoint(const String & fail_point_name)
     if (auto iter = fail_point_wait_channels.find(fail_point_name); iter != fail_point_wait_channels.end())
     {
         /// Increment resume_epoch to wake up all waiting threads.
-        /// They will find the channel has been erased and return.
         ++iter->second->resume_epoch;
         iter->second->resume_cv.notify_all();
         iter->second->pause_cv.notify_all();
@@ -211,8 +209,7 @@ void FailPointInjection::notifyFailPoint(const String & fail_point_name)
     if (auto iter = fail_point_wait_channels.find(fail_point_name); iter != fail_point_wait_channels.end())
     {
         /// Increment resume_epoch to mark a new notification cycle
-        /// This allows the failpoint to be paused and notified multiple times
-        ++iter->second->resume_epoch;
+         ++iter->second->resume_epoch;
         iter->second->resume_cv.notify_all();
     }
     else
@@ -225,26 +222,23 @@ void FailPointInjection::notifyPauseAndWaitForResume(const String & fail_point_n
 {
     std::unique_lock lock(mu);
     auto iter = fail_point_wait_channels.find(fail_point_name);
-    /// We may get here if pauseFailPoint was called in parallel with disableFailPoint.
     if (iter == fail_point_wait_channels.end())
         return;
-    auto channel = iter->second;
 
-    /// Record the resume_epoch when this thread starts waiting
+    auto channel = iter->second;
     size_t my_resume_epoch = channel->resume_epoch;
 
-    /// Increment pause_count to signal that a thread has reached and paused at this failpoint
+    /// Signal that a thread has reached and paused at this failpoint
     ++channel->pause_count;
     channel->pause_cv.notify_all();
 
-    /// Note: this may unlock and re-lock the mutex, invalidating `iter`.
-    /// Wait for resume_epoch to be incremented by either notifyFailPoint or disableFailPoint
+    /// Wait for resume_epoch to be incremented by notify or disable
     channel->resume_cv.wait(lock, [&] {
         return channel->resume_epoch > my_resume_epoch;
     });
 
-     --channel->pause_count;
-    channel->resume_cv.notify_all();
+    --channel->pause_count;
+
 }
 
 void FailPointInjection::waitForPause(const String & fail_point_name)
@@ -252,15 +246,12 @@ void FailPointInjection::waitForPause(const String & fail_point_name)
     std::unique_lock lock(mu);
     auto iter = fail_point_wait_channels.find(fail_point_name);
     if (iter == fail_point_wait_channels.end())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find channel for fail point {}", fail_point_name);
+        return;
 
     auto channel = iter->second;
 
     /// Wait until at least one thread has paused at this failpoint
-    /// or the failpoint is disabled (channel removed from map)
     channel->pause_cv.wait(lock, [&] {
-        if (!fail_point_wait_channels.contains(fail_point_name))
-            return true;
         return channel->pause_count > 0;
     });
 }
@@ -270,17 +261,14 @@ void FailPointInjection::waitForResume(const String & fail_point_name)
     std::unique_lock lock(mu);
     auto iter = fail_point_wait_channels.find(fail_point_name);
     if (iter == fail_point_wait_channels.end())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find channel for fail point {}", fail_point_name);
+        return;
 
     auto channel = iter->second;
-    size_t current_resume_epoch = channel->resume_epoch;
+    size_t my_resume_epoch = channel->resume_epoch;
 
-    /// Wait until the resume_epoch increments (meaning notifyFailPoint was called)
-    /// or the failpoint is disabled (channel removed from map)
+    /// Wait for resume_epoch to be incremented by notify or disable
     channel->resume_cv.wait(lock, [&] {
-        if (!fail_point_wait_channels.contains(fail_point_name))
-            return true;
-        return channel->resume_epoch > current_resume_epoch;
+        return channel->resume_epoch > my_resume_epoch;
     });
 }
 

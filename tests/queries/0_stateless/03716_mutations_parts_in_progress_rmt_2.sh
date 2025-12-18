@@ -23,6 +23,8 @@ $CLICKHOUSE_CLIENT --query "
     INSERT INTO rmt VALUES (1, 1);
     INSERT INTO rmt VALUES (2, 2);
     INSERT INTO rmt VALUES (3, 3);
+
+    SYSTEM SYNC REPLICA rmt;
 "
 # part in progress: all_0_0_0
 $CLICKHOUSE_CLIENT --query "
