@@ -79,6 +79,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_use_clients_cache_for_read", true, true, "New setting"},
             {"distributed_cache_use_clients_cache_for_write", false, false, "New setting"},
             {"enable_positional_arguments_for_projections", true, false, "New setting to control positional arguments in projections."},
+            {"enable_full_text_index", false, false, "Text index was moved to Beta."},
+            {"enable_shared_storage_snapshot_in_query", false, true, "Enable share storage snapshot in query by default"},
             {"insert_select_deduplicate", Field{"auto"}, Field{"auto"}, "New setting"},
             {"output_format_pretty_named_tuples_as_json", false, true, "New setting to control whether named tuples in Pretty format are output as JSON objects"},
         });
@@ -993,6 +995,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"alter_column_secondary_index_mode", "compatibility", "rebuild", "Change the behaviour to allow ALTER `column` when they have dependent secondary indices"},
             {"merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once", false, false, "New setting"},
             {"merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent", 5, 5, "New setting"},
+            {"min_columns_to_activate_adaptive_write_buffer", 500, 500, "New setting"},
             {"nullable_serialization_version", "basic", "basic", "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.11",

@@ -5,7 +5,7 @@ import sys
 import time
 import traceback
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 from urllib.parse import quote
 
 sys.path.append("./")
@@ -148,7 +148,7 @@ CIDB statistics: [cidb]({result.get_hlabel_link("cidb")})
 
 Test output:
 ```
-{result.get_info_truncated(truncate_from_top=False, max_info_lines_cnt=200, max_line_length=200)}
+{result.get_info_truncated(truncate_from_top=False, max_info_lines_cnt=200, max_line_length=0)}
 ```
 """
         labels = [IssueLabels.CI_ISSUE, IssueLabels.FUZZ]
@@ -166,13 +166,7 @@ Test output:
             print("Cannot handle more than 4 test failures in one job - skip")
             return False
         if any(key in job_result.name for key in ("Stateless", "Integration")):
-            if not re.match(r"^(\d{5}|test)_", test_result.name):
-                print(
-                    f"Only regular test failures can be handled, not [{test_result.name}] - skip"
-                )
-                return False
-            else:
-                return True
+            return True
         if any(
             key in job_result.name
             for key in ("Performance", "Finish", "Bugfix", "Docker")
@@ -219,7 +213,15 @@ Test output:
             bool: True if issue was created successfully, False otherwise
         """
         if any(key in job_name for key in ("Stateless", "Integration")):
-            issue_url = cls.create_gh_issue_on_flaky_or_broken_test(result, job_name)
+            if re.match(r"^(\d{5}|test)_", result.name):
+                issue_url = cls.create_gh_issue_on_flaky_or_broken_test(
+                    result, job_name
+                )
+            else:
+                # Logical errors, Sanitizer, Seg faults - create fuzzer issue for these
+                issue_url = cls.create_gh_issue_on_fuzzer_or_stress_finding(
+                    result, job_name
+                )
         elif any(key in job_name for key in ("Buzz", "AST", "Stress")):
             issue_url = cls.create_gh_issue_on_fuzzer_or_stress_finding(
                 result, job_name
@@ -375,24 +377,36 @@ class CommitStatusCheck:
                 sys.exit(0)
 
     @staticmethod
-    def process_mergeable_check_status(commit_status_data: GH.CommitStatus, sha: str):
+    def process_mergeable_check_status(
+        commit_status_data: Optional[GH.CommitStatus], sha: str
+    ):
+        override = False
         if commit_status_data and commit_status_data.state in (Result.Status.SUCCESS,):
             pass
+        elif not commit_status_data:
+            if not UserPrompt.confirm(
+                "Mergeable check not found - CI must be still running. Do you want to proceed?"
+            ):
+                sys.exit(0)
+            else:
+                override = True
         elif commit_status_data.state in (Result.Status.FAILED,):
             if UserPrompt.confirm("Do you want to override mergeable check?"):
-                GH.post_commit_status(
-                    CheckStatuses.MERGEABLE_CHECK,
-                    Result.Status.SUCCESS,
-                    "Manually overridden",
-                    "",
-                    sha=sha,
-                    repo="ClickHouse/ClickHouse",
-                )
+                override = True
             else:
                 sys.exit(0)
         else:
             raise Exception(
                 f"Mergeable check commit status state: {commit_status_data.state} and description: {commit_status_data.description} - cannot proceed"
+            )
+        if override:
+            GH.post_commit_status(
+                CheckStatuses.MERGEABLE_CHECK,
+                Result.Status.SUCCESS,
+                "Manually overridden",
+                "",
+                sha=sha,
+                repo="ClickHouse/ClickHouse",
             )
 
     @classmethod
@@ -522,7 +536,7 @@ def main():
     if not is_master_commit:
         pr_url = f"https://github.com/ClickHouse/ClickHouse/pull/{pr_number}"
         pr_data = Shell.get_output(
-            f"gh pr view {pr_number} --json headRefOid,headRefName"
+            f"gh pr view {pr_number} --json headRefOid,headRefName --repo ClickHouse/ClickHouse"
         )
         pr_data = json.loads(pr_data)
         head_sha = pr_data["headRefOid"]
@@ -742,11 +756,10 @@ def main():
             print(f"ERROR: failed to post CI summary, ex: {e}")
             traceback.print_exc()
 
-    CommitStatusCheck.process_sync_status(sync_status, sha=head_sha)
-
-    CommitStatusCheck.process_mergeable_check_status(
-        mergeable_check_status, sha=head_sha
-    )
+    if not UserPrompt.confirm(
+        f"Do you want to merge PR #{pr_number} (y - continue, n - exit)?"
+    ):
+        sys.exit(0)
 
     if Shell.check(
         f"gh pr view {pr_number} --json isDraft --jq '.isDraft' | grep -q true"
@@ -756,9 +769,13 @@ def main():
         else:
             sys.exit(0)
 
-    if UserPrompt.confirm(f"Do you want to merge PR {pr_number}?"):
-        if Shell.check(f"gh pr merge {pr_number} --auto"):
-            print(f"PR {pr_number} auto merge has been enabled")
+    CommitStatusCheck.process_sync_status(sync_status, sha=head_sha)
+    CommitStatusCheck.process_mergeable_check_status(
+        mergeable_check_status, sha=head_sha
+    )
+
+    if Shell.check(f"gh pr merge {pr_number} --auto"):
+        print(f"PR {pr_number} auto merge has been enabled")
 
 
 if __name__ == "__main__":
