@@ -639,12 +639,46 @@ def main():
     if test_result:
         test_result.sort()
 
-    Result.create_from(
+    R = Result.create_from(
         results=results,
         stopwatch=stop_watch,
         files=CH.logs + debug_files,
         info=job_info,
-    ).complete_job(do_not_block_pipeline_on_failure=force_ok_exit)
+    )
+
+    if is_llvm_coverage:
+        print("Collecting and merging LLVM coverage files...")
+        profraw_files = Shell.get_output("find . -name '*.profraw'", verbose=True).strip().split('\n')
+        profraw_files = [f.strip() for f in profraw_files if f.strip()]
+        
+        if profraw_files:
+            print(f"Found {len(profraw_files)} .profraw files")
+            
+            # Auto-detect available LLVM profdata tool
+            llvm_profdata = None
+            for ver in ["18", "19", "17", "16", ""]:
+                cmd = f"llvm-profdata{'-' + ver if ver else ''}"
+                if Shell.check(f"command -v {cmd}", verbose=False):
+                    llvm_profdata = cmd
+                    break
+            
+            if not llvm_profdata:
+                print("ERROR: llvm-profdata not found in PATH")
+            else:
+                print(f"Using {llvm_profdata} to merge coverage files")
+                
+                # Merge all profraw files to current directory
+                merged_file = f"./ft-{batch_num}.profdata"
+                merge_cmd = f"{llvm_profdata} merge -sparse {' '.join(profraw_files)} -o {merged_file}"
+                if Shell.check(merge_cmd, verbose=True):
+                    print(f"Successfully merged coverage data to {merged_file}")
+                    R.files.append(merged_file)
+                else:
+                    print("ERROR: Failed to merge coverage files")
+        else:
+            print("No .profraw files found for coverage")
+
+    R.complete_job(do_not_block_pipeline_on_failure=force_ok_exit)
 
 
 if __name__ == "__main__":

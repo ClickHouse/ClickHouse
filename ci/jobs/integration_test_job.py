@@ -453,16 +453,6 @@ def main():
             if Path("./ci/tmp/docker-in-docker.log").exists():
                 attached_files.append("./ci/tmp/docker-in-docker.log")
 
-    # Collect coverage reports 
-    # for p in Path("./").glob("*.profraw"):
-    #     files.append(str(p))    
-
-    # print("Following files will be attached to the report: ")
-    # for f in files:
-    #     print(f)
-    # print("\n")
-
-
     # Rerun failed tests if any to check if failure is reproducible
     if 0 < len(failed_test_cases) < 10 and not (
         is_flaky_check or is_bugfix_validation or is_targeted_check or info.is_local_run
@@ -548,8 +538,38 @@ def main():
         else:
             R.set_success()
 
-    Shell.check("echo 'FIND ALL *.profraw FILES'", verbose=True, strict=True)
-    Shell.check("find . -name '*.profraw'", verbose=True, strict=True)
+    if is_llvm_coverage:
+        print("Collecting and merging LLVM coverage files...")
+        profraw_files = Shell.get_output("find . -name '*.profraw'", verbose=True).strip().split('\n')
+        profraw_files = [f.strip() for f in profraw_files if f.strip()]
+        
+        if profraw_files:
+            print(f"Found {len(profraw_files)} .profraw files")
+            
+            # Auto-detect available LLVM profdata tool
+            llvm_profdata = None
+            for ver in ["18", "19", "17", "16", ""]:
+                cmd = f"llvm-profdata{'-' + ver if ver else ''}"
+                if Shell.check(f"command -v {cmd}", verbose=False):
+                    llvm_profdata = cmd
+                    break
+            
+            if not llvm_profdata:
+                print("ERROR: llvm-profdata not found in PATH")
+            else:
+                print(f"Using {llvm_profdata} to merge coverage files")
+                
+                # Merge all profraw files to current directory
+                merged_file = f"./it-{batch_num}.profdata"
+                merge_cmd = f"{llvm_profdata} merge -sparse {' '.join(profraw_files)} -o {merged_file}"
+                if Shell.check(merge_cmd, verbose=True):
+                    print(f"Successfully merged coverage data to {merged_file}")
+                    R.files.append(merged_file)
+                else:
+                    print("ERROR: Failed to merge coverage files")
+        else:
+            print("No .profraw files found for coverage")
+    
     R.sort().complete_job()
 
 
