@@ -345,6 +345,12 @@ ColumnPtr ColumnNullable::filter(const Filter & filt, ssize_t result_size_hint) 
     return ColumnNullable::create(filtered_data, filtered_null_map);
 }
 
+void ColumnNullable::filter(const Filter & filt)
+{
+    getNestedColumn().filter(filt);
+    getNullMapColumn().filter(filt);
+}
+
 void ColumnNullable::expand(const IColumn::Filter & mask, bool inverted)
 {
     nested_column->expand(mask, inverted);
@@ -912,7 +918,11 @@ void ColumnNullable::applyNullMap(const ColumnNullable & other)
 void ColumnNullable::checkConsistency() const
 {
     if (null_map->size() != getNestedColumn().size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Sizes of nested column and null map of Nullable column are not equal");
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Sizes of nested column and null map of Nullable column are not equal (null map size = {}, nested column size = {})",
+            null_map->size(),
+            getNestedColumn().size());
 }
 
 ColumnPtr ColumnNullable::createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const

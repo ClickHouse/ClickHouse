@@ -12,8 +12,8 @@ CREATE TABLE tab
     id UInt32,
     arr Array(String),
     arr_fixed Array(FixedString(3)),
-    INDEX array_idx(arr) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1,
-    INDEX array_fixed_idx(arr_fixed) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1,
+    INDEX array_idx(arr) TYPE text(tokenizer = 'splitByNonAlpha'),
+    INDEX array_fixed_idx(arr_fixed) TYPE text(tokenizer = 'splitByNonAlpha')
 )
 ENGINE = MergeTree()
 ORDER BY (id)

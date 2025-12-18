@@ -547,6 +547,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     MergeTreeData::MergingParams merging_params,
     MergeTreeTransactionPtr txn,
     bool need_prefix,
+    ProjectionDescriptionRawPtr projection,
     IMergeTreeDataPart * parent_part,
     const String & suffix)
 {
@@ -570,6 +571,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         cleanup,
         std::move(merging_params),
         need_prefix,
+        projection,
         parent_part,
         nullptr,
         suffix,

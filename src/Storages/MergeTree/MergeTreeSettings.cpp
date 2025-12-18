@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
+
 #include <Columns/IColumn.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
@@ -11,6 +12,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/isDiskFunction.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
@@ -954,6 +956,13 @@ namespace ErrorCodes
     DECLARE(Bool, use_adaptive_write_buffer_for_dynamic_subcolumns, true, R"(
     Allow to use adaptive writer buffers during writing dynamic subcolumns to
     reduce memory usage
+    )", 0) \
+    DECLARE(UInt64, min_columns_to_activate_adaptive_write_buffer, 500, R"(
+    Allow to reduce memory usage for tables with lots of columns by using adaptive writer buffers.
+
+    Possible values:
+    - 0 - unlimited
+    - 1 - always enabled
     )", 0) \
     DECLARE(NonZeroUInt64, adaptive_write_buffer_initial_size, 16 * 1024, R"(
     Initial size of an adaptive write buffer

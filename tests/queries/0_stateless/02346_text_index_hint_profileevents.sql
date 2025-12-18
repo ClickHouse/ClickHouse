@@ -13,7 +13,7 @@ DROP TABLE IF EXISTS tab;
 CREATE TABLE tab
 (
     s String,
-    INDEX idx (s) TYPE text(tokenizer = ngrams(3)) GRANULARITY 4
+    INDEX idx_s (s) TYPE text(tokenizer = ngrams(3))
 )
 ENGINE = MergeTree ORDER BY tuple();
 

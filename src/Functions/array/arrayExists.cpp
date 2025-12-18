@@ -77,7 +77,7 @@ Returns `1` if there is at least one element in a source array for which `func(x
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayExists(x, y -> x=y, [1, 2, 3], [0, 0, 0])", "0"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayExists>(documentation);
 }

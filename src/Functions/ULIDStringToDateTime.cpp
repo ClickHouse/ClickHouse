@@ -195,7 +195,7 @@ SELECT ULIDStringToDateTime('01GNB2S2FGN2P93QPXDNB4EN2R')
     };
     FunctionDocumentation::IntroducedIn introduced_in_ULIDStringToDateTime = {23, 3};
     FunctionDocumentation::Category category_ULIDStringToDateTime = FunctionDocumentation::Category::ULID;
-    FunctionDocumentation documentation_ULIDStringToDateTime = {description_ULIDStringToDateTime, syntax_ULIDStringToDateTime, arguments_ULIDStringToDateTime, returned_value_ULIDStringToDateTime, examples_ULIDStringToDateTime, introduced_in_ULIDStringToDateTime, category_ULIDStringToDateTime};
+    FunctionDocumentation documentation_ULIDStringToDateTime = {description_ULIDStringToDateTime, syntax_ULIDStringToDateTime, arguments_ULIDStringToDateTime, {}, returned_value_ULIDStringToDateTime, examples_ULIDStringToDateTime, introduced_in_ULIDStringToDateTime, category_ULIDStringToDateTime};
 
     factory.registerFunction<FunctionULIDStringToDateTime>(documentation_ULIDStringToDateTime);
 }
