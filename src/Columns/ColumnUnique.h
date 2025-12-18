@@ -27,6 +27,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
@@ -65,7 +66,8 @@ public:
     IColumnUnique::IndexesWithOverflow uniqueInsertRangeWithOverflow(const IColumn & src, size_t start, size_t length,
                                                                      size_t max_dictionary_size) override;
     size_t uniqueInsertData(const char * pos, size_t length) override;
-    size_t uniqueDeserializeAndInsertFromArena(const char * pos, const char *& new_pos) override;
+    size_t uniqueDeserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
+    size_t uniqueDeserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in) override;
 
     size_t getDefaultValueIndex() const override { return 0; }
     size_t getNullValueIndex() const override;
@@ -74,12 +76,12 @@ public:
 
     Field operator[](size_t n) const override { return (*getNestedColumn())[n]; }
     void get(size_t n, Field & res) const override { getNestedColumn()->get(n, res); }
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options & options) const override
     {
-        return getNestedColumn()->getValueNameAndType(n);
+        return getNestedColumn()->getValueNameAndTypeImpl(name_buf, n, options);
     }
     bool isDefaultAt(size_t n) const override { return n == 0; }
-    StringRef getDataAt(size_t n) const override { return getNestedColumn()->getDataAt(n); }
+    std::string_view getDataAt(size_t n) const override { return getNestedColumn()->getDataAt(n); }
     UInt64 get64(size_t n) const override { return getNestedColumn()->get64(n); }
     UInt64 getUInt(size_t n) const override { return getNestedColumn()->getUInt(n); }
     Int64 getInt(size_t n) const override { return getNestedColumn()->getInt(n); }
@@ -87,10 +89,10 @@ public:
     Float32 getFloat32(size_t n) const override { return getNestedColumn()->getFloat32(n); }
     bool getBool(size_t n) const override { return getNestedColumn()->getBool(n); }
     bool isNullAt(size_t n) const override { return is_nullable && n == getNullValueIndex(); }
-    void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    char * serializeValueIntoMemory(size_t n, char * memory) const override;
-    const char * skipSerializedInArena(const char * pos) const override;
+    void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
+    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
+    char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
     void updateHashWithValue(size_t n, SipHash & hash_func) const override;
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -172,7 +174,7 @@ public:
     UInt128 getHash() const override { return hash.getHash(*getRawColumnPtr()); }
 
     /// This is strange. Please remove this method as soon as possible.
-    std::optional<UInt64> getOrFindValueIndex(StringRef value) const override
+    std::optional<UInt64> getOrFindValueIndex(std::string_view value) const override
     {
         if (std::optional<UInt64> res = reverse_index.getIndex(value); res)
             return res;
@@ -374,7 +376,7 @@ size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
     single_value_column->insert(x);
     auto single_value_data = single_value_column->getDataAt(0);
 
-    return uniqueInsertData(single_value_data.data, single_value_data.size);
+    return uniqueInsertData(single_value_data.data(), single_value_data.size());
 }
 
 template <typename ColumnType>
@@ -402,7 +404,7 @@ bool ColumnUnique<ColumnType>::tryUniqueInsert(const Field & x, size_t & index)
         }
 
     auto single_value_data = single_value_column->getDataAt(0);
-    index = uniqueInsertData(single_value_data.data, single_value_data.size);
+    index = uniqueInsertData(single_value_data.data(), single_value_data.size());
     return true;
 }
 
@@ -424,13 +426,13 @@ size_t ColumnUnique<ColumnType>::uniqueInsertFrom(const IColumn & src, size_t n)
         }
 
     auto ref = src.getDataAt(n);
-    return uniqueInsertData(ref.data, ref.size);
+    return uniqueInsertData(ref.data(), ref.size());
 }
 
 template <typename ColumnType>
 size_t ColumnUnique<ColumnType>::uniqueInsertData(const char * pos, size_t length)
 {
-    if (auto index = getNestedTypeDefaultValueIndex(); getRawColumnPtr()->getDataAt(index) == StringRef(pos, length))
+    if (auto index = getNestedTypeDefaultValueIndex(); getRawColumnPtr()->getDataAt(index) == std::string_view(pos, length))
         return index;
 
     auto insertion_point = reverse_index.insert({pos, length});
@@ -441,7 +443,7 @@ size_t ColumnUnique<ColumnType>::uniqueInsertData(const char * pos, size_t lengt
 }
 
 template <typename ColumnType>
-void ColumnUnique<ColumnType>::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const
+void ColumnUnique<ColumnType>::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const
 {
     /// nullable is handled internally.
     chassert(is_null == nullptr);
@@ -449,13 +451,14 @@ void ColumnUnique<ColumnType>::collectSerializedValueSizes(PaddedPODArray<UInt64
         return;
 
     if (is_nullable)
-        column_holder->collectSerializedValueSizes(sizes, assert_cast<const ColumnUInt8 &>(*nested_null_mask).getData().data());
+        column_holder->collectSerializedValueSizes(sizes, assert_cast<const ColumnUInt8 &>(*nested_null_mask).getData().data(), settings);
     else
-        column_holder->collectSerializedValueSizes(sizes, nullptr);
+        column_holder->collectSerializedValueSizes(sizes, nullptr, settings);
 }
 
 template <typename ColumnType>
-StringRef ColumnUnique<ColumnType>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnUnique<ColumnType>::serializeValueIntoArena(
+    size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
     if (is_nullable)
     {
@@ -466,20 +469,20 @@ StringRef ColumnUnique<ColumnType>::serializeValueIntoArena(size_t n, Arena & ar
         unalignedStore<UInt8>(pos, flag);
 
         if (n == getNullValueIndex())
-            return StringRef(pos, s);
+            return std::string_view(pos, s);
 
-        auto nested_ref = column_holder->serializeValueIntoArena(n, arena, begin);
+        auto nested_ref = column_holder->serializeValueIntoArena(n, arena, begin, settings);
 
         /// serializeValueIntoArena may reallocate memory. Have to use ptr from nested_ref.data and move it back.
-        return StringRef(nested_ref.data - s, nested_ref.size + s);
+        return std::string_view(nested_ref.data() - s, nested_ref.size() + s);
     }
 
 
-    return column_holder->serializeValueIntoArena(n, arena, begin);
+    return column_holder->serializeValueIntoArena(n, arena, begin, settings);
 }
 
 template <typename ColumnType>
-char * ColumnUnique<ColumnType>::serializeValueIntoMemory(size_t n, char * memory) const
+char * ColumnUnique<ColumnType>::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
     if (is_nullable)
     {
@@ -491,41 +494,84 @@ char * ColumnUnique<ColumnType>::serializeValueIntoMemory(size_t n, char * memor
             return memory;
     }
 
-    return column_holder->serializeValueIntoMemory(n, memory);
+    return column_holder->serializeValueIntoMemory(n, memory, settings);
 }
 
 template <typename ColumnType>
-size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(const char * pos, const char *& new_pos)
+size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     if (is_nullable)
     {
-        UInt8 val = unalignedLoad<UInt8>(pos);
-        pos += sizeof(val);
+        UInt8 val;
+        readBinaryLittleEndian<UInt8>(val, in);
 
         if (val)
-        {
-            new_pos = pos;
             return getNullValueIndex();
-        }
     }
 
     /// Numbers, FixedString
     if (size_of_value_if_fixed)
     {
-        new_pos = pos + size_of_value_if_fixed;
-        return uniqueInsertData(pos, size_of_value_if_fixed);
+        if (in.available() < size_of_value_if_fixed)
+            throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Not enough data to deserialize fixed size value in ColumnUnique.");
+
+        size_t ret = uniqueInsertData(in.position(), size_of_value_if_fixed);
+        in.ignore(size_of_value_if_fixed);
+        return ret;
     }
 
     /// String
-    const size_t string_size = unalignedLoad<size_t>(pos);
-    pos += sizeof(string_size);
-    new_pos = pos + string_size;
+    bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
+    size_t string_size;
+    readBinaryLittleEndian<size_t>(string_size, in);
+    if (in.available() < string_size)
+        throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Not enough data to deserialize string value in ColumnUnique.");
 
-    return uniqueInsertData(pos, string_size);
+    size_t ret = uniqueInsertData(in.position(), string_size - serialize_string_with_zero_byte);
+    in.ignore(string_size);
+    return ret;
 }
 
 template <typename ColumnType>
-const char * ColumnUnique<ColumnType>::skipSerializedInArena(const char *) const
+size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
+{
+    if (is_nullable)
+    {
+        UInt8 val;
+        readBinaryLittleEndian<UInt8>(val, in);
+
+        if (val)
+            return getNullValueIndex();
+
+    }
+
+    /// Numbers, FixedString
+    if (size_of_value_if_fixed)
+    {
+        if (in.available() < size_of_value_if_fixed)
+            throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Not enough data to deserialize fixed size value in ColumnUnique.");
+
+        size_t ret = uniqueInsertData(in.position(), size_of_value_if_fixed);
+        in.ignore(size_of_value_if_fixed);
+        return ret;
+
+    }
+
+    /// String
+    /// For compatibility, serialized string value contains zero byte at the end, we just ignore this byte.
+    size_t string_size_with_zero_byte;
+    readBinaryLittleEndian<size_t>(string_size_with_zero_byte, in);
+    if (in.available() < string_size_with_zero_byte)
+        throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Not enough data to deserialize string value in ColumnUnique.");
+
+    size_t ret = uniqueInsertData(in.position(), string_size_with_zero_byte - 1);
+    in.ignore(string_size_with_zero_byte);
+
+    return ret;
+}
+
+template <typename ColumnType>
+void ColumnUnique<ColumnType>::skipSerializedInArena(ReadBuffer &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method skipSerializedInArena is not supported for {}", this->getName());
 }
@@ -633,7 +679,7 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
     if (secondary_index)
         next_position += secondary_index->size();
 
-    auto insert_key = [&](StringRef ref, ReverseIndex<UInt64, ColumnType> & cur_index) -> MutableColumnPtr
+    auto insert_key = [&](std::string_view ref, ReverseIndex<UInt64, ColumnType> & cur_index) -> MutableColumnPtr
     {
         auto inserted_pos = cur_index.insert(ref);
         positions[num_added_rows] = static_cast<IndexType>(inserted_pos);

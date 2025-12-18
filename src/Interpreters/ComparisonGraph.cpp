@@ -39,7 +39,11 @@ ASTPtr normalizeAtom(const ASTPtr & atom, ContextPtr)
     if (const auto * func = res->as<ASTFunction>())
     {
         if (const auto it = inverse_relations.find(func->name); it != std::end(inverse_relations))
-            res = makeASTFunction(it->second, func->arguments->children[1]->clone(), func->arguments->children[0]->clone());
+        {
+            auto new_func = makeASTOperator(it->second, func->arguments->children[1]->clone(), func->arguments->children[0]->clone());
+            new_func->is_operator = func->is_operator;
+            res = new_func;
+        }
     }
 
     return res;

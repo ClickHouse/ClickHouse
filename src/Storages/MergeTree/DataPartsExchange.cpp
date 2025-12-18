@@ -379,7 +379,7 @@ MergeTreeData::DataPartPtr Service::findPart(const String & name)
     static const UInt32 wait_timeout_ms = 1000;
     auto pred = [&] ()
     {
-        auto lock = data.lockParts();
+        auto lock = data.readLockParts();
         return part->getState() != MergeTreeDataPartState::PreActive;
     };
 

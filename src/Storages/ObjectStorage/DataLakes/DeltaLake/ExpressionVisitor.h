@@ -10,7 +10,7 @@
 namespace ffi
 {
 struct Expression;
-struct SharedExpression;
+struct SharedPredicate;
 }
 namespace DB
 {
@@ -30,12 +30,14 @@ std::vector<DB::Field> getConstValuesFromExpression(
 /// Visit exception for scanCallback.
 std::shared_ptr<DB::ActionsDAG> visitScanCallbackExpression(
     const ffi::Expression * expression,
+    const DB::NamesAndTypesList & read_schema,
     const DB::NamesAndTypesList & expression_schema,
     bool enable_logging);
 
 /// A method used in unit test.
 std::shared_ptr<DB::ActionsDAG> visitExpression(
-    ffi::SharedExpression * expression,
+    ffi::SharedPredicate * expression,
+    const DB::NamesAndTypesList & read_schema,
     const DB::NamesAndTypesList & expression_schema);
 
 }

@@ -2,6 +2,7 @@
 
 #include <Interpreters/SystemLog.h>
 #include <Common/ThreadPool.h>
+#include <Common/setThreadName.h>
 
 #include <atomic>
 #include <chrono>
@@ -10,7 +11,7 @@
     M(ErrorLogElement) \
     M(MetricLogElement) \
     M(TransposedMetricLogElement) \
-
+    M(AggregatedZooKeeperLogElement) \
 
 namespace DB
 {
@@ -25,9 +26,11 @@ public:
     using TimePoint = std::chrono::system_clock::time_point;
 
     /// Launches a background thread to collect metrics with periodic interval
-    void startCollect(const String & thread_name, size_t collect_interval_milliseconds_);
+    void startCollect(ThreadName thread_name, size_t collect_interval_milliseconds_);
 
     void shutdown() final;
+
+    void flushBufferToLog(TimePoint current_time) final;
 
 protected:
     /// Stop background thread

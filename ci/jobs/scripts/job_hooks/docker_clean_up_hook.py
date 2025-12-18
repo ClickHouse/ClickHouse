@@ -2,11 +2,11 @@ from ci.praktika.utils import Shell
 
 
 def check():
-    print("Clean up build cache")
-    Shell.check("docker builder prune -a -f", verbose=True)
-    print("Clean up stopped containers")
-    Shell.check("docker container prune -f", verbose=True)
-
+    print("Remove all images with names starting with clickhouse/clickhouse- (forced)")
+    Shell.check(
+        "docker images --format '{{.Repository}}:{{.Tag}}' | grep '^clickhouse/clickhouse-' | xargs -r docker rmi -f",
+        verbose=True,
+    )
     print("Clean up non-latest images per each Repository")
     Shell.check(
         "docker images --format '{{.Repository}} {{.ID}} {{.CreatedAt}}' "
@@ -16,6 +16,11 @@ def check():
         " | xargs -r docker rmi",
         verbose=True,
     )
+    print("Clean up build cache")
+    Shell.check("docker builder prune -a -f", verbose=True)
+    print("Clean up stopped containers")
+    Shell.check("docker container prune -f", verbose=True)
+    Shell.check("docker system prune", verbose=True)
     return True
 
 

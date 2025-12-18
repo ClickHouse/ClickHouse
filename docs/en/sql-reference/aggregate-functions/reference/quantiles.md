@@ -3,6 +3,7 @@ description: 'quantiles, quantilesExactExclusive, quantilesExactInclusive, quant
 sidebar_position: 177
 slug: /sql-reference/aggregate-functions/reference/quantiles
 title: 'quantiles Functions'
+doc_type: 'reference'
 ---
 
 # quantiles functions
@@ -155,8 +156,6 @@ FROM numbers(1000)
 ┌─quantilesGK(10, 0.25, 0.5, 0.75)(plus(number, 1))─┐
 │ [156,413,659]                                     │
 └───────────────────────────────────────────────────┘
-
-
 SELECT quantilesGK(100, 0.25, 0.5, 0.75)(number + 1)
 FROM numbers(1000)
 

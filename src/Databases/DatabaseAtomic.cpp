@@ -15,6 +15,7 @@
 #include <Common/PoolId.h>
 #include <Common/atomicRename.h>
 #include <Common/logger_useful.h>
+#include <Common/AsyncLoader.h>
 
 
 namespace fs = std::filesystem;
@@ -64,9 +65,15 @@ DatabaseAtomic::DatabaseAtomic(
     const String & logger_name,
     ContextPtr context_,
     DatabaseMetadataDiskSettings database_metadata_disk_settings_)
-    : DatabaseOrdinary(name_, metadata_path_, "store/", logger_name, context_, database_metadata_disk_settings_)
-    , path_to_table_symlinks(fs::path("data") / escapeForFileName(name_) / "")
-    , path_to_metadata_symlink(fs::path("metadata") / escapeForFileName(name_))
+    : DatabaseOrdinary(
+        name_,
+        metadata_path_,
+        DatabaseCatalog::getStoreDirPath() / "",
+        logger_name,
+        context_,
+        database_metadata_disk_settings_)
+    , path_to_table_symlinks(DatabaseCatalog::getDataDirPath(name_) / "")
+    , path_to_metadata_symlink(DatabaseCatalog::getMetadataDirPath(name_))
     , db_uuid(uuid)
 {
     assert(db_uuid != UUIDHelpers::Nil);
@@ -89,7 +96,7 @@ void DatabaseAtomic::createDirectoriesUnlocked()
     auto db_disk = getDisk();
 
     DatabaseOnDisk::createDirectoriesUnlocked();
-    db_disk->createDirectories("metadata");
+    db_disk->createDirectories(DatabaseCatalog::getMetadataDirPath());
     if (db_disk->isSymlinkSupported())
         db_disk->createDirectories(path_to_table_symlinks);
     tryCreateMetadataSymlink();
@@ -115,7 +122,10 @@ String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 void DatabaseAtomic::drop(ContextPtr)
 {
     waitDatabaseStarted();
-    assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
+    {
+        std::lock_guard lock(mutex);
+        assert(tables.empty());
+    }
 
     auto db_disk = getDisk();
     try
@@ -702,12 +712,12 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     /// CREATE, ATTACH, DROP, DETACH and RENAME DATABASE must hold DDLGuard
     createDirectories();
     waitDatabaseStarted();
+    std::lock_guard lock(mutex);
 
     bool check_ref_deps = query_context->getSettingsRef()[Setting::check_referential_table_dependencies];
     bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef()[Setting::check_table_dependencies];
     if (check_ref_deps || check_loading_deps)
     {
-        std::lock_guard lock(mutex);
         for (auto & table : tables)
         {
             checkTableNameLengthUnlocked(new_name, table.first, getContext());
@@ -728,16 +738,14 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
         LOG_WARNING(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
     }
 
-    auto new_name_escaped = escapeForFileName(new_name);
-    auto old_database_metadata_path = fs::path("metadata") / (escapeForFileName(getDatabaseName()) + ".sql");
-    auto new_database_metadata_path = fs::path("metadata") / (new_name_escaped + ".sql");
+    auto old_metadata_file_path = DatabaseCatalog::getMetadataFilePath(database_name);
+    auto new_metadata_file_path = DatabaseCatalog::getMetadataFilePath(new_name);
     auto default_db_disk = getContext()->getDatabaseDisk();
-    default_db_disk->moveFile(old_database_metadata_path, new_database_metadata_path);
+    default_db_disk->moveFile(old_metadata_file_path, new_metadata_file_path);
 
     String old_path_to_table_symlinks;
 
     {
-        std::lock_guard lock(mutex);
         {
             Strings table_names;
             table_names.reserve(tables.size());
@@ -759,9 +767,9 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
             snapshot.database = database_name;
         }
 
-        path_to_metadata_symlink = fs::path("metadata") / new_name_escaped;
+        path_to_metadata_symlink = DatabaseCatalog::getMetadataDirPath(new_name);
         old_path_to_table_symlinks = path_to_table_symlinks;
-        path_to_table_symlinks = fs::path("data") / new_name_escaped / "";
+        path_to_table_symlinks = DatabaseCatalog::getDataDirPath(new_name) / "";
     }
 
     auto db_disk = getDisk();
