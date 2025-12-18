@@ -544,6 +544,8 @@ def main():
         else:
             R.set_success()
 
+    Shell.check("echo 'FIND ALL *.profraw FILES'", verbose=True, strict=True)
+    Shell.check("find . -name '*.profraw'", verbose=True, strict=True)
     R.sort().complete_job()
 
 

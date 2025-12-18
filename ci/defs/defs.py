@@ -469,10 +469,10 @@ class ArtifactConfigs:
         type=Artifact.Type.S3,
         path=[
             f"./*.profraw",
-            f"./build/*.profraw",
-            f"./build/programs*.profraw",
-            f"./build/src/unit_tests_dbms/*.profraw",
-            f"./tests/integration/*.profraw",
+            # f"./build/*.profraw",
+            # f"./build/programs*.profraw",
+            # f"./build/src/unit_tests_dbms/*.profraw",
+            # f"./tests/integration/*.profraw",
         ]
     ).parametrize(
         names=LLVM_ARTIFACTS_LIST
