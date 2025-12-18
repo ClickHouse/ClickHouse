@@ -127,6 +127,8 @@ struct FormatSettings
 
     size_t max_block_size_bytes = 0;
 
+    bool pretty_format = false;
+
     enum class ArrowCompression : uint8_t
     {
         NONE,
@@ -143,6 +145,7 @@ struct FormatSettings
         bool read_json_as_string = false;
         bool write_json_as_string = false;
         bool read_bool_field_as_int = false;
+        UInt64 max_object_size = 100000;
     } binary{};
 
     struct
@@ -366,6 +369,8 @@ struct FormatSettings
         UInt64 fallback_to_vertical_max_rows_per_chunk = 100;
         UInt64 fallback_to_vertical_min_columns = 5;
         UInt64 fallback_to_vertical_min_table_width = 250;
+
+        bool named_tuples_as_json = true;
 
         enum class Charset : uint8_t
         {

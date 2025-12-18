@@ -186,7 +186,7 @@ namespace ProfileEvents
     void incrementLoggerElapsedNanoseconds(UInt64 ns);
 
     /// Get name of event by identifier. Returns statically allocated string.
-    const char * getName(Event event);
+    std::string_view getName(Event event);
 
     /// Get description of event by identifier. Returns statically allocated string.
     const char * getDocumentation(Event event);
