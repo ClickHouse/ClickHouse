@@ -1,3 +1,5 @@
+SET enable_analyzer = 1;
+
 CREATE VIEW 03271_parametrized_v AS
 SELECT number AS n
 FROM numbers({upper_bound:UInt64});
