@@ -363,7 +363,7 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
     for (auto it = metadata_files.begin(); it < metadata_files.end(); std::advance(it, batch_size))
     {
         std::span batch{it, std::min(std::next(it, batch_size), metadata_files.end())};
-        runner([batch, &process_metadata_file]() mutable
+        runner.enqueueAndKeepTrack([batch, &process_metadata_file]() mutable
             {
                 for (const auto & file : batch)
                     process_metadata_file(file);
