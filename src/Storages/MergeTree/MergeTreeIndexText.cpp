@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/formatReadable.h>
@@ -22,10 +21,8 @@
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 
-
 #include <base/range.h>
 #include <fmt/ranges.h>
-
 namespace ProfileEvents
 {
     extern const Event TextIndexReadDictionaryBlocks;
@@ -54,7 +51,7 @@ static size_t getBloomFilterSizeInBytes(size_t bits_per_row, size_t num_tokens)
 }
 
 static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 16;
-static_assert(PostingListBuilder::max_small_size <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "max_small_size must be less than or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
+static_assert(PostingListRoaringCodec::max_small_size <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "max_small_size must be less than or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
 
 static constexpr UInt64 DEFAULT_DICTIONARY_BLOCK_SIZE = 128;
 static constexpr bool DEFAULT_DICTIONARY_BLOCK_USE_FRONTCODING = true;
@@ -62,6 +59,7 @@ static constexpr UInt64 DEFAULT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = 16;
 /// 0.1 may seem quite high. The motivation of it is to minimize the size of the bloom filter.
 /// Rate of 0.1 gives 5 bits per token. 0.05 gives 7 bits; 0.025 - 8 bits.
 static constexpr double DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE = 0.1; /// 10%
+static constexpr bool DEFAULT_ENABLE_POSTINGS_COMPRESSION = false;
 
 enum class TokensSerializationFormat : UInt64
 {
@@ -118,16 +116,15 @@ DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInf
 {
 }
 
-UInt64 PostingsSerialization::serialize(UInt64 header, PostingListBuilder && postings, WriteBuffer & ostr)
+size_t PostingListRoaringCodec::serialize(UInt64 header, WriteBuffer & ostr)
 {
-    UInt64 written_bytes = 0;
-    if (header & Flags::RawPostings)
+    size_t written_bytes = 0;
+    if (header & PostingsSerialization::Flags::RawPostings)
     {
-        if (postings.isSmall())
+        if (small_size < max_small_size)
         {
-            size_t size = postings.size();
-            const auto & array = postings.getSmall();
-            for (size_t i = 0; i < size; ++i)
+            const auto & array = small;
+            for (size_t i = 0; i < small_size; ++i)
             {
                 writeVarUInt(array[i], ostr);
                 written_bytes += getLengthOfVarUInt(array[i]);
@@ -135,7 +132,7 @@ UInt64 PostingsSerialization::serialize(UInt64 header, PostingListBuilder && pos
         }
         else
         {
-            const auto & posting_list = postings.getLarge();
+            const auto & posting_list = *large.first;
             for (const auto row_id : posting_list)
             {
                 writeVarUInt(row_id, ostr);
@@ -145,8 +142,8 @@ UInt64 PostingsSerialization::serialize(UInt64 header, PostingListBuilder && pos
     }
     else
     {
-        chassert(!postings.isSmall());
-        auto & posting_list = postings.getLarge();
+        chassert(small_size == max_small_size);
+        auto & posting_list = *large.first;
 
         posting_list.runOptimize();
         size_t num_bytes = posting_list.getSizeInBytes();
@@ -161,9 +158,38 @@ UInt64 PostingsSerialization::serialize(UInt64 header, PostingListBuilder && pos
     return written_bytes;
 }
 
+size_t PostingListBlockCodec::serialize(UInt64 header, WriteBuffer & ostr)
+{
+    chassert(header & PostingsSerialization::Flags::CompressedPostings);
+    return postings->serialize(ostr);
+}
+
+size_t PostingListBuilder::serialize(UInt64 header, WriteBuffer & ostr)
+{
+    if (std::holds_alternative<PostingListRoaringCodecPtr>(codec))
+        return std::get<PostingListRoaringCodecPtr>(codec)->serialize(header, ostr);
+    if (std::holds_alternative<PostingListBlockCodecPtr>(codec))
+        return std::get<PostingListBlockCodecPtr>(codec)->serialize(header, ostr);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "The codec is not initialized yet.");
+}
+
+UInt64 PostingsSerialization::serialize(UInt64 header, PostingListBuilder && postings, WriteBuffer & ostr)
+{
+    return postings.serialize(header, ostr);
+}
+
 PostingListPtr PostingsSerialization::deserialize(UInt64 header, UInt32 cardinality, ReadBuffer & istr)
 {
-    if (header & Flags::RawPostings)
+    if (header & CompressedPostings)
+    {
+        chassert(header & PostingsSerialization::CompressedPostings);
+        auto postings = std::make_shared<PostingList>();
+        deserializePostings(istr, *postings);
+        chassert(cardinality == postings->cardinality());
+        return postings;
+    }
+
+    if (header & RawPostings)
     {
         std::vector<UInt32> values(cardinality);
         for (size_t i = 0; i < cardinality; ++i)
@@ -549,7 +575,7 @@ MergeTreeIndexGranuleTextWritable::MergeTreeIndexGranuleTextWritable(
     BloomFilter && bloom_filter_,
     SortedTokensAndPostings && tokens_and_postings_,
     TokenToPostingsMap && tokens_map_,
-    std::list<PostingList> && posting_lists_,
+    std::list<PostingListCodec> && posting_lists_,
     std::unique_ptr<Arena> && arena_)
     : params(std::move(params_))
     , bloom_filter(std::move(bloom_filter_))
@@ -709,6 +735,8 @@ TextIndexHeader::DictionarySparseIndex serializeTokensAndPostings(
             UInt64 header = 0;
             bool raw_postings = cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS;
             bool embedded_postings = cardinality <= params.max_cardinality_for_embedded_postings;
+            if (params.enable_compressed_postings)
+                header |= PostingsSerialization::CompressedPostings;
 
             if (raw_postings)
                 header |= PostingsSerialization::RawPostings;
@@ -799,7 +827,12 @@ size_t MergeTreeIndexGranuleTextWritable::memoryUsageBytes() const
 {
     size_t posting_lists_size = 0;
     for (const auto & plist : posting_lists)
-        posting_lists_size += plist.getSizeInBytes();
+    {
+        if (std::holds_alternative<PostingList>(plist))
+            posting_lists_size += std::get<PostingList>(plist).getSizeInBytes();
+        else
+            posting_lists_size += std::get<PostingsContainer32>(plist).getSizeInBytes();
+    }
 
     return sizeof(*this)
         + bloom_filter.getFilterSizeBytes()
@@ -819,7 +852,7 @@ MergeTreeIndexTextGranuleBuilder::MergeTreeIndexTextGranuleBuilder(
 {
 }
 
-void PostingListBuilder::add(UInt32 value, PostingListsHolder & postings_holder)
+void PostingListRoaringCodec::add(UInt32 value, PostingListCodecsHolder & postings_holder)
 {
     if (small_size < max_small_size)
     {
@@ -836,7 +869,8 @@ void PostingListBuilder::add(UInt32 value, PostingListsHolder & postings_holder)
         if (small_size == max_small_size)
         {
             auto small_copy = std::move(small);
-            large.first = &postings_holder.emplace_back();
+            auto & postings = postings_holder.emplace_back(std::in_place_type<PostingList>);
+            large.first = &std::get<PostingList>(postings);
             large.second = roaring::BulkContext();
 
             for (size_t i = 0; i < max_small_size; ++i)
@@ -848,6 +882,26 @@ void PostingListBuilder::add(UInt32 value, PostingListsHolder & postings_holder)
         /// Use addBulk to optimize consecutive insertions into the posting list.
         large.first->addBulk(large.second, value);
     }
+}
+
+void PostingListBlockCodec::add(UInt32 value, PostingListCodecsHolder & postings_holder)
+{
+    if (!postings)
+    {
+        auto & codec = postings_holder.emplace_back(std::in_place_type<PostingsContainer32>);
+        postings = &std::get<PostingsContainer32>(codec);
+    }
+    postings->add(value);
+}
+
+void PostingListBuilder::add(UInt32 value, PostingListCodecsHolder & postings_holder)
+{
+    if (std::holds_alternative<PostingListRoaringCodecPtr>(codec))
+        std::get<PostingListRoaringCodecPtr>(codec)->add(value, postings_holder);
+    else if (std::holds_alternative<PostingListBlockCodecPtr>(codec))
+        std::get<PostingListBlockCodecPtr>(codec)->add(value, postings_holder);
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The codec is not initialized yet.");
 }
 
 void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
@@ -865,6 +919,8 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
             tokens_map.emplace(key_holder, it, inserted);
 
             auto & posting_list_builder = it->getMapped();
+            if (inserted)
+                posting_list_builder.initialize(params.enable_compressed_postings);
             posting_list_builder.add(current_row, posting_lists);
             return false;
         });
@@ -1023,6 +1079,7 @@ static const String ARGUMENT_DICTIONARY_BLOCK_SIZE = "dictionary_block_size";
 static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "dictionary_block_frontcoding_compression";
 static const String ARGUMENT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = "max_cardinality_for_embedded_postings";
 static const String ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE = "bloom_filter_false_positive_rate";
+static const String ARGUMENT_BLOOM_ENABLE_POSTINGS_COMPRESSION = "enable_postings_compression";
 
 namespace
 {
@@ -1158,6 +1215,7 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
     UInt64 dictionary_block_frontcoding_compression = extractOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION).value_or(DEFAULT_DICTIONARY_BLOCK_USE_FRONTCODING);
     UInt64 max_cardinality_for_embedded_postings = extractOption<UInt64>(options, ARGUMENT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS).value_or(DEFAULT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS);
     double bloom_filter_false_positive_rate = extractOption<double>(options, ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE).value_or(DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE);
+    bool enable_postings_compression = extractOption<bool>(options, ARGUMENT_BLOOM_ENABLE_POSTINGS_COMPRESSION).value_or(DEFAULT_ENABLE_POSTINGS_COMPRESSION);
 
     const auto [bits_per_rows, num_hashes] = BloomFilterHash::calculationBestPractices(bloom_filter_false_positive_rate);
     MergeTreeIndexTextParams index_params{
@@ -1166,7 +1224,8 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
         max_cardinality_for_embedded_postings,
         bits_per_rows,
         num_hashes,
-        preprocessor};
+        preprocessor,
+        enable_postings_compression};
 
     if (!options.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
@@ -1210,6 +1269,8 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     /// No validation for max_cardinality_for_embedded_postings.
     extractOption<UInt64>(options, ARGUMENT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS);
     auto preprocessor = extractOption<String>(options, ARGUMENT_PREPROCESSOR, false);
+
+    extractOption<bool>(options, ARGUMENT_BLOOM_ENABLE_POSTINGS_COMPRESSION).value_or(DEFAULT_ENABLE_POSTINGS_COMPRESSION);
 
     if (!options.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
