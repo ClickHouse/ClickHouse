@@ -28,6 +28,7 @@ public:
         const String & remote_path,
         const String & local_path,
         size_t data_size,
+        size_t elapsed_microseconds,
         Int32 error_code,
         const String & error_message,
         BlobStorageLogElement::EvenTime time_now = {});
