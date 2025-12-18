@@ -56,14 +56,14 @@ static constexpr auto NEW_LINE = "\n";
 struct PaimonToken
 {
     const String token_provider;
-    const String bear_token;
+    const String bearer_token;
     const String dlf_access_key_id;
     const String dlf_access_key_secret;
     mutable String dlf_generated_authorization;
 
-    explicit PaimonToken(const String & bear_token_)
-        : token_provider("bear")
-        , bear_token(bear_token_)
+    explicit PaimonToken(const String & bearer_token_)
+        : token_provider("bearer")
+        , bearer_token(bearer_token_)
     {
     }
 

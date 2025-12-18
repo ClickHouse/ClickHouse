@@ -138,7 +138,7 @@ void PaimonRestCatalog::createAuthHeaders(
     {
         return;
     }
-    if (token->token_provider == "bear")
+    if (token->token_provider == "bearer")
     {
         current_headers.emplace_back("Authorization", fmt::format("Bearer {}", token->bear_token));
         return;
@@ -488,7 +488,7 @@ bool PaimonRestCatalog::tryGetTableMetadata(const String & database_name, const 
             }
             else
             {
-                std::stringstream ss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+                std::ostringstream ss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
                 table_json_ptr->stringify(ss);
                 result.setTableIsNotReadable(
                     fmt::format("Cannot read table {}, because no 'location' in response: {}", table_name, ss.str()));

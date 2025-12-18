@@ -228,8 +228,9 @@ ObjectIterator PaimonMetadata::iterate(
     {
         if (delete_files.contains(*it))
         {
+            const auto file_path = *it;
             it = data_files.erase(it);
-            LOG_TEST(log, "delete data file: {}", *it);
+            LOG_TEST(log, "delete data file: {}", file_path);
         }
         else
         {

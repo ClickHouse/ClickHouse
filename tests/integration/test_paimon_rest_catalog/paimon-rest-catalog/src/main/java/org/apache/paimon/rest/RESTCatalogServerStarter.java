@@ -65,8 +65,8 @@ public class RESTCatalogServerStarter {
     }
 
     private static AuthProvider createAuthProvider(String tokenType) {
-        if (tokenType.equals("bear")) {
-            return new BearTokenAuthProvider("bear-token-xxx-xxx-xxx");
+        if (tokenType.equals("bearer")) {
+            return new BearTokenAuthProvider("bearer-token-xxx-xxx-xxx");
         } else if (tokenType.equals("dlf")) {
             return DLFAuthProvider.buildAKToken("accessKeyId", "accessKeySecret", "", "cn-hangzhou");
         }

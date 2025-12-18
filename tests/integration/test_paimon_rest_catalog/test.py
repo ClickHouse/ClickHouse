@@ -26,9 +26,9 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
-def start_bear_token_server():
+def start_bearer_token_server():
     instance_id = cluster.get_instance_docker_id("node")
-    # cpoy paimon rest catalog to docker container    
+    # copy paimon rest catalog to docker container    
     run_and_check(
         ["docker cp {local} {cont_id}:{dist}".format(
             local=os.path.join(SCRIPT_DIR, f"paimon-rest-catalog"),
@@ -58,7 +58,7 @@ def start_bear_token_server():
     )
 
     # start paimon rest catalog
-    start_cmd = f'''nohup java -jar target/paimon-server-starter-1.0-SNAPSHOT.jar "server" "file:///tmp/warehouse/" "bear" "0.0.0.0" "{PORT}" &!'''
+    start_cmd = f'''nohup java -jar target/paimon-server-starter-1.0-SNAPSHOT.jar "server" "file:///tmp/warehouse/" "bearer" "0.0.0.0" "{PORT}" &!'''
     run_and_check(
         ["docker exec {cont_id} bash -lc 'cd /root/paimon-rest-catalog && {start_cmd}'".format(
             cont_id=instance_id,
@@ -78,7 +78,7 @@ def start_dlf_token_server():
     )
 
 def test_paimon_rest_catalog(started_cluster):
-    start_bear_token_server()
+    start_bearer_token_server()
     paimon_rest_catalog_container_ip = cluster.get_instance_ip("node")
     # clean warehouse data path
     instance_id = cluster.get_instance_docker_id("node")
@@ -91,7 +91,7 @@ def test_paimon_rest_catalog(started_cluster):
     )
 
     node.query("DROP DATABASE IF EXISTS paimon_rest_db SYNC;")
-    node.query(f"create database paimon_rest_db engine = DataLakeCatalog('http://{paimon_rest_catalog_container_ip}:{PORT}') SETTINGS catalog_type='paimon_rest', warehouse='restWarehouse', catalog_credential='bear-token-xxx-xxx-xxx';", settings={"allow_experimental_database_paimon_rest_catalog": 1})
+    node.query(f"create database paimon_rest_db engine = DataLakeCatalog('http://{paimon_rest_catalog_container_ip}:{PORT}') SETTINGS catalog_type='paimon_rest', warehouse='restWarehouse', catalog_credential='bearer-token-xxx-xxx-xxx';", settings={"allow_experimental_database_paimon_rest_catalog": 1})
     # create database
     requests.post(
         f"http://{paimon_rest_catalog_container_ip}:{PORT}/v1/paimon/databases",
@@ -99,7 +99,7 @@ def test_paimon_rest_catalog(started_cluster):
             "name": "test",
         },
         headers={
-            "Authorization": "Bearer bear-token-xxx-xxx-xxx",
+            "Authorization": "Bearer bearer-token-xxx-xxx-xxx",
         }
     )
     # create table
@@ -141,7 +141,7 @@ def test_paimon_rest_catalog(started_cluster):
         }
         },
         headers={
-            "Authorization": "Bearer bear-token-xxx-xxx-xxx",
+            "Authorization": "Bearer bearer-token-xxx-xxx-xxx",
         }
     )
 
