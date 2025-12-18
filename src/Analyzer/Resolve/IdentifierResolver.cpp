@@ -364,7 +364,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabas
 {
     const auto & settings = context->getSettingsRef();
     std::exception_ptr swallowed_exception; /// to preserve original message/hints
-    bool do_fallback;
+    bool do_fallback = false;
     /// try exact resolution first, only swallow 'not found' cases to allow CI fallback
     try
     {
