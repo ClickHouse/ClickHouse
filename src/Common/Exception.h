@@ -78,7 +78,6 @@ public:
     }
 
     Exception(Exception && o) noexcept
-        : Poco::Exception(std::move(o))
     {
         remote = o.remote;
         logged.store(o.logged.load());
@@ -86,19 +85,20 @@ public:
         message_format_string = o.message_format_string;
         message_format_string_args = std::move(o.message_format_string_args);
         capture_thread_frame_pointers = std::move(o.capture_thread_frame_pointers);
+        Poco::Exception::operator=(std::move(o));
     }
 
     Exception & operator=(const Exception & o)
     {
         if (this != &o)
         {
-            Poco::Exception::operator=(o);
             remote = o.remote;
             logged.store(o.logged.load());
             error_index = o.error_index;
             message_format_string = o.message_format_string;
             message_format_string_args = o.message_format_string_args;
             capture_thread_frame_pointers = o.capture_thread_frame_pointers;
+            Poco::Exception::operator=(o);
         }
         return *this;
     }
@@ -108,13 +108,13 @@ public:
     {
         if (this != &o)
         {
-            Poco::Exception::operator=(std::move(o));
             remote = o.remote;
             logged.store(o.logged.load());
             error_index = o.error_index;
             message_format_string = o.message_format_string;
             message_format_string_args = std::move(o.message_format_string_args);
             capture_thread_frame_pointers = std::move(o.capture_thread_frame_pointers);
+            Poco::Exception::operator=(std::move(o));
         }
         return *this;
     }
