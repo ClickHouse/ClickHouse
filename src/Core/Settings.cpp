@@ -6981,8 +6981,8 @@ If the top-level construct is UNION, 'ORDER BY rand()' is injected into all chil
 Only useful for testing and development (missing ORDER BY is a source of non-deterministic query results).
     )", 0) \
     DECLARE(String, default_dictionary_database, "", R"(
-Default database for external dictionaries when database name is not specified. 
-Empty means global namespace.)", 0) \
+Database to search for external dictionaries when database name is not specified.
+Empty string means the current database.)", 0) \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
     /* ## ADD PRODUCTION / BETA FEATURES BEFORE THIS BLOCK  ## */ \
