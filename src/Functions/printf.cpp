@@ -30,7 +30,6 @@ namespace
 class FunctionPrintf : public IFunction
 {
 private:
-    ContextPtr context;
     FunctionOverloadResolverPtr function_concat;
 
     struct Instruction
@@ -157,8 +156,9 @@ public:
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionPrintf>(context); }
 
-    explicit FunctionPrintf(ContextPtr context_)
-        : context(context_), function_concat(FunctionFactory::instance().get("concat", context)) { }
+    explicit FunctionPrintf(ContextPtr context)
+        : function_concat(FunctionFactory::instance().get("concat", context))
+    {}
 
     String getName() const override { return name; }
 
