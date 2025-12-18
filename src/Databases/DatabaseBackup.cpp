@@ -426,10 +426,10 @@ ASTPtr DatabaseBackup::getCreateDatabaseQuery() const
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks]);
 
-    if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
+    if (!comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(database_comment));
+        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(comment));
     }
 
     return ast;
