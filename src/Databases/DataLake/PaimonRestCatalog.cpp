@@ -140,7 +140,7 @@ void PaimonRestCatalog::createAuthHeaders(
     }
     if (token->token_provider == "bearer")
     {
-        current_headers.emplace_back("Authorization", fmt::format("Bearer {}", token->bear_token));
+        current_headers.emplace_back("Authorization", fmt::format("Bearer {}", token->bearer_token));
         return;
     }
     else if (token->token_provider == "dlf")
