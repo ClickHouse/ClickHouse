@@ -202,7 +202,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_read_request_max_tries", 20, 10, "Changed setting value"},
             {"distributed_cache_connect_max_tries", 20, 5, "Changed setting value"},
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
-            {"vector_search_with_rescoring", true, true, "New setting."},
             {"output_format_parquet_max_dictionary_size", 1024 * 1024, 1024 * 1024, "New setting"},
             {"input_format_parquet_use_native_reader_v3", false, false, "New setting"},
             {"input_format_parquet_memory_low_watermark", 2ul << 20, 2ul << 20, "New setting"},
