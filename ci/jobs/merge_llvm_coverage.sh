@@ -25,8 +25,8 @@ fi
 
 echo "Using LLVM tools: $LLVM_PROFDATA, $LLVM_COV"
 
-# Merge profraw files
-"$LLVM_PROFDATA" merge -sparse *.profraw -o merged.profdata
+# Merge profdata files from all jobs
+"$LLVM_PROFDATA" merge -sparse *.profdata -o merged.profdata
 
 # Generate HTML coverage report
 "$LLVM_COV" show \

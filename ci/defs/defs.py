@@ -464,15 +464,11 @@ class ArtifactConfigs:
             ArtifactNames.CH_LOONGARCH64,
         ]
     )
-    llvm_cov_file = Artifact.Config(
+    llvm_profdata_file = Artifact.Config(
         name="...",
         type=Artifact.Type.S3,
         path=[
-            f"./*.profraw",
-            # f"./build/*.profraw",
-            # f"./build/programs*.profraw",
-            # f"./build/src/unit_tests_dbms/*.profraw",
-            # f"./tests/integration/*.profraw",
+            f"./*.profdata",
         ]
     ).parametrize(
         names=LLVM_ARTIFACTS_LIST

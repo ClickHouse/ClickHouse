@@ -51,7 +51,7 @@ workflow = Workflow.Config(
         # *ArtifactConfigs.clickhouse_tgzs,
         # ArtifactConfigs.fuzzers,
         # ArtifactConfigs.fuzzers_corpus,
-        *ArtifactConfigs.llvm_cov_file,
+        *ArtifactConfigs.llvm_profdata_file,
         ArtifactConfigs.llvm_coverage_html_report
     ],
     dockers=DOCKERS,

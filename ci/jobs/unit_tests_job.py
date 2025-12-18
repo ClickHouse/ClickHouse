@@ -1,5 +1,6 @@
 from ci.praktika.info import Info
 from ci.praktika.result import Result
+from ci.praktika.utils import Shell
 import os
 
 if __name__ == "__main__":
@@ -10,8 +11,41 @@ if __name__ == "__main__":
     else:
         command_launcher = ""
 
-    os.environ["LLVM_PROFILE_FILE"] = "unit-test-%m.profraw"
-    Result.from_gtest_run(
+    R = Result.from_gtest_run(
         unit_tests_path="./ci/tmp/unit_tests_dbms",
         command_launcher=command_launcher,
-    ).complete_job()
+    )
+    
+    # Merge profraw files into profdata
+    print("Collecting and merging LLVM coverage files...")
+    profraw_files = Shell.get_output("find . -name '*.profraw'", verbose=True).strip().split('\n')
+    profraw_files = [f.strip() for f in profraw_files if f.strip()]
+    
+    if profraw_files:
+        print(f"Found {len(profraw_files)} .profraw files")
+        
+        # Auto-detect available LLVM profdata tool
+        llvm_profdata = None
+        for ver in ["20", "18", "19", "17", "16", ""]:
+            cmd = f"llvm-profdata{'-' + ver if ver else ''}"
+            if Shell.check(f"command -v {cmd}", verbose=False):
+                llvm_profdata = cmd
+                break
+        
+        if not llvm_profdata:
+            print("ERROR: llvm-profdata not found in PATH")
+        else:
+            print(f"Using {llvm_profdata} to merge coverage files")
+            
+            # Merge all profraw files to current directory
+            merged_file = "./unit-tests.profdata"
+            merge_cmd = f"{llvm_profdata} merge -sparse {' '.join(profraw_files)} -o {merged_file}"
+            if Shell.check(merge_cmd, verbose=True):
+                print(f"Successfully merged coverage data to {merged_file}")
+                R.files.append(merged_file)
+            else:
+                print("ERROR: Failed to merge coverage files")
+    else:
+        print("No .profraw files found for coverage")
+    
+    R.complete_job()
