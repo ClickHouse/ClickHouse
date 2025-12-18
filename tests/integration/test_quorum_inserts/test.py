@@ -426,7 +426,7 @@ def test_insert_quorum_with_keeper_loss_connection(started_cluster):
 
             zero.query("SYSTEM ENABLE FAILPOINT finish_clean_quorum_failed_parts")
             clean_quorum_fail_parts_future = executor.submit(
-                lambda: first.query(
+                lambda: zero.query(
                     "SYSTEM WAIT FAILPOINT finish_clean_quorum_failed_parts",
                     timeout=300,
                 )
