@@ -1,12 +1,6 @@
-import concurrent.futures
-from threading import Event, Thread
 import uuid
-
 import pytest
-
 from helpers.cluster import ClickHouseCluster, QueryRuntimeException
-
-MAX_THREADS = 10
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -34,14 +28,13 @@ def prepare_cluster():
         node.query("DROP TABLE IF EXISTS distributed_table")
         node.query(
             """
-            CREATE TABLE local_table(i Int64, d DateTime) ENGINE=MergeTree PARTITION BY toYYYYMMDD(d) ORDER BY d
+            CREATE TABLE local_table(i Int64) ENGINE=MergeTree ORDER BY i
             """
         )
         node.query(
             """CREATE TABLE distributed_table(i Int64) ENGINE = Distributed(test_cluster, default, local_table, Rand());"""
         )
-        # Generate some sample data so sleepEachRow in do_slow_select works
-        node.query("INSERT INTO local_table VALUES ({},)".format(idx + 1))
+        node.query("INSERT INTO local_table SELECT number FROM numbers(1000)")
 
 
 @pytest.fixture(scope="module")
@@ -55,77 +48,40 @@ def started_cluster():
 
 
 def test_leaf_queries_retried(started_cluster):
-
+    """
+    Enable failpoints that mean leaf nodes return concurrency errors,
+    then validate that the query still succeeds and we see retries.
+    """
     prepare_cluster()
-    stop_event = Event()
 
-    def _do_slow_select():
-        while not stop_event.isSet():
-            node1.query("SELECT i, sleepEachRow(3) from local_table")
+    node1.query("SYSTEM ENABLE FAILPOINT remote_query_executor_exception_retryable")
+    node3.query("SYSTEM ENABLE FAILPOINT remote_query_executor_exception_retryable")
 
-    query_ids = []
-
-    def _distributed_query():
-        query_id = str(uuid.uuid4())
-        query_ids.append(query_id)
-        return node1.query(
-            "SELECT max(i), sleep(3) FROM distributed_table", query_id=query_id
+    query_id = str(uuid.uuid4())
+    try:
+        result = node1.query(
+            "SELECT max(i) FROM distributed_table SETTINGS load_balancing='in_order'",
+            query_id=query_id,
+        )
+    finally:
+        node1.query(
+            "SYSTEM DISABLE FAILPOINT remote_query_executor_exception_retryable"
+        )
+        node3.query(
+            "SYSTEM DISABLE FAILPOINT remote_query_executor_exception_retryable"
         )
 
-    slow_thread = Thread(target=_do_slow_select)
-    slow_thread.start()
-
-    futures = []
-    errors = []
-    results = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
-        for _ in range(MAX_THREADS):
-            futures.append(executor.submit(_distributed_query))
-
-        for f in futures:
-            try:
-                results.append(f.result())
-            except Exception as err:
-                errors.append(str(err))
-
-    stop_event.set()
-    slow_thread.join()
-
-    concurrency_errors = sum(
-        1 for err in errors if "TOO_MANY_SIMULTANEOUS_QUERIES" in err
-    )
-    other_errors = [err for err in errors if "TOO_MANY_SIMULTANEOUS_QUERIES" not in err]
-
-    assert len(other_errors) == 0, f"Got unexpected query errors: {other_errors}"
-    assert (
-        concurrency_errors == 0
-    ), f"Should be no 'TOO_MANY_SIMULTANEOUS_QUERIES'. Got {errors}"
-
-    assert len(results) > 0
-
-    result_value = int(results[0].split("\t")[0])
-    assert result_value >= 2, f"Expected max(i) >= 2, got {result_value}"
-    assert result_value <= 4, f"Expected max(i) <= 4, got {result_value}"
+    result_value = int(result.split("\t")[0])
+    assert result_value == 999, f"Expected max(i) == 999, got {result_value}"
 
     node1.query("SYSTEM FLUSH LOGS")
-
-    # Check that retries happened for at least one of the distributed queries
-    query_ids_str = "','".join(query_ids)
     retry_count = int(
         node1.query(
-            f"""
-            SELECT max(ProfileEvents['DistributedTryCount']) 
-            FROM system.query_log 
-            WHERE query_id IN ('{query_ids_str}')
-              AND type = 'QueryFinish'
-            """
-        ).strip()
-        or "0"
+            f"SELECT coalesce(max(ProfileEvents['DistributedTryCount']), 0) FROM system.query_log WHERE query_id = '{query_id}'"
+        )
     )
 
-    assert (
-        retry_count >= 1
-    ), f"Expected DistributedTryCount >= 1 (at least one retry happened), got {retry_count}"
+    assert retry_count >= 1, f"Expected at least one retry, got {retry_count}"
 
 
 def test_leaf_queries_not_retried_after_receiving_data(started_cluster):

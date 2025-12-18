@@ -125,7 +125,9 @@ static struct InitFiu
     PAUSEABLE_ONCE(rmt_mutate_task_pause_in_prepare) \
     PAUSEABLE_ONCE(rmt_merge_selecting_task_pause_when_scheduled) \
     ONCE(parallel_replicas_reading_response_timeout) \
-    ONCE(remote_query_executor_exception_after_receiving_data)
+    ONCE(remote_query_executor_exception_after_receiving_data) \
+    ONCE(remote_query_executor_exception_retryable)
+
 
 
 namespace FailPoints
