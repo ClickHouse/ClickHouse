@@ -46,7 +46,8 @@ RUN ln -s /usr/bin/llvm-symbolizer-${LLVM_VERSION} /usr/bin/llvm-symbolizer
 
 # Install LLVM tools for code coverage (llvm-profdata, llvm-cov)
 ENV LLVM_COVERAGE_VERSION=20
-RUN echo "deb https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_COVERAGE_VERSION} main" >> /etc/apt/sources.list.d/llvm-coverage.list \
+RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
+    && echo "deb https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_COVERAGE_VERSION} main" >> /etc/apt/sources.list.d/llvm-coverage.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
         llvm-${LLVM_COVERAGE_VERSION} \
