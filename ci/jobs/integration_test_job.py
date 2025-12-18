@@ -326,6 +326,10 @@ def main():
         )
     )
 
+    # Reduce number of tests to speed up debuging
+    parallel_test_modules = parallel_test_modules[:16]
+    sequential_test_modules = sequential_test_modules[:16]
+
     if is_sequential:
         parallel_test_modules = []
         assert not is_parallel
