@@ -33,7 +33,13 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query);
 class DatabaseOnDisk : public DatabaseWithOwnTablesBase
 {
 public:
-    DatabaseOnDisk(const String & name, const String & metadata_path_, const String & data_path_, const String & logger, ContextPtr context);
+    DatabaseOnDisk(
+        const String & name,
+        const String & metadata_path_,
+        const String & data_path_,
+        bool is_temporary_,
+        const String & logger,
+        ContextPtr context);
 
     void shutdown() override;
 
@@ -85,7 +91,7 @@ public:
     void checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name) const TSA_REQUIRES(mutex);
 
     void checkTableNameLength(const String & table_name) const override;
-    static void checkTableNameLengthUnlocked(const String & database_name_, const String & table_name, ContextPtr context_);
+    static void checkTableNameLengthUnlocked(const String & database_name_, const String & table_name, bool is_temporary, ContextPtr context_);
 
     void modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context);
 

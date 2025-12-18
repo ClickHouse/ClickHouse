@@ -153,8 +153,9 @@ DatabaseReplicated::DatabaseReplicated(
     const String & shard_name_,
     const String & replica_name_,
     DatabaseReplicatedSettings db_settings_,
+    bool is_temporary_,
     ContextPtr context_)
-    : DatabaseAtomic(name_, metadata_path_, uuid, "DatabaseReplicated (" + name_ + ")", context_)
+    : DatabaseAtomic(name_, metadata_path_, uuid, is_temporary_, "DatabaseReplicated (" + name_ + ")", context_)
     , zookeeper_path(zookeeper_path_)
     , shard_name(shard_name_)
     , replica_name(replica_name_)
@@ -1540,7 +1541,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             LOG_DEBUG(log, "Will RENAME TABLE {} TO {}.{}", backQuoteIfNeed(broken_table_name), backQuoteIfNeed(to_database_name), backQuoteIfNeed(to_name));
             assert(db_name < to_database_name);
             DDLGuardPtr to_table_guard = DatabaseCatalog::instance().getDDLGuard(to_database_name, to_name);
-            auto to_db_ptr = DatabaseCatalog::instance().getDatabase(to_database_name);
+            auto to_db_ptr = DatabaseCatalog::instance().getDatabase(to_database_name, getContext());
 
             std::lock_guard lock{metadata_mutex};
             UInt64 new_digest = tables_metadata_digest;
@@ -2283,7 +2284,7 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
 
         StoragePtr storage;
         if (create.uuid != UUIDHelpers::Nil)
-            storage = DatabaseCatalog::instance().tryGetByUUID(create.uuid).second;
+            storage = DatabaseCatalog::instance().tryGetWithTable(create.uuid).second;
 
         /// Pointer `storage` is allowed to be null here (that means that this storage exists on other replicas
         /// but it has not been created on this replica yet).
@@ -2486,7 +2487,9 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
             zookeeper_path,
             shard_name,
             replica_name,
-            std::move(database_replicated_settings), args.context);
+            std::move(database_replicated_settings),
+            args.is_temporary,
+            args.context);
     };
     factory.registerDatabase("Replicated", create_fn, {.supports_arguments = true, .supports_settings = true});
 }

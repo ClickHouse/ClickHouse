@@ -238,7 +238,7 @@ bool maybeRemoveOnCluster(const ASTPtr & query_ptr, ContextPtr context)
     if (database_name != query_on_cluster->cluster)
         return false;
 
-    auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+    auto database = DatabaseCatalog::instance().tryGetDatabase(database_name, context);
     if (database && database->shouldReplicateQuery(context, query_ptr))
     {
         /// It's Replicated database and query is replicated on database level,

@@ -33,7 +33,8 @@ public:
         const StoragePostgreSQL::Configuration & configuration,
         postgres::PoolWithFailoverPtr pool_,
         bool cache_tables_,
-        UUID uuid);
+        UUID uuid,
+        bool is_temporary_);
 
     String getEngineName() const override { return "PostgreSQL"; }
     UUID getUUID() const override { return db_uuid; }

@@ -1238,7 +1238,7 @@ void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, local_context);
     new_metadata.metadata_version += 1;
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, true);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name, local_context)->alterTable(local_context, table_id, new_metadata, true);
     setInMemoryMetadata(new_metadata);
 }
 

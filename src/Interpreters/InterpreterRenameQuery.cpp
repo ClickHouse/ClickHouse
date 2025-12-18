@@ -41,9 +41,10 @@ BlockIO InterpreterRenameQuery::execute()
     {
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(rename.database ? RenameType::RenameDatabase : RenameType::RenameTable);
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+        return executeDDLQueryOnCluster(query_ptr, getContext(), params); // todo: forbid for temporaries
     }
 
+    // todo: temporary keyword
     getContext()->checkAccess(getRequiredAccess(rename.database ? RenameType::RenameDatabase : RenameType::RenameTable));
 
     String current_database = getContext()->getCurrentDatabase();
@@ -112,7 +113,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             database_catalog.assertTableDoesntExist(StorageID(elem.to_database_name, elem.to_table_name), getContext());
         }
 
-        DatabasePtr database = database_catalog.getDatabase(elem.from_database_name);
+        DatabasePtr database = database_catalog.getDatabase(elem.from_database_name, getContext());
         if (database->shouldReplicateQuery(getContext(), query_ptr))
         {
             if (1 < descriptions.size())
@@ -158,7 +159,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             database->renameTable(
                 getContext(),
                 elem.from_table_name,
-                *database_catalog.getDatabase(elem.to_database_name),
+                *database_catalog.getDatabase(elem.to_database_name, getContext()),
                 elem.to_table_name,
                 exchange_tables,
                 rename.dictionary);
@@ -190,12 +191,14 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
     const auto & new_name = descriptions.back().to_database_name;
     auto & catalog = DatabaseCatalog::instance();
 
-    auto db = descriptions.front().if_exists ? catalog.tryGetDatabase(old_name) : catalog.getDatabase(old_name);
+    auto db = descriptions.front().if_exists ? catalog.tryGetDatabase(old_name, getContext()) : catalog.getDatabase(old_name, getContext());
 
     if (db)
     {
         catalog.assertDatabaseDoesntExist(new_name);
         db->renameDatabase(getContext(), new_name);
+        if (getContext()->hasSessionContext() && getContext()->getSessionContext()->hasTemporaryDatabase(old_name))
+            getContext()->getSessionContext()->renameTemporaryDatabase(old_name, new_name);
     }
 
     return {};

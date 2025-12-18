@@ -8,9 +8,9 @@
 namespace DB
 {
 
-ASTPtr tryGetTableOverride(const String & mapped_database, const String & table)
+ASTPtr tryGetTableOverride(const String & mapped_database, const String & table, ContextPtr context_)
 {
-    if (auto database_ptr = DatabaseCatalog::instance().tryGetDatabase(mapped_database))
+    if (auto database_ptr = DatabaseCatalog::instance().tryGetDatabase(mapped_database, context_))
     {
         auto create_query = database_ptr->getCreateDatabaseQuery();
         if (auto * create_database_query = create_query->as<ASTCreateQuery>())

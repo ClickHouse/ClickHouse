@@ -721,7 +721,7 @@ void ZooKeeperMetadataTransaction::commit()
     }
 }
 
-ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)
+ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name, ContextPtr context_)
 {
     String name = cluster_name;
     bool all_groups = false;
@@ -731,7 +731,7 @@ ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)
         all_groups = true;
     }
 
-    if (const auto * replicated_db = dynamic_cast<const DatabaseReplicated *>(DatabaseCatalog::instance().tryGetDatabase(name).get()))
+    if (const auto * replicated_db = dynamic_cast<const DatabaseReplicated *>(DatabaseCatalog::instance().tryGetDatabase(name, context_).get()))
     {
         if (all_groups)
             return replicated_db->tryGetAllGroupsCluster();

@@ -384,6 +384,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_ALREADY_EXISTS;
+    extern const int DATABASE_ALREADY_EXISTS;
     extern const int THERE_IS_NO_SESSION;
     extern const int THERE_IS_NO_QUERY;
     extern const int NO_ELEMENTS_IN_CONFIG;
@@ -1144,6 +1145,7 @@ ContextData::ContextData(const ContextData &o) :
     is_distributed(o.is_distributed),
     default_format(o.default_format),
     insert_format(o.insert_format),
+    temporary_databases_mapping(o.temporary_databases_mapping),
     external_tables_mapping(o.external_tables_mapping),
     scalars(o.scalars),
     special_scalars(o.special_scalars),
@@ -2360,6 +2362,60 @@ std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String 
     return holder;
 }
 
+void Context::addTemporaryDatabase(const String & database_name, DatabasePtr database)
+{
+    if (!isSessionContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary databases can exist only in session contexts");
+    std::lock_guard lock(mutex);
+
+    const auto res = temporary_databases_mapping.emplace(
+        database_name,
+        std::make_shared<TemporaryDatabaseHolder>(std::move(database)));
+    if (!res.second)
+        throw Exception(
+            ErrorCodes::DATABASE_ALREADY_EXISTS,
+            "Temporary database {} already exists in session context. It's a bug, please report it.",
+            backQuoteIfNeed(database_name));
+}
+
+bool Context::hasTemporaryDatabase(const String & database_name) const
+{
+    if (!isSessionContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary databases can exist only in session contexts");
+    std::lock_guard lock(mutex);
+
+    return temporary_databases_mapping.contains(database_name);
+}
+
+void Context::renameTemporaryDatabase(const String & old_name, const String & new_name)
+{
+    if (!isSessionContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary databases can exist only in session contexts");
+    std::lock_guard lock(mutex);
+
+    auto old = temporary_databases_mapping.extract(old_name);
+    if (!old)
+        throw Exception(
+        ErrorCodes::UNKNOWN_DATABASE,
+        "Temporary database {} not found in session context. It's a bug, please report it.",
+        backQuoteIfNeed(old_name));
+
+    old.key() = new_name;
+    temporary_databases_mapping.insert(std::move(old));
+}
+
+void Context::removeTemporaryDatabase(const String & database_name)
+{
+    if (!isSessionContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary databases can exist only in session contexts");
+    std::lock_guard lock(mutex);
+
+    if (temporary_databases_mapping.erase(database_name) != 1)
+        throw Exception(
+        ErrorCodes::UNKNOWN_DATABASE,
+        "Temporary database {} not found in session context. It's a bug, please report it.",
+        backQuoteIfNeed(database_name));
+}
 
 void Context::addScalar(const String & name, const Block & block)
 {
@@ -5181,7 +5237,7 @@ std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name
     }
 
     if (res == nullptr && !cluster_name.empty())
-        res = tryGetReplicatedDatabaseCluster(cluster_name);
+        res = tryGetReplicatedDatabaseCluster(cluster_name, shared_from_this());
 
     return res;
 }
@@ -6490,7 +6546,7 @@ StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where
     if (exc)
         throw Exception(*exc);
     if (!resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
-        resolved.uuid = DatabaseCatalog::instance().getDatabase(resolved.database_name)->tryGetTableUUID(resolved.table_name);
+        resolved.uuid = DatabaseCatalog::instance().getDatabase(resolved.database_name, shared_from_this())->tryGetTableUUID(resolved.table_name);
     return resolved;
 }
 
@@ -6506,7 +6562,7 @@ StorageID Context::tryResolveStorageID(StorageID storage_id, StorageNamespace wh
     }
     if (resolved && !resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
     {
-        auto db = DatabaseCatalog::instance().tryGetDatabase(resolved.database_name);
+        auto db = DatabaseCatalog::instance().tryGetDatabase(resolved.database_name, shared_from_this());
         if (db)
             resolved.uuid = db->tryGetTableUUID(resolved.table_name);
     }

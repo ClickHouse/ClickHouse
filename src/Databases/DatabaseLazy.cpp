@@ -43,8 +43,14 @@ namespace ErrorCodes
 }
 
 
-DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, ContextPtr context_)
-    : DatabaseOnDisk(name_, metadata_path_, DatabaseCatalog::getDataDirPath(name_) / "", "DatabaseLazy (" + name_ + ")", context_)
+DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, bool is_temporary_, ContextPtr context_)
+    : DatabaseOnDisk(
+        name_,
+        metadata_path_,
+        DatabaseCatalog::getDataDirPath(name_, is_temporary_) / "",
+        is_temporary_,
+        "DatabaseLazy (" + name_ + ")",
+        context_)
     , expiration_time(expiration_time_)
 {
     createDirectories();
@@ -409,6 +415,7 @@ void registerDatabaseLazy(DatabaseFactory & factory)
             args.database_name,
             args.metadata_path,
             cache_expiration_time_seconds,
+            args.is_temporary,
             args.context);
     };
     factory.registerDatabase("Lazy", create_fn, {.supports_arguments = true});

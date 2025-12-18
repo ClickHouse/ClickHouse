@@ -24,7 +24,7 @@ class Context;
 class DatabaseHDFS : public IDatabase, protected WithContext
 {
 public:
-    DatabaseHDFS(const String & name, const String & source_url, ContextPtr context);
+    DatabaseHDFS(const String & name, const String & source_url, bool is_temporary, ContextPtr context);
 
     String getEngineName() const override { return "S3"; }
 

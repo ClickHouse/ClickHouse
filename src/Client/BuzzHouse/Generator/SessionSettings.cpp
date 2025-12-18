@@ -779,7 +779,8 @@ std::unordered_map<String, CHSetting> serverSettings = {
              return rg.pickRandomly(choices);
          },
          {"'read'", "'pread'", "'mmap'", "'pread_threadpool'", "'io_uring'"},
-         false)}};
+         false)},
+    {"temporary_databases_cleanup_async", trueOrFalseSettingNoOracle}};
 
 static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"local_filesystem_read_prefetch", trueOrFalseSetting},
@@ -1225,7 +1226,8 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, -100, 100)); },
          {},
-         false)}};
+         false)},
+    {"show_others_temporary_databases_in_system_tables", trueOrFalseSettingNoOracle}};
 
 std::unordered_map<String, CHSetting> queryOracleSettings;
 

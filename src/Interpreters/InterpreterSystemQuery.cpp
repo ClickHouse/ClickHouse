@@ -258,7 +258,7 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
     }
     else
     {
-        for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+        for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}, getContext()))
         {
             startStopActionInDatabase(action_type, start, elem.first, elem.second, getContext(), log);
         }
@@ -1033,7 +1033,7 @@ void InterpreterSystemQuery::restoreDatabaseReplica(ASTSystemQuery & query)
     const String database_name = query.getDatabase();
     getContext()->checkAccess(AccessType::SYSTEM_RESTORE_DATABASE_REPLICA, database_name);
 
-    const auto db_ptr = DatabaseCatalog::instance().getDatabase(database_name);
+    const auto db_ptr = DatabaseCatalog::instance().getDatabase(database_name, getContext());
 
     auto* replicated_db = dynamic_cast<DatabaseReplicated*>(db_ptr.get());
     if (!replicated_db)
@@ -1148,7 +1148,7 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
     bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_RESTART_REPLICA);
     bool show_tables_is_granted_globally = access->isGranted(AccessType::SHOW_TABLES);
 
-    for (auto & elem : catalog.getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+    for (auto & elem : catalog.getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}, getContext()))
     {
         if (elem.second->isExternal())
             continue;
@@ -1203,13 +1203,13 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     else if (query.database)
     {
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA, query.getDatabase());
-        DatabasePtr database = DatabaseCatalog::instance().getDatabase(query.getDatabase());
+        DatabasePtr database = DatabaseCatalog::instance().getDatabase(query.getDatabase(), getContext());
         dropStorageReplicasFromDatabase(query.replica, database);
         LOG_TRACE(log, "Dropped replica {} from database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
     }
     else if (query.is_drop_whole_replica)
     {
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}, getContext());
         auto access = getContext()->getAccess();
         bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_DROP_REPLICA);
 
@@ -1247,7 +1247,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         String remote_replica_path = fs::path(query.replica_zk_path)  / "replicas" / query.replica;
 
         /// This check is actually redundant, but it may prevent from some user mistakes
-        for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+        for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}, getContext()))
         {
             DatabasePtr & database = elem.second;
             for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
@@ -1466,14 +1466,14 @@ DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
     }
     LOG_INFO(log, "All tables are restored successfully");
 
-    auto database = DatabaseCatalog::instance().getDatabase(restoring_database_name);
+    auto database = DatabaseCatalog::instance().getDatabase(restoring_database_name, getContext());
     chassert(database);
     return database;
 }
 
 std::optional<String> InterpreterSystemQuery::getDetachedDatabaseFromKeeperPath(const ASTSystemQuery & query_)
 {
-    auto metadata_dir_path = DatabaseCatalog::getMetadataDirPath();
+    auto metadata_dir_path = DatabaseCatalog::getMetadataDirPath(false);
     auto default_db_disk = getContext()->getDatabaseDisk();
     for (const auto it = default_db_disk->iterateDirectory(metadata_dir_path); it->isValid(); it->next())
     {
@@ -1559,7 +1559,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
     if (query.database)
     {
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA, query.getDatabase());
-        DatabasePtr database = DatabaseCatalog::instance().getDatabase(query.getDatabase());
+        DatabasePtr database = DatabaseCatalog::instance().getDatabase(query.getDatabase(), getContext());
         if (auto * replicated = dynamic_cast<DatabaseReplicated *>(database.get()))
         {
             check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
@@ -1573,7 +1573,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
     }
     else if (query.is_drop_whole_replica)
     {
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}, getContext());
         auto access = getContext()->getAccess();
         bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_DROP_REPLICA);
 
@@ -1601,7 +1601,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA);
 
         /// This check is actually redundant, but it may prevent from some user mistakes
-        for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+        for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}, getContext()))
             if (auto * replicated = dynamic_cast<DatabaseReplicated *>(elem.second.get()))
                 check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
 
@@ -1752,7 +1752,7 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
         getContext()->checkAccess(load ? AccessType::SYSTEM_LOAD_PRIMARY_KEY : AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
         LOG_TRACE(log, "{} primary keys for all tables", load ? "Loading" : "Unloading");
 
-        for (auto & database : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+        for (auto & database : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}, getContext()))
         {
             for (auto it = database.second->getTablesIterator(getContext()); it->isValid(); it->next())
             {
@@ -1843,7 +1843,7 @@ void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 {
     const auto database_name = query.getDatabase();
     auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
-    auto database = DatabaseCatalog::instance().getDatabase(database_name);
+    auto database = DatabaseCatalog::instance().getDatabase(database_name, getContext());
 
     if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get()))
     {

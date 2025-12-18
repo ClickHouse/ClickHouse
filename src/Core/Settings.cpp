@@ -7373,6 +7373,12 @@ Allow to create table with the Alias engine.
     DECLARE(Bool, use_paimon_partition_pruning, false, R"(
 Use Paimon partition pruning for Paimon table functions
     )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_temporary_databases, false, R"(
+Allow to create experimental temporary databases.
+    )", EXPERIMENTAL) \
+    DECLARE(Bool, show_others_temporary_databases_in_system_tables, false, R"(
+Show temporary databases from other sessions in system tables.
+    )", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \

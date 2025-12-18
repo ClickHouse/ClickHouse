@@ -140,6 +140,7 @@ namespace Setting
     extern const SettingsBool restore_replace_external_engines_to_null;
     extern const SettingsBool restore_replace_external_table_functions_to_null;
     extern const SettingsBool restore_replace_external_dictionary_source_to_null;
+    extern const SettingsBool allow_experimental_temporary_databases;
 }
 
 namespace ServerSetting
@@ -189,22 +190,54 @@ InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, Contex
 
 BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 {
+    const auto & context = getContext();
+    bool is_on_cluster = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+    if (create.temporary)
+    {
+        if (!context->getSettingsRef()[Setting::allow_experimental_temporary_databases])
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "Temporary databases are experimental. Set `allow_experimental_temporary_databases` setting to enable it");
+
+        if (!context->hasSessionContext())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Temporary databases cannot be created outside of a session");
+
+        /// actually can, but it is very easy to missuse and occasionally delete data while practical usage is quetionable
+        if (create.attach && !context->isInternalQuery())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ATTACH DATABASE query cannot be used for temporary databases");
+
+        if (is_on_cluster)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Temporary databases cannot be created on cluster");
+
+        if (create.storage && create.storage->engine && create.storage->engine->name == "Replicated")
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Replicated databases cannot be temporary");
+    }
+
+
     String database_name = create.getDatabase();
 
     auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
 
     /// Database can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard
-    if (DatabaseCatalog::instance().isDatabaseExist(database_name))
+    if (const auto db = DatabaseCatalog::instance().tryGetDatabase(database_name, context, {
+            .with_datalake_catalogs = true,
+            .skip_temporary_owner_check = true,
+        }))
     {
         if (create.if_not_exists)
             return {};
+
+        if (db->isTemporary())
+            throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Temporary database {} already exists.", database_name);
         throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists.", database_name);
     }
 
-    auto db_num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_database_num_to_throw].value;
+    auto db_num_limit = context->getGlobalContext()->getServerSettings()[ServerSetting::max_database_num_to_throw].value;
     if (db_num_limit > 0 && !internal)
     {
-        size_t db_count = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true}).size();
+        size_t db_count = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{
+            .with_datalake_catalogs = true,
+            .skip_temporary_owner_check = true,
+        }, context).size();
         std::initializer_list<std::string_view> system_databases =
         {
             DatabaseCatalog::TEMPORARY_DATABASE,
@@ -226,12 +259,12 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
                             db_num_limit, db_count);
     }
 
-    auto default_db_disk = getContext()->getDatabaseDisk();
+    auto default_db_disk = context->getDatabaseDisk();
 
     /// Will write file with database metadata, if needed.
-    default_db_disk->createDirectories(DatabaseCatalog::getMetadataDirPath());
-    auto metadata_file_path = DatabaseCatalog::getMetadataFilePath(database_name);
-    auto metadata_tmp_file_path = DatabaseCatalog::getMetadataTmpFilePath(database_name);
+    default_db_disk->createDirectories(DatabaseCatalog::getMetadataDirPath(create.temporary));
+    auto metadata_file_path = DatabaseCatalog::getMetadataFilePath(database_name, create.temporary);
+    auto metadata_tmp_file_path = DatabaseCatalog::getMetadataTmpFilePath(database_name, create.temporary);
 
     fs::path metadata_path;
     if (!create.storage && create.attach)
@@ -239,7 +272,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (!default_db_disk->existsFile(metadata_file_path))
             throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Database engine must be specified for ATTACH DATABASE query");
         /// Short syntax: try read database definition from file
-        auto ast = DatabaseOnDisk::parseQueryFromMetadata(nullptr, getContext(), default_db_disk, metadata_file_path);
+        auto ast = DatabaseOnDisk::parseQueryFromMetadata(nullptr, context, default_db_disk, metadata_file_path);
         create = ast->as<ASTCreateQuery &>();
         if (create.table || !create.storage)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Metadata file {} contains incorrect CREATE DATABASE query", metadata_file_path.string());
@@ -284,14 +317,13 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (create.uuid == UUIDHelpers::Nil)
             create.uuid = UUIDHelpers::generateV4();
 
-        metadata_path = DatabaseCatalog::getStoreDirPath(create.uuid);
+        metadata_path = DatabaseCatalog::getStoreDirPath(create.uuid, create.temporary);
 
         if (!create.attach && default_db_disk->existsDirectory(metadata_path) && !default_db_disk->isDirectoryEmpty(metadata_path))
             throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Metadata directory {} already exists and is not empty", metadata_path.string());
     }
     else
     {
-        bool is_on_cluster = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
         if (create.uuid != UUIDHelpers::Nil && !is_on_cluster && !internal)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Ordinary database engine does not support UUID");
 
@@ -299,11 +331,11 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         /// a) the initiator of `ON CLUSTER` query generated it to ensure the same UUIDs are used on different hosts; or
         /// b) `RESTORE from backup` query generated it to ensure the same UUIDs are used on different hosts.
         create.uuid = UUIDHelpers::Nil;
-        metadata_path = DatabaseCatalog::getMetadataDirPath(database_name);
+        metadata_path = DatabaseCatalog::getMetadataDirPath(database_name, create.temporary);
     }
 
     if (create.storage->engine->name == "MaterializedPostgreSQL"
-        && !getContext()->getSettingsRef()[Setting::allow_experimental_database_materialized_postgresql] && !internal && !create.attach)
+        && !context->getSettingsRef()[Setting::allow_experimental_database_materialized_postgresql] && !internal && !create.attach)
     {
         throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE,
                         "MaterializedPostgreSQL is an experimental database engine. "
@@ -322,7 +354,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     else if (create.uuid != UUIDHelpers::Nil && !DatabaseCatalog::instance().hasUUIDMapping(create.uuid))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
 
-    DatabasePtr database = DatabaseFactory::instance().get(create, metadata_path / "", getContext());
+    DatabasePtr database = DatabaseFactory::instance().get(create, metadata_path / "", context);
 
     if (create.uuid != UUIDHelpers::Nil)
         create.setDatabase(TABLE_WITH_UUID_NAME_PLACEHOLDER);
@@ -346,7 +378,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             default_db_disk,
             /*file_path=*/metadata_tmp_file_path,
             /*content=*/statement,
-            /*fsync_metadata=*/getContext()->getSettingsRef()[Setting::fsync_metadata]);
+            /*fsync_metadata=*/context->getSettingsRef()[Setting::fsync_metadata]);
     }
 
     /// We attach database before loading it's tables, so do not allow concurrent DDL queries
@@ -354,11 +386,18 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     bool added = false;
     bool renamed = false;
+    bool temporary_attached = false;
     try
     {
         /// TODO Attach db only after it was loaded. Now it's not possible because of view dependencies
         DatabaseCatalog::instance().attachDatabase(database_name, database);
         added = true;
+
+        if (create.temporary)
+        {
+            context->getSessionContext()->addTemporaryDatabase(database_name, database);
+            temporary_attached = true;
+        }
 
         if (need_write_metadata)
         {
@@ -370,7 +409,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (!load_database_without_tables)
         {
             /// We use global context here, because storages lifetime is bigger than query context lifetime
-            TablesLoader loader{getContext()->getGlobalContext(), {{database_name, database}}, mode};
+            TablesLoader loader{context->getGlobalContext(), {{database_name, database}}, mode};
             auto load_tasks = loader.loadTablesAsync();
             auto startup_tasks = loader.startupTablesAsync();
             /// First prioritize, schedule and wait all the load table tasks
@@ -386,8 +425,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             assert(default_db_disk->existsFile(metadata_file_path));
             default_db_disk->removeFileIfExists(metadata_file_path);
         }
+        if (temporary_attached)
+            context->getSessionContext()->removeTemporaryDatabase(database_name);
         if (added)
-            DatabaseCatalog::instance().detachDatabase(getContext(), database_name, false, false);
+            DatabaseCatalog::instance().detachDatabase(context, database_name, false, false);
 
         throw;
     }
@@ -1315,7 +1356,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         String as_database_name = getContext()->resolveDatabase(create.as_database);
         String as_table_name = create.as_table;
 
-        ASTPtr as_create_ptr = DatabaseCatalog::instance().getDatabase(as_database_name)->getCreateTableQuery(as_table_name, getContext());
+        ASTPtr as_create_ptr = DatabaseCatalog::instance().getDatabase(as_database_name, getContext())->getCreateTableQuery(as_table_name, getContext());
 
         const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
 
@@ -1517,7 +1558,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.attach && (!create.storage || !create.storage->engine) && !create.columns_list)
     {
         // In case of an ON CLUSTER query, the database may not be present on the initiator node
-        auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+        auto database = DatabaseCatalog::instance().tryGetDatabase(database_name, getContext());
         if (database && database->shouldReplicateQuery(getContext(), query_ptr))
         {
             auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable());
@@ -1656,7 +1697,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     bool need_add_to_database = !create.temporary;
     // In case of an ON CLUSTER query, the database may not be present on the initiator node
     if (need_add_to_database)
-        database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+        database = DatabaseCatalog::instance().tryGetDatabase(database_name, getContext());
 
     /// Check type compatible for materialized dest table and select columns
     if (create.select && create.is_materialized_view && mode <= LoadingStrictnessLevel::CREATE)
@@ -1778,7 +1819,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         if (create.if_not_exists && getContext()->tryResolveStorageID({"", create.getTable()}, Context::ResolveExternal))
             return false;
 
-        DatabasePtr database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
+        DatabasePtr database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::TEMPORARY_DATABASE, getContext());
 
         String temporary_table_name = create.getTable();
         auto creator = [&](const StorageID & table_id)
@@ -1807,7 +1848,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     String data_path;
     DatabasePtr database;
 
-    database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
+    database = DatabaseCatalog::instance().getDatabase(create.getDatabase(), getContext());
     assertOrSetUUID(create, database);
 
     String storage_name = create.is_dictionary ? "Dictionary" : "Table";
@@ -2089,7 +2130,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     String table_to_replace_name = create.getTable();
 
     {
-        auto database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
+        auto database = DatabaseCatalog::instance().getDatabase(create.getDatabase(), getContext());
         if (database->getUUID() == UUIDHelpers::Nil)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                             "{} query is supported only for Atomic databases",
@@ -2216,7 +2257,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery & create,
                                                                 const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode)
 {
-    DatabasePtr database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
+    DatabasePtr database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::TEMPORARY_DATABASE, getContext());
 
     String temporary_table_name = create.getTable();
     auto creator = [&](const StorageID & table_id)

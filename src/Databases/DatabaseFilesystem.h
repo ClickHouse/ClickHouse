@@ -23,7 +23,7 @@ class Context;
 class DatabaseFilesystem : public IDatabase, protected WithContext
 {
 public:
-    DatabaseFilesystem(const String & name, const String & path, ContextPtr context);
+    DatabaseFilesystem(const String & name, const String & path, bool is_temporary, ContextPtr context);
 
     String getEngineName() const override { return "Filesystem"; }
 

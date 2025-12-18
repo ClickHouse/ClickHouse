@@ -55,7 +55,7 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
         bool ok = true;
         WriteBufferFromOwnString message;
 
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false, .with_temporaries = false}, getContext());
 
         /// Iterate through all the replicated tables.
         for (const auto & db : databases)

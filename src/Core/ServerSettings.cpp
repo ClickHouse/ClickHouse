@@ -1213,6 +1213,9 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(String, keeper_hosts, "", R"(Dynamic setting. Contains a set of [Zoo]Keeper hosts ClickHouse can potentially connect to. Doesn't expose information from `<auxiliary_zookeepers>`)", 0) \
     DECLARE(Bool, allow_impersonate_user, false, R"(Enable/disable the IMPERSONATE feature (EXECUTE AS target_user).)", 0) \
     DECLARE(UInt64, s3_credentials_provider_max_cache_size, 100, R"(The maximum number of S3 credentials providers that can be cached)", 0) \
+\
+    DECLARE(Bool, temporary_databases_cleanup_async, true, R"(Cleanup temporary databases in async mode. If disabled, cleanup will be single-threaded. Maybe overriten by global database_atomic_wait_for_drop_and_detach_synchronously setting.)", 0) \
+    DECLARE(UInt64, temporary_databases_cleanup_interval_sec, 3, R"(Interval for temporary databases cleanup thread.)", 0) \
 
 // clang-format on
 

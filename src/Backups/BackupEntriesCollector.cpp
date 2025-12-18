@@ -398,7 +398,8 @@ void BackupEntriesCollector::gatherDatabasesMetadata()
 
             case ASTBackupQuery::ElementType::ALL:
             {
-                for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true}))
+                for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{
+                    .with_datalake_catalogs = true, .with_temporaries = false}, context))
                 {
                     if (!element.except_databases.contains(database_name))
                     {
@@ -437,11 +438,11 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
         DatabasePtr database;
         if (throw_if_database_not_found)
         {
-            database = DatabaseCatalog::instance().getDatabase(database_name);
+            database = DatabaseCatalog::instance().getDatabase(database_name, getContext());
         }
         else
         {
-            database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+            database = DatabaseCatalog::instance().tryGetDatabase(database_name, getContext());
             if (!database)
                 return;
         }

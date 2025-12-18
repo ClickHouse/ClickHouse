@@ -22,7 +22,8 @@ public:
         const DatabaseDataLakeSettings & settings_,
         ASTPtr database_engine_definition_,
         ASTPtr table_engine_definition_,
-        UUID uuid);
+        UUID uuid,
+        bool is_temporary_);
 
     String getEngineName() const override { return DataLake::DATABASE_ENGINE_NAME; }
     UUID getUUID() const override { return db_uuid; }
