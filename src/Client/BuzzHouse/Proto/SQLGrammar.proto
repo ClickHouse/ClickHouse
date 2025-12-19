@@ -3228,17 +3228,17 @@ enum CompressionCodec {
     COMP_LZ4 = 3;
     COMP_LZ4HC = 4;
     COMP_ZSTD = 5;
-    // COMP_ZSTD_QAT = 6;
-    // COMP_DEFLATE_QPL = 7;
-    COMP_Delta = 8;
-    COMP_DoubleDelta = 9;
-    COMP_GCD = 10;
-    COMP_Gorilla = 11;
-    COMP_FPC = 12;
-    COMP_T64 = 13;
-    //COMP_SZ3 = 14;
-    COMP_AES_128_GCM_SIV = 14;
-    COMP_AES_256_GCM_SIV = 15;
+    COMP_Delta = 6;
+    COMP_DoubleDelta = 7;
+    COMP_GCD = 8;
+    COMP_Gorilla = 9;
+    COMP_FPC = 10;
+    COMP_T64 = 11;
+    COMP_AES_128_GCM_SIV = 12;
+    COMP_AES_256_GCM_SIV = 13;
+    /// COMP_ZSTD_QAT = 14;
+    /// COMP_DEFLATE_QPL = 15;
+    /// COMP_SZ3 = 16;
 }
 
 message IndexKeyVal {
