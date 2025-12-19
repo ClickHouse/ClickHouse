@@ -238,6 +238,11 @@ def test_persistent_watch_event_fields(started_cluster):
     time.sleep(0.5)
     assert len(events) == 2
 
+    if client.exists(NODE_PATH):
+        client.delete(NODE_PATH)
+    if client.exists(OTHER_PATH):
+        client.delete(OTHER_PATH)
+
 def test_persistent_recursive_watch_event_fields(started_cluster):
     node1.restart_clickhouse()
     keeper_utils.wait_until_connected(cluster, node1)
@@ -290,6 +295,13 @@ def test_persistent_recursive_watch_event_fields(started_cluster):
     client.set(CHILD_NODE, b"after2")
     time.sleep(0.5)
     assert len(events) == 2
+
+    if client.exists(CHILD_NODE):
+        client.delete(CHILD_NODE)
+    if client.exists(NODE_PATH):
+        client.delete(NODE_PATH)
+    if client.exists(OTHER_PATH):
+        client.delete(OTHER_PATH)
 
 @pytest.mark.skip(reason="https://github.com/ClickHouse/ClickHouse/issues/92480")
 def test_persistent_watches_cleanup_on_close(started_cluster):
