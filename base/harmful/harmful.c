@@ -288,7 +288,7 @@ TRAP(tss_delete)
 TRAP(getopt)
 TRAP(putenv)
 TRAP(setlogmask)
-//TRAP(rand) Used by contrib/grpc
+TRAP(rand)
 TRAP(getmntent)
 TRAP(getlogin)
 #endif
