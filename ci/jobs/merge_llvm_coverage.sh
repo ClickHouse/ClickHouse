@@ -45,6 +45,18 @@ fi
 
 # Merge profdata files from all jobs (skip corrupted files with -failure-mode=warn)
 echo "Merging profdata files..."
+
+# Artifacts are downloaded to ci/tmp by the CI framework
+cd ci/tmp || { echo "ERROR: ci/tmp directory not found"; exit 1; }
+
+# List available profdata files for debugging
+echo "Available profdata files:"
+ls -lh *.profdata 2>/dev/null || echo "No profdata files found"
+
+# Check if binaries exist (unit_tests_dbms might need decompression)
+echo "Checking for binaries..."
+ls -lh clickhouse unit_tests_dbms 2>/dev/null || echo "Warning: Some binaries not found"
+
 MERGE_OUTPUT=$("$LLVM_PROFDATA" merge -sparse -failure-mode=warn *.profdata -o merged.profdata 2>&1)
 MERGE_EXIT_CODE=$?
 
@@ -64,11 +76,15 @@ fi
 
 # Generate HTML coverage report
 "$LLVM_COV" show \
-  ./home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/clickhouse \
-  ./home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/unit_tests_dbms \
+  ./clickhouse \
+  ./unit_tests_dbms \
   -instr-profile=merged.profdata \
   -format=html \
   -output-dir=clickhouse_coverage
 
-# Create archive
+# Create archive and move results to root
 tar -czf clickhouse_coverage.tar.gz clickhouse_coverage
+mv clickhouse_coverage.tar.gz ../../
+mv merged.profdata ../../
+
+echo "Results stored in workspace root: merged.profdata, clickhouse_coverage.tar.gz"
