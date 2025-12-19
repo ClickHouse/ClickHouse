@@ -1,21 +1,20 @@
 #include <Backups/BackupsWorker.h>
 
 #include <Backups/BackupConcurrencyCheck.h>
-#include <Backups/BackupCoordinationLocal.h>
-#include <Backups/BackupCoordinationOnCluster.h>
-#include <Backups/BackupCoordinationStage.h>
-#include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupFactory.h>
-#include <Backups/BackupInMemory.h>
 #include <Backups/BackupInfo.h>
 #include <Backups/BackupSettings.h>
 #include <Backups/BackupUtils.h>
 #include <Backups/IBackupEntry.h>
-#include <Backups/RestoreCoordinationLocal.h>
+#include <Backups/BackupEntriesCollector.h>
+#include <Backups/BackupCoordinationStage.h>
+#include <Backups/BackupCoordinationOnCluster.h>
+#include <Backups/BackupCoordinationLocal.h>
+#include <Backups/BackupInMemory.h>
 #include <Backups/RestoreCoordinationOnCluster.h>
+#include <Backups/RestoreCoordinationLocal.h>
 #include <Backups/RestoreSettings.h>
 #include <Backups/RestorerFromBackup.h>
-#include <Backups/getBackupDataFileName.h>
 #if CLICKHOUSE_CLOUD
 #include <Backups/BackupsHelper.h>
 #endif
@@ -164,7 +163,6 @@ namespace
         addThrottler(read_settings.local_throttler, context->getBackupsThrottler());
         read_settings.enable_filesystem_cache = false;
         read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
-        read_settings.read_through_distributed_cache = false;
         return read_settings;
     }
 
@@ -405,14 +403,6 @@ struct BackupsWorker::BackupStarter
         if (is_internal_backup)
             backup_id += "-internal-" + backup_settings.host_id;
 
-        if (backup_settings.data_file_name_generator == BackupDataFileNameGeneratorType::FirstFileName)
-            backup_settings.data_file_name_generator = SettingFieldBackupDataFileNameGeneratorTypeTraits::fromString(
-                backup_context->getConfigRef().getString("backups.data_file_name_generator", ""));
-
-        if (!backup_settings.data_file_name_prefix_length)
-            backup_settings.data_file_name_prefix_length
-                = backup_context->getConfigRef().getUInt64("backups.data_file_name_prefix_length", 3);
-
         /// process_list_element_holder is used to make an element in ProcessList live while BACKUP is working asynchronously.
         auto process_list_element = backup_context->getProcessListElement();
         if (process_list_element)
@@ -462,7 +452,6 @@ struct BackupsWorker::BackupStarter
             cluster = backup_context->getCluster(backup_query->cluster);
             backup_settings.cluster_host_ids = cluster->getHostIDs();
         }
-        chassert(backup_settings.data_file_name_prefix_length);
         backup_coordination = backups_worker.makeBackupCoordination(on_cluster, backup_settings, backup_context);
         backup_coordination->startup();
 
@@ -551,7 +540,7 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startMakingBackup(cons
     try
     {
         auto thread_pool_id = starter->is_internal_backup ? ThreadPoolId::ASYNC_BACKGROUND_INTERNAL_BACKUP: ThreadPoolId::ASYNC_BACKGROUND_BACKUP;
-        ThreadName thread_name = starter->is_internal_backup ? ThreadName::BACKUP_ASYNC_INTERNAL : ThreadName::BACKUP_ASYNC;
+        String thread_name = starter->is_internal_backup ? "BackupAsyncInt" : "BackupAsync";
         auto schedule = threadPoolCallbackRunnerUnsafe<void>(thread_pools->getThreadPool(thread_pool_id), thread_name);
 
         schedule([starter]
@@ -577,11 +566,7 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startMakingBackup(cons
 }
 
 
-BackupMutablePtr BackupsWorker::openBackupForWriting(
-    const BackupInfo & backup_info,
-    const BackupSettings & backup_settings,
-    std::shared_ptr<IBackupCoordination> backup_coordination,
-    const ContextPtr & context) const
+BackupMutablePtr BackupsWorker::openBackupForWriting(const BackupInfo & backup_info, const BackupSettings & backup_settings, std::shared_ptr<IBackupCoordination> backup_coordination, const ContextPtr & context) const
 {
     LOG_TRACE(log, "Opening backup for writing");
     BackupFactory::CreateParams backup_create_params;
@@ -595,9 +580,6 @@ BackupMutablePtr BackupsWorker::openBackupForWriting(
     backup_create_params.s3_storage_class = backup_settings.s3_storage_class;
     backup_create_params.is_internal_backup = backup_settings.internal;
     backup_create_params.is_lightweight_snapshot = backup_settings.experimental_lightweight_snapshot;
-    backup_create_params.data_file_name_generator = backup_settings.data_file_name_generator;
-    chassert(backup_settings.data_file_name_prefix_length);
-    backup_create_params.data_file_name_prefix_length = *backup_settings.data_file_name_prefix_length;
     backup_create_params.backup_coordination = backup_coordination;
     backup_create_params.backup_uuid = backup_settings.backup_uuid;
     backup_create_params.deduplicate_files = backup_settings.deduplicate_files;
@@ -757,7 +739,7 @@ void BackupsWorker::writeBackupEntries(
         std::shuffle(writing_order.begin(), writing_order.end(), thread_local_rng);
     }
 
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::BACKUP_WORKER);
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "BackupWorker");
     for (size_t i = 0; i != backup_entries.size(); ++i)
     {
         if (failed)
@@ -807,7 +789,7 @@ void BackupsWorker::writeBackupEntries(
             continue;
         }
 
-        runner.enqueueAndKeepTrack(std::move(job));
+        runner(std::move(job));
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();
@@ -961,7 +943,7 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startRestoring(const A
     try
     {
         auto thread_pool_id = starter->is_internal_restore ? ThreadPoolId::ASYNC_BACKGROUND_INTERNAL_RESTORE : ThreadPoolId::ASYNC_BACKGROUND_RESTORE;
-        ThreadName thread_name = starter->is_internal_restore ? ThreadName::BACKUP_ASYNC_INTERNAL : ThreadName::BACKUP_ASYNC;
+        String thread_name = starter->is_internal_restore ? "RestoreAsyncInt" : "RestoreAsync";
         auto schedule = threadPoolCallbackRunnerUnsafe<void>(thread_pools->getThreadPool(thread_pool_id), thread_name);
 
         schedule([starter]
@@ -1109,7 +1091,8 @@ BackupsWorker::makeBackupCoordination(bool on_cluster, const BackupSettings & ba
 {
     if (!on_cluster)
     {
-        return std::make_shared<BackupCoordinationLocal>(backup_settings, allow_concurrent_backups, *concurrency_counters);
+        return std::make_shared<BackupCoordinationLocal>(
+            !backup_settings.deduplicate_files, allow_concurrent_backups, *concurrency_counters);
     }
 
     bool is_internal_backup = backup_settings.internal;
@@ -1125,12 +1108,12 @@ BackupsWorker::makeBackupCoordination(bool on_cluster, const BackupSettings & ba
     String current_host = is_internal_backup ? backup_settings.host_id : String{BackupCoordinationOnCluster::kInitiator};
 
     auto thread_pool_id = is_internal_backup ? ThreadPoolId::ON_CLUSTER_COORDINATION_INTERNAL_BACKUP : ThreadPoolId::ON_CLUSTER_COORDINATION_BACKUP;
-    auto thread_name = is_internal_backup ? ThreadName::BACKUP_COORDINATION_INTERNAL : ThreadName::BACKUP_COORDINATION;
+    String thread_name = is_internal_backup ? "BackupCoordInt" : "BackupCoord";
     auto schedule = threadPoolCallbackRunnerUnsafe<void>(thread_pools->getThreadPool(thread_pool_id), thread_name);
 
-    chassert(backup_settings.backup_uuid);
     return std::make_shared<BackupCoordinationOnCluster>(
-        backup_settings,
+        *backup_settings.backup_uuid,
+        !backup_settings.deduplicate_files,
         root_zk_path,
         get_zookeeper,
         keeper_settings,
@@ -1163,7 +1146,7 @@ BackupsWorker::makeRestoreCoordination(bool on_cluster, const RestoreSettings & 
     String current_host = is_internal_restore ? restore_settings.host_id : String{RestoreCoordinationOnCluster::kInitiator};
 
     auto thread_pool_id = is_internal_restore ? ThreadPoolId::ON_CLUSTER_COORDINATION_INTERNAL_RESTORE : ThreadPoolId::ON_CLUSTER_COORDINATION_RESTORE;
-    auto thread_name = is_internal_restore ? ThreadName::RESTORE_COORDINATION_INTERNAL : ThreadName::RESTORE_COORDINATION;
+    String thread_name = is_internal_restore ? "RestoreCoordInt" : "RestoreCoord";
     auto schedule = threadPoolCallbackRunnerUnsafe<void>(thread_pools->getThreadPool(thread_pool_id), thread_name);
 
     return std::make_shared<RestoreCoordinationOnCluster>(

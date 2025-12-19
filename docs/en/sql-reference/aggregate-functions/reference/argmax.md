@@ -3,7 +3,6 @@ description: 'Calculates the `arg` value for a maximum `val` value.'
 sidebar_position: 109
 slug: /sql-reference/aggregate-functions/reference/argmax
 title: 'argMax'
-doc_type: 'reference'
 ---
 
 # argMax

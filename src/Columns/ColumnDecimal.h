@@ -11,7 +11,6 @@
 #include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
-#include <IO/Operators.h>
 
 
 namespace DB
@@ -97,9 +96,9 @@ public:
         return {reinterpret_cast<const char*>(data.data()), byteSize()};
     }
 
-    std::string_view getDataAt(size_t n) const override
+    StringRef getDataAt(size_t n) const override
     {
-        return {reinterpret_cast<const char *>(&data[n]), sizeof(data[n])};
+        return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
     }
 
     Float64 getFloat64(size_t n) const final;
@@ -125,11 +124,9 @@ public:
 
     Field operator[](size_t n) const override { return DecimalField<ValueType>(data[n], scale); }
     void get(size_t n, Field & res) const override { res = (*this)[n]; }
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &options) const override
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
     {
-        if (options.notFull(name_buf))
-            name_buf << FieldVisitorToString()(data[n], scale);
-        return FieldToDataType()(data[n], scale);
+        return {FieldVisitorToString()(data[n], scale), FieldToDataType()(data[n], scale)};
     }
     bool getBool(size_t n) const override { return bool(data[n].value); }
     Int64 getInt(size_t n) const override { return Int64(data[n].value); }
@@ -137,7 +134,6 @@ public:
     bool isDefaultAt(size_t n) const override { return data[n].value == 0; }
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
-    void filter(const IColumn::Filter & filt) override;
     void expand(const IColumn::Filter & mask, bool inverted) override;
 
     ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;

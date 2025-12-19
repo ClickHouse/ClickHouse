@@ -3,7 +3,6 @@ description: 'Computes the sample skewness of a sequence.'
 sidebar_position: 186
 slug: /sql-reference/aggregate-functions/reference/skewsamp
 title: 'skewSamp'
-doc_type: 'reference'
 ---
 
 # skewSamp

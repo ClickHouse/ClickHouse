@@ -7,7 +7,6 @@ sidebar_label: 'file'
 sidebar_position: 60
 slug: /sql-reference/table-functions/file
 title: 'file'
-doc_type: 'reference'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';

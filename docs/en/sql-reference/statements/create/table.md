@@ -5,7 +5,6 @@ sidebar_label: 'TABLE'
 sidebar_position: 36
 slug: /sql-reference/statements/create/table
 title: 'CREATE TABLE'
-doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -31,7 +30,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ```
 
 Creates a table named `table_name` in the `db` database or the current database if `db` is not set, with the structure specified in brackets and the `engine` engine.
-The structure of the table is a list of column descriptions, secondary indexes, projections and constraints . If [primary key](#primary-key) is supported by the engine, it will be indicated as parameter for the table engine.
+The structure of the table is a list of column descriptions, secondary indexes and constraints . If [primary key](#primary-key) is supported by the engine, it will be indicated as parameter for the table engine.
 
 A column description is `name type` in the simplest case. Example: `RegionID UInt32`.
 
@@ -81,6 +80,28 @@ Creates a table with a structure like the result of the `SELECT` query, with the
 If the table already exists and `IF NOT EXISTS` is specified, the query won't do anything.
 
 There can be other clauses after the `ENGINE` clause in the query. See detailed documentation on how to create tables in the descriptions of [table engines](/engines/table-engines).
+
+:::tip
+In ClickHouse Cloud please split this into two steps:
+1. Create the table structure
+
+  ```sql
+  CREATE TABLE t1
+  ENGINE = MergeTree
+  ORDER BY ...
+  -- highlight-next-line
+  EMPTY AS
+  SELECT ...
+  ```
+
+2. Populate the table
+
+  ```sql
+  INSERT INTO t1
+  SELECT ...
+  ```
+
+:::
 
 **Example**
 
@@ -525,7 +546,7 @@ ClickHouse supports temporary tables which have the following characteristics:
 To create a temporary table, use the following syntax:
 
 ```sql
-CREATE [OR REPLACE] TEMPORARY TABLE [IF NOT EXISTS] table_name
+CREATE TEMPORARY TABLE [IF NOT EXISTS] table_name
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],

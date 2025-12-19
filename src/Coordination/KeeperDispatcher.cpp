@@ -71,7 +71,6 @@ namespace
 bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request)
 {
     if (request->getOpNum() == Coordination::OpNum::Create
-        || request->getOpNum() == Coordination::OpNum::Create2
         || request->getOpNum() == Coordination::OpNum::CreateIfNotExists
         || request->getOpNum() == Coordination::OpNum::Set)
     {
@@ -87,7 +86,6 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
             switch (sub_zk_request->getOpNum())
             {
                 case Coordination::OpNum::Create:
-                case Coordination::OpNum::Create2:
                 case Coordination::OpNum::CreateIfNotExists: {
                     Coordination::ZooKeeperCreateRequest & create_req
                         = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*sub_zk_request);
@@ -131,7 +129,7 @@ KeeperDispatcher::KeeperDispatcher()
 
 void KeeperDispatcher::requestThread()
 {
-    DB::setThreadName(ThreadName::KEEPER_REQUEST);
+    setThreadName("KeeperReqT");
 
     /// Result of requests batch from previous iteration
     RaftAppendResult prev_result = nullptr;
@@ -335,8 +333,7 @@ void KeeperDispatcher::requestThread()
 
 void KeeperDispatcher::responseThread()
 {
-    DB::setThreadName(ThreadName::KEEPER_RESPONSE);
-
+    setThreadName("KeeperRspT");
     const auto & shutdown_called = keeper_context->isShutdownCalled();
     while (!shutdown_called)
     {
@@ -363,8 +360,7 @@ void KeeperDispatcher::responseThread()
 
 void KeeperDispatcher::snapshotThread()
 {
-    DB::setThreadName(ThreadName::KEEPER_SNAPSHOT);
-
+    setThreadName("KeeperSnpT");
     const auto & shutdown_called = keeper_context->isShutdownCalled();
     CreateSnapshotTask task;
     while (snapshots_queue.pop(task))
@@ -751,7 +747,6 @@ void KeeperDispatcher::addErrorResponses(const KeeperRequestsForSessions & reque
         response->xid = request_for_session.request->xid;
         response->zxid = 0;
         response->error = error;
-        response->enqueue_ts = std::chrono::steady_clock::now();
         if (!responses_queue.push(DB::KeeperResponseForSession{request_for_session.session_id, response}))
             throw Exception(ErrorCodes::SYSTEM_ERROR,
                 "Could not push error response xid {} zxid {} error message {} to responses queue",
@@ -1031,7 +1026,7 @@ Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
 void KeeperDispatcher::cleanResources()
 {
 #if USE_JEMALLOC
-    Jemalloc::purgeArenas();
+    purgeJemallocArenas();
 #endif
 }
 

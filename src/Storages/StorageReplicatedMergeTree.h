@@ -100,9 +100,6 @@ using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFaultInjecti
 class StorageReplicatedMergeTree final : public MergeTreeData
 {
 public:
-    /** For the system table replicas. */
-    using ReplicatedStatus = ReplicatedTableStatus;
-
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
       */
     StorageReplicatedMergeTree(
@@ -207,6 +204,8 @@ public:
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
+    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
+
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
     void onActionLockRemove(StorageActionBlockType action_type) override;
@@ -216,7 +215,7 @@ public:
     bool waitForProcessingQueue(UInt64 max_wait_milliseconds, SyncReplicaMode sync_mode, std::unordered_set<String> source_replicas);
 
     /// Get the status of the table. If with_zk_fields = false - do not fill in the fields that require queries to ZK.
-    void getStatus(ReplicatedStatus & res, bool with_zk_fields = true);
+    void getStatus(ReplicatedTableStatus & res, bool with_zk_fields = true);
 
     using LogEntriesData = std::vector<ReplicatedMergeTreeLogEntryData>;
     void getQueue(LogEntriesData & res, String & replica_name);
@@ -241,7 +240,7 @@ public:
     bool canUseAdaptiveGranularity() const override;
 
     /// Modify a CREATE TABLE query to make a variant which must be written to a backup.
-    void applyMetadataChangesToCreateQueryForBackup(const ASTPtr & create_query) const override;
+    void applyMetadataChangesToCreateQueryForBackup(ASTPtr & create_query) const override;
 
     /// Makes backup entries to backup the data of the storage.
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
@@ -451,6 +450,7 @@ private:
 
     InterserverIOEndpointPtr data_parts_exchange_endpoint;
 
+    MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
     MergeTreeDataMergerMutator merger_mutator;
 
@@ -498,6 +498,7 @@ private:
     BackgroundSchedulePoolTaskHolder queue_updating_task;
 
     BackgroundSchedulePoolTaskHolder mutations_updating_task;
+    Coordination::WatchCallbackPtr mutations_watch_callback;
 
     /// A task that selects parts to merge.
     BackgroundSchedulePoolTaskHolder merge_selecting_task;
@@ -551,7 +552,7 @@ private:
         std::shared_ptr<std::atomic<bool>> exists;
     };
 
-    std::unordered_map<String, ZeroCopyLockDescription> existing_zero_copy_locks TSA_GUARDED_BY(existing_zero_copy_locks_mutex);
+    std::unordered_map<String, ZeroCopyLockDescription> existing_zero_copy_locks;
 
     void readLocalImpl(
         QueryPlan & query_plan,
@@ -882,7 +883,6 @@ private:
     mutable std::unordered_set<std::string> existing_nodes_cache;
     mutable std::mutex existing_nodes_cache_mutex;
     bool existsNodeCached(const ZooKeeperWithFaultInjectionPtr & zookeeper, const std::string & path) const;
-    void tryRemoveNodeCache(const std::string & path) const;
 
     /// Cancels INSERTs in the block range by removing ephemeral block numbers
     void clearLockedBlockNumbersInPartition(zkutil::ZooKeeper & zookeeper, const String & partition_id, Int64 min_block_num, Int64 max_block_num);
