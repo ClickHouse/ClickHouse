@@ -1722,15 +1722,7 @@ private:
 
         if (ctx->execute_ttl_type == ExecuteTTLType::NORMAL)
         {
-            auto transform = std::make_shared<TTLTransform>(
-                ctx->context,
-                builder->getSharedHeader(),
-                *ctx->data,
-                ctx->metadata_snapshot,
-                ctx->new_data_part,
-                NamesAndTypesList{} /*expired_columns*/,
-                ctx->time_of_mutation,
-                true);
+            auto transform = std::make_shared<TTLTransform>(ctx->context, builder->getSharedHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
             subqueries = transform->getSubqueries();
             builder->addTransform(std::move(transform));
         }
@@ -1996,15 +1988,7 @@ private:
 
             if (ctx->execute_ttl_type == ExecuteTTLType::NORMAL)
             {
-                auto transform = std::make_shared<TTLTransform>(
-                    ctx->context,
-                    builder->getSharedHeader(),
-                    *ctx->data,
-                    ctx->metadata_snapshot,
-                    ctx->new_data_part,
-                    NamesAndTypesList{} /*expired_columns*/,
-                    ctx->time_of_mutation,
-                    true);
+                auto transform = std::make_shared<TTLTransform>(ctx->context, builder->getSharedHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
                 subqueries = transform->getSubqueries();
                 builder->addTransform(std::move(transform));
             }

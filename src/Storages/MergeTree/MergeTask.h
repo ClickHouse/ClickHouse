@@ -197,11 +197,8 @@ private:
         bool cleanup{false};
 
         NamesAndTypesList gathering_columns{};
-        NameSet merge_required_key_columns{};
         NamesAndTypesList merging_columns{};
-        NamesAndTypesList merging_columns_expired_by_ttl{};
         NamesAndTypesList storage_columns{};
-        NamesAndTypesList storage_columns_expired_by_ttl{};
         MergeTreeData::DataPart::Checksums checksums_gathered_columns{};
         ColumnsSubstreams gathered_columns_substreams{};
 

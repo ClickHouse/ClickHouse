@@ -266,7 +266,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     Names sort_key_columns_vec = sorting_key_expr->getRequiredColumns();
 
     /// Collect columns used in the sorting key expressions.
-    NameSet key_columns;
+    std::set<String> key_columns;
     auto storage_columns = global_ctx->storage_columns.getNameSet();
     for (const auto & name : sort_key_columns_vec)
     {
@@ -292,15 +292,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     if (global_ctx->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
         key_columns.emplace(global_ctx->merging_params.sign_column);
 
-    /// Force all columns params of Graphite mode
-    if (global_ctx->merging_params.mode == MergeTreeData::MergingParams::Graphite)
-    {
-        key_columns.emplace(global_ctx->merging_params.graphite_params.path_column_name);
-        key_columns.emplace(global_ctx->merging_params.graphite_params.time_column_name);
-        key_columns.emplace(global_ctx->merging_params.graphite_params.value_column_name);
-        key_columns.emplace(global_ctx->merging_params.graphite_params.version_column_name);
-    }
-
     /// Force to merge at least one column in case of empty key
     if (key_columns.empty())
         key_columns.emplace(global_ctx->storage_columns.front().name);
@@ -311,11 +302,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
         auto minmax_columns = MergeTreeData::getMinMaxColumnsNames(global_ctx->metadata_snapshot->getPartitionKey());
         key_columns.insert(minmax_columns.begin(), minmax_columns.end());
     }
-
-    key_columns.insert(global_ctx->deduplicate_by_columns.begin(), global_ctx->deduplicate_by_columns.end());
-
-    /// Key columns required for merge, must not be expired early.
-    global_ctx->merge_required_key_columns = key_columns;
 
     const auto & skip_indexes = global_ctx->metadata_snapshot->getSecondaryIndices();
 
@@ -482,37 +468,23 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     const auto & patch_parts = global_ctx->future_part->patch_parts;
 
-    /// Determine columns that are absent in all source parts—either fully expired or never written—and mark them as
-    /// expired to avoid unnecessary reads or writes during merges.
+    /// Skip fully expired columns manually, since in case of
+    /// need_remove_expired_values is not set, TTLTransform will not be used,
+    /// and columns that had been removed by TTL (via TTLColumnAlgorithm) will
+    /// be added again with default values.
     ///
-    /// NOTE:
-    /// Handling missing columns that have default expressions is non-trivial and currently unresolved
-    /// (see https://github.com/ClickHouse/ClickHouse/issues/91127).
-    /// For now, we conservatively avoid expiring such columns.
-    ///
-    /// The main challenges include:
-    /// 1. A default expression may depend on other columns, which themselves may be missing or expired,
-    ///    making it unclear whether the default should be materialized or recomputed.
-    /// 2. Default expressions may introduce semantic changes if re-evaluated during merges, leading to
-    ///    non-deterministic results across parts.
+    /// Also note, that it is better to do this here, since in other places it
+    /// will be too late (i.e. they will be written, and we will burn CPU/disk
+    /// resources for this).
+    if (!ctx->need_remove_expired_values)
     {
-        NameSet columns_present_in_parts;
-        columns_present_in_parts.reserve(global_ctx->storage_columns.size());
-
-        /// Collect all column names that actually exist in the source parts
-        for (const auto & part : global_ctx->future_part->parts)
+        for (auto & [column_name, ttl] : global_ctx->new_data_part->ttl_infos.columns_ttl)
         {
-            for (const auto & col : part->getColumns())
-                columns_present_in_parts.emplace(col.name);
-        }
-
-        const auto & columns_desc = global_ctx->metadata_snapshot->getColumns();
-
-        /// Any storage column not present in any part and without a default expression is considered expired
-        for (const auto & storage_column : global_ctx->storage_columns)
-        {
-            if (!columns_present_in_parts.contains(storage_column.name) && !columns_desc.getDefault(storage_column.name))
-                global_ctx->new_data_part->expired_columns.emplace(storage_column.name);
+            if (ttl.finished())
+            {
+                global_ctx->new_data_part->expired_columns.insert(column_name);
+                LOG_TRACE(ctx->log, "Adding expired column {} for part {}", column_name, global_ctx->new_data_part->name);
+            }
         }
     }
 
@@ -538,27 +510,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     if (!expired_columns.empty())
     {
         global_ctx->gathering_columns = global_ctx->gathering_columns.eraseNames(expired_columns);
-
-        auto filter_columns = [&](const NamesAndTypesList & input, NamesAndTypesList & expired_out)
-        {
-            NamesAndTypesList result;
-            for (const auto & column : input)
-            {
-                bool is_expired = expired_columns.contains(column.name);
-                bool is_required_for_merge = global_ctx->merge_required_key_columns.contains(column.name);
-
-                if (is_expired)
-                    expired_out.push_back(column);
-
-                if (!is_expired || is_required_for_merge)
-                    result.push_back(column);
-            }
-
-            return result;
-        };
-
-        global_ctx->merging_columns = filter_columns(global_ctx->merging_columns, global_ctx->merging_columns_expired_by_ttl);
-        global_ctx->storage_columns = filter_columns(global_ctx->storage_columns, global_ctx->storage_columns_expired_by_ttl);
+        global_ctx->merging_columns = global_ctx->merging_columns.eraseNames(expired_columns);
+        global_ctx->storage_columns = global_ctx->storage_columns.eraseNames(expired_columns);
     }
 
     global_ctx->new_data_part->uuid = global_ctx->future_part->uuid;
@@ -659,7 +612,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         case MergeAlgorithm::Horizontal:
         {
             global_ctx->merging_columns = global_ctx->storage_columns;
-            global_ctx->merging_columns_expired_by_ttl = global_ctx->storage_columns_expired_by_ttl;
             global_ctx->merging_skip_indexes = global_ctx->metadata_snapshot->getSecondaryIndices();
             global_ctx->gathering_columns.clear();
             global_ctx->skip_indexes_by_column.clear();
@@ -1834,13 +1786,11 @@ public:
         const MergeTreeData & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const MergeTreeData::MutableDataPartPtr & data_part_,
-        const NamesAndTypesList & expired_columns_,
         time_t current_time,
         bool force_)
-        : ITransformingStep(input_header_, TTLTransform::addExpiredColumnsToBlock(input_header_, expired_columns_), getTraits())
+        : ITransformingStep(input_header_, input_header_, getTraits())
     {
-        transform = std::make_shared<TTLTransform>(
-            context_, input_header_, storage_, metadata_snapshot_, data_part_, expired_columns_, current_time, force_);
+        transform = std::make_shared<TTLTransform>(context_, input_header_, storage_, metadata_snapshot_, data_part_, current_time, force_);
         subqueries_for_sets = transform->getSubqueries();
     }
 
@@ -2064,17 +2014,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     PreparedSets::Subqueries subqueries;
 
     /// TTL step
-    if (ctx->need_remove_expired_values || !global_ctx->merging_columns_expired_by_ttl.empty())
+    if (ctx->need_remove_expired_values)
     {
         auto ttl_step = std::make_unique<TTLStep>(
-            merge_parts_query_plan.getCurrentHeader(),
-            global_ctx->context,
-            *global_ctx->data,
-            global_ctx->metadata_snapshot,
-            global_ctx->new_data_part,
-            global_ctx->merging_columns_expired_by_ttl,
-            global_ctx->time_of_merge,
-            ctx->force_ttl);
+            merge_parts_query_plan.getCurrentHeader(), global_ctx->context, *global_ctx->data, global_ctx->metadata_snapshot, global_ctx->new_data_part, global_ctx->time_of_merge, ctx->force_ttl);
         subqueries = ttl_step->getSubqueries();
         ttl_step->setStepDescription("TTL step");
         merge_parts_query_plan.addStep(std::move(ttl_step));
