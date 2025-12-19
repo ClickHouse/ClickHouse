@@ -34,6 +34,7 @@ namespace ProfileEvents
 {
     extern const Event MergeHorizontalStageTotalMilliseconds;
     extern const Event MergeVerticalStageTotalMilliseconds;
+    extern const Event MergeTextIndexStageTotalMilliseconds;
     extern const Event MergeProjectionStageTotalMilliseconds;
 }
 
@@ -46,6 +47,12 @@ class RowsSourcesTemporaryFile;
 
 class MergedPartOffsets;
 using MergedPartOffsetsPtr = std::shared_ptr<MergedPartOffsets>;
+
+class MergeTextIndexesTask;
+using MergeTextIndexesTaskPtr = std::unique_ptr<MergeTextIndexesTask>;
+
+class BuildTextIndexTransform;
+using BuildTextIndexTransformPtr = std::shared_ptr<BuildTextIndexTransform>;
 
 /**
  * Overview of the merge algorithm
@@ -202,6 +209,7 @@ private:
         Names deduplicate_by_columns{};
         bool cleanup{false};
         bool vertical_lightweight_delete{false};
+        CompressionCodecPtr compression_codec{nullptr};
 
         NamesAndTypesList gathering_columns{};
         NameSet merge_required_key_columns{};
@@ -214,6 +222,10 @@ private:
 
         IndicesDescription merging_skip_indexes;
         std::unordered_map<String, IndicesDescription> skip_indexes_by_column;
+
+        IndicesDescription text_indexes_to_merge;
+        MutableDataPartStoragePtr temporary_text_index_storage;
+        std::unordered_map<String, BuildTextIndexTransformPtr> build_text_index_transforms;
 
         MergeAlgorithm chosen_merge_algorithm{MergeAlgorithm::Undecided};
 
@@ -266,7 +278,6 @@ private:
     {
         bool need_remove_expired_values{false};
         bool force_ttl{false};
-        CompressionCodecPtr compression_codec{nullptr};
         std::shared_ptr<RowsSourcesTemporaryFile> rows_sources_temporary_file;
         std::optional<ColumnSizeEstimator> column_sizes{};
 
@@ -351,7 +362,6 @@ private:
         /// Begin dependencies from previous stage
         std::shared_ptr<RowsSourcesTemporaryFile> rows_sources_temporary_file;
         std::optional<ColumnSizeEstimator> column_sizes;
-        CompressionCodecPtr compression_codec;
         std::list<DB::NameAndTypePair>::const_iterator it_name_and_type;
         bool read_with_direct_io{false};
         bool need_sync{false};
@@ -427,6 +437,48 @@ private:
         GlobalRuntimeContextPtr global_ctx;
     };
 
+    struct MergeTextIndexRuntimeContext : IStageRuntimeContext
+    {
+        bool need_sync{false};
+        UInt64 elapsed_execute_ns{0};
+        std::vector<MergeTextIndexesTaskPtr> merge_tasks;
+    };
+
+    using MergeTextIndexRuntimeContextPtr = std::shared_ptr<MergeTextIndexRuntimeContext>;
+
+    struct MergeTextIndexStage : IStage
+    {
+        bool execute() override;
+        void cancel() noexcept override;
+
+        void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) override
+        {
+            ctx = static_pointer_cast<MergeTextIndexRuntimeContext>(local);
+            global_ctx = static_pointer_cast<GlobalRuntimeContext>(global);
+        }
+
+        StageRuntimeContextPtr getContextForNextStage() override;
+        ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeTextIndexStageTotalMilliseconds; }
+
+        bool prepare() const;
+        bool execute() const;
+        bool finalize() const;
+
+        /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
+        using MergeTextIndexStageSubtasks = std::array<bool(MergeTextIndexStage::*)()const, 3>;
+
+        const MergeTextIndexStageSubtasks subtasks
+        {
+            &MergeTextIndexStage::prepare,
+            &MergeTextIndexStage::execute,
+            &MergeTextIndexStage::finalize,
+        };
+
+        MergeTextIndexStageSubtasks::const_iterator subtasks_iterator = subtasks.begin();
+        MergeTextIndexRuntimeContextPtr ctx;
+        GlobalRuntimeContextPtr global_ctx;
+    };
+
     /// By default this context is uninitialized, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
@@ -482,12 +534,13 @@ private:
 
     GlobalRuntimeContextPtr global_ctx;
 
-    using Stages = std::array<StagePtr, 3>;
+    using Stages = std::array<StagePtr, 4>;
 
     const Stages stages
     {
         std::make_shared<ExecuteAndFinalizeHorizontalPart>(),
         std::make_shared<VerticalMergeStage>(),
+        std::make_shared<MergeTextIndexStage>(),
         std::make_shared<MergeProjectionsStage>()
     };
 
@@ -497,6 +550,7 @@ private:
     static bool enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx);
     static void addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type);
     static bool isVerticalLightweightDelete(const GlobalRuntimeContext & global_ctx);
+    static void addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);
 };
 
 /// FIXME
