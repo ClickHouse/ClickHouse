@@ -13,6 +13,7 @@ namespace ErrorCodes
 
 class SerializationObjectSharedDataPath;
 class SerializationSubObjectSharedData;
+class SerializationObjectDistinctPaths;
 
 /// Class for binary serialization/deserialization of a shared data structure inside Object type.
 class SerializationObjectSharedData final : public SimpleTextSerialization
@@ -301,6 +302,7 @@ private:
 
     friend SerializationObjectSharedDataPath;
     friend SerializationSubObjectSharedData;
+    friend SerializationObjectDistinctPaths;
 
     SerializationVersion serialization_version;
     DataTypePtr dynamic_type;
