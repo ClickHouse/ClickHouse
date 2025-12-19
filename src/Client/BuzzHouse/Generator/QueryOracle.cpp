@@ -517,7 +517,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
                 std::optional<String> acluster;
                 Alter * at = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
 
-                acluster = gen.alterSingleTable(rg, t, 1, false, t.areInsertsAppends(), at);
+                acluster = gen.alterSingleTable(rg, t, 1, false, t.areInsertsAppends(), false, at);
                 if (acluster.has_value())
                 {
                     at->mutable_cluster()->set_cluster(acluster.value());
