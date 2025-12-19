@@ -175,6 +175,11 @@ void MergeTreeReaderStream::seekToMark(const MarkInCompressedFile & mark)
     }
 }
 
+off_t MergeTreeReaderStream::getPosition()
+{
+    return plain_file_buffer->getPosition();
+}
+
 void MergeTreeReaderStream::seekToStart()
 {
     init();
@@ -534,6 +539,12 @@ std::pair<size_t, size_t> MergeTreeReaderStreamAllOfMultipleColumns::estimateMar
     }
 
     return {max_range_bytes, sum_range_bytes};
+}
+
+void LargePostingListReaderStream::seek(UInt64 offset)
+{
+    init();
+    MergeTreeReaderStream::seekToMark({offset, 0});
 }
 
 }

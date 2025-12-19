@@ -754,7 +754,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             for (auto & projection_ast : args.query.columns_list->projections->children)
             {
-                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, context);
+                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, context, args.mode);
                 metadata.projections.add(std::move(projection));
             }
         }

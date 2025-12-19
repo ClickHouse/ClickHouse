@@ -222,6 +222,8 @@ add_contrib (antlr4-grammars-cmake antlr4-grammars)
 
 add_contrib (numactl-cmake numactl)
 
+add_contrib (TurboPFor-cmake TurboPFor-Integer-Compression)
+
 # Google Cloud Cpp
 if(ENABLE_LIBRARIES AND (OS_LINUX OR OS_DARWIN OR OS_FREEBSD) AND (ARCH_AMD64 OR (ARCH_AARCH64 AND NOT NO_ARMV81_OR_HIGHER)))
     set(ENABLE_GOOGLE_CLOUD_CPP_DEFAULT ON)

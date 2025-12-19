@@ -288,6 +288,7 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
 
     readSparseIndex(*index_stream, state);
     analyzeDictionary(*dictionary_stream, state);
+    sparse_index.reset();
     readPostingsForRareTokens(*postings_stream, state);
 }
 
@@ -408,7 +409,7 @@ void MergeTreeIndexGranuleText::readPostingsForRareTokens(MergeTreeIndexReaderSt
 size_t MergeTreeIndexGranuleText::memoryUsageBytes() const
 {
     return sizeof(*this)
-        + sparse_index->memoryUsageBytes()
+        + (sparse_index ? sparse_index->memoryUsageBytes() : 0)
         + remaining_tokens.capacity() * sizeof(*remaining_tokens.begin())
         + rare_tokens_postings.capacity() * sizeof(*rare_tokens_postings.begin());
 }
@@ -1303,9 +1304,10 @@ std::pair<String, std::vector<Field>> extractTokenizer(std::unordered_map<String
 
 }
 
-MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
+std::pair<MergeTreeIndexTextParams, std::unique_ptr<ITokenExtractor>>
+MergeTreeIndexText::parseTextIndexArguments(const String & index_name, const FieldVector & index_arguments)
 {
-    std::unordered_map<String, Field> options = convertArgumentsToOptionsMap(index.arguments);
+    std::unordered_map<String, Field> options = convertArgumentsToOptionsMap(index_arguments);
     const auto [tokenizer, params] = extractTokenizer(options);
 
     static std::vector<String> allowed_tokenizers
@@ -1315,23 +1317,28 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
            ArrayTokenExtractor::getExternalName(),
            SparseGramsTokenExtractor::getExternalName()};
 
-    auto token_extractor = TokenizerFactory::createTokenizer(tokenizer, params, allowed_tokenizers, index.name);
+    auto token_extractor = TokenizerFactory::createTokenizer(tokenizer, params, allowed_tokenizers, index_name);
 
     String preprocessor = extractOption<String>(options, ARGUMENT_PREPROCESSOR).value_or("");
     UInt64 dictionary_block_size = extractOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE).value_or(DEFAULT_DICTIONARY_BLOCK_SIZE);
-    UInt64 dictionary_block_frontcoding_compression = extractOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION).value_or(DEFAULT_DICTIONARY_BLOCK_USE_FRONTCODING);
-    UInt64 posting_list_block_size = extractOption<UInt64>(options, ARGUMENT_POSTING_LIST_BLOCK_SIZE).value_or(DEFAULT_POSTING_LIST_BLOCK_SIZE);
-
-    MergeTreeIndexTextParams index_params{
-        dictionary_block_size,
-        dictionary_block_frontcoding_compression,
-        posting_list_block_size,
-        preprocessor};
+    UInt64 dictionary_block_frontcoding_compression = extractOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION)
+                                                          .value_or(DEFAULT_DICTIONARY_BLOCK_USE_FRONTCODING);
+    UInt64 posting_list_block_size
+        = extractOption<UInt64>(options, ARGUMENT_POSTING_LIST_BLOCK_SIZE).value_or(DEFAULT_POSTING_LIST_BLOCK_SIZE);
 
     if (!options.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
 
-    return std::make_shared<MergeTreeIndexText>(index, index_params, std::move(token_extractor));
+    MergeTreeIndexTextParams index_params{
+        dictionary_block_size, dictionary_block_frontcoding_compression, posting_list_block_size, preprocessor};
+
+    return {std::move(index_params), std::move(token_extractor)};
+}
+
+MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
+{
+    auto [index_params, token_extractor] = MergeTreeIndexText::parseTextIndexArguments(index.name, index.arguments);
+    return std::make_shared<MergeTreeIndexText>(index, std::move(index_params), std::move(token_extractor));
 }
 
 void textIndexValidator(const IndexDescription & index, bool /*attach*/)

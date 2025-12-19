@@ -1005,10 +1005,10 @@ void MergeTreeData::checkProperties(
         }
     }
 
+    std::unordered_set<String> columns_with_text_indexes;
     if (!new_metadata.secondary_indices.empty())
     {
         std::unordered_set<String> indices_names;
-        std::unordered_set<String> columns_with_text_indexes;
 
         for (const auto & index : new_metadata.secondary_indices)
         {
@@ -1087,17 +1087,35 @@ void MergeTreeData::checkProperties(
                 true /* allow_nullable_key */,
                 local_context);
 
-            if (projection.index_granularity || projection.index_granularity_bytes)
+            if (!canUseAdaptiveGranularity() && projection.has_index_granularity_overrides)
             {
-                if (!canUseAdaptiveGranularity())
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Projection {} specifies index_granularity-related overrides, but the parent table uses fixed granularity. "
+                    "Such overrides are supported with adaptive granularity (e.g. index_granularity_bytes > 0)",
+                    projection.name);
+            }
+
+            /// Text indexes on projections use the same query optimization rules as regular skip indexes. We apply the
+            /// same constraint here: each column is limited to one text index to avoid issues with
+            /// 'hasAllTokens/hasAnyTokens' (see https://github.com/ClickHouse/ClickHouse/issues/82385).
+            if (projection.index && projection.index->getName() == TEXT_INDEX_NAME)
+            {
+                const auto * index_desc = projection.index->getIndexDescription();
+                chassert(index_desc);
+                const auto & column = index_desc->column_names[0];
+
+                if (columns_with_text_indexes.contains(column))
                 {
                     throw Exception(
-                        ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Projection {} specifies index_granularity-related overrides, but the parent table uses fixed granularity. "
-                        "Such overrides are supported with adaptive granularity (e.g. index_granularity_bytes > 0)",
-                        projection.name);
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Column {} must not have more than one text index",
+                        backQuote(index_desc->column_names[0]));
                 }
+
+                columns_with_text_indexes.insert(column);
             }
+
             projections_names.insert(projection.name);
         }
     }
@@ -1176,16 +1194,30 @@ namespace
 ExpressionActionsPtr getCombinedIndicesExpression(
     const KeyDescription & key,
     const MergeTreeIndices & indices,
+    const std::vector<ProjectionDescriptionRawPtr> & projection_indices,
     const ColumnsDescription & columns,
     ContextPtr context)
 {
     ASTPtr combined_expr_list = key.expression_list_ast->clone();
 
     for (const auto & index : indices)
+    {
         for (const auto & index_expr : index->index.expression_list_ast->children)
             combined_expr_list->children.push_back(index_expr->clone());
+    }
 
-    auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, columns.get(GetColumnsOptions(GetColumnsOptions::Kind::AllPhysical).withSubcolumns()));
+    for (const auto & projection : projection_indices)
+    {
+        chassert(projection->index);
+        const auto * index_desc = projection->index->getIndexDescription();
+        chassert(index_desc);
+        chassert(index_desc->expression_list_ast);
+        for (const auto & index_expr : index_desc->expression_list_ast->children)
+            combined_expr_list->children.push_back(index_expr->clone());
+    }
+
+    auto syntax_result = TreeRewriter(context).analyze(
+        combined_expr_list, columns.get(GetColumnsOptions(GetColumnsOptions::Kind::AllPhysical).withSubcolumns()));
     return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
 }
 
@@ -1214,16 +1246,22 @@ DataTypes MergeTreeData::getMinMaxColumnsTypes(const KeyDescription & partition_
     return {};
 }
 
-ExpressionActionsPtr
-MergeTreeData::getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const
+ExpressionActionsPtr MergeTreeData::getPrimaryKeyAndIndicesExpression(
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeIndices & indices,
+    const std::vector<ProjectionDescriptionRawPtr> & projection_indices) const
 {
-    return getCombinedIndicesExpression(metadata_snapshot->getPrimaryKey(), indices, metadata_snapshot->getColumns(), getContext());
+    return getCombinedIndicesExpression(
+        metadata_snapshot->getPrimaryKey(), indices, projection_indices, metadata_snapshot->getColumns(), getContext());
 }
 
-ExpressionActionsPtr
-MergeTreeData::getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const
+ExpressionActionsPtr MergeTreeData::getSortingKeyAndIndicesExpression(
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeIndices & indices,
+    const std::vector<ProjectionDescriptionRawPtr> & projection_indices) const
 {
-    return getCombinedIndicesExpression(metadata_snapshot->getSortingKey(), indices, metadata_snapshot->getColumns(), getContext());
+    return getCombinedIndicesExpression(
+        metadata_snapshot->getSortingKey(), indices, projection_indices, metadata_snapshot->getColumns(), getContext());
 }
 
 
@@ -4612,17 +4650,56 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
         }
     }
 
-    if (hasTextIndexMaterialization(commands, getInMemoryMetadataPtr()))
+    auto data_parts = getDataPartsVectorForInternalUsage();
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    if (hasTextIndexMaterialization(commands, metadata_snapshot))
     {
-        auto data_parts = getDataPartsVectorForInternalUsage();
-
         for (const auto & part : data_parts)
         {
             if (part->rows_count > std::numeric_limits<UInt32>::max())
             {
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Cannot materialize text index in part {} with {} rows. Materialization of text index is not supported for parts with more than {} rows",
-                    part->name, part->rows_count, std::numeric_limits<UInt32>::max());
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Cannot materialize text index in part {} with {} rows. Materialization of text index is not supported for parts with "
+                    "more than {} rows",
+                    part->name,
+                    part->rows_count,
+                    std::numeric_limits<UInt32>::max());
+            }
+        }
+    }
+
+    UInt64 limit = std::numeric_limits<UInt64>::max();
+    ProjectionDescriptionRawPtr limiting_projection = nullptr;
+    for (const auto & projection : metadata_snapshot->getProjections())
+    {
+        if (projection.index)
+        {
+            UInt64 index_limit = projection.index->getMaxRows();
+            if (index_limit < limit)
+            {
+                limit = index_limit;
+                limiting_projection = &projection;
+            }
+        }
+    }
+
+    if (limit != std::numeric_limits<UInt64>::max())
+    {
+        chassert(limiting_projection && limiting_projection->index);
+        for (const auto & part : data_parts)
+        {
+            if (part->rows_count > limit)
+            {
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Cannot materialize projection index in part {} because it has {} rows, which exceeds the limit ({}) "
+                    "for projection index '{}' (Type: {}).",
+                    part->name,
+                    part->rows_count,
+                    limit,
+                    limiting_projection->name,
+                    limiting_projection->index->getName());
             }
         }
     }
@@ -4635,7 +4712,7 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
     using PartStorageType = MergeTreeDataPartStorageType;
 
     String out_reason;
-    const auto settings = getSettings(projection);
+    const auto settings = getSettings(projection ? &projection->settings_changes : nullptr);
     if (!canUsePolymorphicParts(*settings, out_reason))
         return {PartType::Wide, PartStorageType::Full};
 
@@ -10076,23 +10153,17 @@ MergeTreeData::PartitionIdToMinBlockPtr MergeTreeData::getMinDataVersionForEachP
     return std::make_shared<PartitionIdToMinBlock>(std::move(partition_to_min_data_version));
 }
 
-MergeTreeSettingsPtr MergeTreeData::getSettings(ProjectionDescriptionRawPtr projection) const
+MergeTreeSettingsPtr MergeTreeData::getSettings(const SettingsChanges * settings_changes) const
 {
     auto data_settings = storage_settings.get();
-    if (projection)
+
+    if (settings_changes)
     {
-        if ((projection->index_granularity && (*projection->index_granularity != (*data_settings)[MergeTreeSetting::index_granularity]))
-            || (projection->index_granularity_bytes
-                && (*projection->index_granularity_bytes != (*data_settings)[MergeTreeSetting::index_granularity_bytes])))
-        {
-            auto new_data_settings = std::make_shared<MergeTreeSettings>(*data_settings);
-            if (projection->index_granularity)
-                (*new_data_settings)[MergeTreeSetting::index_granularity] = *projection->index_granularity;
-            if (projection->index_granularity_bytes)
-                (*new_data_settings)[MergeTreeSetting::index_granularity_bytes] = *projection->index_granularity_bytes;
-            data_settings = new_data_settings;
-        }
+        auto new_data_settings = std::make_shared<MergeTreeSettings>(*data_settings);
+        new_data_settings->applyChanges(*settings_changes);
+        return new_data_settings;
     }
+
     return data_settings;
 }
 

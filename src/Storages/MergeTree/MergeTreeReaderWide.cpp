@@ -10,6 +10,8 @@
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
+#include <Storages/MergeTree/ProjectionIndex/PostingListState.h>
+#include <Storages/MergeTree/ProjectionIndex/ProjectionIndexSerializationContext.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -270,6 +272,10 @@ void MergeTreeReaderWide::addStreams(
         }
 
         addStream(substream_path, *stream_name);
+
+        if (dynamic_cast<const DataTypePostingList *>(name_and_type.type->getCustomName()))
+            large_posting_streams.emplace(*stream_name, createLargePostingStream(*stream_name, profile_callback, clock_type));
+
         has_any_stream = true;
     };
 
@@ -586,10 +592,44 @@ void MergeTreeReaderWide::readData(
     };
 
     deserialize_settings.continuous_reading = continue_reading;
+
+    ProjectionIndexDeserializationContext projection_index_context;
+    if (dynamic_cast<const DataTypePostingList *>(name_and_type.type->getCustomName()))
+    {
+        projection_index_context.large_posting_getter
+            = [&](const ISerialization::SubstreamPath & substream_path) -> LargePostingListReaderStreamPtr
+        {
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                name_and_type,
+                substream_path,
+                PROJECTION_INDEX_LARGE_POSTING_SUFFIX,
+                data_part_info_for_read->getChecksums(),
+                storage_settings);
+            chassert(stream_name);
+            auto posting_reader = large_posting_streams.at(*stream_name);
+            posting_reader->getDataBuffer(); /// Call init()
+            return posting_reader;
+        };
+        deserialize_settings.projection_index_context = &projection_index_context;
+    }
+
     auto & deserialize_state = deserialize_binary_bulk_state_map[name_and_type.name];
 
     serialization->deserializeBinaryBulkWithMultipleStreams(
         column, rows_offset, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
+}
+
+LargePostingListReaderStreamPtr MergeTreeReaderWide::getProjectionIndexPostingStreamPtr() const
+{
+    auto it = large_posting_streams.find("posting");
+    if (it == large_posting_streams.end())
+    {
+        auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+            "posting", {}, PROJECTION_INDEX_LARGE_POSTING_SUFFIX, data_part_info_for_read->getChecksums(), storage_settings);
+        chassert(stream_name);
+        return createLargePostingStream(*stream_name, profile_callback, clock_type);
+    }
+    return it->second;
 }
 
 }
