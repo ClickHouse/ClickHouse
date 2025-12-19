@@ -201,7 +201,8 @@ size_t calculateRangeWithStochasticSliding(size_t parts_count, size_t parts_thre
 
 void selectWithinPartsRange(
     RangesIterator range_it,
-    const size_t max_total_size_to_merge,
+    size_t max_total_size_to_merge,
+    size_t max_rows_in_part,
     const IMergeSelector::RangeFilter & range_filter,
     Estimator & estimator,
     const SimpleMergeSelector::Settings & settings,
@@ -263,6 +264,7 @@ void selectWithinPartsRange(
     for (; begin < parts_count; ++begin)
     {
         size_t sum_size = parts[begin].size;
+        size_t sum_rows = parts[begin].rows;
         size_t max_size = parts[begin].size;
         size_t min_age = parts[begin].age;
 
@@ -274,12 +276,17 @@ void selectWithinPartsRange(
 
             size_t cur_size = parts[end - 1].size;
             size_t cur_age = parts[end - 1].age;
+            size_t cur_rows = parts[end - 1].rows;
 
             sum_size += cur_size;
+            sum_rows += cur_rows;
             max_size = std::max(max_size, cur_size);
             min_age = std::min(min_age, cur_age);
 
             if (sum_size > max_total_size_to_merge)
+                break;
+
+            if (sum_rows > max_rows_in_part)
                 break;
 
             auto range_begin = parts.begin() + begin;
@@ -302,7 +309,8 @@ void selectWithinPartsRange(
 PartsRanges SimpleMergeSelector::select(
     const PartsRanges & parts_ranges,
     const MergeSizes & max_merge_sizes,
-    const RangeFilter & range_filter) const
+    const RangeFilter & range_filter,
+    size_t max_rows_in_part) const
 {
     Estimator estimator(parts_ranges);
 
@@ -312,7 +320,7 @@ PartsRanges SimpleMergeSelector::select(
 
     /// Using max size constraint to create more merge candidates
     for (auto range_it = parts_ranges.begin(); range_it != parts_ranges.end(); ++range_it)
-        selectWithinPartsRange(range_it, max_merge_sizes[0], range_filter, estimator, settings, min_size_to_lower_base_log, max_size_to_lower_base_log);
+        selectWithinPartsRange(range_it, max_merge_sizes[0], max_rows_in_part, range_filter, estimator, settings, min_size_to_lower_base_log, max_size_to_lower_base_log);
 
     PartsRanges result;
     for (size_t max_merge_size : max_merge_sizes)

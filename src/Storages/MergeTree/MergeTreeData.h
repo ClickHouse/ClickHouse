@@ -1060,6 +1060,8 @@ public:
         return secondary_index_sizes;
     }
 
+    size_t getMaxAllowedRowsInPart() const;
+
     /// For ATTACH/DETACH/DROP/FORGET PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context) const;
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, const DataPartsAnyLock & lock) const;

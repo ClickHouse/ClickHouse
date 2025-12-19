@@ -1698,6 +1698,14 @@ Int64 MergeTreeData::getMaxBlockNumber() const
     return max_block_num;
 }
 
+size_t MergeTreeData::getMaxAllowedRowsInPart() const
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
+    bool has_text_index = secondary_indices.hasType("text");
+    return has_text_index ? std::numeric_limits<UInt32>::max() : std::numeric_limits<UInt64>::max();
+}
+
 void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const String & name, const DiskPtr & disk)
 {
     auto & current_ptr = root_by_partition[info.getPartitionId()];
@@ -4566,6 +4574,23 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     }
 }
 
+static bool hasTextIndexMaterialization(const MutationCommands & commands, StorageMetadataPtr metadata_snapshot)
+{
+    const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
+    if (secondary_indices.empty())
+        return false;
+
+    for (const auto & command : commands)
+    {
+        if (command.type != MutationCommand::MATERIALIZE_INDEX)
+            continue;
+
+        auto it = std::ranges::find_if(secondary_indices, [&](const IndexDescription & index) { return index.name == command.index_name; });
+        if (it != secondary_indices.end() && it->type == "text")
+            return true;
+    }
+    return false;
+}
 
 void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, const Settings & /*settings*/) const
 {
@@ -4584,6 +4609,21 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
                     "UPDATE or DELETE over the table '{}' is forbidden because it has secondary indexes. Check the MergeTree setting "
                     "'alter_column_secondary_index_mode' to change this behaviour",
                     getStorageID().getNameForLogs());
+        }
+    }
+
+    if (hasTextIndexMaterialization(commands, getInMemoryMetadataPtr()))
+    {
+        auto data_parts = getDataPartsVectorForInternalUsage();
+
+        for (const auto & part : data_parts)
+        {
+            if (part->rows_count > std::numeric_limits<UInt32>::max())
+            {
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Cannot materialize text index in part {} with {} rows. Materialization of text index is not supported for parts with more than {} rows",
+                    part->name, part->rows_count, std::numeric_limits<UInt32>::max());
+            }
         }
     }
 }

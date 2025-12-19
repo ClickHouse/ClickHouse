@@ -258,6 +258,7 @@ MergeSelectorChoices chooseMergesFrom(
     const PartitionIdToTTLs & next_recompress_times,
     bool can_use_ttl_merges,
     time_t current_time,
+    size_t max_rows_in_part,
     const LoggerPtr & log)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergerMutatorSelectPartsForMergeElapsedMicroseconds);
@@ -265,7 +266,7 @@ MergeSelectorChoices chooseMergesFrom(
     auto choices = selector.chooseMergesFrom(
         ranges, partitions_stats, predicate, metadata_snapshot,
         data_settings, next_delete_times, next_recompress_times,
-        can_use_ttl_merges, current_time);
+        can_use_ttl_merges, current_time, max_rows_in_part);
 
     if (!choices.empty())
     {
@@ -340,6 +341,7 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
     const auto storage_policy = data.getStoragePolicy();
     const time_t current_time = std::time(nullptr);
     const bool can_use_ttl_merges = !ttl_merges_blocker.isCancelled();
+    const size_t max_rows_in_part = data.getMaxAllowedRowsInPart();
     LogSeriesLimiter series_log(log, 1, /*interval_s_=*/60 * 30);
 
     auto ranges = grabAllPossibleRanges(parts_collector, metadata_snapshot, storage_policy, current_time, std::nullopt, series_log);
@@ -363,7 +365,7 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
             selector, *merge_predicate,
             ranges_in_partition, partitions_stats, metadata_snapshot, settings,
             next_delete_ttl_merge_times_by_partition, next_recompress_ttl_merge_times_by_partition,
-            can_use_ttl_merges, current_time, log);
+            can_use_ttl_merges, current_time, max_rows_in_part, log);
 
         const String & partition_id = ranges_in_partition.front().front().info.getPartitionId();
 
@@ -398,6 +400,7 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
     const auto storage_policy = data.getStoragePolicy();
     const time_t current_time = std::time(nullptr);
     const bool can_use_ttl_merges = !ttl_merges_blocker.isCancelled();
+    const size_t max_rows_in_part = data.getMaxAllowedRowsInPart();
     LogSeriesLimiter series_log(log, 1, /*interval_s_=*/60 * 30);
 
     auto ranges = grabAllPossibleRanges(parts_collector, metadata_snapshot, storage_policy, current_time, partitions_hint, series_log);
@@ -423,7 +426,7 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
         selector, *merge_predicate,
         ranges, partitions_stats, metadata_snapshot, settings,
         next_delete_ttl_merge_times_by_partition, next_recompress_ttl_merge_times_by_partition,
-        can_use_ttl_merges, current_time, log);
+        can_use_ttl_merges, current_time, max_rows_in_part, log);
 
     if (!merge_choices.empty())
     {
@@ -477,6 +480,24 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
             .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
             .explanation = PreformattedMessage::create("There are no parts inside partition"),
         });
+    }
+
+    size_t max_rows_in_part = data.getMaxAllowedRowsInPart();
+
+    if (max_rows_in_part != std::numeric_limits<UInt64>::max())
+    {
+        size_t total_rows = 0;
+        for (const auto & part : parts)
+            total_rows += part.rows;
+
+        if (total_rows > max_rows_in_part)
+        {
+            return std::unexpected(SelectMergeFailure{
+                .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+                .explanation = PreformattedMessage::create("Total number of rows in parts to merge ({}) is greater than max allowed rows in part ({})",
+                total_rows, max_rows_in_part),
+            });
+        }
     }
 
     if (!final && parts.size() == 1)

@@ -47,6 +47,7 @@ struct ChooseContext
     const PartitionIdToTTLs & next_delete_times;
     const PartitionIdToTTLs & next_recompress_times;
     const time_t current_time;
+    const size_t max_rows_in_part;
     const bool aggressive;
 };
 
@@ -77,7 +78,7 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
         std::vector<size_t> max_sizes(ctx.max_merge_sizes.size(), std::numeric_limits<size_t>::max());
         TTLPartDropMergeSelector drop_ttl_selector(ctx.current_time);
 
-        if (auto merge_ranges = drop_ttl_selector.select(ctx.ranges, max_sizes, ctx.range_filter); !merge_ranges.empty())
+        if (auto merge_ranges = drop_ttl_selector.select(ctx.ranges, max_sizes, ctx.range_filter, ctx.max_rows_in_part); !merge_ranges.empty())
             return pack(ctx, std::move(merge_ranges), MergeType::TTLDrop);
     }
 
@@ -86,7 +87,7 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
     {
         TTLRowDeleteMergeSelector delete_ttl_selector(ctx.next_delete_times, ctx.current_time);
 
-        if (auto merge_ranges = delete_ttl_selector.select(ctx.ranges, ctx.max_merge_sizes, ctx.range_filter); !merge_ranges.empty())
+        if (auto merge_ranges = delete_ttl_selector.select(ctx.ranges, ctx.max_merge_sizes, ctx.range_filter, ctx.max_rows_in_part); !merge_ranges.empty())
             return pack(ctx, std::move(merge_ranges), MergeType::TTLDelete);
     }
 
@@ -95,7 +96,7 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
     {
         TTLRecompressMergeSelector recompress_ttl_selector(ctx.next_recompress_times, ctx.current_time);
 
-        if (auto merge_ranges = recompress_ttl_selector.select(ctx.ranges, ctx.max_merge_sizes, ctx.range_filter); !merge_ranges.empty())
+        if (auto merge_ranges = recompress_ttl_selector.select(ctx.ranges, ctx.max_merge_sizes, ctx.range_filter, ctx.max_rows_in_part); !merge_ranges.empty())
             return pack(ctx, std::move(merge_ranges), MergeType::TTLRecompress);
     }
 
@@ -157,7 +158,7 @@ MergeSelectorChoices tryChooseRegularMerge(const ChooseContext & ctx)
     }
 
     chassert(selector != nullptr);
-    auto merge_ranges = selector->select(ctx.ranges, ctx.max_merge_sizes, ctx.range_filter);
+    auto merge_ranges = selector->select(ctx.ranges, ctx.max_merge_sizes, ctx.range_filter, ctx.max_rows_in_part);
     return pack(ctx, std::move(merge_ranges), MergeType::Regular);
 }
 
@@ -186,7 +187,8 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
     const PartitionIdToTTLs & next_delete_times,
     const PartitionIdToTTLs & next_recompress_times,
     bool can_use_ttl_merges,
-    time_t current_time) const
+    time_t current_time,
+    size_t max_rows_in_part) const
 {
     ChooseContext ctx{
         .ranges = ranges,
@@ -199,6 +201,7 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
         .next_delete_times = next_delete_times,
         .next_recompress_times = next_recompress_times,
         .current_time = current_time,
+        .max_rows_in_part = max_rows_in_part,
         .aggressive = aggressive,
     };
 
