@@ -19,7 +19,6 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheSettings.h>
 #include <Interpreters/Cache/FileSegment.h>
-#include <Interpreters/Cache/EvictionCandidates.h>
 #include <Interpreters/Cache/SLRUFileCachePriority.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -61,11 +60,10 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsUInt64 max_elements;
     extern const FileCacheSettingsUInt64 max_file_segment_size;
     extern const FileCacheSettingsUInt64 boundary_alignment;
-    extern const FileCacheSettingsFileCachePolicy cache_policy;
+    extern const FileCacheSettingsString cache_policy;
     extern const FileCacheSettingsDouble slru_size_ratio;
     extern const FileCacheSettingsUInt64 load_metadata_threads;
     extern const FileCacheSettingsBool load_metadata_asynchronously;
-    extern const FileCacheSettingsBool write_cache_per_user_id_directory;
 }
 
 void printRanges(const auto & segments)
@@ -113,9 +111,6 @@ void assertEqual(const FileSegmentsHolderPtr & file_segments, const Ranges & exp
     std::cerr << "\nFile segments: ";
     for (const auto & file_segment : *file_segments)
         std::cerr << file_segment->range().toString() << ", ";
-    std::cerr << "\nExpected: ";
-    for (const auto & r : expected_ranges)
-        std::cerr << r.toString() << ", ";
 
     ASSERT_EQ(file_segments->size(), expected_ranges.size());
 
@@ -249,48 +244,45 @@ void assertProbationary(const IFileCachePriority::PriorityDumpPtr & dump, const 
     }
 }
 
-FileSegmentPtr get(const HolderPtr & holder, int i)
+FileSegment & get(const HolderPtr & holder, int i)
 {
     auto it = std::next(holder->begin(), i);
     if (it == holder->end())
         std::terminate();
-    return *it;
+    return **it;
 }
 
-void download(FileSegmentPtr file_segment, bool complete = true)
+void download(FileSegment & file_segment)
 {
-    std::cerr << "\nDownloading range " << file_segment->range().toString() << "\n";
+    std::cerr << "\nDownloading range " << file_segment.range().toString() << "\n";
 
-    ASSERT_EQ(file_segment->getOrSetDownloader(), FileSegment::getCallerId());
-    ASSERT_EQ(file_segment->state(), State::DOWNLOADING);
-    ASSERT_EQ(file_segment->getDownloadedSize(), 0);
+    ASSERT_EQ(file_segment.getOrSetDownloader(), FileSegment::getCallerId());
+    ASSERT_EQ(file_segment.state(), State::DOWNLOADING);
+    ASSERT_EQ(file_segment.getDownloadedSize(), 0);
 
     std::string failure_reason;
-    ASSERT_TRUE(file_segment->reserve(file_segment->range().size(), 1000, failure_reason));
-    download(cache_base_path, *file_segment);
-    ASSERT_EQ(file_segment->state(), State::DOWNLOADING);
+    ASSERT_TRUE(file_segment.reserve(file_segment.range().size(), 1000, failure_reason));
+    download(cache_base_path, file_segment);
+    ASSERT_EQ(file_segment.state(), State::DOWNLOADING);
 
-    if (complete)
-    {
-        FileSegment::complete(FileSegmentPtr(file_segment), /*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
-        ASSERT_EQ(file_segment->state(), State::DOWNLOADED);
-    }
+    file_segment.complete(false);
+    ASSERT_EQ(file_segment.state(), State::DOWNLOADED);
 }
 
-void assertDownloadFails(FileSegmentPtr file_segment)
+void assertDownloadFails(FileSegment & file_segment)
 {
-    ASSERT_EQ(file_segment->getOrSetDownloader(), FileSegment::getCallerId());
-    ASSERT_EQ(file_segment->getDownloadedSize(), 0);
+    ASSERT_EQ(file_segment.getOrSetDownloader(), FileSegment::getCallerId());
+    ASSERT_EQ(file_segment.getDownloadedSize(), 0);
     std::string failure_reason;
-    ASSERT_FALSE(file_segment->reserve(file_segment->range().size(), 1000, failure_reason));
-    FileSegment::complete(FileSegmentPtr(file_segment), /*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
+    ASSERT_FALSE(file_segment.reserve(file_segment.range().size(), 1000, failure_reason));
+    file_segment.complete(false);
 }
 
 void download(const HolderPtr & holder)
 {
     for (auto & it : *holder)
     {
-        download(it);
+        download(*it);
     }
 }
 
@@ -393,12 +385,11 @@ TEST_F(FileCacheTest, LRUPolicy)
     settings[FileCacheSetting::max_elements] = 5;
     settings[FileCacheSetting::boundary_alignment] = 1;
     settings[FileCacheSetting::load_metadata_asynchronously] = false;
-    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
 
     const size_t file_size = INT_MAX; // the value doesn't really matter because boundary_alignment == 1.
 
 
-    const auto & user = FileCache::getCommonUser();
+    const auto user = FileCache::getCommonUser();
     {
         std::cerr << "Step 1\n";
         auto cache = DB::FileCache("1", settings);
@@ -413,7 +404,7 @@ TEST_F(FileCacheTest, LRUPolicy)
         {
             auto holder = get_or_set(0, 10); /// Add range [0, 9]
             assertEqual(holder, { Range(0, 9) }, { State::EMPTY });
-            download(*holder->begin());
+            download(holder->front());
             assertEqual(holder, { Range(0, 9) }, { State::DOWNLOADED });
             increasePriority(holder);
         }
@@ -512,7 +503,7 @@ TEST_F(FileCacheTest, LRUPolicy)
             assertDownloadFails(get(holder, 4));
             assertEqual(holder,
                         { Range(0, 9),       Range(10, 14),     Range(15, 16),     Range(17, 20),     Range(21, 23),     Range(24, 26) },
-                        { State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADED, State::PARTIALLY_DOWNLOADED_NO_CONTINUATION, State::DOWNLOADED });
+                        { State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADED, State::DETACHED, State::DOWNLOADED });
 
             /// Range [27, 27] must be evicted in previous getOrSet [0, 25].
             /// Let's not invalidate pointers to returned segments from range [0, 25] and
@@ -520,13 +511,13 @@ TEST_F(FileCacheTest, LRUPolicy)
             /// This will also check that [27, 27] was indeed evicted.
             auto holder2 = get_or_set(27, 1);
             assertEqual(holder2, { Range(27, 27) }, { State::EMPTY });
-            assertDownloadFails(*holder2->begin());
-            assertEqual(holder2, { Range(27, 27) }, { State::PARTIALLY_DOWNLOADED_NO_CONTINUATION });
+            assertDownloadFails(holder2->front());
+            assertEqual(holder2, { Range(27, 27) }, { State::DETACHED });
 
             auto holder3 = get_or_set(28, 3);
             assertEqual(holder3, { Range(28, 30) }, { State::EMPTY });
-            assertDownloadFails(*holder3->begin());
-            assertEqual(holder3, { Range(28, 30) }, { State::PARTIALLY_DOWNLOADED_NO_CONTINUATION });
+            assertDownloadFails(holder3->front());
+            assertEqual(holder3, { Range(28, 30) }, { State::DETACHED });
 
             increasePriority(holder);
             increasePriority(holder2);
@@ -643,9 +634,9 @@ TEST_F(FileCacheTest, LRUPolicy)
                         { Range(24, 26),     Range(27, 27),     Range(28, 29) },
                         { State::DOWNLOADED, State::DOWNLOADED, State::EMPTY });
 
-            auto file_segment = get(holder, 2);
-            ASSERT_TRUE(file_segment->getOrSetDownloader() == FileSegment::getCallerId());
-            ASSERT_TRUE(file_segment->state() == State::DOWNLOADING);
+            auto & file_segment = get(holder, 2);
+            ASSERT_TRUE(file_segment.getOrSetDownloader() == FileSegment::getCallerId());
+            ASSERT_TRUE(file_segment.state() == State::DOWNLOADING);
 
             bool lets_start_download = false;
             std::mutex mutex;
@@ -665,9 +656,9 @@ TEST_F(FileCacheTest, LRUPolicy)
                             { Range(24, 26),     Range(27, 27),     Range(28, 29) },
                             { State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADING });
 
-                auto file_segment2 = get(holder2, 2);
-                ASSERT_TRUE(file_segment2->getOrSetDownloader() != FileSegment::getCallerId());
-                ASSERT_EQ(file_segment2->state(), State::DOWNLOADING);
+                auto & file_segment2 = get(holder2, 2);
+                ASSERT_TRUE(file_segment2.getOrSetDownloader() != FileSegment::getCallerId());
+                ASSERT_EQ(file_segment2.state(), State::DOWNLOADING);
 
                 {
                     std::lock_guard lock(mutex);
@@ -675,8 +666,8 @@ TEST_F(FileCacheTest, LRUPolicy)
                 }
                 cv.notify_one();
 
-                file_segment2->wait(file_segment2->range().right);
-                ASSERT_EQ(file_segment2->getDownloadedSize(), file_segment2->range().size());
+                file_segment2.wait(file_segment2.range().right);
+                ASSERT_EQ(file_segment2.getDownloadedSize(), file_segment2.range().size());
             });
 
             {
@@ -685,7 +676,7 @@ TEST_F(FileCacheTest, LRUPolicy)
             }
 
             download(file_segment);
-            ASSERT_EQ(file_segment->state(), State::DOWNLOADED);
+            ASSERT_EQ(file_segment.state(), State::DOWNLOADED);
 
             other_1.join();
 
@@ -709,9 +700,9 @@ TEST_F(FileCacheTest, LRUPolicy)
                         { Range(2, 4),       Range(5, 23), Range(24, 26) },
                         { State::DOWNLOADED, State::EMPTY, State::DOWNLOADED });
 
-            auto file_segment = get(holder, 1);
-            ASSERT_TRUE(file_segment->getOrSetDownloader() == FileSegment::getCallerId());
-            ASSERT_TRUE(file_segment->state() == State::DOWNLOADING);
+            auto & file_segment = get(holder, 1);
+            ASSERT_TRUE(file_segment.getOrSetDownloader() == FileSegment::getCallerId());
+            ASSERT_TRUE(file_segment.state() == State::DOWNLOADING);
 
             bool lets_start_download = false;
             std::mutex mutex;
@@ -731,8 +722,8 @@ TEST_F(FileCacheTest, LRUPolicy)
                             { Range(2, 4),       Range(5, 23),       Range(24, 26) },
                             { State::DOWNLOADED, State::DOWNLOADING, State::DOWNLOADED });
 
-                auto file_segment2 = get(holder, 1);
-                ASSERT_TRUE(file_segment2->getDownloader() != FileSegment::getCallerId());
+                auto & file_segment2 = get(holder, 1);
+                ASSERT_TRUE(file_segment2.getDownloader() != FileSegment::getCallerId());
 
                 {
                     std::lock_guard lock(mutex);
@@ -740,9 +731,9 @@ TEST_F(FileCacheTest, LRUPolicy)
                 }
                 cv.notify_one();
 
-                file_segment2->wait(file_segment2->range().left);
-                ASSERT_EQ(file_segment2->state(), DB::FileSegment::State::EMPTY);
-                ASSERT_EQ(file_segment2->getOrSetDownloader(), DB::FileSegment::getCallerId());
+                file_segment2.wait(file_segment2.range().left);
+                ASSERT_EQ(file_segment2.state(), DB::FileSegment::State::EMPTY);
+                ASSERT_EQ(file_segment2.getOrSetDownloader(), DB::FileSegment::getCallerId());
                 download(file_segment2);
             });
 
@@ -751,9 +742,9 @@ TEST_F(FileCacheTest, LRUPolicy)
                 cv.wait(lock, [&]{ return lets_start_download; });
             }
 
-            holder = nullptr;
+            holder.reset();
             other_1.join();
-            ASSERT_TRUE(file_segment->state() == DB::FileSegment::State::DOWNLOADED);
+            ASSERT_TRUE(file_segment.state() == DB::FileSegment::State::DOWNLOADED);
         }
     }
 
@@ -783,7 +774,6 @@ TEST_F(FileCacheTest, LRUPolicy)
         auto settings2 = settings;
         settings2[FileCacheSetting::max_file_segment_size] = 10;
         settings2[FileCacheSetting::path] = caches_dir / "cache2";
-        settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
         fs::create_directories(settings2[FileCacheSetting::path].value);
         auto cache2 = DB::FileCache("3", settings2);
         cache2.initialize();
@@ -854,11 +844,10 @@ TEST_F(FileCacheTest, writeBuffer)
     settings[FileCacheSetting::max_file_segment_size] = 5;
     settings[FileCacheSetting::path] = cache_base_path;
     settings[FileCacheSetting::load_metadata_asynchronously] = false;
-    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
 
     FileCache cache("6", settings);
     cache.initialize();
-    const auto & user = FileCache::getCommonUser();
+    const auto user = FileCache::getCommonUser();
 
     auto write_to_cache = [&, this](const String & key, const Strings & data, bool flush, ReadBufferPtr * out_read_buffer = nullptr)
     {
@@ -975,7 +964,7 @@ static size_t readAllTemporaryData(NativeReader & stream)
     {
         block = stream.read();
         read_rows += block.rows();
-    } while (!block.empty());
+    } while (block);
     return read_rows;
 }
 
@@ -988,13 +977,12 @@ try
     settings[FileCacheSetting::max_file_segment_size] = 1_KiB;
     settings[FileCacheSetting::path] = cache_base_path;
     settings[FileCacheSetting::load_metadata_asynchronously] = false;
-    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
 
     DB::FileCache file_cache("7", settings);
     file_cache.initialize();
 
-    const auto & user = FileCache::getCommonUser();
-    auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(TemporaryDataOnDiskSettings{}, &file_cache);
+    const auto user = FileCache::getCommonUser();
+    auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(&file_cache, TemporaryDataOnDiskSettings{});
 
     auto some_data_holder = file_cache.getOrSet(FileCacheKey::fromPath("some_data"), 0, 5_KiB, 5_KiB, CreateFileSegmentSettings{}, 0, user);
 
@@ -1005,7 +993,8 @@ try
         {
             ASSERT_TRUE(segment->getOrSetDownloader() == DB::FileSegment::getCallerId());
             ASSERT_TRUE(segment->reserve(segment->range().size(), 1000, failure_reason));
-            download(segment);
+            download(*segment);
+            segment->complete(false);
         }
     }
 
@@ -1019,13 +1008,13 @@ try
 
 
     {
-        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(generateBlock()), tmp_data_scope);
+        TemporaryBlockStreamHolder stream(generateBlock(), tmp_data_scope);
         ASSERT_TRUE(stream);
         /// Do nothing with stream, just create it and destroy.
     }
 
     {
-        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(generateBlock()), tmp_data_scope);
+        TemporaryBlockStreamHolder stream(generateBlock(), tmp_data_scope);
         ASSERT_GT(stream->write(generateBlock(100)), 0);
 
         ASSERT_GT(file_cache.getUsedCacheSize(), 0);
@@ -1062,11 +1051,11 @@ try
     }
 
     {
-        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(generateBlock()), tmp_data_scope);
+        TemporaryBlockStreamHolder stream(generateBlock(), tmp_data_scope);
 
         ASSERT_GT(stream->write(generateBlock(100)), 0);
 
-        some_data_holder = nullptr;
+        some_data_holder.reset();
 
         stream->write(generateBlock(2000));
 
@@ -1127,7 +1116,6 @@ TEST_F(FileCacheTest, CachedReadBuffer)
     settings[FileCacheSetting::max_elements] = 10;
     settings[FileCacheSetting::boundary_alignment] = 1;
     settings[FileCacheSetting::load_metadata_asynchronously] = false;
-    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
 
     ReadSettings read_settings;
     read_settings.enable_filesystem_cache = true;
@@ -1149,7 +1137,7 @@ TEST_F(FileCacheTest, CachedReadBuffer)
     cache->initialize();
 
     auto key = DB::FileCacheKey::fromPath(file_path);
-    const auto & user = FileCache::getCommonUser();
+    const auto user = FileCache::getCommonUser();
 
     {
         auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
@@ -1189,27 +1177,26 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
         settings[FileCacheSetting::max_file_segment_size] = 1_KiB;
         settings[FileCacheSetting::path] = cache_base_path;
         settings[FileCacheSetting::load_metadata_asynchronously] = false;
-        settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
 
         DB::FileCache file_cache("cache", settings);
         file_cache.initialize();
 
-        auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(TemporaryDataOnDiskSettings{}, &file_cache);
+        auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(&file_cache, TemporaryDataOnDiskSettings{});
 
         auto block = generateBlock(/*size=*/3);
-        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(block), tmp_data_scope);
+        TemporaryBlockStreamHolder stream(block, tmp_data_scope);
 
         stream->write(block);
         auto stat = stream.finishWriting();
 
         /// We allocate buffer of size min(stat.compressed_size, DBMS_DEFAULT_BUFFER_SIZE)
         /// We do care about buffer size because realistic external group by could generate 10^5 temporary files
-        ASSERT_EQ(stat.compressed_size, 64);
+        ASSERT_EQ(stat.compressed_size, 62);
 
         auto reader = stream.getReadStream();
         auto * read_buf = reader.getHolder();
         const auto & internal_buffer = static_cast<TemporaryDataReadBuffer *>(read_buf)->compressed_buf.getHolder()->internalBuffer();
-        ASSERT_EQ(internal_buffer.size(), 64);
+        ASSERT_EQ(internal_buffer.size(), 62);
     }
 
     /// Temporary data stored on disk
@@ -1220,14 +1207,14 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
         disk = createDisk("temporary_data_read_buffer_size_test_dir");
         VolumePtr volume = std::make_shared<SingleDiskVolume>("volume", disk);
 
-        auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(TemporaryDataOnDiskSettings{}, volume);
+        auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(volume, TemporaryDataOnDiskSettings{});
 
         auto block = generateBlock(/*size=*/3);
-        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(block), tmp_data_scope);
+        TemporaryBlockStreamHolder stream(block, tmp_data_scope);
         stream->write(block);
         auto stat = stream.finishWriting();
 
-        ASSERT_EQ(stat.compressed_size, 64);
+        ASSERT_EQ(stat.compressed_size, 62);
     }
 }
 
@@ -1257,12 +1244,12 @@ TEST_F(FileCacheTest, SLRUPolicy)
     settings[FileCacheSetting::boundary_alignment] = 1;
     settings[FileCacheSetting::load_metadata_asynchronously] = false;
 
-    settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
+    settings[FileCacheSetting::cache_policy] = "SLRU";
     settings[FileCacheSetting::slru_size_ratio] = 0.5;
 
     const size_t file_size = -1; // the value doesn't really matter because boundary_alignment == 1.
     size_t file_cache_name = 0;
-    const auto & user = FileCache::getCommonUser();
+    const auto user = FileCache::getCommonUser();
 
     {
         auto cache = DB::FileCache(std::to_string(++file_cache_name), settings);
@@ -1275,7 +1262,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
 
             auto holder = cache.getOrSet(key, offset, size, file_size, {}, 0, user);
             assertEqual(holder, { Range(offset, offset + size - 1) }, { State::EMPTY });
-            download(*holder->begin());
+            download(holder->front());
             assertEqual(holder, { Range(offset, offset + size - 1) }, { State::DOWNLOADED });
         };
 
@@ -1366,9 +1353,9 @@ TEST_F(FileCacheTest, SLRUPolicy)
         settings2[FileCacheSetting::max_size] = 30;
         settings2[FileCacheSetting::max_elements] = 6;
         settings2[FileCacheSetting::boundary_alignment] = 1;
+        settings2[FileCacheSetting::cache_policy] = "SLRU";
         settings2[FileCacheSetting::slru_size_ratio] = 0.5;
-        settings2[FileCacheSetting::load_metadata_asynchronously] = false;
-        settings2[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
+        settings[FileCacheSetting::load_metadata_asynchronously] = false;
 
         auto cache = std::make_shared<DB::FileCache>("slru_2", settings2);
         cache->initialize();
@@ -1438,171 +1425,4 @@ TEST_F(FileCacheTest, SLRUPolicy)
         assertProbationary(cache->dumpQueue(), { Range(0, 4), Range(5, 9) });
         assertProtected(cache->dumpQueue(), { Range(10, 14), Range(0, 4), Range(5, 9)  });
     }
-}
-
-TEST_F(FileCacheTest, FileCacheGetOrSet)
-{
-    ServerUUID::setRandomForUnitTests();
-    DB::ThreadStatus thread_status;
-
-    DB::FileCacheSettings settings;
-    settings[FileCacheSetting::path] = cache_base_path;
-    settings[FileCacheSetting::max_size] = 30;
-    settings[FileCacheSetting::max_elements] = 5;
-    settings[FileCacheSetting::max_file_segment_size] = 25;
-    settings[FileCacheSetting::load_metadata_asynchronously] = false;
-
-    const auto & user = FileCache::getCommonUser();
-    const auto key = DB::FileCacheKey::fromPath("key1");
-
-    auto cache = DB::FileCache("1", settings);
-    cache.initialize();
-
-    {
-        auto holder = cache.getOrSet(key, 0, 20, /* file_size */25, {}, 0, user, /* boundary_alignment */30);
-        assertEqual(holder, { Range(0, 24) }, { State::EMPTY });
-    }
-    {
-        auto holder = cache.getOrSet(key, 0, 20, /* file_size */25, {}, 0, user, /* boundary_alignment */22);
-        assertEqual(holder, { Range(0, 21) }, { State::EMPTY });
-    }
-    {
-        auto holder = cache.getOrSet(key, 0, 20, /* file_size */25, {}, 0, user, /* boundary_alignment */3);
-        assertEqual(holder, { Range(0, 20) }, { State::EMPTY });
-    }
-    {
-        auto holder = cache.getOrSet(key, 0, 20, /* file_size */25, {}, 0, user, /* boundary_alignment */5);
-        assertEqual(holder, { Range(0, 19) }, { State::EMPTY });
-    }
-    {
-        auto holder = cache.getOrSet(key, 0, 20, /* file_size */25, {}, 0, user, /* boundary_alignment */1);
-        assertEqual(holder, { Range(0, 19) }, { State::EMPTY });
-    }
-    {
-        auto holder = cache.getOrSet(key, 0, 22, /* file_size */25, {}, 0, user, /* boundary_alignment */7);
-        assertEqual(holder, { Range(0, 24) }, { State::EMPTY });
-
-        auto holder2 = cache.getOrSet(key, 0, 26, /* file_size */27, {}, 0, user, /* boundary_alignment */30);
-        assertEqual(holder2, { Range(0, 24), Range(25, 26) }, { State::EMPTY, State::EMPTY });
-    }
-    {
-        auto holder = cache.getOrSet(key, 0, 22, /* file_size */25, {}, 0, user, /* boundary_alignment */30);
-        assertEqual(holder, { Range(0, 24) }, { State::EMPTY });
-
-        auto holder2 = cache.getOrSet(key, 0, 19, /* file_size */27, {}, 0, user, /* boundary_alignment */30);
-        assertEqual(holder2, { Range(0, 24) }, { State::EMPTY });
-    }
-    {
-        auto holder = cache.getOrSet(key, 0, 25, /* file_size */26, {}, 0, user, /* boundary_alignment */30);
-        assertEqual(holder, { Range(0, 24) }, { State::EMPTY });
-    }
-    {
-        auto holder = cache.getOrSet(key, 0, 25, /* file_size */20, {}, 0, user, /* boundary_alignment */30);
-        assertEqual(holder, { Range(0, 19) }, { State::EMPTY });
-    }
-}
-
-TEST_F(FileCacheTest, ContinueEvictionPos)
-{
-    ServerUUID::setRandomForUnitTests();
-
-    size_t max_size = 50;
-    size_t max_elements = 3;
-
-    LRUFileCachePriority priority(max_size, max_elements);
-
-    std::string cache_path = std::filesystem::path(caches_dir) / "test_eviction_pos";
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
-
-    auto key = DB::FileCacheKey::fromPath("evict_key");
-    auto user = FileCache::getCommonUser();
-
-    CachePriorityGuard cache_guard;
-    auto cache_lock = cache_guard.lock();
-    auto key_metadata = std::make_shared<KeyMetadata>(key, user, &cache_metadata);
-
-    auto add_file_segment = [&](size_t offset, size_t size)
-    {
-        auto it = priority.add(key_metadata, offset, size, user, cache_lock);
-        auto path = cache_metadata.getFileSegmentPath(key, offset, FileSegmentKind::Regular, user);
-
-        if (std::filesystem::exists(path))
-            std::filesystem::remove(path);
-
-        std::filesystem::create_directories(std::filesystem::path(path).parent_path());
-        std::string data(size, '0');
-        WriteBufferFromFile wb(path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
-        DB::writeString(data, wb);
-        wb.finalize();
-
-        auto file_segment = std::make_shared<FileSegment>(
-            key, offset, size, FileSegment::State::DOWNLOADED,
-            CreateFileSegmentSettings{}, false, nullptr, key_metadata, it);
-
-        LockedKey(key_metadata).emplace(offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment)));
-        return it;
-    };
-
-    auto get_file_segment = [&](size_t offset)
-    {
-        return LockedKey(key_metadata).getByOffset(offset)->file_segment;
-    };
-
-    auto it1 = add_file_segment(0, 10);
-    auto it2 = add_file_segment(10, 10);
-
-    ASSERT_EQ(priority.getElementsCount(cache_lock), 2);
-    ASSERT_EQ(priority.getEvictionPos(), 2); /// queue.end()
-
-    FileCacheReserveStat stat;
-    auto evicted = std::make_unique<EvictionCandidates>();
-    priority.collectCandidatesForEviction(10, 1, stat, *evicted, nullptr, false, user.user_id, cache_lock);
-
-    ASSERT_EQ(evicted->size(), 0); /// Nothing is evicted.
-    ASSERT_EQ(priority.getElementsCount(cache_lock), 2);
-    ASSERT_EQ(priority.getEvictionPos(), 2); /// queue.end()
-
-    auto it3 = add_file_segment(20, 10);
-
-    ASSERT_EQ(priority.getElementsCount(cache_lock), 3);
-    ASSERT_EQ(priority.getEvictionPos(), 3); /// queue.end()
-
-    evicted = std::make_unique<EvictionCandidates>();
-    stat = {};
-    priority.collectCandidatesForEviction(10, 1, stat, *evicted, nullptr, true, user.user_id, cache_lock);
-
-    ASSERT_EQ(evicted->size(), 1);
-    ASSERT_EQ(priority.getElementsCount(cache_lock), 3);
-    ASSERT_EQ(priority.getEvictionPos(), 0); /// queue.begin()
-
-    evicted->evict();
-    evicted->finalize(nullptr, cache_lock);
-    evicted.reset();
-    ASSERT_EQ(priority.getElementsCount(cache_lock), 2);
-    ASSERT_EQ(priority.getEvictionPos(), 0); /// still queue.begin(), but it2
-
-    /// Make fs2 (it2) non-evictable.
-    auto fs2 = get_file_segment(10);
-    ASSERT_EQ(it2->getEntry()->offset, fs2->offset());
-    /// Make fs3 (it3) non-evictable.
-    auto fs3 = get_file_segment(20);
-    ASSERT_EQ(it3->getEntry()->offset, fs3->offset());
-
-    auto it4 = add_file_segment(30, 10);
-    ASSERT_EQ(priority.getElementsCount(cache_lock), 3);
-    ASSERT_EQ(priority.getEvictionPos(), 0);
-
-    evicted = std::make_unique<EvictionCandidates>();
-    stat = {};
-    priority.collectCandidatesForEviction(10, 1, stat, *evicted, nullptr, true, user.user_id, cache_lock);
-
-    ASSERT_EQ(evicted->size(), 1);
-    ASSERT_EQ(priority.getElementsCount(cache_lock), 3);
-    ASSERT_EQ(priority.getEvictionPos(), 2); /// Last element in the queue.
-
-    fs2.reset();
-    fs3.reset();
-
-    priority.resetEvictionPos(cache_lock);
-    ASSERT_EQ(priority.getEvictionPos(), 3); /// queue.end()
 }

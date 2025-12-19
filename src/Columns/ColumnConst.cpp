@@ -39,16 +39,14 @@ ColumnConst::ColumnConst(const ColumnPtr & data_, size_t s_)
 #if defined(MEMORY_SANITIZER)
     if (data->isFixedAndContiguous())
     {
-        auto value = data->getDataAt(0);
-        __msan_check_mem_is_initialized(value.data(), value.size());
+        StringRef value = data->getDataAt(0);
+        __msan_check_mem_is_initialized(value.data, value.size);
     }
 #endif
 }
 
 ColumnPtr ColumnConst::convertToFullColumn() const
 {
-    if (s == 1)
-        return data;
     return data->replicate(Offsets(1, s));
 }
 
@@ -65,15 +63,6 @@ ColumnPtr ColumnConst::filter(const Filter & filt, ssize_t /*result_size_hint*/)
 
     size_t new_size = countBytesInFilter(filt);
     return ColumnConst::create(data, new_size);
-}
-
-void ColumnConst::filter(const Filter & filt)
-{
-    if (s != filt.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})",
-            filt.size(), toString(s));
-
-    s = countBytesInFilter(filt);
 }
 
 void ColumnConst::expand(const Filter & mask, bool inverted)
@@ -122,7 +111,7 @@ ColumnPtr ColumnConst::index(const IColumn & indexes, size_t limit) const
     return ColumnConst::create(data, limit);
 }
 
-MutableColumns ColumnConst::scatter(size_t num_columns, const Selector & selector) const
+MutableColumns ColumnConst::scatter(ColumnIndex num_columns, const Selector & selector) const
 {
     if (s != selector.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector ({}) doesn't match size of column ({})",

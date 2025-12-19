@@ -5,24 +5,12 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Session.h>
-#include <Columns/IColumn.h>
-#include <Common/Exception.h>
 #include <Common/logger_useful.h>
-#include <Common/Base64.h>
 #include <Poco/RegularExpression.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Parsers/ParserPreparedStatement.h>
-#include <Poco/RandomStream.h>
-#include <Poco/SHA1Engine.h>
-#include <Access/Credentials.h>
-#include <algorithm>
 #include <unordered_map>
 #include <utility>
-
-#include <Interpreters/Context.h>
-#include <Access/AccessControl.h>
-#include <Access/User.h>
-#include <fmt/core.h>
 
 namespace DB
 {
@@ -62,8 +50,6 @@ enum class FrontMessageType : Int32
     FLUSH = 'H',
     CLOSE = 'C',
     EXECUTE = 'E',
-    COPY_DATA = 'd',
-    COPY_COMPLETION = 'c',
 };
 
 enum class MessageType : Int32
@@ -135,10 +121,9 @@ enum class MessageType : Int32
     FUNCTION_CALL_RESPONSE = 191,
 };
 
-/** Column 'typelem' from 'pg_type' table. NB: not all types are compatible with PostgreSQL's ones */
+//// Column 'typelem' from 'pg_type' table. NB: not all types are compatible with PostgreSQL's ones
 enum class ColumnType : Int32
 {
-    BOOL = 16,
     CHAR = 18,
     INT8 = 20,
     INT2 = 21,
@@ -160,7 +145,7 @@ public:
     ColumnTypeSpec(ColumnType type_, Int16 len_) : type(type_), len(len_) {}
 };
 
-ColumnTypeSpec convertDataTypeToPostgresColumnTypeSpec(const DataTypePtr & data_type);
+ColumnTypeSpec convertTypeIndexToPostgresColumnTypeSpec(TypeIndex type_index);
 
 class MessageTransport
 {
@@ -473,106 +458,6 @@ public:
     MessageType getMessageType() const override
     {
         return MessageType::AUTHENTICATION_CLEARTEXT_PASSWORD;
-    }
-};
-
-class AuthenticationSASL : public Messaging::BackendMessage
-{
-public:
-    static constexpr std::string_view supported_method = "SCRAM-SHA-256";
-
-    void serialize(WriteBuffer & out) const override
-    {
-        out.write('R');
-        writeBinaryBigEndian(size(), out);
-        writeBinaryBigEndian(static_cast<Int32>(10), out);
-        writeNullTerminatedString(String(supported_method), out);
-        out.write(0);
-    }
-
-    Int32 size() const override
-    {
-        return 4 + 4 + supported_method.size() + 1 + 1;
-    }
-
-    MessageType getMessageType() const override
-    {
-        return MessageType::AUTHENTICATION_SASL;
-    }
-};
-
-class SASLInitialResponse : public Messaging::FrontMessage
-{
-public:
-    String auth_method;
-    String sasl_mechanism;
-
-    void deserialize(ReadBuffer & in) override
-    {
-        UInt8 message_type;
-        readBinaryBigEndian(message_type, in);
-        Int32 size;
-        readBinaryBigEndian(size, in);
-        readNullTerminated(auth_method, in);
-        Int32 size_sasl_mechanism;
-        readBinaryBigEndian(size_sasl_mechanism, in);
-        sasl_mechanism.resize(size_sasl_mechanism);
-        in.readStrict(sasl_mechanism.data(), size_sasl_mechanism);
-    }
-
-    MessageType getMessageType() const override
-    {
-        return MessageType::SASL_INITIAL_RESPONSE;
-    }
-};
-
-class AuthenticationSASLContinue : public Messaging::BackendMessage
-{
-public:
-    String data;
-
-    explicit AuthenticationSASLContinue(const String & data_)
-        : data(data_)
-    {
-    }
-
-    void serialize(WriteBuffer & out) const override
-    {
-        out.write('R');
-        writeBinaryBigEndian(size(), out);
-        writeBinaryBigEndian(static_cast<Int32>(11), out);
-        out.write(data.data(), data.size());
-    }
-
-    Int32 size() const override
-    {
-        return 4 + 4 + static_cast<Int32>(data.size());
-    }
-
-    MessageType getMessageType() const override
-    {
-        return MessageType::AUTHENTICATION_SASL_CONTINUE;
-    }
-};
-
-class SASLResponse : public Messaging::FrontMessage
-{
-public:
-    String sasl_mechanism;
-
-    void deserialize(ReadBuffer & in) override
-    {
-        UInt8 message_type;
-        readBinaryBigEndian(message_type, in);
-        Int32 size;
-        readBinaryBigEndian(size, in);
-        sasl_mechanism.resize(size - 4);
-        in.readStrict(sasl_mechanism.data(), size - 4);
-    }
-
-    MessageType getMessageType() const override
-    {
-        return MessageType::SASL_RESPONSE;
     }
 };
 
@@ -941,9 +826,9 @@ private:
     FormatCode format_code;
 
 public:
-    FieldDescription(const String & name_, const DataTypePtr & data_type, FormatCode format_code_ = FormatCode::TEXT)
+    FieldDescription(const String & name_, TypeIndex type_index, FormatCode format_code_ = FormatCode::TEXT)
     : name(name_)
-    , type_spec(convertDataTypeToPostgresColumnTypeSpec(data_type))
+    , type_spec(convertTypeIndexToPostgresColumnTypeSpec(type_index))
     , format_code(format_code_)
     {}
 
@@ -1065,218 +950,12 @@ public:
     }
 };
 
-class CopyDataQuery : FrontMessage
-{
-public:
-    String query;
-
-    void deserialize(ReadBuffer & in) override
-    {
-        Int32 sz;
-        readBinaryBigEndian(sz, in);
-        readNullTerminated(query, in);
-    }
-
-    MessageType getMessageType() const override
-    {
-        return MessageType::COPY_DATA;
-    }
-};
-
-class CopyInResponse : public BackendMessage
-{
-public:
-    void serialize(WriteBuffer & out) const override
-    {
-        out.write('G');
-        writeBinaryBigEndian(size(), out);
-        writeBinaryBigEndian(static_cast<char>(0), out);
-        writeBinaryBigEndian(static_cast<Int16>(0), out);
-    }
-
-    Int32 size() const override
-    {
-        return 4 + 1 + 2;
-    }
-
-    MessageType getMessageType() const override
-    {
-        return MessageType::COPY_IN_RESPONSE;
-    }
-};
-
-class CopyOutResponse : public BackendMessage
-{
-    int num_columns;
-public:
-    explicit CopyOutResponse(int num_columns_ = 1)
-        : num_columns(num_columns_)
-    {
-    }
-
-    void serialize(WriteBuffer & out) const override
-    {
-        out.write('H');
-        writeBinaryBigEndian(size(), out);
-        writeBinaryBigEndian(static_cast<Int8>(FormatCode::TEXT), out);
-        writeBinaryBigEndian(static_cast<Int16>(num_columns), out);
-        for (int i = 0; i < num_columns; ++i)
-            writeBinaryBigEndian(static_cast<Int16>(FormatCode::TEXT), out);
-    }
-
-    Int32 size() const override
-    {
-        return 4 + 1 + 2 + 2 * num_columns;
-    }
-
-    MessageType getMessageType() const override
-    {
-        return MessageType::COPY_OUT_RESPONSE;
-    }
-};
-
-class CopyInData : FrontMessage
-{
-public:
-    String query;
-
-    void deserialize(ReadBuffer & in) override
-    {
-        Int32 sz;
-        readBinaryBigEndian(sz, in);
-        query.reserve(sz - sizeof(Int32));
-        for (size_t i = 0; i < sz - sizeof(Int32); ++i)
-        {
-            char byte;
-            readBinary(byte, in);
-            query.push_back(byte);
-        }
-    }
-
-    MessageType getMessageType() const override
-    {
-        return MessageType::COPY_DATA;
-    }
-};
-
-class CopyDone : FrontMessage
-{
-public:
-    void deserialize(ReadBuffer & in) override
-    {
-        Int32 sz;
-        readBinaryBigEndian(sz, in);
-    }
-
-    MessageType getMessageType() const override
-    {
-        return MessageType::COPY_DONE;
-    }
-};
-
-class CopyOutData : public BackendMessage
-{
-    std::vector<char> data;
-public:
-    explicit CopyOutData(std::vector<char> data_)
-        : data(data_)
-    {
-    }
-
-    void serialize(WriteBuffer & out) const override
-    {
-        writeBinaryBigEndian('d', out);
-        writeBinaryBigEndian(size(), out);
-        out.write(data.data(), data.size());
-    }
-
-    Int32 size() const override
-    {
-        return 4 + static_cast<Int32>(data.size());
-    }
-
-    MessageType getMessageType() const override
-    {
-        return MessageType::COPY_DATA;
-    }
-};
-
-class CopyDataResponse : BackendMessage
-{
-public:
-    void serialize(WriteBuffer & out) const override
-    {
-        out.write('d');
-        writeBinaryBigEndian(size(), out);
-    }
-
-    Int32 size() const override
-    {
-        return 4;
-    }
-
-    MessageType getMessageType() const override
-    {
-        return MessageType::COPY_DATA;
-    }
-};
-
-class CopyCompletionResponse : BackendMessage
-{
-public:
-    void serialize(WriteBuffer & out) const override
-    {
-        out.write('c');
-        writeBinaryBigEndian(size(), out);
-    }
-
-    Int32 size() const override
-    {
-        return 4;
-    }
-
-    MessageType getMessageType() const override
-    {
-        return MessageType::COPY_DONE;
-    }
-};
-
-
-/**
-* CommandComplete message for PostgreSQL wire protocol
-* Reference: https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-COMMANDCOMPLETE
-*/
 class CommandComplete : BackendMessage
 {
 public:
-    enum Command
-    {
-        BEGIN = 0,
-        COMMIT = 1,
-        INSERT = 2,
-        DELETE = 3,
-        UPDATE = 4,
-        SELECT = 5,
-        MOVE = 6,
-        FETCH = 7,
-        COPY = 8,
-        PREPARE = 9,
-        CREATE_TABLE = 10,
-        CREATE_DATABASE = 11,
-        DROP_TABLE = 12,
-        DROP_DATABASE = 13,
-        ALTER_TABLE = 14,
-        TRUNCATE = 15,
-        USE = 16,
-        SET = 17
-    };
+    enum Command {BEGIN = 0, COMMIT = 1, INSERT = 2, DELETE = 3, UPDATE = 4, SELECT = 5, MOVE = 6, FETCH = 7, COPY = 8, EXECUTE = 9};
 private:
-    String enum_to_string[18] =
-    {
-        "BEGIN", "COMMIT", "INSERT", "DELETE", "UPDATE", "SELECT", "MOVE", "FETCH", "COPY", "PREPARE",
-        "CREATE TABLE", "CREATE DATABASE", "DROP TABLE", "DROP DATABASE", "ALTER TABLE",
-        "TRUNCATE", "USE", "SET"
-    };
+    String enum_to_string[10] = {"BEGIN", "COMMIT", "INSERT", "DELETE", "UPDATE", "SELECT", "MOVE", "FETCH", "COPY", "EXECUTE"};
 
     String value;
 
@@ -1284,21 +963,10 @@ public:
     CommandComplete(Command cmd_, Int32 rows_count_)
     {
         value = enum_to_string[cmd_];
-
-        // Commands that include row count according to PostgreSQL protocol
-        // Note: UPDATE and DELETE in ClickHouse always return 0 because ClickHouse uses
-        // lightweight deletes/updates that don't track affected rows in the same way as PostgreSQL
-        bool include_row_count = (cmd_ == Command::INSERT || cmd_ == Command::DELETE ||
-                                  cmd_ == Command::UPDATE || cmd_ == Command::SELECT ||
-                                  cmd_ == Command::MOVE || cmd_ == Command::FETCH || cmd_ == Command::COPY);
-
-        if (include_row_count)
-        {
-            String add = " ";
-            if (cmd_ == Command::INSERT)
-                add = " 0 ";  // OID (always 0 for ClickHouse tables)
-            value += add + std::to_string(rows_count_);
-        }
+        String add = " ";
+        if (cmd_ == Command::INSERT)
+            add = " 0 ";
+        value += add + std::to_string(rows_count_);
     }
 
     void serialize(WriteBuffer & out) const override
@@ -1318,73 +986,20 @@ public:
         return MessageType::COMMAND_COMPLETE;
     }
 
-    // Extract and normalize prefix: skip leading spaces, collapse multiple spaces to one, convert to uppercase on the fly
-    static String extractNormalizedPrefix(const String & query, size_t max_len)
-    {
-        String prefix;
-        prefix.reserve(max_len);
-
-        bool prev_was_space = true;
-
-        for (size_t i = 0; i < query.size() && prefix.size() < max_len; ++i)
-        {
-            if (std::isspace(query[i]))
-            {
-                if (!prev_was_space)
-                {
-                    prefix.push_back(' ');
-                    prev_was_space = true;
-                }
-            }
-            else
-            {
-                prefix.push_back(std::toupper(query[i]));
-                prev_was_space = false;
-            }
-        }
-
-        return prefix;
-    }
-
     static Command classifyQuery(const String & query)
     {
-        static const std::vector<std::pair<String, Command>> query_patterns = {
-            {"CREATE TEMPORARY TABLE", Command::CREATE_TABLE},
-            {"CREATE TABLE", Command::CREATE_TABLE},
-            {"CREATE DATABASE", Command::CREATE_DATABASE},
-            {"DROP TABLE", Command::DROP_TABLE},
-            {"DROP DATABASE", Command::DROP_DATABASE},
-            {"ALTER TABLE", Command::ALTER_TABLE},
-            {"TRUNCATE", Command::TRUNCATE},
-            {"BEGIN", Command::BEGIN},
-            {"COMMIT", Command::COMMIT},
-            {"INSERT", Command::INSERT},
-            {"DELETE", Command::DELETE},
-            {"UPDATE", Command::UPDATE},
-            {"SELECT", Command::SELECT},
-            {"MOVE", Command::MOVE},
-            {"FETCH", Command::FETCH},
-            {"COPY", Command::COPY},
-            {"PREPARE", Command::PREPARE},
-            {"USE", Command::USE}, // ClickHouse-specific, not have in PostgreSQL
-            {"SET", Command::SET},
-        };
-
-        // Calculate max pattern length from query_patterns
-        static const size_t MAX_PATTERN_LEN = []()
+        std::vector<String> query_types({"BEGIN", "COMMIT", "INSERT", "DELETE", "UPDATE", "SELECT", "MOVE", "FETCH", "COPY", "EXECUTE"});
+        for (size_t i = 0; i != query_types.size(); ++i)
         {
-            size_t max_len = 0;
-            for (const auto & [pattern, _] : query_patterns)
-                max_len = std::max(pattern.size(), max_len);
-            return max_len;
-        }();
+            String::const_iterator iter = std::search(
+                query.begin(),
+                query.end(),
+                query_types[i].begin(),
+                query_types[i].end(),
+                [](char a, char b){return std::toupper(a) == b;});
 
-        String prefix = extractNormalizedPrefix(query, MAX_PATTERN_LEN);
-
-        for (const auto & [pattern, command] : query_patterns)
-        {
-            if (prefix.starts_with(pattern))
-                return command;
+            if (iter != query.end())
+                return static_cast<Command>(i);
         }
 
         return Command::SELECT;
@@ -1467,156 +1082,6 @@ public:
     }
 };
 
-class ScrambleSHA256Auth : public AuthenticationMethod
-{
-    static size_t findPatternPosition(const String & key, const String & pattern)
-    {
-        size_t pos = key.size();
-        for (size_t i = 0; i + 1 < key.size(); ++i)
-        {
-            if (key.substr(i, 2) == pattern)
-            {
-                pos = i + 2;
-                break;
-            }
-        }
-        if (pos == key.size())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Client response should contain nonce");
-
-        return pos;
-    }
-
-    static String parseResponse(const String & key, const String & pattern)
-    {
-        String result;
-        auto pos = findPatternPosition(key, pattern);
-
-        while (pos < key.size() && key[pos] != ',')
-        {
-            result.push_back(key[pos]);
-            ++pos;
-        }
-        return result;
-    }
-
-    static String parseClientNonce(const String & key)
-    {
-        return parseResponse(key, "r=");
-    }
-
-    static String parseProof(const String & key)
-    {
-        return parseResponse(key, "p=");
-    }
-
-    static String parseUsername(const String & key)
-    {
-        return parseResponse(key, "n=");
-    }
-
-    static size_t findProofPosition(const String & key)
-    {
-        return findPatternPosition(key, "p=");
-    }
-
-public:
-    static String generateNonce()
-    {
-        static constexpr size_t nonce_length = 16;
-
-        String scramble;
-        scramble.resize(nonce_length + 1, 0);
-        Poco::RandomInputStream generator;
-
-        for (size_t i = 0; i < nonce_length; ++i)
-        {
-            generator >> scramble[i];
-            scramble[i] %= 13;
-            scramble[i] += 'n';
-        }
-
-        return base64Encode(scramble);
-    }
-
-    /**
-     * This function implements the client-side logic for the SCRAM-SHA-256
-     * authentication protocol. It exchanges messages with the server to
-     * establish a secure connection.
-     *
-     * The function constructs the authentication message (auth_message) by
-     * concatenating the client-first-message-bare, the server-first-message,
-     * and the client-final-message-without-proof.  The messages exchanged with the server are:
-     * - Messaging::AuthenticationSASL: Initial SASL authentication request.
-     * - Messaging::AuthenticationSASLContinue:  SASL continue message.
-     * - Messaging::SASLResponse: Generic SASL response from the server.
-     *
-     * **SCRAM-SHA-256 Message Formats:**
-     *
-     *  - **Client First Message:** y,,n=<username>,r=<client_nonce>
-     *    - n: Attribute for the username.
-     *    - r: Attribute for the client-generated nonce.
-     *
-     *  - **Server First Message:** r=<client_nonce><server_nonce>,s=<salt>,i=<iterations>
-     *    - r: Attribute for the combined client and server nonces.
-     *    - s: Attribute for the salt.
-     *    - i: Attribute for the number of iterations.
-     *
-     *  - **Client Final Message:** c=<channel_binding>,r=<combined_nonce>,p=<client_proof>
-     *    - c: Attribute for channel binding data (often empty).
-     *    - r: Attribute for the combined client and server nonces.
-     *    - p: Attribute for the client's computed proof.
-     *
-     * The function retrieves the salt from the user's authentication methods.
-     * It then computes the client proof and uses it to authenticate the session.
-     */
-    void authenticate(
-        const String & user_name,
-        Session & session,
-        Messaging::MessageTransport & mt,
-        const Poco::Net::SocketAddress & address) override
-    {
-        static constexpr int num_iterations = 4096;
-
-        String auth_message;
-
-        mt.send(Messaging::AuthenticationSASL(), true);
-        auto rsp = mt.receive<Messaging::SASLInitialResponse>();
-
-        auto server_nonce = generateNonce();
-        auto client_nonce = parseClientNonce(rsp->sasl_mechanism);
-        auth_message += fmt::format("n={},r={}", parseUsername(rsp->sasl_mechanism), client_nonce);
-        auto nonce = client_nonce + server_nonce;
-
-        String salt;
-        const auto& access_control = session.globalContext()->getAccessControl();
-        if (auto id = access_control.find<User>(user_name))
-        {
-            if (auto user = access_control.tryRead<User>(*id))
-            {
-                for (const auto & auth_method : user->authentication_methods)
-                {
-                    salt = auth_method.getSalt();
-                }
-            }
-        }
-        auto sasl_continue_message = fmt::format("r={},s={},i={}", nonce, salt, num_iterations);
-        mt.send(Messaging::AuthenticationSASLContinue(sasl_continue_message), true);
-        auth_message += "," + sasl_continue_message;
-        auto rsp_continue = mt.receive<Messaging::SASLResponse>();
-        auto proof = parseProof(rsp_continue->sasl_mechanism);
-        auto proof_position = findProofPosition(rsp_continue->sasl_mechanism);
-        auth_message += "," + rsp_continue->sasl_mechanism.substr(0, proof_position - 3);
-
-        auto credentials = ScramSHA256Credentials(user_name, proof, auth_message, num_iterations);
-        session.authenticate(credentials, address);
-    }
-
-    AuthenticationType getType() const override
-    {
-        return AuthenticationType::SCRAM_SHA256_PASSWORD;
-    }
-};
-
 class AuthenticationManager
 {
 private:
@@ -1644,7 +1109,7 @@ public:
 
             for (auto user_authentication_type : user_authentication_types)
             {
-                if (type_to_method.contains(user_authentication_type))
+                if (type_to_method.find(user_authentication_type) != type_to_method.end())
                 {
                     type_to_method[user_authentication_type]->authenticate(user_name, session, mt, address);
                     mt.send(Messaging::AuthenticationOk(), true);

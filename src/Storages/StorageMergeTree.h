@@ -14,8 +14,6 @@
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/MutatePlainMergeTreeTask.h>
-#include <Storages/MergeTree/MergeTreeCommittingBlock.h>
-#include <Storages/MergeTree/PatchParts/PatchPartsLock.h>
 
 #include <Disks/StoragePolicy.h>
 #include <Common/SimpleIncrement.h>
@@ -23,9 +21,6 @@
 
 namespace DB
 {
-
-class PreparedSetsCache;
-using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
 /** See the description of the data structure in MergeTreeData.
   */
@@ -57,7 +52,7 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
 
-    bool supportsTransactions() const override { return support_transaction; }
+    bool supportsTransactions() const override { return true; }
 
     void read(
         QueryPlan & query_plan,
@@ -69,11 +64,13 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    std::optional<UInt64> totalRows(ContextPtr) const override;
+    std::optional<UInt64> totalRows(const Settings &) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr) const override;
-    std::optional<UInt64> totalBytes(ContextPtr) const override;
+    std::optional<UInt64> totalBytes(const Settings &) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings &) const override;
-    MutationCounters getMutationCounters() const override;
+
+    UInt64 getNumberOnFlyDataMutations() const override;
+    UInt64 getNumberOnFlyMetadataMutations() const override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
@@ -90,7 +87,6 @@ public:
         ContextPtr context) override;
 
     void mutate(const MutationCommands & commands, ContextPtr context) override;
-    QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr query_context) override;
 
     bool hasLightweightDeletedMask() const override;
 
@@ -106,6 +102,8 @@ public:
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
     void alter(const AlterCommands & commands, ContextPtr context, AlterLockHolder & table_lock_holder) override;
+
+    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
 
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
@@ -126,6 +124,7 @@ private:
     std::mutex mutation_wait_mutex;
     std::condition_variable mutation_wait_event;
 
+    MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
     MergeTreeDataMergerMutator merger_mutator;
 
@@ -150,22 +149,11 @@ private:
     /// This set have to be used with `currently_processing_in_background_mutex`.
     DataParts currently_merging_mutating_parts;
 
-    /// currently mutating parts with future version
-    std::map<DataPartPtr, Int64> currently_mutating_part_future_versions;
-
     std::map<UInt64, MergeTreeMutationEntry> current_mutations_by_version;
 
     /// Unfinished mutations that are required for AlterConversions.
-    MutationCounters mutation_counters;
-
-    CommittingBlocksSet committing_blocks;
-    mutable std::mutex committing_blocks_mutex;
-    mutable std::condition_variable committing_blocks_cv;
-
-    void removeCommittingBlock(CommittingBlock block);
-    std::unique_ptr<PlainCommittingBlockHolder> allocateBlockNumber(CommittingBlock::Op op);
-    void waitForCommittingInsertsAndMutations(Int64 max_block_number, size_t timeout_ms) const;
-    CommittingBlocksSet getCommittingBlocks() const;
+    Int64 num_data_mutations_to_apply = 0;
+    Int64 num_metadata_mutations_to_apply = 0;
 
     std::atomic<bool> shutdown_called {false};
     std::atomic<bool> flush_called {false};
@@ -176,9 +164,6 @@ private:
     /// If the tasks are executed without time overlap, we will destroy the cache to free memory, and the next task might rebuild the same sets.
     std::mutex mutation_prepared_sets_cache_mutex;
     std::map<Int64, PreparedSetsCachePtr::weak_type> mutation_prepared_sets_cache;
-    PlainLightweightUpdatesSync lightweight_updates_sync;
-
-    const bool support_transaction;
 
     void loadMutations();
 
@@ -220,7 +205,6 @@ private:
 
     friend struct CurrentlyMergingPartsTagger;
     friend class MergeTreeMergePredicate;
-    friend struct PlainCommittingBlockHolder;
 
     std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> selectPartsToMerge(
         const StorageMetadataPtr & metadata_snapshot,
@@ -236,14 +220,12 @@ private:
         const StorageMetadataPtr & metadata_snapshot, PreformattedMessage & disable_reason,
         TableLockHolder & table_lock_holder, std::unique_lock<std::mutex> & currently_processing_in_background_mutex_lock);
 
-    /// Returns a lock for lightweight update according to the update_parallel_mode setting
-    std::unique_ptr<PlainLightweightUpdateLock> getLockForLightweightUpdate(const MutationCommands & commands, const ContextPtr & local_context);
-
     /// For current mutations queue, returns maximum version of mutation for a part,
     /// with respect of mutations which would not change it.
     /// Returns 0 if there is no such mutation in active status.
-    UInt64 getCurrentMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
-    UInt64 getNextMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
+    UInt64 getCurrentMutationVersion(
+        const MergeTreePartInfo & part_info,
+        std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
     /// Returns the maximum level of all outdated parts in a range (left; right), or 0 in case if empty range.
     /// Merges have to be aware of the outdated part's levels inside designated merge range.
@@ -285,8 +267,8 @@ private:
     std::optional<MergeTreeMutationStatus> getIncompleteMutationsStatusUnlocked(Int64 mutation_version, std::unique_lock<std::mutex> & lock,
                                                                         std::set<String> * mutation_ids = nullptr, bool from_another_mutation = false) const;
 
-    std::unique_ptr<PlainCommittingBlockHolder> fillNewPartName(MutableDataPartPtr & part, DataPartsLock & lock);
-    std::unique_ptr<PlainCommittingBlockHolder> fillNewPartNameAndResetLevel(MutableDataPartPtr & part, DataPartsLock & lock);
+    void fillNewPartName(MutableDataPartPtr & part, DataPartsLock & lock);
+    void fillNewPartNameAndResetLevel(MutableDataPartPtr & part, DataPartsLock & lock);
 
     void startBackgroundMovesIfNeeded() override;
 
@@ -302,7 +284,6 @@ private:
     void assertNotReadonly() const;
 
     friend class MergeTreeSink;
-    friend class MergeTreeSinkPatch;
     friend class MergeTreeData;
     friend class MergePlainMergeTreeTask;
     friend class MutatePlainMergeTreeTask;
@@ -334,105 +315,18 @@ private:
         ContextPtr context;
     };
 
-    struct MutationsSnapshot final : public MutationsSnapshotBase
+    struct MutationsSnapshot : public IMutationsSnapshot
     {
+        MutationsSnapshot() = default;
+        MutationsSnapshot(Params params_, Info info_) : IMutationsSnapshot(std::move(params_), std::move(info_)) {}
+
         using MutationsByVersion = std::map<UInt64, std::shared_ptr<const MutationCommands>>;
         MutationsByVersion mutations_by_version;
 
-        MutationsSnapshot() = default;
-        MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByVersion mutations_snapshot, DataPartsVector patches_);
-
-        MutationCommands getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
+        MutationCommands getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
         std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
         NameSet getAllUpdatedColumns() const override;
     };
-
-    class PartMutationBackoffPolicy
-    {
-        struct PartMutationInfo
-        {
-            size_t retry_count;
-            size_t latest_fail_time_us;
-            size_t max_postpone_time_ms;
-            size_t max_postpone_power;
-
-            explicit PartMutationInfo(size_t max_postpone_time_ms_)
-                            : retry_count(0ull)
-                            , latest_fail_time_us(static_cast<size_t>(Poco::Timestamp().epochMicroseconds()))
-                            , max_postpone_time_ms(max_postpone_time_ms_)
-                            , max_postpone_power((max_postpone_time_ms_) ? (static_cast<size_t>(std::log2(max_postpone_time_ms_))) : (0ull))
-            {}
-
-
-            size_t getNextMinExecutionTimeUsResolution() const
-            {
-                if (max_postpone_time_ms == 0)
-                    return static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
-                size_t current_backoff_interval_us = (1 << retry_count) * 1000ul;
-                return latest_fail_time_us + current_backoff_interval_us;
-            }
-
-            void addPartFailure()
-            {
-                if (max_postpone_time_ms == 0)
-                    return;
-                retry_count = std::min(max_postpone_power, retry_count + 1);
-                latest_fail_time_us = static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
-            }
-
-            bool partCanBeMutated() const
-            {
-                if (max_postpone_time_ms == 0)
-                    return true;
-
-                auto current_time_us = static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
-                return current_time_us >= getNextMinExecutionTimeUsResolution();
-            }
-        };
-
-        using DataPartsWithRetryInfo = std::unordered_map<String, PartMutationInfo>;
-        DataPartsWithRetryInfo failed_mutation_parts;
-        mutable std::mutex parts_info_lock;
-
-    public:
-
-        void resetMutationFailures()
-        {
-            std::unique_lock _lock(parts_info_lock);
-            failed_mutation_parts.clear();
-        }
-
-        void removePartFromFailed(const String & part_name)
-        {
-            std::unique_lock _lock(parts_info_lock);
-            failed_mutation_parts.erase(part_name);
-        }
-
-        void addPartMutationFailure (const String& part_name, size_t max_postpone_time_ms_)
-        {
-            std::unique_lock _lock(parts_info_lock);
-            auto part_info_it = failed_mutation_parts.find(part_name);
-            if (part_info_it == failed_mutation_parts.end())
-            {
-                auto [it, success] = failed_mutation_parts.emplace(part_name, PartMutationInfo(max_postpone_time_ms_));
-                std::swap(it, part_info_it);
-            }
-            auto& part_info = part_info_it->second;
-            part_info.addPartFailure();
-        }
-
-        bool partCanBeMutated(const String& part_name)
-        {
-
-            std::unique_lock _lock(parts_info_lock);
-            auto iter = failed_mutation_parts.find(part_name);
-            if (iter == failed_mutation_parts.end())
-                return true;
-            return iter->second.partCanBeMutated();
-        }
-    };
-    /// Controls postponing logic for failed mutations.
-    PartMutationBackoffPolicy mutation_backoff_policy;
 
     MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const override;
 };

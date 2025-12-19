@@ -4,7 +4,6 @@ description: 'The `median*` functions are the aliases for the corresponding `qua
 sidebar_position: 167
 slug: /sql-reference/aggregate-functions/reference/median
 title: 'median'
-doc_type: 'reference'
 ---
 
 # median
@@ -28,7 +27,7 @@ Functions:
 
 Input table:
 
-```text
+``` text
 ┌─val─┐
 │   1 │
 │   1 │
@@ -39,13 +38,13 @@ Input table:
 
 Query:
 
-```sql
+``` sql
 SELECT medianDeterministic(val, 1) FROM t;
 ```
 
 Result:
 
-```text
+``` text
 ┌─medianDeterministic(val, 1)─┐
 │                         1.5 │
 └─────────────────────────────┘

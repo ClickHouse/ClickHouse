@@ -86,7 +86,7 @@ public:
     std::vector<rocksdb::Status> multiGet(const std::vector<rocksdb::Slice> & slices_keys, std::vector<String> & values) const;
     Names getPrimaryKey() const override { return {primary_key}; }
 
-    Chunk getByKeys(const ColumnsWithTypeAndName & keys, const Names &, PaddedPODArray<UInt8> & null_map, IColumn::Offsets & /* out_offsets */) const override;
+    Chunk getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map, const Names &) const override;
 
     Block getSampleBlock(const Names &) const override;
 
@@ -102,9 +102,9 @@ public:
     /// To turn on the optimization optimize_trivial_approximate_count_query=1 should be set for a query.
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
-    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
+    std::optional<UInt64> totalRows(const Settings & settings) const override;
 
-    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
+    std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const override;
 

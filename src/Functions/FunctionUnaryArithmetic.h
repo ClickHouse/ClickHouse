@@ -96,7 +96,6 @@ struct FixedStringUnaryOperationImpl
         ColumnFixedString::Chars & c)
     {
         size_t size = a.size();
-
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::apply(a[i]);
     }))
@@ -402,7 +401,7 @@ public:
                             for (size_t i = 0; i < size; ++i)
                             {
                                 vec_res[i] = StringUnaryOperationReduceImpl<Op<UInt8>>::vector(
-                                    chars.data() + offsets[i - 1], chars.data() + offsets[i]);
+                                    chars.data() + offsets[i - 1], chars.data() + offsets[i] - 1);
                             }
                             result_column = std::move(col_res);
                             return true;
