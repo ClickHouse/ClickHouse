@@ -125,7 +125,7 @@ CREATE TABLE table_str_chain
     s String
 )
 ENGINE = MergeTree
-ORDER BY reverse(lowerUTF8(s))
+ORDER BY reverse(lower(s))
 SETTINGS index_granularity = 1;
 
 INSERT INTO table_str_chain VALUES

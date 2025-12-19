@@ -79,7 +79,7 @@ CREATE TABLE table_str_chain
     s String
 )
 ENGINE = MergeTree
-ORDER BY reverse(lowerUTF8(s))
+ORDER BY reverse(lower(s))
 SETTINGS index_granularity = 1;
 INSERT INTO table_str_chain VALUES
     ('Abc'), ('abc'),
@@ -96,7 +96,7 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     FROM table_str_chain
     WHERE has(['Abc', 'Bar', 'XYZ', 'Hello', 'AA'], s)
 )) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
-Condition: (reverse(lowerUTF8(s)) in 5-element set)
+Condition: (reverse(lower(s)) in 5-element set)
 Granules: read < total_granules
 SELECT arraySort(groupArray(s))
 FROM table_str_chain
@@ -108,7 +108,7 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     FROM table_str_chain
     WHERE NOT has(['Abc', 'Bar', 'XYZ', 'Hello', 'AA'], s)
 )) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
-Condition: not((reverse(lowerUTF8(s)) in 5-element set))
+Condition: not((reverse(lower(s)) in 5-element set))
 Granules: read >= total_granules
 SELECT arraySort(groupArray(s))
 FROM table_str_chain
