@@ -1336,6 +1336,8 @@ static BlockIO executeQueryImpl(
                     input_storage.setPipe(std::move(pipe));
                 }
             }
+
+            insert_query->tail.reset();
         }
         else
         {
