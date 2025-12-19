@@ -126,7 +126,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_JSONArrayLength = {23, 2};
     FunctionDocumentation::Category category_JSONArrayLength = FunctionDocumentation::Category::JSON;
-    FunctionDocumentation documentation_JSONArrayLength = {description_JSONArrayLength, syntax_JSONArrayLength, arguments_JSONArrayLength, returned_value_JSONArrayLength, examples_JSONArrayLength, introduced_in_JSONArrayLength, category_JSONArrayLength};
+    FunctionDocumentation documentation_JSONArrayLength = {description_JSONArrayLength, syntax_JSONArrayLength, arguments_JSONArrayLength, {}, returned_value_JSONArrayLength, examples_JSONArrayLength, introduced_in_JSONArrayLength, category_JSONArrayLength};
 
     factory.registerFunction<FunctionJSONArrayLength>(documentation_JSONArrayLength);
 

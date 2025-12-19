@@ -100,7 +100,14 @@ MergeTreeDeduplicationLog::MergeTreeDeduplicationLog(
 void MergeTreeDeduplicationLog::load()
 {
     if (!disk->existsDirectory(logs_dir))
-        return;
+    {
+        if (auto * object_storage = dynamic_cast<DiskObjectStorage *>(disk.get()))
+        {
+            // MetadataStorageType::Plain does not have directory concept. When checking `logs_dir` existence, it might return false.
+            if (object_storage->getMetadataStorage()->getType() != MetadataStorageType::Plain)
+                return;
+        }
+    }
 
     for (auto it = disk->iterateDirectory(logs_dir); it->isValid(); it->next())
     {

@@ -3,7 +3,7 @@ import time
 import uuid
 
 import pytest
-from kazoo.exceptions import NoNodeError
+from kazoo.exceptions import NoNodeError, NodeExistsError
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
@@ -198,3 +198,125 @@ def test_create2(started_cluster):
     assert stats.numChildren == 0
     assert stats.ephemeralOwner == 0
     assert stats.version == 0
+
+
+def test_create2_stats_match_get_and_exists(started_cluster):
+    wait_nodes()
+    node1_zk = None
+    path = None
+    try:
+        node1_zk = get_fake_zk(node1.name)
+        path = f"/test_create2_stats_{uuid.uuid4().hex}"
+        data = b"hello-create2"
+
+        created_path, create_stat = node1_zk.create(path, data, include_data=True)
+        assert created_path == path
+
+        got_data, get_stat = node1_zk.get(path)
+        assert got_data == data
+
+        exists_stat = node1_zk.exists(path)
+        assert exists_stat is not None
+
+        for attr in (
+            "czxid",
+            "mzxid",
+            "ctime",
+            "mtime",
+            "version",
+            "cversion",
+            "aversion",
+            "ephemeralOwner",
+            "numChildren",
+            "pzxid",
+        ):
+            assert getattr(create_stat, attr) == getattr(get_stat, attr)
+            assert getattr(create_stat, attr) == getattr(exists_stat, attr)
+
+        assert get_stat.dataLength == len(data)
+        assert exists_stat.dataLength == len(data)
+    finally:
+        if node1_zk is not None:
+            try:
+                if path:
+                    node1_zk.delete(path)
+            except NoNodeError:
+                pass
+            destroy_zk_client(node1_zk)
+
+
+def test_create2_tree_parent_stats(started_cluster):
+    wait_nodes()
+    node1_zk = None
+    root = None
+    children = []
+    grandchild = None
+    try:
+        node1_zk = get_fake_zk(node1.name)
+        root = f"/test_create2_tree_{uuid.uuid4().hex}"
+
+        created_path, root_stat = node1_zk.create(root, b"root", include_data=True)
+        assert created_path == root
+        assert root_stat.numChildren == 0
+
+        children = [f"{root}/child_{i}" for i in range(3)]
+        for c in children:
+            node1_zk.create(c, b"child", include_data=True)
+
+        _, get_stat = node1_zk.get(root)
+        exists_stat = node1_zk.exists(root)
+        assert get_stat.numChildren == len(children)
+        assert exists_stat.numChildren == len(children)
+        assert get_stat.cversion >= root_stat.cversion + len(children)
+
+        grandchild = f"{children[0]}/g"
+        node1_zk.create(grandchild, b"g", include_data=True)
+
+        _, root_after = node1_zk.get(root)
+        assert root_after.numChildren == len(children)
+        _, child0_stat = node1_zk.get(children[0])
+        assert child0_stat.numChildren == 1
+        assert child0_stat.cversion >= 1
+    finally:
+        if node1_zk is not None:
+            try:
+                if grandchild:
+                    node1_zk.delete(grandchild)
+            except NoNodeError:
+                pass
+            for c in children[::-1]:
+                try:
+                    node1_zk.delete(c)
+                except NoNodeError:
+                    pass
+            try:
+                if root:
+                    node1_zk.delete(root)
+            except NoNodeError:
+                pass
+            destroy_zk_client(node1_zk)
+
+
+def test_create2_errors_existing_and_missing_parent(started_cluster):
+    wait_nodes()
+    node1_zk = None
+    base = None
+    try:
+        node1_zk = get_fake_zk(node1.name)
+        base = f"/test_create2_error_{uuid.uuid4().hex}"
+        node1_zk.create(base, b"v1", include_data=True)
+
+        with pytest.raises(NodeExistsError):
+            node1_zk.create(base, b"v2", include_data=True)
+
+        missing_parent_child = f"/test_create2_missing_parent_{uuid.uuid4().hex}/child"
+        with pytest.raises(NoNodeError):
+            node1_zk.create(missing_parent_child, b"v", include_data=True)
+    finally:
+        if node1_zk is not None:
+            try:
+                if base:
+                    node1_zk.delete(base)
+            except NoNodeError:
+                pass
+            destroy_zk_client(node1_zk)
