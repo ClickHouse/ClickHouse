@@ -10,7 +10,7 @@
 namespace DB
 {
 
-size_t computeMaxTableNameLength(const String & database_name, const bool is_temporary, ContextPtr context)
+size_t computeMaxTableNameLength(const String & database_name, bool is_temporary, ContextPtr context)
 {
     namespace fs = std::filesystem;
 
