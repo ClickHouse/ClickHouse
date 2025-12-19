@@ -56,7 +56,7 @@ The computation is similar to the [`cramersV`](./cramersv.md) function but with 
         {"column1", "First column to compare.", {"Any"}},
         {"column2", "Second column to compare.", {"Any"}}
     };
-    FunctionDocumentation::Parameters parameters = {};
+    FunctionDocumentation::Parameters docs_parameters = {};
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a value between 0 and 1. The larger the result, the closer the association of the two columns.", {"Float64"}};
     FunctionDocumentation::Examples examples = {
     {
@@ -83,14 +83,18 @@ FROM
     };
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn introduced_in = {22, 1};
-    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, docs_parameters, returned_value, examples, introduced_in, category};
     factory.registerFunction(ContingencyData::getName(),
+    {
         [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             assertBinary(name, argument_types);
             assertNoParameters(name, parameters);
             return std::make_shared<AggregateFunctionCrossTab<ContingencyData>>(argument_types);
-        }, documentation);
+        },
+        {},
+        documentation
+    });
 }
 
 }

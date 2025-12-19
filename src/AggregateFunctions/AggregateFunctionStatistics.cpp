@@ -570,7 +570,7 @@ FROM series
         assertNoParameters(name, parameters);
         assertBinary(name, argument_types);
         return std::make_shared<AggregateFunctionCovariance<true>>(CovarKind::corrStable, argument_types);
-    }, corrStable_documentation);
+    });
 }
 
 }
