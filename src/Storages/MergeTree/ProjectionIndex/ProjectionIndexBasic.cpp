@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/ProjectionIndex/BasicProjectionIndex.h>
+#include <Storages/MergeTree/ProjectionIndex/ProjectionIndexBasic.h>
 
 #include <Core/Block.h>
 #include <Parsers/ASTExpressionList.h>
@@ -9,7 +9,7 @@
 namespace DB
 {
 
-void BasicProjectionIndex::fillProjectionDescription(
+void ProjectionIndexBasic::fillProjectionDescription(
     ProjectionDescription & result, const IAST * index_expr, const ColumnsDescription & columns, ContextPtr query_context) const
 {
     auto select_query = std::make_shared<ASTProjectionSelectQuery>();
@@ -21,7 +21,7 @@ void BasicProjectionIndex::fillProjectionDescription(
     ProjectionDescription::fillProjectionDescriptionByQuery(result, *select_query, columns, query_context);
 }
 
-Block BasicProjectionIndex::calculate(
+Block ProjectionIndexBasic::calculate(
     const ProjectionDescription & projection_desc, const Block & block, ContextPtr context, const IColumnPermutation * perm_ptr) const
 {
     return projection_desc.calculateByQuery(block, context, perm_ptr);

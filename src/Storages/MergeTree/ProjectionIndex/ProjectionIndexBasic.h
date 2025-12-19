@@ -5,17 +5,17 @@
 namespace DB
 {
 
-class BasicProjectionIndex : public IProjectionIndex
+class ProjectionIndexBasic : public IProjectionIndex
 {
 public:
     static constexpr auto name = "basic";
 
     static ProjectionIndexPtr create(const ASTProjectionDeclaration & /* proj */)
     {
-        return std::make_shared<BasicProjectionIndex>();
+        return std::make_shared<ProjectionIndexBasic>();
     }
 
-    String getName() const override { return "basic"; }
+    String getName() const override { return name; }
 
     void fillProjectionDescription(
         ProjectionDescription & result,
