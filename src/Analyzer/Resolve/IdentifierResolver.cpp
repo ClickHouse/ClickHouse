@@ -804,7 +804,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
         {
             result_expression = ci_match_column;
             /// If nested path exists (like a.b), resolve it via compound if needed
-            if (!identifier_without_column_qualifier.isShort())                     // TODO: move this if up
+            if (!identifier_without_column_qualifier.isShort())
             {
                 size_t identifier_bind_size = identifier_column_qualifier_parts + 1;
                 result_expression = tryResolveIdentifierFromCompoundExpression(
