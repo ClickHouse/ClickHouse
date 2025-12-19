@@ -52,8 +52,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
-    extern const SettingsBool enable_deflate_qpl_codec;
-    extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsBool flatten_nested;
 }
 
@@ -516,7 +514,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             column.comment = *comment;
 
         if (codec)
-            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, false, true, true, true);
+            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, false, true);
 
         column.ttl = ttl;
 
@@ -595,7 +593,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             else
             {
                 if (codec)
-                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type ? data_type : column.type, false, true, true, true);
+                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type ? data_type : column.type, false, true);
 
                 if (comment)
                     column.comment = *comment;
@@ -1435,9 +1433,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     command.codec,
                     command.data_type,
                     !settings[Setting::allow_suspicious_codecs],
-                    settings[Setting::allow_experimental_codecs],
-                    settings[Setting::enable_deflate_qpl_codec],
-                    settings[Setting::enable_zstd_qat_codec]);
+                    settings[Setting::allow_experimental_codecs]);
             }
 
             all_columns.add(ColumnDescription(column_name, command.data_type));
@@ -1466,9 +1462,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     command.codec,
                     command.data_type,
                     !context->getSettingsRef()[Setting::allow_suspicious_codecs],
-                    context->getSettingsRef()[Setting::allow_experimental_codecs],
-                    context->getSettingsRef()[Setting::enable_deflate_qpl_codec],
-                    context->getSettingsRef()[Setting::enable_zstd_qat_codec]);
+                    context->getSettingsRef()[Setting::allow_experimental_codecs]);
             }
             auto column_default = all_columns.getDefault(column_name);
             if (column_default)
