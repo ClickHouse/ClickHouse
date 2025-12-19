@@ -183,8 +183,8 @@ namespace std
     {
         size_t operator()(const DB::Decimal128 & x) const
         {
-            return std::hash<Int64>()(x.value >> 64)
-                ^ std::hash<Int64>()(x.value & max_uint_mask);
+            return std::hash<Int64>()(static_cast<Int64>(x.value >> 64))
+                ^ std::hash<Int64>()(static_cast<Int64>(x.value & max_uint_mask));
         }
     };
 

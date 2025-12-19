@@ -228,7 +228,7 @@ CacheMetadataGuard::Lock CacheMetadata::MetadataBucket::lock() const
 
 CacheMetadata::MetadataBucket & CacheMetadata::getMetadataBucket(const Key & key)
 {
-    const auto bucket = key.key % buckets_num;
+    const auto bucket = static_cast<size_t>(key.key % buckets_num);
     return metadata_buckets[bucket];
 }
 

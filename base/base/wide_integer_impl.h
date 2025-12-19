@@ -649,7 +649,7 @@ private:
             HalfType a0 = lhs.items[little(0)];
             HalfType a1 = lhs.items[little(1)];
 
-            HalfType b01 = rhs;
+            HalfType b01 = static_cast<HalfType>(rhs);
             uint64_t b0 = b01;
             uint64_t b1 = 0;
             HalfType b23 = 0;
@@ -1220,7 +1220,7 @@ constexpr integer<Bits, Signed>::integer(std::initializer_list<T> il) noexcept
         {
             if (it < il.end())
             {
-                items[_impl::little(i)] = *it;
+                items[_impl::little(i)] = static_cast<base_type>(*it);
                 ++it;
             }
             else
@@ -1376,12 +1376,9 @@ constexpr integer<Bits, Signed>::operator bool() const noexcept
 }
 
 template <size_t Bits, typename Signed>
-template <class T>
-requires(std::is_arithmetic_v<T>)
+template <std::integral T>
 constexpr integer<Bits, Signed>::operator T() const noexcept
 {
-    static_assert(std::numeric_limits<T>::is_integer);
-
     /// NOTE: memcpy will suffice, but unfortunately, this function is constexpr.
 
     using UnsignedT = std::make_unsigned_t<T>;

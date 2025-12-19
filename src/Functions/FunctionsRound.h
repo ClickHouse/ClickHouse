@@ -583,7 +583,7 @@ struct Dispatcher
 
                     for (size_t i = 0; i < rows; ++i)
                     {
-                        Int64 scale64 = scale_data[i];
+                        Int64 scale64 = static_cast<Int64>(scale_data[i]);
                         validateScale(scale64);
                         Scale raw_scale = scale64;
 
@@ -652,7 +652,7 @@ public:
 
                     for (size_t i = 0; i < rows; ++i)
                     {
-                        Int64 scale64 = scale[i];
+                        Int64 scale64 = static_cast<Int64>(scale[i]);
                         validateScale(scale64);
                         Scale raw_scale = scale64;
 

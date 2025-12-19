@@ -590,7 +590,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
             total_size = *limit;
             /// We should shrink intersected_ranges for case:
             ///     intersected_ranges: [1, 4], [7, 100]; query_limit: 2
-            shrinkRanges(intersected_ranges, total_size);
+            shrinkRanges(intersected_ranges, static_cast<size_t>(total_size));
         }
 
         checkLimits(size_t(total_size));
@@ -609,7 +609,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
                 intersected_ranges, ranges_state, max_block_size, numbers_storage.step, numbers_storage.column_name);
 
             if (i == 0)
-                source->addTotalRowsApprox(total_size);
+                source->addTotalRowsApprox(static_cast<size_t>(total_size));
 
             pipe.addSource(std::move(source));
         }
