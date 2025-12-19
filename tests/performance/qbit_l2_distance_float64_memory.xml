@@ -38,25 +38,25 @@
     <create_query>INSERT INTO tab_{type} SELECT number + 1 AS id, arrayMap(i -> id + i - 1, range({vector_size})) AS vec FROM numbers({elements})</create_query>
 
     <query>
-        SELECT * FROM (SELECT 1 AS k, id, L2DistanceTransposed(vec, arrayMap(i -> (i + 1) * 2, range({vector_size})), {p}) AS dist FROM tab_{type} ORDER BY dist LIMIT 10)
+        SELECT * FROM (SELECT 1 AS k, id, L2DistanceTransposed(vec, arrayMap(i -> (i + k) * 2, range({vector_size})), {p}) AS dist FROM tab_{type} ORDER BY dist LIMIT 10)
         UNION ALL
-        SELECT * FROM (SELECT 2 AS k, id, L2DistanceTransposed(vec, arrayMap(i -> (i + 2) * 2, range({vector_size})), {p}) AS dist FROM tab_{type} ORDER BY dist LIMIT 10)
+        SELECT * FROM (SELECT 2 AS k, id, L2DistanceTransposed(vec, arrayMap(i -> (i + k) * 2, range({vector_size})), {p}) AS dist FROM tab_{type} ORDER BY dist LIMIT 10)
         UNION ALL
-        SELECT * FROM (SELECT 3 AS k, id, L2DistanceTransposed(vec, arrayMap(i -> (i + 3) * 2, range({vector_size})), {p}) AS dist FROM tab_{type} ORDER BY dist LIMIT 10)
+        SELECT * FROM (SELECT 3 AS k, id, L2DistanceTransposed(vec, arrayMap(i -> (i + k) * 2, range({vector_size})), {p}) AS dist FROM tab_{type} ORDER BY dist LIMIT 10)
         UNION ALL
-        SELECT * FROM (SELECT 4 AS k, id, L2DistanceTransposed(vec, arrayMap(i -> (i + 4) * 2, range({vector_size})), {p}) AS dist FROM tab_{type} ORDER BY dist LIMIT 10)
+        SELECT * FROM (SELECT 4 AS k, id, L2DistanceTransposed(vec, arrayMap(i -> (i + k) * 2, range({vector_size})), {p}) AS dist FROM tab_{type} ORDER BY dist LIMIT 10)
         UNION ALL
-        SELECT * FROM (SELECT 5 AS k, id, L2DistanceTransposed(vec, arrayMap(i -> (i + 5) * 2, range({vector_size})), {p}) AS dist FROM tab_{type} ORDER BY dist LIMIT 10)
+        SELECT * FROM (SELECT 5 AS k, id, L2DistanceTransposed(vec, arrayMap(i -> (i + k) * 2, range({vector_size})), {p}) AS dist FROM tab_{type} ORDER BY dist LIMIT 10)
         UNION ALL
-        SELECT * FROM (SELECT 6 AS k, id, L2DistanceTransposed(vec, arrayMap(i -> (i + 6) * 2, range({vector_size})), {p}) AS dist FROM tab_{type} ORDER BY dist LIMIT 10)
+        SELECT * FROM (SELECT 6 AS k, id, L2DistanceTransposed(vec, arrayMap(i -> (i + k) * 2, range({vector_size})), {p}) AS dist FROM tab_{type} ORDER BY dist LIMIT 10)
         UNION ALL
-        SELECT * FROM (SELECT 7 AS k, id, L2DistanceTransposed(vec, arrayMap(i -> (i + 7) * 2, range({vector_size})), {p}) AS dist FROM tab_{type} ORDER BY dist LIMIT 10)
+        SELECT * FROM (SELECT 7 AS k, id, L2DistanceTransposed(vec, arrayMap(i -> (i + k) * 2, range({vector_size})), {p}) AS dist FROM tab_{type} ORDER BY dist LIMIT 10)
         UNION ALL
-        SELECT * FROM (SELECT 8 AS k, id, L2DistanceTransposed(vec, arrayMap(i -> (i + 8) * 2, range({vector_size})), {p}) AS dist FROM tab_{type} ORDER BY dist LIMIT 10)
+        SELECT * FROM (SELECT 8 AS k, id, L2DistanceTransposed(vec, arrayMap(i -> (i + k) * 2, range({vector_size})), {p}) AS dist FROM tab_{type} ORDER BY dist LIMIT 10)
         UNION ALL
-        SELECT * FROM (SELECT 9 AS k, id, L2DistanceTransposed(vec, arrayMap(i -> (i + 9) * 2, range({vector_size})), {p}) AS dist FROM tab_{type} ORDER BY dist LIMIT 10)
+        SELECT * FROM (SELECT 9 AS k, id, L2DistanceTransposed(vec, arrayMap(i -> (i + k) * 2, range({vector_size})), {p}) AS dist FROM tab_{type} ORDER BY dist LIMIT 10)
         UNION ALL
-        SELECT * FROM (SELECT 10 AS k, id, L2DistanceTransposed(vec, arrayMap(i -> (i + 10) * 2, range({vector_size})), {p}) AS dist FROM tab_{type} ORDER BY dist LIMIT 10)
+        SELECT * FROM (SELECT 10 AS k, id, L2DistanceTransposed(vec, arrayMap(i -> (i + k) * 2, range({vector_size})), {p}) AS dist FROM tab_{type} ORDER BY dist LIMIT 10)
     </query>
 
     <drop_query>DROP TABLE tab_{type}</drop_query>
