@@ -478,7 +478,7 @@ class ArtifactConfigs:
     llvm_coverage_html_report = Artifact.Config(
         name=ArtifactNames.LLVM_COVERAGE_HTML_REPORT,
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/clickhouse_coverage.zip",
+        path=f"{TEMP_DIR}/clickhouse_coverage.tar.gz",
     )
     clickhouse_debians = Artifact.Config(
         name="*",

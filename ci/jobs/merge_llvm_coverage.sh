@@ -82,9 +82,8 @@ fi
   -format=html \
   -output-dir=clickhouse_coverage
 
-# Create archive and move results to root
+# Create tar.gz archive
 tar -czf clickhouse_coverage.tar.gz clickhouse_coverage
-mv clickhouse_coverage.tar.gz ../../
-mv merged.profdata ../../
 
-echo "Results stored in workspace root: merged.profdata, clickhouse_coverage.tar.gz"
+# Keep results in ci/tmp (artifacts are uploaded from here)
+echo "Results stored in ci/tmp: merged.profdata, clickhouse_coverage.tar.gz"
