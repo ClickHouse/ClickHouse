@@ -1,4 +1,3 @@
--- Tags: no-fasttest
 -- Note, this test uses sleep, but, it should not affect it's flakiness
 
 set function_sleep_max_microseconds_per_block=5e9;

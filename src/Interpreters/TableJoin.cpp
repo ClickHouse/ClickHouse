@@ -717,8 +717,7 @@ static void mergeDags(std::optional<ActionsDAG> & result_dag, std::optional<Acti
 std::pair<std::optional<ActionsDAG>, std::optional<ActionsDAG>>
 TableJoin::createConvertingActions(
     const ColumnsWithTypeAndName & left_sample_columns,
-    const ColumnsWithTypeAndName & right_sample_columns,
-    const ContextPtr & context)
+    const ColumnsWithTypeAndName & right_sample_columns)
 {
     std::optional<ActionsDAG> left_dag;
     std::optional<ActionsDAG> right_dag;
@@ -739,8 +738,8 @@ TableJoin::createConvertingActions(
     inferJoinKeyCommonType(left_sample_columns, right_sample_columns, !isSpecialStorage(), require_strict_keys_match);
     if (!left_type_map.empty() || !right_type_map.empty())
     {
-        left_dag = applyKeyConvertToTable(left_sample_columns, left_type_map, JoinTableSide::Left, left_column_rename, context);
-        right_dag = applyKeyConvertToTable(right_sample_columns, right_type_map, JoinTableSide::Right, right_column_rename, context);
+        left_dag = applyKeyConvertToTable(left_sample_columns, left_type_map, JoinTableSide::Left, left_column_rename);
+        right_dag = applyKeyConvertToTable(right_sample_columns, right_type_map, JoinTableSide::Right, right_column_rename);
     }
 
     /**
@@ -777,8 +776,7 @@ TableJoin::createConvertingActions(
     {
         auto new_left_dag = applyJoinUseNullsConversion(
             left_dag ? left_dag->getResultColumns() : left_sample_columns,
-            left_column_rename,
-            context);
+            left_column_rename);
         mergeDags(left_dag, std::move(new_left_dag));
     }
 
@@ -786,8 +784,7 @@ TableJoin::createConvertingActions(
     {
         auto new_right_dag = applyJoinUseNullsConversion(
             right_dag ? right_dag->getResultColumns() : right_sample_columns,
-            right_column_rename,
-            context);
+            right_column_rename);
         mergeDags(right_dag, std::move(new_right_dag));
     }
 
@@ -886,8 +883,7 @@ void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
 static std::optional<ActionsDAG> changeKeyTypes(const ColumnsWithTypeAndName & cols_src,
                                     const TableJoin::NameToTypeMap & type_mapping,
                                     bool add_new_cols,
-                                    NameToNameMap & key_column_rename,
-                                    const ContextPtr & context)
+                                    NameToNameMap & key_column_rename)
 {
     ColumnsWithTypeAndName cols_dst = cols_src;
     bool has_some_to_do = false;
@@ -907,7 +903,6 @@ static std::optional<ActionsDAG> changeKeyTypes(const ColumnsWithTypeAndName & c
         /* source= */ cols_src,
         /* result= */ cols_dst,
         /* mode= */ ActionsDAG::MatchColumnsMode::Name,
-        /* context= */ context,
         /* ignore_constant_values= */ true,
         /* add_cast_columns= */ add_new_cols,
         /* new_names= */ &key_column_rename);
@@ -915,8 +910,7 @@ static std::optional<ActionsDAG> changeKeyTypes(const ColumnsWithTypeAndName & c
 
 static std::optional<ActionsDAG> changeTypesToNullable(
     const ColumnsWithTypeAndName & cols_src,
-    const NameSet & exception_cols,
-    const ContextPtr & context)
+    const NameSet & exception_cols)
 {
     ColumnsWithTypeAndName cols_dst = cols_src;
     bool has_some_to_do = false;
@@ -936,7 +930,6 @@ static std::optional<ActionsDAG> changeTypesToNullable(
         /* source= */ cols_src,
         /* result= */ cols_dst,
         /* mode= */ ActionsDAG::MatchColumnsMode::Name,
-        /* context= */ context,
         /* ignore_constant_values= */ true,
         /* add_cast_columns= */ false,
         /* new_names= */ nullptr);
@@ -946,14 +939,13 @@ std::optional<ActionsDAG> TableJoin::applyKeyConvertToTable(
     const ColumnsWithTypeAndName & cols_src,
     const NameToTypeMap & type_mapping,
     JoinTableSide table_side,
-    NameToNameMap & key_column_rename,
-    const ContextPtr & context)
+    NameToNameMap & key_column_rename)
 {
     if (type_mapping.empty())
         return {};
 
     /// Create DAG to convert key columns
-    auto convert_dag = changeKeyTypes(cols_src, type_mapping, !hasUsing(), key_column_rename, context);
+    auto convert_dag = changeKeyTypes(cols_src, type_mapping, !hasUsing(), key_column_rename);
     applyRename(table_side, key_column_rename);
     return convert_dag;
 }
@@ -996,8 +988,7 @@ std::optional<ActionsDAG> TableJoin::applyNullsafeWrapper(
 
 std::optional<ActionsDAG> TableJoin::applyJoinUseNullsConversion(
     const ColumnsWithTypeAndName & cols_src,
-    const NameToNameMap & key_column_rename,
-    const ContextPtr & context)
+    const NameToNameMap & key_column_rename)
 {
     /// Do not need to make nullable temporary columns that would be used only as join keys, but is not visible to user
     NameSet exclude_columns;
@@ -1005,7 +996,7 @@ std::optional<ActionsDAG> TableJoin::applyJoinUseNullsConversion(
         exclude_columns.insert(it.second);
 
     /// Create DAG to make columns nullable if needed
-    return changeTypesToNullable(cols_src, exclude_columns, context);
+    return changeTypesToNullable(cols_src, exclude_columns);
 }
 
 void TableJoin::setStorageJoin(std::shared_ptr<const IKeyValueEntity> storage)
@@ -1191,8 +1182,7 @@ bool allowParallelHashJoin(
 {
     if (std::ranges::none_of(join_algorithms, [](auto algo) { return algo == JoinAlgorithm::PARALLEL_HASH; }))
         return false;
-    if (kind != JoinKind::Left && kind != JoinKind::Inner
-        && kind != JoinKind::Right && kind != JoinKind::Full)
+    if (kind != JoinKind::Left && kind != JoinKind::Inner)
         return false;
     if (strictness == JoinStrictness::Asof)
         return false;

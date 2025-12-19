@@ -57,7 +57,7 @@ CREATE TABLE tab
     INDEX idx str TYPE text(tokenizer = 'invalid')
 )
 ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
 SELECT '-- tokenizer can be identifier or function.';
 
@@ -149,10 +149,10 @@ SELECT '-- ngram size must be between 2 and 8.';
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = ngrams(0))
+    INDEX idx str TYPE text(tokenizer = ngrams(1))
 )
 ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
 CREATE TABLE tab
 (
@@ -160,7 +160,7 @@ CREATE TABLE tab
     INDEX idx str TYPE text(tokenizer = ngrams(9))
 )
 ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
 SELECT 'Test separators argument.';
 
@@ -193,14 +193,14 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
-SELECT 'Test posting_list_block_size argument.';
+SELECT 'Test bloom_filter_false_positive_rate argument.';
 
-SELECT '-- posting_list_block_size must be a positive integer.';
+SELECT '-- bloom_filter_false_positive_rate must be a double.';
 
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', posting_list_block_size = 0)
+    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', bloom_filter_false_positive_rate = 1)
 )
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
@@ -216,11 +216,29 @@ ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', posting_list_block_size = 1024)
+    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', bloom_filter_false_positive_rate = 0.5)
 )
 ENGINE = MergeTree
 ORDER BY tuple();
 DROP TABLE tab;
+
+SELECT '-- bloom_filter_false_positive_rate must be between 0.0 and 1.0.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', bloom_filter_false_positive_rate = 0.0)
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', bloom_filter_false_positive_rate = 1.0)
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
 SELECT 'Test dictionary_block_size argument.';
 
@@ -320,6 +338,46 @@ CREATE TABLE tab
 (
     str String,
     INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', dictionary_block_frontcoding_compression = 0)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+DROP TABLE tab;
+
+SELECT 'Test max_cardinality_for_embedded_postings argument.';
+
+SELECT '-- max_cardinality_for_embedded_postings must be an integer.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', max_cardinality_for_embedded_postings = 1024.0)
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', max_cardinality_for_embedded_postings = '1024')
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', max_cardinality_for_embedded_postings = 1024)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+DROP TABLE tab;
+
+SELECT 'Parameters are shuffled.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(max_cardinality_for_embedded_postings = 1024, tokenizer = ngrams(4))
 )
 ENGINE = MergeTree
 ORDER BY tuple();

@@ -58,8 +58,6 @@ struct ColumnStatisticsDescription
 
     ASTPtr getAST() const;
 
-    String getNameForLogs() const;
-
     /// get a vector of <column name, statistics desc> pair
     static std::vector<std::pair<String, ColumnStatisticsDescription>> fromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns);
     static ColumnStatisticsDescription fromStatisticsDescriptionAST(const ASTPtr & statistics_desc, const String & column_name, DataTypePtr data_type);

@@ -37,7 +37,6 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Common/FailPoint.h>
-#include <Client/JWTProvider.h>
 
 #include <Common/config_version.h>
 #include <Core/Types.h>
@@ -66,6 +65,8 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_suspicious_codecs;
+    extern const SettingsBool enable_deflate_qpl_codec;
+    extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsString network_compression_method;
     extern const SettingsInt64 network_zstd_compression_level;
 }
@@ -104,11 +105,7 @@ Connection::Connection(const String & host_, UInt16 port_,
     const String & client_name_,
     Protocol::Compression compression_,
     Protocol::Secure secure_,
-    const String & bind_host_
-#if USE_JWT_CPP && USE_SSL
-    , std::shared_ptr<JWTProvider> jwt_provider_
-#endif
-)
+    const String & bind_host_)
     : host(host_), port(port_), default_database(default_database_)
     , user(user_), password(password_)
     , proto_send_chunked(proto_send_chunked_), proto_recv_chunked(proto_recv_chunked_)
@@ -118,7 +115,6 @@ Connection::Connection(const String & host_, UInt16 port_,
     , quota_key(quota_key_)
 #if USE_JWT_CPP && USE_SSL
     , jwt(jwt_)
-    , jwt_provider(jwt_provider_)
 #endif
     , cluster(cluster_)
     , cluster_secret(cluster_secret_)
@@ -826,24 +822,7 @@ void Connection::sendQuery(
         client_info = &new_client_info;
     }
 
-#if USE_JWT_CPP && USE_SSL
-    if (jwt_provider && !jwt.empty())
-    {
-        if (JWTProvider::getJwtExpiry(jwt) < (Poco::Timestamp() + Poco::Timespan(30, 0)))
-        {
-            String new_jwt = jwt_provider->getJWT();
-            if (!new_jwt.empty())
-            {
-                jwt = new_jwt;
-                // We have a new token, so we need to reconnect.
-                // The current connection is still using the old token.
-                disconnect();
-            }
-        }
-    }
-#endif
-
-    if (!connected)
+    if (!isConnected())
         connect(timeouts);
 
     /// Query is not executed within sendQuery() function.
@@ -874,7 +853,9 @@ void Connection::sendQuery(
             method,
             level,
             !(*settings)[Setting::allow_suspicious_codecs],
-            (*settings)[Setting::allow_experimental_codecs]);
+            (*settings)[Setting::allow_experimental_codecs],
+            (*settings)[Setting::enable_deflate_qpl_codec],
+            (*settings)[Setting::enable_zstd_qat_codec]);
         compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
     else
@@ -1223,7 +1204,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
             elem->pipe = elem->creating_pipe_callback();
 
         QueryPipelineBuilder pipeline = std::move(*elem->pipe);
-        elem->pipe = nullptr;
+        elem->pipe.reset();
         pipeline.resize(1);
         auto sink = std::make_shared<ExternalTableDataSink>(pipeline.getSharedHeader(), *this, *elem, std::move(on_cancel));
         pipeline.setSinks([&](const SharedHeader &, QueryPipelineBuilder::StreamType type) -> ProcessorPtr
@@ -1618,11 +1599,7 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
         std::string(DEFAULT_CLIENT_NAME),
         parameters.compression,
         parameters.security,
-        parameters.bind_host
-#if USE_JWT_CPP && USE_SSL
-        , parameters.jwt_provider
-#endif
-        );
+        parameters.bind_host);
 }
 
 }

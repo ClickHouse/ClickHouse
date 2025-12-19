@@ -1,22 +1,42 @@
 #include <Storages/StorageArrowFlight.h>
 
 #if USE_ARROWFLIGHT
-#include <Common/Logger.h>
-#include <Common/parseAddress.h>
+#include <sstream>
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/IdentifierNode.h>
+#include <Analyzer/JoinNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/SortNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/Utils.h>
+#include <Core/Names.h>
+#include <DataTypes/DataTypeString.h>
+#include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
-#include <Core/Settings.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sources/ArrowFlightSource.h>
 #include <QueryPipeline/Pipe.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/ArrowFlight/ArrowFlightConnection.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Storages/StorageFactory.h>
-#include <Storages/checkAndGetLiteralArgument.h>
+#include <arrow/array.h>
+#include <arrow/buffer.h>
+#include <arrow/builder.h>
 #include <arrow/flight/client.h>
-
+#include <arrow/record_batch.h>
+#include <arrow/type.h>
+#include <Common/logger_useful.h>
+#include <Common/parseAddress.h>
+#include <boost/algorithm/string/predicate.hpp>
 
 const int ARROWFLIGHT_DEFAULT_PORT = 8815;
 
@@ -29,11 +49,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ARROWFLIGHT_FETCH_SCHEMA_ERROR;
     extern const int ARROWFLIGHT_WRITE_ERROR;
-}
-
-namespace Setting
-{
-    extern const SettingsArrowFlightDescriptorType arrow_flight_request_descriptor_type;
 }
 
 StorageArrowFlight::Configuration StorageArrowFlight::getConfiguration(ASTs & args, ContextPtr context_)
@@ -81,9 +96,6 @@ StorageArrowFlight::Configuration StorageArrowFlight::processNamedCollectionResu
 
     configuration.host = named_collection.getAnyOrDefault<String>({"host", "hostname"}, "");
     configuration.port = static_cast<UInt16>(named_collection.get<UInt64>("port"));
-    configuration.dataset_name = named_collection.getOrDefault<String>("dataset", "");
-
-    configuration.dataset_name = named_collection.get<String>("dataset");
 
     configuration.use_basic_authentication = named_collection.getOrDefault<bool>("use_basic_authentication", true);
     bool is_username_set = named_collection.has("username") || named_collection.has("user");
@@ -124,7 +136,7 @@ StorageArrowFlight::StorageArrowFlight(
     StorageInMemoryMetadata storage_metadata;
 
     if (columns_.empty())
-        storage_metadata.setColumns(getTableStructureFromData(connection_, dataset_name_, context_));
+        storage_metadata.setColumns(getTableStructureFromData(connection_, dataset_name_));
     else
         storage_metadata.setColumns(columns_);
 
@@ -132,24 +144,34 @@ StorageArrowFlight::StorageArrowFlight(
     setInMemoryMetadata(storage_metadata);
 }
 
+std::string buildArrowFlightQueryString(const std::vector<std::string> & column_names, const std::string & dataset_name)
+{
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    oss << "{";
+    oss << R"("dataset": ")" << dataset_name << R"(", )";
+    oss << "\"columns\": [";
+
+    for (size_t i = 0; i < column_names.size(); ++i)
+    {
+        oss << "\"" << column_names[i] << "\"";
+        if (i + 1 != column_names.size())
+            oss << ", ";
+    }
+
+    oss << "]";
+    oss << "}";
+
+    return oss.str();
+}
+
 ColumnsDescription StorageArrowFlight::getTableStructureFromData(
     std::shared_ptr<ArrowFlightConnection> connection_,
-    const String & dataset_name_,
-    ContextPtr context_)
+    const String & dataset_name_)
 {
     auto client = connection_->getClient();
     auto options = connection_->getOptions();
 
-    arrow::flight::FlightDescriptor descriptor;
-    if (context_->getSettingsRef()[Setting::arrow_flight_request_descriptor_type] == ArrowFlightDescriptorType::Command)
-    {
-        String query = "SELECT * FROM " + dataset_name_;
-        descriptor = arrow::flight::FlightDescriptor::Command(query);
-    }
-    else
-    {
-        descriptor = arrow::flight::FlightDescriptor::Path({dataset_name_});
-    }
+    arrow::flight::FlightDescriptor descriptor = arrow::flight::FlightDescriptor::Path({dataset_name_});
     auto status = client->GetSchema(*options, descriptor);
     if (!status.ok())
     {
@@ -171,9 +193,9 @@ Pipe StorageArrowFlight::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
-    ContextPtr context_,
+    ContextPtr /*context*/,
     QueryProcessingStage::Enum,
-    size_t /*max_block_size*/,
+    size_t max_block_size,
     size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
@@ -185,7 +207,8 @@ Pipe StorageArrowFlight::read(
         sample_block.insert({column_data.type, column_data.name});
     }
 
-    return Pipe(std::make_shared<ArrowFlightSource>(connection, dataset_name, sample_block, context_));
+    return Pipe(std::make_shared<ArrowFlightSource>(
+        connection, buildArrowFlightQueryString(column_names, dataset_name), sample_block, column_names, max_block_size));
 }
 
 class ArrowFlightSink : public SinkToStorage
@@ -194,13 +217,11 @@ public:
     explicit ArrowFlightSink(
         const StorageMetadataPtr & metadata_snapshot_,
         std::shared_ptr<ArrowFlightConnection> connection_,
-        const String & dataset_name_,
-        ContextPtr context_)
+        const String & dataset_name_)
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , metadata_snapshot(metadata_snapshot_)
         , connection(connection_)
         , dataset_name(dataset_name_)
-        , context(context_)
     {
     }
 
@@ -213,16 +234,7 @@ public:
 
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
 
-        arrow::flight::FlightDescriptor descriptor;
-        if (context && context->getSettingsRef()[Setting::arrow_flight_request_descriptor_type] == ArrowFlightDescriptorType::Command)
-        {
-            String query = "SELECT * FROM " + dataset_name;
-            descriptor = arrow::flight::FlightDescriptor::Command(query);
-        }
-        else
-        {
-            descriptor = arrow::flight::FlightDescriptor::Path({dataset_name});
-        }
+        arrow::flight::FlightDescriptor descriptor = arrow::flight::FlightDescriptor::Path({dataset_name});
 
         CHColumnToArrowColumn::Settings arrow_settings;
         arrow_settings.output_string_as_string = true;
@@ -233,13 +245,14 @@ public:
         chunks.emplace_back(std::move(chunk));
         converter.chChunkToArrowTable(table, chunks, getHeader().columns());
 
-        auto reader_res = arrow::RecordBatchReader::MakeFromIterator(
-            arrow::Iterator<std::shared_ptr<arrow::RecordBatch>>{arrow::TableBatchReader{table}}, converter.getArrowSchema());
-        if (!reader_res.ok())
+        auto maybe_combined_table = table->CombineChunks();
+        if (!maybe_combined_table.ok())
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot convert chunk to arrow stream: {}", reader_res.status().ToString());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot combine chunks: {}", maybe_combined_table.status().ToString());
         }
-        const auto & reader = reader_res.ValueOrDie();
+
+        auto combined_table = std::move(maybe_combined_table).ValueOrDie();
+        arrow::TableBatchReader reader(combined_table);
 
         std::shared_ptr<arrow::RecordBatch> batch;
         bool first_batch = true;
@@ -247,7 +260,7 @@ public:
 
         while (true)
         {
-            auto status = reader->ReadNext(&batch);
+            auto status = reader.ReadNext(&batch);
             if (!status.ok())
             {
                 throw Exception(ErrorCodes::ARROWFLIGHT_WRITE_ERROR, "Failed to read record batch: {}", status.ToString());
@@ -296,13 +309,12 @@ private:
     StorageMetadataPtr metadata_snapshot;
     std::shared_ptr<ArrowFlightConnection> connection;
     String dataset_name;
-    ContextPtr context;
 };
 
 SinkToStoragePtr
-StorageArrowFlight::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_, bool /*async_write*/)
+StorageArrowFlight::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr, bool /*async_write*/)
 {
-    return std::make_shared<ArrowFlightSink>(metadata_snapshot, connection, dataset_name, context_);
+    return std::make_shared<ArrowFlightSink>(metadata_snapshot, connection, dataset_name);
 }
 
 void registerStorageArrowFlight(StorageFactory & factory)

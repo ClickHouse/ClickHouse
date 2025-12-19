@@ -81,8 +81,6 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
             result += "`](/sql-reference/data-types/map)";
         else if (type.starts_with("Variant")) /// "Variant(T1, T2, ...)", "Variant(UInt8, String)", ...
             result += "`](/sql-reference/data-types/variant)";
-        else if (type.starts_with("Geometry"))
-            result += "`](/sql-reference/data-types/geo)";
         else if (type.starts_with("LowCardinality")) /// "LowCardinality(T)", "LowCardinality(UInt8)", "LowCardinality(String)", ...
             result += "`](/sql-reference/data-types/lowcardinality)";
         else if (type.starts_with("Nullable")) /// "Nullable(T)", "Nullable(UInt8)", "Nullable(String)", ...
@@ -131,7 +129,6 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
     result += "\n";
     return result;
 }
-}
 
 template <typename Type>
 String argumentsOrParametersAsString(const Type & arguments_or_parameters, const FunctionDocumentation::Syntax & syntax)
@@ -147,6 +144,8 @@ String argumentsOrParametersAsString(const Type & arguments_or_parameters, const
             result += mapTypesToTypesWithLinks(types, syntax);
     }
     return result;
+}
+
 }
 
 String FunctionDocumentation::argumentsAsString() const
@@ -278,4 +277,5 @@ String FunctionDocumentation::categoryAsString() const
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Category has no mapping to string");
 }
+
 }

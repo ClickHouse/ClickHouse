@@ -67,11 +67,14 @@ namespace ProfileEvents
     extern const Event DiskS3WriteRequestsThrottling;
     extern const Event DiskS3WriteRequestsRedirects;
 
+    extern const Event S3GetRequestThrottlerCount;
+    extern const Event S3GetRequestThrottlerSleepMicroseconds;
+    extern const Event S3PutRequestThrottlerCount;
+    extern const Event S3PutRequestThrottlerSleepMicroseconds;
+
     extern const Event DiskS3GetRequestThrottlerCount;
-    extern const Event DiskS3GetRequestThrottlerBlocked;
     extern const Event DiskS3GetRequestThrottlerSleepMicroseconds;
     extern const Event DiskS3PutRequestThrottlerCount;
-    extern const Event DiskS3PutRequestThrottlerBlocked;
     extern const Event DiskS3PutRequestThrottlerSleepMicroseconds;
 }
 
@@ -112,7 +115,8 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     bool for_disk_s3_,
     std::optional<std::string> opt_disk_name_,
     bool s3_use_adaptive_timeouts_,
-    const HTTPRequestThrottler & request_throttler_,
+    const ThrottlerPtr & get_request_throttler_,
+    const ThrottlerPtr & put_request_throttler_,
     std::function<void(const ProxyConfiguration &)> error_report_)
     : per_request_configuration(per_request_configuration_)
     , force_region(force_region_)
@@ -124,7 +128,8 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     , enable_s3_requests_logging(enable_s3_requests_logging_)
     , for_disk_s3(for_disk_s3_)
     , opt_disk_name(opt_disk_name_)
-    , request_throttler(request_throttler_)
+    , get_request_throttler(get_request_throttler_)
+    , put_request_throttler(put_request_throttler_)
     , s3_use_adaptive_timeouts(s3_use_adaptive_timeouts_)
     , error_report(error_report_)
 {
@@ -145,17 +150,6 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     /// We don't use them and MinIO server doesn't support them.
     checksumConfig.requestChecksumCalculation = Aws::Client::RequestChecksumCalculation::WHEN_REQUIRED;
     checksumConfig.responseChecksumValidation = Aws::Client::ResponseChecksumValidation::WHEN_REQUIRED;
-
-    // Make sure throttlers update DiskS3* profile events if necessary
-    if (for_disk_s3)
-    {
-        request_throttler.disk_get_amount = ProfileEvents::DiskS3GetRequestThrottlerCount;
-        request_throttler.disk_get_blocked = ProfileEvents::DiskS3GetRequestThrottlerBlocked;
-        request_throttler.disk_get_sleep_us = ProfileEvents::DiskS3GetRequestThrottlerSleepMicroseconds;
-        request_throttler.disk_put_amount = ProfileEvents::DiskS3PutRequestThrottlerCount;
-        request_throttler.disk_put_blocked = ProfileEvents::DiskS3PutRequestThrottlerBlocked;
-        request_throttler.disk_put_sleep_us = ProfileEvents::DiskS3PutRequestThrottlerSleepMicroseconds;
-    }
 }
 
 void PocoHTTPClientConfiguration::updateSchemeAndRegion()
@@ -212,7 +206,8 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_config
     , http_max_field_value_size(client_configuration.http_max_field_value_size)
     , enable_s3_requests_logging(client_configuration.enable_s3_requests_logging)
     , for_disk_s3(client_configuration.for_disk_s3)
-    , request_throttler(client_configuration.request_throttler)
+    , get_request_throttler(client_configuration.get_request_throttler)
+    , put_request_throttler(client_configuration.put_request_throttler)
     , extra_headers(client_configuration.extra_headers)
 {
 }
@@ -309,8 +304,7 @@ PocoHTTPClient::S3MetricKind PocoHTTPClient::getMetricKind(const Aws::Http::Http
 
 void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricType type, ProfileEvents::Count amount) const
 {
-    static const ProfileEvents::Event events_map[static_cast<size_t>(S3MetricType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] =
-    {
+    static const ProfileEvents::Event events_map[static_cast<size_t>(S3MetricType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] = {
         {ProfileEvents::S3ReadMicroseconds, ProfileEvents::S3WriteMicroseconds},
         {ProfileEvents::S3ReadRequestsCount, ProfileEvents::S3WriteRequestsCount},
         {ProfileEvents::S3ReadRequestsErrors, ProfileEvents::S3WriteRequestsErrors},
@@ -318,8 +312,7 @@ void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricT
         {ProfileEvents::S3ReadRequestsRedirects, ProfileEvents::S3WriteRequestsRedirects},
     };
 
-    static const ProfileEvents::Event disk_s3_events_map[static_cast<size_t>(S3MetricType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] =
-    {
+    static const ProfileEvents::Event disk_s3_events_map[static_cast<size_t>(S3MetricType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] = {
         {ProfileEvents::DiskS3ReadMicroseconds, ProfileEvents::DiskS3WriteMicroseconds},
         {ProfileEvents::DiskS3ReadRequestsCount, ProfileEvents::DiskS3WriteRequestsCount},
         {ProfileEvents::DiskS3ReadRequestsErrors, ProfileEvents::DiskS3WriteRequestsErrors},
@@ -479,20 +472,33 @@ void PocoHTTPClient::makeRequestInternalImpl(
         case Aws::Http::HttpMethod::HTTP_TRACE:
         case Aws::Http::HttpMethod::HTTP_OPTIONS:
         case Aws::Http::HttpMethod::HTTP_CONNECT:
-            /// Limits get request per second rate for GET, SELECT and all other requests, excluding throttled by put throttler
-            /// (i.e. throttles GetObject, HeadObject)
-            request_throttler.throttleHTTPGet();
+            if (get_request_throttler)
+            {
+                Stopwatch sleep_watch;
+                bool blocked = get_request_throttler->throttle(1);
+                if (blocked && for_disk_s3)
+                {
+                    ProfileEvents::increment(ProfileEvents::DiskS3GetRequestThrottlerCount);
+                    ProfileEvents::increment(ProfileEvents::DiskS3GetRequestThrottlerSleepMicroseconds, sleep_watch.elapsedMicroseconds());
+                }
+            }
             break;
         case Aws::Http::HttpMethod::HTTP_PUT:
         case Aws::Http::HttpMethod::HTTP_POST:
         case Aws::Http::HttpMethod::HTTP_PATCH:
-            /// Limits put request per second rate for PUT, COPY, POST, LIST requests
-            /// (i.e. throttles PutObject, CopyObject, ListObjects, CreateMultipartUpload, UploadPartCopy, UploadPart, CompleteMultipartUpload)
-            request_throttler.throttleHTTPPut();
+            if (put_request_throttler)
+            {
+                Stopwatch sleep_watch;
+                bool blocked = put_request_throttler->throttle(1);
+                if (blocked && for_disk_s3)
+                {
+                    ProfileEvents::increment(ProfileEvents::DiskS3PutRequestThrottlerCount);
+                    ProfileEvents::increment(ProfileEvents::DiskS3PutRequestThrottlerSleepMicroseconds, sleep_watch.elapsedMicroseconds());
+                }
+            }
             break;
         case Aws::Http::HttpMethod::HTTP_DELETE:
-            /// DELETE and CANCEL requests are not throttled by either put or get throttler
-            break;
+            break; // Not throttled
     }
 
     addMetric(request, S3MetricType::Count);

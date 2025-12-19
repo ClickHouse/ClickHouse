@@ -82,7 +82,6 @@ namespace Setting
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsBool use_hive_partitioning;
-    extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
 }
 
 namespace ErrorCodes
@@ -259,7 +258,7 @@ public:
 
         std::optional<ActionsDAG> filter_dag;
         if (!uris.empty())
-            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context, hive_columns);
+            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, hive_columns);
 
         if (filter_dag)
         {
@@ -523,7 +522,7 @@ Chunk StorageURLSource::generate()
             && (!format_filter_info || !format_filter_info->hasFilter()))
             addNumRowsToCache(curr_uri.toString(), total_rows_in_file);
 
-        (*pipeline).reset();
+        pipeline->reset();
         reader.reset();
         input_format.reset();
         read_buf.reset();
@@ -714,7 +713,6 @@ void StorageURLSink::finalizeBuffers()
     catch (...)
     {
         /// Stop ParallelFormattingOutputFormat correctly.
-        cancelBuffers();
         releaseBuffers();
         throw;
     }
@@ -934,11 +932,25 @@ namespace
 
         void setSchemaToLastFile(const ColumnsDescription & columns) override
         {
-            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_url])
+            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_url]
+                || getContext()->getSettingsRef()[Setting::schema_inference_mode] != SchemaInferenceMode::UNION)
                 return;
 
             auto key = getKeyForSchemaCache(current_url_option, *format, format_settings, getContext());
             StorageURL::getSchemaCache(getContext()).addColumns(key, columns);
+        }
+
+        void setResultingSchema(const ColumnsDescription & columns) override
+        {
+            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_url]
+                || getContext()->getSettingsRef()[Setting::schema_inference_mode] != SchemaInferenceMode::DEFAULT)
+                return;
+
+            for (const auto & options : url_options_to_check)
+            {
+                auto keys = getKeysForSchemaCache(options, *format, format_settings, getContext());
+                StorageURL::getSchemaCache(getContext()).addManyColumns(keys, columns);
+            }
         }
 
         void setFormatName(const String & format_name) override
@@ -1192,9 +1204,6 @@ void IStorageURLBase::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
-        num_streams = local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
-
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
     auto read_from_format_info = prepareReadingFromFormat(
         column_names,

@@ -4,14 +4,14 @@ description: 'A table engine storing time series, i.e. a set of values associate
 sidebar_label: 'TimeSeries'
 sidebar_position: 60
 slug: /engines/table-engines/special/time_series
-title: 'TimeSeries table engine'
+title: 'TimeSeries Engine'
 doc_type: 'reference'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# TimeSeries table engine
+# TimeSeries engine
 
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
@@ -49,8 +49,8 @@ CREATE TABLE my_table ENGINE=TimeSeries
 ```
 
 Then this table can be used with the following protocols (a port must be assigned in the server configuration):
-- [prometheus remote-write](/interfaces/prometheus#remote-write)
-- [prometheus remote-read](/interfaces/prometheus#remote-read)
+- [prometheus remote-write](../../../interfaces/prometheus.md#remote-write)
+- [prometheus remote-read](../../../interfaces/prometheus.md#remote-read)
 
 ## Target tables {#target-tables}
 

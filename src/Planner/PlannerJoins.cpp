@@ -13,8 +13,6 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageDictionary.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/StorageSnapshot.h>
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -276,15 +274,7 @@ void buildJoinClauseImpl(
     std::string function_name;
     auto * function_node = join_expression->as<FunctionNode>();
     if (function_node)
-    {
-        function_name = function_node->getFunctionName();
-        if (!function_node->isOrdinaryFunction())
-        {
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                "Unexpected function '{}' in JOIN ON section, only ordinary functions are supported, in expression: {}",
-                function_name, function_node->formatASTForErrorMessage());
-        }
-    }
+        function_name = function_node->getFunction()->getName();
 
     auto asof_inequality = getASOFJoinInequality(function_name);
     bool is_asof_join_inequality = join_node.getStrictness() == JoinStrictness::Asof && asof_inequality != ASOFJoinInequality::None;
@@ -480,15 +470,7 @@ void buildJoinClause(
     std::string function_name;
     auto * function_node = join_expression->as<FunctionNode>();
     if (function_node)
-    {
-        function_name = function_node->getFunctionName();
-        if (!function_node->isOrdinaryFunction())
-        {
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                "Unexpected function '{}' in JOIN ON section, only ordinary functions are supported, in expression: {}",
-                function_name, function_node->formatASTForErrorMessage());
-        }
-    }
+        function_name = function_node->getFunction()->getName();
 
     /// For 'and' function go into children
     if (function_name == "and")
@@ -697,7 +679,7 @@ std::pair<JoinClauses, bool /*is_inequal_join*/> buildAllJoinClauses(
 
     bool has_residual_filters = false;
     JoinClauses join_clauses;
-    const auto & function_name = function_node.getFunctionName();
+    const auto & function_name = function_node.getFunction()->getName();
     if (function_name == "or")
     {
         for (const auto & child : function_node.getArguments())
@@ -742,7 +724,6 @@ JoinClausesAndActions buildJoinClausesAndActions(
     const JoinNode & join_node,
     const PlannerContextPtr & planner_context)
 {
-    auto context = planner_context->getQueryContext();
     ActionsDAG left_join_actions(left_table_expression_columns);
     ActionsDAG right_join_actions(right_table_expression_columns);
     ColumnsWithTypeAndName result_relation_columns;
@@ -903,10 +884,10 @@ JoinClausesAndActions buildJoinClausesAndActions(
                 }
 
                 if (!left_key_node->result_type->equals(*common_type))
-                    left_key_node = &left_join_actions.addCast(*left_key_node, common_type, {}, context);
+                    left_key_node = &left_join_actions.addCast(*left_key_node, common_type, {});
 
                 if (!is_join_with_special_storage && !right_key_node->result_type->equals(*common_type))
-                    right_key_node = &right_join_actions.addCast(*right_key_node, common_type, {}, context);
+                    right_key_node = &right_join_actions.addCast(*right_key_node, common_type, {});
             }
 
             if (join_clause.isNullsafeCompareKey(i) && isNullableOrLowCardinalityNullable(left_key_node->result_type) && isNullableOrLowCardinalityNullable(right_key_node->result_type))

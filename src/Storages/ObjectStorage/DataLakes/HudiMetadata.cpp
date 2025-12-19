@@ -1,4 +1,4 @@
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
@@ -42,8 +42,9 @@ namespace ErrorCodes
     */
 Strings HudiMetadata::getDataFilesImpl() const
 {
+    auto configuration_ptr = configuration.lock();
     auto log = getLogger("HudiMetadata");
-    const auto keys = listFiles(*object_storage, table_path, "", Poco::toLower(format));
+    const auto keys = listFiles(*object_storage, *configuration_ptr, "", Poco::toLower(configuration_ptr->format));
 
     using Partition = std::string;
     using FileID = std::string;
@@ -85,11 +86,8 @@ Strings HudiMetadata::getDataFilesImpl() const
     return result;
 }
 
-HudiMetadata::HudiMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationPtr configuration_, ContextPtr context_)
-    : WithContext(context_)
-    , object_storage(object_storage_)
-    , table_path(configuration_->getPathForRead().path)
-    , format(configuration_->format)
+HudiMetadata::HudiMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, ContextPtr context_)
+    : WithContext(context_), object_storage(object_storage_), configuration(configuration_)
 {
 }
 

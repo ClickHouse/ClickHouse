@@ -12,6 +12,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/MemorySettings.h>
+#include <DataTypes/ObjectUtils.h>
 
 #include <IO/WriteHelpers.h>
 #include <QueryPipeline/Pipe.h>
@@ -90,6 +91,14 @@ public:
     {
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
         storage_snapshot->metadata->check(block, true);
+        if (!storage_snapshot->object_columns.empty())
+        {
+            auto extended_storage_columns = storage_snapshot->getColumns(
+                GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects());
+
+            convertDynamicColumnsToTuples(block, storage_snapshot);
+        }
+
         if (storage.getMemorySettingsRef()[MemorySetting::compress])
         {
             Block compressed_block;
@@ -181,7 +190,17 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
     /// Not guaranteed to match `blocks`, but that's ok. It would probably be better to move
     /// rows and bytes counters into the MultiVersion-ed struct, then everything would be consistent.
     snapshot_data->rows_approx = total_size_rows.load(std::memory_order_relaxed);
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(snapshot_data));
+
+    if (!hasDynamicSubcolumnsDeprecated(metadata_snapshot->getColumns()))
+        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, ColumnsDescription{}, std::move(snapshot_data));
+
+    auto object_columns = getConcreteObjectColumns(
+        snapshot_data->blocks->begin(),
+        snapshot_data->blocks->end(),
+        metadata_snapshot->getColumns(),
+        [](const auto & block) -> const auto & { return block.getColumnsWithTypeAndName(); });
+
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(object_columns), std::move(snapshot_data));
 }
 
 void StorageMemory::read(
@@ -483,8 +502,7 @@ void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector
     }
 
     TemporaryDataOnDiskSettings tmp_data_settings;
-    auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
-    tmp_data_settings.buffer_size = max_compress_block_size ? max_compress_block_size : DBMS_DEFAULT_BUFFER_SIZE;
+    tmp_data_settings.buffer_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
     auto tmp_data = std::make_shared<TemporaryDataOnDiskScope>(backup_entries_collector.getContext()->getTempDataOnDisk(), tmp_data_settings);
     const auto & read_settings = backup_entries_collector.getReadSettings();
 

@@ -53,9 +53,6 @@
 #include <Interpreters/JoinOperator.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Interpreters/DirectJoinMergeTreeEntity.h>
-#include <Processors/QueryPlan/ReadFromTableStep.h>
-
 
 #include <memory>
 #include <stack>
@@ -220,10 +217,10 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
                 using_column_node.getColumnName(), node->dumpTree());
 
         const auto & result_type = using_column_node.getResultType();
-        auto cast_to_super = [&result_type, &changed_types, &builder_context](auto & dag, const auto & nodes)
+        auto cast_to_super = [&result_type, &changed_types](auto & dag, const auto & nodes)
         {
             auto arg = nodes.at(0);
-            const auto & casted = dag.addCast(*arg, result_type, {}, builder_context.planner_context->getQueryContext());
+            const auto & casted = dag.addCast(*arg, result_type, {});
             changed_types[arg->result_name] = &dag.addAlias(casted, arg->result_name);
             return arg;
         };
@@ -261,15 +258,7 @@ void buildJoinCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
     std::string function_name;
     const auto * function_node = node->as<FunctionNode>();
     if (function_node)
-    {
-        function_name = function_node->getFunctionName();
-        if (!function_node->isOrdinaryFunction())
-        {
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                "Unexpected function '{}' in JOIN ON section, only ordinary functions are supported, in expression: {}",
-                function_name, function_node->formatASTForErrorMessage());
-        }
-    }
+        function_name = function_node->getFunction()->getName();
 
     if (function_name == "and")
     {
@@ -289,7 +278,7 @@ void buildDisjunctiveJoinConditions(const QueryTreeNodePtr & node, JoinOperatorB
             "JOIN {} join expression expected function",
             node->formatASTForErrorMessage());
 
-    const auto & function_name = function_node->getFunctionName();
+    const auto & function_name = function_node->getFunction()->getName();
 
     if (function_name == "or")
     {
@@ -551,7 +540,7 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
             auto nothing_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
             ColumnWithTypeAndName null_column(nothing_type->createColumnConstWithDefaultValue(1), nothing_type, "NULL");
             JoinActionRef null_action(&actions_dag->addColumn(null_column), build_context.expression_actions);
-            null_action.setSourceRelations(BitSet());
+            null_action.setSourceRelations(BitSet().set(0).set(1));
             build_context.join_operator.expression.push_back(null_action);
         }
     }

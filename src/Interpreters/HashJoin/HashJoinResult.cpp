@@ -138,7 +138,7 @@ static void appendRightColumns(
         block.insert(std::move(right_col));
 
         if (!offsets.empty())
-            right_keys_to_replicate.push_back(block.columns() - 1);
+            right_keys_to_replicate.push_back(block.getPositionByName(right_col_name));
     }
 
     if (!offsets.empty())
