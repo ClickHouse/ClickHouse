@@ -171,7 +171,7 @@ private:
         auto local_context = getContext();
 
         return std::make_shared<MergeTreeMarksLoader>(
-            info_for_read,
+            info_for_read->getDataPartStorage(),
             local_context->getMarkCache().get(),
             info_for_read->getIndexGranularityInfo().getMarksFilePath(prefix_name),
             info_for_read->getMarksCount(),

@@ -82,6 +82,7 @@ int mainEntryClickHouseServer(int argc, char ** argv);
 int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
 int mainEntryClickHouseZooKeeperDumpTree(int argc, char ** argv);
 int mainEntryClickHouseZooKeeperRemoveByList(int argc, char ** argv);
+int mainEntryClickHouseRestorePartsSerialization(int argc, char ** argv);
 
 int mainEntryClickHouseHashBinary(int, char **)
 {
@@ -155,6 +156,7 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"checksum-for-compressed-block", mainEntryClickHouseChecksumForCompressedBlock},
     {"zookeeper-dump-tree", mainEntryClickHouseZooKeeperDumpTree},
     {"zookeeper-remove-by-list", mainEntryClickHouseZooKeeperRemoveByList},
+    {"restore-parts-serialization", mainEntryClickHouseRestorePartsSerialization},
 
     // keeper
 #if ENABLE_CLICKHOUSE_KEEPER
