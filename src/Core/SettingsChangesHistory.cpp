@@ -42,7 +42,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
 
         addSettingsChanges(settings_changes_history, "26.1",
         {
-
+            {"allow_experimental_temporary_databases", false, false, "New experimental setting."},
+            {"show_others_temporary_databases_in_system_tables", false, false, "New experimental setting."},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
@@ -79,8 +80,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"type_json_skip_invalid_typed_paths", false, false, "Allow skipping typed paths that fail type coercion in JSON columns"},
             {"query_plan_optimize_join_order_algorithm", "greedy", "greedy", "New experimental setting."},
             {"s3_path_filter_limit", 0, 1000, "New setting"},
-            {"allow_experimental_temporary_databases", false, false, "New experimental setting."},
-            {"show_others_temporary_databases_in_system_tables", false, false, "New experimental setting."},
             {"format_capn_proto_max_message_size", 0, 1_GiB, "Prevent allocating large amount of memory"},
             {"parallel_replicas_allow_materialized_views", false, true, "Allow usage of materialized views with parallel replicas"},
             {"distributed_cache_use_clients_cache_for_read", true, true, "New setting"},
