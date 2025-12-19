@@ -17,7 +17,7 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     SELECT count()
     FROM test_has_idx_simple
     WHERE has([10, 50000, 90000], id)
-)) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
+)) AS plan SELECT arrayJoin(03733_explain_index(plan, 'PrimaryKey')) AS explain;
 Condition: (id in 3-element set)
 Granules: read < total_granules
 SELECT count()
@@ -33,7 +33,7 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     SELECT count()
     FROM test_has_idx_simple
     WHERE has([10, 50000, 90000], toUInt64(id + 2))
-)) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
+)) AS plan SELECT arrayJoin(03733_explain_index(plan, 'PrimaryKey')) AS explain;
 Condition: (toUInt64(plus(id, 2)) in 3-element set)
 Granules: read < total_granules
 SELECT count()
@@ -49,7 +49,7 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     SELECT count()
     FROM test_has_idx_simple
     WHERE has([10, 50000, 90000, NULL, NULL], toUInt64(id + 2))
-)) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
+)) AS plan SELECT arrayJoin(03733_explain_index(plan, 'PrimaryKey')) AS explain;
 Condition: (toUInt64(plus(id, 2)) in 5-element set)
 Granules: read < total_granules
 SELECT count()
@@ -61,7 +61,7 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     SELECT count()
     FROM test_has_idx_simple
     WHERE toUInt64(id + 2) IN (10, 50000, 90000, NULL, NULL)
-)) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
+)) AS plan SELECT arrayJoin(03733_explain_index(plan, 'PrimaryKey')) AS explain;
 Condition: (toUInt64(plus(id, 2)) in 3-element set)
 Granules: read < total_granules
 SELECT count()
@@ -87,7 +87,7 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     SELECT count()
     FROM test_has_idx_tuple_col
     WHERE has([(10, 0), (50000, 0)], key_tuple)
-)) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
+)) AS plan SELECT arrayJoin(03733_explain_index(plan, 'PrimaryKey')) AS explain;
 Condition: (key_tuple in 2-element set)
 Granules: read < total_granules
 SELECT count()
@@ -122,7 +122,7 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     SELECT count()
     FROM test_has_idx_tuple_col_nullable_elements
     WHERE has([(10, 0), (50000, 0), (0, NULL), (NULL, 10), (NULL, 20)], key_tuple)
-)) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
+)) AS plan SELECT arrayJoin(03733_explain_index(plan, 'PrimaryKey')) AS explain;
 Condition: (key_tuple in 5-element set)
 Granules: read < total_granules
 SELECT count()
@@ -154,7 +154,7 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     SELECT count()
     FROM test_has_idx_array_col
     WHERE has([[10, 11], [50000, 50001]], arr_key)
-)) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
+)) AS plan SELECT arrayJoin(03733_explain_index(plan, 'PrimaryKey')) AS explain;
 Condition: (arr_key in 2-element set)
 Granules: read < total_granules
 SELECT count()
@@ -185,7 +185,7 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     SELECT count()
     FROM test_has_idx_tuple_two_cols
     WHERE has([(10, 0), (50000, 0)], (k1, k2))
-)) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
+)) AS plan SELECT arrayJoin(03733_explain_index(plan, 'PrimaryKey')) AS explain;
 Condition: ((k1, k2) in 2-element set)
 Granules: read < total_granules
 SELECT count()
@@ -201,7 +201,7 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     SELECT count()
     FROM test_has_idx_tuple_two_cols
     WHERE has([(10, 0), (50000, 0), (NULL, NULL)], (k1, k2))
-)) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
+)) AS plan SELECT arrayJoin(03733_explain_index(plan, 'PrimaryKey')) AS explain;
 Condition: ((k1, k2) in 3-element set)
 Granules: read < total_granules
 SELECT count()
@@ -230,7 +230,7 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     SELECT count()
     FROM test_has_idx_lowcard
     WHERE has(['1000010', '1000042', '1000077'], key_lc)
-)) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
+)) AS plan SELECT arrayJoin(03733_explain_index(plan, 'PrimaryKey')) AS explain;
 Condition: (key_lc in 3-element set)
 Granules: read < total_granules
 SELECT count()
@@ -259,7 +259,7 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     SELECT count()
     FROM test_has_idx_nullable
     WHERE has([11, 50000, 90000], key_nullable)
-)) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
+)) AS plan SELECT arrayJoin(03733_explain_index(plan, 'PrimaryKey')) AS explain;
 Condition: (key_nullable in 3-element set)
 Granules: read < total_granules
 SELECT count()
@@ -275,7 +275,7 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     SELECT count()
     FROM test_has_idx_nullable
     WHERE has([11, 50000, 90000, NULL], key_nullable)
-)) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
+)) AS plan SELECT arrayJoin(03733_explain_index(plan, 'PrimaryKey')) AS explain;
 Condition: (key_nullable in 4-element set)
 Granules: read < total_granules
 SELECT count()
@@ -306,7 +306,7 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     SELECT count()
     FROM test_has_idx_func_key
     WHERE has([toDate('2020-01-01'), toDate('2020-01-02'), toDate('2020-01-03')], toDate(ts))
-)) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
+)) AS plan SELECT arrayJoin(03733_explain_index(plan, 'PrimaryKey')) AS explain;
 Condition: (toDate(ts) in 3-element set)
 Granules: read < total_granules
 SELECT count()

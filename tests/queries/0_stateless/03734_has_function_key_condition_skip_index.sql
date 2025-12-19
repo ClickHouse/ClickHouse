@@ -1,43 +1,38 @@
-DROP FUNCTION IF EXISTS explain_lines;
-DROP FUNCTION IF EXISTS explain_index_pos;
-DROP FUNCTION IF EXISTS explain_index_condition_line;
-DROP FUNCTION IF EXISTS explain_index_granules_line;
-DROP FUNCTION IF EXISTS explain_index_granules_read;
-DROP FUNCTION IF EXISTS explain_index_granules_total;
-DROP FUNCTION IF EXISTS explain_index_granules_pruned;
-DROP FUNCTION IF EXISTS explain_index;
+-- Tags: no-replicated-database, no-parallel-replicas
+-- no-replicated-database: EXPLAIN output differs for replicated database.
+-- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
 
-CREATE FUNCTION explain_lines AS (pairs) ->
+CREATE OR REPLACE FUNCTION 03734_explain_lines AS (pairs) ->
     arrayMap(t -> trimLeft(t.2), arraySort(pairs));
 
-CREATE FUNCTION explain_index_pos AS (pairs, idx) ->
-    arrayFirstIndex(x -> x = idx, explain_lines(pairs));
+CREATE OR REPLACE FUNCTION 03734_explain_index_pos AS (pairs, idx) ->
+    arrayFirstIndex(x -> x = idx, 03734_explain_lines(pairs));
 
-CREATE FUNCTION explain_index_condition_line AS (pairs, idx) ->
+CREATE OR REPLACE FUNCTION 03734_explain_index_description_line AS (pairs, idx) ->
     arrayFirst(
         x -> startsWith(x, 'Description:'),
-        arraySlice(explain_lines(pairs), explain_index_pos(pairs, idx) + 1)
+        arraySlice(03734_explain_lines(pairs), 03734_explain_index_pos(pairs, idx) + 1)
     );
 
-CREATE FUNCTION explain_index_granules_line AS (pairs, idx) ->
+CREATE OR REPLACE FUNCTION 03734_explain_index_granules_line AS (pairs, idx) ->
     arrayFirst(
         x -> startsWith(x, 'Granules:'),
-        arraySlice(explain_lines(pairs), explain_index_pos(pairs, idx) + 1)
+        arraySlice(03734_explain_lines(pairs), 03734_explain_index_pos(pairs, idx) + 1)
     );
 
-CREATE FUNCTION explain_index_granules_read AS (pairs, idx) ->
-    toUInt64OrZero(extract(explain_index_granules_line(pairs, idx), 'Granules: ([0-9]+)'));
+CREATE OR REPLACE FUNCTION 03734_explain_index_granules_read AS (pairs, idx) ->
+    toUInt64OrZero(extract(03734_explain_index_granules_line(pairs, idx), 'Granules: ([0-9]+)'));
 
-CREATE FUNCTION explain_index_granules_total AS (pairs, idx) ->
-    toUInt64OrZero(extract(explain_index_granules_line(pairs, idx), 'Granules: [0-9]+/([0-9]+)'));
+CREATE OR REPLACE FUNCTION 03734_explain_index_granules_total AS (pairs, idx) ->
+    toUInt64OrZero(extract(03734_explain_index_granules_line(pairs, idx), 'Granules: [0-9]+/([0-9]+)'));
 
-CREATE FUNCTION explain_index_granules_pruned AS (pairs, idx) ->
-    explain_index_granules_read(pairs, idx) < explain_index_granules_total(pairs, idx);
+CREATE OR REPLACE FUNCTION 03734_explain_index_granules_pruned AS (pairs, idx) ->
+    03734_explain_index_granules_read(pairs, idx) < 03734_explain_index_granules_total(pairs, idx);
 
-CREATE FUNCTION explain_index AS (pairs, idx) ->
+CREATE OR REPLACE FUNCTION 03734_explain_index AS (pairs, idx) ->
 [
-    explain_index_condition_line(pairs, idx),
-    concat('Granules: ', if(explain_index_granules_pruned(pairs, idx), 'read < total_granules', 'read >= total_granules'))
+    03734_explain_index_description_line(pairs, idx),
+    concat('Granules: ', if(03734_explain_index_granules_pruned(pairs, idx), 'read < total_granules', 'read == total_granules'))
 ];
 
 -- { echoOn }
@@ -66,7 +61,7 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     SELECT count()
     FROM test_has_skip_minmax
     WHERE has([5432, 7432, 9999], key_col)
-)) AS plan SELECT arrayJoin(explain_index(plan, 'Skip')) AS explain;
+)) AS plan SELECT arrayJoin(03734_explain_index(plan, 'Skip')) AS explain;
 
 SELECT count()
 FROM test_has_skip_minmax
@@ -98,7 +93,7 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     SELECT count() 
     FROM test_has_skip_set 
     WHERE has([10, 20, 30], user_id)
-)) AS plan SELECT arrayJoin(explain_index(plan, 'Skip')) AS explain;
+)) AS plan SELECT arrayJoin(03734_explain_index(plan, 'Skip')) AS explain;
 
 SELECT count() 
 FROM test_has_skip_set 
@@ -132,7 +127,7 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     SELECT count()
     FROM test_has_skip_bloom
     WHERE has(['v_12345', 'v_54321', 'v_99999'], key_str)
-)) AS plan SELECT arrayJoin(explain_index(plan, 'Skip')) AS explain;
+)) AS plan SELECT arrayJoin(03734_explain_index(plan, 'Skip')) AS explain;
 
 SELECT count()
 FROM test_has_skip_bloom

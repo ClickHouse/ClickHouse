@@ -21,7 +21,7 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     SELECT count()
     FROM test_has_skip_minmax
     WHERE has([5432, 7432, 9999], key_col)
-)) AS plan SELECT arrayJoin(explain_index(plan, 'Skip')) AS explain;
+)) AS plan SELECT arrayJoin(03734_explain_index(plan, 'Skip')) AS explain;
 Description: minmax GRANULARITY 4
 Granules: read < total_granules
 SELECT count()
@@ -51,7 +51,7 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     SELECT count() 
     FROM test_has_skip_set 
     WHERE has([10, 20, 30], user_id)
-)) AS plan SELECT arrayJoin(explain_index(plan, 'Skip')) AS explain;
+)) AS plan SELECT arrayJoin(03734_explain_index(plan, 'Skip')) AS explain;
 Description: set GRANULARITY 2
 Granules: read < total_granules
 SELECT count() 
@@ -83,7 +83,7 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     SELECT count()
     FROM test_has_skip_bloom
     WHERE has(['v_12345', 'v_54321', 'v_99999'], key_str)
-)) AS plan SELECT arrayJoin(explain_index(plan, 'Skip')) AS explain;
+)) AS plan SELECT arrayJoin(03734_explain_index(plan, 'Skip')) AS explain;
 Description: bloom_filter GRANULARITY 4
 Granules: read < total_granules
 SELECT count()

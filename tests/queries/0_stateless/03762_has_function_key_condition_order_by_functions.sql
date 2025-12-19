@@ -1,43 +1,38 @@
-DROP FUNCTION IF EXISTS explain_lines;
-DROP FUNCTION IF EXISTS explain_index_pos;
-DROP FUNCTION IF EXISTS explain_index_condition_line;
-DROP FUNCTION IF EXISTS explain_index_granules_line;
-DROP FUNCTION IF EXISTS explain_index_granules_read;
-DROP FUNCTION IF EXISTS explain_index_granules_total;
-DROP FUNCTION IF EXISTS explain_index_granules_pruned;
-DROP FUNCTION IF EXISTS explain_index;
+-- Tags: no-replicated-database, no-parallel-replicas
+-- no-replicated-database: EXPLAIN output differs for replicated database.
+-- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
 
-CREATE FUNCTION explain_lines AS (pairs) ->
+CREATE OR REPLACE FUNCTION 03762_explain_lines AS (pairs) ->
     arrayMap(t -> trimLeft(t.2), arraySort(pairs));
 
-CREATE FUNCTION explain_index_pos AS (pairs, idx) ->
-    arrayFirstIndex(x -> x = idx, explain_lines(pairs));
+CREATE OR REPLACE FUNCTION 03762_explain_index_pos AS (pairs, idx) ->
+    arrayFirstIndex(x -> x = idx, 03762_explain_lines(pairs));
 
-CREATE FUNCTION explain_index_condition_line AS (pairs, idx) ->
+CREATE OR REPLACE FUNCTION 03762_explain_index_condition_line AS (pairs, idx) ->
     arrayFirst(
         x -> startsWith(x, 'Condition:'),
-        arraySlice(explain_lines(pairs), explain_index_pos(pairs, idx) + 1)
+        arraySlice(03762_explain_lines(pairs), 03762_explain_index_pos(pairs, idx) + 1)
     );
 
-CREATE FUNCTION explain_index_granules_line AS (pairs, idx) ->
+CREATE OR REPLACE FUNCTION 03762_explain_index_granules_line AS (pairs, idx) ->
     arrayFirst(
         x -> startsWith(x, 'Granules:'),
-        arraySlice(explain_lines(pairs), explain_index_pos(pairs, idx) + 1)
+        arraySlice(03762_explain_lines(pairs), 03762_explain_index_pos(pairs, idx) + 1)
     );
 
-CREATE FUNCTION explain_index_granules_read AS (pairs, idx) ->
-    toUInt64OrZero(extract(explain_index_granules_line(pairs, idx), 'Granules: ([0-9]+)'));
+CREATE OR REPLACE FUNCTION 03762_explain_index_granules_read AS (pairs, idx) ->
+    toUInt64OrZero(extract(03762_explain_index_granules_line(pairs, idx), 'Granules: ([0-9]+)'));
 
-CREATE FUNCTION explain_index_granules_total AS (pairs, idx) ->
-    toUInt64OrZero(extract(explain_index_granules_line(pairs, idx), 'Granules: [0-9]+/([0-9]+)'));
+CREATE OR REPLACE FUNCTION 03762_explain_index_granules_total AS (pairs, idx) ->
+    toUInt64OrZero(extract(03762_explain_index_granules_line(pairs, idx), 'Granules: [0-9]+/([0-9]+)'));
 
-CREATE FUNCTION explain_index_granules_pruned AS (pairs, idx) ->
-    explain_index_granules_read(pairs, idx) < explain_index_granules_total(pairs, idx);
+CREATE OR REPLACE FUNCTION 03762_explain_index_granules_pruned AS (pairs, idx) ->
+    03762_explain_index_granules_read(pairs, idx) < 03762_explain_index_granules_total(pairs, idx);
 
-CREATE FUNCTION explain_index AS (pairs, idx) ->
+CREATE OR REPLACE FUNCTION 03762_explain_index AS (pairs, idx) ->
 [
-    explain_index_condition_line(pairs, idx),
-    concat('Granules: ', if(explain_index_granules_pruned(pairs, idx), 'read < total_granules', 'read >= total_granules'))
+    03762_explain_index_condition_line(pairs, idx),
+    concat('Granules: ', if(03762_explain_index_granules_pruned(pairs, idx), 'read < total_granules', 'read == total_granules'))
 ];
 
 -- { echoOn }
@@ -67,7 +62,7 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
         toUnixTimestamp(d),
     FROM table_basic
     WHERE has([toDateTime(1730611800, 'America/New_York')], d)
-)) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
+)) AS plan SELECT arrayJoin(03762_explain_index(plan, 'PrimaryKey')) AS explain;
 
 SELECT
     toUnixTimestamp(d),
@@ -80,7 +75,7 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
         toUnixTimestamp(d),
     FROM table_basic
     WHERE not has([toDateTime(1730611800, 'America/New_York')], d)
-)) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
+)) AS plan SELECT arrayJoin(03762_explain_index(plan, 'PrimaryKey')) AS explain;
 
 DROP TABLE IF EXISTS table_intdiv_string;
 
@@ -100,7 +95,7 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     SELECT arraySort(groupArray(x))
     FROM table_intdiv_string
     WHERE has(CAST([12,95,2,33,100] AS Array(Int32)), x)
-)) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
+)) AS plan SELECT arrayJoin(03762_explain_index(plan, 'PrimaryKey')) AS explain;
 
 SELECT arraySort(groupArray(x))
 FROM table_intdiv_string
@@ -111,7 +106,7 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     SELECT arraySort(groupArray(x))
     FROM table_intdiv_string
     WHERE NOT has(CAST([12,95,2,33,100] AS Array(Int32)), x)
-)) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
+)) AS plan SELECT arrayJoin(03762_explain_index(plan, 'PrimaryKey')) AS explain;
 
 SELECT arraySort(groupArray(x))
 FROM table_intdiv_string
@@ -143,7 +138,7 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     SELECT arraySort(groupArray(s))
     FROM table_str_chain
     WHERE has(['Abc', 'Bar', 'XYZ', 'Hello', 'AA'], s)
-)) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
+)) AS plan SELECT arrayJoin(03762_explain_index(plan, 'PrimaryKey')) AS explain;
 
 SELECT arraySort(groupArray(s))
 FROM table_str_chain
@@ -154,7 +149,7 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     SELECT arraySort(groupArray(s))
     FROM table_str_chain
     WHERE NOT has(['Abc', 'Bar', 'XYZ', 'Hello', 'AA'], s)
-)) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
+)) AS plan SELECT arrayJoin(03762_explain_index(plan, 'PrimaryKey')) AS explain;
 
 SELECT arraySort(groupArray(s))
 FROM table_str_chain
@@ -173,10 +168,10 @@ SELECT * FROM table_json WHERE json.a = 0 AND has(['str_0', 'str_1'], json.b) OR
 
 WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     EXPLAIN indexes = 1 SELECT * FROM table_json WHERE json.a = 0 AND has(['str_0', 'str_1'], json.b) ORDER BY id
-)) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
+)) AS plan SELECT arrayJoin(03762_explain_index(plan, 'PrimaryKey')) AS explain;
 
 SELECT * FROM table_json WHERE json.a = 0 AND NOT has(['str_0', 'str_1'], json.b) ORDER BY id;
 
 WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     EXPLAIN indexes = 1 SELECT * FROM table_json WHERE json.a = 0 AND NOT has(['str_0', 'str_1'], json.b) ORDER BY id
-)) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
+)) AS plan SELECT arrayJoin(03762_explain_index(plan, 'PrimaryKey')) AS explain;

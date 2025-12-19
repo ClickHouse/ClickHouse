@@ -22,9 +22,9 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
         toUnixTimestamp(d),
     FROM table_basic
     WHERE has([toDateTime(1730611800, 'America/New_York')], d)
-)) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
+)) AS plan SELECT arrayJoin(03762_explain_index(plan, 'PrimaryKey')) AS explain;
 Condition: (CAST(d, \'String\') in 1-element set)
-Granules: read >= total_granules
+Granules: read == total_granules
 SELECT
     toUnixTimestamp(d),
 FROM table_basic
@@ -36,9 +36,9 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
         toUnixTimestamp(d),
     FROM table_basic
     WHERE not has([toDateTime(1730611800, 'America/New_York')], d)
-)) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
+)) AS plan SELECT arrayJoin(03762_explain_index(plan, 'PrimaryKey')) AS explain;
 Condition: not((CAST(d, \'String\') in 1-element set))
-Granules: read >= total_granules
+Granules: read == total_granules
 DROP TABLE IF EXISTS table_intdiv_string;
 CREATE TABLE table_intdiv_string
 (
@@ -54,7 +54,7 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     SELECT arraySort(groupArray(x))
     FROM table_intdiv_string
     WHERE has(CAST([12,95,2,33,100] AS Array(Int32)), x)
-)) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
+)) AS plan SELECT arrayJoin(03762_explain_index(plan, 'PrimaryKey')) AS explain;
 Condition: (toString(intDiv(x, 10)) in 5-element set)
 Granules: read < total_granules
 SELECT arraySort(groupArray(x))
@@ -66,9 +66,9 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     SELECT arraySort(groupArray(x))
     FROM table_intdiv_string
     WHERE NOT has(CAST([12,95,2,33,100] AS Array(Int32)), x)
-)) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
+)) AS plan SELECT arrayJoin(03762_explain_index(plan, 'PrimaryKey')) AS explain;
 Condition: not((toString(intDiv(x, 10)) in 5-element set))
-Granules: read >= total_granules
+Granules: read == total_granules
 SELECT arraySort(groupArray(x))
 FROM table_intdiv_string
 WHERE NOT has(CAST([12,95,2,33,100] AS Array(Int32)), x);
@@ -95,7 +95,7 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     SELECT arraySort(groupArray(s))
     FROM table_str_chain
     WHERE has(['Abc', 'Bar', 'XYZ', 'Hello', 'AA'], s)
-)) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
+)) AS plan SELECT arrayJoin(03762_explain_index(plan, 'PrimaryKey')) AS explain;
 Condition: (reverse(lower(s)) in 5-element set)
 Granules: read < total_granules
 SELECT arraySort(groupArray(s))
@@ -107,9 +107,9 @@ WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     SELECT arraySort(groupArray(s))
     FROM table_str_chain
     WHERE NOT has(['Abc', 'Bar', 'XYZ', 'Hello', 'AA'], s)
-)) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
+)) AS plan SELECT arrayJoin(03762_explain_index(plan, 'PrimaryKey')) AS explain;
 Condition: not((reverse(lower(s)) in 5-element set))
-Granules: read >= total_granules
+Granules: read == total_granules
 SELECT arraySort(groupArray(s))
 FROM table_str_chain
 WHERE NOT has(['Abc', 'Bar', 'XYZ', 'Hello', 'AA'], s);
@@ -123,13 +123,13 @@ SELECT * FROM table_json WHERE json.a = 0 AND has(['str_0', 'str_1'], json.b) OR
 0	{"a":0,"b":"str_0","c":[]}
 WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     EXPLAIN indexes = 1 SELECT * FROM table_json WHERE json.a = 0 AND has(['str_0', 'str_1'], json.b) ORDER BY id
-)) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
+)) AS plan SELECT arrayJoin(03762_explain_index(plan, 'PrimaryKey')) AS explain;
 Condition: and((CAST(json.b, \'String\') in 2-element set), (json.a in [0, 0]))
 Granules: read < total_granules
 SELECT * FROM table_json WHERE json.a = 0 AND NOT has(['str_0', 'str_1'], json.b) ORDER BY id;
 2	{"a":0,"b":"str_2","c":[0,1]}
 WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
     EXPLAIN indexes = 1 SELECT * FROM table_json WHERE json.a = 0 AND NOT has(['str_0', 'str_1'], json.b) ORDER BY id
-)) AS plan SELECT arrayJoin(explain_index(plan, 'PrimaryKey')) AS explain;
+)) AS plan SELECT arrayJoin(03762_explain_index(plan, 'PrimaryKey')) AS explain;
 Condition: and(not((CAST(json.b, \'String\') in 2-element set)), (json.a in [0, 0]))
 Granules: read < total_granules
