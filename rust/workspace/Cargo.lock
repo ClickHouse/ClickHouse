@@ -26,7 +26,7 @@ dependencies = [
  "cxx",
  "cxx-build",
  "skim",
- "term 1.2.0",
+ "term 1.2.1",
 ]
 
 [[package]]
@@ -939,9 +939,9 @@ dependencies = [
 
 [[package]]
 name = "prqlc"
-version = "0.13.7"
+version = "0.13.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2130a59dd0cfd5ded87421e1bc68a80ac93ff5efc4888f9cf38a216d59ecf88b"
+checksum = "66746d54758d21d5f9792cd577647e56b223251b12e1c327dc06fb2589ac5164"
 dependencies = [
  "anstream",
  "ariadne",
@@ -965,9 +965,9 @@ dependencies = [
 
 [[package]]
 name = "prqlc-parser"
-version = "0.13.7"
+version = "0.13.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d94dabf287da578eb01d4cd0b934747c66304d4a2a728b2d3800f71c686dcecd"
+checksum = "a6529458ef33f7fb21cf78c4ab1a3f9abe52afc6b8c40f90ae91e76d788c078a"
 dependencies = [
  "chumsky",
  "enum-as-inner",
@@ -1343,9 +1343,9 @@ dependencies = [
 
 [[package]]
 name = "sqlparser"
-version = "0.59.0"
+version = "0.60.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4591acadbcf52f0af60eafbb2c003232b2b4cd8de5f0e9437cb8b1b59046cc0f"
+checksum = "505aa16b045c4c1375bf5f125cce3813d0176325bfe9ffc4a903f423de7774ff"
 dependencies = [
  "log",
  "serde",
@@ -1415,9 +1415,9 @@ dependencies = [
 
 [[package]]
 name = "term"
-version = "1.2.0"
+version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2111ef44dae28680ae9752bb89409e7310ca33a8c621ebe7b106cf5c928b3ac0"
+checksum = "d8c27177b12a6399ffc08b98f76f7c9a1f4fe9fc967c784c5a071fa8d93cf7e1"
 dependencies = [
  "windows-sys 0.61.2",
 ]
