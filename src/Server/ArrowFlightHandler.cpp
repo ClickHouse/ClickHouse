@@ -2223,7 +2223,8 @@ arrow::Status ArrowFlightHandler::DoAction(
                 }
                 catch (DB::Exception & e)
                 {
-                    auto error_value = [&]() {
+                    auto error_value = [&]()
+                    {
                         if (e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED || e.code() == ErrorCodes::SYNTAX_ERROR)
                             return arrow::flight::SetSessionOptionErrorValue::kInvalidValue;
                         else if (e.code() == ErrorCodes::UNKNOWN_SETTING)
@@ -2236,12 +2237,12 @@ arrow::Status ArrowFlightHandler::DoAction(
                 }
                 catch (...)
                 {
-                    if(block_io)
+                    if (block_io)
                         block_io->onException();
                     throw;
                 }
 
-                if(block_io)
+                if (block_io)
                     block_io->onFinish();
             }
 
