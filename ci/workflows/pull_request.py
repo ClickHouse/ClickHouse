@@ -123,6 +123,7 @@ workflow = Workflow.Config(
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
         *ArtifactConfigs.clickhouse_binaries,
+        ArtifactConfigs.clickhouse_plain_binary,
         # *ArtifactConfigs.clickhouse_debians,
         # *ArtifactConfigs.clickhouse_rpms,
         # *ArtifactConfigs.clickhouse_tgzs,

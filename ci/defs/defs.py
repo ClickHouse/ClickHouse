@@ -365,6 +365,7 @@ class ToolSet:
 class ArtifactNames:
     CH_AMD_DEBUG = "CH_AMD_DEBUG"
     CH_AMD_LLVM_COVERAGE_BUILD = "CH_AMD_LLVM_COVERAGE_BUILD" # this is llvm coverage!!
+    CH_AMD_LLVM_COVERAGE_BUILD_PLAIN = "CH_AMD_LLVM_COVERAGE_BUILD_PLAIN"  # non-self-extracting binary for coverage
     LLVM_COVERAGE_FILE = "LLVM_COVERAGE_FILE"  # this is llvm coverage!!
     LLVM_COVERAGE_HTML_REPORT = "LLVM_COVERAGE_HTML_REPORT"
     CH_AMD_RELEASE = "CH_AMD_RELEASE"
@@ -528,6 +529,12 @@ class ArtifactConfigs:
             ArtifactNames.UNITTEST_AMD_UBSAN,
             ArtifactNames.UNITTEST_LLVM_COVERAGE
         ]
+    )
+    clickhouse_plain_binary = Artifact.Config(
+        name=ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD_PLAIN,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/programs/clickhouse",
+        compress_zst=True,
     )
     fuzzers = Artifact.Config(
         name=ArtifactNames.ARM_FUZZERS,
