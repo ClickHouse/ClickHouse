@@ -346,7 +346,7 @@ Parses a Well-Known Text (WKT) representation of a Polygon geometry and returns 
     FunctionDocumentation::Examples examples_ring = {{"Usage example", "SELECT readWKTRing('POLYGON ((1 1, 2 2, 3 3, 1 1))');", "[(1,1),(2,2),(3,3),(1,1)]"}};
     FunctionDocumentation::IntroducedIn introduced_in_ring = {21, 4};
     FunctionDocumentation::Category category_ring = FunctionDocumentation::Category::GeoPolygon;
-    FunctionDocumentation function_documentation_ring = {description_ring, syntax_ring, arguments_ring, returned_value_ring, examples_ring, introduced_in_ring, category_ring};
+    FunctionDocumentation function_documentation_ring = {description_ring, syntax_ring, arguments_ring, {}, returned_value_ring, examples_ring, introduced_in_ring, category_ring};
 
     factory.registerFunction<FunctionReadWKT<DataTypeRingName, CartesianRing, RingSerializer<CartesianPoint>, ReadWKTRingNameHolder>>(function_documentation_ring);
 
