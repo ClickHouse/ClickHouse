@@ -19,6 +19,8 @@
 
 #include <roaring/roaring.hh>
 
+#include "PostingsContainer.h"
+
 namespace DB
 {
 
@@ -81,63 +83,61 @@ struct MergeTreeIndexTextParams
 
 using PostingList = roaring::Roaring;
 using PostingListPtr = std::shared_ptr<PostingList>;
-    using PostingListsHolder = std::list<PostingList>;
-    static constexpr size_t max_small_size = 6;
-    using SmallContainer = std::array<UInt32, max_small_size>;
+using PostingListsHolder = std::list<PostingList>;
+static constexpr size_t max_small_size = 6;
+using SmallContainer = std::array<UInt32, max_small_size>;
 
-    struct PostingListWithContext
+struct PostingListWithContext
+{
+    PostingList *postings;
+    roaring::BulkContext context;
+};
+
+struct PostingsStorage
+{
+    union
     {
-        PostingList * postings;
-        roaring::BulkContext context;
+        SmallContainer small;
+        PostingListWithContext large;
+        PostingsContainer32 * compressed;
     };
-    struct PostingsStorage
+
+    UInt8 small_size = 0;
+    bool enable_postings_compression = false;
+
+    PostingsStorage()
     {
-        enum class Kind : uint8_t
-        {
-            Small = 0,
-            Large = 1,
-        };
-        Kind kind = Kind::Small;
-        union
-        {
-            SmallContainer small;
-            PostingListWithContext large;
-        };
-        UInt8 small_size = 0;
-        PostingsStorage() {}
-        explicit PostingsStorage(PostingList * posting_list)
-            : large {posting_list, roaring::BulkContext{}}
+    }
+
+    explicit PostingsStorage(PostingList *posting_list)
+        : large{posting_list, roaring::BulkContext{}}
         , small_size(max_small_size)
-        {
-        }
-#if 0
-        template <class SmallType, class LargeType, class CompressedType>
-        ALWAYS_INLINE decltype(auto) dispatch(SmallType && func_small, LargeType && func_large, CompressedType && func_compressed) const
-        {
-            if (__builtin_expect(kind == Kind::Large, 1))
-                return func_large(large);
+    {
+    }
+    void add(UInt32 value, PostingListsHolder &postings_holder);
 
-            switch (kind)
-            {
-                case Kind::Small: return func_small(small);
-                    //case Kind::Compressed: return func_compressed(compressed);
-                default: __builtin_unreachable();
-            }
-        }
-#endif
-        void add(UInt32 value, PostingListsHolder & postings_holder);
-
-        size_t size() const { return isSmall() ? small_size : large.postings->cardinality(); }
-        bool isEmpty() const { return size() == 0; }
-        bool isSmall() const { return small_size < max_small_size; }
-        bool isLarge() const { return !isSmall(); }
-        UInt32 minimum() const { return isSmall() ? small[0] : large.postings->minimum(); }
-        UInt32 maximum() const { return isSmall() ? small[small_size - 1] : large.postings->maximum(); }
-
-        SmallContainer & getSmall() { return small; }
-        const SmallContainer & getSmall() const { return small; }
-        PostingList & getLarge() const { return *large.postings; }
-    };
+    size_t size() const
+    {
+        if (!enable_postings_compression)
+            return isSmall() ? small_size : large.postings->cardinality();
+        return compressed->size();
+    }
+    bool isSmall() const { return small_size < max_small_size; }
+    bool isLarge() const { return !isSmall(); }
+    bool isCompressed() const { return enable_postings_compression; }
+    UInt32 minimum() const
+    {
+        if (!enable_postings_compression)
+            return isSmall() ? small[0] : large.postings->minimum();
+        return compressed->minimum();
+    }
+    UInt32 maximum() const
+    {
+        if (!enable_postings_compression)
+            return isSmall() ? small[small_size - 1] : large.postings->maximum();
+        return compressed->maximum();
+    }
+};
 /// A struct for building a posting list with optimization for infrequent tokens.
 /// Tokens with cardinality less than max_small_size are stored in a raw array allocated on the stack.
 /// It avoids allocations of Roaring Bitmap for infrequent tokens without increasing the memory usage.
@@ -157,17 +157,18 @@ struct PostingListBuilder
     /// posting list is created in the postings_holder and reference to it is saved.
     void add(UInt32 value, PostingListsHolder & postings_holder) { store.add(value, postings_holder); }
 
-    size_t size() const { return store.size(); }
-    bool isEmpty() const { return store.isEmpty(); }
+    ALWAYS_INLINE size_t size() const { return store.size(); }
+    bool isEmpty() const { return size() == 0; }
     bool isSmall() const { return store.isSmall(); }
     bool isLarge() const { return store.isLarge(); }
-    UInt32 minimum() const { return store.minimum(); }
+    bool isCompressed() const { return store.isCompressed(); }
+    ALWAYS_INLINE UInt32 minimum() const { return store.minimum(); }
     UInt32 maximum() const { return store.maximum(); }
 
     SmallContainer & getSmall() { return store.small; }
     const SmallContainer & getSmall() const { return store.small; }
     PostingList & getLarge() const { return *store.large.postings; }
-
+    PostingsContainer32 & getCompressed() const { return *store.compressed; }
 private:
     PostingsStorage store;
 };
