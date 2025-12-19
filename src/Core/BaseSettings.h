@@ -928,7 +928,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             void writeBinary(const Data & data, size_t index, WriteBuffer & out) const { return field_infos[index].write_binary_function(data, out); } \
             void readBinary(Data & data, size_t index, ReadBuffer & in) const { return field_infos[index].read_binary_function(data, in); } \
             String getDefaultValueString(size_t index) const { return field_infos[index].get_default_value_string_function(); } \
-        private: \
+            \
             Accessor(); \
             struct FieldInfo \
             { \
