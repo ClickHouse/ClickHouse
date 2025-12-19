@@ -421,8 +421,8 @@ ASTPtr DatabaseBackup::getCreateDatabaseQueryImpl() const
 
     auto & ast_create_query = ast->as<ASTCreateQuery &>();
     ast_create_query.temporary = isTemporary();
-    if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
-        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(database_comment));
+    if (!comment.empty())
+        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(comment));
 
     return ast;
 }

@@ -493,7 +493,7 @@ ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
 {
     if (columns.empty())
     {
-        size_t result_size = limit ? limit : perm.size();
+        size_t result_size = limit ? std::min(limit, perm.size()) : perm.size();
         if (perm.size() < result_size)
             throw Exception(
                 ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of permutation ({}) is less than required ({})", perm.size(), result_size);
@@ -514,7 +514,7 @@ ColumnPtr ColumnTuple::index(const IColumn & indexes, size_t limit) const
 {
     if (columns.empty())
     {
-        size_t result_size = limit ? limit : indexes.size();
+        size_t result_size = limit ? std::min(limit, indexes.size()) : indexes.size();
         if (indexes.size() < result_size)
             throw Exception(
                 ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of indexes ({}) is less than required ({})", indexes.size(), result_size);

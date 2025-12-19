@@ -2,7 +2,7 @@
 
 -- Tests that text search indexes use a (non-standard) index granularity of 64 by default.
 
-SET allow_experimental_full_text_index = 1;
+SET enable_full_text_index = 1;
 
 -- After CREATE TABLE
 DROP TABLE IF EXISTS tab;
