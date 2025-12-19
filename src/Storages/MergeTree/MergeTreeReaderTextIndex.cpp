@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/MergeTree/ProjectionIndex/MergeTreeReaderProjectionIndex.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
@@ -59,6 +60,14 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
                 column.name, column.type->getName());
         }
     }
+
+    initializeIndexStreams();
+}
+
+void MergeTreeReaderTextIndex::initializeIndexStreams()
+{
+    if (index.index->isProjectionIndex())
+        return;
 
     auto data_part = getDataPart();
     auto substreams = index.index->getSubstreams();
@@ -123,6 +132,14 @@ MergeTreeDataPartPtr MergeTreeReaderTextIndex::getDataPart() const
 
 void MergeTreeReaderTextIndex::readGranule()
 {
+    if (index.index->isProjectionIndex())
+    {
+        MergeTreeIndexInputStreams empty_streams;
+        granule = index.index->createIndexGranule();
+        granule->deserializeBinaryWithMultipleStreams(empty_streams, *deserialization_state);
+        return;
+    }
+
     if (!is_prefetched)
         sparse_index_stream->seekToStart();
 
@@ -142,7 +159,7 @@ void MergeTreeReaderTextIndex::analyzeTokensCardinality()
 {
     is_always_true.resize(columns_to_read.size(), false);
     const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
-    const auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
+    const auto & granule_text = dynamic_cast<MergeTreeIndexGranuleText &>(*granule);
     const auto & remaining_tokens = granule_text.getRemainingTokens();
 
     for (size_t i = 0; i < columns_to_read.size(); ++i)
@@ -182,7 +199,10 @@ void MergeTreeReaderTextIndex::analyzeTokensCardinality()
 
 void MergeTreeReaderTextIndex::initializePostingStreams()
 {
-    const auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
+    if (index.index->isProjectionIndex())
+        return;
+
+    const auto & granule_text = dynamic_cast<MergeTreeIndexGranuleText &>(*granule);
     const auto & remaining_tokens = granule_text.getRemainingTokens();
 
     auto data_part = getDataPart();
@@ -224,15 +244,13 @@ bool MergeTreeReaderTextIndex::canSkipMark(size_t mark, size_t)
         initializePostingStreams();
     }
 
-    auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
-    granule_text.setCurrentRange(*rows_range);
+    granule->setCurrentRange(*rows_range);
     bool may_be_true = index.condition->mayBeTrueOnGranule(granule, nullptr);
 
     if (may_be_true)
         may_be_true_granules.add(mark);
 
     analyzed_granules.add(mark);
-    granule_text.resetAfterAnalysis();
     return can_skip_mark && !may_be_true;
 }
 
@@ -416,7 +434,7 @@ PostingsMap MergeTreeReaderTextIndex::readPostingsIfNeeded(size_t mark)
     if (!rows_range.has_value())
         return {};
 
-    auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
+    auto & granule_text = dynamic_cast<MergeTreeIndexGranuleText &>(*granule);
     const auto & remaining_tokens = granule_text.getRemainingTokens();
     PostingsMap result;
 
@@ -447,9 +465,16 @@ PostingsMap MergeTreeReaderTextIndex::readPostingsIfNeeded(size_t mark)
     return result;
 }
 
+PostingListPtr
+MergeTreeReaderTextIndex::readPostingsBlockForToken(std::string_view token, const TokenPostingsInfo & token_info, size_t block_idx)
+{
+    auto * postings_stream = large_postings_streams.at(token).get();
+    return MergeTreeIndexGranuleText::readPostingsBlock(*postings_stream, *deserialization_state, token_info, block_idx);
+}
+
 std::vector<PostingListPtr> MergeTreeReaderTextIndex::readPostingsBlocksForToken(std::string_view token, const TokenPostingsInfo & token_info, const RowsRange & range)
 {
-    auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
+    auto & granule_text = dynamic_cast<MergeTreeIndexGranuleText &>(*granule);
     auto read_postings = granule_text.getPostingsForRareToken(token);
 
     if (read_postings)
@@ -464,10 +489,7 @@ std::vector<PostingListPtr> MergeTreeReaderTextIndex::readPostingsBlocksForToken
         auto [it, inserted] = postings_blocks[token].try_emplace(block_idx);
 
         if (inserted)
-        {
-            auto * postings_stream = large_postings_streams.at(token).get();
-            it->second = MergeTreeIndexGranuleText::readPostingsBlock(*postings_stream, *deserialization_state, token_info, block_idx);
-        }
+            it->second = readPostingsBlockForToken(token, token_info, block_idx);
 
         token_postings.push_back(it->second);
     }
@@ -477,7 +499,7 @@ std::vector<PostingListPtr> MergeTreeReaderTextIndex::readPostingsBlocksForToken
 
 void MergeTreeReaderTextIndex::cleanupPostingsBlocks(const RowsRange & range)
 {
-    const auto & granule_text = assert_cast<const MergeTreeIndexGranuleText &>(*granule);
+    const auto & granule_text = dynamic_cast<const MergeTreeIndexGranuleText &>(*granule);
     const auto & remaining_tokens = granule_text.getRemainingTokens();
 
     for (const auto & [token, token_info] : remaining_tokens)
@@ -611,6 +633,8 @@ MergeTreeReaderPtr createMergeTreeReaderTextIndex(
     const NamesAndTypesList & columns_to_read,
     bool can_skip_mark)
 {
+    if (index.index->isProjectionIndex())
+        return std::make_unique<MergeTreeReaderProjectionIndex>(main_reader, index, columns_to_read, can_skip_mark);
     return std::make_unique<MergeTreeReaderTextIndex>(main_reader, index, columns_to_read, can_skip_mark);
 }
 

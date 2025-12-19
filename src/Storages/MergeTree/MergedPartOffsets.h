@@ -7,6 +7,7 @@
 #include <Common/PODArray.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace DB
 {
@@ -188,10 +189,28 @@ public:
         Disabled /// No mapping needed (e.g., no sorting key)
     };
 
-    explicit MergedPartOffsets(size_t num_parts, MappingMode mode_ = MappingMode::Enabled)
+    explicit MergedPartOffsets(const MergeTreeDataPartsVector & parts, MappingMode mode_ = MappingMode::Enabled)
         : mode(mode_)
-        , offset_maps(mode == MappingMode::Enabled ? num_parts : 0)
+        , offset_maps(mode == MappingMode::Enabled ? parts.size() : 0)
         , finalized(mode == MappingMode::Disabled)
+    {
+        if (mode == MappingMode::Disabled)
+        {
+            size_t part_starting_offset = 0;
+            part_starting_offsets.reserve(parts.size());
+            for (const auto & part : parts)
+            {
+                part_starting_offsets.push_back(part_starting_offset);
+                part_starting_offset += part->rows_count;
+            }
+        }
+    }
+
+    /// Currently only used in unit tests
+    explicit MergedPartOffsets(size_t num_parts)
+        : mode(MappingMode::Enabled)
+        , offset_maps(num_parts)
+        , finalized(false)
     {
     }
 
@@ -206,12 +225,34 @@ public:
         }
     }
 
-    /// Looks up the new _part_offset in the merged data.
-    UInt64 operator[](UInt64 part_index, UInt64 part_offset) const
+    /// Looks up the new _part_offset in the merged data. Only used in MappingMode::Enabled.
+    UInt64 ALWAYS_INLINE operator[](UInt64 part_index, UInt64 part_offset) const
     {
         chassert(mode == MappingMode::Enabled);
         chassert(part_index < offset_maps.size());
         return offset_maps[part_index][part_offset];
+    }
+
+    template <typename T>
+    requires std::unsigned_integral<T> && (sizeof(T) <= 8)
+    void ALWAYS_INLINE mapOffsets(size_t part_index, T * data, size_t num) const
+    {
+        if (num == 0) return;
+
+        if (mode == MappingMode::Enabled)
+        {
+            chassert(part_index < offset_maps.size());
+            const auto & map = offset_maps[part_index];
+            for (size_t i = 0; i < num; ++i)
+                data[i] = static_cast<T>(map[data[i]]);
+        }
+        else
+        {
+            chassert(part_index < part_starting_offsets.size());
+            T offset = static_cast<T>(part_starting_offsets[part_index]);
+            for (size_t i = 0; i < num; ++i)
+                data[i] += offset;
+        }
     }
 
     /// Finalizes all _part_offset maps and releases temporary buffers.
@@ -257,6 +298,7 @@ public:
 private:
     MappingMode mode;
     std::vector<PackedPartOffsets> offset_maps;
+    std::vector<UInt64> part_starting_offsets;
     bool finalized;
 
     size_t num_rows = 0;

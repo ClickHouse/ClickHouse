@@ -175,6 +175,11 @@ void MergeTreeReaderStream::seekToMark(const MarkInCompressedFile & mark)
     }
 }
 
+off_t MergeTreeReaderStream::getPosition()
+{
+    return plain_file_buffer->getPosition();
+}
+
 void MergeTreeReaderStream::seekToStart()
 {
     init();

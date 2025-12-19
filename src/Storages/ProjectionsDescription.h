@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
@@ -73,14 +74,23 @@ struct ProjectionDescription
 
     bool with_parent_part_offset = false;
 
+    /// If not null, this projection is treated as a specialized index. It triggers specific calculation and application
+    /// logic during query execution to optimize data access paths.
     ProjectionIndexPtr index;
 
-    std::optional<UInt64> index_granularity;
-    std::optional<UInt64> index_granularity_bytes;
+    /// Optional SETTINGS overrides for the projection.
+    SettingsChanges settings_changes;
+
+    /// Cache whether index_granularity or index_granularity_bytes is overridden to avoid re-scanning the changes list
+    /// during data writing.
+    bool has_index_granularity_overrides = false;
 
     /// Parse projection from definition AST
-    static ProjectionDescription
-    getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context);
+    static ProjectionDescription getProjectionFromAST(
+        const ASTPtr & definition_ast,
+        const ColumnsDescription & columns,
+        ContextPtr query_context,
+        LoadingStrictnessLevel mode = LoadingStrictnessLevel::ATTACH);
 
     static void fillProjectionDescriptionByQuery(
         ProjectionDescription & result,
@@ -106,8 +116,6 @@ struct ProjectionDescription
 
     ProjectionDescription clone() const;
 
-    void loadSettings(const SettingsChanges & changes);
-
     bool operator==(const ProjectionDescription & other) const;
     bool operator!=(const ProjectionDescription & other) const { return !(*this == other); }
 
@@ -121,6 +129,11 @@ struct ProjectionDescription
      * @brief Calculates the projection result for a given input block.
      *
      * @param block The input block used to evaluate the projection.
+     * @param starting_offset The absolute starting row index of the current `block` within the
+     *        source data part. It is used to calculate the value of the virtual `_part_offset`
+     *        column (i.e., `_part_offset = starting_offset + row_index`). This column is
+     *        essential for mapping projection rows back to their original positions in the
+     *        parent part during merge or mutation.
      * @param context The query context. A copy will be made internally with adjusted settings.
      * @param perm_ptr Optional pointer to a permutation vector. If provided, it is used to map
      *        the output rows back to their original order in the parent block. This is necessary
@@ -129,11 +142,12 @@ struct ProjectionDescription
      *
      * @return The resulting block after executing the projection query.
      */
-    Block calculate(const Block & block, ContextPtr context, const IColumnPermutation * perm_ptr = nullptr) const;
+    Block calculate(const Block & block, UInt64 starting_offset, ContextPtr context, const IColumnPermutation * perm_ptr = nullptr) const;
 
     /// Same as but ignores additional index-specific metadata or structures.
     /// Only the query AST is used to compute the output block.
-    Block calculateByQuery(const Block & block, ContextPtr context, const IColumnPermutation * perm_ptr = nullptr) const;
+    Block
+    calculateByQuery(const Block & block, UInt64 starting_offset, ContextPtr context, const IColumnPermutation * perm_ptr = nullptr) const;
 
     String getDirectoryName() const { return name + ".proj"; }
 };

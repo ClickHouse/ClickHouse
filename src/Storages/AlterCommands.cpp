@@ -841,7 +841,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == ADD_PROJECTION)
     {
-        auto projection = ProjectionDescription::getProjectionFromAST(projection_decl, metadata.columns, context);
+        auto projection
+            = ProjectionDescription::getProjectionFromAST(projection_decl, metadata.columns, context, LoadingStrictnessLevel::CREATE);
         metadata.projections.add(std::move(projection), after_projection_name, first, if_not_exists);
     }
     else if (type == DROP_PROJECTION)
@@ -1216,6 +1217,12 @@ bool AlterCommands::hasTextIndex(const StorageInMemoryMetadata & metadata)
         if (index.type == TEXT_INDEX_NAME)
             return true;
     }
+
+    for (const auto & projection : metadata.projections)
+    {
+        if (projection.index && projection.index->getName() == TEXT_INDEX_NAME)
+            return true;
+    }
     return false;
 }
 
@@ -1293,13 +1300,18 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
         try
         {
             /// Check if we can still build projection from new metadata.
-            auto new_projection = ProjectionDescription::getProjectionFromAST(projection.definition_ast, metadata_copy.columns, context);
+            auto new_projection = ProjectionDescription::getProjectionFromAST(
+                projection.definition_ast, metadata_copy.columns, context, LoadingStrictnessLevel::CREATE);
             /// Check if new metadata has the same keys as the old one.
             if (!blocksHaveEqualStructure(projection.sample_block_for_keys, new_projection.sample_block_for_keys))
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "Cannot ALTER column");
             /// Check if new metadata is convertible from old metadata for projection.
             Block old_projection_block = projection.sample_block;
-            performRequiredConversions(old_projection_block, new_projection.sample_block.getNamesAndTypesList(), context, metadata_copy.getColumns().getDefaults());
+            performRequiredConversions(
+                old_projection_block,
+                new_projection.sample_block.getNamesAndTypesList(),
+                context,
+                metadata_copy.getColumns().getDefaults());
             new_projections.add(std::move(new_projection));
         }
         catch (Exception & exception)

@@ -1409,10 +1409,22 @@ void PartMergerWriter::prepare()
 {
     const auto & settings = ctx->context->getSettingsRef();
 
-    for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
+    /// We split the materialization into multiple stages similar to the process of INSERT SELECT query.
+    for (const auto * projection : ctx->projections_to_build)
     {
-        // We split the materialization into multiple stages similar to the process of INSERT SELECT query.
-        projection_squashes.emplace_back(std::make_shared<const Block>(ctx->updated_header), settings[Setting::min_insert_block_size_rows], settings[Setting::min_insert_block_size_bytes]);
+        if (projection->index && projection->index->getIndexDescription())
+        {
+            /// TODO(amos): In-memory merge for inverted indices within projections is not yet supported. Force
+            /// immediate flush (block size = 1) until the lazy-loading merge path is fully implemented.
+            projection_squashes.emplace_back(std::make_shared<const Block>(ctx->updated_header), 1, 1);
+        }
+        else
+        {
+            projection_squashes.emplace_back(
+                std::make_shared<const Block>(ctx->updated_header),
+                settings[Setting::min_insert_block_size_rows],
+                settings[Setting::min_insert_block_size_bytes]);
+        }
     }
 
     if (!ctx->text_indices_to_recalc.empty())
@@ -1448,13 +1460,14 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         if (ctx->count_lightweight_deleted_rows)
             existing_rows_count += MutationHelpers::getExistingRowsCount(cur_block);
 
+        UInt64 starting_offset = (*ctx->mutate_entry)->rows_written;
         for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
         {
             Chunk squashed_chunk;
 
             {
                 ProfileEventTimeIncrement<Microseconds> projection_watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
-                Block block_to_squash = ctx->projections_to_build[i]->calculate(cur_block, ctx->context);
+                Block block_to_squash = ctx->projections_to_build[i]->calculate(cur_block, starting_offset, ctx->context);
 
                 /// Everything is deleted by lighweight delete
                 if (block_to_squash.rows() == 0)
@@ -1850,10 +1863,21 @@ private:
 
         auto builder = std::make_unique<QueryPipelineBuilder>(std::move(ctx->mutating_pipeline_builder));
 
-        if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices())
+        std::vector<ProjectionDescriptionRawPtr> projection_indices_to_build;
+        for (ProjectionDescriptionRawPtr projection_index : ctx->projections_to_build)
         {
-            auto indices_expression_dag = ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)->getActionsDAG().clone();
-            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(builder->getHeader(), indices_expression_dag.getRequiredColumnsNames(), ctx->context);
+            if (projection_index->index && projection_index->index->getIndexDescription())
+                projection_indices_to_build.push_back(projection_index);
+        }
+
+        if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices() || !projection_indices_to_build.empty())
+        {
+            auto indices_expression_dag
+                = ctx->data->getPrimaryKeyAndIndicesExpression(ctx->metadata_snapshot, skip_indices, projection_indices_to_build)
+                      ->getActionsDAG()
+                      .clone();
+            auto extracting_subcolumns_dag
+                = createSubcolumnsExtractionActions(builder->getHeader(), indices_expression_dag.getRequiredColumnsNames(), ctx->context);
             if (!extracting_subcolumns_dag.getNodes().empty())
                 indices_expression_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(indices_expression_dag));
 

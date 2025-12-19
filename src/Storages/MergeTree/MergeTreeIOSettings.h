@@ -82,8 +82,6 @@ private:
 
 struct MergeTreeWriterSettings
 {
-    MergeTreeWriterSettings() = default;
-
     MergeTreeWriterSettings(
         const Settings & global_settings,
         const WriteSettings & query_write_settings_,
@@ -122,6 +120,7 @@ struct MergeTreeWriterSettings
     bool use_adaptive_write_buffer_for_dynamic_subcolumns;
     size_t min_columns_to_activate_adaptive_write_buffer;
     size_t adaptive_write_buffer_initial_size;
+    bool compact_parts_flush_per_column;
 };
 
 }

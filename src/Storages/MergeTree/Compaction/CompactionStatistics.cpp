@@ -166,7 +166,14 @@ UInt64 getMaxResultPartRowsCount(const MergeTreeData & data)
     const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
     /// Text index and vector similarity indexes don't support UInt64 indexes of rows.
     bool has_index_with_limit_on_rows = secondary_indices.hasType("text") || secondary_indices.hasType("vector_similarity");
-    return has_index_with_limit_on_rows ? std::numeric_limits<UInt32>::max() : std::numeric_limits<UInt64>::max();
+    UInt64 limit = has_index_with_limit_on_rows ? std::numeric_limits<UInt32>::max() : std::numeric_limits<UInt64>::max();
+
+    for (const auto & projection : metadata_snapshot->getProjections())
+    {
+        if (projection.index)
+            limit = std::min(limit, projection.index->getMaxRows());
+    }
+    return limit;
 }
 
 UInt64 estimateResultPartRowsCount(const PartsRange & parts)

@@ -89,6 +89,9 @@ void MergeTreeDataPartWriterOnDisk::cancel() noexcept
 
     for (auto & stream : skip_indices_streams_holders)
         stream->cancel();
+
+    for (auto & [_, stream] : large_posting_streams)
+        stream->cancel();
 }
 
 size_t MergeTreeDataPartWriterOnDisk::computeIndexGranularity(const Block & block) const
@@ -394,6 +397,25 @@ void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataP
         stats[i]->serialize(stream.compressed_hashing);
         stream.preFinalize();
         stream.addToChecksums(checksums, true);
+    }
+}
+
+void MergeTreeDataPartWriterOnDisk::finishLargePostingSerialization(bool sync)
+{
+    for (auto & [_, stream] : large_posting_streams)
+    {
+        stream->finalize();
+        if (sync)
+            stream->sync();
+    }
+}
+
+void MergeTreeDataPartWriterOnDisk::fillLargePostingChecksums(MergeTreeData::DataPart::Checksums & checksums)
+{
+    for (auto & [_, stream] : large_posting_streams)
+    {
+        stream->preFinalize();
+        stream->addToChecksums(checksums, false /*is_compressed*/);
     }
 }
 
