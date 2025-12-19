@@ -276,7 +276,6 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
             std::move(algorithm),
             nullptr,
             nullptr,
-            /*lazily_read_info*/ nullptr,
             /*index_read_tasks*/ IndexReadTasks{},
             actions_settings,
             reader_settings,
