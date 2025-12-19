@@ -57,7 +57,7 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
 
-    bool supportsTransactions() const override { return support_transaction; }
+    bool supportsTransactions() const override { return true; }
 
     void read(
         QueryPlan & query_plan,
@@ -107,6 +107,8 @@ public:
 
     void alter(const AlterCommands & commands, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
+    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
+
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
     void onActionLockRemove(StorageActionBlockType action_type) override;
@@ -126,6 +128,7 @@ private:
     std::mutex mutation_wait_mutex;
     std::condition_variable mutation_wait_event;
 
+    MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
     MergeTreeDataMergerMutator merger_mutator;
 
@@ -149,9 +152,6 @@ private:
     /// Parts that currently participate in merge or mutation.
     /// This set have to be used with `currently_processing_in_background_mutex`.
     DataParts currently_merging_mutating_parts;
-
-    /// currently mutating parts with future version
-    std::map<DataPartPtr, Int64> currently_mutating_part_future_versions;
 
     std::map<UInt64, MergeTreeMutationEntry> current_mutations_by_version;
 
@@ -177,8 +177,6 @@ private:
     std::mutex mutation_prepared_sets_cache_mutex;
     std::map<Int64, PreparedSetsCachePtr::weak_type> mutation_prepared_sets_cache;
     PlainLightweightUpdatesSync lightweight_updates_sync;
-
-    const bool support_transaction;
 
     void loadMutations();
 

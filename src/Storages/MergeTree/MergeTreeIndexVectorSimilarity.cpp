@@ -6,7 +6,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/BitHelpers.h>
-#include <Common/setThreadName.h>
 #include <Common/formatReadable.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
@@ -325,7 +324,7 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
     /// indexes are build simultaneously (e.g. multiple merges run at the same time).
     auto & thread_pool = Context::getGlobalContextInstance()->getBuildVectorSimilarityIndexThreadPool();
 
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::MERGETREE_VECTOR_SIM_INDEX);
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "VectorSimIndex");
     auto add_vector_to_index = [&](USearchIndex::vector_key_t key, size_t row)
     {
         const typename Column::ValueType & value = column_array_data_float_data[column_array_offsets[row - 1]];
@@ -357,7 +356,7 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
     for (size_t row = 0; row < rows; ++row)
     {
         auto key = static_cast<USearchIndex::vector_key_t>(index_size + row);
-        runner.enqueueAndKeepTrack([&add_vector_to_index, key, row] { add_vector_to_index(key, row); });
+        runner([&add_vector_to_index, key, row] { add_vector_to_index(key, row); });
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();
@@ -454,7 +453,7 @@ MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity
             throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_index_fetch_multiplier' must be greater than 0.0 and less than {}", MAX_INDEX_FETCH_MULTIPLIER);
 }
 
-bool MergeTreeIndexConditionVectorSimilarity::mayBeTrueOnGranule(MergeTreeIndexGranulePtr, const UpdatePartialDisjunctionResultFn & /*update_partial_disjunction_result_fn*/) const
+bool MergeTreeIndexConditionVectorSimilarity::mayBeTrueOnGranule(MergeTreeIndexGranulePtr) const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "mayBeTrueOnGranule is not supported for vector similarity indexes");
 }
@@ -545,7 +544,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexVectorSimilarity::createIndexGranule() co
     return std::make_shared<MergeTreeIndexGranuleVectorSimilarity>(index.name, metric_kind, scalar_kind, usearch_hnsw_params);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexVectorSimilarity::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexVectorSimilarity::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
 {
     return std::make_shared<MergeTreeIndexAggregatorVectorSimilarity>(index.name, index.sample_block, dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
 }

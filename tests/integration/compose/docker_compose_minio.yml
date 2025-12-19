@@ -1,6 +1,6 @@
 services:
   minio1:
-    image: minio/minio:RELEASE.2024-09-13T20-26-02Z
+    image: minio/minio:RELEASE.2024-07-31T05-46-26Z
     volumes:
       - data1-1:/data1
       - ${MINIO_CERTS_DIR:-}:/certs
@@ -22,7 +22,7 @@ services:
   # HTTP proxies for Minio.
   proxy1:
     stop_grace_period: 5s
-    image: clickhouse/s3-proxy:${DOCKER_S3_PROXY_TAG:-latest}
+    image: clickhouse/s3-proxy
     expose:
       - "8080" # Redirect proxy port
       - "80"   # Reverse proxy port
@@ -30,7 +30,7 @@ services:
 
   proxy2:
     stop_grace_period: 5s
-    image: clickhouse/s3-proxy:${DOCKER_S3_PROXY_TAG:-latest}
+    image: clickhouse/s3-proxy
     expose:
       - "8080"
       - "80"
