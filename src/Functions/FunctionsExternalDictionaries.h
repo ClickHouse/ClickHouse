@@ -65,18 +65,19 @@ namespace ErrorCodes
   */
 
 
-class FunctionDictHelper
+class FunctionDictHelper : public WithContext
 {
 public:
-    explicit FunctionDictHelper(ContextPtr context_) : context(context_) {}
+    explicit FunctionDictHelper(ContextPtr context_) : WithContext(context_) {}
 
     std::shared_ptr<const IDictionary> getDictionary(const String & dictionary_name)
     {
-        auto dict = context->getExternalDictionariesLoader().getDictionary(dictionary_name, context);
+        auto current_context = getContext();
+        auto dict = current_context->getExternalDictionariesLoader().getDictionary(dictionary_name, current_context);
 
         if (!access_checked)
         {
-            context->checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
+            current_context->checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
             access_checked = true;
         }
 
@@ -120,7 +121,7 @@ public:
     bool isDictGetFunctionInjective(const Block & sample_columns)
     {
         /// Assume non-injective by default
-        if (sample_columns.empty())
+        if (!sample_columns)
             return false;
 
         if (sample_columns.columns() < 3)
@@ -142,10 +143,8 @@ public:
 
     DictionaryStructure getDictionaryStructure(const String & dictionary_name) const
     {
-        return context->getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, context);
+        return getContext()->getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, getContext());
     }
-
-    const ContextPtr context;
 
 private:
     /// Access cannot be not granted, since in this case checkAccess() will throw and access_checked will not be updated.
@@ -644,7 +643,7 @@ private:
         ColumnPtr mask_column,
         const DataTypePtr & result_type) const
     {
-        auto if_func = FunctionFactory::instance().get("if", helper.context);
+        auto if_func = FunctionFactory::instance().get("if", helper.getContext());
         ColumnsWithTypeAndName if_args =
         {
             {mask_column, std::make_shared<DataTypeUInt8>(), {}},

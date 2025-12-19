@@ -4,7 +4,6 @@ description: 'System table containing information about session settings for cur
 keywords: ['system table', 'settings']
 slug: /operations/system-tables/settings
 title: 'system.settings'
-doc_type: 'reference'
 ---
 
 # system.settings
@@ -19,31 +18,29 @@ Columns:
 - `description` ([String](../../sql-reference/data-types/string.md)) — Short setting description.
 - `min` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Minimum value of the setting, if any is set via [constraints](/operations/settings/constraints-on-settings). If the setting has no minimum value, contains [NULL](/operations/settings/formats#input_format_null_as_default).
 - `max` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Maximum value of the setting, if any is set via [constraints](/operations/settings/constraints-on-settings). If the setting has no maximum value, contains [NULL](/operations/settings/formats#input_format_null_as_default).
-- `disallowed_values` ([Array](/sql-reference/data-types/array)([String](../../sql-reference/data-types/string.md))) — List of disallowed values.
 - `readonly` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Shows whether the current user can change the setting:
-  - `0` — Current user can change the setting.
-  - `1` — Current user can't change the setting.
+    - `0` — Current user can change the setting.
+    - `1` — Current user can't change the setting.
 - `default` ([String](../../sql-reference/data-types/string.md)) — Setting default value.
-- `alias_for` ([String](../../sql-reference/data-types/string.md)) — The name of the original setting if the setting is an alias for another setting.
 - `is_obsolete` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) - Shows whether a setting is obsolete.
 - `tier` ([Enum8](../../sql-reference/data-types/enum.md)) — Support level for this feature. ClickHouse features are organized in tiers, varying depending on the current status of their development and the expectations one might have when using them. Values:
-  - `'Production'` — The feature is stable, safe to use and does not have issues interacting with other **production** features. .
-  - `'Beta'` — The feature is stable and safe. The outcome of using it together with other features is unknown and correctness is not guaranteed. Testing and reports are welcome.
-  - `'Experimental'` — The feature is under development. Only intended for developers and ClickHouse enthusiasts. The feature might or might not work and could be removed at any time.
-  - `'Obsolete'` — No longer supported. Either it is already removed or it will be removed in future releases.
+    - `'Production'` — The feature is stable, safe to use and does not have issues interacting with other **production** features. .
+    - `'Beta'` — The feature is stable and safe. The outcome of using it together with other features is unknown and correctness is not guaranteed. Testing and reports are welcome.
+    - `'Experimental'` — The feature is under development. Only intended for developers and ClickHouse enthusiasts. The feature might or might not work and could be removed at any time.
+    - `'Obsolete'` — No longer supported. Either it is already removed or it will be removed in future releases.
 
 **Example**
 
 The following example shows how to get information about settings which name contains `min_i`.
 
-```sql
+``` sql
 SELECT *
 FROM system.settings
 WHERE name LIKE '%min_insert_block_size_%'
 FORMAT Vertical
 ```
 
-```text
+``` text
 Row 1:
 ──────
 name:        min_insert_block_size_rows
@@ -140,7 +137,7 @@ Using of `WHERE changed` can be useful, for example, when you want to check:
 
 <!-- -->
 
-```sql
+``` sql
 SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 ```
 

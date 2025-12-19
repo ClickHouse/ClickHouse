@@ -46,7 +46,6 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
-
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
 #include <ranges>
@@ -242,24 +241,8 @@ bool isQueryOrUnionNode(const QueryTreeNodePtr & node)
     return isQueryOrUnionNode(node.get());
 }
 
-bool isCorrelatedQueryOrUnionNode(const QueryTreeNodePtr & node)
+bool isDependentColumn(IdentifierResolveScope * scope_to_check, const QueryTreeNodePtr & column_source)
 {
-    auto * query_node = node->as<QueryNode>();
-    auto * union_node = node->as<UnionNode>();
-
-    return (query_node != nullptr && query_node->isCorrelated()) || (union_node != nullptr && union_node->isCorrelated());
-}
-
-bool checkCorrelatedColumn(
-    const IdentifierResolveScope * scope_to_check,
-    const QueryTreeNodePtr & column
-)
-{
-    const auto * current_scope = scope_to_check;
-    chassert(column->getNodeType() == QueryTreeNodeType::COLUMN);
-    auto * column_node = column->as<ColumnNode>();
-    auto column_source = column_node->getColumnSource();
-
     /// The case of lambda argument. Example:
     /// arrayMap(X -> X + Y, [0])
     ///
@@ -268,37 +251,15 @@ bool checkCorrelatedColumn(
     if (column_source->getNodeType() == QueryTreeNodeType::LAMBDA)
         return false;
 
-    bool is_correlated = false;
-
     while (scope_to_check != nullptr)
     {
-        /// Check if column source is in the FROM section of the current scope (query).
         if (scope_to_check->registered_table_expression_nodes.contains(column_source))
-            break;
-
-        /// Previous check wouldn't work in the case of resolution of alias columns.
-        /// In that case table expression is not registered yet and table expression data is being computed.
-        if (scope_to_check->table_expressions_in_resolve_process.contains(column_source.get()))
-            break;
-
+            return false;
         if (isQueryOrUnionNode(scope_to_check->scope_node))
-        {
-            is_correlated = true;
-            if (auto * query_node = scope_to_check->scope_node->as<QueryNode>())
-                query_node->addCorrelatedColumn(column);
-            else if (auto * union_node = scope_to_check->scope_node->as<UnionNode>())
-                union_node->addCorrelatedColumn(column);
-        }
+            return true;
         scope_to_check = scope_to_check->parent_scope;
     }
-    if (!scope_to_check)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Cannot find the original scope of the column '{}'. Current scope: {}",
-            column_node->getColumnName(),
-            current_scope->scope_node->formatASTForErrorMessage());
-
-    return is_correlated;
+    return true;
 }
 
 DataTypePtr getExpressionNodeResultTypeOrNull(const QueryTreeNodePtr & query_tree_node)
@@ -975,7 +936,12 @@ void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const Stri
     function_node.resolveAsAggregateFunction(std::move(aggregate_function));
 }
 
-std::pair<QueryTreeNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & node)
+/** Returns:
+  * {_, false} - multiple sources
+  * {nullptr, true} - no sources (for constants)
+  * {source, true} - single source
+  */
+std::pair<QueryTreeNodePtr, bool> getExpressionSourceImpl(const QueryTreeNodePtr & node)
 {
     if (const auto * column = node->as<ColumnNode>())
     {
@@ -991,7 +957,7 @@ std::pair<QueryTreeNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & n
         const auto & args = func->getArguments().getNodes();
         for (const auto & arg : args)
         {
-            auto [arg_source, is_ok] = getExpressionSource(arg);
+            auto [arg_source, is_ok] = getExpressionSourceImpl(arg);
             if (!is_ok)
                 return {nullptr, false};
 
@@ -1008,6 +974,14 @@ std::pair<QueryTreeNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & n
         return {nullptr, true};
 
     return {nullptr, false};
+}
+
+QueryTreeNodePtr getExpressionSource(const QueryTreeNodePtr & node)
+{
+    auto [source, is_ok] = getExpressionSourceImpl(node);
+    if (!is_ok)
+        return nullptr;
+    return source;
 }
 
 /** There are no limits on the maximum size of the result for the subquery.
@@ -1301,7 +1275,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
 
             const auto & shared_variant = dynamic_column.getSharedVariant();
             auto value_data = shared_variant.getDataAt(variant_column.offsetAt(row));
-            ReadBufferFromMemory buf(value_data);
+            ReadBufferFromMemory buf(value_data.data, value_data.size);
             auto type = decodeDataType(buf);
             auto tmp_column = type->createColumn();
             tmp_column->reserve(1);
@@ -1325,16 +1299,14 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             size_t end = shared_data_offsets[row];
             auto dynamic_type = std::make_shared<DataTypeDynamic>();
             auto dynamic_serialization = dynamic_type->getDefaultSerialization();
-
-            FormatSettings format_settings;
             for (size_t i = start; i != end; ++i)
             {
-                String path{shared_paths->getDataAt(i)};
+                String path = shared_paths->getDataAt(i).toString();
                 auto value_data = shared_values->getDataAt(i);
-                ReadBufferFromMemory buf(value_data);
+                ReadBufferFromMemory buf(value_data.data, value_data.size);
                 auto tmp_column = dynamic_type->createColumn();
                 tmp_column->reserve(1);
-                dynamic_serialization->deserializeBinary(*tmp_column, buf, format_settings);
+                dynamic_serialization->deserializeBinary(*tmp_column, buf, {});
                 object[path] = getFieldFromColumnForASTLiteralImpl(std::move(tmp_column), 0, dynamic_type, true);
             }
 

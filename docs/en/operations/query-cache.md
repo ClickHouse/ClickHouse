@@ -1,18 +1,17 @@
 ---
 description: 'Guide to using and configuring the query cache feature in ClickHouse'
-sidebar_label: 'Query cache'
+sidebar_label: 'Query Cache'
 sidebar_position: 65
 slug: /operations/query-cache
-title: 'Query cache'
-doc_type: 'guide'
+title: 'Query Cache'
 ---
 
-# Query cache
+# Query Cache
 
 The query cache allows to compute `SELECT` queries just once and to serve further executions of the same query directly from the cache.
 Depending on the type of the queries, this can dramatically reduce latency and resource consumption of the ClickHouse server.
 
-## Background, design and limitations {#background-design-and-limitations}
+## Background, Design and Limitations {#background-design-and-limitations}
 
 Query caches can generally be viewed as transactionally consistent or inconsistent.
 
@@ -33,7 +32,7 @@ Transactionally inconsistent caching is traditionally provided by client tools o
 configuration is often duplicated. With ClickHouse's query cache, the caching logic moves to the server side. This reduces maintenance
 effort and avoids redundancy.
 
-## Configuration settings and usage {#configuration-settings-and-usage}
+## Configuration Settings and Usage {#configuration-settings-and-usage}
 
 :::note
 In ClickHouse Cloud, you must use [query level settings](/operations/settings/query-level) to edit query cache settings. Editing [config level settings](/operations/configuration-files) is currently not supported.
@@ -83,16 +82,15 @@ The query cache can be cleared using statement `SYSTEM DROP QUERY CACHE`. The co
 "QueryCacheHits" and "QueryCacheMisses" in system table [system.events](system-tables/events.md). Both counters are only updated for
 `SELECT` queries which run with setting `use_query_cache = true`, other queries do not affect "QueryCacheMisses". Field `query_cache_usage`
 in system table [system.query_log](system-tables/query_log.md) shows for each executed query whether the query result was written into or
-read from the query cache. Metrics `QueryCacheEntries` and `QueryCacheBytes` in system table
-[system.metrics](system-tables/metrics.md) show how many entries / bytes the query cache currently contains.
+read from the query cache. Asynchronous metrics "QueryCacheEntries" and "QueryCacheBytes" in system table
+[system.asynchronous_metrics](system-tables/asynchronous_metrics.md) show how many entries / bytes the query cache currently contains.
 
 The query cache exists once per ClickHouse server process. However, cache results are by default not shared between users. This can be
 changed (see below) but doing so is not recommended for security reasons.
 
 Query results are referenced in the query cache by the [Abstract Syntax Tree (AST)](https://en.wikipedia.org/wiki/Abstract_syntax_tree) of
 their query. This means that caching is agnostic to upper/lowercase, for example `SELECT 1` and `select 1` are treated as the same query. To
-make the matching more natural, all query-level settings related to the query cache and [output formatting](settings/settings-formats.md))
-are removed from the AST.
+make the matching more natural, all query-level settings related to the query cache are removed from the AST.
 
 If the query was aborted due to an exception or user cancellation, no entry is written into the query cache.
 
@@ -115,7 +113,7 @@ allocate in the query cache and the maximum number of stored query results. For 
 [query_cache_max_entries](/operations/settings/settings#query_cache_max_entries) in a user profile in `users.xml`, then make both settings
 readonly:
 
-```xml
+``` xml
 <profiles>
     <default>
         <!-- The maximum cache size in bytes for user/profile 'default' -->
@@ -138,7 +136,7 @@ readonly:
 To define how long a query must run at least such that its result can be cached, you can use setting
 [query_cache_min_query_duration](/operations/settings/settings#query_cache_min_query_duration). For example, the result of query
 
-```sql
+``` sql
 SELECT some_expensive_calculation(column_1, column_2)
 FROM table
 SETTINGS use_query_cache = true, query_cache_min_query_duration = 5000;
@@ -152,9 +150,6 @@ value can be specified at session, profile or query level using setting [query_c
 cache evicts entries "lazily", i.e. when an entry becomes stale, it is not immediately removed from the cache. Instead, when a new entry
 is to be inserted into the query cache, the database checks whether the cache has enough free space for the new entry. If this is not the
 case, the database tries to remove all stale entries. If the cache still has not enough free space, the new entry is not inserted.
-
-If the query is run via HTTP, then ClickHouse sets the `Age` and `Expires` headers with the age (in seconds) and expiration timestamp of the
-cached entry.
 
 Entries in the query cache are compressed by default. This reduces the overall memory consumption at the cost of slower writes into / reads
 from the query cache. To disable compression, use setting [query_cache_compress_entries](/operations/settings/settings#query_cache_compress_entries).
@@ -185,9 +180,8 @@ result blocks. While this behavior is a good default, it can be suppressed using
 [query_cache_squash_partial_results](/operations/settings/settings#query_cache_squash_partial_results).
 
 Also, results of queries with non-deterministic functions are not cached by default. Such functions include
-- functions for accessing dictionaries: [`dictGet()`](/sql-reference/functions/ext-dict-functions) etc.
-- [user-defined functions](../sql-reference/statements/create/function.md) without tag `<deterministic>true</deterministic>` in their XML
-  definition,
+- functions for accessing dictionaries: [`dictGet()`](/sql-reference/functions/ext-dict-functions#dictget-dictgetordefault-dictgetornull) etc.
+- [user-defined functions](../sql-reference/statements/create/function.md),
 - functions which return the current date or time: [`now()`](../sql-reference/functions/date-time-functions.md#now),
   [`today()`](../sql-reference/functions/date-time-functions.md#today),
   [`yesterday()`](../sql-reference/functions/date-time-functions.md#yesterday) etc.,
@@ -199,7 +193,7 @@ Also, results of queries with non-deterministic functions are not cached by defa
   [`runningDifference()`](../sql-reference/functions/other-functions.md#runningDifference),
   [`blockSize()`](../sql-reference/functions/other-functions.md#blockSize) etc.,
 - functions which depend on the environment: [`currentUser()`](../sql-reference/functions/other-functions.md#currentUser),
-  [`queryID()`](/sql-reference/functions/other-functions#queryID),
+  [`queryID()`](/sql-reference/functions/other-functions#queryid),
   [`getMacro()`](../sql-reference/functions/other-functions.md#getMacro) etc.
 
 To force caching of results of queries with non-deterministic functions regardless, use setting
@@ -214,6 +208,6 @@ row policy on a table by running the same query as another user B for whom no su
 be marked accessible by other users (i.e. shared) by supplying setting
 [query_cache_share_between_users](/operations/settings/settings#query_cache_share_between_users).
 
-## Related content {#related-content}
+## Related Content {#related-content}
 
 - Blog: [Introducing the ClickHouse Query Cache](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)

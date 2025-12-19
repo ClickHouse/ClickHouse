@@ -3,7 +3,7 @@
 #include <memory>
 #include <string>
 #include <vector>
-#include <Dictionaries/Embedded/GeodataProviders/Entries.h>
+#include "Entries.h"
 
 namespace DB
 {

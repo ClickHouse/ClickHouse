@@ -1,12 +1,12 @@
-#include <DisksClient.h>
+#include "DisksClient.h"
 #include <optional>
 #include <Client/ClientBase.h>
 #include <Disks/DiskFactory.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/registerDisks.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Disks/IDisk.h>
-#include <base/types.h>
+#include "Disks/IDisk.h"
+#include "base/types.h"
 
 #include <Formats/registerFormats.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -48,18 +48,6 @@ DiskWithPath::DiskWithPath(DiskPtr disk_, std::optional<String> path_) : disk(di
     {
         path = String{"/"};
     }
-
-    String relative_path = normalizePathAndGetAsRelative(path);
-    if (disk->existsDirectory(relative_path) || relative_path.empty())
-    {
-        return;
-    }
-    throw Exception(
-        ErrorCodes::BAD_ARGUMENTS,
-        "Initializing path {} (normalized path: {}) at disk {} is not a directory",
-        path,
-        relative_path,
-        disk->getName());
 }
 
 std::vector<String> DiskWithPath::listAllFilesByPath(const String & any_path) const

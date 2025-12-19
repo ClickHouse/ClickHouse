@@ -1,7 +1,6 @@
 #pragma once
 #include <Interpreters/Cache/FileCache_fwd.h>
 #include <Interpreters/Cache/FileCacheKey.h>
-#include <time.h>
 
 namespace DB
 {
@@ -77,7 +76,6 @@ namespace DB
         FileSegmentState state;
         uint64_t size;
         uint64_t downloaded_size;
-        time_t download_finished_time;
         uint64_t cache_hits;
         uint64_t references;
         bool is_unbound;

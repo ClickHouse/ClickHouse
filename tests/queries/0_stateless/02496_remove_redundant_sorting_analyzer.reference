@@ -118,14 +118,11 @@ ORDER BY t1.number, t2.number
 Expression (Project names)
   Sorting (Sorting for ORDER BY)
     Expression ((Before ORDER BY + Projection))
-      Expression (Post Join Actions)
-        Join (JOIN FillRightFirst)
-          Expression (Left Pre Join Actions)
-            Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
-              ReadFromSystemNumbers
-          Expression (Right Pre Join Actions)
-            Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
-              ReadFromSystemNumbers
+      Join (JOIN FillRightFirst)
+        Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
+          ReadFromSystemNumbers
+        Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
+          ReadFromSystemNumbers
 -- execute
 0	0
 0	1
@@ -165,14 +162,11 @@ ORDER BY t1.number, t2.number
 Expression (Project names)
   Sorting (Sorting for ORDER BY)
     Expression ((Before ORDER BY + Projection))
-      Expression (Post Join Actions)
-        Join (JOIN FillRightFirst)
-          Expression (Left Pre Join Actions)
-            Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
-              ReadFromSystemNumbers
-          Expression (Right Pre Join Actions)
-            Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
-              ReadFromSystemNumbers
+      Join (JOIN FillRightFirst)
+        Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
+          ReadFromSystemNumbers
+        Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
+          ReadFromSystemNumbers
 -- execute
 0	0
 0	1
