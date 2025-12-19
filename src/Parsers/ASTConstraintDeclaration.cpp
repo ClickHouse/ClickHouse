@@ -22,7 +22,7 @@ ASTPtr ASTConstraintDeclaration::clone() const
 void ASTConstraintDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
     ostr << backQuoteIfNeed(name);
-    ostr << (s.hilite ? hilite_keyword : "") << (type == Type::CHECK ? " CHECK " : " ASSUME ") << (s.hilite ? hilite_none : "");
+    ostr << (type == Type::CHECK ? " CHECK " : " ASSUME ");
     expr->format(ostr, s, state, frame);
 }
 

@@ -147,7 +147,7 @@ private:
         String parent; // Name of parent workload
         WorkloadSettings settings; // Settings specific for a given resource
 
-        NodeInfo(WorkloadSettings::Unit unit, const ASTPtr & ast, const String & resource_name);
+        NodeInfo(CostUnit unit, const ASTPtr & ast, const String & resource_name);
     };
 
     /// Ownership control for scheduler nodes, which could be referenced by raw pointers
@@ -165,7 +165,7 @@ private:
         ~Resource();
 
         const String & getName() const { return resource_name; }
-        const WorkloadSettings::Unit & getUnit() const { return unit; }
+        CostUnit getUnit() const { return unit; }
 
         /// Hierarchy management
         void createNode(const NodeInfo & info);
@@ -209,7 +209,7 @@ private:
 
         ASTPtr resource_entity;
         const String resource_name;
-        const WorkloadSettings::Unit unit;
+        const CostUnit unit;
         SchedulerRoot scheduler;
 
         // TODO(serxa): consider using resource_manager->mutex + scheduler thread for updates and mutex only for reading to avoid slow acquire/release of classifier
@@ -241,21 +241,23 @@ private:
         /// NOTE: It is called from query threads (possibly multiple)
         bool has(const String & resource_name) override;
         ResourceLink get(const String & resource_name) override;
+        WorkloadSettings getWorkloadSettings(const String & resource_name) const override;
 
         /// Attaches/detaches a specific resource
         /// NOTE: It is called from scheduler threads (possibly multiple)
-        void attach(const ResourcePtr & resource, const VersionPtr & version, ResourceLink link);
+        void attach(const ResourcePtr & resource, const VersionPtr & version, UnifiedSchedulerNode * node);
         void detach(const ResourcePtr & resource);
 
     private:
         const ClassifierSettings settings;
         WorkloadResourceManager * resource_manager;
-        std::mutex mutex;
+        mutable std::mutex mutex;
         struct Attachment
         {
             ResourcePtr resource;
             VersionPtr version;
             ResourceLink link;
+            WorkloadSettings settings;
         };
         std::unordered_map<String, Attachment> attachments; // TSA_GUARDED_BY(mutex);
     };

@@ -42,8 +42,6 @@ public:
     bool supportParallelWrite() const override;
     bool isBroken() const override;
     bool isReadonly() const override;
-    void syncRevision(UInt64 revision) const override;
-    UInt64 getRevision() const override;
     std::string getDiskPath() const override;
     ReservationPtr reserve(UInt64 bytes) const override;
     ReservationPtr tryReserve(UInt64 bytes) const override;

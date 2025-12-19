@@ -1,4 +1,4 @@
-#include "CHJIT.h"
+#include <Interpreters/JIT/CHJIT.h>
 
 #if USE_EMBEDDED_COMPILER
 
@@ -392,7 +392,7 @@ std::unique_ptr<llvm::Module> CHJIT::createModuleForCompilation()
 {
     std::unique_ptr<llvm::Module> module = std::make_unique<llvm::Module>("jit" + std::to_string(current_module_key), context);
     module->setDataLayout(layout);
-    module->setTargetTriple(machine->getTargetTriple().getTriple());
+    module->setTargetTriple(machine->getTargetTriple());
 
     return module;
 }

@@ -4,6 +4,7 @@
 #include <Processors/Executors/PollingQueue.h>
 #include <Processors/Executors/ThreadsQueue.h>
 #include <Processors/Executors/TasksQueue.h>
+#include <Common/ISlotControl.h>
 #include <stack>
 
 namespace DB
@@ -40,14 +41,20 @@ class ExecutorTasks
     /// Maximum amount of threads. Constant after initialization, based on `max_threads` setting.
     size_t num_threads = 0;
 
-    /// Started thread count (allocated by `ConcurrencyControl`). Can increase during execution up to `num_threads`.
+    /// Maximum slot_id of currently active slots + 1. Can change during execution in range from 1 to `num_threads`.
     size_t use_threads = 0;
 
-    /// Number of idle threads, changed with threads_queue.size().
-    size_t idle_threads = 0;
+    /// Reference counters for thread CPU slots to handle race conditions between upscale/downscale.
+    std::vector<size_t> slot_count;
+
+    /// Total number of non-preempted slots.
+    size_t total_slots = 0;
 
     /// A set of currently waiting threads.
     ThreadsQueue threads_queue;
+
+    /// CPU slots for each thread.
+    SlotAllocationPtr cpu_slots;
 
     /// Threshold found by rolling dice.
     const static size_t TOO_MANY_IDLE_THRESHOLD = 4;
@@ -62,7 +69,7 @@ public:
     using Stack = std::stack<UInt64>;
     /// This queue can grow a lot and lead to OOM. That is why we use non-default
     /// allocator for container which throws exceptions in operator new
-    using DequeWithMemoryTracker = std::deque<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
+    using DequeWithMemoryTracker = boost::container::devector<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
     using Queue = std::queue<ExecutingGraph::Node *, DequeWithMemoryTracker>;
 
     void finish();
@@ -91,13 +98,30 @@ public:
     // If non-local tasks were added, wake up one thread to process them.
     SpawnStatus pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
 
-    void init(size_t num_threads_, size_t use_threads_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback);
+    void init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback);
     void fill(Queue & queue, Queue & async_queue);
-    SpawnStatus upscale(size_t use_threads_);
+
+    /// Release CPU slots
+    void freeCPU();
+
+    /// Upscale to include slot_id. Updates use_threads to max(use_threads, slot_id + 1)
+    /// Returns spawn status indicating if more threads should be spawned
+    SpawnStatus upscale(size_t slot_id);
+
+    /// Downscale by removing slot_id from active slots. Updates use_threads to highest active slot + 1
+    void downscale(size_t slot_id);
+
+    /// Temporarily release slot_id without downscale. Later either downscale() or resume() is called.
+    void preempt(size_t slot_id);
+
+    /// Resume execution of a previously preempted slot.
+    void resume(size_t slot_id);
 
     void processAsyncTasks();
 
     ExecutionThreadContext & getThreadContext(size_t thread_num) { return *executor_contexts[thread_num]; }
+
+    String dump();
 };
 
 }

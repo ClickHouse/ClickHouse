@@ -1,7 +1,7 @@
 #include <TableFunctions/TableFunctionURLCluster.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 
 namespace DB
 {
@@ -36,7 +36,7 @@ StoragePtr TableFunctionURLCluster::getStorage(
         format,
         compression_method,
         StorageID(getDatabaseName(), table_name),
-        getActualTableStructure(context, /* is_insert_query */ true),
+        getActualTableStructure(context, true),
         ConstraintsDescription{},
         configuration);
 }

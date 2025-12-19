@@ -4,7 +4,7 @@
 #include <time.h>
 #include <Compression/CompressedReadBufferBase.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include "Common/LoggingFormatStringHelpers.h"
+#include <Common/LoggingFormatStringHelpers.h>
 
 
 namespace DB
@@ -54,6 +54,8 @@ public:
     /// read data into working_buffer and don't shift our position to offset_in_decompressed_block. Instead
     /// we store this offset inside nextimpl_working_buffer_offset.
     void seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block) override;
+
+    off_t getPosition() const override;
 
     [[nodiscard]] size_t readBig(char * to, size_t n) override;
 

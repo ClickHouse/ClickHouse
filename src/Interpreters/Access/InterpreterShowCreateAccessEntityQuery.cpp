@@ -48,8 +48,7 @@ namespace
         bool attach_mode)
     {
         auto query = std::make_shared<ASTCreateUserQuery>();
-        query->names = std::make_shared<ASTUserNamesWithHost>();
-        query->names->push_back(user.getName());
+        query->names = std::make_shared<ASTUserNamesWithHost>(user.getName());
         query->attach = attach_mode;
 
         if (user.allowed_client_hosts != AllowedClientHosts::AnyHostTag{})
@@ -277,7 +276,7 @@ QueryPipeline InterpreterShowCreateAccessEntityQuery::executeImpl()
     if (startsWith(desc, prefix))
         desc = desc.substr(prefix.length()); /// `desc` always starts with "SHOW ", so we can trim this prefix.
 
-    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(Block{{std::move(column), std::make_shared<DataTypeString>(), desc}}));
+    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(Block{{std::move(column), std::make_shared<DataTypeString>(), desc}})));
 }
 
 

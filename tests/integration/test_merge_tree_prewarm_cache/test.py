@@ -56,11 +56,9 @@ def test_merge_tree_prewarm_index_cache(started_cluster):
         == "0\n"
     )
 
-    node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
-
     assert (
         node.query(
-            "SELECT value FROM system.asynchronous_metrics WHERE metric = 'PrimaryIndexCacheFiles'"
+            "SELECT value FROM system.metrics WHERE metric = 'PrimaryIndexCacheFiles'"
         )
         == "2\n"
     )

@@ -27,7 +27,7 @@ public:
     };
 
     /// no_escapes - do not use ANSI escape sequences - to display in the browser, not in the console.
-    PrettyBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, Style style_, bool mono_block_, bool color_, bool glue_chunks_);
+    PrettyBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_, Style style_, bool mono_block_, bool color_, bool glue_chunks_);
     ~PrettyBlockOutputFormat() override;
 
     String getName() const override { return "PrettyBlockOutputFormat"; }
@@ -42,7 +42,7 @@ protected:
     size_t prev_row_number_width = 7;
     size_t row_number_width = 7; // "10000. "
 
-    const FormatSettings format_settings;
+    FormatSettings format_settings;
     Serializations serializations;
 
     using Widths = PODArray<size_t>;

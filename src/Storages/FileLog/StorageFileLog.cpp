@@ -40,7 +40,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsNonZeroUInt64 max_block_size;
-    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsMilliseconds stream_poll_timeout_ms;
     extern const SettingsBool use_concurrency_control;
 }
@@ -125,11 +125,11 @@ private:
         if (file_log.file_infos.file_names.empty())
         {
             LOG_WARNING(file_log.log, "There is a idle table named {}, no files need to parse.", getName());
-            Header header;
+            Block header;
             auto column_names_and_types = storage_snapshot->getColumnsByNames(GetColumnsOptions::All, column_names);
             for (const auto & [name, type] : column_names_and_types)
                 header.insert(ColumnWithTypeAndName(type, name));
-            return Pipe(std::make_unique<NullSource>(header));
+            return Pipe(std::make_unique<NullSource>(std::make_shared<const Block>(header)));
         }
 
         auto modified_context = Context::createCopy(file_log.filelog_context);
@@ -226,7 +226,7 @@ StorageFileLog::StorageFileLog(
         if (path_is_directory)
             directory_watch = std::make_unique<FileLogDirectoryWatcher>(root_data_path, *this, getContext());
 
-        auto thread = getContext()->getSchedulePool().createTask(log->name(), [this] { threadFunc(); });
+        auto thread = getContext()->getSchedulePool().createTask(getStorageID(), log->name(), [this] { threadFunc(); });
         task = std::make_shared<TaskContext>(std::move(thread));
     }
     catch (...)
@@ -505,7 +505,7 @@ void StorageFileLog::openFilesAndSetPos()
             auto & reader = file_ctx.reader.value();
             assertStreamGood(reader);
 
-            reader.seekg(0, reader.end); /// NOLINT(readability-static-accessed-through-instance)
+            reader.seekg(0, std::ios::end);
             assertStreamGood(reader);
 
             auto file_end = reader.tellg();
@@ -516,7 +516,7 @@ void StorageFileLog::openFilesAndSetPos()
             {
                 throw Exception(
                     ErrorCodes::CANNOT_READ_ALL_DATA,
-                    "Last saved offsset for File {} is bigger than file size ({} > {})",
+                    "Last saved offsset for File {} is bigger than the file size ({} > {})",
                     file,
                     meta.last_writen_position,
                     std::streamoff{file_end});
@@ -776,6 +776,10 @@ bool StorageFileLog::streamToViews()
 
     auto new_context = Context::createCopy(filelog_context);
 
+    /// Create a fresh query context from filelog_context, discarding any caches attached to the previous context to
+    /// ensure no stale state is reused.
+    new_context->makeQueryContext();
+
     InterpreterInsertQuery interpreter(
         insert,
         new_context,
@@ -887,6 +891,9 @@ void registerStorageFileLog(StorageFactory & factory)
         if ((*filelog_settings)[FileLogSetting::poll_directory_watch_events_backoff_factor].changed
             && !(*filelog_settings)[FileLogSetting::poll_directory_watch_events_backoff_factor].value)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "poll_directory_watch_events_backoff_factor can not be 0");
+
+        if ((*filelog_settings)[FileLogSetting::handle_error_mode].changed && (*filelog_settings)[FileLogSetting::handle_error_mode].value == StreamingHandleErrorMode::DEAD_LETTER_QUEUE)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "DEAD_LETTER_QUEUE is not supported by the table engine");
 
         if (args_count != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of StorageFileLog should be 2, path and format name");

@@ -1,7 +1,13 @@
-#include "CachedInMemoryReadBufferFromFile.h"
+#include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <IO/SwapHelper.h>
 #include <base/scope_guard.h>
 #include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
+
+namespace ProfileEvents
+{
+    extern const Event PageCacheReadBytes;
+}
 
 namespace DB
 {
@@ -35,9 +41,9 @@ String CachedInMemoryReadBufferFromFile::getInfoForLog()
 
 bool CachedInMemoryReadBufferFromFile::isSeekCheap()
 {
-    /// If working buffer is empty then the next nextImpl() call will have to send a new read
-    /// request anyway, seeking doesn't make it more expensive.
-    return available() == 0 || last_read_hit_cache;
+    /// Seek is cheap in the sense that seek()+nextImpl() is never much slower than ignore()+nextImpl()
+    /// (which is what the caller cares about).
+    return true;
 }
 
 off_t CachedInMemoryReadBufferFromFile::seek(off_t off, int whence)
@@ -200,9 +206,28 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
         nextimpl_working_buffer_offset = 0;
     }
 
-    file_offset_of_buffer_end += available();
+    size_t size = available();
+    file_offset_of_buffer_end += size;
+    ProfileEvents::increment(ProfileEvents::PageCacheReadBytes, size);
 
     return true;
+}
+
+bool CachedInMemoryReadBufferFromFile::isContentCached(size_t offset, size_t /*size*/)
+{
+    /// Usually this is called immediately after seek()ing to `offset`.
+
+    if (!working_buffer.empty())
+    {
+        chassert(chunk);
+        return chunk->key.offset <= offset && chunk->key.offset + chunk->key.size > offset;
+    }
+
+    size_t block_size = settings.page_cache_block_size;
+    auto old_offset = std::exchange(cache_key.offset, offset / block_size * block_size);
+    auto old_size = std::exchange(cache_key.size, std::min(block_size, file_size.value() - cache_key.offset));
+    SCOPE_EXIT(cache_key.offset = old_offset; cache_key.size = old_size;);
+    return cache->contains(cache_key, settings.page_cache_inject_eviction);
 }
 
 }

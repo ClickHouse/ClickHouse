@@ -71,6 +71,7 @@ using MergedPartOffsetsPtr = std::shared_ptr<MergedPartOffsets>;
 class MergeTask
 {
 public:
+    static constexpr auto TEMP_DIRECTORY_PREFIX = "tmp_merge_";
 
     MergeTask(
         FutureMergedMutatedPartPtr future_part_,
@@ -86,6 +87,7 @@ public:
         bool cleanup_,
         MergeTreeData::MergingParams merging_params_,
         bool need_prefix,
+        ProjectionDescriptionRawPtr projection_,
         IMergeTreeDataPart * parent_part_,
         MergedPartOffsetsPtr merged_part_offsets_,
         String suffix_,
@@ -111,6 +113,7 @@ public:
             global_ctx->deduplicate = std::move(deduplicate_);
             global_ctx->deduplicate_by_columns = std::move(deduplicate_by_columns_);
             global_ctx->cleanup = std::move(cleanup_);
+            global_ctx->projection = projection_;
             global_ctx->parent_part = std::move(parent_part_);
             global_ctx->merged_part_offsets = std::move(merged_part_offsets_);
             global_ctx->data = std::move(data_);
@@ -121,6 +124,8 @@ public:
             global_ctx->need_prefix = need_prefix;
             global_ctx->suffix = std::move(suffix_);
             global_ctx->merging_params = std::move(merging_params_);
+
+            global_ctx->data_settings = global_ctx->data->getSettings(global_ctx->projection);
 
             auto prepare_stage_ctx = std::make_shared<ExecuteAndFinalizeHorizontalPartRuntimeContext>();
             (*stages.begin())->setRuntimeContext(std::move(prepare_stage_ctx), global_ctx);
@@ -177,6 +182,7 @@ private:
         std::unique_ptr<MergeListElement> projection_merge_list_element;
         MergeListElement * merge_list_element_ptr{nullptr};
         MergeTreeData * data{nullptr};
+        MergeTreeSettingsPtr data_settings;
         MergeTreeDataMergerMutator * mutator{nullptr};
         PartitionActionBlocker * merges_blocker{nullptr};
         ActionBlocker * ttl_merges_blocker{nullptr};
@@ -184,6 +190,7 @@ private:
         StorageMetadataPtr metadata_snapshot{nullptr};
         FutureMergedMutatedPartPtr future_part{nullptr};
         std::vector<AlterConversionsPtr> alter_conversions;
+        ProjectionDescriptionRawPtr projection{nullptr};
         /// This will be either nullptr or new_data_part, so raw pointer is ok.
         IMergeTreeDataPart * parent_part{nullptr};
         MergedPartOffsetsPtr merged_part_offsets;
@@ -194,12 +201,16 @@ private:
         bool deduplicate{false};
         Names deduplicate_by_columns{};
         bool cleanup{false};
+        bool vertical_lightweight_delete{false};
 
         NamesAndTypesList gathering_columns{};
+        NameSet merge_required_key_columns{};
         NamesAndTypesList merging_columns{};
+        NamesAndTypesList merging_columns_expired_by_ttl{};
         NamesAndTypesList storage_columns{};
+        NamesAndTypesList storage_columns_expired_by_ttl{};
         MergeTreeData::DataPart::Checksums checksums_gathered_columns{};
-        ColumnsWithTypeAndName gathered_columns_samples{};
+        ColumnsSubstreams gathered_columns_substreams{};
 
         IndicesDescription merging_skip_indexes;
         std::unordered_map<String, IndicesDescription> skip_indexes_by_column;
@@ -237,6 +248,9 @@ private:
         scope_guard temporary_directory_lock;
 
         UInt64 prev_elapsed_ms{0};
+
+        /// Current merge may or may not reduce number of rows. It's not known until the horizontal stage is finished.
+        bool merge_may_reduce_rows{false};
 
         // will throw an exception if merge was cancelled in any way.
         void checkOperationIsNotCanceled() const;
@@ -314,7 +328,7 @@ private:
 
         MergeAlgorithm chooseMergeAlgorithm() const;
         void createMergedStream() const;
-        void extractMergingAndGatheringColumns() const;
+        void extractMergingAndGatheringColumns(const std::unordered_set<String> & exclude_index_names) const;
 
         void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) override
         {
@@ -481,8 +495,8 @@ private:
 
     static bool enabledBlockNumberColumn(GlobalRuntimeContextPtr global_ctx);
     static bool enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx);
-
     static void addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type);
+    static bool isVerticalLightweightDelete(const GlobalRuntimeContext & global_ctx);
 };
 
 /// FIXME

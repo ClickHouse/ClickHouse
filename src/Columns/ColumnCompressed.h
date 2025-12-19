@@ -84,8 +84,8 @@ public:
     TypeIndex getDataType() const override { throwMustBeDecompressed(); }
     Field operator[](size_t) const override { throwMustBeDecompressed(); }
     void get(size_t, Field &) const override { throwMustBeDecompressed(); }
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t) const override { throwMustBeDecompressed(); }
-    StringRef getDataAt(size_t) const override { throwMustBeDecompressed(); }
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const override { throwMustBeDecompressed(); }
+    std::string_view getDataAt(size_t) const override { throwMustBeDecompressed(); }
     bool isDefaultAt(size_t) const override { throwMustBeDecompressed(); }
     void insert(const Field &) override { throwMustBeDecompressed(); }
     bool tryInsert(const Field &) override { throwMustBeDecompressed(); }
@@ -97,14 +97,15 @@ public:
     void insertData(const char *, size_t) override { throwMustBeDecompressed(); }
     void insertDefault() override { throwMustBeDecompressed(); }
     void popBack(size_t) override { throwMustBeDecompressed(); }
-    StringRef serializeValueIntoArena(size_t, Arena &, char const *&) const override { throwMustBeDecompressed(); }
-    char * serializeValueIntoMemory(size_t, char *) const override { throwMustBeDecompressed(); }
-    const char * deserializeAndInsertFromArena(const char *) override { throwMustBeDecompressed(); }
-    const char * skipSerializedInArena(const char *) const override { throwMustBeDecompressed(); }
+    std::string_view serializeValueIntoArena(size_t, Arena &, char const *&, const IColumn::SerializationSettings *) const override { throwMustBeDecompressed(); }
+    char * serializeValueIntoMemory(size_t, char *, const IColumn::SerializationSettings *) const override { throwMustBeDecompressed(); }
+    void deserializeAndInsertFromArena(ReadBuffer &, const IColumn::SerializationSettings *) override { throwMustBeDecompressed(); }
+    void skipSerializedInArena(ReadBuffer &) const override { throwMustBeDecompressed(); }
     void updateHashWithValue(size_t, SipHash &) const override { throwMustBeDecompressed(); }
     WeakHash32 getWeakHash32() const override { throwMustBeDecompressed(); }
     void updateHashFast(SipHash &) const override { throwMustBeDecompressed(); }
     ColumnPtr filter(const Filter &, ssize_t) const override { throwMustBeDecompressed(); }
+    void filter(const Filter &) override { throwMustBeDecompressed(); }
     void expand(const Filter &, bool) override { throwMustBeDecompressed(); }
     ColumnPtr permute(const Permutation &, size_t) const override { throwMustBeDecompressed(); }
     ColumnPtr index(const IColumn &, size_t) const override { throwMustBeDecompressed(); }
@@ -126,7 +127,7 @@ public:
     void updatePermutation(IColumn::PermutationSortDirection, IColumn::PermutationSortStability,
                         size_t, int, Permutation &, EqualRanges &) const override { throwMustBeDecompressed(); }
     ColumnPtr replicate(const Offsets &) const override { throwMustBeDecompressed(); }
-    MutableColumns scatter(ColumnIndex, const Selector &) const override { throwMustBeDecompressed(); }
+    MutableColumns scatter(size_t, const Selector &) const override { throwMustBeDecompressed(); }
     void gather(ColumnGathererStream &) override { throwMustBeDecompressed(); }
     void getExtremes(Field &, Field &) const override { throwMustBeDecompressed(); }
     size_t byteSizeAt(size_t) const override { throwMustBeDecompressed(); }
@@ -135,7 +136,9 @@ public:
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override { throwMustBeDecompressed(); }
 
     bool hasDynamicStructure() const override { throwMustBeDecompressed(); }
-    void takeDynamicStructureFromSourceColumns(const Columns &) override { throwMustBeDecompressed(); }
+    void takeDynamicStructureFromSourceColumns(const Columns &, std::optional<size_t>) override { throwMustBeDecompressed(); }
+    void takeDynamicStructureFromColumn(const ColumnPtr &) override { throwMustBeDecompressed(); }
+    void fixDynamicStructure() override { throwMustBeDecompressed(); }
 
 protected:
     size_t rows;

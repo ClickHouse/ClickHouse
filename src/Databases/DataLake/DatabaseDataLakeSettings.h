@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/BaseSettingsFwdMacros.h>
-#include <Core/FormatFactorySettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
@@ -35,7 +34,7 @@ struct DatabaseDataLakeSettings
 
     DATABASE_ICEBERG_SETTINGS_SUPPORTED_TYPES(DatabaseDataLakeSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
-    void loadFromQuery(const ASTStorage & storage_def);
+    void loadFromQuery(const ASTStorage & storage_def, bool is_attach);
 
     void applyChanges(const SettingsChanges & changes);
 

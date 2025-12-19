@@ -81,7 +81,9 @@ public:
 
             DataTypes set_element_types = {in_first_argument->getResultType()};
             const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(set_element_types.front().get());
-            if (left_tuple_type && left_tuple_type->getElements().size() != 1)
+
+            /// Do not unpack if empty tuple or single element tuple
+            if (left_tuple_type && left_tuple_type->getElements().size() > 1)
                 set_element_types = left_tuple_type->getElements();
 
             set_element_types = Set::getElementTypes(std::move(set_element_types), settings[Setting::transform_null_in]);
@@ -105,7 +107,7 @@ public:
             if (in_second_argument->as<TableNode>())
                 subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(subquery_to_execute, planner_context.getQueryContext());
 
-            auto ast = in_second_argument->toAST();
+            auto ast = in_second_argument->toAST({ .set_subquery_cte_name = false });
             sets.addFromSubquery(set_key, std::move(ast), std::move(subquery_to_execute), settings);
         }
         else

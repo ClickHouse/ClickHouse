@@ -1,0 +1,33 @@
+<clickhouse>
+    <zookeeper>
+        <node index="1">
+            <host>zoo1</host>
+            <port>2181</port>
+        </node>
+        <node index="2">
+            <host>zoo2</host>
+            <port>2181</port>
+        </node>
+            <node index="3">
+            <host>zoo3</host>
+            <port>2181</port>
+        </node>
+        <session_timeout_ms>20000</session_timeout_ms>
+    </zookeeper>
+    <background_message_broker_schedule_pool_size>128</background_message_broker_schedule_pool_size>
+    <kafka>
+        <!-- Debugging of possible issues, like:
+             - https://github.com/edenhill/librdkafka/issues/2077
+             - https://github.com/edenhill/librdkafka/issues/1778
+             - #5615
+
+             XXX: for now this messages will appears in stderr.
+        -->
+        <debug>cgrp,consumer,topic,protocol</debug>
+
+        <!-- librdkafka stat in system.kafka_consumers -->
+        <!-- default 3000 (every three second) seems too long for test -->
+        <statistics_interval_ms>600</statistics_interval_ms>
+    </kafka>
+
+</clickhouse>

@@ -22,22 +22,24 @@ bool parseOneOperation(ASTCreateResourceQuery::Operation & operation, IParser::P
 {
     ParserIdentifier disk_name_p;
 
-    ASTCreateResourceQuery::AccessMode mode;
+    ResourceAccessMode mode;
     ASTPtr node;
     std::optional<String> disk;
 
     if (ParserKeyword(Keyword::WRITE).ignore(pos, expected))
-        mode = ASTCreateResourceQuery::AccessMode::DiskWrite;
+        mode = ResourceAccessMode::DiskWrite;
     else if (ParserKeyword(Keyword::READ).ignore(pos, expected))
-        mode = ASTCreateResourceQuery::AccessMode::DiskRead;
+        mode = ResourceAccessMode::DiskRead;
     else if (ParserKeyword(Keyword::MASTER_THREAD).ignore(pos, expected))
-        mode = ASTCreateResourceQuery::AccessMode::MasterThread;
+        mode = ResourceAccessMode::MasterThread;
     else if (ParserKeyword(Keyword::WORKER_THREAD).ignore(pos, expected))
-        mode = ASTCreateResourceQuery::AccessMode::WorkerThread;
+        mode = ResourceAccessMode::WorkerThread;
+    else if (ParserKeyword(Keyword::QUERY).ignore(pos, expected))
+        mode = ResourceAccessMode::Query;
     else
         return false;
 
-    if (mode == ASTCreateResourceQuery::AccessMode::DiskWrite || mode == ASTCreateResourceQuery::AccessMode::DiskRead)
+    if (mode == ResourceAccessMode::DiskWrite || mode == ResourceAccessMode::DiskRead)
     {
         if (ParserKeyword(Keyword::ANY).ignore(pos, expected))
         {
@@ -150,7 +152,7 @@ bool ParserCreateResourceQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     create_resource_query->if_not_exists = if_not_exists;
     create_resource_query->cluster = std::move(cluster_str);
 
-    create_resource_query->unit = operations.empty() ? ASTCreateResourceQuery::CostUnit::IOByte : operations.front().unit();
+    create_resource_query->unit = operations.empty() ? CostUnit::IOByte : operations.front().unit();
     create_resource_query->operations = std::move(operations);
 
     return true;

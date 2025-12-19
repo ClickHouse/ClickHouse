@@ -1,5 +1,7 @@
 -- Tags: no-parallel
 
+SET enable_analyzer = 1;
+
 DROP DATABASE IF EXISTS 01902_db_repr;
 DROP DATABASE IF EXISTS 01902_db_repr1;
 DROP DATABASE IF EXISTS 01902_db_repr2;
@@ -65,7 +67,7 @@ SELECT _database, _table, n FROM merge(currentDatabase(), '^t') ORDER BY _databa
 --fuzzed LOGICAL_ERROR
 CREATE TABLE 01902_db_repr.t4 (n Date) ENGINE=MergeTree ORDER BY n;
 INSERT INTO 01902_db_repr.t4   SELECT * FROM numbers(10);
-SELECT NULL FROM 01902_db_repr.t_merge WHERE n ORDER BY _table DESC; -- {serverError ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER}
+SELECT NULL FROM 01902_db_repr.t_merge WHERE n ORDER BY _table DESC;
 
 DROP DATABASE 01902_db_repr;
 DROP DATABASE 01902_db_repr1;

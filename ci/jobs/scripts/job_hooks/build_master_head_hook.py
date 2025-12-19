@@ -39,6 +39,8 @@ def check():
                         s3_path=f"{S3_BUCKET_NAME}/{info.git_branch}/{BUILD_TYPE_TO_STATIC_LOCATION[build_type]}/clickhouse",
                         with_rename=True,
                     )
+                except AssertionError:
+                    raise
                 except Exception as e:
                     traceback.print_exc()
                 return

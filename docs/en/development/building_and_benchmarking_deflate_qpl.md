@@ -4,6 +4,7 @@ sidebar_label: 'Building and Benchmarking DEFLATE_QPL'
 sidebar_position: 73
 slug: /development/building_and_benchmarking_deflate_qpl
 title: 'Build Clickhouse with DEFLATE_QPL'
+doc_type: 'guide'
 ---
 
 # Build Clickhouse with DEFLATE_QPL
@@ -117,7 +118,7 @@ Complete three steps same as lz4 above
 [self-check]
 For each codec(lz4/zstd/deflate), please execute below query to make sure the databases are created successfully:
 ```sql
-select count() from lineorder_flat
+SELECT count() FROM lineorder_flat
 ```
 You are expected to see below output:
 ```sql

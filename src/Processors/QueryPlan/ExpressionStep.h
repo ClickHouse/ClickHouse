@@ -1,4 +1,5 @@
 #pragma once
+
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Interpreters/ActionsDAG.h>
 
@@ -12,7 +13,7 @@ class JoiningTransform;
 class ExpressionStep : public ITransformingStep
 {
 public:
-    explicit ExpressionStep(const Header & input_header_, ActionsDAG actions_dag_);
+    explicit ExpressionStep(SharedHeader input_header_, ActionsDAG actions_dag_);
 
     ExpressionStep(const ExpressionStep & other)
         : ITransformingStep(other)
@@ -39,6 +40,12 @@ public:
 
     bool hasCorrelatedExpressions() const override { return actions_dag.hasCorrelatedColumns(); }
     void decorrelateActions() { actions_dag.decorrelate(); }
+
+    bool supportsDataflowStatisticsCollection() const override { return true; }
+
+    bool canRemoveUnusedColumns() const override;
+    RemovedUnusedColumns removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs) override;
+    bool canRemoveColumnsFromOutput() const override;
 
 private:
     void updateOutputHeader() override;

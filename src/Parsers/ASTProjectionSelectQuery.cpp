@@ -58,18 +58,18 @@ void ASTProjectionSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettin
 
     if (with())
     {
-        ostr << (s.hilite ? hilite_keyword : "") << indent_str << "WITH" << (s.hilite ? hilite_none : "");
+        ostr << indent_str << "WITH";
         s.one_line ? with()->format(ostr, s, state, frame) : with()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
         ostr << s.nl_or_ws;
     }
 
-    ostr << (s.hilite ? hilite_keyword : "") << indent_str << "SELECT" << (s.hilite ? hilite_none : "");
+    ostr << indent_str << "SELECT";
 
     s.one_line ? select()->format(ostr, s, state, frame) : select()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
 
     if (groupBy())
     {
-        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "GROUP BY" << (s.hilite ? hilite_none : "");
+        ostr << s.nl_or_ws << indent_str << "GROUP BY";
         s.one_line ? groupBy()->format(ostr, s, state, frame) : groupBy()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
     }
 
@@ -77,7 +77,7 @@ void ASTProjectionSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettin
     {
         /// Let's convert tuple ASTFunction into ASTExpressionList, which generates consistent format
         /// between GROUP BY and ORDER BY projection definition.
-        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "ORDER BY" << (s.hilite ? hilite_none : "");
+        ostr << s.nl_or_ws << indent_str << "ORDER BY";
         ASTPtr order_by;
         if (auto * func = orderBy()->as<ASTFunction>(); func && func->name == "tuple")
             order_by = func->arguments;

@@ -16,11 +16,9 @@ namespace DB
 class NpyOutputFormat : public IOutputFormat
 {
 public:
-    NpyOutputFormat(WriteBuffer & out_, const Block & header_);
+    NpyOutputFormat(WriteBuffer & out_, SharedHeader header_);
 
     String getName() const override { return "NpyOutputFormat"; }
-
-    String getContentType() const override { return "application/octet-stream"; }
 
 private:
     String shapeStr() const;

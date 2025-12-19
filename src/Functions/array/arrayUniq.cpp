@@ -80,7 +80,7 @@ private:
 
     struct MethodString
     {
-        using Set = ClearableHashSetWithStackMemory<StringRef, StringRefHash,
+        using Set = ClearableHashSetWithStackMemory<std::string_view, StringViewHash,
             INITIAL_SIZE_DEGREE>;
 
         using Method = ColumnsHashing::HashMethodString<typename Set::value_type, void, false, false>;
@@ -88,7 +88,7 @@ private:
 
     struct MethodFixedString
     {
-        using Set = ClearableHashSetWithStackMemory<StringRef, StringRefHash,
+        using Set = ClearableHashSetWithStackMemory<std::string_view, StringViewHash,
             INITIAL_SIZE_DEGREE>;
 
         using Method = ColumnsHashing::HashMethodFixedString<typename Set::value_type, void, false, false>;
@@ -339,25 +339,26 @@ If you want to get a list of unique items in an array, you can use `arrayReduce(
     FunctionDocumentation::Arguments arguments = {
         {
             "arr1",
-            "Array for which to count the number of unique elements. [`Array(T)`](/sql-reference/data-types/array)."
+            "Array for which to count the number of unique elements.",
+            {"Array(T)"}
         },
         {
-            "[, arr2, ..., arrN] (optional)",
-            "Optional. Additional arrays used to count the number of unique tuples of elements at corresponding positions in multiple arrays. [`Array(T)`](/sql-reference/data-types/array)."
+            "[, arr2, ..., arrN]",
+            "Optional. Additional arrays used to count the number of unique tuples of elements at corresponding positions in multiple arrays.",
+            {"Array(T)"}
         }
     };
     FunctionDocumentation::Examples examples =
 {{"Single argument", "SELECT arrayUniq([1, 1, 2, 2])", "2"},
 {"Multiple argument", "SELECT arrayUniq([1, 2, 3, 1], [4, 5, 6, 4])", "3"}};
-    FunctionDocumentation::ReturnedValue returned_value = R"(
+    FunctionDocumentation::ReturnedValue returned_value = {R"(
 For a single argument returns the number of unique
 elements. For multiple arguments returns the number of unique tuples made from
 elements at corresponding positions across the arrays.
-[`UInt32`](/sql-reference/data-types/int-uint).
-)";
+)", {"UInt32"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayUniq>(documentation);
 }

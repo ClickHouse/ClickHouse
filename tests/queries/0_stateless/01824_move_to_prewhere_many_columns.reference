@@ -1,7 +1,7 @@
 1	Wide
 2	Compact
 35
-      Filter
+      Filter ((WHERE + Change column names to column identifiers))
       Filter column: and(a, b, c, not(ignore(fat_string))) (removed)
         Prewhere info
           Prewhere filter
@@ -12,7 +12,7 @@
 SELECT count()
 FROM t_move_to_prewhere
 WHERE a AND b AND c AND (NOT ignore(fat_string))
-      Filter
+      Filter ((WHERE + Change column names to column identifiers))
       Filter column: and(a, b, c, not(ignore(fat_string))) (removed)
         Prewhere info
           Prewhere filter

@@ -9,7 +9,9 @@ mkdir -p ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/
 rm -rf ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}/*
 chmod 777 ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/
 
-${CLICKHOUSE_CLIENT} -q --ignore-error "
+# parallel_distributed_insert_select is disabled be able execute INSERT SELECTs with parallel replicas run
+# Otherwise, INSERT SELECTs fail with enabled parallel replicas and parallel_distributed_insert_select=2 since they try to open the same npy file in parallel
+${CLICKHOUSE_CLIENT} --parallel_distributed_insert_select=0 -q --ignore-error "
     DROP DATABASE IF EXISTS npy_output_02895;
     CREATE DATABASE IF NOT EXISTS npy_output_02895;
 

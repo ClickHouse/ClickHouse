@@ -331,6 +331,37 @@ ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_
     return res;
 }
 
+void ColumnAggregateFunction::filter(const Filter & filt)
+{
+    size_t size = data.size();
+    if (size != filt.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+                        "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
+
+    if (size == 0)
+        return;
+
+    const auto need_destroy = !src && !func->hasTrivialDestructor();
+    size_t write_pos = 0;
+
+    /// Filter in place by moving elements
+    for (size_t read_pos = 0; read_pos < size; ++read_pos)
+    {
+        if (filt[read_pos])
+        {
+            data[write_pos] = data[read_pos];
+            ++write_pos;
+        }
+        else if (need_destroy)
+        {
+            func->destroy(data[read_pos]);
+        }
+    }
+
+    /// Resize to the new size
+    data.resize_assume_reserved(write_pos);
+}
+
 void ColumnAggregateFunction::expand(const Filter & mask, bool inverted)
 {
     ensureOwnership();
@@ -475,22 +506,21 @@ void ColumnAggregateFunction::get(size_t n, Field & res) const
     res = operator[](n);
 }
 
-std::pair<String, DataTypePtr> ColumnAggregateFunction::getValueNameAndType(size_t n) const
+DataTypePtr ColumnAggregateFunction::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
-    String state;
+    if (options.notFull(name_buf))
     {
         WriteBufferFromOwnString buffer;
         func->serialize(data[n], buffer, version);
-        WriteBufferFromString wb(state);
-        writeQuoted(buffer.str(), wb);
+        writeQuoted(buffer.str(), name_buf);
     }
 
-    return {state, DataTypeFactory::instance().get(type_string)};
+    return DataTypeFactory::instance().get(type_string);
 }
 
-StringRef ColumnAggregateFunction::getDataAt(size_t n) const
+std::string_view ColumnAggregateFunction::getDataAt(size_t n) const
 {
-    return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
+    return {reinterpret_cast<const char *>(&data[n]), sizeof(data[n])};
 }
 
 void ColumnAggregateFunction::insertData(const char * pos, size_t /*length*/)
@@ -601,7 +631,8 @@ void ColumnAggregateFunction::insertDefault()
     pushBackAndCreateState(data, arena, func.get());
 }
 
-StringRef ColumnAggregateFunction::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin) const
+std::string_view ColumnAggregateFunction::serializeValueIntoArena(
+    size_t n, Arena & arena, const char *& begin, const IColumn::SerializationSettings *) const
 {
     WriteBufferFromArena out(arena, begin);
     func->serialize(data[n], out, version);
@@ -609,7 +640,7 @@ StringRef ColumnAggregateFunction::serializeValueIntoArena(size_t n, Arena & are
     return out.complete();
 }
 
-const char * ColumnAggregateFunction::deserializeAndInsertFromArena(const char * src_arena)
+void ColumnAggregateFunction::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings *)
 {
     ensureOwnership();
 
@@ -618,21 +649,10 @@ const char * ColumnAggregateFunction::deserializeAndInsertFromArena(const char *
       */
     Arena & dst_arena = createOrGetArena();
     pushBackAndCreateState(data, dst_arena, func.get());
-
-    /** We will read from src_arena.
-      * There is no limit for reading - it is assumed, that we can read all that we need after src_arena pointer.
-      * Buf ReadBufferFromMemory requires some bound. We will use arbitrary big enough number, that will not overflow pointer.
-      * NOTE Technically, this is not compatible with C++ standard,
-      *  as we cannot legally compare pointers after last element + 1 of some valid memory region.
-      *  Probably this will not work under UBSan.
-      */
-    ReadBufferFromMemory read_buffer(src_arena, std::numeric_limits<char *>::max() - src_arena - 1);
-    func->deserialize(data.back(), read_buffer, version, &dst_arena);
-
-    return read_buffer.position();
+    func->deserialize(data.back(), in, version, &dst_arena);
 }
 
-const char * ColumnAggregateFunction::skipSerializedInArena(const char *) const
+void ColumnAggregateFunction::skipSerializedInArena(ReadBuffer &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method skipSerializedInArena is not supported for {}", getName());
 }
@@ -675,7 +695,7 @@ ColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets & offsets) c
     return res;
 }
 
-MutableColumns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const
+MutableColumns ColumnAggregateFunction::scatter(size_t num_columns, const IColumn::Selector & selector) const
 {
     /// Columns with scattered values will point to this column as the owner of values.
     MutableColumns columns(num_columns);

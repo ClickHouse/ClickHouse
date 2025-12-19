@@ -37,7 +37,7 @@ namespace ErrorCodes
 class BufferingToFileSink : public ISink
 {
 public:
-    BufferingToFileSink(Block header, TemporaryBlockStreamHolder tmp_stream_, LoggerPtr log_)
+    BufferingToFileSink(SharedHeader header, TemporaryBlockStreamHolder tmp_stream_, LoggerPtr log_)
         : ISink(std::move(header))
         , tmp_stream(std::move(tmp_stream_))
         , log(log_)
@@ -87,7 +87,7 @@ private:
 class BufferingFromFileSource : public ISource
 {
 public:
-    BufferingFromFileSource(Block header, TemporaryBlockStreamHolder & tmp_stream_, LoggerPtr log_)
+    BufferingFromFileSource(SharedHeader header, TemporaryBlockStreamHolder & tmp_stream_, LoggerPtr log_)
         : ISource(std::move(header))
         , tmp_stream(tmp_stream_)
         , log(log_)
@@ -120,7 +120,7 @@ public:
         }
 
         Block block = tmp_read_stream.value()->read();
-        if (!block)
+        if (block.empty())
             return {};
 
         UInt64 num_rows = block.rows();
@@ -134,7 +134,7 @@ private:
 };
 
 MergeSortingTransform::MergeSortingTransform(
-    const Block & header,
+    SharedHeader header,
     const SortDescription & description_,
     size_t max_merged_block_size_,
     size_t max_block_bytes_,
@@ -145,7 +145,8 @@ MergeSortingTransform::MergeSortingTransform(
     size_t max_bytes_in_block_before_external_sort_,
     size_t max_bytes_in_query_before_external_sort_,
     TemporaryDataOnDiskScopePtr tmp_data_,
-    size_t min_free_disk_space_)
+    size_t min_free_disk_space_,
+    TopKThresholdTrackerPtr threshold_tracker_)
     : SortingTransform(header, description_, max_merged_block_size_, limit_, increase_sort_description_compile_attempts)
     , max_bytes_before_remerge(max_bytes_before_remerge_)
     , remerge_lowered_memory_bytes_ratio(remerge_lowered_memory_bytes_ratio_)
@@ -154,6 +155,7 @@ MergeSortingTransform::MergeSortingTransform(
     , tmp_data(std::move(tmp_data_))
     , min_free_disk_space(min_free_disk_space_)
     , max_block_bytes(max_block_bytes_)
+    , threshold_tracker(threshold_tracker_)
 {
 }
 
@@ -211,12 +213,12 @@ void MergeSortingTransform::consume(Chunk chunk)
 
     /** If significant amount of data was accumulated, perform preliminary merging step.
       */
-    if (chunks.size() > 1
+    if ((chunks.size() > 1
         && limit
         && limit * 2 < sum_rows_in_blocks   /// 2 is just a guess.
         && remerge_is_useful
         && max_bytes_before_remerge
-        && sum_bytes_in_blocks > max_bytes_before_remerge)
+        && sum_bytes_in_blocks > max_bytes_before_remerge) || (threshold_tracker && (sum_rows_in_blocks > limit * 1.5)))
     {
         remerge();
     }
@@ -234,11 +236,16 @@ void MergeSortingTransform::consume(Chunk chunk)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "TemporaryDataOnDisk is not set for MergeSortingTransform");
             temporary_files_num++;
 
-            LOG_TRACE(log, "Will dump sorting block to disk ({} > {})", formatReadableSizeWithBinarySuffix(query_memory), formatReadableSizeWithBinarySuffix(max_bytes_in_query_before_external_sort));
+            LOG_TRACE(log, "Will dump sorting block ({}, limit: {}) to disk (query memory: {}, limit: {})",
+                formatReadableSizeWithBinarySuffix(sum_bytes_in_blocks),
+                formatReadableSizeWithBinarySuffix(max_bytes_in_block_before_external_sort),
+                formatReadableSizeWithBinarySuffix(query_memory),
+                formatReadableSizeWithBinarySuffix(max_bytes_in_query_before_external_sort));
 
             /// If there's less free disk space than reserve_size, an exception will be thrown
             size_t reserve_size = sum_bytes_in_blocks + min_free_disk_space;
-            TemporaryBlockStreamHolder tmp_stream(header_without_constants, tmp_data.get(), reserve_size);
+            SharedHeader shared_header_without_constants = std::make_shared<const Block>(header_without_constants);
+            TemporaryBlockStreamHolder tmp_stream(shared_header_without_constants, tmp_data, reserve_size);
             size_t max_merged_block_size = this->max_merged_block_size;
             if (max_block_bytes > 0 && sum_rows_in_blocks > 0 && sum_bytes_in_blocks > 0)
             {
@@ -246,9 +253,9 @@ void MergeSortingTransform::consume(Chunk chunk)
                 /// max_merged_block_size >= 128
                 max_merged_block_size = std::max(std::min(max_merged_block_size, max_block_bytes / avg_row_bytes), 128UL);
             }
-            merge_sorter = std::make_unique<MergeSorter>(header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
-            auto sink = std::make_shared<BufferingToFileSink>(header_without_constants, std::move(tmp_stream), log);
-            auto source = std::make_shared<BufferingFromFileSource>(header_without_constants, sink->getHolder(), log);
+            merge_sorter = std::make_unique<MergeSorter>(shared_header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
+            auto sink = std::make_shared<BufferingToFileSink>(shared_header_without_constants, std::move(tmp_stream), log);
+            auto source = std::make_shared<BufferingFromFileSource>(shared_header_without_constants, sink->getHolder(), log);
 
             processors.emplace_back(source);
             processors.emplace_back(sink);
@@ -260,15 +267,17 @@ void MergeSortingTransform::consume(Chunk chunk)
                 bool apply_virtual_row = false;
 
                 external_merging_sorted = std::make_shared<MergingSortedTransform>(
-                        header_without_constants,
+                        shared_header_without_constants,
                         0,
                         description,
                         max_merged_block_size,
-                        /*max_merged_block_size_bytes*/0,
+                        /*max_merged_block_size_bytes=*/0,
+                        /*max_dynamic_subcolumns=*/std::nullopt,
                         SortingQueueStrategy::Batch,
                         limit,
                         /*always_read_till_end_=*/ false,
-                        nullptr,
+                        /*out_row_sources_buf=*/ nullptr,
+                        /*filter_column_name=*/ std::nullopt,
                         use_average_block_sizes,
                         apply_virtual_row,
                         have_all_inputs);
@@ -296,7 +305,7 @@ void MergeSortingTransform::generate()
     {
         if (temporary_files_num == 0)
         {
-            merge_sorter = std::make_unique<MergeSorter>(header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
+            merge_sorter = std::make_unique<MergeSorter>(std::make_shared<const Block>(header_without_constants), std::move(chunks), description, max_merged_block_size, limit);
         }
         else
         {
@@ -304,7 +313,7 @@ void MergeSortingTransform::generate()
             LOG_INFO(log, "There are {} temporary sorted parts to merge", temporary_files_num);
 
             processors.emplace_back(std::make_shared<MergeSorterSource>(
-                    header_without_constants, std::move(chunks), description, max_merged_block_size, limit));
+                    std::make_shared<const Block>(header_without_constants), std::move(chunks), description, max_merged_block_size, limit));
         }
 
         generated_prefix = true;
@@ -325,7 +334,7 @@ void MergeSortingTransform::remerge()
     LOG_DEBUG(log, "Re-merging intermediate ORDER BY data ({} blocks with {} rows) to save memory consumption", chunks.size(), sum_rows_in_blocks);
 
     /// NOTE Maybe concat all blocks and partial sort will be faster than merge?
-    MergeSorter remerge_sorter(header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
+    MergeSorter remerge_sorter(std::make_shared<const Block>(header_without_constants), std::move(chunks), description, max_merged_block_size, limit);
 
     Chunks new_chunks;
     size_t new_sum_rows_in_blocks = 0;
@@ -350,6 +359,15 @@ void MergeSortingTransform::remerge()
     chunks = std::move(new_chunks);
     sum_rows_in_blocks = new_sum_rows_in_blocks;
     sum_bytes_in_blocks = new_sum_bytes_in_blocks;
+
+    /// Publish the updated TopK value if optimization is ON
+    if (threshold_tracker && sum_rows_in_blocks == limit && chunks.size() == 1)
+    {
+        Field value;
+        chunks[0].getColumns()[0]->get(limit - 1, value);
+        threshold_tracker->testAndSet(value);
+        LOG_DEBUG(log, "TopK threshold tracker is updated");
+    }
 }
 
 }

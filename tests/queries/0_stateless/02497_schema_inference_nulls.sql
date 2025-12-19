@@ -4,6 +4,8 @@ set input_format_json_try_infer_named_tuples_from_objects=0;
 set input_format_json_read_objects_as_strings=0;
 set input_format_json_infer_incomplete_types_as_strings=0;
 set input_format_json_read_numbers_as_strings=0;
+set input_format_json_infer_array_of_dynamic_from_array_of_different_types=0;
+
 desc format(JSONEachRow, '{"x" : 1234}, {"x" : "String"}') settings input_format_json_try_infer_numbers_from_strings=1; -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
 desc format(JSONEachRow, '{"x" : [null, 1]}');
 desc format(JSONEachRow, '{"x" : [null, 1]}, {"x" : []}');
@@ -65,3 +67,9 @@ desc format(CSV, '"[NULL, 1]"');
 desc format(CSV, '"[1, 2]"\n"[3]"');
 desc format(CSV, '"[1, 2]"\n"[null]"');
 
+set schema_inference_make_columns_nullable=0;
+desc format(CSV, '\\N,\\N,1\nb,\\N,1');
+set schema_inference_make_columns_nullable='auto';
+desc format(CSV, '\\N,\\N,1\nb,\\N,1');
+set schema_inference_make_columns_nullable=3;
+desc format(CSV, '\\N,\\N,1\nb,\\N,1');

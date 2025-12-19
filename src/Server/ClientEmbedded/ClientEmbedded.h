@@ -5,12 +5,6 @@
 #include <Client/ClientBase.h>
 #include <Client/LocalConnection.h>
 
-#include <Core/Settings.h>
-#include <Interpreters/Context_fwd.h>
-#include <Loggers/Loggers.h>
-#include <Common/InterruptListener.h>
-#include <Common/StatusFile.h>
-#include <Common/Config/ConfigHelper.h>
 #include <Common/Config/ConfigProcessor.h>
 
 

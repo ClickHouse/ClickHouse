@@ -5,14 +5,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-disk_name="s3_cache_02944"
+disk_name="s3_cache_02944_lru"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE"
 $CLICKHOUSE_CLIENT --query "select max_size, max_elements from system.filesystem_cache_settings where cache_name = '${disk_name}'"
 
 $CLICKHOUSE_CLIENT -m --query "
 DROP TABLE IF EXISTS test;
-CREATE TABLE test (a String) engine=MergeTree() ORDER BY tuple() SETTINGS disk = '$disk_name';
+CREATE TABLE test (a String) engine=MergeTree() ORDER BY tuple() SETTINGS disk = '$disk_name', serialization_info_version = 'basic';
 INSERT INTO test SELECT randomString(100);
 SYSTEM DROP FILESYSTEM CACHE;
 "

@@ -12,7 +12,7 @@ namespace DB
     class RestoreChunkInfosTransform : public ISimpleTransform
     {
     public:
-        RestoreChunkInfosTransform(Chunk::ChunkInfoCollection chunk_infos_, const Block & header_)
+        RestoreChunkInfosTransform(Chunk::ChunkInfoCollection chunk_infos_, SharedHeader header_)
                 : ISimpleTransform(header_, header_, true)
                 , chunk_infos(std::move(chunk_infos_))
         {}
@@ -98,7 +98,7 @@ namespace DeduplicationToken
     class CheckTokenTransform : public ISimpleTransform
     {
     public:
-        CheckTokenTransform(String debug_, const Block & header_)
+        CheckTokenTransform(String debug_, SharedHeader header_)
             : ISimpleTransform(header_, header_, true)
             , debug(std::move(debug_))
         {
@@ -118,7 +118,7 @@ namespace DeduplicationToken
     class AddTokenInfoTransform : public ISimpleTransform
     {
     public:
-        explicit AddTokenInfoTransform(const Block & header_)
+        explicit AddTokenInfoTransform(SharedHeader header_)
             : ISimpleTransform(header_, header_, true)
         {
         }
@@ -135,7 +135,7 @@ namespace DeduplicationToken
     class DefineSourceWithChunkHashTransform : public ISimpleTransform
     {
     public:
-        explicit DefineSourceWithChunkHashTransform(const Block & header_)
+        explicit DefineSourceWithChunkHashTransform(SharedHeader header_)
             : ISimpleTransform(header_, header_, true)
         {
         }
@@ -153,7 +153,7 @@ namespace DeduplicationToken
     class ResetTokenTransform : public ISimpleTransform
     {
     public:
-        explicit ResetTokenTransform(const Block & header_)
+        explicit ResetTokenTransform(SharedHeader header_)
             : ISimpleTransform(header_, header_, true)
         {
         }
@@ -167,7 +167,7 @@ namespace DeduplicationToken
     class SetUserTokenTransform : public ISimpleTransform
     {
     public:
-        SetUserTokenTransform(String user_token_, const Block & header_)
+        SetUserTokenTransform(String user_token_, SharedHeader header_)
             : ISimpleTransform(header_, header_, true)
             , user_token(std::move(user_token_))
         {
@@ -185,7 +185,7 @@ namespace DeduplicationToken
     class SetSourceBlockNumberTransform : public ISimpleTransform
     {
     public:
-        explicit SetSourceBlockNumberTransform(const Block & header_)
+        explicit SetSourceBlockNumberTransform(SharedHeader header_)
             : ISimpleTransform(header_, header_, true)
         {
         }
@@ -202,7 +202,7 @@ namespace DeduplicationToken
     class SetViewIDTransform : public ISimpleTransform
     {
     public:
-        SetViewIDTransform(String view_id_, const Block & header_)
+        SetViewIDTransform(String view_id_, SharedHeader header_)
             : ISimpleTransform(header_, header_, true)
             , view_id(std::move(view_id_))
         {
@@ -220,7 +220,7 @@ namespace DeduplicationToken
     class SetViewBlockNumberTransform : public ISimpleTransform
     {
     public:
-        explicit SetViewBlockNumberTransform(const Block & header_)
+        explicit SetViewBlockNumberTransform(SharedHeader header_)
             : ISimpleTransform(header_, header_, true)
         {
         }

@@ -78,28 +78,28 @@ SELECT
     x2,
     x1
 FROM test
-ORDER BY x3 ASC
+ORDER BY 1 ASC
 explain syntax select x3 + 1, x2, x1 from test order by 1;
 SELECT
     x3 + 1,
     x2,
     x1
 FROM test
-ORDER BY x3 + 1 ASC
+ORDER BY 1 ASC
 explain syntax select x3, x2, x1 from test order by -1;
 SELECT
     x3,
     x2,
     x1
 FROM test
-ORDER BY x1 ASC
+ORDER BY -1 ASC
 explain syntax select x3 + 1, x2, x1 from test order by -1;
 SELECT
     x3 + 1,
     x2,
     x1
 FROM test
-ORDER BY x1 ASC
+ORDER BY -1 ASC
 explain syntax select x3, x3 - x2, x2, x1 from test order by 2;
 SELECT
     x3,
@@ -107,7 +107,7 @@ SELECT
     x2,
     x1
 FROM test
-ORDER BY x3 - x2 ASC
+ORDER BY 2 ASC
 explain syntax select x3, x3 - x2, x2, x1 from test order by -2;
 SELECT
     x3,
@@ -115,55 +115,55 @@ SELECT
     x2,
     x1
 FROM test
-ORDER BY x2 ASC
+ORDER BY -2 ASC
 explain syntax select x3, if(x3 > 10, x3, plus(x1, x2)), x1 + x2 from test order by 2;
 SELECT
     x3,
-    if(x3 > 10, x3, x1 + x2),
+    if(x3 > 10, x3, plus(x1, x2)),
     x1 + x2
 FROM test
-ORDER BY if(x3 > 10, x3, x1 + x2) ASC
+ORDER BY 2 ASC
 explain syntax select x3, if(x3 > 10, x3, plus(x1, x2)), x1 + x2 from test order by -2;
 SELECT
     x3,
-    if(x3 > 10, x3, x1 + x2),
+    if(x3 > 10, x3, plus(x1, x2)),
     x1 + x2
 FROM test
-ORDER BY if(x3 > 10, x3, x1 + x2) ASC
+ORDER BY -2 ASC
 explain syntax select max(x1), x2 from test group by 2 order by 1, 2;
 SELECT
     max(x1),
     x2
 FROM test
-GROUP BY x2
+GROUP BY 2
 ORDER BY
-    max(x1) ASC,
-    x2 ASC
+    1 ASC,
+    2 ASC
 explain syntax select max(x1), x2 from test group by -1 order by -2, -1;
 SELECT
     max(x1),
     x2
 FROM test
-GROUP BY x2
+GROUP BY -1
 ORDER BY
-    max(x1) ASC,
-    x2 ASC
+    -2 ASC,
+    -1 ASC
 explain syntax select 1 + greatest(x1, 1), x2 from test group by 1, 2;
 SELECT
     1 + greatest(x1, 1),
     x2
 FROM test
 GROUP BY
-    1 + greatest(x1, 1),
-    x2
+    1,
+    2
 explain syntax select 1 + greatest(x1, 1), x2 from test group by -2, -1;
 SELECT
     1 + greatest(x1, 1),
     x2
 FROM test
 GROUP BY
-    1 + greatest(x1, 1),
-    x2
+    -2,
+    -1
 select max(x1), x2 from test group by 1, 2; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT, 184 }
 select 1 + max(x1), x2 from test group by 1, 2; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT, 184 }
 select max(x1), x2 from test group by -2, -1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT, 184 }
@@ -174,16 +174,16 @@ SELECT
     x3
 FROM test
 GROUP BY
-    x1 + x3,
-    x3
+    1,
+    2
 explain syntax select x1 + x3, x3 from test group by -2, -1;
 SELECT
     x1 + x3,
     x3
 FROM test
 GROUP BY
-    x1 + x3,
-    x3
+    -2,
+    -1
 create table test2(x1 Int, x2 Int, x3 Int) engine=Memory;
 insert into test2 values (1, 10, 100), (10, 1, 10), (100, 100, 1);
 select x1, x1 * 2, max(x2), max(x3) from test2 group by 2, 1, x1 order by 1, 2, 4 desc, 3 asc;
@@ -199,7 +199,8 @@ select a, b, c, d, e, f  from (select 44 a, 88 b, 13 c, 14 d, 15 e, 16 f) t grou
 select a, b, c, d, e, f  from (select 44 a, 88 b, 13 c, 14 d, 15 e, 16 f) t group by 1,2,3,-3,-2,-1 order by a;
 44	88	13	14	15	16
 explain syntax select plus(1, 1) as a group by a;
-SELECT 1 + 1 AS a
+SELECT plus(1, 1) AS a
+FROM system.one
 GROUP BY a
 select substr('aaaaaaaaaaaaaa', 8) as a  group by a order by a;
 aaaaaaa

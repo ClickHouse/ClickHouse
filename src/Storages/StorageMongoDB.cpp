@@ -31,6 +31,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include <bsoncxx/json.hpp>
+#include <mongocxx/exception/logic_error.hpp>
 
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -57,6 +58,8 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool mongodb_throw_on_unsupported_query;
 }
+
+static constexpr const char * MONGODB_RESERVED_CHARS = "!?#/'\",;:$&()[]*+=@";
 
 void MongoDBConfiguration::checkHosts(const ContextPtr & context) const
 {
@@ -102,11 +105,19 @@ Pipe StorageMongoDB::read(
 
     auto options = mongocxx::options::find{};
 
-    return Pipe(std::make_shared<MongoDBSource>(*configuration.uri, configuration.collection, buildMongoDBQuery(context, options, query_info, sample_block),
-        std::move(options), sample_block, max_block_size));
+    bsoncxx::document::view_or_value mongo_query = buildMongoDBQuery(context, options, query_info, sample_block);
+    return Pipe(std::make_shared<MongoDBSource>(*configuration.uri, configuration.collection, mongo_query,
+        std::move(options), std::make_shared<const Block>(std::move(sample_block)), max_block_size));
 }
 
-MongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextPtr context)
+static String encodeString(const String & str)
+{
+    String encoded;
+    Poco::URI::encode(str, MONGODB_RESERVED_CHARS, encoded);
+    return encoded;
+}
+
+static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, ASTs engine_args, ContextPtr context, bool allow_excessive_path_in_host)
 {
     MongoDBConfiguration configuration;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
@@ -122,10 +133,12 @@ MongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextP
                 "host", "port", "user", "password", "database", "collection"}, {"options", "oid_columns"});
             String user = named_collection->get<String>("user");
             String auth_string;
-            String escaped_password;
-            Poco::URI::encode(named_collection->get<String>("password"), "!?#/'\",;:$&()[]*+=@", escaped_password);
             if (!user.empty())
-                auth_string = fmt::format("{}:{}@", user, escaped_password);
+            {
+                String escaped_user = encodeString(user);
+                String escaped_password = encodeString(named_collection->get<String>("password"));
+                auth_string = fmt::format("{}:{}@", escaped_user, escaped_password);
+            }
             configuration.uri = std::make_unique<mongocxx::uri>(fmt::format("mongodb://{}{}:{}/{}?{}",
                                                           auth_string,
                                                           named_collection->get<String>("host"),
@@ -152,17 +165,45 @@ MongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextP
 
             String user = checkAndGetLiteralArgument<String>(engine_args[3], "user");
             String auth_string;
-            String escaped_password;
-            Poco::URI::encode(checkAndGetLiteralArgument<String>(engine_args[4], "password"), "!?#/'\",;:$&()[]*+=@", escaped_password);
             if (!user.empty())
-                auth_string = fmt::format("{}:{}@", user, escaped_password);
-            auto parsed_host_port = parseAddress(checkAndGetLiteralArgument<String>(engine_args[0], "host:port"), 27017);
-            configuration.uri = std::make_unique<mongocxx::uri>(fmt::format("mongodb://{}{}:{}/{}?{}",
-                                                              auth_string,
-                                                              parsed_host_port.first,
-                                                              parsed_host_port.second,
-                                                              checkAndGetLiteralArgument<String>(engine_args[1], "database"),
-                                                              options));
+            {
+                String escaped_user = encodeString(user);
+                String escaped_password = encodeString(checkAndGetLiteralArgument<String>(engine_args[4], "password"));
+                auth_string = fmt::format("{}:{}@", escaped_user, escaped_password);
+            }
+
+            auto host_port = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
+            auto database_name = checkAndGetLiteralArgument<String>(engine_args[1], "database");
+            auto parsed_host_port = parseAddress(host_port, 27017);
+            try
+            {
+                configuration.uri = std::make_unique<mongocxx::uri>(
+                    fmt::format("mongodb://{}{}:{}/{}?{}", auth_string, parsed_host_port.first, parsed_host_port.second, database_name, options));
+            }
+            catch (const mongocxx::logic_error & e)
+            {
+                auto pos = host_port.find('/');
+                if (!allow_excessive_path_in_host || pos == String::npos)
+                    throw;
+
+                LOG_WARNING(getLogger("StorageMongoDB"), "Failed to parse MongoDB connection string: '{}', trying to remove everything after slash from the hostname", e.what());
+
+                host_port = host_port.substr(0, pos);
+                parsed_host_port = parseAddress(host_port, 27017);
+
+                configuration.uri = std::make_unique<mongocxx::uri>(
+                    fmt::format("mongodb://{}{}:{}/{}?{}", auth_string, parsed_host_port.first, parsed_host_port.second, database_name, options));
+
+                context->addOrUpdateWarningMessage(
+                    Context::WarningType::OBSOLETE_MONGO_TABLE_DEFINITION,
+                    PreformattedMessage::create(
+                        "The first argument in '{}' table definition with MongoDB engine contains a path which was ignored. "
+                        "To fix this, either use a complete MongoDB connection string with schema and database name as the first argument, "
+                        "or use only host:port format and specify database name and other parameters separately in the table engine definition. "
+                        "In future versions, this will be an error when loading the table.",
+                        table_id ? table_id->getNameForLogs() : ""));
+            }
+
             if (engine_args.size() == 7)
                 boost::split(configuration.oid_fields,
                     checkAndGetLiteralArgument<String>(engine_args[6], "oid_columns"), boost::is_any_of(","));
@@ -184,6 +225,11 @@ MongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextP
     configuration.checkHosts(context);
 
     return configuration;
+}
+
+MongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextPtr context)
+{
+    return getConfigurationImpl(nullptr, std::move(engine_args), context, false);
 }
 
 static std::string mongoFuncName(const std::string & func)
@@ -562,15 +608,19 @@ void registerStorageMongoDB(StorageFactory & factory)
 {
     factory.registerStorage("MongoDB", [](const StorageFactory::Arguments & args)
     {
+        /// Allow loading tables with excessive path in host parameter created on older ClickHouse versions
+        /// (that used the previous Poco-based MongoDB implementation which allowed it).
+        /// TODO: we can remove it after ClickHouse 27.5, it should be enough time for users to migrate.
+        bool allow_excessive_path_in_host = args.mode > LoadingStrictnessLevel::CREATE;
         return std::make_shared<StorageMongoDB>(
             args.table_id,
-            StorageMongoDB::getConfiguration(args.engine_args, args.getLocalContext()),
+            getConfigurationImpl(&args.table_id, args.engine_args, args.getLocalContext(), allow_excessive_path_in_host),
             args.columns,
             args.constraints,
             args.comment);
     },
     {
-        .source_access_type = AccessType::MONGO,
+        .source_access_type = AccessTypeObjects::Source::MONGO,
     });
 }
 

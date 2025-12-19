@@ -27,8 +27,8 @@ class CreatingSetsTransform : public IAccumulatingTransform
 {
 public:
     CreatingSetsTransform(
-        Block in_header_,
-        Block out_header_,
+        SharedHeader in_header_,
+        SharedHeader out_header_,
         SetAndKeyPtr set_and_key_,
         StoragePtr external_table_,
         SizeLimits network_transfer_limits_,

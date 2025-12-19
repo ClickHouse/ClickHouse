@@ -87,9 +87,9 @@ these are replaced with the corresponding array value.
 )";
     FunctionDocumentation::Syntax syntax = "arrayJoin(arr)";
     FunctionDocumentation::Arguments arguments = {
-        {"arr", "An array to unfold. [`Array(T)`](/sql-reference/data-types/array)."}
+        {"arr", "An array to unfold.", {"Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns a set of rows unfolded from `arr`.";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a set of rows unfolded from `arr`."};
     FunctionDocumentation::Examples examples = {
         {"Basic usage", R"(SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src)", R"(
 ┌─dst─┬─\'Hello\'─┬─src─────┐
@@ -247,7 +247,7 @@ GROUP BY
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionArrayJoin>(documentation);
 }
 

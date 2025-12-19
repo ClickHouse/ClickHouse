@@ -5,6 +5,7 @@ sidebar_label: 'HTTP Interface'
 sidebar_position: 15
 slug: /interfaces/http
 title: 'HTTP Interface'
+doc_type: 'reference'
 ---
 
 import PlayUI from '@site/static/images/play.png';
@@ -42,11 +43,13 @@ Also see: [HTTP response codes caveats](#http_response_codes_caveats).
 ClickHouse includes a web user interface, which can be accessed from the following address: 
 
 ```text
-http://localhost:8123/play`
+http://localhost:8123/play
 ```
 
 The web UI supports displaying progress during query runtime, query cancellation, and result streaming.
 It has a secret feature for displaying charts and graphs for query pipelines.
+
+After executing a query successfully, a download button appears that allows you to download the query results in various formats including CSV, TSV, JSON, JSONLines, Parquet, Markdown, or any custom format supported by ClickHouse. The download feature uses the query cache to efficiently retrieve results without re-executing the query. It will download the full result set even if the UI displayed only a single page out of many.
 
 The web UI is designed for professionals like you.
 
@@ -107,12 +110,16 @@ echo -ne 'GET /?query=SELECT%201 HTTP/1.0\r\n\r\n' | nc localhost 8123
 
 ```response title="response"
 HTTP/1.0 200 OK
-Date: Wed, 27 Nov 2019 10:30:18 GMT
+X-ClickHouse-Summary: {"read_rows":"1","read_bytes":"1","written_rows":"0","written_bytes":"0","total_rows_to_read":"1","result_rows":"0","result_bytes":"0","elapsed_ns":"4505959","memory_usage":"1111711"}
+Date: Tue, 11 Nov 2025 18:16:01 GMT
 Connection: Close
 Content-Type: text/tab-separated-values; charset=UTF-8
-X-ClickHouse-Server-Display-Name: clickhouse.ru-central1.internal
-X-ClickHouse-Query-Id: 5abe861c-239c-467f-b955-8a201abb8b7f
-X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
+Access-Control-Expose-Headers: X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone,X-ClickHouse-Exception-Code,X-ClickHouse-Exception-Tag
+X-ClickHouse-Server-Display-Name: MacBook-Pro.local
+X-ClickHouse-Query-Id: ec0d8ec6-efc4-4e1d-a14f-b748e01f5294
+X-ClickHouse-Format: TabSeparated
+X-ClickHouse-Timezone: Europe/London
+X-ClickHouse-Exception-Tag: dngjzjnxkvlwkeua
 
 1
 ```
@@ -141,7 +148,7 @@ ECT 1
 , expected One of: SHOW TABLES, SHOW DATABASES, SELECT, INSERT, CREATE, ATTACH, RENAME, DROP, DETACH, USE, SET, OPTIMIZE., e.what() = DB::Exception
 ```
 
-By default, data is returned in the [`TabSeparated`](formats.md#tabseparated) format.
+By default, data is returned in the [`TabSeparated`](/interfaces/formats/TabSeparated) format.
 
 The `FORMAT` clause is used in the query to request any other format. For example:
 
@@ -196,6 +203,14 @@ $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @
 ┡━━━┩
 │ 1 │
 └───┘
+```
+
+You can use POST method with parameterized queries. The parameters are specified using curly braces with the parameter name and type, like `{name:Type}`. The parameter values are passed with the `param_name`:
+
+```bash
+$ curl -X POST -F 'query=select {p1:UInt8} + {p2:UInt8}' -F "param_p1=3" -F "param_p2=4" 'http://localhost:8123/'
+
+7
 ```
 
 ## Insert queries over HTTP/HTTPS {#insert-queries}
@@ -287,7 +302,7 @@ You can also choose to use [HTTP compression](https://en.wikipedia.org/wiki/HTTP
 
 To send a compressed `POST` request, append the request header `Content-Encoding: compression_method`.
 
-In order for ClickHouse to compress the response, enable compression with the [`enable_http_compression`](../operations/settings/settings.md#enable_http_compression) setting and append the `Accept-Encoding: compression_method` header to the request. 
+In order for ClickHouse to compress the response, append the `Accept-Encoding: compression_method` header to the request. 
 
 You can configure the data compression level using the [`http_zlib_compression_level`](../operations/settings/settings.md#http_zlib_compression_level) setting for all compression methods.
 
@@ -326,7 +341,7 @@ curl -sS "http://localhost:8123/?enable_http_compression=1" \
 2
 ```
 
-## Default Database {#default-database}
+## Default database {#default-database}
 
 You can use the `database` URL parameter or the `X-ClickHouse-Database` header to specify the default database.
 
@@ -418,12 +433,12 @@ You can receive information about the progress of a query in the `X-ClickHouse-P
 Below is an example of the header sequence:
 
 ```text
-X-ClickHouse-Progress: {"read_rows":"2752512","read_bytes":"240570816","total_rows_to_read":"8880128","elapsed_ns":"662334"}
-X-ClickHouse-Progress: {"read_rows":"5439488","read_bytes":"482285394","total_rows_to_read":"8880128","elapsed_ns":"992334"}
-X-ClickHouse-Progress: {"read_rows":"8783786","read_bytes":"819092887","total_rows_to_read":"8880128","elapsed_ns":"1232334"}
+X-ClickHouse-Progress: {"read_rows":"261636","read_bytes":"2093088","total_rows_to_read":"1000000","elapsed_ns":"14050417","memory_usage":"22205975"}
+X-ClickHouse-Progress: {"read_rows":"654090","read_bytes":"5232720","total_rows_to_read":"1000000","elapsed_ns":"27948667","memory_usage":"83400279"}
+X-ClickHouse-Progress: {"read_rows":"1000000","read_bytes":"8000000","total_rows_to_read":"1000000","elapsed_ns":"38002417","memory_usage":"80715679"}
 ```
 
-The possible header fields can be:
+The possible header fields are:
 
 | Header field         | Description                     |
 |----------------------|---------------------------------|
@@ -432,6 +447,8 @@ The possible header fields can be:
 | `total_rows_to_read` | Total number of rows to be read.|
 | `written_rows`       | Number of rows written.         |
 | `written_bytes`      | Volume of data written in bytes.|
+| `elapsed_ns`         | Query runtime in nanoseconds.|
+| `memory_usage`       | Memory in bytes used by the query. |
 
 Running requests do not stop automatically if the HTTP connection is lost. Parsing and data formatting are performed on the server-side, and using the network might be ineffective.
 
@@ -444,7 +461,7 @@ The following optional parameters exist:
 
 The HTTP interface allows passing external data (external temporary tables) for querying. For more information, see ["External data for query processing"](/engines/table-engines/special/external-data).
 
-## Response Buffering {#response-buffering}
+## Response buffering {#response-buffering}
 
 Response buffering can be enabled on the server-side. The following URL parameters are provided for this purpose:
 - `buffer_size`
@@ -526,7 +543,73 @@ You can mitigate this problem by enabling `wait_end_of_query=1` ([Response Buffe
 The only way to catch all errors is to analyze the HTTP body before parsing it using the required format.
 :::
 
-## Queries with Parameters {#cli-queries-with-parameters}
+Such exceptions in ClickHouse have consistent exception format as below irrespective of which format used (eg. `Native`, `TSV`, `JSON`, etc) when `http_write_exception_in_output_format=0` (default) . Which makes it easy to parse and extract error messages on the client side.
+
+```text
+\r\n
+__exception__\r\n
+<TAG>\r\n
+<error message>\r\n
+<message_length> <TAG>\r\n
+__exception__\r\n
+
+```
+
+Where `<TAG>` is a 16 byte random tag, which is the same tag sent in the `X-ClickHouse-Exception-Tag` response header.
+The `<error message>` is the actual exception message (exact length can be found in `<message_length>`). The whole exception block described above can be up to 16 KiB.
+
+Here is an example in `JSON` format
+
+```bash
+$ curl -v -Ss "http://localhost:8123/?max_block_size=1&query=select+sleepEachRow(0.001),throwIf(number=2)from+numbers(5)+FORMAT+JSON"
+...
+{
+    "meta":
+    [
+        {
+            "name": "sleepEachRow(0.001)",
+            "type": "UInt8"
+        },
+        {
+            "name": "throwIf(equals(number, 2))",
+            "type": "UInt8"
+        }
+    ],
+
+    "data":
+    [
+        {
+            "sleepEachRow(0.001)": 0,
+            "throwIf(equals(number, 2))": 0
+        },
+        {
+            "sleepEachRow(0.001)": 0,
+            "throwIf(equals(number, 2))": 0
+        }
+__exception__
+dmrdfnujjqvszhav
+Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(equals(__table1.number, 2_UInt8) :: 1) -> throwIf(equals(__table1.number, 2_UInt8)) UInt8 : 0'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) (version 25.11.1.1)
+262 dmrdfnujjqvszhav
+__exception__
+```
+
+Here is similar example but in `CSV` format
+
+```bash
+$ curl -v -Ss "http://localhost:8123/?max_block_size=1&query=select+sleepEachRow(0.001),throwIf(number=2)from+numbers(5)+FORMAT+CSV"
+...
+<
+0,0
+0,0
+
+__exception__
+rumfyutuqkncbgau
+Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(equals(__table1.number, 2_UInt8) :: 1) -> throwIf(equals(__table1.number, 2_UInt8)) UInt8 : 0'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) (version 25.11.1.1)
+262 rumfyutuqkncbgau
+__exception__
+```
+
+## Queries with parameters {#cli-queries-with-parameters}
 
 You can create a query with parameters and pass values for them from the corresponding HTTP request parameters. For more information, see [Queries with Parameters for CLI](../interfaces/cli.md#cli-queries-with-parameters).
 
@@ -615,7 +698,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
 < X-ClickHouse-Format: Template
 < X-ClickHouse-Timezone: Asia/Shanghai
 < Keep-Alive: timeout=10
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334","memory_usage":"8451671"}
 <
 # HELP "Query" "Number of executing queries"
 # TYPE "Query" counter
@@ -648,33 +731,46 @@ Configuration options for `http_handlers` work as follows.
 - `method`
 - `headers`
 - `url`
+- `full_url`
 - `handler`
 
 Each of these are discussed below:
 
-  - `method` is responsible for matching the method part of the HTTP request. `method` fully conforms to the definition of [`method`]    
+- `method` is responsible for matching the method part of the HTTP request. `method` fully conforms to the definition of [`method`]    
   (https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods) in the HTTP protocol. It is an optional configuration. If it is not defined in the   
   configuration file, it does not match the method portion of the HTTP request.
 
-  - `url` is responsible for matching the URL part of the HTTP request. It is compatible with [RE2](https://github.com/google/re2)'s regular 
-  expressions. It is an optional configuration. If it is not defined in the configuration file, it does not match the URL portion of the HTTP 
-  request.
+- `url` is responsible for matching the URL part (path and query string) of the HTTP request.
+  If the `url` prefixed with `regex:` it expects [RE2](https://github.com/google/re2)'s regular expressions.
+  It is an optional configuration. If it is not defined in the configuration file, it does not match the URL portion of the HTTP request.
 
-  - `headers` are responsible for matching the header part of the HTTP request. It is compatible with RE2's regular expressions. It is an optional 
+- `full_url` same as `url`, but, includes complete URL, i.e. `schema://host:port/path?query_string`.
+  Note, ClickHouse does not support "virtual hosts", so the `host` is an IP address (and not the value of `Host` header).
+
+- `empty_query_string` - ensures that there is no query string (`?query_string`) in the request
+
+- `headers` are responsible for matching the header part of the HTTP request. It is compatible with RE2's regular expressions. It is an optional 
   configuration. If it is not defined in the configuration file, it does not match the header portion of the HTTP request.
 
-  - `handler` contains the main processing part. Now `handler` can configure `type`, `status`, `content_type`, `http_response_headers`, 
-  `response_content`, `query`, `query_param_name`. `type` currently supports three types: [`predefined_query_handler`](#predefined_query_handler), 
-  [`dynamic_query_handler`](#dynamic_query_handler), [`static`](#static).
+- `handler` contains the main processing part.
 
-    - `query` — use with `predefined_query_handler` type, executes query when the handler is called.
-    - `query_param_name` — use with `dynamic_query_handler` type, extracts and executes the value corresponding to the `query_param_name` value in 
+  It can have the following `type`:
+  - [`predefined_query_handler`](#predefined_query_handler)
+  - [`dynamic_query_handler`](#dynamic_query_handler)
+  - [`static`](#static)
+  - [`redirect`](#redirect)
+
+  And the following parameters:
+  - `query` — use with `predefined_query_handler` type, executes query when the handler is called.
+  - `query_param_name` — use with `dynamic_query_handler` type, extracts and executes the value corresponding to the `query_param_name` value in 
        HTTP request parameters.
-    - `status` — use with `static` type, response status code.
-    - `content_type` — use with any type, response [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
-    - `http_response_headers` — use with any type, response headers map. Could be used to set content type as well.
-    - `response_content` — use with `static` type, response content sent to client, when using the prefix 'file://' or 'config://', find the content 
+  - `status` — use with `static` type, response status code.
+  - `content_type` — use with any type, response [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
+  - `http_response_headers` — use with any type, response headers map. Could be used to set content type as well.
+  - `response_content` — use with `static` type, response content sent to client, when using the prefix 'file://' or 'config://', find the content 
     from the file or configuration sends to client.
+  - `user` - user to execute the query from (default user is `default`).
+    **Note**, you do not need to specify password for this user.
 
 The configuration methods for different `type`s are discussed next.
 
@@ -822,7 +918,7 @@ curl -vv  -H 'XXX:xxx' 'http://localhost:8123/hi'
 < Content-Type: text/html; charset=UTF-8
 < Transfer-Encoding: chunked
 < Keep-Alive: timeout=10
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334","memory_usage":"8451671"}
 <
 * Connection #0 to host localhost left intact
 Say Hi!%
@@ -862,7 +958,7 @@ $ curl -v  -H 'XXX:xxx' 'http://localhost:8123/get_config_static_handler'
 < Content-Type: text/plain; charset=UTF-8
 < Transfer-Encoding: chunked
 < Keep-Alive: timeout=10
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334","memory_usage":"8451671"}
 <
 * Connection #0 to host localhost left intact
 <html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>%
@@ -920,7 +1016,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_absolute_path_static_handler'
 < Content-Type: text/html; charset=UTF-8
 < Transfer-Encoding: chunked
 < Keep-Alive: timeout=10
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334","memory_usage":"8451671"}
 <
 <html><body>Absolute Path File</body></html>
 * Connection #0 to host localhost left intact
@@ -939,13 +1035,34 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 < Content-Type: text/html; charset=UTF-8
 < Transfer-Encoding: chunked
 < Keep-Alive: timeout=10
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334","memory_usage":"8451671"}
 <
 <html><body>Relative Path File</body></html>
 * Connection #0 to host localhost left intact
 ```
 
-## HTTP Response Headers {#http-response-headers}
+### redirect {#redirect}
+
+`redirect` will do a `302` redirect to `location`
+
+For instance this is how you can automatically add set user to `play` for ClickHouse play:
+
+```xml
+<clickhouse>
+    <http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <url>/play</url>
+            <handler>
+                <type>redirect</type>
+                <location>/play?user=play</location>
+            </handler>
+        </rule>
+    </http_handlers>
+</clickhouse>
+```
+
+## HTTP response headers {#http-response-headers}
 
 ClickHouse allows you to configure custom HTTP response headers that can be applied to any kind of handler that can be configured. These headers can be set using the `http_response_headers` setting, which accepts key-value pairs representing header names and their values. This feature is particularly useful for implementing custom security headers, CORS policies, or any other HTTP header requirements across your ClickHouse HTTP interface.
 
@@ -984,7 +1101,7 @@ In the example below, every server response will contain two custom headers: `X-
 
 While query execution occurs over HTTP an exception can happen when part of the data has already been sent. Usually an exception is sent to the client in plain text.
 Even if some specific data format was used to output data and the output may become invalid in terms of specified data format.
-To prevent it, you can use setting [`http_write_exception_in_output_format`](/operations/settings/settings#http_write_exception_in_output_format) (enabled by default) that will tell ClickHouse to write an exception in specified format (currently supported for XML and JSON* formats).
+To prevent it, you can use setting [`http_write_exception_in_output_format`](/operations/settings/settings#http_write_exception_in_output_format) (disabled by default) that will tell ClickHouse to write an exception in specified format (currently supported for XML and JSON* formats).
 
 Examples:
 

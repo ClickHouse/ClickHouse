@@ -22,7 +22,11 @@ namespace ProfileEvents
     using Event = StrongTypedef<size_t, struct EventTag>;
     using Count = size_t;
     using Increment = Int64;
-    using Counter = std::atomic<Count>;
+    /// Avoid false sharing when multiple threads increment different counters close to each other.
+    struct alignas(64) Counter : public std::atomic<Count>
+    {
+        using std::atomic<Count>::atomic;
+    };
     class Counters;
 
     /// Counters - how many times each event happened
@@ -62,7 +66,7 @@ namespace ProfileEvents
         std::unique_ptr<Counter[]> counters_holder;
         /// Used to propagate increments
         std::atomic<Counters *> parent = {};
-        bool trace_profile_events = false;
+        std::atomic_bool trace_profile_events = false;
         Counter prev_cpu_wait_microseconds = 0;
         Counter prev_cpu_virtual_time_microseconds = 0;
 
@@ -132,7 +136,7 @@ namespace ProfileEvents
 
         void setTraceProfileEvents(bool value)
         {
-            trace_profile_events = value;
+            trace_profile_events.store(value, std::memory_order_relaxed);
         }
 
         /// Set all counters to zero
@@ -182,7 +186,7 @@ namespace ProfileEvents
     void incrementLoggerElapsedNanoseconds(UInt64 ns);
 
     /// Get name of event by identifier. Returns statically allocated string.
-    const char * getName(Event event);
+    std::string_view getName(Event event);
 
     /// Get description of event by identifier. Returns statically allocated string.
     const char * getDocumentation(Event event);

@@ -299,7 +299,7 @@ Cluster::Address Cluster::Address::fromFullString(std::string_view full_string)
         secure = Protocol::Secure::Enable;
     }
 
-    const char * colon = strchr(full_string.data(), ':');  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    const char * colon = strchr(full_string.data(), ':'); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     if (!user_pw_end || !colon)
         throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect user[:password]@host:port#default_database format {}", full_string);
 
@@ -308,7 +308,7 @@ Cluster::Address Cluster::Address::fromFullString(std::string_view full_string)
     if (!host_end)
         throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect address '{}', it does not contain port", full_string);
 
-    const char * has_db = strchr(full_string.data(), '#');  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    const char * has_db = strchr(full_string.data(), '#'); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     const char * port_end = has_db ? has_db : address_end;
 
     Address address;
@@ -336,7 +336,16 @@ ClusterPtr Clusters::getCluster(const std::string & cluster_name) const
 {
     std::lock_guard lock(mutex);
 
-    auto expanded_cluster_name = macros_->expand(cluster_name);
+    std::string expanded_cluster_name;
+    try
+    {
+        expanded_cluster_name = macros_->expand(cluster_name);
+    }
+    catch (Exception & e)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to expand macros in cluster name: {}", e.message());
+    }
+
     auto it = impl.find(expanded_cluster_name);
     return (it != impl.end()) ? it->second : nullptr;
 }

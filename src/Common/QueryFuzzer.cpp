@@ -1,4 +1,4 @@
-#include "QueryFuzzer.h"
+#include <Common/QueryFuzzer.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
@@ -646,8 +646,8 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
         for (const auto & element : type_tuple->getElements())
             elements.push_back(fuzzDataType(element));
 
-        return type_tuple->haveExplicitNames() ? std::make_shared<DataTypeTuple>(elements, type_tuple->getElementNames())
-                                               : std::make_shared<DataTypeTuple>(elements);
+        return type_tuple->hasExplicitNames() ? std::make_shared<DataTypeTuple>(elements, type_tuple->getElementNames())
+                                              : std::make_shared<DataTypeTuple>(elements);
     }
 
     const auto * type_map = typeid_cast<const DataTypeMap *>(type.get());
@@ -719,7 +719,7 @@ DataTypePtr QueryFuzzer::getRandomType()
            TypeIndex::FixedString, TypeIndex::Enum8,          TypeIndex::Enum16,   TypeIndex::Decimal32,  TypeIndex::Decimal64,
            TypeIndex::Decimal128,  TypeIndex::Decimal256,     TypeIndex::UUID,     TypeIndex::Array,      TypeIndex::Tuple,
            TypeIndex::Nullable,    TypeIndex::LowCardinality, TypeIndex::Map,      TypeIndex::IPv4,       TypeIndex::IPv6,
-           TypeIndex::Variant,     TypeIndex::Dynamic /*,        TypeIndex::Time,     TypeIndex::Time64*/};
+           TypeIndex::Variant,     TypeIndex::Dynamic,        TypeIndex::Time,     TypeIndex::Time64};
     const auto type_id = pickRandomly(fuzz_rand, random_types);
 
 /// NOLINTBEGIN(bugprone-macro-parentheses)
@@ -871,7 +871,7 @@ void QueryFuzzer::fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuer
 
     static const std::unordered_map<ASTExplainQuery::ExplainKind, std::vector<String>> settings_by_kind
         = {{ASTExplainQuery::ExplainKind::ParsedAST, {"graph", "optimize"}},
-           {ASTExplainQuery::ExplainKind::AnalyzedSyntax, {}},
+           {ASTExplainQuery::ExplainKind::AnalyzedSyntax, {"oneline", "query_tree_passes"}},
            {ASTExplainQuery::QueryTree, {"run_passes", "dump_passes", "dump_ast", "passes"}},
            {ASTExplainQuery::ExplainKind::QueryPlan, {"header, description", "actions", "indexes", "optimize", "json", "sorting"}},
            {ASTExplainQuery::ExplainKind::QueryPipeline, {"header", "graph=1", "compact"}},
@@ -1178,34 +1178,34 @@ ASTPtr QueryFuzzer::generatePredicate()
                 /// Pick a random identifier
                 auto rand_col1 = colids.begin();
                 std::advance(rand_col1, fuzz_rand() % colids.size());
-                ASTPtr exp1 = rand_col1->second->clone();
+                ASTPtr expression_1 = rand_col1->second->clone();
 
-                exp1 = setIdentifierAliasOrNot(exp1);
+                expression_1 = setIdentifierAliasOrNot(expression_1);
                 if (nprob == 0)
                 {
-                    next_condition = makeASTFunction(fuzz_rand() % 2 == 0 ? "isNull" : "isNotNull", exp1);
+                    next_condition = makeASTFunction(fuzz_rand() % 2 == 0 ? "isNull" : "isNotNull", expression_1);
                 }
                 else
                 {
                     /// Pick any other column reference
                     auto rand_col2 = column_like.begin();
                     std::advance(rand_col2, fuzz_rand() % column_like.size());
-                    ASTPtr exp2 = rand_col2->second->clone();
+                    ASTPtr expression_2 = rand_col2->second->clone();
 
-                    exp2 = setIdentifierAliasOrNot(exp2);
+                    expression_2 = setIdentifierAliasOrNot(expression_2);
                     if (fuzz_rand() % 3 == 0)
                     {
                         /// Swap sides
-                        auto exp3 = exp1;
-                        exp1 = exp2;
-                        exp2 = exp3;
+                        auto expression_3 = expression_1;
+                        expression_1 = expression_2;
+                        expression_2 = expression_3;
                     }
                     /// Run mostly equality conditions
                     /// No isNotDistinctFrom outside join conditions
                     next_condition = makeASTFunction(
                         comparison_comparators[(fuzz_rand() % 10 == 0) ? (fuzz_rand() % (comparison_comparators.size() - 1)) : 0],
-                        exp1,
-                        exp2);
+                        expression_1,
+                        expression_2);
                 }
                 next_condition = tryNegateNextPredicate(next_condition, 30);
                 /// Sometimes use multiple conditions
@@ -1467,20 +1467,20 @@ ASTPtr QueryFuzzer::addJoinClause()
 
             const String id1_alias = id1->tryGetAlias();
             const String & nidentifier = (id1_alias.empty() || (fuzz_rand() % 2 == 0)) ? id1->shortName() : id1_alias;
-            ASTPtr exp1 = std::make_shared<ASTIdentifier>(Strings{next_alias, nidentifier});
-            ASTPtr exp2 = rand_col2->second->clone();
+            ASTPtr expression_1 = std::make_shared<ASTIdentifier>(Strings{next_alias, nidentifier});
+            ASTPtr expression_2 = rand_col2->second->clone();
 
-            exp2 = setIdentifierAliasOrNot(exp2);
+            expression_2 = setIdentifierAliasOrNot(expression_2);
             if (fuzz_rand() % 3 == 0)
             {
                 /// Swap sides
-                auto exp3 = exp1;
-                exp1 = exp2;
-                exp2 = exp3;
+                auto expression_e = expression_1;
+                expression_1 = expression_2;
+                expression_2 = expression_e;
             }
             /// Run mostly equi-joins
             ASTPtr next_condition = makeASTFunction(
-                comparison_comparators[(fuzz_rand() % 10 == 0) ? (fuzz_rand() % comparison_comparators.size()) : 0], exp1, exp2);
+                comparison_comparators[(fuzz_rand() % 10 == 0) ? (fuzz_rand() % comparison_comparators.size()) : 0], expression_1, expression_2);
             next_condition = tryNegateNextPredicate(next_condition, 30);
 
             /// Sometimes use multiple conditions

@@ -13,7 +13,7 @@
 
 #if USE_QPL
 
-#include "libaccel_config.h"
+#include <libaccel_config.h>
 
 #include <immintrin.h>
 

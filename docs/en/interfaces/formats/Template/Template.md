@@ -6,6 +6,7 @@ keywords: ['Template']
 output_format: true
 slug: /interfaces/formats/Template
 title: 'Template'
+doc_type: 'guide'
 ---
 
 | Input | Output | Alias |
@@ -29,7 +30,7 @@ It uses the following settings:
 | `format_template_resultset_format`                                                                       | Specifies the result set format string [in-line](#inline_specification).                                                   |
 | Some settings of other formats (e.g.`output_format_json_quote_64bit_integers` when using `JSON` escaping |                                                                                                                            |
 
-## Settings And Escaping Rules {#settings-and-escaping-rules}
+## Settings and escaping rules {#settings-and-escaping-rules}
 
 ### format_template_row {#format_template_row}
 
@@ -127,11 +128,11 @@ The rules for format strings and escape sequences are the same as those for:
 - [`format_template_resultset`](#format_template_resultset) when using `format_template_resultset_format`.
 :::
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
 Let's look at two examples of how we can use the `Template` format, first for selecting data and then for inserting data.
 
-### Selecting Data {#selecting-data}
+### Selecting data {#selecting-data}
 
 ```sql
 SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase ORDER BY c DESC LIMIT 5 FORMAT Template SETTINGS
@@ -180,7 +181,7 @@ Result:
 </html>
 ```
 
-### Inserting Data {#inserting-data}
+### Inserting data {#inserting-data}
 
 ```text
 Some header
@@ -206,7 +207,7 @@ Page views: ${PageViews:CSV}, User id: ${UserID:CSV}, Useless field: ${:CSV}, Du
 `PageViews`, `UserID`, `Duration` and `Sign` inside placeholders are names of columns in the table. Values after `Useless field` in rows and after `\nTotal rows:` in suffix will be ignored.
 All delimiters in the input data must be strictly equal to delimiters in specified format strings.
 
-### In-line Specification {#in-line-specification}
+### In-line specification {#in-line-specification}
 
 Tired of manually formatting markdown tables? In this example we'll look at how we can use the `Template` format and in-line specification settings to achieve a simple task - `SELECT`ing the names of some ClickHouse formats from the `system.formats` table and formatting them as a markdown table. This can be easily achieved using the `Template` format and settings `format_template_row_format` and `format_template_resultset_format`.
 
@@ -237,5 +238,3 @@ Look at that! We've saved ourselves the trouble of having to manually add all th
 |`DWARF`|
 |`Avro`|
 ```
-
-

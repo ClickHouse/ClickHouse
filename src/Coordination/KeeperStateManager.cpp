@@ -12,7 +12,7 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Disks/DiskLocal.h>
 #include <Common/logger_useful.h>
-#include "Coordination/CoordinationSettings.h"
+#include <Coordination/CoordinationSettings.h>
 
 namespace DB
 {
@@ -21,13 +21,15 @@ namespace CoordinationSetting
 {
     extern const CoordinationSettingsBool async_replication;
     extern const CoordinationSettingsUInt64 commit_logs_cache_size_threshold;
+    extern const CoordinationSettingsUInt64 commit_logs_cache_entry_count_threshold;
     extern const CoordinationSettingsBool compress_logs;
     extern const CoordinationSettingsBool force_sync;
     extern const CoordinationSettingsUInt64 latest_logs_cache_size_threshold;
+    extern const CoordinationSettingsUInt64 latest_logs_cache_entry_count_threshold;
     extern const CoordinationSettingsUInt64 log_file_overallocate_size;
     extern const CoordinationSettingsUInt64 max_flush_batch_size;
     extern const CoordinationSettingsUInt64 max_log_file_size;
-    extern const CoordinationSettingsUInt64 rotate_log_storage_interval;
+    extern const CoordinationSettingsNonZeroUInt64 rotate_log_storage_interval;
 }
 
 namespace ErrorCodes
@@ -273,6 +275,7 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
     return result;
 }
 
+/// Constructor for tests
 KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host, int port, KeeperContextPtr keeper_context_)
     : my_server_id(server_id_)
     , secure(false)
@@ -310,7 +313,9 @@ KeeperStateManager::KeeperStateManager(
               .max_size = keeper_context_->getCoordinationSettings()[CoordinationSetting::max_log_file_size],
               .overallocate_size = keeper_context_->getCoordinationSettings()[CoordinationSetting::log_file_overallocate_size],
               .latest_logs_cache_size_threshold = keeper_context_->getCoordinationSettings()[CoordinationSetting::latest_logs_cache_size_threshold],
-              .commit_logs_cache_size_threshold = keeper_context_->getCoordinationSettings()[CoordinationSetting::commit_logs_cache_size_threshold]
+              .latest_logs_cache_entry_count_threshold = keeper_context_->getCoordinationSettings()[CoordinationSetting::latest_logs_cache_entry_count_threshold],
+              .commit_logs_cache_size_threshold = keeper_context_->getCoordinationSettings()[CoordinationSetting::commit_logs_cache_size_threshold],
+              .commit_logs_cache_entry_count_threshold = keeper_context_->getCoordinationSettings()[CoordinationSetting::commit_logs_cache_entry_count_threshold],
           },
           FlushSettings
           {

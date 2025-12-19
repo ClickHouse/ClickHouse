@@ -273,9 +273,9 @@ struct JDBCBridgeMixin
         return "JDBC";
     }
 
-    static AccessType getSourceAccessType()
+    static std::optional<AccessTypeObjects::Source> getSourceAccessObject()
     {
-        return AccessType::JDBC;
+        return AccessTypeObjects::Source::JDBC;
     }
 
     static bool startBridgeManually()
@@ -304,9 +304,9 @@ struct ODBCBridgeMixin
         return "ODBC";
     }
 
-    static AccessType getSourceAccessType()
+    static std::optional<AccessTypeObjects::Source> getSourceAccessObject()
     {
-        return AccessType::ODBC;
+        return AccessTypeObjects::Source::ODBC;
     }
 
     static bool startBridgeManually()
