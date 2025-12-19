@@ -9,7 +9,7 @@ create table data1 (key Int) engine=ReplicatedMergeTree('/tables/{database}/{tab
 create table data2 (key Int) engine=ReplicatedMergeTree('/tables/{database}/{table}', 'r1') order by ();
 
 system stop merges data1;
-insert into data1 select * from numbers(100) settings max_block_size=1, min_insert_block_size_rows=1;
+insert into data1 select * from numbers(100) settings max_block_size=1, min_insert_block_size_rows=1, min_insert_block_size_bytes=0;
 select 'parts in data1', count() from system.parts where database = currentDatabase() and table = 'data1';
 
 alter table data2 fetch partition () from '/tables/{database}/data1';
