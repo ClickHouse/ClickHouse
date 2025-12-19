@@ -16,7 +16,7 @@ CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(message) TYPE text(tokenizer = array, dictionary_block_size = 128)
+    INDEX idx(message) TYPE text(tokenizer = array, dictionary_block_size = 128) GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY (id)
@@ -54,6 +54,17 @@ SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_511');
 
 SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_511');
+
+SELECT '--- no profile events when cache is disabled.';
+
+SET use_text_index_header_cache = 0;
+
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_255');
+
+SET use_text_index_header_cache = 1;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT * FROM text_index_cache_stats(filter = 'text_255');
 
 SELECT 'Clear text index header cache';
 

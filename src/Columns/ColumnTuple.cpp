@@ -186,7 +186,7 @@ bool ColumnTuple::isDefaultAt(size_t n) const
     return true;
 }
 
-std::string_view ColumnTuple::getDataAt(size_t) const
+StringRef ColumnTuple::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
 }
@@ -329,7 +329,7 @@ void ColumnTuple::rollback(const ColumnCheckpoint & checkpoint)
         columns[i]->rollback(*checkpoints[i]);
 }
 
-std::string_view ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
+StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
     if (columns.empty())
     {
@@ -339,11 +339,12 @@ std::string_view ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, c
         return { res, 1 };
     }
 
-    std::string_view res;
+    StringRef res(begin, 0);
     for (const auto & column : columns)
     {
         auto value_ref = column->serializeValueIntoArena(n, arena, begin, settings);
-        res = std::string_view{value_ref.data() - res.size(), res.size() + value_ref.size()};
+        res.data = value_ref.data - res.size;
+        res.size += value_ref.size;
     }
 
     return res;
@@ -459,22 +460,6 @@ ColumnPtr ColumnTuple::filter(const Filter & filt, ssize_t result_size_hint) con
         new_columns[i] = columns[i]->filter(filt, result_size_hint);
 
     return ColumnTuple::create(new_columns);
-}
-
-void ColumnTuple::filter(const Filter & filt)
-{
-    if (columns.empty())
-    {
-        column_length = countBytesInFilter(filt);
-        return;
-    }
-
-    const size_t tuple_size = columns.size();
-
-    for (size_t i = 0; i < tuple_size; ++i)
-        columns[i]->filter(filt);
-
-    column_length = columns[0]->size();
 }
 
 void ColumnTuple::expand(const Filter & mask, bool inverted)

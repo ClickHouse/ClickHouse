@@ -1,7 +1,6 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 
 #include <IO/HTTPCommon.h>
-#include <IO/WriteHelpers.h>
 #include <Common/NetException.h>
 #include <Poco/Net/NetException.h>
 #include <Common/ProxyConfigurationResolverProvider.h>

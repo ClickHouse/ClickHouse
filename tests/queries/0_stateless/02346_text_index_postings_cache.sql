@@ -63,6 +63,17 @@ SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_pl_2');
 SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_pl_2');
 
+SELECT '--- no profile events when cache is disabled.';
+
+SET use_text_index_postings_cache = 0;
+
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_pl_3');
+
+SET use_text_index_postings_cache = 1;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT * FROM text_index_cache_stats(filter = 'text_pl_3');
+
 SELECT 'Clear text index postings cache';
 
 SYSTEM DROP TEXT INDEX POSTINGS CACHE;

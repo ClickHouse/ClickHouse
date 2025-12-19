@@ -1705,7 +1705,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             };
 
             if (allow_concurrent_table_creation)
-                runner.enqueueAndKeepTrack(std::move(task));
+                runner(std::move(task));
             else
                 task();
         }

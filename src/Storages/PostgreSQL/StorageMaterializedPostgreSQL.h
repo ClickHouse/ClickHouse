@@ -122,7 +122,7 @@ public:
     /// temporary nested, which will be created shortly after.
     StoragePtr createTemporary() const;
 
-    ContextMutablePtr getNestedTableContext() const { return nested_context; }
+    ContextPtr getNestedTableContext() const { return nested_context; }
 
     StorageID getNestedStorageID() const;
 

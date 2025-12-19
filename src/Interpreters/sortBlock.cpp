@@ -198,8 +198,6 @@ void getBlockSortPermutationImpl(const Block & block, const SortDescription & de
     }
 }
 
-}
-
 bool isIdentityPermutation(const IColumn::Permutation & permutation, size_t limit)
 {
     static_assert(sizeof(permutation[0]) == sizeof(UInt64), "Invalid permutation value size");
@@ -252,9 +250,6 @@ bool isIdentityPermutation(const IColumn::Permutation & permutation, size_t limi
 
     return true;
 }
-
-namespace
-{
 
 template <typename Comparator>
 bool isAlreadySortedImpl(size_t rows, Comparator compare)

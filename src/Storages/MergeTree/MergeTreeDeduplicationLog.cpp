@@ -1,6 +1,6 @@
 #include <filesystem>
 #include <Disks/IDisk.h>
-#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/WriteMode.h>
 #include <Disks/supportWritingWithAppend.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -100,14 +100,7 @@ MergeTreeDeduplicationLog::MergeTreeDeduplicationLog(
 void MergeTreeDeduplicationLog::load()
 {
     if (!disk->existsDirectory(logs_dir))
-    {
-        if (auto * object_storage = dynamic_cast<DiskObjectStorage *>(disk.get()))
-        {
-            // MetadataStorageType::Plain does not have directory concept. When checking `logs_dir` existence, it might return false.
-            if (object_storage->getMetadataStorage()->getType() != MetadataStorageType::Plain)
-                return;
-        }
-    }
+        return;
 
     for (auto it = disk->iterateDirectory(logs_dir); it->isValid(); it->next())
     {
