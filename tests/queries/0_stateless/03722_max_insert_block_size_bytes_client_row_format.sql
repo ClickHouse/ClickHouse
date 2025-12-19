@@ -113,7 +113,7 @@ AND (query_id = (
     SELECT argMax(query_id, event_time) 
     FROM system.query_log 
     WHERE query LIKE '%INSERT INTO test_max_insert_bytes FORMAT CSV%' 
-    AND database = currentDatabase() 
+    AND current_database = currentDatabase() 
 ));
 
 -- We expect to see 4 parts inserted
@@ -125,7 +125,7 @@ AND (query_id = (
     SELECT argMax(query_id, event_time)  
     FROM system.query_log 
     WHERE query LIKE '%INSERT INTO test_min_insert_rows_bytes FORMAT CSV%' 
-    AND database = currentDatabase() 
+    AND current_database = currentDatabase() 
 ));
 
 -- We expect to see 2 parts inserted
@@ -137,7 +137,7 @@ AND (query_id = (
     SELECT argMax(query_id, event_time)  
     FROM system.query_log 
     WHERE query LIKE '%INSERT INTO test_min_insert_rows FORMAT CSV%' 
-    AND database = currentDatabase() 
+    AND current_database = currentDatabase() 
 ));
 
 -- We expect to see 2 parts inserted
@@ -149,7 +149,7 @@ AND (query_id = (
     SELECT argMax(query_id, event_time)  
     FROM system.query_log 
     WHERE query LIKE '%INSERT INTO test_min_insert_bytes FORMAT CSV%' 
-    AND database = currentDatabase() 
+    AND current_database = currentDatabase() 
 ));
 
 DROP TABLE IF EXISTS test_max_insert_bytes;

@@ -31,10 +31,10 @@ echo -ne '1\n2\n3\n4\n5\n6\n7\n8' | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&qu
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
 
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.part_log WHERE table = 'test_max_insert_bytes_sh' AND event_type = 'NewPart' AND database = currentDatabase() AND (query_id = (SELECT argMax(query_id, event_time) FROM system.query_log WHERE query LIKE '%INSERT INTO test_max_insert_bytes_sh FORMAT T%'))"
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.part_log WHERE table = 'test_min_insert_rows_bytes_sh' AND event_type = 'NewPart' AND database = currentDatabase() AND (query_id = (SELECT argMax(query_id, event_time) FROM system.query_log WHERE query LIKE '%INSERT INTO test_min_insert_rows_bytes_sh FORMAT TSV%'))"
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.part_log WHERE table = 'test_min_insert_rows_sh' AND event_type = 'NewPart' AND database = currentDatabase() AND (query_id = (SELECT argMax(query_id, event_time) FROM system.query_log WHERE query LIKE '%INSERT INTO test_min_insert_rows_sh FORMAT TSV%'))"
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.part_log WHERE table = 'test_min_insert_bytes_sh' AND event_type = 'NewPart' AND database = currentDatabase() AND (query_id = (SELECT argMax(query_id, event_time) FROM system.query_log WHERE query LIKE '%INSERT INTO test_min_insert_bytes_sh FORMAT TSV%'))"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.part_log WHERE table = 'test_max_insert_bytes_sh' AND event_type = 'NewPart' AND (query_id = (SELECT argMax(query_id, event_time) FROM system.query_log WHERE query LIKE '%INSERT INTO test_max_insert_bytes_sh FORMAT T%' AND current_database = currentDatabase()))"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.part_log WHERE table = 'test_min_insert_rows_bytes_sh' AND event_type = 'NewPart' AND (query_id = (SELECT argMax(query_id, event_time) FROM system.query_log WHERE query LIKE '%INSERT INTO test_min_insert_rows_bytes_sh FORMAT TSV%' AND current_database = currentDatabase()))"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.part_log WHERE table = 'test_min_insert_rows_sh' AND event_type = 'NewPart' AND (query_id = (SELECT argMax(query_id, event_time) FROM system.query_log WHERE query LIKE '%INSERT INTO test_min_insert_rows_sh FORMAT TSV%' AND current_database = currentDatabase()))"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.part_log WHERE table = 'test_min_insert_bytes_sh' AND event_type = 'NewPart' AND (query_id = (SELECT argMax(query_id, event_time) FROM system.query_log WHERE query LIKE '%INSERT INTO test_min_insert_bytes_sh FORMAT TSV%' AND current_database = currentDatabase()))"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test_max_insert_bytes_sh"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test_min_insert_rows_bytes_sh"
