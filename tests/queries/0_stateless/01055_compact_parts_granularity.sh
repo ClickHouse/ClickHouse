@@ -15,7 +15,7 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE mt_compact(a Int, s String) ENGINE = MergeTr
 
 $CLICKHOUSE_CLIENT -q "SYSTEM STOP MERGES mt_compact"
 
-$CLICKHOUSE_CLIENT --max_block_size=1 --min_insert_block_size_rows=1 -q \
+$CLICKHOUSE_CLIENT --max_block_size=1 --min_insert_block_size_rows=1 --min_insert_block_size_bytes=0 -q \
     "INSERT INTO mt_compact SELECT number, 'aaa' FROM numbers(100);"
 
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.parts WHERE table = 'mt_compact' AND database = '$CLICKHOUSE_DATABASE' AND active"
