@@ -9661,6 +9661,8 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
     pipeline_builder.addTransform(std::make_shared<SimpleSquashingChunksTransform>(
         pipeline_builder.getSharedHeader(),
         settings[Setting::min_insert_block_size_rows],
+        settings[Setting::min_insert_block_size_bytes],
+        settings[Setting::min_insert_block_size_rows],
         settings[Setting::min_insert_block_size_bytes]));
 
     /// Required by MergeTree sinks.

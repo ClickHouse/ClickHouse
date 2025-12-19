@@ -491,7 +491,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             {
                 for (auto & outport : outports)
                 {
-                    auto squashing = std::make_shared<SimpleSquashingChunksTransform>(right->getSharedHeader(), min_block_size_rows, min_block_size_bytes);
+                    auto squashing = std::make_shared<SimpleSquashingChunksTransform>(right->getSharedHeader(), min_block_size_rows, min_block_size_bytes, min_block_size_rows, min_block_size_bytes);
                     connect(*outport, squashing->getInputs().front());
                     processors.emplace_back(squashing);
                     auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getSharedHeader(), join, filling_finish_counter);
@@ -563,7 +563,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         OutputPort * left_port = *lit;
         if (min_block_size_rows > 0 || min_block_size_bytes > 0)
         {
-            auto squashing = std::make_shared<SimpleSquashingChunksTransform>(left->getSharedHeader(), min_block_size_rows, min_block_size_bytes);
+            auto squashing = std::make_shared<SimpleSquashingChunksTransform>(left->getSharedHeader(), min_block_size_rows, min_block_size_bytes, min_block_size_rows, min_block_size_bytes);
             connect(*left_port, squashing->getInputs().front());
             left_port = &squashing->getOutputPort();
             left->pipe.processors->emplace_back(std::move(squashing));
