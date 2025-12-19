@@ -39,6 +39,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+
+        addSettingsChanges(settings_changes_history, "26.1",
+        {
+
+        });
         addSettingsChanges(settings_changes_history, "25.12",
         {
             {"format_binary_max_object_size", 100000, 100000, "New setting that limits the maximum size of object during JSON type binary deserialization"},
@@ -990,12 +995,15 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.1",
+        {
+            {"min_columns_to_activate_adaptive_write_buffer", 500, 500, "New setting"},
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.12",
         {
             {"alter_column_secondary_index_mode", "compatibility", "rebuild", "Change the behaviour to allow ALTER `column` when they have dependent secondary indices"},
             {"merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once", false, false, "New setting"},
             {"merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent", 5, 5, "New setting"},
-            {"min_columns_to_activate_adaptive_write_buffer", 500, 500, "New setting"},
             {"nullable_serialization_version", "basic", "basic", "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.11",
