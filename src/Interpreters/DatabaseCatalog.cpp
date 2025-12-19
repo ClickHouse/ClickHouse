@@ -1140,7 +1140,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
         auto full_path = elem.first;
         auto storage_id = elem.second.first;
         auto db_disk = elem.second.second;
-        runner.enqueueAndKeepTrack([this, full_path, storage_id, db_disk]() { enqueueDroppedTableCleanup(storage_id, nullptr, db_disk, full_path); });
+        runner.enqueueAndKeepTrack([this, full_path, storage_id, db_disk]() { enqueueDroppedTableCleanup(storage_id, nullptr, db_disk, full_path, false, false); });
     }
     runner.waitForAllToFinishAndRethrowFirstError();
 }
@@ -1484,7 +1484,7 @@ void DatabaseCatalog::dropTablesParallel(std::vector<DatabaseCatalog::TablesMark
             }
         };
 
-        runner(std::move(job));
+        runner.enqueueAndKeepTrack(std::move(job));
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();

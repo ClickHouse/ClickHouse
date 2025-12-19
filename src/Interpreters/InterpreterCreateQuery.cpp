@@ -201,7 +201,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (!context->hasSessionContext())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Temporary databases cannot be created outside of a session");
 
-        /// actually can, but it is very easy to missuse and occasionally delete data while practical usage is quetionable
+        /// actually can, but it is very easy to misuse and occasionally delete data while practical usage is questionable
         if (create.attach && !context->isInternalQuery())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "ATTACH DATABASE query cannot be used for temporary databases");
 
@@ -218,10 +218,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
 
     /// Database can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard
-    if (const auto db = DatabaseCatalog::instance().tryGetDatabase(database_name, context, {
-            .with_datalake_catalogs = true,
-            .skip_temporary_owner_check = true,
-        }))
+    if (const auto db = DatabaseCatalog::instance().tryGetDatabase(database_name, context, {.with_datalake_catalogs = true, .skip_temporary_owner_check = true}))
     {
         if (create.if_not_exists)
             return {};

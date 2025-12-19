@@ -29,7 +29,6 @@
 #include <filesystem>
 
 #include <fmt/ranges.h>
-#include "Dictionaries/Embedded/RegionsNames.h"
 
 #define ORDINARY_TO_ATOMIC_PREFIX ".tmp_convert."
 
