@@ -1469,6 +1469,9 @@ void addTableDependencies(const ASTCreateQuery & create, const ASTPtr & query_pt
     auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
     auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr);
     DatabaseCatalog::instance().addDependencies(qualified_name, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{});
+
+    if (!ref_dependencies.plain_view_dependencies.empty())
+        DatabaseCatalog::instance().addPlainViewDependencies(qualified_name, ref_dependencies.plain_view_dependencies);
 }
 
 void checkTableCanBeAddedWithNoCyclicDependencies(const ASTCreateQuery & create, const ASTPtr & query_ptr, const ContextPtr & context)

@@ -1,0 +1,18 @@
+['03760_mview1','03760_view1','03760_view2']
+['03760_view2']
+['03760_view3']
+[]
+[]
+03760_mview1	MaterializedView	[]
+03760_src1	MergeTree	['03760_mview1','03760_view1','03760_view2']
+03760_src2	MergeTree	['03760_view2']
+03760_view1	View	['03760_view3']
+03760_view2	View	[]
+03760_view3	View	[]
+db_03760_x.remote_view_of_local
+default.03760_mview1
+default.03760_view1
+default.03760_view2
+03760_local_view_of_x
+['03760_view1','03760_view2','remote_view_of_local']
+['03760_view2']
