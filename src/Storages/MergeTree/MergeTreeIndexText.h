@@ -17,9 +17,9 @@
 
 #include <vector>
 
-#include <roaring/roaring.hh>
+#include <roaring.hh>
 
-#include "PostingsContainer.h"
+//#include "PostingsContainer.h"
 
 namespace DB
 {
@@ -99,7 +99,6 @@ struct PostingsStorage
     {
         SmallContainer small;
         PostingListWithContext large;
-        PostingsContainer32 * compressed;
     };
 
     UInt8 small_size = 0;
@@ -114,29 +113,19 @@ struct PostingsStorage
         , small_size(max_small_size)
     {
     }
+
     void add(UInt32 value, PostingListsHolder &postings_holder);
 
-    size_t size() const
-    {
-        if (!enable_postings_compression)
-            return isSmall() ? small_size : large.postings->cardinality();
-        return compressed->size();
-    }
+    size_t size() const { return isSmall() ? small_size : large.postings->cardinality(); }
+    bool isEmpty() const { return size() == 0; }
     bool isSmall() const { return small_size < max_small_size; }
     bool isLarge() const { return !isSmall(); }
-    bool isCompressed() const { return enable_postings_compression; }
-    UInt32 minimum() const
-    {
-        if (!enable_postings_compression)
-            return isSmall() ? small[0] : large.postings->minimum();
-        return compressed->minimum();
-    }
-    UInt32 maximum() const
-    {
-        if (!enable_postings_compression)
-            return isSmall() ? small[small_size - 1] : large.postings->maximum();
-        return compressed->maximum();
-    }
+    UInt32 minimum() const { return isSmall() ? small[0] : large.postings->minimum(); }
+    UInt32 maximum() const { return isSmall() ? small[small_size - 1] : large.postings->maximum(); }
+
+    SmallContainer &getSmall() { return small; }
+    const SmallContainer &getSmall() const { return small; }
+    PostingList &getLarge() const { return *large.postings; }
 };
 /// A struct for building a posting list with optimization for infrequent tokens.
 /// Tokens with cardinality less than max_small_size are stored in a raw array allocated on the stack.
@@ -157,18 +146,17 @@ struct PostingListBuilder
     /// posting list is created in the postings_holder and reference to it is saved.
     void add(UInt32 value, PostingListsHolder & postings_holder) { store.add(value, postings_holder); }
 
-    ALWAYS_INLINE size_t size() const { return store.size(); }
-    bool isEmpty() const { return size() == 0; }
+    size_t size() const { return store.size(); }
+    bool isEmpty() const { return store.isEmpty(); }
     bool isSmall() const { return store.isSmall(); }
     bool isLarge() const { return store.isLarge(); }
-    bool isCompressed() const { return store.isCompressed(); }
-    ALWAYS_INLINE UInt32 minimum() const { return store.minimum(); }
+    UInt32 minimum() const { return store.minimum(); }
     UInt32 maximum() const { return store.maximum(); }
 
     SmallContainer & getSmall() { return store.small; }
     const SmallContainer & getSmall() const { return store.small; }
     PostingList & getLarge() const { return *store.large.postings; }
-    PostingsContainer32 & getCompressed() const { return *store.compressed; }
+
 private:
     PostingsStorage store;
 };
