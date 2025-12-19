@@ -245,9 +245,11 @@ For queries that are completed quickly because of a LIMIT, you can set a lower '
 For example, if the necessary number of entries are located in every block and max_threads = 8, then 8 blocks are retrieved, although it would have been enough to read just one.
 The smaller the `max_threads` value, the less memory is consumed.
 
-The `max_threads` setting by default matches the number of cores (threads) of a single CPU available to ClickHouse.
-For Cloud users, the default value will display as `auto(N)` where N matches the vCPU size of your service e.g. 8GiB:2vCPU, 16GiB:4vCPU etc.
-See the settings tab in Cloud console for a list of all service sizes.
+The `max_threads` setting by default matches the number of hardware threads available to ClickHouse.
+Without SMT (e.g. Intel HyperThreading), this corresponds to the number of CPU cores.
+
+For ClickHouse Cloud users, the default value will display as `auto(N)` where N matches the vCPU size of your service e.g. 2vCPU/8GiB, 4vCPU/16GiB etc.
+See the settings tab in the Cloud console for a list of all service sizes.
 )", 0) \
     DECLARE(Bool, use_concurrency_control, true, R"(
 Respect the server's concurrency control (see the `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores` global server settings). If disabled, it allows using a larger number of threads even if the server is overloaded (not recommended for normal usage, and needed mostly for tests).
@@ -2081,7 +2083,7 @@ For testing of `PartsSplitter` - split read ranges into intersecting and non int
     DECLARE(Bool, enable_http_compression, true, R"(
 Enables or disables data compression in the response to an HTTP request.
 
-For more information, read the [HTTP interface description](../../interfaces/http.md).
+For more information, read the [HTTP interface description](/interfaces/http).
 
 Possible values:
 
@@ -2097,7 +2099,7 @@ Possible values: Numbers from 1 to 9.
     DECLARE(Bool, http_native_compression_disable_checksumming_on_decompress, false, R"(
 Enables or disables checksum verification when decompressing the HTTP POST data from the client. Used only for ClickHouse native compression format (not used with `gzip` or `deflate`).
 
-For more information, read the [HTTP interface description](../../interfaces/http.md).
+For more information, read the [HTTP interface description](/interfaces/http).
 
 Possible values:
 
@@ -2159,7 +2161,7 @@ Possible values:
     DECLARE(Bool, send_progress_in_http_headers, false, R"(
 Enables or disables `X-ClickHouse-Progress` HTTP response headers in `clickhouse-server` responses.
 
-For more information, read the [HTTP interface description](../../interfaces/http.md).
+For more information, read the [HTTP interface description](/interfaces/http).
 
 Possible values:
 
@@ -2487,12 +2489,6 @@ If it is set to true, then a user is allowed to executed distributed DDL queries
 )", 0) \
     DECLARE(Bool, allow_suspicious_codecs, false, R"(
 If it is set to true, allow to specify meaningless compression codecs.
-)", 0) \
-    DECLARE(Bool, enable_zstd_qat_codec, false, R"(
-If turned on, the ZSTD_QAT codec may be used to compress columns.
-)", 0) \
-    DECLARE(Bool, enable_deflate_qpl_codec, false, R"(
-If turned on, the DEFLATE_QPL codec may be used to compress columns.
 )", 0) \
     DECLARE(UInt64, query_profiler_real_time_period_ns, QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS, R"(
 Sets the period for a real clock timer of the [query profiler](../../operations/optimizing-performance/sampling-query-profiler.md). Real clock timer counts wall-clock time.
@@ -5236,7 +5232,7 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
-    DECLARE(Bool, enable_shared_storage_snapshot_in_query, false, R"(
+    DECLARE(Bool, enable_shared_storage_snapshot_in_query, true, R"(
 If enabled, all subqueries within a single query will share the same StorageSnapshot for each table.
 This ensures a consistent view of the data across the entire query, even if the same table is accessed multiple times.
 
@@ -5768,7 +5764,7 @@ Enable multithreading after evaluating window functions to allow parallel stream
     DECLARE(Bool, query_plan_optimize_lazy_materialization, true, R"(
 Use query plan for lazy materialization optimization.
 )", 0) \
-    DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 100, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
+    DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10000, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0) \
     DECLARE(Bool, enable_lazy_columns_replication, true, R"(
 Enables lazy columns replication in JOIN and ARRAY JOIN, it allows to avoid unnecessary copy of the same rows multiple times in memory.
@@ -7305,9 +7301,9 @@ Allows defining columns with [statistics](../../engines/table-engines/mergetree-
 )", EXPERIMENTAL, allow_experimental_statistic) \
     DECLARE(Bool, use_statistics_cache, false, R"(Use statistics cache in a query to avoid the overhead of loading statistics of every parts)", EXPERIMENTAL) \
     \
-    DECLARE(Bool, allow_experimental_full_text_index, false, R"(
-If set to true, allow using the experimental text index.
-)", EXPERIMENTAL) \
+    DECLARE_WITH_ALIAS(Bool, enable_full_text_index, false, R"(
+If set to true, allow using the text index.
+)", BETA, allow_experimental_full_text_index) \
     DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
 Allow to perform full text search filtering using only the inverted text index in query plan.
 )", 0) \
@@ -7521,6 +7517,8 @@ Multiple algorithms can be specified, e.g. 'dpsize,greedy'.
     MAKE_OBSOLETE(M, Bool, azure_sdk_use_native_client, true) \
     MAKE_OBSOLETE(M, Bool, allow_not_comparable_types_in_order_by, false) \
     MAKE_OBSOLETE(M, Bool, allow_not_comparable_types_in_comparison_functions, false) \
+    MAKE_OBSOLETE(M, Bool, enable_zstd_qat_codec, false) \
+    MAKE_OBSOLETE(M, Bool, enable_deflate_qpl_codec, false) \
 \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
