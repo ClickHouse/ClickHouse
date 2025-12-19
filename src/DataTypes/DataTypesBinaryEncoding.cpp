@@ -60,11 +60,13 @@ namespace
 /// It prevents from allocating too large arrays if the data is corrupted.
 constexpr size_t MAX_ARRAY_SIZE = 1000000;
 
+/// MAX_ARRAY_SIZE prevents wide types (single Tuple with 10M elements) before allocation. getMaxTypeDecodingComplexity() prevents
+/// large width × depth (e.g. Tuple(Tuple(...) x 999999) x 10000) that does not trigger stack overflow or MAX_ARRAY_SIZE check.
 inline ALWAYS_INLINE size_t getMaxTypeDecodingComplexity()
 {
     if (auto query_context = CurrentThread::getQueryContext())
         return query_context->getSettingsRef()[Setting::input_format_binary_max_type_complexity];
-    return 1000; /// Default (matches the default input_format_binary_max_type_complexity setting)
+    return 1000; /// Default value that matches the default input_format_binary_max_type_complexity setting
 }
 
 enum class BinaryTypeIndex : uint8_t
@@ -622,7 +624,7 @@ String encodeDataType(const DataTypePtr & type)
     return buf.str();
 }
 
-DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity)
+DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
 {
     ++complexity;
     size_t max_complexity = getMaxTypeDecodingComplexity();
@@ -724,7 +726,7 @@ DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity)
         case BinaryTypeIndex::UUID:
             return getDataTypesCache().getType("UUID");
         case BinaryTypeIndex::Array:
-            return std::make_shared<DataTypeArray>(decodeDataTypeImpl(buf, complexity));
+            return std::make_shared<DataTypeArray>(decodeDataType(buf, complexity));
         case BinaryTypeIndex::NamedTuple:
         {
             size_t size;
@@ -740,7 +742,7 @@ DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity)
             {
                 names.emplace_back();
                 readStringBinary(names.back(), buf);
-                elements.push_back(decodeDataTypeImpl(buf, complexity));
+                elements.push_back(decodeDataType(buf, complexity));
             }
 
             return std::make_shared<DataTypeTuple>(elements, names);
@@ -755,12 +757,12 @@ DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity)
             DataTypes elements;
             elements.reserve(size);
             for (size_t i = 0; i != size; ++i)
-                elements.push_back(decodeDataTypeImpl(buf, complexity));
+                elements.push_back(decodeDataType(buf, complexity));
             return std::make_shared<DataTypeTuple>(elements);
         }
         case BinaryTypeIndex::QBit:
         {
-            auto element_type = decodeDataTypeImpl(buf, complexity);
+            auto element_type = decodeDataType(buf, complexity);
             size_t dimension;
             readVarUInt(dimension, buf);
             return std::make_shared<DataTypeQBit>(element_type, dimension);
@@ -774,7 +776,7 @@ DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity)
             return std::make_shared<DataTypeInterval>(IntervalKind(IntervalKind::Kind(kind)));
         }
         case BinaryTypeIndex::Nullable:
-            return std::make_shared<DataTypeNullable>(decodeDataTypeImpl(buf, complexity));
+            return std::make_shared<DataTypeNullable>(decodeDataType(buf, complexity));
         case BinaryTypeIndex::Function:
         {
             size_t arguments_size;
@@ -785,16 +787,16 @@ DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity)
             DataTypes arguments;
             arguments.reserve(arguments_size);
             for (size_t i = 0; i != arguments_size; ++i)
-                arguments.push_back(decodeDataTypeImpl(buf, complexity));
-            auto return_type = decodeDataTypeImpl(buf, complexity);
+                arguments.push_back(decodeDataType(buf, complexity));
+            auto return_type = decodeDataType(buf, complexity);
             return std::make_shared<DataTypeFunction>(arguments, return_type);
         }
         case BinaryTypeIndex::LowCardinality:
-            return std::make_shared<DataTypeLowCardinality>(decodeDataTypeImpl(buf, complexity));
+            return std::make_shared<DataTypeLowCardinality>(decodeDataType(buf, complexity));
         case BinaryTypeIndex::Map:
         {
-            auto key_type = decodeDataTypeImpl(buf, complexity);
-            auto value_type = decodeDataTypeImpl(buf, complexity);
+            auto key_type = decodeDataType(buf, complexity);
+            auto value_type = decodeDataType(buf, complexity);
             return std::make_shared<DataTypeMap>(key_type, value_type);
         }
         case BinaryTypeIndex::IPv4:
@@ -811,7 +813,7 @@ DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity)
             DataTypes variants;
             variants.reserve(size);
             for (size_t i = 0; i != size; ++i)
-                variants.push_back(decodeDataTypeImpl(buf, complexity));
+                variants.push_back(decodeDataType(buf, complexity));
             return std::make_shared<DataTypeVariant>(variants);
         }
         case BinaryTypeIndex::Dynamic:
@@ -847,7 +849,7 @@ DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity)
             {
                 names.emplace_back();
                 readStringBinary(names.back(), buf);
-                elements.push_back(decodeDataTypeImpl(buf, complexity));
+                elements.push_back(decodeDataType(buf, complexity));
             }
 
             return createNested(elements, names);
@@ -884,7 +886,7 @@ DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity)
             {
                 String path;
                 readStringBinary(path, buf);
-                typed_paths[path] = decodeDataTypeImpl(buf, complexity);
+                typed_paths[path] = decodeDataType(buf, complexity);
             }
             size_t paths_to_skip_size;
             readVarUInt(paths_to_skip_size, buf);
@@ -929,7 +931,7 @@ DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity)
 DataTypePtr decodeDataType(ReadBuffer & buf)
 {
     size_t complexity = 0;
-    return decodeDataTypeImpl(buf, complexity);
+    return decodeDataType(buf, complexity);
 }
 
 DataTypePtr decodeDataType(const String & data)
