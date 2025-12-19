@@ -19,6 +19,7 @@
 #include <Common/thread_local_rng.h>
 #include <Common/likePatternToRegexp.h>
 #include <Common/re2.h>
+#include <Common/setThreadName.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 
@@ -500,7 +501,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                     StorageID storage_id = table_ptr->getStorageID();
                     if (storage_id.hasUUID())
                         prepared_tables.insert(storage_id.uuid);
-                    runner([my_table_ptr = std::move(table_ptr)]()
+                    runner.enqueueAndKeepTrack([my_table_ptr = std::move(table_ptr)]()
                     {
                         my_table_ptr->flushAndPrepareForShutdown();
                     });
@@ -579,7 +580,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
         for (const auto & table_id : tables_to_truncate)
         {
-            runner([&, table_id]()
+            runner.enqueueAndKeepTrack([&, table_id]()
             {
                 // Create a proper AST for a single-table TRUNCATE query.
                 auto sub_query_ptr = std::make_shared<ASTDropQuery>();

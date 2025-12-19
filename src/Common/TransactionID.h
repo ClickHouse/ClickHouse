@@ -1,8 +1,10 @@
 #pragma once
+
 #include <Core/Types.h>
 #include <Core/UUID.h>
-#include <fmt/format.h>
 #include <IO/WriteHelpers.h>
+#include <fmt/format.h>
+
 
 namespace DB
 {
@@ -10,6 +12,8 @@ namespace DB
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 class MergeTreeTransaction;
+class ReadBuffer;
+class WriteBuffer;
 
 /// This macro is useful for places where a pointer to current transaction should be passed,
 /// but transactions are not supported yet (e.g. when calling MergeTreeData's methods from StorageReplicatedMergeTree)
@@ -104,13 +108,13 @@ namespace Tx
 template<>
 struct fmt::formatter<DB::TransactionID>
 {
-    template<typename ParseContext>
+    template <typename ParseContext>
     constexpr auto parse(ParseContext & context)
     {
         return context.begin();
     }
 
-    template<typename FormatContext>
+    template <typename FormatContext>
     auto format(const DB::TransactionID & tid, FormatContext & context) const
     {
         return fmt::format_to(context.out(), "({}, {}, {})", tid.start_csn, tid.local_tid, tid.host_id);
