@@ -36,7 +36,7 @@ function run_test()
 }
 
 $CLICKHOUSE_CLIENT -q "
-    SET enable_text_index = 1;
+    SET enable_full_text_index = 1;
     DROP TABLE IF EXISTS t_text_index_materialization;
 
     CREATE TABLE t_text_index_materialization
@@ -61,7 +61,7 @@ $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE t_text_index_materialization FINAL"
 echo "After OPTIMIZE FINAL"
 run_test
 
-$CLICKHOUSE_CLIENT --mutations_sync 2 --enable_text_index 1 -q "ALTER TABLE t_text_index_materialization CLEAR INDEX idx_text"
+$CLICKHOUSE_CLIENT --mutations_sync 2 --enable_full_text_index 1 -q "ALTER TABLE t_text_index_materialization CLEAR INDEX idx_text"
 echo "After CLEAR INDEX idx_text"
 run_test
 
