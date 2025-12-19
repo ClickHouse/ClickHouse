@@ -105,7 +105,8 @@ static Block adoptBlock(const Block & header, const Block & block, LoggerPtr log
     auto converting_dag = ActionsDAG::makeConvertingActions(
         block.cloneEmpty().getColumnsWithTypeAndName(),
         header.getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name);
+        ActionsDAG::MatchColumnsMode::Name,
+        nullptr);
 
     auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
     Block converted = block;
@@ -333,7 +334,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         if (isCancelled())
             throw Exception(ErrorCodes::ABORTED, "Writing job was cancelled");
 
-        ThreadGroupSwitcher switcher(thread_group, "DistrOutStrProc");
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_SINK);
 
         OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
 
@@ -595,7 +596,7 @@ void DistributedSink::onFinish()
                     {
                         pool->scheduleOrThrowOnError([&job, thread_group = CurrentThread::getGroup()]()
                         {
-                            ThreadGroupSwitcher switcher(thread_group, "");
+                            ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_SINK);
 
                             job.executor->finish();
                         });

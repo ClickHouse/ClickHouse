@@ -24,13 +24,13 @@ namespace ErrorCodes
 
 /// Function timeSeriesIdToTags(<id>) returns Array(Tuple(String, String)) containing the names and values of tags associated with
 /// a specified identifier <id>.
-class FunctionTimeSeriesIdToTags : public IFunction, private WithContext
+class FunctionTimeSeriesIdToTags : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesIdToTags";
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTimeSeriesIdToTags>(context_); }
-    explicit FunctionTimeSeriesIdToTags(ContextPtr context_) : WithContext(context_) {}
+    explicit FunctionTimeSeriesIdToTags(ContextPtr context_) : context(context_) {}
 
     String getName() const override { return name; }
 
@@ -149,7 +149,7 @@ public:
     std::vector<TagNamesAndValuesPtr> getTagsImpl(const IColumn & column_ids) const
     {
         auto ids = extractIDs<IDType>(column_ids);
-        return getContext()->getQueryContext()->getTimeSeriesTagsCollector().getTagsById(ids);
+        return context->getQueryContext()->getTimeSeriesTagsCollector().getTagsById(ids);
     }
 
     /// Extracts identifiers from the column.
@@ -157,10 +157,13 @@ public:
     static std::vector<IDType> extractIDs(const IColumn & column_ids)
     {
         std::string_view data = column_ids.getRawData();
-        chassert(data.size() == column_ids.size() * sizeof(IDType));  /// NOLINT(bugprone-sizeof-expression,cert-arr39-c)
+        chassert(data.size() == column_ids.size() * sizeof(IDType));
         const IDType * begin = reinterpret_cast<const IDType *>(data.data());
         return std::vector<IDType>(begin, begin + column_ids.size());
     }
+
+private:
+    const ContextPtr context;
 };
 
 
@@ -173,7 +176,7 @@ REGISTER_FUNCTION(TimeSeriesIdToTags)
     FunctionDocumentation::Examples examples = {{"Example", "SELECT timeSeriesStoreTags(8374283493092, [('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS id, timeSeriesIdToTags(id)", "8374283493092    [('__name__', ''http_requests_count''), ('env', 'dev'), ('region', 'eu')]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTimeSeriesIdToTags>(documentation);
 }

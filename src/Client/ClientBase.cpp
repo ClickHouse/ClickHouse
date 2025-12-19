@@ -153,6 +153,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int CANNOT_WRITE_TO_FILE;
     extern const int CANNOT_CREATE_DIRECTORY;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 }
@@ -268,8 +269,8 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
 
     struct Id
     {
-        StringRef name;
-        StringRef host_name;
+        std::string_view name;
+        std::string_view host_name;
 
         bool operator<(const Id & rhs) const
         {
@@ -521,14 +522,14 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     if (block.empty())
         return;
 
-    processed_rows += block.rows();
+    processed_rows_from_blocks += block.rows();
     /// Even if all blocks are empty, we still need to initialize the output stream to write empty resultset.
     initOutputFormat(block, parsed_query);
 
     /// The header block containing zero rows was used to initialize
     /// output_format, do not output it.
     /// Also do not output too much data if we're fuzzing.
-    if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows >= 100))
+    if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows_from_blocks >= 100))
         return;
 
     /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
@@ -1324,7 +1325,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 
             /// Retry when the server said "Client should retry" and no rows
             /// has been received yet.
-            if (processed_rows == 0 && e.code() == ErrorCodes::DEADLOCK_AVOIDED && --retries_left)
+            if (processed_rows_from_blocks == 0 && e.code() == ErrorCodes::DEADLOCK_AVOIDED && --retries_left)
             {
                 error_stream << "Got a transient error from the server, will"
                         << " retry (" << retries_left << " retries left)";
@@ -1383,9 +1384,15 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
                     double elapsed = receive_watch.elapsedSeconds();
                     if (break_on_timeout && elapsed > receive_timeout.totalSeconds())
                     {
-                        output_stream << "Timeout exceeded while receiving data from server."
-                                    << " Waited for " << static_cast<size_t>(elapsed) << " seconds,"
-                                    << " timeout is " << receive_timeout.totalSeconds() << " seconds." << std::endl;
+                        PreformattedMessage error_message = PreformattedMessage::create
+                        (
+                            "Timeout exceeded while receiving data from server. Waited for {} seconds, timeout is {} seconds.",
+                            static_cast<size_t>(elapsed),
+                            receive_timeout.totalSeconds()
+                        );
+
+                        client_exception = std::make_unique<Exception>(error_message, ErrorCodes::TIMEOUT_EXCEEDED);
+                        have_error = true;
 
                         cancelQuery();
                     }
@@ -1491,6 +1498,13 @@ void ClientBase::onProgress(const Progress & value)
         return;
     }
 
+    /// Tracks inserted rows for server-side operations like INSERT ... SELECT where data bypasses the client and thus isn't captured in
+    // `processed_rows_from_blocks`. We exclude `read_rows` to avoid incorrect counting:
+    ///   - INSERT ... SELECT is an INSERT operation, so counting read rows would be misleading.
+    ///   - Pure SELECT would show internal scan count rather than actual results returned to client. SELECT queries already track correct
+    //      row count in `processed_rows_from_blocks` and we want `processed_rows_from_progress` to be 0 in such scenario.
+    processed_rows_from_progress += value.written_rows;
+
     if (output_format)
         output_format->onProgress(value);
 
@@ -1565,14 +1579,14 @@ void ClientBase::onProfileEvents(Block & block)
         const auto & host_names = typeid_cast<const ColumnString &>(*block.getByName("host_name").column);
         const auto & array_values = typeid_cast<const ColumnInt64 &>(*block.getByName("value").column).getData();
 
-        const auto * user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
-        const auto * system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
+        auto user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
+        auto system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
 
         HostToTimesMap thread_times;
         for (size_t i = 0; i < rows; ++i)
         {
             auto thread_id = array_thread_id[i];
-            auto host_name = host_names.getDataAt(i).toString();
+            std::string host_name{host_names.getDataAt(i)};
 
             /// In ProfileEvents packets thread id 0 specifies common profiling information
             /// for all threads executing current query on specific host. So instead of summing per thread
@@ -2085,7 +2099,7 @@ void ClientBase::sendDataFromPipe(Pipe && pipe, ASTPtr parsed_query, bool have_m
         if (!block.empty())
         {
             connection->sendData(block, /* name */"", /* scalar */false);
-            processed_rows += block.rows();
+            processed_rows_from_blocks += block.rows();
         }
     }
 
@@ -2254,7 +2268,8 @@ void ClientBase::processParsedSingleQuery(
         }
     }
 
-    processed_rows = 0;
+    processed_rows_from_blocks = 0;
+    processed_rows_from_progress = 0;
     written_first_block = false;
     progress_indication.resetProgress();
     progress_table.resetTable();
@@ -2382,6 +2397,8 @@ void ClientBase::processParsedSingleQuery(
 
         profile_events.last_block = {};
     }
+
+    auto processed_rows = std::max(processed_rows_from_blocks, processed_rows_from_progress);
 
     if (is_interactive)
     {
@@ -3131,7 +3148,7 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
                         {
                             if (!result.empty())
                                 result += "\n";
-                            result += column->getDataAt(i).toString();
+                            result.append(column->getDataAt(i));
                         }
                     }
                     break;
@@ -3396,6 +3413,11 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     if (options.contains("prompt"))
         getClientConfiguration().setString("prompt", options["prompt"].as<std::string>());
 
+    if (options.contains("oauth-url"))
+        getClientConfiguration().setString("oauth-url", options["oauth-url"].as<std::string>());
+    if (options.contains("oauth-client-id"))
+        getClientConfiguration().setString("oauth-client-id", options["oauth-client-id"].as<std::string>());
+
     if (options.contains("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
     if (options.contains("server_logs_file"))
@@ -3487,10 +3509,12 @@ void ClientBase::runInteractive()
     replxx::Replxx::highlighter_callback_with_pos_t highlight_callback{};
 
     if (getClientConfiguration().getBool("highlight", true))
+    {
         highlight_callback = [this](const String & query, std::vector<replxx::Replxx::Color> & colors, int pos)
         {
             highlight(query, colors, *client_context, pos);
         };
+    }
 
     /// Don't allow embedded client to read from and write to any file on the server's filesystem.
     String actual_history_file_path;

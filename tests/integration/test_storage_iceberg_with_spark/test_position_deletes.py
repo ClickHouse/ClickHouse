@@ -159,6 +159,7 @@ def test_position_deletes_out_of_order(started_cluster_iceberg_with_spark, use_r
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, additional_settings=list(map(lambda kv: f'{kv[0]}={kv[1]}', settings.items())))
 
-    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME} PREWHERE NOT sleepEachRow(1/100) order by id", settings=settings)) == list(range(10, 103)) + [104]
+    # TODO: Replace WHERE with PREWHERE when we add prewhere support for datalakes.
+    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME} WHERE NOT sleepEachRow(1/100) order by id", settings=settings)) == list(range(10, 103)) + [104]
 
     instance.query(f"DROP TABLE {TABLE_NAME}")

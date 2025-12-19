@@ -104,7 +104,7 @@ add_headers_and_sources(clickhouse_common_io IO/Archives)
 add_headers_and_sources(clickhouse_common_io IO/Protobuf)
 add_headers_and_sources(clickhouse_common_io IO/S3)
 add_headers_and_sources(clickhouse_common_io IO/AzureBlobStorage)
-add_headers_and_sources(clickhouse_common_io Disks/ObjectStorages/AzureBlobStorage)
+add_headers_and_sources(clickhouse_common_io Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/AllocationInterceptors.cpp)
 
 
@@ -112,7 +112,13 @@ add_headers_and_sources(clickhouse_compression Compression)
 add_library(clickhouse_compression ${clickhouse_compression_headers} ${clickhouse_compression_sources})
 
 add_headers_and_sources(dbms Disks/IO)
-add_headers_and_sources(dbms Disks/ObjectStorages)
+add_headers_and_sources(dbms Disks/DiskObjectStorage)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/Local)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/Plain)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/PlainRewritable)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/Web)
 if (TARGET ch_contrib::sqlite)
     add_headers_and_sources(dbms Databases/SQLite)
 endif()
@@ -158,23 +164,23 @@ endif()
 
 if (TARGET ch_contrib::aws_s3)
     add_headers_and_sources(dbms Common/S3)
-    add_headers_and_sources(dbms Disks/ObjectStorages/S3)
+    add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages/S3)
 endif()
 
 if (TARGET ch_contrib::azure_sdk)
-    add_headers_and_sources(dbms Disks/ObjectStorages/AzureBlobStorage)
+    add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage)
     add_headers_and_sources(dbms IO/AzureBlobStorage)
 endif()
 
 if (TARGET ch_contrib::hdfs)
-    add_headers_and_sources(dbms Disks/ObjectStorages/HDFS)
+    add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages/HDFS)
 endif()
 
 add_headers_and_sources(dbms Databases/DataLake)
 
-add_headers_and_sources(dbms Disks/ObjectStorages/Cached)
-add_headers_and_sources(dbms Disks/ObjectStorages/Local)
-add_headers_and_sources(dbms Disks/ObjectStorages/Web)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages/Cached)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages/Local)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages/Web)
 
 add_headers_and_sources(dbms Storages/Cache)
 if (TARGET ch_contrib::hivemetastore)
@@ -300,6 +306,9 @@ endif()
 
 add_object_library(clickhouse_server Server)
 add_object_library(clickhouse_server_http Server/HTTP)
+if (ENABLE_SSL)
+    add_object_library(clickhouse_server_acme Server/ACME)
+endif()
 if (TARGET ch_contrib::ssh)
     add_object_library(clickhouse_server_ssh Server/SSH)
 endif()
@@ -472,6 +481,10 @@ target_link_libraries(
         clickhouse_common_io
         Poco::Redis
 )
+
+if (TARGET ch_contrib::jwt-cpp)
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::jwt-cpp)
+endif()
 
 if (TARGET ch_contrib::mongocxx)
     target_link_libraries(
@@ -762,3 +775,7 @@ if (ENABLE_TESTS)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet)
     endif()
 endif ()
+
+if (TARGET ch_contrib::jwt-cpp)
+    add_object_library(clickhouse_client_jwt Client/jwt)
+endif()

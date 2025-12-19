@@ -175,28 +175,8 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     }
 
     auto index = std::make_shared<ASTIndexDeclaration>(expr, type, name->as<ASTIdentifier &>().name());
-
-    if (granularity)
-    {
-        index->granularity = granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
-    }
-    else
-    {
-        index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
-
-        if (auto index_type = index->getType())
-        {
-            const std::string_view index_type_name = index_type->name;
-
-            if (index_type_name == "vector_similarity")
-                index->granularity = ASTIndexDeclaration::DEFAULT_VECTOR_SIMILARITY_INDEX_GRANULARITY;
-            else if (index_type_name == "text")
-                index->granularity = ASTIndexDeclaration::DEFAULT_TEXT_INDEX_GRANULARITY;
-        }
-    }
-
+    index->granularity = getSecondaryIndexGranularity(index->getType(), granularity);
     node = index;
-
     return true;
 }
 
@@ -284,10 +264,13 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
 {
     ParserIdentifier name_p;
     ParserProjectionSelectQuery query_p;
+    ParserSetQuery settings_p(/* parse_only_internals_ = */ true);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
+    ParserKeyword s_with_settings(Keyword::WITH_SETTINGS);
     ASTPtr name;
     ASTPtr query;
+    ASTPtr with_settings;
 
     if (!name_p.parse(pos, name, expected))
         return false;
@@ -301,9 +284,22 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     if (!s_rparen.ignore(pos, expected))
         return false;
 
+    if (s_with_settings.ignore(pos, expected))
+    {
+        if (!s_lparen.ignore(pos, expected))
+            return false;
+
+        if (!settings_p.parse(pos, with_settings, expected))
+            return false;
+
+        if (!s_rparen.ignore(pos, expected))
+            return false;
+    }
+
     auto projection = std::make_shared<ASTProjectionDeclaration>();
     projection->name = name->as<ASTIdentifier &>().name();
     projection->set(projection->query, query);
+    projection->set(projection->with_settings, with_settings);
     node = projection;
 
     return true;

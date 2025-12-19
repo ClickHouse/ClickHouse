@@ -33,6 +33,7 @@ namespace
         auto new_context = Context::createCopy(context->getGlobalContext());
         new_context->setClientInfo(context->getClientInfo());
         new_context->makeQueryContext();
+        new_context->setCurrentQueryId({});
 
         const auto & database = context->getCurrentDatabase();
         if (!database.empty() && database != new_context->getCurrentDatabase())

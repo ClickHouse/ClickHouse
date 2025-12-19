@@ -928,7 +928,7 @@ struct TestQuery {
             cpu_lease->startConsumption();
         metrics.start(thread_num);
 
-        setThreadName(fmt::format("name.{}", name, thread_num).c_str());
+        DB::setThreadName(DB::ThreadName::TEST_SCHEDULER);
         while (true)
         {
             if (!controlConcurrency(cpu_lease))
@@ -983,7 +983,7 @@ struct TestQuery {
         master_thread = t.async(workload, t.storage.getMasterThreadResourceName(), t.storage.getWorkerThreadResourceName(),
             [&, type, workload] (ResourceLink master_link, ResourceLink worker_link)
             {
-                setThreadName(workload.c_str());
+                setThreadName(ThreadName::TEST_SCHEDULER);
                 {
                     std::unique_lock in_thread_lock{slots_mutex};
                     slots = allocateCPUSlots(type, master_link, worker_link, workload);

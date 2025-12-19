@@ -333,7 +333,8 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
                 auto actions_dag = ActionsDAG::makeConvertingActions(
                         plans[i]->getCurrentHeader()->getColumnsWithTypeAndName(),
                         result_header->getColumnsWithTypeAndName(),
-                        ActionsDAG::MatchColumnsMode::Position);
+                        ActionsDAG::MatchColumnsMode::Position,
+                        context);
                 auto converting_step = std::make_unique<ExpressionStep>(plans[i]->getCurrentHeader(), std::move(actions_dag));
                 converting_step->setStepDescription("Conversion before UNION");
                 plans[i]->addStep(std::move(converting_step));
