@@ -193,12 +193,41 @@ def test_create2(started_cluster):
     node1_zk = None
     node1_zk = get_fake_zk(node1.name)
     uid = str(uuid.uuid4()).replace('-', '')
-    _, stats = node1_zk.create(f'/tea_{uid}', include_data=True)
+    path = f"/tea_{uid}"
+    _, stats = node1_zk.create(path, include_data=True)
     assert stats is not None
+    data, stats_get = node1_zk.get(path)
+    stats_exists = node1_zk.exists(path)
+    assert stats_get is not None
+    assert stats_exists is not None
+
     assert stats.numChildren == 0
     assert stats.ephemeralOwner == 0
     assert stats.version == 0
 
+    assert stats_get.numChildren == stats.numChildren
+    assert stats_get.ephemeralOwner == stats.ephemeralOwner
+    assert stats_get.version == stats.version
+    assert stats_get.czxid == stats.czxid
+    assert stats_get.mzxid == stats.mzxid
+    assert stats_get.pzxid == stats.pzxid
+    assert stats_get.ctime == stats.ctime
+    assert stats_get.mtime == stats.mtime
+    assert stats_get.cversion == stats.cversion
+    assert stats_get.aversion == stats.aversion
+
+    assert stats_exists.czxid == stats.czxid
+    assert stats_exists.mzxid == stats.mzxid
+    assert stats_exists.pzxid == stats.pzxid
+    assert stats_exists.ctime == stats.ctime
+    assert stats_exists.mtime == stats.mtime
+    assert stats_exists.version == stats.version
+    assert stats_exists.cversion == stats.cversion
+    assert stats_exists.aversion == stats.aversion
+    assert stats_exists.ephemeralOwner == stats.ephemeralOwner
+    assert stats_exists.numChildren == stats.numChildren
+
+    assert stats_get.dataLength == len(data)
 
 def test_create2_stats_match_get_and_exists(started_cluster):
     wait_nodes()
