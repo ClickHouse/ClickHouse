@@ -304,8 +304,6 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     /// from all results based on created selector.
     IColumn::Selector selector;
     selector.reserve(variant_column.size());
-    IColumn::Offsets variants_offsets;
-    variants_offsets.reserve(variant_column.size());
     std::vector<ColumnWithTypeAndName> variants;
     /// We need to determine the selector index for rows with NULL values.
     /// We allocate 0 index for rows with NULL values.
@@ -321,7 +319,6 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         if (local_discr == ColumnVariant::NULL_DISCRIMINATOR)
         {
             selector.push_back(0);
-            variants_offsets.emplace_back();
         }
         else
         {
@@ -336,7 +333,6 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
             }
 
             selector.push_back(it->second);
-            variants_offsets.push_back(offsets[i]);
         }
     }
 
@@ -444,7 +440,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
             if (selector[i] == 0 || !variants_results[selector[i]])
                 result->insertDefault();
             else
-                result->insertFrom(*variants_results[selector[i]], variants_offsets[i]);
+                result->insertFrom(*variants_results[selector[i]], offsets[i]);
         }
         return result;
     }
@@ -524,7 +520,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
             auto global_discr = *result_discriminators[selector[i]];
             auto local_discr = result_variant.localDiscriminatorByGlobal(global_discr);
             result_discriminators_col.push_back(local_discr);
-            result_offsets.push_back(variants_offsets[i]);
+            result_offsets.push_back(offsets[i]);
         }
     }
 
