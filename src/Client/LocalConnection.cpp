@@ -246,11 +246,15 @@ void LocalConnection::sendQuery(
 
         chassert(in, "ReadBuffer should be initialized");
 
-        auto source = context->getInputFormat(current_format, *in, sample, 
-                                              settings[Setting::max_insert_block_size], std::nullopt, 
-                                        settings[Setting::max_insert_block_size_bytes],
-                                         settings[Setting::min_insert_block_size_rows],
-                                        settings[Setting::min_insert_block_size_bytes]);
+        auto source = context->getInputFormat(
+            current_format,
+            *in,
+            sample,
+            settings[Setting::max_insert_block_size],
+            std::nullopt,
+            settings[Setting::max_insert_block_size_bytes],
+            settings[Setting::min_insert_block_size_rows],
+            settings[Setting::min_insert_block_size_bytes]);
         Pipe pipe(source);
 
         auto columns_description = metadata_snapshot->getColumns();

@@ -1,22 +1,22 @@
-#include <IO/ReadHelpers.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/convertFieldToType.h>
-#include <Interpreters/Context.h>
-#include <Parsers/TokenIterator.h>
-#include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
-#include <Formats/FormatFactory.h>
-#include <Formats/EscapingRuleUtils.h>
 #include <Core/Block.h>
-#include <base/find_symbols.h>
-#include <Common/typeid_cast.h>
-#include <Common/checkStackSize.h>
-#include <Common/logger_useful.h>
 #include <Core/Settings.h>
-#include <Parsers/ASTLiteral.h>
-#include <DataTypes/Serializations/SerializationNullable.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
+#include <Formats/EscapingRuleUtils.h>
+#include <Formats/FormatFactory.h>
+#include <IO/ReadHelpers.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/TokenIterator.h>
+#include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
+#include <base/find_symbols.h>
+#include <Common/checkStackSize.h>
+#include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -132,7 +132,7 @@ Chunk ValuesBlockInputFormat::read()
     {
         return (!max_block_size_rows || rows < max_block_size_rows) && (!max_block_size_bytes || bytes < max_block_size_bytes);
     };
-    
+
     for (; larger_min_block_size_exists(rows_in_block, bytes_in_block) &&
            smaller_max_block_size_each(rows_in_block, bytes_in_block)
          ; ++rows_in_block)
@@ -154,7 +154,7 @@ Chunk ValuesBlockInputFormat::read()
                     for (const auto & column : columns)
                         bytes_in_block += column->byteSize();
                 }
-            }            
+            }
         }
         catch (Exception & e)
         {

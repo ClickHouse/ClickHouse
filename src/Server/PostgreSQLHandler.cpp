@@ -1,27 +1,27 @@
 #include <memory>
-#include <Server/PostgreSQLHandler.h>
+#include <Core/PostgreSQLProtocol.h>
+#include <Core/Settings.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/WriteBuffer.h>
+#include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
+#include <Parsers/ASTCopyQuery.h>
+#include <Parsers/ParserCopyQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Poco/Util/LayeredConfiguration.h>
+#include <Server/PostgreSQLHandler.h>
 #include <Server/TCPServer.h>
 #include <base/scope_guard.h>
 #include <pcg_random.hpp>
-#include <Common/Exception.h>
+#include <Poco/Util/LayeredConfiguration.h>
 #include <Common/CurrentThread.h>
+#include <Common/Exception.h>
 #include <Common/config_version.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
-#include <Core/PostgreSQLProtocol.h>
-#include <Parsers/ASTCopyQuery.h>
-#include <Parsers/ParserCopyQuery.h>
-#include <Core/Settings.h>
 
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -485,11 +485,21 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
                     message_transport->receive<PostgreSQLProtocol::Messaging::CopyInData>();
 
                 ReadBufferFromString buf(data_query->query);
-                auto format_ptr = FormatFactory::instance().getInput(format, buf, io.pipeline.getHeader(), query_context, max_insert_block_size_rows_setting, 
-                                                                            std::nullopt, nullptr, nullptr, false, CompressionMethod::None, false, 
-                                                                            max_insert_block_size_bytes_setting,
-                                                                            min_insert_block_size_rows_setting,
-                                                                            min_insert_block_size_bytes_setting);
+                auto format_ptr = FormatFactory::instance().getInput(
+                    format,
+                    buf,
+                    io.pipeline.getHeader(),
+                    query_context,
+                    max_insert_block_size_rows_setting,
+                    std::nullopt,
+                    nullptr,
+                    nullptr,
+                    false,
+                    CompressionMethod::None,
+                    false,
+                    max_insert_block_size_bytes_setting,
+                    min_insert_block_size_rows_setting,
+                    min_insert_block_size_bytes_setting);
                 while (true)
                 {
                     auto chunk = format_ptr->generate();
