@@ -1297,7 +1297,11 @@ Limit for number of sharding key values, turns off `optimize_skip_unused_shards`
 Too many values may require significant amount for processing, while the benefit is doubtful, since if you have huge number of values in `IN (...)`, then most likely the query will be sent to all shards anyway.
 )", 0) \
     DECLARE(Bool, optimize_skip_unused_shards, false, R"(
-Enables or disables skipping of unused shards for [SELECT](../../sql-reference/statements/select/index.md) queries that have sharding key condition in `WHERE/PREWHERE` (assuming that the data is distributed by sharding key, otherwise a query yields incorrect result).
+Enables or disables skipping of unused shards for [SELECT](../../sql-reference/statements/select/index.md) queries that have sharding key condition in `WHERE/PREWHERE`, and activates related optimizations for distributed queries (e.g. aggregation by sharding key).
+
+:::note
+Assumes that the data is distributed by sharding key, otherwise a query yields incorrect result.
+:::
 
 Possible values:
 
