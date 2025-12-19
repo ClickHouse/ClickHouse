@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <bit>
 
-#include <Common/StackTrace.h>
+#include <Common/FramePointers.h>
 #include <Common/formatIPv6.h>
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
@@ -1157,7 +1157,7 @@ inline void writeBinary(const CityHash_v1_0_2::uint128 & x, WriteBuffer & buf)
     writePODBinary(x.high64, buf);
 }
 
-inline void writeBinary(const StackTrace::FramePointers & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const FramePointers & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 /// Methods for outputting the value in text form for a tab-separated format.
 

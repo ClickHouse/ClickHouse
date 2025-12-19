@@ -3228,8 +3228,8 @@ enum CompressionCodec {
     COMP_LZ4 = 3;
     COMP_LZ4HC = 4;
     COMP_ZSTD = 5;
-    COMP_ZSTD_QAT = 6;
-    COMP_DEFLATE_QPL = 7;
+    // COMP_ZSTD_QAT = 6;
+    // COMP_DEFLATE_QPL = 7;
     COMP_Delta = 8;
     COMP_DoubleDelta = 9;
     COMP_GCD = 10;

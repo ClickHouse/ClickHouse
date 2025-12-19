@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Common/Exception.h>
 #include <Core/Types.h>
-#include <Poco/Util/AbstractConfiguration.h>
+
+#include <mutex>
 
 #include "config.h"
 
