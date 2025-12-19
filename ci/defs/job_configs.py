@@ -253,8 +253,7 @@ class JobConfigs:
                 ArtifactNames.RPM_AMD_RELEASE,
                 ArtifactNames.TGZ_AMD_RELEASE,
             ],
-            # Release needs same architecture (for now) to handle `clickhouse hash-binary` to setup binary hash
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.ARM_LARGE,
             timeout=3 * 3600,
         ),
         Job.ParamSet(
@@ -265,7 +264,6 @@ class JobConfigs:
                 ArtifactNames.RPM_ARM_RELEASE,
                 ArtifactNames.TGZ_ARM_RELEASE,
             ],
-            # Release needs same architecture (for now) to handle `clickhouse hash-binary` to setup binary hash
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
@@ -348,7 +346,7 @@ class JobConfigs:
     install_check_jobs = Job.Config(
         name=JobNames.INSTALL_TEST,
         runs_on=[],  # from parametrize()
-        command="python3 ./ci/jobs/install_check.py --no-rpm --no-tgz",
+        command="python3 ./ci/jobs/install_check.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/install_check.py",
@@ -359,11 +357,23 @@ class JobConfigs:
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
-            parameter="amd_debug",
+            parameter="amd_release",
             runs_on=RunnerLabels.STYLE_CHECK_AMD,
             requires=[
-                ArtifactNames.DEB_AMD_DEBUG,
-                ArtifactNames.CH_AMD_DEBUG,
+                ArtifactNames.DEB_AMD_RELEASE,
+                ArtifactNames.CH_AMD_RELEASE,
+                ArtifactNames.RPM_AMD_RELEASE,
+                ArtifactNames.TGZ_AMD_RELEASE,
+            ],
+        ),
+        Job.ParamSet(
+            parameter="arm_release",
+            runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            requires=[
+                ArtifactNames.DEB_ARM_RELEASE,
+                ArtifactNames.CH_ARM_RELEASE,
+                ArtifactNames.RPM_ARM_RELEASE,
+                ArtifactNames.TGZ_ARM_RELEASE,
             ],
         ),
     )
@@ -1061,9 +1071,9 @@ class JobConfigs:
     )
     libfuzzer_job = Job.Config(
         name=JobNames.LIBFUZZER_TEST,
-        runs_on=RunnerLabels.FUNC_TESTER_ARM,
-        command="cd ./tests/ci && python3 libfuzzer_test_check.py 'libFuzzer tests'",
-        requires=["Build (arm_fuzzers)"],
+        runs_on=RunnerLabels.ARM_MEDIUM,
+        command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
+        requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
     )
     vector_search_stress_job = Job.Config(
         name="Vector Search Stress",

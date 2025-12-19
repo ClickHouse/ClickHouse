@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
+
 #include <Columns/IColumn.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
@@ -11,6 +12,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/isDiskFunction.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
@@ -38,6 +40,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_SETTING;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
     extern const int READONLY;
 }
 
@@ -953,6 +956,13 @@ namespace ErrorCodes
     DECLARE(Bool, use_adaptive_write_buffer_for_dynamic_subcolumns, true, R"(
     Allow to use adaptive writer buffers during writing dynamic subcolumns to
     reduce memory usage
+    )", 0) \
+    DECLARE(UInt64, min_columns_to_activate_adaptive_write_buffer, 500, R"(
+    Allow to reduce memory usage for tables with lots of columns by using adaptive writer buffers.
+
+    Possible values:
+    - 0 - unlimited
+    - 1 - always enabled
     )", 0) \
     DECLARE(NonZeroUInt64, adaptive_write_buffer_initial_size, 16 * 1024, R"(
     Initial size of an adaptive write buffer
@@ -2434,6 +2444,8 @@ void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_v
             /// In case the alias is being used (e.g. use enable_analyzer) we must change the original setting
             auto final_name = MergeTreeSettingsTraits::resolveName(change.name);
             auto setting_index = MergeTreeSettingsTraits::Accessor::instance().find(final_name);
+            if (setting_index == static_cast<size_t>(-1))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown setting in history: {}", final_name);
             auto previous_value = MergeTreeSettingsTraits::Accessor::instance().castValueUtil(setting_index, change.previous_value);
 
             if (get(final_name) != previous_value)
