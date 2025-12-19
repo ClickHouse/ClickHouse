@@ -479,7 +479,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
                 if constexpr (is_floating_point<T>)
                 {
                     /// We search for the exact byte representation, not the default floating point equal, otherwise we might not find the value (NaN)
-                    static_assert(std::is_trivial_v<T> && std::is_standard_layout_v<T>);
+                    static_assert(std::is_pod_v<T>);
                     if (!null_map[i] && std::memcmp(&vec_data[i], &smallest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
                         return {i};
                 }
@@ -500,7 +500,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
             {
                 if constexpr (is_floating_point<T>)
                 {
-                    static_assert(std::is_trivial_v<T> && std::is_standard_layout_v<T>);
+                    static_assert(std::is_pod_v<T>);
                     if (if_map[i] && std::memcmp(&vec_data[i], &smallest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
                         return {i};
                 }
@@ -522,7 +522,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
             {
                 if constexpr (is_floating_point<T>)
                 {
-                    static_assert(std::is_trivial_v<T> && std::is_standard_layout_v<T>);
+                    static_assert(std::is_pod_v<T>);
                     if (final_flags[i] && std::memcmp(&vec_data[i], &smallest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
                         return {i};
                 }
@@ -573,7 +573,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
             {
                 if constexpr (is_floating_point<T>)
                 {
-                    static_assert(std::is_trivial_v<T> && std::is_standard_layout_v<T>);
+                    static_assert(std::is_pod_v<T>);
                     if (!null_map[i] && std::memcmp(&vec_data[i], &greatest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
                         return {i};
                 }
@@ -594,7 +594,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
             {
                 if constexpr (is_floating_point<T>)
                 {
-                    static_assert(std::is_trivial_v<T> && std::is_standard_layout_v<T>);
+                    static_assert(std::is_pod_v<T>);
                     if (if_map[i] && std::memcmp(&vec_data[i], &greatest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
                         return {i};
                 }
@@ -616,7 +616,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
             {
                 if constexpr (is_floating_point<T>)
                 {
-                    static_assert(std::is_trivial_v<T> && std::is_standard_layout_v<T>);
+                    static_assert(std::is_pod_v<T>);
                     if (final_flags[i] && std::memcmp(&vec_data[i], &greatest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
                         return {i};
                 }
@@ -1089,9 +1089,9 @@ const char * SingleValueDataString::getData() const
     return isSmall() ? small_data : large_data;
 }
 
-std::string_view SingleValueDataString::getStringView() const
+StringRef SingleValueDataString::getStringRef() const
 {
-    return std::string_view{getData(), size - 1};
+    return StringRef(getData(), size - 1);
 }
 
 void SingleValueDataString::allocateLargeDataIfNeeded(UInt32 size_to_reserve, Arena * arena)
@@ -1111,12 +1111,12 @@ void SingleValueDataString::allocateLargeDataIfNeeded(UInt32 size_to_reserve, Ar
     }
 }
 
-void SingleValueDataString::changeImpl(std::string_view value, Arena * arena)
+void SingleValueDataString::changeImpl(StringRef value, Arena * arena)
 {
-    if (unlikely(MAX_STRING_SIZE < value.size()))
-        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size is too big ({}), maximum: {}", value.size(), MAX_STRING_SIZE);
+    if (unlikely(MAX_STRING_SIZE < value.size))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size is too big ({}), maximum: {}", value.size, MAX_STRING_SIZE);
 
-    UInt32 value_size = static_cast<UInt32>(value.size());
+    UInt32 value_size = static_cast<UInt32>(value.size);
 
     if (value_size <= MAX_SMALL_STRING_SIZE && isSmall())
     {
@@ -1124,14 +1124,14 @@ void SingleValueDataString::changeImpl(std::string_view value, Arena * arena)
         size = value_size + 1;
 
         if (value_size > 0)
-            memcpy(small_data, value.data(), value.size());
+            memcpy(small_data, value.data, value.size);
     }
     else
     {
         allocateLargeDataIfNeeded(value_size, arena);
 
         size = value_size + 1;
-        memcpy(large_data, value.data(), value.size());
+        memcpy(large_data, value.data, value.size);
     }
 }
 
@@ -1226,13 +1226,13 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
 
 bool SingleValueDataString::isEqualTo(const IColumn & column, size_t row_num) const
 {
-    return has() && assert_cast<const ColumnString &>(column).getDataAt(row_num) == getStringView();
+    return has() && assert_cast<const ColumnString &>(column).getDataAt(row_num) == getStringRef();
 }
 
 bool SingleValueDataString::isEqualTo(const SingleValueDataBase & other) const
 {
     auto const & to = assert_cast<const Self &>(other);
-    return has() && to.has() && to.getStringView() == getStringView();
+    return has() && to.has() && to.getStringRef() == getStringRef();
 }
 
 void SingleValueDataString::set(const IColumn & column, size_t row_num, Arena * arena)
@@ -1244,12 +1244,12 @@ void SingleValueDataString::set(const SingleValueDataBase & other, Arena * arena
 {
     auto const & to = assert_cast<const Self &>(other);
     if (to.has())
-        changeImpl(to.getStringView(), arena);
+        changeImpl(to.getStringRef(), arena);
 }
 
 bool SingleValueDataString::setIfSmaller(const IColumn & column, size_t row_num, Arena * arena)
 {
-    if (!has() || assert_cast<const ColumnString &>(column).getDataAt(row_num) < getStringView())
+    if (!has() || assert_cast<const ColumnString &>(column).getDataAt(row_num) < getStringRef())
     {
         set(column, row_num, arena);
         return true;
@@ -1260,9 +1260,9 @@ bool SingleValueDataString::setIfSmaller(const IColumn & column, size_t row_num,
 bool SingleValueDataString::setIfSmaller(const SingleValueDataBase & other, Arena * arena)
 {
     auto const & to = assert_cast<const Self &>(other);
-    if (to.has() && (!has() || to.getStringView() < getStringView()))
+    if (to.has() && (!has() || to.getStringRef() < getStringRef()))
     {
-        changeImpl(to.getStringView(), arena);
+        changeImpl(to.getStringRef(), arena);
         return true;
     }
     return false;
@@ -1271,7 +1271,7 @@ bool SingleValueDataString::setIfSmaller(const SingleValueDataBase & other, Aren
 
 bool SingleValueDataString::setIfGreater(const IColumn & column, size_t row_num, Arena * arena)
 {
-    if (!has() || assert_cast<const ColumnString &>(column).getDataAt(row_num) > getStringView())
+    if (!has() || assert_cast<const ColumnString &>(column).getDataAt(row_num) > getStringRef())
     {
         set(column, row_num, arena);
         return true;
@@ -1282,9 +1282,9 @@ bool SingleValueDataString::setIfGreater(const IColumn & column, size_t row_num,
 bool SingleValueDataString::setIfGreater(const SingleValueDataBase & other, Arena * arena)
 {
     auto const & to = assert_cast<const Self &>(other);
-    if (to.has() && (!has() || to.getStringView() > getStringView()))
+    if (to.has() && (!has() || to.getStringRef() > getStringRef()))
     {
-        changeImpl(to.getStringView(), arena);
+        changeImpl(to.getStringRef(), arena);
         return true;
     }
     return false;

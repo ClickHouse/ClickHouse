@@ -1,7 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -242,7 +241,7 @@ static void appendAggregateFunctions(
             /// Cast to aggregate types specified in query if it's not
             /// strictly the same as the one specified in projection. This
             /// is required to generate correct results during finalization.
-            node = &proj_dag.addCast(*node, type, aggregate.column_name, nullptr);
+            node = &proj_dag.addCast(*node, type, aggregate.column_name);
         else if (node->result_name != aggregate.column_name)
             node = &proj_dag.addAlias(*node, aggregate.column_name);
 
@@ -446,66 +445,6 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
     return candidates;
 }
 
-AggregateProjectionCandidates getAggregateProjectionCandidates(QueryPlan::Node & node, DistinctStep & distinct, ReadFromMergeTree & reading)
-{
-    const auto metadata = reading.getStorageMetadata();
-    Block key_virtual_columns = reading.getMergeTreeData().getHeaderWithVirtualsForFilter(metadata);
-
-    ContextPtr context = reading.getContext();
-
-    const auto & projections = metadata->projections;
-    std::vector<const ProjectionDescription *> agg_projections;
-
-    for (const auto & projection : projections)
-        if (projection.type == ProjectionDescription::Type::Aggregate)
-            agg_projections.push_back(&projection);
-
-    AggregateProjectionCandidates candidates;
-
-    if (agg_projections.empty())
-        return candidates;
-
-    QueryDAG dag;
-    if (!dag.build(*node.children.front()))
-        return candidates;
-
-    auto query_index = buildDAGIndex(*dag.dag);
-    candidates.has_filter = dag.filter_node;
-
-    const auto & keys = distinct.getColumnNames();
-
-    /// Prefer the user specified projection if any.
-    auto it = std::find_if(
-        agg_projections.begin(),
-        agg_projections.end(),
-        [&](const auto * projection)
-        { return projection->name == context->getSettingsRef()[Setting::preferred_optimize_projection_name].value; });
-
-    if (it != agg_projections.end())
-    {
-        const ProjectionDescription * preferred_projection = *it;
-        agg_projections.clear();
-        agg_projections.push_back(preferred_projection);
-    }
-
-    AggregateDescriptions aggregates; // Empty for DISTINCT
-    candidates.real.reserve(agg_projections.size());
-
-    /// Only select the projection where distinct columns are a subset of projection columns.
-    for (const auto * projection : agg_projections)
-    {
-        auto info = getAggregatingProjectionInfo(*projection, context, metadata, key_virtual_columns);
-        if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates))
-        {
-            AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(*proj_dag)};
-            candidate.projection = projection;
-            candidates.real.emplace_back(std::move(candidate));
-        }
-    }
-
-    return candidates;
-}
-
 static QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
 {
     IQueryPlanStep * step = node.step.get();
@@ -535,14 +474,10 @@ std::optional<String> optimizeUseAggregateProjections(
         return {};
 
     auto * aggregating = typeid_cast<AggregatingStep *>(node.step.get());
-
-    auto * distinct = typeid_cast<DistinctStep *>(node.step.get());
-
-    /// In the event there is DISTINCT but no GROUP BY, we still want to use aggregate projections.
-    if (!aggregating && !distinct)
+    if (!aggregating)
         return {};
 
-    if (aggregating && !aggregating->canUseProjection())
+    if (!aggregating->canUseProjection())
         return {};
 
     QueryPlan::Node * reading_node = findReadingStep(*node.children.front());
@@ -558,14 +493,13 @@ std::optional<String> optimizeUseAggregateProjections(
 
     PartitionIdToMaxBlockPtr max_added_blocks = getMaxAddedBlocks(reading);
 
-    auto candidates
-        = (distinct ? getAggregateProjectionCandidates(node, *distinct, *reading)
-                    : getAggregateProjectionCandidates(node, *aggregating, *reading, max_added_blocks, allow_implicit_projections));
+    auto candidates = getAggregateProjectionCandidates(node, *aggregating, *reading, max_added_blocks, allow_implicit_projections);
 
     auto logger = getLogger("optimizeUseAggregateProjections");
     const auto & query_info = reading->getQueryInfo();
     const auto metadata = reading->getStorageMetadata();
     ContextPtr context = reading->getContext();
+    MergeTreeDataSelectExecutor reader(reading->getMergeTreeData());
     AggregateProjectionCandidate * best_candidate = nullptr;
 
     /// Stores row count from exact ranges of parts.
@@ -695,7 +629,6 @@ std::optional<String> optimizeUseAggregateProjections(
                 projection_query_info.prewhere_info = nullptr;
                 projection_query_info.filter_actions_dag = std::make_unique<ActionsDAG>(candidate.dag.clone());
 
-                MergeTreeDataSelectExecutor reader(reading->getMergeTreeData(), candidate.projection);
                 bool analyzed = analyzeProjectionCandidate(
                     candidate,
                     reader,
@@ -858,7 +791,6 @@ std::optional<String> optimizeUseAggregateProjections(
         projection_query_info.prewhere_info = nullptr;
         projection_query_info.filter_actions_dag = nullptr;
 
-        MergeTreeDataSelectExecutor reader(reading->getMergeTreeData(), best_candidate->projection);
         projection_reading = reader.readFromParts(
             /* parts = */ {},
             reading->getMutationsSnapshot()->cloneEmpty(),
@@ -929,31 +861,15 @@ std::optional<String> optimizeUseAggregateProjections(
         aggregate_projection_node = &projection_reading_node;
     }
 
-    const auto & projection_header = aggregate_projection_node->step->getOutputHeader();
-
     if (has_parent_parts)
     {
-        if (aggregating)
-        {
-            node.step = aggregating->convertToAggregatingProjection(projection_header);
-        }
-        else
-        {
-            node.step->updateInputHeader(projection_header);
-        }
+        node.step = aggregating->convertToAggregatingProjection(aggregate_projection_node->step->getOutputHeader());
         node.children.push_back(aggregate_projection_node);
     }
     else
     {
         /// All parts are taken from projection
-        if (aggregating)
-        {
-            aggregating->requestOnlyMergeForAggregateProjection(projection_header);
-        }
-        else
-        {
-            node.step->updateInputHeader(projection_header);
-        }
+        aggregating->requestOnlyMergeForAggregateProjection(aggregate_projection_node->step->getOutputHeader());
         node.children.front() = aggregate_projection_node;
     }
 

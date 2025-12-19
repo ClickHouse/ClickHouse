@@ -8,7 +8,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/NamePrompter.h>
 #include <Common/quoteString.h>
-#include <Common/AsyncLoader.h>
 
 
 namespace CurrentMetrics
@@ -60,7 +59,7 @@ IDatabase::~IDatabase()
     CurrentMetrics::sub(CurrentMetrics::AttachedDatabase, 1);
 }
 
-void IDatabase::alterDatabaseComment(const AlterCommand & /*command*/, ContextPtr /*query_context*/)
+void IDatabase::alterDatabaseComment(const AlterCommand & /*command*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: ALTER DATABASE COMMENT is not supported", getEngineName());
 }
