@@ -229,7 +229,7 @@ static inline void insertDefaultValuesIntoColumns( /// NOLINT
 static inline void deserializeAndInsertIntoColumns( /// NOLINT
     MutableColumns & columns,
     const DictionaryStorageFetchRequest & fetch_request,
-    const char * place_for_serialized_columns)
+    ReadBuffer & in)
 {
     size_t columns_size = columns.size();
 
@@ -238,9 +238,9 @@ static inline void deserializeAndInsertIntoColumns( /// NOLINT
         const auto & column = columns[column_index];
 
         if (fetch_request.shouldFillResultColumnWithIndex(column_index))
-            place_for_serialized_columns = column->deserializeAndInsertFromArena(place_for_serialized_columns);
+            column->deserializeAndInsertFromArena(in, nullptr);
         else
-            place_for_serialized_columns = column->skipSerializedInArena(place_for_serialized_columns);
+            column->skipSerializedInArena(in);
     }
 }
 
@@ -438,7 +438,7 @@ public:
 
         if constexpr (key_type == DictionaryKeyType::Simple)
         {
-            key_columns[0] = removeSpecialRepresentations(key_columns[0]->convertToFullColumnIfConst());
+            key_columns[0] = recursiveRemoveSparse(key_columns[0]->convertToFullColumnIfConst());
 
             const auto * vector_col = checkAndGetColumn<ColumnVector<UInt64>>(key_columns[0].get());
             if (!vector_col)
@@ -478,7 +478,7 @@ public:
 
             for (const auto & column : key_columns)
             {
-                StringRef serialized_data = column->serializeValueIntoArena(current_key_index, *complex_key_arena, block_start);
+                StringRef serialized_data = column->serializeValueIntoArena(current_key_index, *complex_key_arena, block_start, nullptr);
                 allocated_size_for_columns += serialized_data.size;
             }
 
@@ -599,7 +599,7 @@ Block mergeBlockWithPipe(
 
     while (executor.pull(block))
     {
-        removeSpecialColumnRepresentations(block);
+        convertToFullIfSparse(block);
         block.checkNumberOfRows();
 
         Columns block_key_columns;
@@ -665,7 +665,7 @@ static const PaddedPODArray<T> & getColumnVectorData(
     PaddedPODArray<T> & backup_storage)
 {
     bool is_const_column = isColumnConst(*column);
-    auto full_column = removeSpecialRepresentations(column->convertToFullColumnIfConst());
+    auto full_column = recursiveRemoveSparse(column->convertToFullColumnIfConst());
     auto vector_col = checkAndGetColumn<ColumnVector<T>>(full_column.get());
 
     if (!vector_col)

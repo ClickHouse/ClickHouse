@@ -7,7 +7,6 @@ sidebar_label: 'executable'
 sidebar_position: 50
 slug: /engines/table-functions/executable
 title: 'executable'
-doc_type: 'reference'
 ---
 
 # executable Table Function for UDFs

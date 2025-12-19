@@ -320,17 +320,23 @@ public:
         if (!current_result)
         {
             if (next_block >= dispatched_blocks.size())
-                return {Block(), true};
+                return {Block(), nullptr, true};
 
             current_result = hash_joins[next_block]->data->joinScatteredBlock(std::move(dispatched_blocks[next_block]));
-            ++next_block;
         }
 
         auto data = current_result->next();
         if (data.is_last)
+        {
+            if (data.next_block)
+                dispatched_blocks[next_block] = std::move(*data.next_block);
+            else
+                ++next_block;
             current_result.reset();
+        }
+
         bool is_last = next_block >= dispatched_blocks.size() && data.is_last;
-        return {std::move(data.block), is_last};
+        return {std::move(data.block), nullptr, is_last};
     }
 };
 
@@ -447,7 +453,7 @@ IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, 
     for (const auto & key_name : key_columns_names)
     {
         const auto & key_col = from_block.getByName(key_name).column->convertToFullColumnIfConst();
-        const auto & key_col_no_lc = recursiveRemoveLowCardinality(removeSpecialRepresentations(key_col));
+        const auto & key_col_no_lc = recursiveRemoveLowCardinality(recursiveRemoveSparse(key_col));
         key_column_holders.push_back(key_col_no_lc);
         key_columns.push_back(key_col_no_lc.get());
     }

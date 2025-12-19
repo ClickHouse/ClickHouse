@@ -1446,7 +1446,7 @@ namespace
     {
         responder.reset();
         pipeline_executor.reset();
-        pipeline = nullptr;
+        pipeline.reset();
         output_format_processor.reset();
         read_buffer.reset();
         write_buffer.reset();

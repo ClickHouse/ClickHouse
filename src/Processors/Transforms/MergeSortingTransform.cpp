@@ -274,8 +274,7 @@ void MergeSortingTransform::consume(Chunk chunk)
                         SortingQueueStrategy::Batch,
                         limit,
                         /*always_read_till_end_=*/ false,
-                        /*out_row_sources_buf=*/ nullptr,
-                        /*filter_column_name=*/ std::nullopt,
+                        nullptr,
                         use_average_block_sizes,
                         apply_virtual_row,
                         have_all_inputs);

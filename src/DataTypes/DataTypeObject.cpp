@@ -360,6 +360,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
                 if (path.starts_with(prefix))
                     result_dynamic_paths.emplace_back(path.substr(prefix.size()), column);
             }
+            result_object_column.setMaxDynamicPaths(result_dynamic_paths.size());
             result_object_column.setDynamicPaths(result_dynamic_paths);
 
             const auto & shared_data_offsets = object_column.getSharedDataOffsets();

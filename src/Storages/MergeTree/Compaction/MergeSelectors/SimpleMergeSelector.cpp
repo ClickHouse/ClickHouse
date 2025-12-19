@@ -45,10 +45,6 @@ public:
 
     void consider(RangesIterator range_it, PartsIterator begin, PartsIterator end, size_t sum_size, size_t size_prev_at_left, const SimpleMergeSelector::Settings & settings)
     {
-        if (settings.enable_heuristic_to_remove_small_parts_at_right)
-            while (end >= begin + 3 && (end - 1)->size < settings.heuristic_to_remove_small_parts_at_right_max_ratio * sum_size)
-                --end;
-
         double current_score = score(end - begin, sum_size, settings.size_fixed_cost_to_add);
 
         if (settings.enable_heuristic_to_align_parts
@@ -59,6 +55,10 @@ public:
                 current_score *= interpolateLinear(settings.heuristic_to_align_parts_max_score_adjustment, 1,
                     difference / settings.heuristic_to_align_parts_max_absolute_difference_in_powers_of_two);
         }
+
+        if (settings.enable_heuristic_to_remove_small_parts_at_right)
+            while (end >= begin + 3 && (end - 1)->size < settings.heuristic_to_remove_small_parts_at_right_max_ratio * sum_size)
+                --end;
 
         ranges.emplace_back(range_it, begin, end, sum_size, current_score);
     }

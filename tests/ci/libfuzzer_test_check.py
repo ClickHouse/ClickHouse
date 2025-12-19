@@ -21,7 +21,7 @@ from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
-TIMEOUT = 60 * 60 # 60 minutes
+TIMEOUT = 60 * 5
 NO_CHANGES_MSG = "Nothing to run"
 s3 = S3Helper()
 
@@ -151,7 +151,7 @@ def process_error(path: Path) -> list:
     error_info = []
     is_error = False
 
-    with open(path, "r", encoding="utf-8", errors='replace') as file:
+    with open(path, "r", encoding="utf-8") as file:
         for line in file:
             line = line.rstrip("\n")
             if is_error:

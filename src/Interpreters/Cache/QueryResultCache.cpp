@@ -185,7 +185,7 @@ namespace
 
 bool isQueryResultCacheRelatedSetting(const String & setting_name)
 {
-    return ((setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache")) && setting_name != "query_cache_tag") || setting_name == "log_comment";
+    return (setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache")) && setting_name != "query_cache_tag";
 }
 
 class RemoveQueryResultCacheSettingsMatcher
@@ -404,7 +404,7 @@ void QueryResultCacheWriter::buffer(Chunk && chunk, ChunkType chunk_type)
             /// such chunks are expected).
             auto & buffered_chunk = (chunk_type == ChunkType::Totals) ? query_result->totals : query_result->extremes;
 
-            removeSpecialColumnRepresentations(chunk);
+            convertToFullIfSparse(chunk);
             convertToFullIfConst(chunk);
 
             if (!buffered_chunk.has_value())
@@ -453,7 +453,7 @@ void QueryResultCacheWriter::finalizeWrite()
 
         for (auto & chunk : query_result->chunks)
         {
-            removeSpecialColumnRepresentations(chunk);
+            convertToFullIfSparse(chunk);
             convertToFullIfConst(chunk);
 
             const size_t rows_chunk = chunk.getNumRows();

@@ -6,7 +6,7 @@ CREATE TABLE tab
 (
     key UInt64,
     str String,
-    INDEX inv_idx str TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1
+    INDEX inv_idx str TYPE text(tokenizer = 'default') GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY key;

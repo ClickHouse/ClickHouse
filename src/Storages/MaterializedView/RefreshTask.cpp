@@ -78,7 +78,7 @@ namespace ErrorCodes
 
 namespace FailPoints
 {
-extern const char refresh_task_delay_update_coordination_state_running[];
+extern const char refresh_task_stop_racing_for_running_refresh[];
 }
 
 RefreshTask::RefreshTask(
@@ -164,13 +164,6 @@ OwnedRefreshTask RefreshTask::create(
 
     task->refresh_task = context->getSchedulePool().createTask("RefreshTask",
         [self = task.get()] { self->refreshTask(); });
-
-    task->refresh_task_watch_callback = std::make_shared<Coordination::WatchCallback>([w = task->coordination.watches, task_waker = task->refresh_task->getWatchCallback()](const Coordination::WatchResponse & response)
-    {
-        w->root_watch_active.store(false);
-        w->should_reread_znodes.store(true);
-        (*task_waker)(response);
-    });
 
     if (strategy.dependencies)
         for (auto && dependency : strategy.dependencies->children)
@@ -953,12 +946,24 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
     if (!coordination.watches->root_watch_active.load())
     {
         coordination.watches->root_watch_active.store(true);
-        zookeeper->existsWatch(coordination.path, nullptr, refresh_task_watch_callback);
+        zookeeper->existsWatch(coordination.path, nullptr,
+            [w = coordination.watches, task_waker = refresh_task->getWatchCallback()](const Coordination::WatchResponse & response)
+            {
+                w->root_watch_active.store(false);
+                w->should_reread_znodes.store(true);
+                task_waker(response);
+            });
     }
     if (!coordination.watches->children_watch_active.load())
     {
         coordination.watches->children_watch_active.store(true);
-        zookeeper->getChildrenWatch(coordination.path, nullptr, refresh_task_watch_callback);
+        zookeeper->getChildrenWatch(coordination.path, nullptr,
+            [w = coordination.watches, task_waker = refresh_task->getWatchCallback()](const Coordination::WatchResponse & response)
+            {
+                w->children_watch_active.store(false);
+                w->should_reread_znodes.store(true);
+                task_waker(response);
+            });
     }
 
     Strings paths {coordination.path, coordination.path + "/running", coordination.path + "/paused"};
@@ -995,10 +1000,11 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
         ops.emplace_back(zkutil::makeSetRequest(coordination.path, root.toString(), root.version));
         if (running)
         {
-            fiu_do_on(FailPoints::refresh_task_delay_update_coordination_state_running, {
-                std::chrono::milliseconds sleep_time{3000 + thread_local_rng() % 2000};
-                std::this_thread::sleep_for(sleep_time);
-            });
+            bool stop_racing_for_running_refresh = false;
+            fiu_do_on(FailPoints::refresh_task_stop_racing_for_running_refresh, { stop_racing_for_running_refresh = true; });
+            if (stop_racing_for_running_refresh)
+                return false;
+
             ops.emplace_back(
                 zkutil::makeCreateRequest(coordination.path + "/running", coordination.replica_name, zkutil::CreateMode::Ephemeral));
         }

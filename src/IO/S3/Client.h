@@ -228,11 +228,17 @@ public:
     }
 
     ProviderType getProviderType() const { return provider_type; }
+    std::string getGCSOAuthToken() const
+    {
+        if (provider_type != ProviderType::GCS)
+            return "";
 
-    std::string getGCSOAuthToken() const;
+        const auto & client = PocoHTTPClientGCPOAuth(client_configuration);
+        return client.getBearerToken();
+    }
 
-    ThrottlerPtr getPutRequestThrottler() const { return client_configuration.request_throttler.put_throttler; }
-    ThrottlerPtr getGetRequestThrottler() const { return client_configuration.request_throttler.get_throttler; }
+    ThrottlerPtr getPutRequestThrottler() const { return client_configuration.put_request_throttler; }
+    ThrottlerPtr getGetRequestThrottler() const { return client_configuration.get_request_throttler; }
 
     std::string getRegionForBucket(const std::string & bucket, bool force_detect = false) const;
 
@@ -272,11 +278,11 @@ private:
     ComposeObjectOutcome ComposeObject(ComposeObjectRequest & request) const;
 
     template <typename RequestType, typename RequestFn>
-    std::invoke_result_t<RequestFn, RequestType>
+    std::invoke_result_t<RequestFn, RequestType &>
     doRequest(RequestType & request, RequestFn request_fn) const;
 
     template <bool IsReadMethod, typename RequestType, typename RequestFn>
-    std::invoke_result_t<RequestFn, RequestType>
+    std::invoke_result_t<RequestFn, RequestType &>
     doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request_fn) const;
 
     void updateURIForBucket(const std::string & bucket, S3::URI new_uri) const;
@@ -354,7 +360,8 @@ public:
         bool enable_s3_requests_logging,
         bool for_disk_s3,
         std::optional<std::string> opt_disk_name,
-        const HTTPRequestThrottler & request_throttler,
+        const ThrottlerPtr & get_request_throttler,
+        const ThrottlerPtr & put_request_throttler,
         const String & protocol = "https");
 
 private:
