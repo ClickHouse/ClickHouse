@@ -141,15 +141,11 @@ private:
 
     Chain createPreSink(StorageIDMaybeEmpty view_id) const;
     Chain createSelect(StorageIDMaybeEmpty view_id) const;
+    Chain createMergePreSink(StorageIDMaybeEmpty merge_id) const;
     Chain createSink(StorageIDMaybeEmpty view_id) const;
     Chain createPostSink(StorageIDMaybeEmpty view_id) const;
 
     Chain createRetry(const std::vector<StorageIDMaybeEmpty> & path, StorageIDMaybeEmpty start_from, const std::string & partition) const;
-    Chain createPreSink(StorageIDPrivate view_id) const;
-    Chain createSelect(StorageIDPrivate view_id) const;
-    Chain createMergeSink(StorageIDPrivate merge_id) const;
-    Chain createSink(StorageIDPrivate view_id) const;
-    Chain createPostSink(StorageIDPrivate view_id) const;
 
     static QueryViewsLogElement::ViewStatus getQueryViewStatus(std::exception_ptr exception, bool before_start);
 

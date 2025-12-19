@@ -59,6 +59,9 @@ public:
     bool supportsPrewhere() const override;
     std::optional<NameSet> supportedPrewhereColumns() const override;
 
+    // Would be checked for inner table during sink creation.
+    bool supportsSparseSerialization() const override { return true; }
+
     bool canMoveConditionsToPrewhere() const override;
 
     QueryProcessingStage::Enum

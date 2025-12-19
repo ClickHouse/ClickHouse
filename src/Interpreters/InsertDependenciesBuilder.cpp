@@ -474,6 +474,68 @@ private:
     std::vector<ViewStatus> statuses;
 };
 
+class FinalizingMergeTransform final : public IProcessor
+{
+public:
+    FinalizingMergeTransform(Block merge_header, Block inner_header)
+        : IProcessor({inner_header, merge_header}, {merge_header})
+        , inner_source(getInputs().front())
+        , data_source(getInputs().back())
+        , output(getOutputs().front())
+    {
+    }
+
+    String getName() const override { return "FinalizingMergeTransform"; }
+
+    Status prepare() override
+    {
+        if (output.isFinished())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot finalize merge because output port is finished");
+        if (!output.canPush())
+            return Status::PortFull;
+
+        if (inner_source.isFinished() && data_source.isFinished())
+        {
+            output.finish();
+            return Status::Finished;
+        }
+
+        // Drain inner source
+        if (!inner_source.isFinished())
+        {
+            inner_source.setNeeded();
+            if (inner_source.hasData())
+            {
+                auto data = inner_source.pullData();
+                if (data.exception)
+                {
+                    output.pushException(data.exception);
+                    return Status::PortFull;
+                }
+            }
+        }
+
+        if (!data_source.isFinished())
+        {
+            data_source.setNeeded();
+            if (!data_source.hasData())
+                return Status::NeedData;
+
+            auto data = data_source.pullData();
+            output.pushData(std::move(data));
+            return Status::PortFull;
+        }
+
+        std::unreachable();
+    }
+
+    void work() override { /* no op */ }
+
+private:
+    InputPort & inner_source;
+    InputPort & data_source;
+    OutputPort & output;
+};
 
 DB::ConstraintsDescription buildConstraints(StorageMetadataPtr metadata, StoragePtr storage)
 {
@@ -1437,7 +1499,7 @@ Chain InsertDependenciesBuilder::createPreSink(StorageIDMaybeEmpty view_id) cons
     return result;
 }
 
-Chain InsertDependenciesBuilder::createMergeSink(StorageIDPrivate merge_id) const
+Chain InsertDependenciesBuilder::createMergePreSink(StorageIDMaybeEmpty merge_id) const
 {
     chassert(isMerge(merge_id));
     Chain result;
@@ -1519,7 +1581,24 @@ Chain InsertDependenciesBuilder::createSink(StorageIDMaybeEmpty view_id) const
     }
     else if (dynamic_cast<StorageMerge *>(inner_storage.get()))
     {
-        // Write to merge table is build in the postSink
+        auto chain = createMergePreSink(inner_table_id);
+        chain = Chain::concat(std::move(chain), createSink(inner_table_id));
+        chain = Chain::concat(std::move(chain),  createPostSink(inner_table_id));
+
+        if (!dependent_views.at(view_id).empty())
+        {
+            auto copying_data = std::make_shared<CopyTransform>(output_headers.at(inner_table_id), 2);
+            auto finalize = std::make_shared<FinalizingMergeTransform>(*output_headers.at(inner_table_id), chain.getOutputHeader());
+            connect(copying_data->getOutputs().front(), chain.getInputPort());
+            connect(copying_data->getOutputs().back(), finalize->getInputs().back());
+            connect(chain.getOutputPort(), finalize->getInputs().front());
+
+            auto & processors = chain.getProcessors();
+            processors.push_front(std::move(copying_data));
+            processors.push_back(std::move(finalize));
+        }
+
+        result = Chain::concat(std::move(result), std::move(chain));
     }
     else
     {
@@ -1534,18 +1613,16 @@ Chain InsertDependenciesBuilder::createSink(StorageIDMaybeEmpty view_id) const
 
 Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) const
 {
-    auto inner_table_id = inner_tables.at(view_id);
-    auto write_to_merge = isMerge(inner_table_id);
-    auto dependent_views_ids = dependent_views.at(view_id);
-    if (dependent_views_ids.empty() && !write_to_merge)
+    const auto & dependent_views_ids = dependent_views.at(view_id);
+    if (dependent_views_ids.empty())
         return {};
 
-    auto output_chains_size = dependent_views_ids.size() + (write_to_merge ? 1 : 0);
+    const auto & inner_table_id = inner_tables.at(view_id);
     std::vector<Chain> view_chains;
-    view_chains.reserve(output_chains_size);
+    view_chains.reserve(dependent_views_ids.size());
 
     std::vector<Block> output_view_chains_headers;
-    output_view_chains_headers.reserve(output_chains_size);
+    output_view_chains_headers.reserve(dependent_views_ids.size());
 
     for (const auto & child_view_id : dependent_views_ids)
     {
@@ -1562,19 +1639,8 @@ Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) con
         view_chains.push_back(std::move(chain));
     }
 
-    if (write_to_merge)
-    {
-        auto chain = createMergeSink(inner_table_id);
-        chain = Chain::concat(std::move(chain), createSink(inner_table_id));
-        chain = Chain::concat(std::move(chain), createPostSink(inner_table_id));
-
-        output_view_chains_headers.push_back(chain.getOutputHeader());
-        view_chains.push_back(std::move(chain));
-        dependent_views_ids.push_back(inner_table_id);
-    }
-
-    auto copying_data = std::make_shared<CopyTransform>(isMerge(view_id) ? output_headers.at(inner_table_id) : output_headers.at(view_id), output_chains_size);
-    auto finalizing_views = std::make_shared<FinalizingViewsTransform>(std::move(output_view_chains_headers), std::move(dependent_views_ids), shared_from_this(), views_error_registry);
+    auto copying_data = std::make_shared<CopyTransform>(output_headers.at(inner_table_id), dependent_views_ids.size());
+    auto finalizing_views = std::make_shared<FinalizingViewsTransform>(std::move(output_view_chains_headers), dependent_views_ids, shared_from_this(), views_error_registry);
     auto out = copying_data->getOutputs().begin();
     auto in = finalizing_views->getInputs().begin();
 
