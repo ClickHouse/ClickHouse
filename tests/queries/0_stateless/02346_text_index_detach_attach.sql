@@ -1,6 +1,6 @@
 -- Test that detaching and attaching parts with a text index works
 
-SET allow_experimental_full_text_index = 1;
+SET enable_full_text_index = 1;
 
 CREATE TABLE tab
 (
