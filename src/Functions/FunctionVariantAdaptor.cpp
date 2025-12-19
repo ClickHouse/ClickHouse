@@ -275,107 +275,26 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
             }
         }
 
-        /// If the result of nested function is not Variant, we create Variant column with this type as one of the variants.
-        auto variant = nested_result;
-        auto variant_type_for_result = nested_result_type;
-        const NullMap * null_map_ptr = nullptr;
-        /// If the result of nested function is Nullable, we create a null-mask and use it during Variant column creation,
-        /// also the nested column inside Nullable will be filtered by this mask (inside Variant we don't store default values in rows with NULLs).
-        if (const auto & column_nullable = typeid_cast<const ColumnNullable *>(variant.get()))
+        /// If the result of nested function is not Variant, cast it to result Variant type and expand
+        /// This handles both regular types and Nullable types automatically
+        ColumnPtr result;
+        try
         {
-            const auto & null_map = column_nullable->getNullMapData();
-            /// Create filter for nested column from null-map and calculate result size hint.
-            PaddedPODArray<UInt8> nested_filter;
-            nested_filter.reserve(null_map.size());
-            size_t size_hint = 0;
-
-            for (auto byte : null_map)
-            {
-                if (byte)
-                {
-                    nested_filter.push_back(0);
-                }
-                else
-                {
-                    nested_filter.push_back(1);
-                    ++size_hint;
-                }
-            }
-
-            variant = column_nullable->getNestedColumnPtr()->filter(nested_filter, size_hint);
-            variant_type_for_result = removeNullable(nested_result_type);
-            null_map_ptr = &null_map;
+            result = castColumn(ColumnWithTypeAndName{nested_result, nested_result_type, ""}, result_type);
         }
-
-        auto result = result_type->createColumn();
-        auto & result_variant = assert_cast<ColumnVariant &>(*result);
-        const auto & result_variant_type = assert_cast<const DataTypeVariant &>(*result_type);
-
-        /// Find the discriminator in result Variant type that matches our variant type.
-        /// For custom-named types (like Geometry's Point, Polygon, etc.), we must match by name
-        /// because equals() would match types with the same underlying structure (e.g., Polygon and MultiLineString).
-        std::optional<ColumnVariant::Discriminator> result_global_discr;
-        const auto & result_variants = result_variant_type.getVariants();
-
-        /// First try to match by name (for custom types)
-        for (size_t i = 0; i < result_variants.size(); ++i)
+        catch (const Exception & e)
         {
-            if (result_variants[i]->getName() == variant_type_for_result->getName())
-            {
-                result_global_discr = i;
-                break;
-            }
-        }
-
-        /// If not found by name, try equals() (for regular types without custom names)
-        if (!result_global_discr)
-        {
-            for (size_t i = 0; i < result_variants.size(); ++i)
-            {
-                if (result_variants[i]->equals(*variant_type_for_result))
-                {
-                    result_global_discr = i;
-                    break;
-                }
-            }
-        }
-
-        if (!result_global_discr)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Cannot find variant type {} in result Variant type {} during execution of {}",
-                variant_type_for_result->getName(),
+                "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
+                getName(),
+                nested_result_type->getName(),
                 result_type->getName(),
-                getName());
-
-        /// Now inside Variant we have the correct variant type.
-        /// Use our result column as variant and fill discriminators and offsets columns.
-        auto result_local_discr = result_variant.localDiscriminatorByGlobal(*result_global_discr);
-        result_variant.getVariantPtrByLocalDiscriminator(result_local_discr) = std::move(variant);
-
-        auto & result_local_discriminators = result_variant.getLocalDiscriminators();
-        result_local_discriminators.reserve(filter.size());
-        auto & result_offsets = result_variant.getOffsets();
-        result_offsets.reserve(filter.size());
-        /// Calculate correct offset for our variant, we cannot use initial offsets from
-        /// argument column because we could filter result column by its null-map.
-        size_t offset = 0;
-        /// Use initial offsets from argument column to use correct values of null-map.
-        const auto & offsets = variant_column.getOffsets();
-        for (size_t i = 0; i != filter.size(); ++i)
-        {
-            if (filter[i] && (!null_map_ptr || !(*null_map_ptr)[offsets[i]]))
-            {
-                result_local_discriminators.push_back(result_local_discr);
-                result_offsets.push_back(offset++);
-            }
-            else
-            {
-                result_local_discriminators.push_back(ColumnVariant::NULL_DISCRIMINATOR);
-                result_offsets.emplace_back();
-            }
+                e.message());
         }
 
+        /// Expand to match the original column size (filling filtered-out rows with NULLs)
+        result->assumeMutable()->expand(filter, false);
         return result;
     }
 
