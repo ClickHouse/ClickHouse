@@ -776,7 +776,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexBloomFilterText::createIndexCondition(
 
 MergeTreeIndexPtr bloomFilterIndexTextCreator(const IndexDescription & index)
 {
-    std::vector<String> allowed_tokenizers
+    static std::vector<String> allowed_tokenizers
         = {NgramsTokenExtractor::getName(), SplitByNonAlphaTokenExtractor::getName(), SparseGramsTokenExtractor::getBloomFilterIndexName()};
 
     TokenizerFactory::isAllowedTokenizer(index.type, allowed_tokenizers, index.name);
