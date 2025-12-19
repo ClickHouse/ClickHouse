@@ -26,6 +26,7 @@
 #include <Processors/Merges/VersionedCollapsingTransform.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
+#include <Processors/QueryPlan/LazilyReadFromMergeTree.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -669,7 +670,8 @@ Pipe ReadFromMergeTree::readInOrder(
             required_columns,
             pool_settings,
             block_size,
-            context);
+            context,
+            nullptr);
     }
 
     /// If parallel replicas enabled, set total rows in progress here only on initiator with local plan
@@ -2704,6 +2706,119 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     return cloned_step;
 }
 
+std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs)
+{
+    if (output_header == nullptr)
+        return {};
+
+    NameSet columns_to_keep;
+
+    for (const auto & column_name : required_outputs)
+        columns_to_keep.insert(column_name);
+
+    if (query_info.row_level_filter)
+    {
+        for (const auto * input : query_info.row_level_filter->actions.getInputs())
+            columns_to_keep.insert(input->result_name);
+    }
+
+
+    if (query_info.prewhere_info)
+    {
+        for (const auto * input : query_info.prewhere_info->prewhere_actions.getInputs())
+            columns_to_keep.insert(input->result_name);
+    }
+
+    auto virtuals = data.getVirtualsPtr();
+
+    Names new_column_names;
+    Names columns_to_remove;
+    for (const auto & column_name : all_column_names)
+    {
+        if (columns_to_keep.contains(column_name) || virtuals->has(column_name))
+            new_column_names.push_back(column_name);
+        else
+            columns_to_remove.push_back(column_name);
+    }
+
+    if (columns_to_remove.empty())
+        return {};
+
+    auto lazy_reading_header = std::make_shared<const Block>(
+        MergeTreeSelectProcessor::transformHeader(
+            storage_snapshot->getSampleBlockForColumns(columns_to_remove),
+            nullptr,
+            nullptr, //query_info.row_level_filter,
+            nullptr) //query_info.prewhere_info)
+    );
+
+    PartRangesReadInfo info(getParts(), context->getSettingsRef(), *data.getSettings());
+
+    auto new_reading = std::make_unique<LazilyReadFromMergeTree>(
+        std::move(lazy_reading_header),
+        block_size.max_block_size_rows,
+        info.min_marks_for_concurrent_read,
+        reader_settings,
+        mutations_snapshot,
+        storage_snapshot,
+        context,
+        data.getLogName());
+
+    all_column_names = std::move(new_column_names);
+
+    output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
+        storage_snapshot->getSampleBlockForColumns(all_column_names),
+        lazily_read_info,
+        query_info.row_level_filter,
+        query_info.prewhere_info));
+
+    /// Update analysis result if it exists
+    if (analyzed_result_ptr)
+        analyzed_result_ptr->column_names_to_read = all_column_names;
+
+    required_source_columns = all_column_names;
+
+    return new_reading;
+}
+
+void ReadFromMergeTree::addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset)
+{
+    added_part_starting_offset = true;
+    added_part_offset = true;
+
+    for (const auto & col_name : all_column_names)
+    {
+        if (col_name == "_part_starting_offset")
+            added_part_starting_offset = false;
+        if (col_name == "_part_offset")
+            added_part_offset = false;
+    }
+
+    if (!added_part_starting_offset && !added_part_offset)
+        return;
+
+    Names new_column_names;
+    if (added_part_starting_offset)
+        new_column_names.push_back("_part_starting_offset");
+    if (added_part_offset)
+        new_column_names.push_back("_part_offset");
+
+    new_column_names.insert(new_column_names.end(), all_column_names.begin(), all_column_names.end());
+    all_column_names = std::move(new_column_names);
+
+    output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
+        storage_snapshot->getSampleBlockForColumns(all_column_names),
+        lazily_read_info,
+        query_info.row_level_filter,
+        query_info.prewhere_info));
+
+    /// Update analysis result if it exists
+    if (analyzed_result_ptr)
+        analyzed_result_ptr->column_names_to_read = all_column_names;
+
+    required_source_columns = all_column_names;
+}
+
 bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
 {
     if (!indexes || !indexes->use_skip_indexes || indexes->skip_indexes.empty())
@@ -3552,6 +3667,7 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Index {} not found in analyzed indexes", index_name);
 
             index_task.index = *index_it;
+            index_task.is_final = is_final;
         }
 
         for (const auto & [column_name, column_type] : columns)
@@ -3580,8 +3696,7 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
     storage_snapshot = std::make_shared<StorageSnapshot>(
         storage_snapshot->storage,
         storage_snapshot->metadata,
-        std::move(new_virtual_columns),
-        std::move(storage_snapshot->data));
+        std::move(new_virtual_columns));
 
     if (output_header != nullptr)
     {

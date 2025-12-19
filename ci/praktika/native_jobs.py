@@ -543,22 +543,11 @@ def _check_and_link_open_issues(result: Result, job_name: str) -> bool:
     print("Checking for flaky tests and infrastructure issues...")
 
     # Download catalog from S3
-    catalog_name = TestCaseIssueCatalog.name
-    s3_catalog_path = f"{Settings.HTML_S3_PATH}/statistics/{catalog_name}.json.gz"
-    local_catalog_gz = TestCaseIssueCatalog.file_name_static(name=catalog_name) + ".gz"
-    local_catalog_json = TestCaseIssueCatalog.file_name_static(name=catalog_name)
-
-    if not S3.copy_file_from_s3(s3_catalog_path, local_catalog_gz, no_strict=True):
-        print("  WARNING: Could not download flaky test catalog from S3")
+    issue_catalog = TestCaseIssueCatalog.from_s3()
+    if not issue_catalog:
+        print("ERROR: Could not load issue catalog")
         return False
-
-    if not Utils.decompress_file(local_catalog_gz, local_catalog_json):
-        print("  WARNING: Could not decompress flaky test catalog")
-        return False
-
-    issue_catalog = TestCaseIssueCatalog.from_fs(name=catalog_name)
-
-    print(f"  Loaded {len(issue_catalog.active_test_issues)} active issues")
+    print(f"Loaded {len(issue_catalog.active_test_issues)} active issues")
 
     # Check all issues against the result tree
     for issue in issue_catalog.active_test_issues:

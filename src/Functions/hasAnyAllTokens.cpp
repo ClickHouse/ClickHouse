@@ -17,7 +17,7 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_full_text_index;
+    extern const SettingsBool enable_full_text_index;
 }
 
 namespace ErrorCodes
@@ -34,7 +34,7 @@ FunctionPtr FunctionHasAnyAllTokens<HasTokensTraits>::create(ContextPtr context)
 
 template <class HasTokensTraits>
 FunctionHasAnyAllTokens<HasTokensTraits>::FunctionHasAnyAllTokens(ContextPtr context)
-    : allow_experimental_full_text_index(context->getSettingsRef()[Setting::allow_experimental_full_text_index])
+    : enable_full_text_index(context->getSettingsRef()[Setting::enable_full_text_index])
 {
 }
 
@@ -126,10 +126,10 @@ TokensWithPosition extractTokensFromString(std::string_view value)
 template <class HasTokensTraits>
 DataTypePtr FunctionHasAnyAllTokens<HasTokensTraits>::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
-    if (!allow_experimental_full_text_index)
+    if (!enable_full_text_index)
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
-            "Enable the setting 'allow_experimental_full_text_index' to use function {}", getName());
+            "Enable the setting 'enable_full_text_index' to use function {}", getName());
 
     FunctionArgumentDescriptors mandatory_args{
         {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedStringOrArrayOfStringOrFixedString), nullptr, "String, FixedString, Array(String) or Array(FixedString)"},

@@ -555,7 +555,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         const auto & table_to_lambda = [&view_ncols, &next](const SQLTable & t)
         { return t.isAttached() && t.cols.size() >= view_ncols && (t.is_deterministic || !next.is_deterministic); };
         next.has_with_cols = collectionHas<SQLTable>(table_to_lambda);
-        const bool has_tables = next.has_with_cols || !tables.empty();
+        const bool has_tables = collectionHas<SQLTable>(attached_tables);
         const bool has_to
             = !replace && nopt > 6 && (next.has_with_cols || has_tables) && rg.nextSmallNumber() < (next.has_with_cols ? 9 : 6);
 

@@ -93,6 +93,19 @@ std::string correctAPIURI(const std::string & uri)
     return std::filesystem::path(uri) / "v1";
 }
 
+String encodeNamespaceForURI(const String & namespace_name)
+{
+    String encoded;
+    for (const auto & ch : namespace_name)
+    {
+        if (ch == '.')
+            encoded += "%1F";
+        else
+            encoded.push_back(ch);
+    }
+    return encoded;
+}
+
 }
 
 std::string RestCatalog::Config::toString() const
@@ -383,7 +396,7 @@ DB::Names RestCatalog::getTables() const
 
     auto execute_for_each_namespace = [&](const std::string & current_namespace)
     {
-        runner(
+        runner.enqueueAndKeepTrack(
         [=, &tables, &mutex, this]
         {
             auto tables_in_namespace = getTables(current_namespace);
@@ -528,7 +541,8 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
 
 DB::Names RestCatalog::getTables(const std::string & base_namespace, size_t limit) const
 {
-    const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / base_namespace / "tables";
+    auto encoded_namespace = encodeNamespaceForURI(base_namespace);
+    const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encoded_namespace / "tables";
 
     auto buf = createReadBuffer(config.prefix / endpoint);
     return parseTables(*buf, base_namespace, limit);
@@ -627,7 +641,7 @@ bool RestCatalog::getTableMetadataImpl(
         headers.emplace_back("X-Iceberg-Access-Delegation", "vended-credentials");
     }
 
-    const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / namespace_name / "tables" / table_name;
+    const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encodeNamespaceForURI(namespace_name) / "tables" / table_name;
     auto buf = createReadBuffer(config.prefix / endpoint, /* params */{}, headers);
 
     if (buf->eof())

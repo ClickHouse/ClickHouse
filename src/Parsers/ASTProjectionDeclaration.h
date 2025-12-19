@@ -6,18 +6,18 @@
 namespace DB
 {
 
+class ASTFunction;
 class ASTSetQuery;
 
-/** name (subquery) [WITH SETTINGS (...)]
-  */
 class ASTProjectionDeclaration : public IAST
 {
 public:
     String name;
-    IAST * query;
+    IAST * query = nullptr;
+    IAST * index = nullptr;
+    ASTFunction * type = nullptr;
     ASTSetQuery * with_settings = nullptr;
 
-    /** Get the text that identifies this element. */
     String getID(char) const override { return "Projection"; }
 
     ASTPtr clone() const override;
@@ -25,6 +25,8 @@ public:
     void forEachPointerToChild(std::function<void(void**)> f) override
     {
         f(reinterpret_cast<void **>(&query));
+        f(reinterpret_cast<void **>(&index));
+        f(reinterpret_cast<void **>(&type));
         f(reinterpret_cast<void **>(&with_settings));
     }
 
