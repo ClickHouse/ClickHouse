@@ -20,6 +20,8 @@ services:
             - /misc/rabbitmq/server-key.pem:/etc/rabbitmq/server-key.pem
             - /misc/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins
         # https://www.rabbitmq.com/docs/monitoring#health-checks
+        # Run with strace to disable fsync/fdatasync for faster test execution
+        command: sh -c "apk add --no-cache strace && exec strace -qq -f -e inject=fsync,fdatasync:retval=0 -e exit_group -e signal=9 docker-entrypoint.sh rabbitmq-server"
         healthcheck:
             test: rabbitmq-diagnostics -q ping
             interval: 10s
