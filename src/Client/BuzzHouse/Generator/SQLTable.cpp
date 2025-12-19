@@ -396,12 +396,6 @@ void StatementGenerator::generateNextCodecs(RandomGenerator & rg, CodecList * cl
         switch (cc)
         {
             case COMP_LZ4HC:
-            case COMP_ZSTD_QAT:
-                if (rg.nextBool())
-                {
-                    cp->add_params()->set_ival(rg.randomInt<uint32_t>(1, 12));
-                }
-                break;
             case COMP_ZSTD:
                 if (rg.nextBool())
                 {
