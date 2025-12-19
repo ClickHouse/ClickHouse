@@ -69,6 +69,7 @@ struct ProjectionDescription
     std::vector<size_t> partition_value_indices;
 
     bool with_parent_part_offset = false;
+    bool select_expr_required_part_offset = false;
 
     std::optional<UInt64> index_granularity;
     std::optional<UInt64> index_granularity_bytes;

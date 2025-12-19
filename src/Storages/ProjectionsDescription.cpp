@@ -31,6 +31,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 
 namespace DB
 {
@@ -87,6 +88,7 @@ ProjectionDescription ProjectionDescription::clone() const
     other.primary_key_max_column_name = primary_key_max_column_name;
     other.partition_value_indices = partition_value_indices;
     other.with_parent_part_offset = with_parent_part_offset;
+    other.select_expr_required_part_offset = select_expr_required_part_offset;
     other.index_granularity = index_granularity;
     other.index_granularity_bytes = index_granularity_bytes;
 
@@ -264,6 +266,9 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     auto query = projection_definition->query->as<ASTProjectionSelectQuery &>();
     result.query_ast = query.cloneToASTSelect();
 
+    RequiredSourceColumnsVisitor::Data columns_context;
+    RequiredSourceColumnsVisitor(columns_context).visit(result.query_ast);
+    result.select_expr_required_part_offset = columns_context.requiredColumns().contains("_part_offset");
     /// Prevent normal projection from storing parent part offset if the parent table defines `_parent_part_offset` or
     /// `_part_offset` as physical columns, which would cause a conflict. Parent table cannot defines `_part_index` as
     /// physical column either because it's used to build part offset mapping during merge.
@@ -528,9 +533,9 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context, 
 
     /// Create "_part_offset" column when needed for projection with parent part offsets
     Block source_block = block;
-    if (with_parent_part_offset)
+    if (with_parent_part_offset || select_expr_required_part_offset)
     {
-        chassert(sample_block.has("_parent_part_offset"));
+        chassert(sample_block.has("_parent_part_offset") || select_expr_required_part_offset);
 
         /// Add "_part_offset" column if not present (needed for insertions but not mutations - materialize projections)
         if (!source_block.has("_part_offset"))
