@@ -744,6 +744,7 @@ class ClickHouseCluster:
         self.rabbitmq_ip = None
         self.rabbitmq_port = 5672
         self.rabbitmq_secure_port = 5671
+        self.rabbitmq_management_port = 15672
         self.rabbitmq_dir = p.abspath(p.join(self.instances_dir, "rabbitmq"))
         self.rabbitmq_cookie_file = os.path.join(self.rabbitmq_dir, "erlang.cookie")
         self.rabbitmq_logs_dir = os.path.join(self.rabbitmq_dir, "logs")
@@ -1552,6 +1553,7 @@ class ClickHouseCluster:
         env_variables["RABBITMQ_HOST"] = self.rabbitmq_host
         env_variables["RABBITMQ_PORT"] = str(self.rabbitmq_port)
         env_variables["RABBITMQ_SECURE_PORT"] = str(self.rabbitmq_secure_port)
+        env_variables["RABBITMQ_MANAGEMENT_PORT"] = str(self.rabbitmq_management_port)
         env_variables["RABBITMQ_LOGS"] = self.rabbitmq_logs_dir
         env_variables["RABBITMQ_LOGS_FS"] = "bind"
         env_variables["RABBITMQ_COOKIE_FILE"] = self.rabbitmq_cookie_file
@@ -2935,34 +2937,45 @@ class ClickHouseCluster:
 
         raise RuntimeError("Cannot wait RabbitMQ container")
 
-    def stop_rabbitmq_app(self, timeout=120):
+    @contextmanager
+    def pause_rabbitmq(self, timeout=120):
         run_rabbitmqctl(
             self.rabbitmq_docker_id, self.rabbitmq_cookie, "stop_app", timeout
         )
 
-    def start_rabbitmq_app(self, timeout=120):
-        run_rabbitmqctl(
-            self.rabbitmq_docker_id, self.rabbitmq_cookie, "start_app", timeout
-        )
-        self.wait_rabbitmq_to_start(timeout)
-
-    @contextmanager
-    def pause_rabbitmq(self, monitor=None, timeout=120):
-        if monitor is not None:
-            monitor.stop()
-        self.stop_rabbitmq_app(timeout)
-
         try:
             yield
         finally:
-            self.start_rabbitmq_app(timeout)
-            if monitor is not None:
-                monitor.start(self)
+            run_rabbitmqctl(
+                self.rabbitmq_docker_id, self.rabbitmq_cookie, "start_app", timeout
+            )
+            self.wait_rabbitmq_to_start(timeout)
 
-    def reset_rabbitmq(self, timeout=240):
-        self.stop_rabbitmq_app()
-        run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, "reset", timeout)
-        self.start_rabbitmq_app()
+    def reset_rabbitmq(self, timeout=120):
+        try:
+            resp = requests.get(f"http://{self.rabbitmq_ip}:{self.rabbitmq_management_port}/api/overview",
+                                auth=("root", "clickhouse"))
+            logging.debug(f"RabbitMQ statistics:\n{json.dumps(resp.json(), indent=2)}")
+        except:
+            pass
+        logging.debug("Resetting RabbitMQ by restarting container")
+        run_and_check(
+            f"docker stop --time {timeout} {self.rabbitmq_docker_id}",
+            shell=True,
+            nothrow=True,
+            timeout=timeout
+        )
+        run_and_check(
+            f"docker rm -f -v {self.rabbitmq_docker_id}",
+            shell=True,
+            nothrow=True,
+        )
+        subprocess_check_call(
+            self.base_rabbitmq_cmd + ["up", "-d", "--renew-anon-volumes"],
+            timeout=timeout,
+        )
+        self.rabbitmq_docker_id = self.get_instance_docker_id("rabbitmq1")
+        self.wait_rabbitmq_to_start(timeout)
 
     def run_rabbitmqctl(self, command):
         run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, command)
@@ -3354,7 +3367,7 @@ class ClickHouseCluster:
                         "Got exception pulling images: %s", kwargs["exception"]
                     )
 
-            retry(log_function=logging_pulling_images, retries=3, delay=8, jitter=8)(run_and_check, images_pull_cmd, nothrow=True)
+            retry(log_function=logging_pulling_images, retries=3, delay=8, jitter=8)(run_and_check, images_pull_cmd, nothrow=True, timeout=600)
 
             if self.with_zookeeper_secure and self.base_zookeeper_cmd:
                 logging.debug("Setup ZooKeeper Secure")

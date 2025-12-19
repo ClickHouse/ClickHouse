@@ -1,6 +1,6 @@
 DROP TABLE IF EXISTS text_index_validation;
 
-SET allow_experimental_full_text_index = 1;
+SET enable_full_text_index = 1;
 
 CREATE TABLE text_index_validation (s String, INDEX idx_s (s) TYPE text(tokenizer = ngrams(0))) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE text_index_validation (s String, INDEX idx_s (s) TYPE text(tokenizer = ngrams(10))) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }

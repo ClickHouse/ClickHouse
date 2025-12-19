@@ -14,11 +14,10 @@ namespace BuzzHouse
 static const auto compressSetting = CHSetting(
     [](RandomGenerator & rg, FuzzConfig &)
     {
-        static const DB::Strings & choices
-            = {"'ZSTD'", "'LZ4'", "'LZ4HC'", "'ZSTD_QAT'", "'DEFLATE_QPL'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"};
+        static const DB::Strings & choices = {"'ZSTD'", "'LZ4'", "'LZ4HC'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"};
         return rg.pickRandomly(choices);
     },
-    {"'ZSTD'", "'LZ4'", "'LZ4HC'", "'ZSTD_QAT'", "'DEFLATE_QPL'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"},
+    {"'ZSTD'", "'LZ4'", "'LZ4HC'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"},
     false);
 
 static const auto bytesRangeSetting = CHSetting(bytesRange, {"0", "4", "8", "32", "1024", "4096", "16384", "'10M'"}, false);
