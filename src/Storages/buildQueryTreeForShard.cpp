@@ -28,6 +28,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 #include <Analyzer/UnionNode.h>
+#include <Planner/CollectTableExpressionData.h>
 
 #include <stack>
 

@@ -1,3 +1,4 @@
+#include <city.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 
 #include <Analyzer/QueryNode.h>
@@ -34,6 +35,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnString.h>
+#include "Common/Logger.h"
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
 #include <Core/QueryProcessingStage.h>
@@ -47,6 +49,8 @@
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 #include <fmt/format.h>
+#include <Planner/PlannerContext.h>
+
 
 namespace DB
 {
@@ -311,19 +315,13 @@ static ASTPtr tryBuildAdditionalFilterAST(
             /// The column name can be taken from the projection name, or from the projection expression.
             /// It depends on the predicate and query stage.
 
-            std::string_view r;
-            for(auto token : node->result_name | std::views::split('.'))
-                r = std::string_view(&*token.begin(), std::ranges::distance(token));
-
-            std::string result_name{r};
-
-            if (projection_names.contains(result_name))
+            if (projection_names.contains(node->result_name))
             {
                 /// The input name matches the projection name. Example:
                 /// SELECT x FROM (SELECT number + 1 AS x FROM remote('127.0.0.2', numbers(3))) WHERE x = 1
                 /// In this case, ReadFromRemote has header `x UInt64` and filter DAG has input column with name `x`.
                 /// Here, filter is applied to the whole query, and checking for projection name is reasonable.
-                res = std::make_shared<ASTIdentifier>(result_name);
+                res = std::make_shared<ASTIdentifier>(node->result_name);
             }
             else
             {
@@ -336,7 +334,7 @@ static ASTPtr tryBuildAdditionalFilterAST(
                 /// Here, filter is pushed down before the aggregation, and projection name can't be used.
                 /// However, we can match the input with the execution name of projection query tree.
                 /// Note: this may not cover all the cases.
-                auto it = execution_name_to_projection_query_tree.find(result_name);
+                auto it = execution_name_to_projection_query_tree.find(node->result_name);
                 if (it != execution_name_to_projection_query_tree.end())
                     /// Append full expression as an AST.
                     /// We rely on plan optimization that the result is (expected to be) valid.
@@ -457,9 +455,35 @@ static void addFilters(
     for (const auto & col : query_node->getProjectionColumns())
         projection_names.insert(col.name);
 
+    const auto & table_to_data = planner_context->getTableExpressionNodeToData();
+    for(const auto & [node, data] : table_to_data)
+    {
+        std::string column2identifier;
+        for (auto [identifier, column] : data.getColumnIdentifierToColumnName())
+            column2identifier += std::format("{} : {} (), ", column, identifier);
+
+        LOG_DEBUG(
+            getLogger(__func__),
+            "table expression to data\n{} / {}\n{}\n{}",
+            reinterpret_cast<void *>(node.get()),
+            CityHash_v1_0_2::Hash128to64(node->getTreeHash()),
+            node->dumpTree(),
+            column2identifier);
+    }
+
     std::unordered_map<std::string, QueryTreeNodePtr> execution_name_to_projection_query_tree;
     for (const auto & node : query_node->getProjection())
-        execution_name_to_projection_query_tree[calculateActionNodeName(node, *planner_context)] = node;
+    {
+        auto name = calculateActionNodeName(node, *planner_context);
+        LOG_DEBUG(
+            getLogger(__func__),
+            "execution_name_to_projection_query_tree({} / {})\n{}\n{}",
+            reinterpret_cast<void *>(node.get()),
+            CityHash_v1_0_2::Hash128to64(node->getTreeHash()),
+            name,
+            node->dumpTree());
+        execution_name_to_projection_query_tree[name] = node;
+    }
 
     ASTPtr predicate = tryBuildAdditionalFilterAST(pushed_down_filters, projection_names, execution_name_to_projection_query_tree, external_tables, context);
     if (!predicate)

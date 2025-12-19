@@ -1,3 +1,4 @@
+#include <city.h>
 #include <Planner/PlannerContext.h>
 
 #include <Analyzer/ColumnNode.h>
@@ -7,6 +8,8 @@
 #include <Analyzer/UnionNode.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
+#include "Common/Logger.h"
+#include "Common/logger_useful.h"
 
 namespace DB
 {
@@ -79,6 +82,14 @@ PlannerContext::PlannerContext(ContextMutablePtr query_context_, PlannerContextP
 
 TableExpressionData & PlannerContext::getOrCreateTableExpressionData(const QueryTreeNodePtr & table_expression_node)
 {
+    LOG_DEBUG(
+        getLogger(__func__),
+        "planner context {}\n{} / {}\n{}",
+        reinterpret_cast<void *>(this),
+        reinterpret_cast<void *>(table_expression_node.get()),
+        CityHash_v1_0_2::Hash128to64(table_expression_node->getTreeHash()),
+        table_expression_node->dumpTree());
+
     auto & shared_table_expression_data = getSharedTableExpressionDataMap();
     if (auto it = shared_table_expression_data.find(table_expression_node); it != shared_table_expression_data.end())
         return *it->second;
@@ -171,6 +182,14 @@ const ColumnIdentifier * PlannerContext::getColumnNodeIdentifierOrNull(const Que
     auto column_source = column_node_typed.getColumnSourceOrNull();
     if (!column_source)
         return nullptr;
+
+    LOG_DEBUG(
+        getLogger(__func__),
+        "\ncolumn_name={}\ncolumn_source={} {}\n{}",
+        column_name,
+        reinterpret_cast<void *>(column_source.get()),
+        CityHash_v1_0_2::Hash128to64(column_source->getTreeHash()),
+        column_source->dumpTree());
 
     const auto * table_expression_data = getTableExpressionDataOrNull(column_source);
     if (!table_expression_data)

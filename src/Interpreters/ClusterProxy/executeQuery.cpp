@@ -673,8 +673,8 @@ void executeQueryWithParallelReplicas(
     QueryPlanStepPtr analyzed_read_from_merge_tree)
 {
     auto logger = getLogger("executeQueryWithParallelReplicas");
-    LOG_DEBUG(logger, "Executing read from {}, header {}, query ({}), stage {} with parallel replicas",
-        storage_id.getNameForLogs(), header->dumpStructure(), query_ast->formatForLogging(), processed_stage);
+    LOG_DEBUG(logger, "Executing read from {}, header {}, query ({}), stage {} with parallel replicas\n{}",
+        storage_id.getNameForLogs(), header->dumpStructure(), query_ast->formatForLogging(), processed_stage, StackTrace().toString());
 
     auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, context);
     auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
@@ -788,8 +788,8 @@ void executeQueryWithParallelReplicas(
     rewriteJoinToGlobalJoin(modified_query_tree, context);
     modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree, /*allow_global_join_for_right_table*/ true);
 
-    auto header
-        = InterpreterSelectQueryAnalyzer::getSampleBlock(modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
+    auto [header, new_planner_context]
+        = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
     auto modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
 
     executeQueryWithParallelReplicas(
@@ -799,7 +799,7 @@ void executeQueryWithParallelReplicas(
         processed_stage,
         modified_query_ast,
         modified_query_tree,
-        planner_context,
+        new_planner_context,
         context,
         storage_limits,
         std::move(analyzed_read_from_merge_tree));

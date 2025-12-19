@@ -32,7 +32,7 @@ namespace
 class CollectSourceColumnsVisitor : public InDepthQueryTreeVisitorWithContext<CollectSourceColumnsVisitor>
 {
 public:
-    explicit CollectSourceColumnsVisitor(PlannerContextPtr & planner_context_, bool keep_alias_columns_ = true)
+    explicit CollectSourceColumnsVisitor(const PlannerContextPtr & planner_context_, bool keep_alias_columns_ = true)
         : InDepthQueryTreeVisitorWithContext(planner_context_->getQueryContext())
         , planner_context(planner_context_)
         , keep_alias_columns(keep_alias_columns_)
@@ -224,7 +224,7 @@ public:
     }
 
 private:
-    PlannerContextPtr & planner_context;
+    const PlannerContextPtr & planner_context;
 
     /// Replace ALIAS columns with their expressions or register them in table expression data.
     /// Usually we can replace them when we build some "local" actions DAG
@@ -356,7 +356,7 @@ void checkStorageSupportPrewhere(const QueryTreeNodePtr & table_expression)
 
 }
 
-void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr & planner_context)
+void collectTableExpressionData(QueryTreeNodePtr & query_node, const PlannerContextPtr & planner_context)
 {
     auto & query_node_typed = query_node->as<QueryNode &>();
     auto table_expressions_nodes = extractTableExpressions(query_node_typed.getJoinTree());
