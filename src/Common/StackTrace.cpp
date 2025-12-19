@@ -234,7 +234,7 @@ static void * getCallerAddress(const ucontext_t & context)
 }
 
 void StackTrace::forEachFrame(
-    const StackTrace::FramePointers & frame_pointers,
+    const FramePointers & frame_pointers,
     size_t offset,
     size_t size,
     std::function<void(const Frame &)> callback,
@@ -392,9 +392,9 @@ StackTrace::StackTrace(FramePointers frame_pointers_, size_t size_, size_t offse
 void StackTrace::tryCapture()
 {
 #if defined(OS_DARWIN)
-    size = backtrace(frame_pointers.data(), capacity);
+    size = backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
 #else
-    size = unw_backtrace(frame_pointers.data(), capacity);
+    size = unw_backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
 #endif
     __msan_unpoison(frame_pointers.data(), size * sizeof(frame_pointers[0]));
 }
@@ -438,14 +438,14 @@ String demangleAndCollapseNames(std::optional<std::string_view> file, const char
 
 struct StackTraceRefTriple
 {
-    const StackTrace::FramePointers & pointers;
+    const FramePointers & pointers;
     size_t offset;
     size_t size;
 };
 
 struct StackTraceTriple
 {
-    StackTrace::FramePointers pointers;
+    FramePointers pointers;
     size_t offset;
     size_t size;
 };
@@ -523,7 +523,7 @@ void StackTrace::toStringEveryLine(void ** frame_pointers_raw, size_t offset, si
 {
     __msan_unpoison(frame_pointers_raw, size * sizeof(*frame_pointers_raw));
 
-    StackTrace::FramePointers frame_pointers{};
+    FramePointers frame_pointers{};
     std::copy_n(frame_pointers_raw, size, frame_pointers.begin());
 
     toStringEveryLineImpl(true, {frame_pointers, offset, size}, std::move(callback));
@@ -559,7 +559,7 @@ static StackTraceCache cache;
 
 static DB::SharedMutex stacktrace_cache_mutex;
 
-static String toStringCached(const StackTrace::FramePointers & pointers, size_t offset, size_t size)
+static String toStringCached(const FramePointers & pointers, size_t offset, size_t size)
 {
     const StackTraceRefTriple key{pointers, offset, size};
 
@@ -615,7 +615,7 @@ std::string StackTrace::toString(void * const * frame_pointers_raw, size_t offse
 {
     __msan_unpoison(frame_pointers_raw, size * sizeof(*frame_pointers_raw));
 
-    StackTrace::FramePointers frame_pointers{};
+    FramePointers frame_pointers{};
     std::copy_n(frame_pointers_raw, size, frame_pointers.begin());
 
     return toStringCached(frame_pointers, offset, size);
