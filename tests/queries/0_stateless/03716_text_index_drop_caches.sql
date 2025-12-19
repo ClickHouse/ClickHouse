@@ -2,7 +2,7 @@
 
 DROP TABLE IF EXISTS t_text_index_drop_caches;
 
-SET allow_experimental_full_text_index = 1;
+SET enable_text_index = 1;
 SET use_text_index_header_cache = 1;
 SET use_text_index_dictionary_cache = 1;
 SET use_text_index_postings_cache = 1;

@@ -1,6 +1,6 @@
 -- Tags: no-parallel-replicas
 
-SET allow_experimental_full_text_index = 1;
+SET enable_full_text_index = 1;
 
 DROP TABLE IF EXISTS tab;
 
