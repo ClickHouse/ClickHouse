@@ -21,6 +21,7 @@
 #include <optional>
 #include <sys/stat.h>
 #include <atomic>
+#include <mutex>
 
 #include "config.h"
 
