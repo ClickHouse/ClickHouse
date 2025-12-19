@@ -146,7 +146,7 @@ void MergeTreeDataPartWriterWide::addStreams(
         if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
             return;
 
-        auto full_stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+        auto full_stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
 
         String stream_name;
         if ((*storage_settings)[MergeTreeSetting::replace_long_file_name_to_hash] && full_stream_name.size() > (*storage_settings)[MergeTreeSetting::max_file_name_length])
@@ -188,9 +188,7 @@ void MergeTreeDataPartWriterWide::addStreams(
             max_compress_block_size = settings.max_compress_block_size;
 
         WriteSettings query_write_settings = settings.query_write_settings;
-        query_write_settings.use_adaptive_write_buffer =
-            (settings.min_columns_to_activate_adaptive_write_buffer && columns_list.size() >= settings.min_columns_to_activate_adaptive_write_buffer)
-            || (settings.use_adaptive_write_buffer_for_dynamic_subcolumns && ISerialization::isDynamicSubcolumn(substream_path, substream_path.size()));
+        query_write_settings.use_adaptive_write_buffer = settings.use_adaptive_write_buffer_for_dynamic_subcolumns && ISerialization::isDynamicSubcolumn(substream_path, substream_path.size());
         query_write_settings.adaptive_write_buffer_initial_size = settings.adaptive_write_buffer_initial_size;
 
         column_streams[stream_name] = std::make_unique<MergeTreeWriterStream<false>>(
@@ -222,7 +220,7 @@ const String & MergeTreeDataPartWriterWide::getStreamName(
     const NameAndTypePair & column,
     const ISerialization::SubstreamPath & substream_path) const
 {
-    auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+    auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path);
     auto it = full_name_to_stream_name.find(full_stream_name);
     if (it == full_name_to_stream_name.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Stream {} not found", full_stream_name);
@@ -760,7 +758,7 @@ void MergeTreeDataPartWriterWide::fillDataChecksums(MergeTreeDataPartChecksums &
         }
 
         stream->preFinalize();
-        stream->addToChecksums(checksums, true);
+        stream->addToChecksums(checksums);
     }
 }
 
@@ -939,7 +937,7 @@ void MergeTreeDataPartWriterWide::initColumnsSubstreamsIfNeeded(const Block & bl
         columns_substreams.addColumn(name_and_type.name);
         serialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings)));
+            columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForStream(name_and_type, substream_path));
             return &buf;
         };
         serialize_settings.stream_mark_getter = [&](const ISerialization::SubstreamPath &){ return MarkInCompressedFile(); };

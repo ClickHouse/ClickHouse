@@ -1,5 +1,4 @@
--- Tags: no-asan, no-tsan, no-msan, no-flaky-check
--- too slow for sanitizers and flaky check
+-- Tags: no-fasttest, long, no-debug, no-tsan, no-asan, no-msan, no-ubsan
 
 SET enable_json_type = 1;
 set allow_experimental_variant_type = 1;

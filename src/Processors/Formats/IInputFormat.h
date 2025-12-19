@@ -4,8 +4,6 @@
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/InputFormatErrorsLogger.h>
 #include <Common/PODArray.h>
-#include <IO/WriteBuffer.h>
-#include <base/types.h>
 #include <Core/BlockMissingValues.h>
 #include <Processors/ISource.h>
 
@@ -47,29 +45,6 @@ struct ChunkInfoRowNumbers : public ChunkInfo
     std::optional<IColumnFilter> applied_filter;
 };
 
-/// Structure for storing information about buckets that IInputFormat needs to read.
-struct FileBucketInfo
-{
-    virtual void serialize(WriteBuffer & buffer) = 0;
-    virtual void deserialize(ReadBuffer & buffer) = 0;
-    virtual String getIdentifier() const = 0;
-    virtual String getFormatName() const = 0;
-
-    virtual ~FileBucketInfo() = default;
-};
-using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
-
-/// Interface for splitting a file into buckets.
-struct IBucketSplitter
-{
-    /// Splits a file into buckets using the given read buffer and format settings.
-    /// Returns information about the resulting buckets (see the structure above for details).
-    virtual std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) = 0;
-
-    virtual ~IBucketSplitter() = default;
-};
-using BucketSplitter = std::shared_ptr<IBucketSplitter>;
-
 /** Input format is a source, that reads data from ReadBuffer.
   */
 class IInputFormat : public ISource
@@ -93,7 +68,6 @@ public:
     /// All data reading from the read buffer must be performed by this method.
     virtual Chunk read() = 0;
 
-    virtual void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read);
     /** In some usecase (hello Kafka) we need to read a lot of tiny streams in exactly the same format.
      * The recreating of parser for each small stream takes too long, so we introduce a method
      * resetParser() which allow to reset the state of parser to continue reading of

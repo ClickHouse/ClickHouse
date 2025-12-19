@@ -41,7 +41,7 @@ namespace DB
 ///   2.2 use pauseFailPoint when it is a pausable failpoint
 /// 3. in test file, we can use system failpoint enable/disable 'failpoint_name'
 
-struct FailPointChannel;
+class FailPointChannel;
 
 class FailPointInjection
 {
@@ -51,9 +51,13 @@ public:
 
     static void enableFailPoint(const String & fail_point_name);
 
+    static void enablePauseFailPoint(const String & fail_point_name, UInt64 time);
+
     static void disableFailPoint(const String & fail_point_name);
 
     static void wait(const String & fail_point_name);
+
+    static void enableFromGlobalConfig(const Poco::Util::AbstractConfiguration & config);
 
 private:
     static std::mutex mu;

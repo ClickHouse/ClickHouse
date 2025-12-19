@@ -12,7 +12,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
-#include <IO/ReadBufferFromMemory.h>
 
 
 namespace DB
@@ -185,7 +184,7 @@ private:
             size_t sorted_paths_index = 0;
             for (size_t j = start; j != end; ++j)
             {
-                auto shared_data_path = shared_data_paths->getDataAt(j);
+                auto shared_data_path = shared_data_paths->getDataAt(j).toView();
                 while (sorted_paths_index != sorted_dynamic_and_typed_paths.size() && sorted_dynamic_and_typed_paths[sorted_paths_index] < shared_data_path)
                 {
                     const auto path = sorted_dynamic_and_typed_paths[sorted_paths_index];
@@ -295,7 +294,7 @@ private:
             size_t sorted_paths_index = 0;
             for (size_t j = start; j != end; ++j)
             {
-                auto shared_data_path = shared_data_paths->getDataAt(j);
+                auto shared_data_path = shared_data_paths->getDataAt(j).toView();
                 auto type_name = getDynamicValueTypeFromSharedData(shared_data_values->getDataAt(j));
                 /// Skip NULL values.
                 if (!type_name)
@@ -355,7 +354,7 @@ private:
         if (global_discr == dynamic_column->getSharedVariantDiscriminator())
         {
             auto value = dynamic_column->getSharedVariant().getDataAt(variant_column.offsetAt(i));
-            ReadBufferFromMemory buf(value);
+            ReadBufferFromMemory buf(value.data, value.size);
             auto type = decodeDataType(buf);
             return type->getName();
         }
@@ -363,9 +362,9 @@ private:
         return variant_info.variant_names[global_discr];
     }
 
-    std::optional<String> getDynamicValueTypeFromSharedData(std::string_view value) const
+    std::optional<String> getDynamicValueTypeFromSharedData(StringRef value) const
     {
-        ReadBufferFromMemory buf(value);
+        ReadBufferFromMemory buf(value.data, value.size);
         auto type = decodeDataType(buf);
         if (isNothing(type))
             return std::nullopt;
@@ -406,7 +405,7 @@ SELECT json, JSONAllPaths(json) FROM test;
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionJSONPaths<JSONAllPathsImpl>>(documentation);
     }
 
@@ -439,7 +438,7 @@ SELECT json, JSONAllPathsWithTypes(json) FROM test;
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionJSONPaths<JSONAllPathsWithTypesImpl>>(documentation);
     }
 
@@ -472,7 +471,7 @@ SELECT json, JSONDynamicPaths(json) FROM test;
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionJSONPaths<JSONDynamicPathsImpl>>(documentation);
     }
 
@@ -505,7 +504,7 @@ SELECT json, JSONDynamicPathsWithTypes(json) FROM test;
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionJSONPaths<JSONDynamicPathsWithTypesImpl>>(documentation);
     }
 
@@ -538,7 +537,7 @@ SELECT json, JSONSharedDataPaths(json) FROM test;
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionJSONPaths<JSONSharedDataPathsImpl>>(documentation);
     }
 
@@ -571,7 +570,7 @@ SELECT json, JSONSharedDataPathsWithTypes(json) FROM test;
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionJSONPaths<JSONSharedDataPathsWithTypesImpl>>(documentation);
     }
 }

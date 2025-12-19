@@ -84,8 +84,7 @@ public:
         ColumnWithTypeAndName from,
         DataTypePtr to,
         CastType cast_type,
-        std::optional<CastDiagnostic> diagnostic,
-        ContextPtr context)
+        std::optional<CastDiagnostic> diagnostic)
     {
         if (cast_type == CastType::accurateOrNull && !isVariant(to))
             to = makeNullable(to);
@@ -94,8 +93,10 @@ public:
         arguments.emplace_back(std::move(from));
         arguments.emplace_back().type = std::make_unique<DataTypeString>();
 
+        /// We consistently use Saturate for internal toDateTime conversion to ensure monotonic so that index analysis is correct.
+        /// Reference: https://github.com/ClickHouse/ClickHouse/issues/73307
         return createFunctionBaseCast(
-            context, getNameImpl(cast_type, true), arguments, to, diagnostic, cast_type, FormatSettings::DateTimeOverflowBehavior::Saturate);
+            nullptr, getNameImpl(cast_type, true), arguments, to, diagnostic, cast_type, FormatSettings::DateTimeOverflowBehavior::Saturate);
     }
 
 protected:
@@ -156,9 +157,9 @@ private:
 };
 
 
-FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic, ContextPtr context)
+FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic)
 {
-    return CastOverloadResolverImpl::createInternalCast(std::move(from), std::move(to), cast_type, std::move(diagnostic), context);
+    return CastOverloadResolverImpl::createInternalCast(std::move(from), std::move(to), cast_type, std::move(diagnostic));
 }
 
 REGISTER_FUNCTION(CastOverloadResolvers)
@@ -219,7 +220,7 @@ SELECT '123'::UInt32
     };
     FunctionDocumentation::IntroducedIn CAST_introduced_in = {1, 1};
     FunctionDocumentation::Category CAST_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation CAST_documentation = {CAST_description, CAST_syntax, CAST_arguments, {}, CAST_returned_value, CAST_examples, CAST_introduced_in, CAST_category};
+    FunctionDocumentation CAST_documentation = {CAST_description, CAST_syntax, CAST_arguments, CAST_returned_value, CAST_examples, CAST_introduced_in, CAST_category};
 
     /// accurateCast documentation
     FunctionDocumentation::Description accurateCast_description = R"(
@@ -259,7 +260,7 @@ SELECT accurateCast('123.45', 'Float64')
     };
     FunctionDocumentation::IntroducedIn accurateCast_introduced_in = {1, 1};
     FunctionDocumentation::Category accurateCast_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation accurateCast_documentation = {accurateCast_description, accurateCast_syntax, accurateCast_arguments, {}, accurateCast_returned_value, accurateCast_examples, accurateCast_introduced_in, accurateCast_category};
+    FunctionDocumentation accurateCast_documentation = {accurateCast_description, accurateCast_syntax, accurateCast_arguments, accurateCast_returned_value, accurateCast_examples, accurateCast_introduced_in, accurateCast_category};
 
     /// accurateCastOrNull documentation
     FunctionDocumentation::Description accurateCastOrNull_description = R"(
@@ -300,7 +301,7 @@ SELECT accurateCastOrNull('abc', 'UInt32')
     };
     FunctionDocumentation::IntroducedIn accurateCastOrNull_introduced_in = {1, 1};
     FunctionDocumentation::Category accurateCastOrNull_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation accurateCastOrNull_documentation = {accurateCastOrNull_description, accurateCastOrNull_syntax, accurateCastOrNull_arguments, {}, accurateCastOrNull_returned_value, accurateCastOrNull_examples, accurateCastOrNull_introduced_in, accurateCastOrNull_category};
+    FunctionDocumentation accurateCastOrNull_documentation = {accurateCastOrNull_description, accurateCastOrNull_syntax, accurateCastOrNull_arguments, accurateCastOrNull_returned_value, accurateCastOrNull_examples, accurateCastOrNull_introduced_in, accurateCastOrNull_category};
 
     factory.registerFunction("CAST", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::nonAccurate, false, {}); }, CAST_documentation, FunctionFactory::Case::Insensitive);
     factory.registerFunction("accurateCast", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::accurate, false, {}); }, accurateCast_documentation);
