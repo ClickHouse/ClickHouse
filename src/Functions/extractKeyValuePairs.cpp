@@ -48,11 +48,10 @@ class ExtractKeyValuePairs : public IFunction
             builder.withQuotingCharacter(parsed_arguments.quoting_character.value());
         }
 
-        bool is_number_of_pairs_unlimited = context->getSettingsRef()[Setting::extract_key_value_pairs_max_pairs_per_row] == 0;
-
+        bool is_number_of_pairs_unlimited = extract_key_value_pairs_max_pairs_per_row == 0;
         if (!is_number_of_pairs_unlimited)
         {
-            builder.withMaxNumberOfPairs(context->getSettingsRef()[Setting::extract_key_value_pairs_max_pairs_per_row]);
+            builder.withMaxNumberOfPairs(extract_key_value_pairs_max_pairs_per_row);
         }
 
         if (parsed_arguments.unexpected_quoting_character_strategy)
@@ -108,7 +107,9 @@ class ExtractKeyValuePairs : public IFunction
     }
 
 public:
-    explicit ExtractKeyValuePairs(ContextPtr context_) : context(context_) {}
+    explicit ExtractKeyValuePairs(ContextPtr context)
+        : extract_key_value_pairs_max_pairs_per_row(context->getSettingsRef()[Setting::extract_key_value_pairs_max_pairs_per_row])
+    {}
 
     static constexpr auto name = Name::name;
 
@@ -157,7 +158,7 @@ public:
     }
 
 private:
-    ContextPtr context;
+    const UInt64 extract_key_value_pairs_max_pairs_per_row;
 };
 
 struct NameExtractKeyValuePairs
