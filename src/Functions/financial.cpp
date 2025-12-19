@@ -442,7 +442,7 @@ public:
         {
             if (!isColumnConst(*arguments[3].column) || !isString(arguments[3].type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Fourth argument (daycount) must be a constant string");
-            auto day_count_str = arguments[3].column->getDataAt(0);
+            auto day_count_str = arguments[3].column->getDataAt(0).toString();
             auto parsed_day_count = parseDayCount(day_count_str);
             if (!parsed_day_count.has_value())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid day count value: {}", day_count_str);
@@ -650,7 +650,7 @@ public:
         {
             if (!isColumnConst(*arguments[3].column) || !isString(arguments[3].type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Fourth argument (daycount) must be a constant string");
-            auto day_count_str = arguments[3].column->getDataAt(0);
+            auto day_count_str = arguments[3].column->getDataAt(0).toString();
             auto parsed_day_count = parseDayCount(day_count_str);
             if (!parsed_day_count.has_value())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid day count value: {}", day_count_str);
@@ -873,7 +873,7 @@ SELECT round(financialInternalRateOfReturnExtended([100000, -110000], [toDate('2
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Financial;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionXirr>(documentation);
 }
@@ -902,7 +902,7 @@ $$
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Financial;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIRR>(documentation);
 }
@@ -934,7 +934,7 @@ Arrays should be sorted by date in ascending order. Dates need to be unique.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Financial;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionXnpv>(documentation);
 }
@@ -969,7 +969,7 @@ $$
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Financial;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionNPV>(documentation);
 }

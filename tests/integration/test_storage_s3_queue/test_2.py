@@ -61,7 +61,6 @@ def started_cluster():
             user_configs=[
                 "configs/users.xml",
                 "configs/enable_keeper_fault_injection.xml",
-                "configs/keeper_retries.xml",
             ],
             with_minio=True,
             with_azurite=True,
@@ -78,7 +77,6 @@ def started_cluster():
             user_configs=[
                 "configs/users.xml",
                 "configs/enable_keeper_fault_injection.xml",
-                "configs/keeper_retries.xml",
             ],
             with_minio=True,
             with_zookeeper=True,
@@ -193,10 +191,10 @@ def test_processing_threads(started_cluster, mode):
 )
 def test_shards(started_cluster, mode, processing_threads):
     node = started_cluster.instances["instance"]
-    table_name = f"test_shards_{mode}_{processing_threads}_{generate_random_string()}"
+    table_name = f"test_shards_{mode}_{processing_threads}"
     dst_table_name = f"{table_name}_dst"
     # A unique path is necessary for repeatable tests
-    keeper_path = f"/clickhouse/test_{table_name}"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
     files_to_generate = 300
     shards_num = 3
@@ -225,7 +223,7 @@ def test_shards(started_cluster, mode, processing_threads):
     def get_count(table_name):
         return int(run_query(node, f"SELECT count() FROM {table_name}"))
 
-    for _ in range(100):
+    for _ in range(30):
         count = (
             get_count(f"{dst_table_name}_1")
             + get_count(f"{dst_table_name}_2")
@@ -251,7 +249,7 @@ where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_pr
             .strip()
             .split("\n")
         )
-        print(
+        logging.debug(
             f"Processed files: {len(processed_files)}/{files_to_generate}: {processed_files}"
         )
 
@@ -260,7 +258,7 @@ where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_pr
             + get_count(f"{dst_table_name}_2")
             + get_count(f"{dst_table_name}_3")
         )
-        print(f"Processed rows: {count}/{files_to_generate}")
+        logging.debug(f"Processed rows: {count}/{files_to_generate}")
 
         info = node.query(
             f"""
@@ -269,7 +267,7 @@ where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_pr
             where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0)
             """
         )
-        print(f"Unprocessed files: {info}")
+        logging.debug(f"Unprocessed files: {info}")
 
         files1 = (
             node.query(f"select distinct(_path) from {dst_table_name}_1")
@@ -290,9 +288,9 @@ where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_pr
         def intersection(list_a, list_b):
             return [e for e in list_a if e in list_b]
 
-        print(f"Intersecting files 1: {intersection(files1, files2)}")
-        print(f"Intersecting files 2: {intersection(files1, files3)}")
-        print(f"Intersecting files 3: {intersection(files2, files3)}")
+        logging.debug(f"Intersecting files 1: {intersection(files1, files2)}")
+        logging.debug(f"Intersecting files 2: {intersection(files1, files3)}")
+        logging.debug(f"Intersecting files 3: {intersection(files2, files3)}")
 
         assert False
 
@@ -344,12 +342,12 @@ where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_pr
 def test_shards_distributed(started_cluster, mode, processing_threads):
     node = started_cluster.instances["instance"]
     node_2 = started_cluster.instances["instance2"]
-    table_name = f"test_shards_distributed_{mode}_{processing_threads}_{generate_random_string()}"
+    table_name = f"test_shards_distributed_{mode}_{processing_threads}"
     dst_table_name = f"{table_name}_dst"
     # A unique path is necessary for repeatable tests
-    keeper_path = f"/clickhouse/test_{table_name}"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
-    files_to_generate = 1000
+    files_to_generate = 600
     row_num = 1000
     total_rows = row_num * files_to_generate
     shards_num = 2
@@ -375,7 +373,6 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
     for instance in [node, node_2]:
         create_mv(instance, table_name, dst_table_name)
 
-    time.sleep(2)
     total_values = generate_random_files(
         started_cluster, files_path, files_to_generate, row_num=row_num
     )
@@ -447,35 +444,18 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue where zookeep
 
         logging.debug(f"Intersecting files: {intersection(files1, files2)}")
 
-    for _ in range(120):
+    for _ in range(30):
         if (
             get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
         ) == total_rows:
             break
         time.sleep(1)
 
-    count1 = get_count(node, dst_table_name)
-    count2 = get_count(node_2, dst_table_name)
-    if (count1 + count2) != total_rows:
-        expected_files = [f"{files_path}/test_{x}.csv" for x in range(files_to_generate)]
-        node.query("SYSTEM FLUSH LOGS")
-        node_2.query("SYSTEM FLUSH LOGS")
-        processed_files = (
-            node.query(
-                f"SELECT distinct(_path) FROM clusterAllReplicas(cluster, default.{dst_table_name})"
-            )
-            .strip()
-            .split("\n")
-        )
-        processed_files.sort()
-        logging.debug(f"Processed files: {processed_files}")
-        missing_files = [file for file in expected_files if file not in processed_files]
-        missing_files.sort()
-
-        assert (
-            False
-        ), f"Expected {total_rows} in total, got {count1} and {count2} ({count1 + count2}, having {len(missing_files)} missing files: ({missing_files})"
-
+    if (
+        get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
+    ) != total_rows:
+        print_debug_info()
+        assert False
 
     get_query = f"SELECT column1, column2, column3 FROM {dst_table_name}"
     res1 = [list(map(int, l.split())) for l in run_query(node, get_query).splitlines()]

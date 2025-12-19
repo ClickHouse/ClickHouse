@@ -182,10 +182,7 @@ Settings:
 - `indexes` — Shows used indexes, the number of filtered parts and the number of filtered granules for every index applied. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables. Starting from ClickHouse >= v25.9, this statement only shows reasonable output when used with `SETTINGS use_query_condition_cache = 0, use_skip_indexes_on_data_read = 0`.
 - `projections` — Shows all analyzed projections and their effect on part-level filtering based on projection primary key conditions. For each projection, this section includes statistics such as the number of parts, rows, marks, and ranges that were evaluated using the projection's primary key. It also shows how many data parts were skipped due to this filtering, without reading from the projection itself. Whether a projection was actually used for reading or only analyzed for filtering can be determined by the `description` field. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 - `actions` — Prints detailed information about step actions. Default: 0.
-- `json` — Prints query plan steps as a row in [JSON](/interfaces/formats/JSON) format. Default: 0. It is recommended to use [TabSeparatedRaw (TSVRaw)](/interfaces/formats/TabSeparatedRaw) format to avoid unnecessary escaping.
-- `input_headers` - Prints input headers for step. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
-- `column_structure` - Prints also the structure of columns in headers on top of their name and type. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
-- `distributed` — Shows query plans executed on remote nodes for distributed tables or parallel replicas. Default: 0.
+- `json` — Prints query plan steps as a row in [JSON](../../interfaces/formats.md#json) format. Default: 0. It is recommended to use [TSVRaw](../../interfaces/formats.md#tabseparatedraw) format to avoid unnecessary escaping.
 
 When `json=1` step names will contain an additional suffix with unique step identifier.
 
@@ -454,50 +451,6 @@ EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
 ]
 ```
 
-With `distributed` = 1, the output includes not only the local query plan but also the query plans that will be executed on remote nodes. This is useful for analyzing and debugging distributed queries.
-
-Example with distributed table:
-
-```sql
-EXPLAIN distributed=1 SELECT * FROM remote('127.0.0.{1,2}', numbers(2)) WHERE number = 1;
-```
-
-```sql
-Union
-  Expression ((Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))
-    Filter ((WHERE + Change column names to column identifiers))
-      ReadFromSystemNumbers
-  Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromRemote (Read from remote replica)
-      Expression ((Project names + Projection))
-        Filter ((WHERE + Change column names to column identifiers))
-          ReadFromSystemNumbers
-```
-
-Example with parallel replicas:
-
-```sql
-SET enable_parallel_replicas = 2, max_parallel_replicas = 2, cluster_for_parallel_replicas = 'default';
-
-EXPLAIN distributed=1 SELECT sum(number) FROM test_table GROUP BY number % 4;
-```
-
-```sql
-Expression ((Project names + Projection))
-  MergingAggregated
-    Union
-      Aggregating
-        Expression ((Before GROUP BY + Change column names to column identifiers))
-          ReadFromMergeTree (default.test_table)
-      ReadFromRemoteParallelReplicas
-        BlocksMarshalling
-          Aggregating
-            Expression ((Before GROUP BY + Change column names to column identifiers))
-              ReadFromMergeTree (default.test_table)
-```
-
-In both examples, the query plan shows the complete execution flow including local and remote steps.
-
 ### EXPLAIN PIPELINE {#explain-pipeline}
 
 Settings:
@@ -531,7 +484,7 @@ ExpressionTransform
 ```
 ### EXPLAIN ESTIMATE {#explain-estimate}
 
-Shows the estimated number of rows, marks and parts to be read from the tables while processing the query. Works with tables in the [MergeTree](/engines/table-engines/mergetree-family/mergetree) family.
+Shows the estimated number of rows, marks and parts to be read from the tables while processing the query. Works with tables in the [MergeTree](/engines/table-engines/mergetree-family/mergetree) family. 
 
 **Example**
 

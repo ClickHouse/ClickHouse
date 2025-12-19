@@ -55,7 +55,7 @@ bool needTable(const DatabasePtr & database, const Block & header)
     static const std::set<std::string> columns_without_table = {"database", "name", "uuid", "metadata_modification_time"};
     for (const auto & column : header.getColumnsWithTypeAndName())
     {
-        if (!columns_without_table.contains(column.name))
+        if (columns_without_table.find(column.name) == columns_without_table.end())
             return true;
     }
     return false;
@@ -97,7 +97,7 @@ ColumnPtr getFilteredTables(
     MutableColumnPtr uuid_column;
     MutableColumnPtr engine_column;
 
-    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context);
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample);
     if (dag)
     {
         bool filter_by_engine = false;
@@ -120,7 +120,7 @@ ColumnPtr getFilteredTables(
 
     for (size_t database_idx = 0; database_idx < filtered_databases_column->size(); ++database_idx)
     {
-        const auto database_name = filtered_databases_column->getDataAt(database_idx);
+        const auto & database_name = filtered_databases_column->getDataAt(database_idx).toString();
         DatabasePtr database = DatabaseCatalog::instance().tryGetDatabase(database_name);
         if (!database)
             continue;
@@ -211,7 +211,6 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"active_on_fly_data_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active data mutations (UPDATEs and DELETEs) suitable for applying on the fly."},
         {"active_on_fly_alter_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active alter mutations (MODIFY COLUMNs) suitable for applying on the fly."},
         {"active_on_fly_metadata_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active metadata mutations (RENAMEs) suitable for applying on the fly."},
-        {"columns_descriptions_cache_size", std::make_shared<DataTypeUInt64>(), "Size of columns description cache for *MergeTree tables"},
         {"lifetime_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Total number of rows INSERTed since server start (only for Buffer tables)."
         },
@@ -264,7 +263,7 @@ public:
         size_t size = tables_->size();
         tables.reserve(size);
         for (size_t idx = 0; idx < size; ++idx)
-            tables.insert(std::string{tables_->getDataAt(idx)});
+            tables.insert(tables_->getDataAt(idx).toString());
     }
 
     String getName() const override { return "Tables"; }
@@ -322,7 +321,7 @@ protected:
 
             while (database_idx < databases->size() && (!tables_it || !tables_it->isValid()))
             {
-                database_name = databases->getDataAt(database_idx);
+                database_name = databases->getDataAt(database_idx).toString();
                 database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
                 if (!database)
@@ -772,15 +771,6 @@ protected:
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
                     }
-                }
-
-                // columns_descriptions_cache_size
-                if (columns_mask[src_index++])
-                {
-                    if (table_merge_tree)
-                        res_columns[res_index++]->insert(table_merge_tree->getColumnsDescriptionsCacheSize());
-                    else
-                        res_columns[res_index++]->insertDefault();
                 }
 
                 if (columns_mask[src_index++])

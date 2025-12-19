@@ -4,7 +4,7 @@ description: 'A data set that is always in RAM. It is intended for use on the ri
 sidebar_label: 'Set'
 sidebar_position: 60
 slug: /engines/table-engines/special/set
-title: 'Set table engine'
+title: 'Set Table Engine'
 doc_type: 'reference'
 ---
 
