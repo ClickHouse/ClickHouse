@@ -83,11 +83,11 @@ SELECT count()
 FROM system.part_log 
 WHERE table = 'test_max_insert_rows_squashing' 
 AND event_type = 'NewPart' 
-AND (query_id IN (
-    SELECT query_id 
+AND (query_id = (
+    SELECT argMax(query_id, event_time) 
     FROM system.query_log 
     WHERE query LIKE '%INSERT INTO test_max_insert_rows_squashing SELECT%' 
-    ORDER BY event_time DESC LIMIT 1
+    AND database = currentDatabase() 
 ));
 
 -- We expect to see 5 parts inserted
@@ -95,11 +95,11 @@ SELECT count()
 FROM system.part_log 
 WHERE table = 'test_max_insert_bytes_squashing' 
 AND event_type = 'NewPart' 
-AND (query_id IN (
-    SELECT query_id 
+AND (query_id = (
+    SELECT argMax(query_id, event_time)  
     FROM system.query_log 
     WHERE query LIKE '%INSERT INTO test_max_insert_bytes_squashing SELECT%' 
-    ORDER BY event_time DESC LIMIT 1
+    AND database = currentDatabase() 
 ));
 
 -- We expect to see 4 parts inserted
@@ -107,11 +107,11 @@ SELECT count()
 FROM system.part_log 
 WHERE table = 'test_min_insert_rows_less_than_bytes_squashing' 
 AND event_type = 'NewPart' 
-AND (query_id IN (
-    SELECT query_id 
+AND (query_id = (
+    SELECT argMax(query_id, event_time)  
     FROM system.query_log 
     WHERE query LIKE '%INSERT INTO test_min_insert_rows_less_than_bytes_squashing SELECT%' 
-    ORDER BY event_time DESC LIMIT 1
+    AND database = currentDatabase() 
 ));
 
 -- We expect to see 20 parts inserted
@@ -119,11 +119,11 @@ SELECT count()
 FROM system.part_log 
 WHERE table = 'test_min_insert_bytes_less_than_rows_squashing' 
 AND event_type = 'NewPart' 
-AND (query_id IN (
-    SELECT query_id 
+AND (query_id = (
+    SELECT argMax(query_id, event_time)  
     FROM system.query_log 
     WHERE query LIKE '%INSERT INTO test_min_insert_bytes_less_than_rows_squashing SELECT%' 
-    ORDER BY event_time DESC LIMIT 1
+    AND database = currentDatabase() 
 ));
 
 DROP TABLE IF EXISTS test_max_insert_rows_squashing;

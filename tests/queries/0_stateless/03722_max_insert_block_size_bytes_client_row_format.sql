@@ -109,11 +109,11 @@ SELECT count()
 FROM system.part_log 
 WHERE table = 'test_max_insert_bytes' 
 AND event_type = 'NewPart' 
-AND (query_id IN (
-    SELECT query_id 
+AND (query_id = (
+    SELECT argMax(query_id, event_time) 
     FROM system.query_log 
     WHERE query LIKE '%INSERT INTO test_max_insert_bytes FORMAT CSV%' 
-    ORDER BY event_time DESC LIMIT 1
+    AND database = currentDatabase() 
 ));
 
 -- We expect to see 4 parts inserted
@@ -121,11 +121,11 @@ SELECT count()
 FROM system.part_log 
 WHERE table = 'test_min_insert_rows_bytes' 
 AND event_type = 'NewPart' 
-AND (query_id IN (
-    SELECT query_id 
+AND (query_id = (
+    SELECT argMax(query_id, event_time)  
     FROM system.query_log 
     WHERE query LIKE '%INSERT INTO test_min_insert_rows_bytes FORMAT CSV%' 
-    ORDER BY event_time DESC LIMIT 1
+    AND database = currentDatabase() 
 ));
 
 -- We expect to see 2 parts inserted
@@ -133,11 +133,11 @@ SELECT count()
 FROM system.part_log 
 WHERE table = 'test_min_insert_rows' 
 AND event_type = 'NewPart' 
-AND (query_id IN (
-    SELECT query_id 
+AND (query_id = (
+    SELECT argMax(query_id, event_time)  
     FROM system.query_log 
     WHERE query LIKE '%INSERT INTO test_min_insert_rows FORMAT CSV%' 
-    ORDER BY event_time DESC LIMIT 1
+    AND database = currentDatabase() 
 ));
 
 -- We expect to see 2 parts inserted
@@ -145,11 +145,11 @@ SELECT count()
 FROM system.part_log 
 WHERE table = 'test_min_insert_bytes' 
 AND event_type = 'NewPart' 
-AND (query_id IN (
-    SELECT query_id 
+AND (query_id = (
+    SELECT argMax(query_id, event_time)  
     FROM system.query_log 
     WHERE query LIKE '%INSERT INTO test_min_insert_bytes FORMAT CSV%' 
-    ORDER BY event_time DESC LIMIT 1
+    AND database = currentDatabase() 
 ));
 
 DROP TABLE IF EXISTS test_max_insert_bytes;
