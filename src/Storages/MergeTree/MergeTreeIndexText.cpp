@@ -53,7 +53,7 @@ static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 12;
 static constexpr UInt64 MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = 6;
 
 static_assert(MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS must be less or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
-static_assert(PostingListBuilder::max_small_size <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "max_small_size must be less than or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
+static_assert(max_small_size <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "max_small_size must be less than or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
 
 static constexpr UInt64 DEFAULT_DICTIONARY_BLOCK_SIZE = 512;
 static constexpr bool DEFAULT_DICTIONARY_BLOCK_USE_FRONTCODING = true;
@@ -966,12 +966,11 @@ MergeTreeIndexTextGranuleBuilder::MergeTreeIndexTextGranuleBuilder(
 }
 
 PostingListBuilder::PostingListBuilder(PostingList * posting_list)
-    : large{posting_list, roaring::BulkContext()}
-    , small_size(max_small_size)
+    : store(posting_list)
 {
 }
 
-void PostingListBuilder::add(UInt32 value, PostingListsHolder & postings_holder)
+void PostingsStorage::add(UInt32 value, PostingListsHolder & postings_holder)
 {
     if (small_size < max_small_size)
     {

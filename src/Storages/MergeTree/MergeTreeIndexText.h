@@ -81,53 +81,95 @@ struct MergeTreeIndexTextParams
 
 using PostingList = roaring::Roaring;
 using PostingListPtr = std::shared_ptr<PostingList>;
-
-/// A struct for building a posting list with optimization for infrequent tokens.
-/// Tokens with cardinality less than max_small_size are stored in a raw array allocated on the stack.
-/// It avoids allocations of Roaring Bitmap for infrequent tokens without increasing the memory usage.
-struct PostingListBuilder
-{
-public:
     using PostingListsHolder = std::list<PostingList>;
-
-    /// sizeof(PostingListWithContext) == 24 bytes.
-    /// Use small container of the same size to reuse this memory.
     static constexpr size_t max_small_size = 6;
     using SmallContainer = std::array<UInt32, max_small_size>;
 
-    PostingListBuilder() : small_size(0) {}
-    explicit PostingListBuilder(PostingList * posting_list);
-
-    /// Adds a value to small array or to the large Roaring Bitmap.
-    /// If small array is converted to Roaring Bitmap after adding a value,
-    /// posting list is created in the postings_holder and reference to it is saved.
-    void add(UInt32 value, PostingListsHolder & postings_holder);
-
-    size_t size() const { return isSmall() ? small_size : large.postings->cardinality(); }
-    bool isEmpty() const { return size() == 0; }
-    bool isSmall() const { return small_size < max_small_size; }
-    bool isLarge() const { return !isSmall(); }
-    UInt32 minimum() const { return isSmall() ? small[0] : large.postings->minimum(); }
-    UInt32 maximum() const { return isSmall() ? small[small_size - 1] : large.postings->maximum(); }
-
-    SmallContainer & getSmall() { return small; }
-    const SmallContainer & getSmall() const { return small; }
-    PostingList & getLarge() const { return *large.postings; }
-
-private:
     struct PostingListWithContext
     {
         PostingList * postings;
         roaring::BulkContext context;
     };
-
-    union
+    struct PostingsStorage
     {
-        SmallContainer small;
-        PostingListWithContext large;
-    };
+        enum class Kind : uint8_t
+        {
+            Small = 0,
+            Large = 1,
+        };
+        Kind kind = Kind::Small;
+        union
+        {
+            SmallContainer small;
+            PostingListWithContext large;
+        };
+        UInt8 small_size = 0;
+        PostingsStorage() {}
+        explicit PostingsStorage(PostingList * posting_list)
+            : large {posting_list, roaring::BulkContext{}}
+        , small_size(max_small_size)
+        {
+        }
+#if 0
+        template <class SmallType, class LargeType, class CompressedType>
+        ALWAYS_INLINE decltype(auto) dispatch(SmallType && func_small, LargeType && func_large, CompressedType && func_compressed) const
+        {
+            if (__builtin_expect(kind == Kind::Large, 1))
+                return func_large(large);
 
-    UInt8 small_size;
+            switch (kind)
+            {
+                case Kind::Small: return func_small(small);
+                    //case Kind::Compressed: return func_compressed(compressed);
+                default: __builtin_unreachable();
+            }
+        }
+#endif
+        void add(UInt32 value, PostingListsHolder & postings_holder);
+
+        size_t size() const { return isSmall() ? small_size : large.postings->cardinality(); }
+        bool isEmpty() const { return size() == 0; }
+        bool isSmall() const { return small_size < max_small_size; }
+        bool isLarge() const { return !isSmall(); }
+        UInt32 minimum() const { return isSmall() ? small[0] : large.postings->minimum(); }
+        UInt32 maximum() const { return isSmall() ? small[small_size - 1] : large.postings->maximum(); }
+
+        SmallContainer & getSmall() { return small; }
+        const SmallContainer & getSmall() const { return small; }
+        PostingList & getLarge() const { return *large.postings; }
+    };
+/// A struct for building a posting list with optimization for infrequent tokens.
+/// Tokens with cardinality less than max_small_size are stored in a raw array allocated on the stack.
+/// It avoids allocations of Roaring Bitmap for infrequent tokens without increasing the memory usage.
+struct PostingListBuilder
+{
+    using PostingListsHolder = std::list<PostingList>;
+
+    /// sizeof(PostingListWithContext) == 24 bytes.
+    /// Use small container of the same size to reuse this memory.
+    using SmallContainer = std::array<UInt32, max_small_size>;
+
+    PostingListBuilder() {}
+    explicit PostingListBuilder(PostingList * posting_list);
+
+    /// Adds a value to small array or to the large Roaring Bitmap.
+    /// If small array is converted to Roaring Bitmap after adding a value,
+    /// posting list is created in the postings_holder and reference to it is saved.
+    void add(UInt32 value, PostingListsHolder & postings_holder) { store.add(value, postings_holder); }
+
+    size_t size() const { return store.size(); }
+    bool isEmpty() const { return store.isEmpty(); }
+    bool isSmall() const { return store.isSmall(); }
+    bool isLarge() const { return store.isLarge(); }
+    UInt32 minimum() const { return store.minimum(); }
+    UInt32 maximum() const { return store.maximum(); }
+
+    SmallContainer & getSmall() { return store.small; }
+    const SmallContainer & getSmall() const { return store.small; }
+    PostingList & getLarge() const { return *store.large.postings; }
+
+private:
+    PostingsStorage store;
 };
 
 /// Save BulkContext to optimize consecutive insertions into the posting list.

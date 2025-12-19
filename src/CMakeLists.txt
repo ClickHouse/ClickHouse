@@ -515,6 +515,13 @@ target_link_libraries(dbms PUBLIC
     ch_contrib::pdqsort)
 
 target_link_libraries(dbms PRIVATE ch_contrib::zstd)
+
+if (OS_LINUX AND ARCH_AMD64)
+    target_link_libraries (dbms PRIVATE ch_contrib::simdcomp)
+else()
+   target_link_libraries (dbms PRIVATE ch_contrib::streamvbyte)
+endif()
+
 target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::zstd)
 target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::xz)
 
