@@ -102,7 +102,7 @@ INSERT INTO test_min_insert_bytes FORMAT CSV
 7
 8
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log, part_log;
 
 -- We expect to see 8 parts inserted
 SELECT count()  

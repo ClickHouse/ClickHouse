@@ -76,7 +76,7 @@ SET min_insert_block_size_bytes = 8;
 
 INSERT INTO test_min_insert_bytes_less_than_rows_squashing SELECT number FROM numbers(100) SETTINGS max_block_size = 10;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log, part_log;
 
 -- We expect to see 2 parts inserted
 SELECT count()  
