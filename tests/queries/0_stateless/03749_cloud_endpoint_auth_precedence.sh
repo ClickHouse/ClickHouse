@@ -64,7 +64,7 @@ fi
 
 rm -f "$CONFIG_FILE"
 
-echo "Test 6: Connection string with user should not trigger OAuth"
+echo "Test 6: Connection string with only user should not trigger OAuth"
 output=$($CLICKHOUSE_CLIENT_BINARY "clickhouse://default@${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_TCP}/" --query "SELECT 1" 2>&1)
 if echo "$output" | grep -qi "login\|OAuth\|browser"; then
     echo "FAILED: OAuth login triggered despite connection string credentials"
