@@ -669,12 +669,16 @@ def main():
                 
                 # Merge all profraw files to current directory
                 merged_file = f"./ft-{batch_num}.profdata"
-                merge_cmd = f"{llvm_profdata} merge -sparse {' '.join(profraw_files)} -o {merged_file}"
-                if Shell.check(merge_cmd, verbose=True):
-                    print(f"Successfully merged coverage data to {merged_file}")
-                    R.files.append(merged_file)
-                else:
-                    print("ERROR: Failed to merge coverage files")
+                merge_cmd = f"{llvm_profdata} merge -sparse -failure-mode=warn {' '.join(profraw_files)} -o {merged_file} 2>&1"
+                merge_output = Shell.get_output(merge_cmd, verbose=True)
+                
+                # Check for corrupted files in the output
+                corrupted_files = [line for line in merge_output.split('\n') if 'invalid instrumentation profile' in line or 'file header is corrupt' in line]
+                if corrupted_files:
+                    print(f"WARNING: Found {len(corrupted_files)} corrupted profraw files:")
+                    for corrupted in corrupted_files:
+                        print(f"  {corrupted}")
+                
         else:
             print("No .profraw files found for coverage")
 

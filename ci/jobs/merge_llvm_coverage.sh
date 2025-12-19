@@ -43,8 +43,24 @@ if [ -z "$LLVM_COV" ]; then
   exit 1
 fi
 
-# Merge profdata files from all jobs
-"$LLVM_PROFDATA" merge -sparse *.profdata -o merged.profdata
+# Merge profdata files from all jobs (skip corrupted files with -failure-mode=warn)
+echo "Merging profdata files..."
+MERGE_OUTPUT=$("$LLVM_PROFDATA" merge -sparse -failure-mode=warn *.profdata -o merged.profdata 2>&1)
+MERGE_EXIT_CODE=$?
+
+# Log corrupted files
+CORRUPTED_COUNT=$(echo "$MERGE_OUTPUT" | grep -c "invalid instrumentation profile\|file header is corrupt" || true)
+if [ "$CORRUPTED_COUNT" -gt 0 ]; then
+    echo "WARNING: Found $CORRUPTED_COUNT corrupted profdata files:"
+    echo "$MERGE_OUTPUT" | grep "invalid instrumentation profile\|file header is corrupt" || true
+fi
+
+if [ $MERGE_EXIT_CODE -eq 0 ] && [ -f merged.profdata ]; then
+    echo "Successfully merged coverage data to merged.profdata"
+else
+    echo "ERROR: Failed to merge coverage files"
+    exit 1
+fi
 
 # Generate HTML coverage report
 "$LLVM_COV" show \

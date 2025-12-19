@@ -4755,7 +4755,7 @@ class ClickHouseInstance:
                 return
 
             self.exec_in_container(
-                ["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")],
+                ["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "-TERM")],
                 user="root",
             )
 
