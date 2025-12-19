@@ -1946,7 +1946,7 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
         size_t shared_data_end = shared_data_offsets[i];
         for (size_t j = shared_data_start; j < shared_data_end; ++j)
         {
-            if (dynamic_paths.contains(shared_data_paths->getDataAt(j)))
+            if (dynamic_paths.contains(shared_data_paths->getDataAt(j).toView()))
             {
                 /// Duplicate is found, no need to iterate further, we need to start repair.
                 first_row_with_duplicates = i;
@@ -1966,7 +1966,11 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
     /// During repair we create new shared data without duplicated dynamic paths
     /// update corresponding dynamic paths with values from shared data.
     auto new_shared_data = shared_data->cloneResized(*first_row_with_duplicates);
-    const auto [new_shared_data_paths, new_shared_data_values, new_shared_data_offsets] = getSharedDataPathsValuesAndOffsets(*new_shared_data);
+    auto & column_array = assert_cast<ColumnArray &>(*new_shared_data);
+    auto & column_tuple = assert_cast<ColumnTuple &>(column_array.getData());
+    auto * new_shared_data_paths = assert_cast<ColumnString *>(&column_tuple.getColumn(0));
+    auto * new_shared_data_values = assert_cast<ColumnString *>(&column_tuple.getColumn(1));
+    auto * new_shared_data_offsets = &column_array.getOffsets();
     new_shared_data_offsets->reserve(size);
     PathToColumnMap new_dynamic_paths;
     for (size_t i = *first_row_with_duplicates; i < size; ++i)
