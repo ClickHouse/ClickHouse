@@ -298,7 +298,7 @@ void MemoryAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityP
     clearConflictsInEntitiesList(entities_without_conflicts, getLogger());
 
     /// It is ok if total count equals access_entities_num_limit, so throw only if it is greater than limit
-    UInt64 size_to_check = entities_without_conflicts.size() > 0 ? entities_without_conflicts.size() - 1 : 0;
+    UInt64 size_to_check = entities_without_conflicts.empty() ? entities_without_conflicts.size() - 1 : 0;
     if (entityLimitWillBeReached(size_to_check))
         throwTooManyEntities(entities_without_conflicts.size());
 
