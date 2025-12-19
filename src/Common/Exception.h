@@ -1,10 +1,11 @@
 #pragma once
 
+#include <Core/LogsLevel.h>
 #include <base/defines.h>
 #include <base/errnoToString.h>
+#include <base/types.h>
+#include <Common/FramePointers.h>
 #include <Common/LoggingFormatStringHelpers.h>
-#include <Common/StackTrace.h>
-#include <Core/LogsLevel.h>
 
 #include <atomic>
 #include <cerrno>
@@ -13,7 +14,6 @@
 
 #include <fmt/format.h>
 #include <Poco/Exception.h>
-
 
 namespace Poco
 {
@@ -37,7 +37,7 @@ extern std::atomic_bool abort_on_logical_error;
 class Exception : public Poco::Exception
 {
 public:
-    using FramePointers = std::vector<void *>;
+    using Trace = std::vector<void *>;
 
     Exception()
     {
@@ -61,18 +61,67 @@ public:
             std::terminate();
         capture_thread_frame_pointers = getThreadFramePointers();
         message_format_string = msg.format_string;
-        message_format_string_args = msg.format_string_args;
+        message_format_string_args = std::move(msg.format_string_args);
     }
 
     ~Exception() override;
-    Exception(const Exception &) = default;
-    Exception & operator=(const Exception &) = default;
-    Exception(Exception &&) = default;
-    Exception & operator=(Exception &&) = default;
+
+    Exception(const Exception & o)
+        : Poco::Exception(o)
+    {
+        remote = o.remote;
+        logged.store(o.logged.load());
+        error_index = o.error_index;
+        message_format_string = o.message_format_string;
+        message_format_string_args = o.message_format_string_args;
+        capture_thread_frame_pointers = o.capture_thread_frame_pointers;
+    }
+
+    Exception(Exception && o) noexcept
+    {
+        remote = o.remote;
+        logged.store(o.logged.load());
+        error_index = o.error_index;
+        message_format_string = o.message_format_string;
+        message_format_string_args = std::move(o.message_format_string_args);
+        capture_thread_frame_pointers = std::move(o.capture_thread_frame_pointers);
+        Poco::Exception::operator=(std::move(o));
+    }
+
+    Exception & operator=(const Exception & o)
+    {
+        if (this != &o)
+        {
+            remote = o.remote;
+            logged.store(o.logged.load());
+            error_index = o.error_index;
+            message_format_string = o.message_format_string;
+            message_format_string_args = o.message_format_string_args;
+            capture_thread_frame_pointers = o.capture_thread_frame_pointers;
+            Poco::Exception::operator=(o);
+        }
+        return *this;
+    }
+
+
+    Exception & operator=(Exception && o) noexcept
+    {
+        if (this != &o)
+        {
+            remote = o.remote;
+            logged.store(o.logged.load());
+            error_index = o.error_index;
+            message_format_string = o.message_format_string;
+            message_format_string_args = std::move(o.message_format_string_args);
+            capture_thread_frame_pointers = std::move(o.capture_thread_frame_pointers);
+            Poco::Exception::operator=(std::move(o));
+        }
+        return *this;
+    }
 
     /// Collect call stacks of all previous jobs' schedulings leading to this thread job's execution
     static thread_local bool enable_job_stack_trace;
-    using ThreadFramePointersBase = std::vector<StackTrace::FramePointers>;
+    using ThreadFramePointersBase = std::vector<FramePointers>;
 
     /// If thread is going to use thread_frame_pointers then this initializer should be called at the beginning of a thread function.
     /// It is necessary to force thread_frame_pointers to be initialized - static thread_local members are lazy initializable.
@@ -86,7 +135,7 @@ public:
     static void clearThreadFramePointers();
 
     /// Callback for any exception
-    static std::function<void(std::string_view format_string, int code, bool remote, const Exception::FramePointers & trace)> callback;
+    static std::function<void(std::string_view format_string, int code, bool remote, const Exception::Trace & trace)> callback;
 
 protected:
     static thread_local bool can_use_thread_frame_pointers;
@@ -171,29 +220,20 @@ public:
 
     std::string getStackTraceString() const;
     /// Used for system.errors
-    FramePointers getStackFramePointers() const;
+    Trace getStackFramePointers() const;
 
     std::string_view tryGetMessageFormatString() const { return message_format_string; }
 
     std::vector<std::string> getMessageFormatStringArgs() const { return message_format_string_args; }
 
-    void markAsLogged()
-    {
-        if (logged)
-        {
-            logged->store(true, std::memory_order_relaxed);
-        }
-    }
+    void markAsLogged() { logged.store(true, std::memory_order_relaxed); }
 
     /// Indicates if the error code triggers alerts in ClickHouse Cloud
     bool isErrorCodeImportant() const;
 
 private:
-#ifndef STD_EXCEPTION_HAS_STACK_TRACE
-    StackTrace trace;
-#endif
     bool remote = false;
-    std::shared_ptr<std::atomic<bool>> logged = std::make_shared<std::atomic<bool>>(false);
+    std::atomic<bool> logged = false;
 
     /// Number of this error among other errors with the same code and the same `remote` flag since the program startup.
     size_t error_index = static_cast<size_t>(-1);
@@ -204,8 +244,11 @@ protected:
     std::string_view message_format_string;
     std::vector<std::string> message_format_string_args;
     /// Local copy of static per-thread thread_frame_pointers, should be mutable to be unpoisoned on printout
-    mutable std::vector<StackTrace::FramePointers> capture_thread_frame_pointers;
+    mutable std::vector<FramePointers> capture_thread_frame_pointers;
 };
+
+/// Most common exception constructor (just a string). Forward declare to avoid many unnecessary instantiations
+extern template Exception::Exception(int, FormatStringHelperImpl<>);
 
 [[noreturn]] void abortOnFailedAssertion(const String & description, std::string_view format_string, void * const * trace, size_t trace_offset, size_t trace_size);
 [[noreturn]] void abortOnFailedAssertion(const String & description);

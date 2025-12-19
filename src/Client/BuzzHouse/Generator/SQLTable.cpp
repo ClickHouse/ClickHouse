@@ -396,12 +396,6 @@ void StatementGenerator::generateNextCodecs(RandomGenerator & rg, CodecList * cl
         switch (cc)
         {
             case COMP_LZ4HC:
-            case COMP_ZSTD_QAT:
-                if (rg.nextBool())
-                {
-                    cp->add_params()->set_ival(rg.randomInt<uint32_t>(1, 12));
-                }
-                break;
             case COMP_ZSTD:
                 if (rg.nextBool())
                 {
@@ -1864,18 +1858,14 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             }
             if (rg.nextBool())
             {
+                std::uniform_int_distribution<uint32_t> next_dist(1, 100000);
+
+                idef->add_params()->set_unescaped_sval("posting_list_block_size = " + std::to_string(next_dist(rg.generator)));
+            }
+            if (rg.nextBool())
+            {
                 idef->add_params()->set_unescaped_sval(
                     "dictionary_block_frontcoding_compression = " + std::to_string(rg.nextBool() ? 1 : 0));
-            }
-            if (rg.nextBool())
-            {
-                idef->add_params()->set_unescaped_sval(
-                    "max_cardinality_for_embedded_postings = " + std::to_string(rg.randomInt<uint32_t>(0, 8192)));
-            }
-            if (rg.nextBool())
-            {
-                idef->add_params()->set_unescaped_sval(
-                    "bloom_filter_false_positive_rate = 0." + std::to_string(rg.randomInt<uint32_t>(1, 9)));
             }
         }
         break;

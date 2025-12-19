@@ -89,6 +89,7 @@ static struct InitFiu
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
     ONCE(receive_timeout_on_table_status_response) \
     ONCE(delta_kernel_fail_literal_visitor) \
+    ONCE(column_aggregate_function_ensureOwnership_exception) \
     REGULAR(keepermap_fail_drop_data) \
     REGULAR(lazy_pipe_fds_fail_close) \
     PAUSEABLE(infinite_sleep) \
@@ -113,17 +114,23 @@ static struct InitFiu
     REGULAR(plain_object_storage_copy_temp_source_file_fail_on_file_move) \
     REGULAR(plain_object_storage_copy_temp_target_file_fail_on_file_move) \
     REGULAR(output_format_sleep_on_progress) \
+    ONCE(smt_commit_exception_before_op) \
+    ONCE(disk_object_storage_fail_commit_metadata_transaction) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
     ONCE(iceberg_writes_cleanup) \
     ONCE(backup_add_empty_memory_table) \
+    PAUSEABLE(sc_state_application_pause) \
+    REGULAR(sc_intentions_commit_fail) \
     REGULAR(sleep_in_logs_flush) \
-    ONCE(smt_commit_exception_before_op) \
-    ONCE(disk_object_storage_fail_commit_metadata_transaction) \
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
     ONCE(database_replicated_drop_after_removing_keeper_failed) \
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
     PAUSEABLE_ONCE(rmt_mutate_task_pause_in_prepare) \
+    PAUSEABLE_ONCE(smt_mutate_task_pause_in_prepare) \
     PAUSEABLE_ONCE(rmt_merge_selecting_task_pause_when_scheduled) \
+    PAUSEABLE_ONCE(smt_merge_selecting_task_pause_when_scheduled) \
+    ONCE(shared_set_full_update_fails_when_initializing) \
+    PAUSEABLE(after_kill_part_pause) \
     ONCE(parallel_replicas_reading_response_timeout)
 
 
