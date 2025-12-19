@@ -364,7 +364,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabas
 {
     const auto & settings = context->getSettingsRef();
     std::exception_ptr swallowed_exception; /// to preserve original message/hints
-    bool do_fallback = false;
+
     /// try exact resolution first, only swallow 'not found' cases to allow CI fallback
     try
     {
@@ -373,7 +373,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabas
     }
     catch (const Exception & e)
     {
-        do_fallback =
+        bool do_fallback =
             (e.code() == ErrorCodes::UNKNOWN_DATABASE && settings[Setting::enable_case_insensitive_databases]) ||
             (e.code() == ErrorCodes::UNKNOWN_TABLE && settings[Setting::enable_case_insensitive_tables]);
 
@@ -383,7 +383,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabas
         swallowed_exception = std::current_exception();
     }
 
-    if (do_fallback)
+    if (settings[Setting::enable_case_insensitive_tables] || settings[Setting::enable_case_insensitive_databases])
         return tryResolveTableIdentifierFallback(table_identifier, context, swallowed_exception);
     return {};
 }
