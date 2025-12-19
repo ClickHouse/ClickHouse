@@ -4,6 +4,7 @@ sidebar_label: 'QUOTA'
 sidebar_position: 46
 slug: /sql-reference/statements/alter/quota
 title: 'ALTER QUOTA'
+doc_type: 'reference'
 ---
 
 Changes quotas.

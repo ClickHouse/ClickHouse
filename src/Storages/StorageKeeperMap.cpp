@@ -372,7 +372,7 @@ StorageKeeperMap::StorageKeeperMap(
 
     WriteBufferFromOwnString out;
     out << "KeeperMap metadata format version: 1\n"
-        << "columns: " << metadata.columns.toString()
+        << "columns: " << metadata.columns.toString(true)
         << "primary key: " << formattedAST(metadata.getPrimaryKey().expression_list_ast) << "\n";
     metadata_string = out.str();
 
@@ -896,6 +896,9 @@ void StorageKeeperMap::dropTableFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, St
     if (!zookeeper->exists(zk_dropped_path_to_remove))
         ops.emplace_back(zkutil::makeCreateRequest(zk_dropped_path_to_remove, "", zkutil::CreateMode::Persistent));
 
+    if (!zookeeper->exists(zk_dropped_lock_version_path))
+        ops.emplace_back(zkutil::makeCreateRequest(zk_dropped_lock_version_path, "", zkutil::CreateMode::Persistent));
+
     ops.emplace_back(zkutil::makeCreateRequest(zk_dropped_lock_path_to_remove, "", zkutil::CreateMode::Ephemeral));
     auto code = zookeeper->tryMulti(ops, responses);
 
@@ -1012,7 +1015,12 @@ void StorageKeeperMap::drop()
     ops.emplace_back(zkutil::makeRemoveRequest(zk_tables_path, -1));
     ops.emplace_back(zkutil::makeCreateRequest(zk_dropped_path, "", zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(zk_dropped_lock_path, "", zkutil::CreateMode::Ephemeral));
-    ops.emplace_back(zkutil::makeSetRequest(zk_dropped_lock_version_path, table_unique_id, -1));
+
+    /// 'zk_dropped_lock_version_path' node was added in 25.1, so we need to check if it exists
+    if (client->exists(zk_dropped_lock_version_path))
+        ops.emplace_back(zkutil::makeSetRequest(zk_dropped_lock_version_path, table_unique_id, -1));
+    else
+        ops.emplace_back(zkutil::makeCreateRequest(zk_dropped_lock_version_path, table_unique_id, zkutil::CreateMode::Persistent));
 
     auto code = client->tryMulti(ops, responses);
 
@@ -1068,7 +1076,7 @@ private:
 
     BackupEntries generate() override
     {
-        auto data_out = std::make_unique<TemporaryDataBuffer>(tmp_data.get());
+        auto data_out = std::make_unique<TemporaryDataBuffer>(tmp_data);
         std::vector<std::string> data_children;
         {
             auto holder = with_retries->createRetriesControlHolder("getKeeperMapDataKeys");
@@ -1149,7 +1157,9 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
         }
 
         TemporaryDataOnDiskSettings tmp_data_settings;
-        tmp_data_settings.buffer_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
+        auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
+        tmp_data_settings.buffer_size = max_compress_block_size ? max_compress_block_size : DBMS_DEFAULT_BUFFER_SIZE;
+
         auto tmp_data = std::make_shared<TemporaryDataOnDiskScope>(backup_entries_collector.getContext()->getTempDataOnDisk(), tmp_data_settings);
 
         auto with_retries = std::make_shared<WithRetries>
@@ -1402,7 +1412,7 @@ StorageKeeperMap::TableStatus StorageKeeperMap::getTableStatus(const ContextPtr 
     return table_status;
 }
 
-Chunk StorageKeeperMap::getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map, const Names &) const
+Chunk StorageKeeperMap::getByKeys(const ColumnsWithTypeAndName & keys, const Names &, PaddedPODArray<UInt8> & null_map, IColumn::Offsets & /* out_offsets */) const
 {
     if (keys.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageKeeperMap supports only one key, got: {}", keys.size());

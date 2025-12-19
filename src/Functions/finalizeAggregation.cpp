@@ -116,7 +116,7 @@ FROM numbers(5);
     };
     FunctionDocumentation::IntroducedIn introduced_in_finalizeAggregation = {1, 1};
     FunctionDocumentation::Category category_finalizeAggregation = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_finalizeAggregation = {description_finalizeAggregation, syntax_finalizeAggregation, arguments_finalizeAggregation, returned_value_finalizeAggregation, examples_finalizeAggregation, introduced_in_finalizeAggregation, category_finalizeAggregation};
+    FunctionDocumentation documentation_finalizeAggregation = {description_finalizeAggregation, syntax_finalizeAggregation, arguments_finalizeAggregation, {}, returned_value_finalizeAggregation, examples_finalizeAggregation, introduced_in_finalizeAggregation, category_finalizeAggregation};
 
     factory.registerFunction<FunctionFinalizeAggregation>(documentation_finalizeAggregation);
 }

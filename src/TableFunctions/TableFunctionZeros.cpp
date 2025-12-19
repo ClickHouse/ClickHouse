@@ -33,7 +33,11 @@ public:
     bool hasStaticStructure() const override { return true; }
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
-    const char * getStorageEngineName() const override { return "SystemZeros"; }
+    const char * getStorageEngineName() const override
+    {
+        /// Technically it's SystemZeros but it doesn't register itself
+        return "";
+    }
 
     UInt64 evaluateArgument(ContextPtr context, ASTPtr & argument) const;
 

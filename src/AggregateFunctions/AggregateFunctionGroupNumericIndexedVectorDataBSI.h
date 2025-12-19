@@ -800,7 +800,7 @@ public:
 
 #if defined(__AVX512__)
             cnt = roaring::internal::bitset_extract_setbits_avx512(buffer.data() + offset, len, bit_buffer.data(), k_batch_size * 64, 0);
-#elif defined(__AVX2__)
+#elif defined(__AVX2__) && !defined(__e2k__)
             cnt = roaring::internal::bitset_extract_setbits_avx2(buffer.data() + offset, len, bit_buffer.data(), k_batch_size * 64, 0);
 #else
             cnt = roaring::internal::bitset_extract_setbits(buffer.data() + offset, len, bit_buffer.data(), 0);
@@ -810,7 +810,7 @@ public:
                 UInt64 val = bit_buffer[i];
                 UInt64 row;
                 UInt64 col = val & 0x3f;
-#if defined(__BMI2__)
+#if defined(__BMI2__) && !defined(__e2k__)
                 ASM_SHIFT_RIGHT(val, shift, row);
 #else
                 row = val >> shift;
@@ -925,7 +925,7 @@ public:
                 {
                     UInt64 tmp_offset;
                     UInt64 p = bit_buffer[i][j];
-#if defined(__BMI2__)
+#if defined(__BMI2__) && !defined(__e2k__)
                     ASM_SHIFT_RIGHT(p, shift, tmp_offset);
 #else
                     tmp_offset = p >> shift;

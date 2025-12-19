@@ -11,12 +11,12 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 
 namespace DB
 {
-
 
 StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_)
     : StorageSystemPartsBase(table_id_,
@@ -64,9 +64,12 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"column_data_uncompressed_bytes",             std::make_shared<DataTypeUInt64>(), "Total size of the decompressed data in the column, in bytes."},
         {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>(), "The size of the marks for column, in bytes."},
         {"column_modification_time",                   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "The last time the column was modified."},
-        {"column_ttl_min",                        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "The minimum value of the calculated TTL expression of the column."},
-        {"column_ttl_max",                        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "The maximum value of the calculated TTL expression of the column."},
-
+        {"column_ttl_min",                             std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "The minimum value of the calculated TTL expression of the column."},
+        {"column_ttl_max",                             std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "The maximum value of the calculated TTL expression of the column."},
+        {"statistics",                                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The statistics of the column."},
+        {"estimates.min",                              std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()), "Estimated minimum value of the column."},
+        {"estimates.max",                              std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()), "Estimated maximum value of the column."},
+        {"estimates.cardinality",                      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Estimated cardinality of the column."},
         {"serialization_kind",                         std::make_shared<DataTypeString>(), "Kind of serialization of a column"},
         {"substreams",                                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Names of substreams to which column is serialized"},
         {"filenames",                                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Names of files for each substream of a column respectively"},
@@ -123,6 +126,16 @@ void StorageSystemPartsColumns::processNextStorage(
 
         auto index_size_in_bytes = part->getIndexSizeInBytes();
         auto index_size_in_allocated_bytes = part->getIndexSizeInAllocatedBytes();
+        std::optional<Estimates> estimates;
+
+        /// Lazy initialize statistics estimates if they are queried.
+        auto find_estimate = [&](const auto & column_name)
+        {
+            if (!estimates.has_value())
+                estimates = part->getEstimates();
+
+            return estimates->find(column_name);
+        };
 
         using State = MergeTreeDataPartState;
 
@@ -260,9 +273,53 @@ void StorageSystemPartsColumns::processNextStorage(
                     columns[res_index++]->insertDefault();
             }
 
+            if (columns_mask[src_index++])
+            {
+                auto estimate_it = find_estimate(column.name);
+                if (estimate_it != estimates->end())
+                {
+                    Array types;
+                    for (const auto & type : estimate_it->second.types)
+                        types.push_back(toString(type));
+
+                    columns[res_index++]->insert(types);
+                }
+                else
+                {
+                    columns[res_index++]->insertDefault();
+                }
+            }
+
+            if (columns_mask[src_index++])
+            {
+                auto estimate_it = find_estimate(column.name);
+                if (estimate_it != estimates->end() && estimate_it->second.estimated_min.has_value())
+                    columns[res_index++]->insert(estimate_it->second.estimated_min.value());
+                else
+                    columns[res_index++]->insertDefault();
+            }
+
+            if (columns_mask[src_index++])
+            {
+                auto estimate_it = find_estimate(column.name);
+                if (estimate_it != estimates->end() && estimate_it->second.estimated_max.has_value())
+                    columns[res_index++]->insert(estimate_it->second.estimated_max.value());
+                else
+                    columns[res_index++]->insertDefault();
+            }
+
+            if (columns_mask[src_index++])
+            {
+                auto estimate_it = find_estimate(column.name);
+                if (estimate_it != estimates->end() && estimate_it->second.estimated_cardinality.has_value())
+                    columns[res_index++]->insert(estimate_it->second.estimated_cardinality.value());
+                else
+                    columns[res_index++]->insertDefault();
+            }
+
             auto serialization = part->getSerialization(column.name);
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(ISerialization::kindToString(serialization->getKind()));
+                columns[res_index++]->insert(ISerialization::kindStackToString(serialization->getKindStack()));
 
             Array substreams;
             Array filenames;
@@ -273,7 +330,7 @@ void StorageSystemPartsColumns::processNextStorage(
                 for (const auto & substream : column_substreams)
                 {
                     substreams.push_back(substream);
-                    auto filename = IMergeTreeDataPart::getStreamNameOrHash(substream, part->checksums);
+                    auto filename = IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", part->checksums);
                     filenames.push_back(filename.value_or(""));
                 }
             }
@@ -281,8 +338,8 @@ void StorageSystemPartsColumns::processNextStorage(
             {
                 serialization->enumerateStreams([&](const auto & subpath)
                 {
-                    auto substream = ISerialization::getFileNameForStream(column.name, subpath);
-                    auto filename = IMergeTreeDataPart::getStreamNameForColumn(column.name, subpath, part->checksums);
+                    auto substream = ISerialization::getFileNameForStream(column.name, subpath, ISerialization::StreamFileNameSettings(*info.data->getSettings()));
+                    auto filename = IMergeTreeDataPart::getStreamNameForColumn(column.name, subpath, ".bin", part->checksums, info.data->getSettings());
 
                     substreams.push_back(std::move(substream));
                     filenames.push_back(filename.value_or(""));
@@ -309,14 +366,18 @@ void StorageSystemPartsColumns::processNextStorage(
                 if (isTuple(data.type) || isNested(data.type))
                     return;
 
+                /// Skip ephemeral subcolumns that don't store any real data.
+                if (ISerialization::isEphemeralSubcolumn(subpath, subpath.size()))
+                    return;
+
                 subcolumn_names.push_back(name);
                 subcolumn_types.push_back(data.type->getName());
-                subcolumn_serializations.push_back(ISerialization::kindToString(data.serialization->getKind()));
+                subcolumn_serializations.push_back(ISerialization::kindStackToString(data.serialization->getKindStack()));
 
                 ColumnSize size;
                 NameAndTypePair subcolumn(column.name, name, column.type, data.type);
 
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(subcolumn, subpath, part->checksums);
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(subcolumn, subpath, ".bin", part->checksums, info.data->getSettings());
                 if (stream_name)
                 {
                     auto bin_checksum = part->checksums.files.find(*stream_name + ".bin");

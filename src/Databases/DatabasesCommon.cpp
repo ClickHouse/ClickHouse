@@ -12,11 +12,10 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Storages/IStorage.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/KeyDescription.h>
-#include <Storages/StorageDictionary.h>
-#include <Storages/StorageFactory.h>
 #include <Storages/TTLDescription.h>
 #include <Storages/Utils.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -25,6 +24,11 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
+
 
 namespace DB
 {
@@ -44,6 +48,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int BAD_ARGUMENTS;
+    extern const int THERE_IS_NO_QUERY;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 }
 namespace
@@ -99,7 +104,7 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
     if (columns.indices)
     {
         for (const auto & child : columns.indices->children)
-            IndexDescription::getIndexFromAST(child, columns_desc, context);
+            IndexDescription::getIndexFromAST(child, columns_desc, /* is_implicitly_created */ false, context);
     }
     if (columns.constraints)
     {
@@ -129,7 +134,7 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
 }
 }
 
-void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata, ContextPtr context)
+void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata, ContextPtr context, const bool validate_new_create_query)
 {
     auto & ast_create_query = query->as<ASTCreateQuery &>();
 
@@ -219,7 +224,8 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
     else
         ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(metadata.comment));
 
-    validateCreateQuery(ast_create_query, context);
+    if (validate_new_create_query)
+        validateCreateQuery(ast_create_query, context);
 }
 
 
@@ -330,27 +336,46 @@ void writeMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path, st
     out.reset();
 }
 
-void updateDatabaseCommentWithMetadataFile(DatabasePtr db, const AlterCommand & command)
+void DatabaseWithAltersOnDiskBase::alterDatabaseComment(const AlterCommand & command, ContextPtr query_context [[maybe_unused]])
 {
     if (!command.comment)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to obtain database comment from query");
 
-    String old_database_comment = db->getDatabaseComment();
-    db->setDatabaseComment(command.comment.value());
+    std::lock_guard lock{mutex};
+
+    const String old_comment = comment;
+    comment = command.comment.value();
 
     try
     {
-        DatabaseCatalog::instance().updateMetadataFile(db);
+#if CLICKHOUSE_CLOUD
+        bool managed_by_shared_catalog = SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::isDatabaseEngineSupported(getEngineName());
+        if (managed_by_shared_catalog && !SharedDatabaseCatalog::isInitialQuery(query_context))
+            return;
+#endif
+        const ASTPtr create_query = getCreateDatabaseQueryImpl();
+        if (!create_query)
+            throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database_name));
+#if CLICKHOUSE_CLOUD
+        if (managed_by_shared_catalog)
+        {
+
+            auto version_to_wait = SharedDatabaseCatalog::instance().alterDatabase(getUUID(), create_query);
+            query_context->setVersionToWaitSharedCatalog(version_to_wait);
+            return;
+        }
+#endif
+        DatabaseCatalog::instance().updateMetadataFile(database_name, create_query);
     }
     catch (...)
     {
-        db->setDatabaseComment(old_database_comment);
+        comment = old_comment;
         throw;
     }
 }
 
 DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context_)
-    : IDatabase(name_)
+    : DatabaseWithAltersOnDiskBase(name_)
     , WithContext(context_->getGlobalContext())
     , log(getLogger(logger))
 {
@@ -359,7 +384,7 @@ DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const
 bool DatabaseWithOwnTablesBase::isTableExist(const String & table_name, ContextPtr) const
 {
     std::lock_guard lock(mutex);
-    return tables.find(table_name) != tables.end();
+    return tables.contains(table_name);
 }
 
 StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, ContextPtr) const

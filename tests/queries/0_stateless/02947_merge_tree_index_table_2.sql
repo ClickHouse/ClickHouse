@@ -4,6 +4,7 @@ DROP TABLE IF EXISTS t_merge_tree_index;
 
 SET output_format_pretty_row_numbers = 0;
 SET print_pretty_type_names = 0;
+SET output_format_pretty_named_tuples_as_json = 0;
 
 CREATE TABLE t_merge_tree_index
 (
@@ -23,6 +24,7 @@ SETTINGS
     min_rows_for_wide_part = 6,
     ratio_of_defaults_for_sparse_serialization = 0.9,
     write_marks_for_substreams_in_compact_parts=0,
+    serialization_info_version = 'basic',
     compact_parts_max_granules_to_buffer = 1;
 
 SYSTEM STOP MERGES t_merge_tree_index;

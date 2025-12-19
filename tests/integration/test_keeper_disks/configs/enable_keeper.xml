@@ -37,7 +37,7 @@
             <operation_timeout_ms>5000</operation_timeout_ms>
             <session_timeout_ms>10000</session_timeout_ms>
             <raft_logs_level>trace</raft_logs_level>
-            <snapshot_distance>10</snapshot_distance>
+            <snapshot_distance>100000</snapshot_distance>
             <stale_log_gap>10</stale_log_gap>
             <reserved_log_items>1</reserved_log_items>
             <rotate_log_storage_interval>3</rotate_log_storage_interval>
