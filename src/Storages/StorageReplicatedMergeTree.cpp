@@ -410,7 +410,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , replica_name(zookeeper_info.replica_name)
     , replica_path(fs::path(zookeeper_path) / "replicas" / replica_name)
     , create_query_zookeeper_retries_info(create_query_zookeeper_retries_info_)
-    , reader(*this)
     , writer(*this)
     , merger_mutator(*this)
     , merge_strategy_picker(*this)
@@ -5950,7 +5949,7 @@ void StorageReplicatedMergeTree::readLocalSequentialConsistencyImpl(
         }
     }
 
-    auto plan = reader.read(
+    auto plan = MergeTreeDataSelectExecutor(*this).read(
         column_names,
         storage_snapshot,
         query_info,
@@ -5985,7 +5984,7 @@ void StorageReplicatedMergeTree::readLocalImpl(
     const size_t num_streams)
 {
     const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower();
-    auto plan = reader.read(
+    auto plan = MergeTreeDataSelectExecutor(*this).read(
         column_names,
         storage_snapshot,
         query_info,

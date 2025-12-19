@@ -535,7 +535,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     prepareProjectionsToMergeAndRebuild();
 
-    auto merge_tree_settings = global_ctx->data->getSettings();
+    const auto & merge_tree_settings = global_ctx->data_settings;
 
     /// Get list of skip indexes to exclude from merge
     std::unordered_set<String> exclude_index_names;
@@ -739,6 +739,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     global_ctx->to = std::make_shared<MergedBlockOutputStream>(
         global_ctx->new_data_part,
+        merge_tree_settings,
         global_ctx->metadata_snapshot,
         global_ctx->merging_columns,
         /// indices,
@@ -772,12 +773,14 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
 bool MergeTask::enabledBlockNumberColumn(GlobalRuntimeContextPtr global_ctx)
 {
-    return (*global_ctx->data->getSettings())[MergeTreeSetting::enable_block_number_column] && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
+    return (*global_ctx->data_settings)[MergeTreeSetting::enable_block_number_column]
+        && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
 }
 
 bool MergeTask::enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx)
 {
-    return (*global_ctx->data->getSettings())[MergeTreeSetting::enable_block_offset_column] && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
+    return (*global_ctx->data_settings)[MergeTreeSetting::enable_block_offset_column]
+        && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
 }
 
 void MergeTask::addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type)
@@ -797,7 +800,7 @@ bool MergeTask::isVerticalLightweightDelete(const GlobalRuntimeContext & global_
     if (global_ctx.chosen_merge_algorithm != MergeAlgorithm::Vertical)
         return false;
 
-    if (!(*global_ctx.data->getSettings())[MergeTreeSetting::vertical_merge_optimize_lightweight_delete])
+    if (!(*global_ctx.data_settings)[MergeTreeSetting::vertical_merge_optimize_lightweight_delete])
         return false;
 
     bool has_lightweight_delete = false;
@@ -888,7 +891,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::cancel() noexcept
 
 void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRebuild() const
 {
-    const auto mode = (*global_ctx->data->getSettings())[MergeTreeSetting::deduplicate_merge_projection_mode];
+    const auto mode = (*global_ctx->data_settings)[MergeTreeSetting::deduplicate_merge_projection_mode];
     /// Under throw mode, we still choose to drop projections due to backward compatibility since some
     /// users might have projections before this change.
     if (global_ctx->data->merging_params.mode != MergeTreeData::MergingParams::Ordinary
@@ -1043,7 +1046,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
 {
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
     UInt64 step_time_ms
-        = (*global_ctx->data->getSettings())[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds();
+        = (*global_ctx->data_settings)[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds();
 
     do
     {
@@ -1115,7 +1118,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalize() const
         throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts with expired TTL");
 
     const size_t sum_compressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_compressed;
-    ctx->need_sync = global_ctx->data->getSettings()->needSyncPart(ctx->sum_input_rows_upper_bound, sum_compressed_bytes_upper_bound);
+    ctx->need_sync = global_ctx->data_settings->needSyncPart(ctx->sum_input_rows_upper_bound, sum_compressed_bytes_upper_bound);
 }
 
 bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
@@ -1145,7 +1148,7 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
 
     ctx->it_name_and_type = global_ctx->gathering_columns.cbegin();
 
-    const auto & storage_settings = *global_ctx->data->getSettings();
+    const auto & storage_settings = *global_ctx->data_settings;
 
     if (global_ctx->new_data_part->getDataPartStorage().supportParallelWrite())
         ctx->max_delayed_streams = storage_settings[MergeTreeSetting::max_merge_delayed_streams_for_parallel_write];
@@ -1279,7 +1282,7 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
 
     /// Add column gatherer step
     {
-        const auto merge_tree_settings = global_ctx->data->getSettings();
+        const auto & merge_tree_settings = global_ctx->data_settings;
         std::optional<size_t> max_dynamic_subcolumns = std::nullopt;
         if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Wide)
             max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_wide_part].valueOrNullopt();
@@ -1364,6 +1367,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
 
     ctx->column_to = std::make_unique<MergedColumnOnlyOutputStream>(
         global_ctx->new_data_part,
+        global_ctx->data_settings,
         global_ctx->metadata_snapshot,
         columns_list,
         column_pipepline.indexes_to_recalc,
@@ -1380,7 +1384,8 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
 bool MergeTask::VerticalMergeStage::executeVerticalMergeForOneColumn() const
 {
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
-    UInt64 step_time_ms = (*global_ctx->data->getSettings())[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds();
+    UInt64 step_time_ms
+        = (*global_ctx->data_settings)[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds();
 
     do
     {
@@ -1498,7 +1503,7 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             projection_parts.back()->name);
 
         auto projection_future_part = std::make_shared<FutureMergedMutatedPart>();
-        projection_future_part->assign(std::move(projection_parts), /*patch_parts_=*/ {});
+        projection_future_part->assign(std::move(projection_parts), /*patch_parts_=*/ {}, projection);
         projection_future_part->name = projection->name;
         // TODO (ab): path in future_part is only for merge process introspection, which is not available for merges of projection parts.
         // Let's comment this out to avoid code inconsistency and add it back after we implement projection merge introspection.
@@ -1524,6 +1529,7 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             global_ctx->cleanup,
             projection_merging_params,
             global_ctx->need_prefix,
+            projection,
             global_ctx->new_data_part.get(),
             projection->with_parent_part_offset ? global_ctx->merged_part_offsets : nullptr,
             ".proj",
@@ -1972,7 +1978,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     /// We count total amount of bytes in parts
     /// and use direct_io + aio if there is more than min_merge_bytes_to_use_direct_io
     ctx->read_with_direct_io = false;
-    const auto merge_tree_settings = global_ctx->data->getSettings();
+    const auto & merge_tree_settings = global_ctx->data_settings;
     if ((*merge_tree_settings)[MergeTreeSetting::min_merge_bytes_to_use_direct_io] != 0)
     {
         size_t total_size = 0;
@@ -2226,7 +2232,7 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
 {
     const size_t total_rows_count = global_ctx->merge_list_element_ptr->total_rows_count;
     const size_t total_size_bytes_uncompressed = global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed;
-    const auto merge_tree_settings = global_ctx->data->getSettings();
+    const auto & merge_tree_settings = global_ctx->data_settings;
 
     if (global_ctx->deduplicate)
         return MergeAlgorithm::Horizontal;

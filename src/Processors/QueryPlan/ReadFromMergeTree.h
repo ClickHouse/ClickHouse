@@ -24,6 +24,8 @@ using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadRespon
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 
+struct QueryIdHolder;
+
 struct MergeTreeDataSelectSamplingData
 {
     bool use_sampling = false;
@@ -199,6 +201,12 @@ public:
         {}
 
         bool readFromProjection() const { return !parts_with_ranges.empty() && parts_with_ranges.front().data_part->isProjectionPart(); }
+
+        /// Check query limits: max_partitions_to_read, max_concurrent_queries.
+        /// Also, return QueryIdHolder. If not null, we should keep it until query finishes.
+        std::shared_ptr<QueryIdHolder>
+        checkLimits(const Context & context_, const MergeTreeData & data_, const MergeTreeSettings & data_settings_) const;
+
         bool isUsable() const { return !exceeded_row_limits; }
     };
 
@@ -209,6 +217,7 @@ public:
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot_,
         Names all_column_names_,
         const MergeTreeData & data_,
+        MergeTreeSettingsPtr data_settings_,
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context_,
@@ -285,11 +294,13 @@ public:
         size_t num_streams,
         PartitionIdToMaxBlockPtr max_block_numbers_to_read,
         const MergeTreeData & data,
+        const MergeTreeSettingsPtr & data_settings_,
         const Names & all_column_names,
         LoggerPtr log,
         std::optional<Indexes> & indexes,
         bool find_exact_ranges,
-        bool is_parallel_reading_from_replicas_);
+        bool is_parallel_reading_from_replicas_,
+        bool allow_query_condition_cache_);
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
 
@@ -332,6 +343,8 @@ public:
     std::optional<VectorSearchParameters> getVectorSearchParameters() const { return vector_search_parameters; }
 
     bool isParallelReadingFromReplicas() const { return is_parallel_reading_from_replicas; }
+    void disableQueryConditionCache() { allow_query_condition_cache = false; }
+    void disableMergeTreePartsSnapshotRemoval() { enable_remove_parts_from_snapshot_optimization = false; }
 
     /// After projection optimization, ReadFromMergeTree may be replaced with a new reading step, and the ParallelReadingExtension must be forwarded to the new step.
     /// Meanwhile, the ParallelReadingExtension originally in ReadFromMergeTree might be clear.
@@ -355,6 +368,7 @@ public:
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
 
 private:
+    MergeTreeSettingsPtr data_settings;
     MergeTreeReaderSettings reader_settings;
 
     RangesInDataPartsPtr prepared_parts;
@@ -481,6 +495,7 @@ private:
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
     bool enable_remove_parts_from_snapshot_optimization = true;
+    bool allow_query_condition_cache = true;
 
     ExpressionActionsPtr virtual_row_conversion;
 
