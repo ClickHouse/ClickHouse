@@ -8,6 +8,10 @@ Test 4: --host= with --port (space) should work
 OK
 Test 5: Config file credentials should be respected
 OK
-Test 6: Multiple host/port format variations
+Test 6: Connection string with only user should not trigger OAuth
+OK
+Test 7: Connection string with user:password@ should not trigger OAuth
+OK
+Test 8: Multiple host/port format variations
 OK
 All tests completed
