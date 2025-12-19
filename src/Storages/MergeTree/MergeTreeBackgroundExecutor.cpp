@@ -341,8 +341,8 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
 
             if (watch_on_completed.elapsedMilliseconds() > 1000)
             {
-                LOG_WARNING(log, "Execution of callback took {} ms for thread {} in [{}], Stack trace (when copying this message, always include the lines below): \n {}",
-                    watch_on_completed.elapsedMilliseconds(), CurrentThread::get().thread_id, __PRETTY_FUNCTION__, StackTrace().toString());
+                LOG_WARNING(log, "Execution of callback took {} ms in [{}], Stack trace (when copying this message, always include the lines below): \n {}",
+                    watch_on_completed.elapsedMilliseconds(), __PRETTY_FUNCTION__, StackTrace().toString());
             }
         }
 
