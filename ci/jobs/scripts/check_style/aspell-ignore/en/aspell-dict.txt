@@ -974,7 +974,6 @@ ProxySQL
 Punycode
 PyArrow
 PyCharm
-QATlib
 QBit
 QEMU
 QTCreator
@@ -1338,7 +1337,6 @@ YYYYMMDDhhmmssToDateTime
 Yandex
 Yasm
 ZCurve
-ZSTDQAT
 Zabbix
 Zipkin
 ZooKeeper
