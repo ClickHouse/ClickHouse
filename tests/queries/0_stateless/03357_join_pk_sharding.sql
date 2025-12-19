@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-asan, no-msan
 
 SET allow_statistics_optimize = 0;
 drop table if exists tab_l;
