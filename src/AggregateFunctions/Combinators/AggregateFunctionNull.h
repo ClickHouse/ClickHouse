@@ -12,7 +12,6 @@
 #include <absl/container/inlined_vector.h>
 
 #include <array>
-#include <iostream>
 
 #include "config.h"
 
@@ -447,9 +446,6 @@ public:
         const auto & offsets = column_sparse.getOffsetsData();
         const auto & values = column_sparse.getValuesColumn();
         const auto * nested_column = &assert_cast<const ColumnNullable &>(values).getNestedColumn();
-
-        std::cerr << values.dumpStructure() << '\n';
-        std::cerr << (typeid(values).name()) << '\n';
 
         size_t from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin();
         size_t to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin();
