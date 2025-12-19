@@ -2206,10 +2206,10 @@ arrow::Status ArrowFlightHandler::DoAction(
 
             auto visitor = overloaded {
                 [](const std::monostate &) { return std::string(); },
-                [](const std::string & str) { return std::format("='{}'", str); },
-                [](bool b) { return std::format("={}", b ? "true" : "false"); },
+                [](const std::string & str) { return fmt::format("='{}'", str); },
+                [](bool b) { return fmt::format("={}", b ? "true" : "false"); },
                 [](const std::vector<std::string> & strings) { return strings.empty() ? "=[]" : "=['" + boost::join(strings, "','")  + "']"; },
-                [](const auto & v) { return std::format("={}", v); }
+                [](const auto & v) { return fmt::format("={}", v); }
             };
 
             for (const auto & [setting, value] : request.session_options)
