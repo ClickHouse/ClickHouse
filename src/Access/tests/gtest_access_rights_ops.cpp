@@ -1030,3 +1030,26 @@ TEST(AccessRights, PartialRevokePropagation)
     ASSERT_TRUE(root.isGranted(AccessType::SELECT, "writeonly"));
     ASSERT_FALSE(root.isGranted(AccessType::INSERT, "writeonly"));
 }
+
+TEST(AccessRights, PartialRevokeIsGrantedWildcard)
+{
+    AccessRights root;
+    root.grant(AccessType::SELECT);
+    root.revoke(AccessType::SELECT, "system", "zookeeper");
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "normal"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "system", "query_log"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "system", "zookeeper"));
+    ASSERT_FALSE(root.isGrantedWildcard(AccessType::SELECT, "system", "zookeeper"));
+
+    // system.zookeeper is revoked, but system.zookeeper2 is not
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "system", "zookeeper2"));
+    ASSERT_TRUE(root.isGrantedWildcard(AccessType::SELECT, "system", "zookeeper2"));
+    ASSERT_TRUE(root.isGrantedWildcard(AccessType::SELECT, "system", "query_log"));
+
+    root = {};
+    root.grant(AccessType::SELECT);
+    root.revokeWildcard(AccessType::SELECT, "system", "zookeeper");
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "system", "zookeeper"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "system", "zookeeper2"));
+    ASSERT_TRUE(root.isGrantedWildcard(AccessType::SELECT, "system", "query_log"));
+}
