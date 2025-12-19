@@ -716,9 +716,9 @@ private:
             auto & new_parent = getChildNode(prefix, level_);
             child.node_name = child.node_name.substr(i);
             new_parent.children = std::make_shared<Container>();
+            new_parent.min_flags_with_children = it->min_flags_with_children & flags;
+            new_parent.max_flags_with_children = it->max_flags_with_children | flags;
             new_parent.children->splice(new_parent.children->begin(), *children, it);
-            new_parent.min_flags_with_children = min_flags_with_children;
-            new_parent.max_flags_with_children = max_flags_with_children;
 
             return new_parent.getLeaf(new_path, level_, return_parent_node);
         }
@@ -776,9 +776,9 @@ private:
                 auto new_parent = createChildNode(prefix, level_);
                 child.node_name = child.node_name.substr(i);
                 new_parent.children = std::make_shared<Container>();
+                new_parent.min_flags_with_children = child.min_flags_with_children & flags;
+                new_parent.max_flags_with_children = child.max_flags_with_children | flags;
                 new_parent.children->push_back(std::move(child));
-                new_parent.min_flags_with_children = min_flags_with_children;
-                new_parent.max_flags_with_children = max_flags_with_children;
 
                 return new_parent.tryGetLeaf(new_path, level_, return_parent_node);
             }
