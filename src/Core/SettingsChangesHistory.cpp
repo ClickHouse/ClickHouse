@@ -853,38 +853,9 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
-        addSettingsChanges(merge_tree_settings_changes_history, "25.11",
-        {
-            {"merge_max_dynamic_subcolumns_in_wide_part", "auto", "auto", "Add a new setting to limit number of dynamic subcolumns in Wide part after merge regardless the parameters specified in the data type"},
-            {"refresh_statistics_interval", 0, 0, "New setting"},
-            {"shared_merge_tree_create_per_replica_metadata_nodes", true, false, "Reduce the amount of metadata in Keeper."},
-            {"serialization_info_version", "basic", "with_types", "Change to the newer format allowing custom string serialization"},
-            {"string_serialization_version", "single_stream", "with_size_stream", "Change to the newer format with separate sizes"},
-        });
-        addSettingsChanges(merge_tree_settings_changes_history, "25.10",
-        {
-            {"auto_statistics_types", "", "", "New setting"},
-            {"exclude_materialize_skip_indexes_on_merge", "", "", "New setting."},
-            {"serialization_info_version", "basic", "basic", "New setting"},
-            {"string_serialization_version", "single_stream", "single_stream", "New setting"},
-            {"replicated_deduplication_window_seconds", 7 * 24 * 60 * 60, 60*60, "decrease default value"},
-            {"shared_merge_tree_activate_coordinated_merges_tasks", false, false, "New settings"},
-            {"shared_merge_tree_merge_coordinator_factor", 1.1f, 1.1f, "Lower coordinator sleep time after load"},
-            {"min_level_for_wide_part", 0, 0, "New setting"},
-            {"min_level_for_full_part_storage", 0, 0, "New setting"},
-        });
-        addSettingsChanges(merge_tree_settings_changes_history, "25.9",
-        {
-            {"vertical_merge_optimize_lightweight_delete", false, true, "New setting"},
-            {"replicated_deduplication_window", 1000, 10000, "increase default value"},
-            {"shared_merge_tree_enable_automatic_empty_partitions_cleanup", false, false, "New setting"},
-            {"shared_merge_tree_empty_partition_lifetime", 86400, 86400, "New setting"},
-            {"shared_merge_tree_outdated_parts_group_size", 2, 2, "New setting"},
-            {"shared_merge_tree_use_outdated_parts_compact_format", false, true, "Enable outdated parts v3 by default"},
-            {"shared_merge_tree_activate_coordinated_merges_tasks", false, false, "New settings"},
-        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.8",
         {
+            {"merge_max_dynamic_subcolumns_in_wide_part", "auto", "auto", "Add a new setting to limit number of dynamic subcolumns in Wide part after merge regardless the parameters specified in the data type"},
             {"object_serialization_version", "v2", "v2", "Add a setting to control JSON serialization versions"},
             {"object_shared_data_serialization_version", "map", "map", "Add a setting to control JSON serialization versions"},
             {"object_shared_data_serialization_version_for_zero_level_parts", "map", "map", "Add a setting to control JSON serialization versions  for zero level parts"},
