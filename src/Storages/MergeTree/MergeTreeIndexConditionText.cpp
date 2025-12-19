@@ -248,7 +248,7 @@ bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const
 
 bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
 {
-    const auto * granule = typeid_cast<const MergeTreeIndexGranuleText *>(idx_granule.get());
+    const auto * granule = dynamic_cast<const MergeTreeIndexGranuleText *>(idx_granule.get());
     if (!granule)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index condition got a granule with the wrong type.");
 

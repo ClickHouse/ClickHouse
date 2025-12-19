@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/MergeTree/ProjectionIndex/PostingListData.h>
 #include <Columns/IColumn.h>
 #include <Common/Logger.h>
 #include <Common/HashTable/HashMap.h>
@@ -159,24 +160,12 @@ struct PostingsSerialization
     static PostingListPtr deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality, PostingListCodecPtr posting_list_codec);
 };
 
-/// Closed range of rows.
-struct RowsRange
-{
-    size_t begin;
-    size_t end;
-
-    RowsRange() = default;
-    RowsRange(size_t begin_, size_t end_) : begin(begin_), end(end_) {}
-
-    bool intersects(const RowsRange & other) const;
-};
-
 /// Stores information about posting list for a token.
 struct TokenPostingsInfo
 {
     UInt64 header = 0;
     UInt32 cardinality = 0;
-    std::vector<UInt64> offsets;
+    std::vector<LargePostingBlockMeta> offsets;
     std::vector<RowsRange> ranges;
     PostingListPtr embedded_postings;
 
@@ -247,7 +236,7 @@ struct TextIndexSerialization
 
 
 /// Text index granule created on reading of the index.
-struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
+struct MergeTreeIndexGranuleText : public IMergeTreeIndexGranule
 {
 public:
     using TokenToPostingsInfosMap = absl::flat_hash_map<std::string_view, TokenPostingsInfo>;
@@ -272,7 +261,7 @@ public:
 
     const TokenToPostingsInfosMap & getRemainingTokens() const { return remaining_tokens; }
     PostingListPtr getPostingsForRareToken(std::string_view token) const;
-    void setCurrentRange(RowsRange range) { current_range = std::move(range); }
+    void setCurrentRange(RowsRange range) override { current_range = std::move(range); }
     void resetAfterAnalysis();
 
     static PostingListPtr readPostingsBlock(
@@ -282,7 +271,7 @@ public:
         size_t block_idx,
         PostingListCodecPtr posting_list_codec);
 
-private:
+protected:
     void readSparseIndex(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
     /// Reads dictionary blocks and analyzes them for tokens.
     void analyzeDictionary(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
@@ -423,6 +412,9 @@ public:
     /// 2. The tokenizer argument can be a string, a function name (literal) or a function-like expression, e.g.: ngram(5)
     /// 3. The preprocessor argument is a generic expression, e.g. lower(extractTextFromHTML(col))
     static FieldVector parseArgumentsListFromAST(const ASTPtr & arguments);
+
+    static std::tuple<MergeTreeIndexTextParams, std::unique_ptr<ITokenExtractor>, std::unique_ptr<IPostingListCodec>>
+    parseTextIndexArguments(const String & index_name, const FieldVector & index_arguments);
 
     PostingListCodecPtr getPostingListCodec() const { return posting_list_codec.get(); }
 

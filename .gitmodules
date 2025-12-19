@@ -378,3 +378,6 @@
 [submodule "contrib/libcotp"]
 	path = contrib/libcotp
 	url = https://github.com/paolostivanin/libcotp.git
+[submodule "contrib/TurboPFor-CPP"]
+	path = contrib/TurboPFor-CPP
+	url = https://github.com/amosbird/TurboPFor-CPP

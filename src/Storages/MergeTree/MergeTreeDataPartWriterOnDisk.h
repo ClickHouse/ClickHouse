@@ -38,6 +38,16 @@ struct Granule
 /// Multiple granules to write for concrete block.
 using Granules = std::vector<Granule>;
 
+struct LargePostingListWriterStream : public MergeTreeWriterStream<true>
+{
+    using MergeTreeWriterStream<true>::MergeTreeWriterStream;
+
+    alignas(16) UInt32 doc_buffer[128];
+    alignas(16) uint8_t packed_buffer[128 * 4];
+};
+
+using LargePostingListWriterStreamPtr = std::unique_ptr<LargePostingListWriterStream>;
+
 /// Writes data part to disk in different formats.
 /// Calculates and serializes primary and skip indices if needed.
 class MergeTreeDataPartWriterOnDisk : public IMergeTreeDataPartWriter
@@ -98,6 +108,9 @@ protected:
     void fillStatisticsChecksums(MergeTreeDataPartChecksums & checksums);
     void finishStatisticsSerialization(bool sync);
 
+    void fillLargePostingChecksums(MergeTreeDataPartChecksums & checksums);
+    void finishLargePostingSerialization(bool sync);
+
     /// Get global number of the current which we are writing (or going to start to write)
     size_t getCurrentMark() const { return current_mark; }
 
@@ -118,6 +131,8 @@ protected:
 
     const ColumnsStatistics stats;
     std::vector<StatisticStreamPtr> stats_streams;
+
+    std::unordered_map<String, LargePostingListWriterStreamPtr> large_posting_streams;
 
     const String marks_file_extension;
     const CompressionCodecPtr default_codec;
