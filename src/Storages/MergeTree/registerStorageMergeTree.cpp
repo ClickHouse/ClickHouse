@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/registerMergeSelectors.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -674,9 +675,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// column if sorting key will be changed.
         metadata.sorting_key = KeyDescription::getSortingKeyFromAST(
             args.storage_def->order_by->ptr(), metadata.columns, context, merging_param_key_arg);
-
         if (!local_settings[Setting::allow_suspicious_primary_key] && args.mode <= LoadingStrictnessLevel::CREATE)
-            MergeTreeData::verifySortingKey(metadata.sorting_key, merging_params);
+            MergeTreeData::verifySortingKey(metadata.sorting_key);
 
         /// If primary key explicitly defined, than get it from AST
         if (args.storage_def->primary_key)
@@ -719,18 +719,16 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             metadata.settings_changes = args.storage_def->settings->ptr();
         }
 
-        metadata.add_minmax_index_for_numeric_columns = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns];
-        metadata.add_minmax_index_for_string_columns = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns];
         if (args.query.columns_list && args.query.columns_list->indices)
         {
             for (const auto & index : args.query.columns_list->indices->children)
             {
-                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, context));
+                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, context));
                 auto index_name = index->as<ASTIndexDeclaration>()->name;
-
-                if (args.mode <= LoadingStrictnessLevel::CREATE
-                    && (metadata.add_minmax_index_for_numeric_columns || metadata.add_minmax_index_for_string_columns)
-                    && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
+                if (args.mode <= LoadingStrictnessLevel::CREATE && (
+                    ((*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns]
+                    || (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns])
+                    && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX)))
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create table because index {} uses a reserved index name", index_name);
                 }
@@ -740,7 +738,26 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// Try to add "implicit" min-max indexes on all columns
         for (const auto & column : metadata.columns)
         {
-            metadata.addImplicitIndicesForColumn(column, context);
+            if ((isNumber(column.type) && (*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns])
+                || (isString(column.type) && (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns]))
+            {
+                bool minmax_index_exists = false;
+
+                for (const auto & index : metadata.secondary_indices)
+                {
+                    if (index.column_names.front() == column.name && index.type == "minmax")
+                    {
+                        minmax_index_exists = true;
+                        break;
+                    }
+                }
+
+                if (minmax_index_exists)
+                    continue;
+
+                auto new_index = createImplicitMinMaxIndexDescription(column.name, columns, context);
+                metadata.secondary_indices.push_back(std::move(new_index));
+            }
         }
 
         String statistics_types_str = (*storage_settings)[MergeTreeSetting::auto_statistics_types];
@@ -799,9 +816,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// column if sorting key will be changed.
         metadata.sorting_key
             = KeyDescription::getSortingKeyFromAST(engine_args[arg_num], metadata.columns, context, merging_param_key_arg);
-
         if (!local_settings[Setting::allow_suspicious_primary_key] && args.mode <= LoadingStrictnessLevel::CREATE)
-            MergeTreeData::verifySortingKey(metadata.sorting_key, merging_params);
+            MergeTreeData::verifySortingKey(metadata.sorting_key);
 
         /// In old syntax primary_key always equals to sorting key.
         metadata.primary_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, context);
@@ -900,6 +916,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
 void registerStorageMergeTree(StorageFactory & factory)
 {
+    /// Part of MergeTree
+    registerMergeSelectors();
+
     StorageFactory::StorageFeatures features{
         .supports_settings = true,
         .supports_skipping_indices = true,

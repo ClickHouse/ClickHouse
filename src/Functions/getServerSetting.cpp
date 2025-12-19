@@ -19,12 +19,13 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionGetServerSetting : public IFunction
+class FunctionGetServerSetting : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "getServerSetting";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGetServerSetting>(); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionGetServerSetting>(context_); }
+    explicit FunctionGetServerSetting(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override { return name; }
 
@@ -68,9 +69,9 @@ private:
                             "The argument of function {} should be a constant string with the name of a setting",
                             String{name});
 
-        std::string_view setting_name{column->getDataAt(0)};
+        std::string_view setting_name{column->getDataAt(0).toView()};
 
-        return Context::getGlobalContextInstance()->getServerSettings().get(setting_name);
+        return getContext()->getServerSettings().get(setting_name);
     }
 };
 
@@ -101,7 +102,7 @@ SELECT getServerSetting('allow_use_jemalloc_memory');
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionGetServerSetting>(documentation, FunctionFactory::Case::Sensitive);
 }

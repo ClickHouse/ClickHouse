@@ -186,7 +186,7 @@ public:
                     if (function_argument_nodes.size() == 2)
                     {
                         if (const auto * second_argument = function_argument_nodes.at(1)->as<ConstantNode>())
-                            result = fieldToString(second_argument->getValue());
+                            result = toString(second_argument->getValue());
                     }
 
                     /// Empty node name is not allowed and leads to logical errors
@@ -571,7 +571,7 @@ public:
         return node;
     }
 
-    const ActionsDAG::Node * addConstantIfNecessary(const std::string & node_name, const ColumnWithTypeAndName & column, bool is_deterministic)
+    const ActionsDAG::Node * addConstantIfNecessary(const std::string & node_name, const ColumnWithTypeAndName & column)
     {
         auto it = node_name_to_node.find(node_name);
         if (it != node_name_to_node.end())
@@ -586,7 +586,7 @@ public:
                 return it->second;
         }
 
-        const auto * node = &actions_dag.addColumn(column, is_deterministic);
+        const auto * node = &actions_dag.addColumn(column);
         node_name_to_node[node->result_name] = node;
 
         return node;
@@ -857,7 +857,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     column.type = constant_type;
     column.column = constant_node.getColumn();
 
-    actions_stack[0].addConstantIfNecessary(constant_node_name, column, constant_node.isDeterministic());
+    actions_stack[0].addConstantIfNecessary(constant_node_name, column);
 
     size_t actions_stack_size = actions_stack.size();
     for (size_t i = 1; i < actions_stack_size; ++i)
@@ -956,10 +956,6 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
         in_second_argument_node_type == QueryTreeNodeType::UNION ||
         in_second_argument_node_type == QueryTreeNodeType::TABLE;
 
-    bool in_second_is_deterministic = false;
-    if (const auto * const_node = in_second_argument->as<const ConstantNode>())
-        in_second_is_deterministic = const_node->isDeterministic();
-
     FutureSetPtr set;
     auto set_key = in_second_argument->getTreeHash({ .ignore_cte = true });
 
@@ -1000,7 +996,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     else
         column.column = std::move(column_set);
 
-    actions_stack[0].addConstantIfNecessary(column.name, column, in_second_is_deterministic);
+    actions_stack[0].addConstantIfNecessary(column.name, column);
 
     size_t actions_stack_size = actions_stack.size();
     for (size_t i = 1; i < actions_stack_size; ++i)

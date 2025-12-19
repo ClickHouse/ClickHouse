@@ -396,7 +396,7 @@ DB::Names RestCatalog::getTables() const
 
     auto execute_for_each_namespace = [&](const std::string & current_namespace)
     {
-        runner.enqueueAndKeepTrack(
+        runner(
         [=, &tables, &mutex, this]
         {
             auto tables_in_namespace = getTables(current_namespace);

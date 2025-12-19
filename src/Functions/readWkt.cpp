@@ -61,7 +61,7 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const std::string str{column_string.getDataAt(i)};
+            const auto & str = column_string.getDataAt(i).toString();
             boost::geometry::read_wkt(str, geometry);
             serializer.add(geometry);
         }
@@ -95,7 +95,7 @@ public:
 
     explicit FunctionReadWKTCommon() = default;
 
-    static constexpr const char * name = "readWKT";
+    static constexpr const char * name = "readWkt";
 
     String getName() const override { return name; }
 
@@ -140,7 +140,7 @@ public:
         };
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const std::string str{column_string.getDataAt(i)};
+            const auto & str = column_string.getDataAt(i).toString();
             if (try_deserialize_type(
                     [&]
                     {
@@ -312,21 +312,18 @@ Parses a Well-Known Text (WKT) representation of a MultiLineString geometry and 
         .description = R"(
 Parses a Well-Known Text (WKT) representation of Geometry and returns it in the internal ClickHouse format.
 )",
-        .syntax = "readWKT(wkt_string)",
+        .syntax = "readWkt(wkt_string)",
         .arguments{{"wkt_string", "The input WKT string representing a LineString geometry.", {"String"}}},
         .returned_value = {"The function returns a ClickHouse internal representation of the Geometry."},
         .examples{
-            {"first call", "SELECT readWKT('LINESTRING (1 1, 2 2, 3 3, 1 1)');", R"(
-┌─readWKT('LINESTRING (1 1, 2 2, 3 3, 1 1)')─┐
+            {"first call", "SELECT readWkt('LINESTRING (1 1, 2 2, 3 3, 1 1)');", R"(
+┌─readWkt('LINESTRING (1 1, 2 2, 3 3, 1 1)')─┐
 │ [(1,1),(2,2),(3,3),(1,1)]                  │
 └────────────────────────────────────────────┘
             )"},
         },
         .introduced_in = {25, 7},
         .category = FunctionDocumentation::Category::Geo});
-
-    /// This was initially added by mistake, but we have to keep it:
-    factory.registerAlias("readWkt", "readWKT");
 }
 
 }

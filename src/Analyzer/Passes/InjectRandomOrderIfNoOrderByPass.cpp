@@ -2,6 +2,7 @@
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/IQueryTreePass.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
@@ -9,8 +10,8 @@
 #include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
-#include <IO/WriteHelpers.h>
 
+#include <memory>
 
 namespace DB
 {

@@ -30,7 +30,6 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 #include <ranges>
 #include <Core/Joins.h>
@@ -506,6 +505,12 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
 
     graph.inputs.push_back(node);
     RelationStats stats = estimateReadRowsCount(*node);
+    if (!label.empty() && !graph.context->dummy_stats.empty())
+    {
+        auto dummy_stats = getDummyStats(graph.context->dummy_stats, label);
+        if (!dummy_stats.table_name.empty())
+            stats = std::move(dummy_stats);
+    }
 
     std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
     if (num_rows_from_cache)
@@ -574,8 +579,6 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
 
     auto [expression_actions_dag, expression_actions_sources] = expression_actions.detachActionsDAG();
 
-    auto existing_outputs = std::ranges::to<std::unordered_set>(query_graph.expression_actions.getActionsDAG()->getOutputs());
-
     ActionsDAG::NodeMapping node_mapping;
     query_graph.expression_actions.getActionsDAG()->mergeInplace(std::move(expression_actions_dag), node_mapping, true);
 
@@ -604,8 +607,7 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
     for (const auto * out_node : join_outputs)
     {
         if (out_node->type == ActionsDAG::ActionType::INPUT ||
-            out_node->type == ActionsDAG::ActionType::COLUMN ||
-            existing_outputs.contains(out_node))
+            out_node->type == ActionsDAG::ActionType::COLUMN)
             continue;
 
         auto source = JoinActionRef(out_node, query_graph.expression_actions).getSourceRelations();
@@ -749,9 +751,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
     if (!global_actions_dag)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global expression actions DAG is not set");
 
-    const auto & optimization_settings = query_graph_builder.context->optimization_settings;
-
-    auto optimized = optimizeJoinOrder(std::move(query_graph), optimization_settings);
+    auto optimized = optimizeJoinOrder(std::move(query_graph));
     auto sequence = getJoinTreePostOrderSequence(optimized);
 
     if (sequence.empty())
@@ -824,6 +824,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
         input_node_map[input] = input_idx;
     }
 
+    const auto & optimization_settings = query_graph_builder.context->optimization_settings;
     for (size_t entry_idx = 0; entry_idx < sequence.size(); ++entry_idx)
     {
         auto * entry = sequence[entry_idx];

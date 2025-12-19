@@ -114,8 +114,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
-    extern const SettingsBool async_insert_deduplicate;
-    extern const SettingsBool insert_deduplicate;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 min_insert_block_size_rows_for_materialized_views;
@@ -760,10 +758,8 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
     LOG_TEST(logger, "InsertDependenciesBuilder created for table {} with query: {}, debugTree:\n{}",
         init_table_id.getFullTableName(), init_query->formatForLogging(), debugTree());
 
-    auto all_sinks_support_parallel_insert = std::ranges::all_of(storages, [&] (auto storage)
-        { return isView(storage.first) || storage.second->supportsParallelInsert();});
-    if (all_sinks_support_parallel_insert && (settings[Setting::parallel_view_processing] || !isViewsInvolved()))
-        sink_stream_size = max_insert_threads;
+    if (settings[Setting::parallel_view_processing] || !isViewsInvolved())
+        sink_stream_size = init_storage->supportsParallelInsert() ? max_insert_threads : 1;
 }
 
 namespace

@@ -139,13 +139,11 @@ def test_round_robin(started_cluster):
             )
             new_idx = (idx + 1) % 3
 
-            pm.add_rule(
+            pm._add_rule(
                 {
-                    "instance": node,
                     "source": node.ip_address,
                     "destination": cluster.get_instance_ip("zoo" + str(idx + 1)),
                     "action": "REJECT --reject-with tcp-reset",
-                    "protocol": "tcp",
                 }
             )
 
@@ -164,13 +162,11 @@ def test_az(started_cluster):
     pm = PartitionManager()
     try:
         # make sure it disconnects from the optimal node
-        pm.add_rule(
+        pm._add_rule(
             {
-                "instance": node4,
                 "source": node4.ip_address,
                 "destination": cluster.get_instance_ip("zoo2"),
                 "action": "REJECT --reject-with tcp-reset",
-                "protocol": "tcp",
             }
         )
 

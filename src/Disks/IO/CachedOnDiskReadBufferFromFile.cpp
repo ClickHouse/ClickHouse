@@ -2,7 +2,7 @@
 #include <algorithm>
 
 #include <Disks/IO/createReadBufferFromFileBase.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
+#include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <IO/BoundedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
@@ -83,11 +83,9 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     , cache_log(settings.enable_filesystem_cache_log ? cache_log_ : nullptr)
 {
     LOG_TEST(
-        log, "Cache key: {}, source file path: {}, boundary alignment: {}, "
-        "external buffer: {}, allow seeks after first read: {}, file size: {}",
-        cache_key.toString(), source_file_path,
+        log, "Boundary alignment: {}, external buffer: {}, allow seeks after first read: {}",
         settings.filesystem_cache_boundary_alignment.has_value() ? DB::toString(settings.filesystem_cache_boundary_alignment.value()) : "None",
-        use_external_buffer, allow_seeks_after_first_read, file_size_);
+        use_external_buffer, allow_seeks_after_first_read);
 }
 
 void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(

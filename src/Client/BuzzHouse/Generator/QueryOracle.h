@@ -12,16 +12,14 @@ enum class DumpOracleStrategy
     DUMP_TABLE = 1,
     OPTIMIZE = 2,
     REATTACH = 3,
-    BACKUP_RESTORE = 4,
-    ALTER_UPDATE = 5,
-    INSERT_COUNT = 6
+    BACKUP_RESTORE = 4
 };
 
 class QueryOracle
 {
 private:
     static const std::vector<std::vector<OutFormat>> oracleFormats;
-    FuzzConfig & fc;
+    const FuzzConfig & fc;
     const std::filesystem::path qcfile, qsfile, qfile_peer;
 
     MD5Impl md5_hash1, md5_hash2;
@@ -30,8 +28,6 @@ private:
 
     PeerQuery peer_query = PeerQuery::AllPeers;
     int first_errcode = 0;
-    uint64_t nrows = 0;
-    std::uniform_int_distribution<uint64_t> rows_dist;
     bool other_steps_sucess = true, can_test_oracle_result, measure_performance, compare_explain;
 
     std::unordered_set<uint32_t> found_tables;
@@ -46,14 +42,13 @@ private:
     generateImportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4) const;
 
 public:
-    explicit QueryOracle(FuzzConfig & ffc)
+    explicit QueryOracle(const FuzzConfig & ffc)
         : fc(ffc)
         , qcfile(ffc.client_file_path / "query.data")
         , qsfile(ffc.server_file_path / "query.data")
         , qfile_peer(
               ffc.clickhouse_server.has_value() ? (ffc.clickhouse_server.value().user_files_dir / "peer.data")
                                                 : std::filesystem::temp_directory_path())
-        , rows_dist(fc.min_insert_rows, fc.max_insert_rows)
         , can_test_oracle_result(fc.compare_success_results)
         , measure_performance(fc.measure_performance)
     {
@@ -69,18 +64,11 @@ public:
     void generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2);
 
     /// Dump and read table oracle
-    void dumpTableContent(
-        RandomGenerator & rg,
-        StatementGenerator & gen,
-        DumpOracleStrategy strategy,
-        bool test_content,
-        const SQLTable & t,
-        SQLQuery & sq1,
-        SQLQuery & sq2);
+    void dumpTableContent(RandomGenerator & rg, StatementGenerator & gen, bool test_content, const SQLTable & t, SQLQuery & sq1);
     void dumpOracleIntermediateSteps(
         RandomGenerator & rg,
         StatementGenerator & gen,
-        SQLTable & t,
+        const SQLTable & t,
         DumpOracleStrategy strategy,
         bool test_content,
         std::vector<SQLQuery> & intermediate_queries);

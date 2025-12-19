@@ -50,7 +50,8 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         data_part_info_for_read_->getIndexGranularityInfo(),
         settings.save_marks_in_cache,
         settings.read_settings,
-        settings_.load_marks_asynchronously ? &data_part_info_for_read_->getContext()->getLoadMarksThreadpool() : nullptr,
+        settings_.read_settings.load_marks_asynchronously
+            ? &data_part_info_for_read_->getContext()->getLoadMarksThreadpool() : nullptr,
         data_part_info_for_read_->getIndexGranularityInfo().mark_type.with_substreams
             ? columns_substreams.getTotalSubstreams() : data_part_info_for_read_->getColumns().size()))
     , profile_callback(profile_callback_)
