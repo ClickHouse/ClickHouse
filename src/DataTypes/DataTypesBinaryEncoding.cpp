@@ -630,6 +630,8 @@ DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
     size_t max_complexity = getMaxTypeDecodingComplexity();
     if (max_complexity > 0 && complexity > max_complexity)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Binary type decoding complexity limit exceeded: {} > {} (adjust input_format_binary_max_type_complexity)", complexity, max_complexity);
+    if (complexity % 128 == 0)
+        checkStackSize();
 
     UInt8 type;
     readBinary(type, buf);
