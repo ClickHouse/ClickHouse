@@ -666,6 +666,8 @@ void executeQueryWithParallelReplicas(
     SharedHeader header,
     QueryProcessingStage::Enum processed_stage,
     const ASTPtr & query_ast,
+    QueryTreeNodePtr query_tree,
+    PlannerContextPtr planner_context,
     ContextPtr context,
     std::shared_ptr<const StorageLimitsList> storage_limits,
     QueryPlanStepPtr analyzed_read_from_merge_tree)
@@ -712,6 +714,8 @@ void executeQueryWithParallelReplicas(
 
         auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
             query_ast,
+            query_tree,
+            planner_context,
             cluster,
             storage_id,
             coordinator,
@@ -749,6 +753,8 @@ void executeQueryWithParallelReplicas(
 
         auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
             query_ast,
+            query_tree,
+            planner_context,
             cluster,
             storage_id,
             std::move(coordinator),
@@ -782,12 +788,21 @@ void executeQueryWithParallelReplicas(
     rewriteJoinToGlobalJoin(modified_query_tree, context);
     modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree, /*allow_global_join_for_right_table*/ true);
 
-    auto header
-        = InterpreterSelectQueryAnalyzer::getSampleBlock(modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
+    auto [header, new_planner_context]
+        = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
     auto modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
 
     executeQueryWithParallelReplicas(
-        query_plan, storage_id, header, processed_stage, modified_query_ast, context, storage_limits, std::move(analyzed_read_from_merge_tree));
+        query_plan,
+        storage_id,
+        header,
+        processed_stage,
+        modified_query_ast,
+        modified_query_tree,
+        new_planner_context,
+        context,
+        storage_limits,
+        std::move(analyzed_read_from_merge_tree));
 }
 
 void executeQueryWithParallelReplicas(
@@ -802,7 +817,8 @@ void executeQueryWithParallelReplicas(
         context, query_ast, storage_id.database_name, storage_id.table_name, /*remote_table_function_ptr*/ nullptr);
     auto header = InterpreterSelectQuery(modified_query_ast, context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
 
-    executeQueryWithParallelReplicas(query_plan, storage_id, header, processed_stage, modified_query_ast, context, storage_limits, nullptr);
+    executeQueryWithParallelReplicas(
+        query_plan, storage_id, header, processed_stage, modified_query_ast, nullptr, nullptr, context, storage_limits, nullptr);
 }
 
 void executeQueryWithParallelReplicasCustomKey(

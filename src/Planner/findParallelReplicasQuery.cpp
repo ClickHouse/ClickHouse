@@ -528,6 +528,8 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
         header,
         processed_stage,
         modified_query_ast,
+        modified_query_tree,
+        planner_context,
         context,
         storage_limits,
         nullptr);
