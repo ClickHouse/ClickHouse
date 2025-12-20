@@ -410,7 +410,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , replica_name(zookeeper_info.replica_name)
     , replica_path(fs::path(zookeeper_path) / "replicas" / replica_name)
     , create_query_zookeeper_retries_info(create_query_zookeeper_retries_info_)
-    , reader(*this)
     , writer(*this)
     , merger_mutator(*this)
     , merge_strategy_picker(*this)
@@ -2853,6 +2852,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
     using PartDescriptionPtr = std::shared_ptr<PartDescription>;
     using PartDescriptions = std::vector<PartDescriptionPtr>;
 
+    StoragePtr source_table; // must outlive parts_to_add (`src_table_part` points into this table)
     PartDescriptions all_parts;
     PartDescriptions parts_to_add;
     PartsToRemoveFromZooKeeper parts_to_remove;
@@ -2908,7 +2908,6 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
         LOG_WARNING(log, "Some (but not all) parts from REPLACE PARTITION command already exist. REPLACE PARTITION will not be atomic.");
     }
 
-    StoragePtr source_table;
     TableLockHolder table_lock_holder_src_table;
     StorageID source_table_id{entry_replace.from_database, entry_replace.from_table};
 
@@ -2968,6 +2967,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
 
             part_desc->found_new_part_name = part_desc->new_part_name;
             part_desc->found_new_part_info = part_desc->new_part_info;
+            chassert(!part_desc->src_table_part);
             part_desc->src_table_part = src_part;
 
             ++num_clonable_parts;
@@ -5949,7 +5949,7 @@ void StorageReplicatedMergeTree::readLocalSequentialConsistencyImpl(
         }
     }
 
-    auto plan = reader.read(
+    auto plan = MergeTreeDataSelectExecutor(*this).read(
         column_names,
         storage_snapshot,
         query_info,
@@ -5984,7 +5984,7 @@ void StorageReplicatedMergeTree::readLocalImpl(
     const size_t num_streams)
 {
     const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower();
-    auto plan = reader.read(
+    auto plan = MergeTreeDataSelectExecutor(*this).read(
         column_names,
         storage_snapshot,
         query_info,
@@ -7833,7 +7833,7 @@ void StorageReplicatedMergeTree::fetchPartition(
         std::mutex missing_parts_mutex;
         for (const String & part : parts_to_fetch)
         {
-            fetch_partition_runner([&]()
+            fetch_partition_runner.enqueueAndKeepTrack([&]()
             {
                 bool fetched = false;
 

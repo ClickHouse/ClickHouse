@@ -66,7 +66,7 @@ SELECT count(DISTINCT t) FROM (SELECT initialQueryID() AS t FROM remote('127.0.0
     };
     FunctionDocumentation::IntroducedIn introduced_in_initialQueryID = {1, 1};
     FunctionDocumentation::Category category_initialQueryID = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_initialQueryID = {description_initialQueryID, syntax_initialQueryID, arguments_initialQueryID, returned_value_initialQueryID, examples_initialQueryID, introduced_in_initialQueryID, category_initialQueryID};
+    FunctionDocumentation documentation_initialQueryID = {description_initialQueryID, syntax_initialQueryID, arguments_initialQueryID, {}, returned_value_initialQueryID, examples_initialQueryID, introduced_in_initialQueryID, category_initialQueryID};
 
     factory.registerFunction<FunctionInitialQueryID>(documentation_initialQueryID);
     factory.registerAlias("initial_query_id", FunctionInitialQueryID::name, FunctionFactory::Case::Insensitive);

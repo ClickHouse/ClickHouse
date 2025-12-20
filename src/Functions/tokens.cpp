@@ -25,8 +25,8 @@ constexpr size_t arg_tokenizer = 1;
 
 std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & arguments, std::string_view function_name)
 {
-    const auto tokenizer = arguments.size() < 2 ? SplitByNonAlphaTokenExtractor::getExternalName()
-                                                : arguments[arg_tokenizer].column->getDataAt(0);
+    const auto tokenizer = arguments.size() < 2 || !arguments[arg_tokenizer].column ? SplitByNonAlphaTokenExtractor::getExternalName()
+                                                                                    : arguments[arg_tokenizer].column->getDataAt(0);
 
     FieldVector params;
     for (size_t i = 2; i < arguments.size(); ++i)
@@ -277,7 +277,7 @@ For example, with separators = `['%21', '%']` string `%21abc` would be tokenized
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTokensOverloadResolver>(documentation);
 }
