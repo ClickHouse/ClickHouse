@@ -329,7 +329,8 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(
         handleTableMetadataMismatch(table_name_for_error_message, "data format version", DB::toString(from_zk.data_format_version.toUnderType()), "", DB::toString(data_format_version.toUnderType()));
 
     String parsed_zk_partition_key = formattedAST(KeyDescription::parse(from_zk.partition_key, columns, context, false).expression_list_ast);
-    if (partition_key != parsed_zk_partition_key)
+    String parsed_local_partition_key = formattedAST(KeyDescription::parse(partition_key, columns, context, false).expression_list_ast);
+    if (parsed_local_partition_key != parsed_zk_partition_key)
         handleTableMetadataMismatch(table_name_for_error_message, "partition key expression", from_zk.partition_key, parsed_zk_partition_key, partition_key);
 }
 
