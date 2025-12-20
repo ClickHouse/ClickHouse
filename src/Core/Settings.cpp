@@ -3402,6 +3402,14 @@ Possible values:
 - 1 — Tracing of profile events enabled.
 - 0 — Tracing of profile events disabled.
 )", 0) \
+    DECLARE(String, trace_profile_events_list, "", R"(
+When the setting `trace_profile_events` is enabled, limit the traced events to the specified list of comma-separated names.
+If the `trace_profile_events_list` is an empty string (by default), trace all profile events.
+
+Example value: 'DiskS3ReadMicroseconds,DiskS3ReadRequestsCount,SelectQueryTimeMicroseconds,ReadBufferFromS3Bytes'
+
+Using this setting allows more precise collection of data for a large number of queries, because otherwise the vast amount of events can overflow the internal system log queue and some portion of them will be dropped.
+)", 0) \
     \
     DECLARE(UInt64, memory_usage_overcommit_max_wait_microseconds, 5'000'000, R"(
 Maximum time thread will wait for memory to be freed in the case of memory overcommit on a user level.
