@@ -19,10 +19,12 @@ Columns:
 - `description` ([String](../../sql-reference/data-types/string.md)) — Short setting description.
 - `min` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Minimum value of the setting, if any is set via [constraints](/operations/settings/constraints-on-settings). If the setting has no minimum value, contains [NULL](/operations/settings/formats#input_format_null_as_default).
 - `max` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Maximum value of the setting, if any is set via [constraints](/operations/settings/constraints-on-settings). If the setting has no maximum value, contains [NULL](/operations/settings/formats#input_format_null_as_default).
+- `disallowed_values` ([Array](/sql-reference/data-types/array)([String](../../sql-reference/data-types/string.md))) — List of disallowed values.
 - `readonly` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Shows whether the current user can change the setting:
   - `0` — Current user can change the setting.
   - `1` — Current user can't change the setting.
 - `default` ([String](../../sql-reference/data-types/string.md)) — Setting default value.
+- `alias_for` ([String](../../sql-reference/data-types/string.md)) — The name of the original setting if the setting is an alias for another setting.
 - `is_obsolete` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) - Shows whether a setting is obsolete.
 - `tier` ([Enum8](../../sql-reference/data-types/enum.md)) — Support level for this feature. ClickHouse features are organized in tiers, varying depending on the current status of their development and the expectations one might have when using them. Values:
   - `'Production'` — The feature is stable, safe to use and does not have issues interacting with other **production** features. .

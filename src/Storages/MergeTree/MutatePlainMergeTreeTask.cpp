@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Common/ErrorCodes.h>
 #include <Common/ProfileEventsScope.h>
+#include <Common/setThreadName.h>
 #include <Core/Settings.h>
 
 namespace DB
@@ -89,7 +90,7 @@ bool MutatePlainMergeTreeTask::executeStep()
     /// Make out memory tracker a parent of current thread memory tracker
     std::optional<ThreadGroupSwitcher> switcher;
     if (merge_list_entry)
-        switcher.emplace((*merge_list_entry)->thread_group, "", /*allow_existing_group*/ true);
+        switcher.emplace((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
 
     switch (state)
     {
@@ -162,6 +163,11 @@ void MutatePlainMergeTreeTask::cancel() noexcept
 
     if (new_part)
         new_part->removeIfNeeded();
+
+    /// We need to destroy task here because it holds RAII wrapper for
+    /// temp directories which guards temporary dir from background removal which can
+    /// conflict with the next scheduled merge because it will be possible after merge_mutate_entry->finalize()
+    mutate_task.reset();
 
     if (merge_mutate_entry)
         merge_mutate_entry->finalize();

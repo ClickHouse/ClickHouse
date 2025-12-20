@@ -284,6 +284,16 @@ public:
             if (function_node->getParametersNode() == child)
                 return false;
         }
+
+        if (auto * query_node = parent->as<QueryNode>())
+        {
+            // Do not visit LIMIT and OFFSET nodes
+            if (query_node->hasLimit() && query_node->getLimit() == child)
+                return false;
+            if (query_node->hasOffset() && query_node->getOffset() == child)
+                return false;
+        }
+
         return true;
     }
 
@@ -406,7 +416,8 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
         auto actions_dag = ActionsDAG::makeConvertingActions(
             query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
             sample_block_with_unique_names.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position);
+            ActionsDAG::MatchColumnsMode::Position,
+            context_copy);
         auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(actions_dag));
         query_plan.addStep(std::move(converting_step));
     }
@@ -416,7 +427,7 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
 
     auto external_storage_holder = TemporaryTableHolder(
         mutable_context,
-        ColumnsDescription{columns},
+        ColumnsDescription(columns, false),
         ConstraintsDescription{},
         nullptr /*query*/,
         true /*create_for_global_subquery*/);

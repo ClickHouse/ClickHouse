@@ -23,13 +23,13 @@ namespace ErrorCodes
 
 /// Function timeSeriesIdToTags(<group>) returns Array(Tuple(String, String)) containing the names and values of tags associated with
 /// a specified group.
-class FunctionTimeSeriesTagsGroupToTags : public IFunction, private WithContext
+class FunctionTimeSeriesTagsGroupToTags : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesTagsGroupToTags";
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTimeSeriesTagsGroupToTags>(context_); }
-    explicit FunctionTimeSeriesTagsGroupToTags(ContextPtr context_) : WithContext(context_) {}
+    explicit FunctionTimeSeriesTagsGroupToTags(ContextPtr context_) : context(context_) {}
 
     String getName() const override { return name; }
 
@@ -112,7 +112,7 @@ public:
         if (checkColumn<ColumnUInt64>(&column_groups))
         {
             auto groups = extractGroups(column_groups);
-            return getContext()->getQueryContext()->getTimeSeriesTagsCollector().getTagsByGroup(groups);
+            return context->getQueryContext()->getTimeSeriesTagsCollector().getTagsByGroup(groups);
         }
 
         /// The argument can be wrapped in ColumnConst or ColumnLowCardinality.
@@ -131,10 +131,13 @@ public:
     static std::vector<size_t> extractGroups(const IColumn & column_groups)
     {
         std::string_view data = column_groups.getRawData();
-        chassert(data.size() == column_groups.size() * sizeof(UInt64));  /// NOLINT(bugprone-sizeof-expression,cert-arr39-c)
+        chassert(data.size() == column_groups.size() * sizeof(UInt64));
         const UInt64 * begin = reinterpret_cast<const UInt64 *>(data.data());
         return std::vector<size_t>(begin, begin + column_groups.size());
     }
+
+private:
+    const ContextPtr context;
 };
 
 
@@ -147,7 +150,7 @@ REGISTER_FUNCTION(TimeSeriesTagsGroupToTags)
     FunctionDocumentation::Examples examples = {{"Example", "SELECT timeSeriesStoreTags(8374283493092, [('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS id, timeSeriesIdToTagsGroup(id) AS group, timeSeriesTagsGroupToTags(group)", "8374283493092    0    [('__name__', ''http_requests_count''), ('env', 'dev'), ('region', 'eu')]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTimeSeriesTagsGroupToTags>(documentation);
 }
