@@ -53,7 +53,7 @@ def cleanup_after_test():
     try:
         yield
     finally:
-        node.query("DROP TABLE IF EXISTS mytable SYNC")
+        node.query("DROP TABLE IF EXISTS mytable, map_test, large_test, bulk_test SYNC")
 
 
 def test_select():
