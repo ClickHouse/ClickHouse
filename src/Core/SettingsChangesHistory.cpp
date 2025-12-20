@@ -42,7 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
 
         addSettingsChanges(settings_changes_history, "26.1",
         {
-
+            {"hedged_connections_prefer_stable_pools", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {

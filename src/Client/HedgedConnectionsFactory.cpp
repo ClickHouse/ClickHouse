@@ -29,6 +29,7 @@ HedgedConnectionsFactory::HedgedConnectionsFactory(
     bool fallback_to_stale_replicas_,
     UInt64 max_parallel_replicas_,
     bool skip_unavailable_shards_,
+    bool prefer_stable_pools_,
     std::shared_ptr<QualifiedTableName> table_to_check_,
     GetPriorityForLoadBalancing::Func priority_func)
     : pool(pool_)
@@ -39,12 +40,16 @@ HedgedConnectionsFactory::HedgedConnectionsFactory(
     , fallback_to_stale_replicas(fallback_to_stale_replicas_)
     , max_parallel_replicas(max_parallel_replicas_)
     , skip_unavailable_shards(skip_unavailable_shards_)
+    , prefer_stable_pools(prefer_stable_pools_)
 {
     shuffled_pools = pool->getShuffledPools(settings_, priority_func, /* use_slowdown_count */ true);
 
     for (const auto & shuffled_pool : shuffled_pools)
         replicas.emplace_back(
             std::make_unique<ConnectionEstablisherAsync>(shuffled_pool.pool, &timeouts, settings_, log, table_to_check.get()));
+
+    if (prefer_stable_pools)
+        stable_pools_to_try_connections = std::count_if(shuffled_pools.begin(), shuffled_pools.end(), [](const auto&  shuffled_pool){ return shuffled_pool.is_stable; });
 }
 
 HedgedConnectionsFactory::~HedgedConnectionsFactory()
@@ -160,10 +165,20 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::waitForReadyConnection
     /// We will try to use usable replica.
 
     /// Check if we are not allowed to use usable replicas or there is no even a free usable replica.
-    if (!fallback_to_stale_replicas)
-        return State::CANNOT_CHOOSE;
-
-    return setBestUsableReplica(connection_out);
+    if (fallback_to_stale_replicas)
+    {
+        LOG_TRACE(log, "Can not choose from non-delayed pools, fallback to stale ones.");
+        state = setBestUsableReplica(connection_out);
+        if (state != State::CANNOT_CHOOSE)
+            return state;
+    }
+    if (prefer_stable_pools && stable_pools_to_try_connections == 0)
+    {
+        LOG_TRACE(log, "Can not choose from stable pools, fallback to unstable ones.");
+        prefer_stable_pools = false;
+        return waitForReadyConnectionsImpl(blocking, connection_out, async_callback);
+    }
+    return State::CANNOT_CHOOSE;
 }
 
 int HedgedConnectionsFactory::getNextIndex()
@@ -250,6 +265,13 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::processEpollEvents(boo
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown event from epoll");
 
+        /// If we already determined state of each `stable` replica
+        /// then we should fallback to take stale replicas.
+        /// In case when it's still not enough, we will return to processing epoll
+        /// with waiting all replicas (not stable too).
+        if (prefer_stable_pools && stable_pools_to_try_connections == 0)
+            return State::CANNOT_CHOOSE;
+
         /// We reach this point only if we need to start new connection
         /// (Special timeout expired or one of the previous connections failed).
         /// Return only if replica is ready.
@@ -303,9 +325,14 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::processFinishedConnect
     if (!fail_message.empty())
         fail_messages += fail_message + "\n";
 
+    ShuffledPool & shuffled_pool = shuffled_pools[index];
     if (!result.entry.isNull())
     {
         ++entries_count;
+
+        if (shuffled_pool.is_stable)
+            stable_pools_to_try_connections--;
+        shuffled_pool.is_stable = true;
 
         if (result.is_usable)
         {
@@ -325,7 +352,6 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::processFinishedConnect
     }
     else
     {
-        ShuffledPool & shuffled_pool = shuffled_pools[index];
         LOG_INFO(log, "Connection failed at try №{}, reason: {}", (shuffled_pool.error_count + 1), fail_message);
 
         shuffled_pool.error_count = std::min(pool->getMaxErrorCap(), shuffled_pool.error_count + 1);
@@ -333,6 +359,9 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::processFinishedConnect
 
         if (shuffled_pool.error_count >= max_tries)
         {
+            if (shuffled_pool.is_stable)
+                stable_pools_to_try_connections--;
+            shuffled_pool.is_stable = false;
             ++failed_pools_count;
             ProfileEvents::increment(ProfileEvents::DistributedConnectionFailAtAll);
         }

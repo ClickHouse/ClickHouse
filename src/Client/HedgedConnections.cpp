@@ -28,6 +28,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsBool skip_unavailable_shards;
+    extern const SettingsBool hedged_connections_prefer_stable_pools;
 }
 
 namespace ErrorCodes
@@ -56,6 +57,7 @@ HedgedConnections::HedgedConnections(
           context_->getSettingsRef()[Setting::fallback_to_stale_replicas_for_distributed_queries].value,
           context_->getSettingsRef()[Setting::max_parallel_replicas].value,
           context_->getSettingsRef()[Setting::skip_unavailable_shards].value,
+          context_->getSettingsRef()[Setting::hedged_connections_prefer_stable_pools].value,
           table_to_check_,
           priority_func)
     , context(std::move(context_))
