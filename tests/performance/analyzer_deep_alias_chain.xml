@@ -2,6 +2,7 @@
     <settings>
         <enable_analyzer>1</enable_analyzer>
         <max_expanded_ast_elements>5000000000</max_expanded_ast_elements>
+        <max_execution_time>300</max_execution_time>
     </settings>
 
     <create_query>CREATE TABLE sample_table (id UInt64, value UInt64) ENGINE = MergeTree() ORDER BY id</create_query>
