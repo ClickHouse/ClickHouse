@@ -1,3 +1,5 @@
+### Watch all release presentations and videos at [ClickHouse Theater](https://presentations.clickhouse.com/) and [YouTube Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3jAlSy1JxyP8zluvXaN3nxU).
+
 ### Table of Contents
 **[ClickHouse release v25.12, 2025-12-18](#2512)**<br/>
 **[ClickHouse release v25.11, 2025-11-27](#2511)**<br/>
