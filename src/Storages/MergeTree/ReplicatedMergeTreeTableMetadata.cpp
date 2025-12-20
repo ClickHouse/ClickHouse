@@ -320,10 +320,9 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(
             handleTableMetadataMismatch(table_name_for_error_message, "graphite params", from_zk.graphite_params_hash, "", graphite_params_hash);
     }
 
-    /// NOTE: You can make a less strict check of match expressions so that tables do not break from small changes
-    ///    in formatAST code.
     String parsed_zk_primary_key = formattedAST(KeyDescription::parse(from_zk.primary_key, columns, context, true).getOriginalExpressionList());
-    if (primary_key != parsed_zk_primary_key)
+    String parsed_local_primary_key = formattedAST(KeyDescription::parse(primary_key, columns, context, true).getOriginalExpressionList());
+    if (parsed_local_primary_key != parsed_zk_primary_key)
         handleTableMetadataMismatch(table_name_for_error_message, "primary key", from_zk.primary_key, parsed_zk_primary_key, primary_key);
 
     if (data_format_version != from_zk.data_format_version)
