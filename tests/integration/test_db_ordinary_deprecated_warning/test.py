@@ -22,7 +22,8 @@ def started_cluster():
 
 
 def test_warning():
-    assert node.query("SELECT name FROM system.databases where engine = 'Ordinary'") == "\n"
+    node.query("DROP DATABASE IF EXISTS testdb")
+    assert node.query("SELECT name FROM system.databases where engine = 'Ordinary'") == ""
     assert node.query("SELECT count() = 0 FROM system.databases where engine = 'Ordinary'") == "1\n"
 
     node.query("CREATE DATABASE testdb ENGINE = Ordinary")
