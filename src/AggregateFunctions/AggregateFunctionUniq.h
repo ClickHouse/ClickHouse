@@ -551,7 +551,7 @@ public:
         detail::Adder<T, Data>::add(this->data(place), columns, num_args, row_num);
     }
 
-    void addBatchSinglePlace(
+    ALWAYS_INLINE void addBatchSinglePlace(
         size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena *, ssize_t if_argument_pos)
         const override
     {

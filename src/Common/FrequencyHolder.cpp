@@ -47,7 +47,7 @@ void FrequencyHolder::loadEncodingsFrequency()
     Float64 frequency;
     String charset_name;
 
-    auto buf = std::make_unique<ReadBufferFromMemory>(resource.data(), resource.size());
+    auto buf = std::make_unique<ReadBufferFromMemory>(resource);
     ZstdInflatingReadBuffer in(std::move(buf));
 
     while (!in.eof())
@@ -104,7 +104,7 @@ void FrequencyHolder::loadEmotionalDict()
     Float64 tonality;
     size_t count = 0;
 
-    auto buf = std::make_unique<ReadBufferFromMemory>(resource.data(), resource.size());
+    auto buf = std::make_unique<ReadBufferFromMemory>(resource);
     ZstdInflatingReadBuffer in(std::move(buf));
 
     while (!in.eof())
@@ -143,7 +143,7 @@ void FrequencyHolder::loadProgrammingFrequency()
     Float64 frequency;
     String programming_language;
 
-    auto buf = std::make_unique<ReadBufferFromMemory>(resource.data(), resource.size());
+    auto buf = std::make_unique<ReadBufferFromMemory>(resource);
     ZstdInflatingReadBuffer in(std::move(buf));
 
     while (!in.eof())

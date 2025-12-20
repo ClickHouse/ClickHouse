@@ -237,14 +237,14 @@ void DatabaseCatalog::createBackgroundTasks()
     if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER && getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_cleanup_period_sec])
     {
         auto cleanup_task_holder
-            = getContext()->getSchedulePool().createTask("DatabaseCatalogCleanupStoreDirectoryTask", [this]() { this->cleanupStoreDirectoryTask(); });
+            = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "DatabaseCatalogCleanupStoreDirectoryTask", [this]() { this->cleanupStoreDirectoryTask(); });
         cleanup_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(cleanup_task_holder));
     }
 
-    auto drop_task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalogDropTableTask", [this](){ this->dropTableDataTask(); });
+    auto drop_task_holder = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "DatabaseCatalogDropTableTask", [this](){ this->dropTableDataTask(); });
     drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(drop_task_holder));
 
-    auto reload_disks_task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalogReloadDisksTask", [this](){ this->reloadDisksTask(); });
+    auto reload_disks_task_holder = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "DatabaseCatalogReloadDisksTask", [this](){ this->reloadDisksTask(); });
     reload_disks_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(reload_disks_task_holder));
 }
 
@@ -1171,7 +1171,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
         auto full_path = elem.first;
         auto storage_id = elem.second.first;
         auto db_disk = elem.second.second;
-        runner([this, full_path, storage_id, db_disk]() { this->enqueueDroppedTableCleanup(storage_id, nullptr, db_disk, full_path); });
+        runner.enqueueAndKeepTrack([this, full_path, storage_id, db_disk]() { this->enqueueDroppedTableCleanup(storage_id, nullptr, db_disk, full_path); });
     }
     runner.waitForAllToFinishAndRethrowFirstError();
 }
@@ -1472,7 +1472,7 @@ void DatabaseCatalog::dropTablesParallel(std::vector<DatabaseCatalog::TablesMark
             }
         };
 
-        runner(std::move(job));
+        runner.enqueueAndKeepTrack(std::move(job));
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();

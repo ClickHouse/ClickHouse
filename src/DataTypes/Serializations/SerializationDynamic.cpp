@@ -261,7 +261,7 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
             for (size_t i = 0; i != shared_variant.size(); ++i)
             {
                 auto value = shared_variant.getDataAt(i);
-                ReadBufferFromMemory buf(value.data(), value.size());
+                ReadBufferFromMemory buf(value);
                 auto type = decodeDataType(buf);
                 auto type_name = type->getName();
                 if (auto it = shared_variants_statistics.find(type_name); it != shared_variants_statistics.end())
@@ -588,7 +588,7 @@ void SerializationDynamic::serializeBinaryBulkWithMultipleStreamsAndCountTotalSi
                 if (local_discriminators[i] == shared_variant_discr)
                 {
                     auto value = shared_variant.getDataAt(offsets[i]);
-                    ReadBufferFromMemory buf(value.data(), value.size());
+                    ReadBufferFromMemory buf(value);
                     auto type = decodeDataType(buf);
                     auto type_name = type->getName();
                     if (auto it = dynamic_state->statistics.shared_variants_statistics.find(type_name); it != dynamic_state->statistics.shared_variants_statistics.end())
@@ -740,7 +740,7 @@ void SerializationDynamic::serializeForHashCalculation(const IColumn & column, s
     if (global_discr == dynamic_column.getSharedVariantDiscriminator())
     {
         auto value = dynamic_column.getSharedVariant().getDataAt(variant_column.offsetAt(row_num));
-        ReadBufferFromMemory value_buf(value.data(), value.size());
+        ReadBufferFromMemory value_buf(value);
         auto type = decodeDataType(value_buf);
         auto type_name = type->getName();
         auto serialization = getDataTypesCache().getSerialization(type_name);
@@ -904,7 +904,7 @@ static void serializeTextImpl(
     if (variant_column.globalDiscriminatorAt(row_num) == dynamic_column.getSharedVariantDiscriminator())
     {
         auto value = dynamic_column.getSharedVariant().getDataAt(variant_column.offsetAt(row_num));
-        ReadBufferFromMemory buf(value.data(), value.size());
+        ReadBufferFromMemory buf(value);
         auto variant_type = decodeDataType(buf);
         auto tmp_variant_column = variant_type->createColumn();
         auto variant_serialization = variant_type->getDefaultSerialization();

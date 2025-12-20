@@ -16,6 +16,7 @@
 #include <memory>
 #include <variant>
 
+
 namespace DB
 {
 
@@ -61,7 +62,7 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             auto str = column->getDataAt(i);
-            ReadBufferFromString in_buffer(std::string_view(str.data(), str.size()));
+            ReadBufferFromString in_buffer(str);
 
             auto object = parseWKBFormat(in_buffer);
             auto boost_object = std::get<Geometry>(object);
@@ -117,7 +118,7 @@ public:
 
     explicit FunctionReadWKBCommon() = default;
 
-    static constexpr const char * name = "readWkb";
+    static constexpr const char * name = "readWKB";
 
     String getName() const override
     {
@@ -359,17 +360,17 @@ REGISTER_FUNCTION(ReadWKB)
             .description = R"(
     Parses a Well-Known Binary (WKB) representation of a Geometry and returns it in the internal ClickHouse format.
     )",
-            .syntax = "readWkb(wkt_string)",
+            .syntax = "readWKB(wkt_string)",
             .arguments{{"wkb_string", "The input WKB string representing a Point geometry."}},
             .returned_value = {"The function returns a ClickHouse internal representation of the Geometry."},
             .examples{
                 {"first call",
                  "SELECT "
-                 "readWkb(unhex('"
+                 "readWKB(unhex('"
                  "010100000000000000000000000000000000000000"
                  "'));",
                  R"(
-    ┌─readWkb(unhex'010100000000000000000000000...'))─┐
+    ┌─readWKB(unhex'010100000000000000000000000...'))─┐
     │ (0,0)                                           │
     └─────────────────────────────────────────────────┘
                 )"},
@@ -378,6 +379,9 @@ REGISTER_FUNCTION(ReadWKB)
             .category = FunctionDocumentation::Category::Geo,
         }
     );
+
+    /// This was initially added by mistake, but we have to keep it:
+    factory.registerAlias("readWkb", "readWKB");
 }
 
 }

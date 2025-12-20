@@ -41,6 +41,7 @@
         M(Float64, arrow::DoubleBuilder)
 
 #define FOR_ARROW_TYPES(M) \
+        M(BOOL, arrow::BooleanType) \
         M(UINT8, arrow::UInt8Type) \
         M(INT8, arrow::Int8Type) \
         M(UINT16, arrow::UInt16Type) \
@@ -53,7 +54,8 @@
         M(DOUBLE, arrow::DoubleType) \
         M(BINARY, arrow::BinaryType) \
         M(STRING, arrow::StringType) \
-        M(FIXED_SIZE_BINARY, arrow::FixedSizeBinaryType)
+        M(FIXED_SIZE_BINARY, arrow::FixedSizeBinaryType) \
+        M(DATE32, arrow::Date32Type)
 
 namespace DB
 {

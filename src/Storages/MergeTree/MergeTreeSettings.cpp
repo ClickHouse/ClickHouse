@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
+
 #include <Columns/IColumn.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
@@ -11,6 +12,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/isDiskFunction.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
@@ -38,6 +40,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_SETTING;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
     extern const int READONLY;
 }
 
@@ -220,7 +223,7 @@ namespace ErrorCodes
     Only available in ClickHouse Cloud. Maximal number of bytes to write in a
     single stripe in compact parts
     )", 0) \
-    DECLARE(UInt64, compact_parts_max_granules_to_buffer, 128, R"(
+    DECLARE(NonZeroUInt64, compact_parts_max_granules_to_buffer, 128, R"(
     Only available in ClickHouse Cloud. Maximal number of granules to write in a
     single stripe in compact parts
     )", 0) \
@@ -274,8 +277,8 @@ namespace ErrorCodes
     Controls the serialization format for top-level `String` columns.
 
     This setting is only effective when `serialization_info_version` is set to "with_types".
-    When enabled, top-level `String` columns are serialized with a separate `.size`
-    subcolumn storing string lengths, rather than inline. This allows real `.size`
+    When set to `with_size_stream`, top-level `String` columns are serialized with a separate
+    `.size` subcolumn storing string lengths, rather than inline. This allows real `.size`
     subcolumns and can improve compression efficiency.
 
     Nested `String` types (e.g., inside `Nullable`, `LowCardinality`, `Array`, or `Map`)
@@ -285,6 +288,15 @@ namespace ErrorCodes
 
     - `single_stream` — Use the standard serialization format with inline sizes.
     - `with_size_stream` — Use a separate size stream for top-level `String` columns.
+    )", 0) \
+    DECLARE(MergeTreeNullableSerializationVersion, nullable_serialization_version, "basic", R"(
+    Controls the serialization method used for `Nullable(T)` columns.
+
+    Possible values:
+
+    - basic — Use the standard serialization for `Nullable(T)`.
+
+    - allow_sparse — Permit `Nullable(T)` to use sparse encoding.
     )", 0) \
     DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version, "v2", R"(
     Serialization version for JSON data type. Required for compatibility.
@@ -716,6 +728,15 @@ namespace ErrorCodes
     DECLARE(MergeSelectorAlgorithm, merge_selector_algorithm, MergeSelectorAlgorithm::SIMPLE, R"(
     The algorithm to select parts for merges assignment
     )", EXPERIMENTAL) \
+    DECLARE(Bool, merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once, false, R"(
+    Enable heuristic for simple merge selector which will lower maximum limit for merge choice.
+    By doing so number of concurrent merges will increase which can help with TOO_MANY_PARTS
+    errors but at the same time this will increase the write amplification.
+    )", EXPERIMENTAL) \
+    DECLARE(UInt64, merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent, 5, R"(
+    Controls the exponent value used in formulae building lowering curve. Lowering exponent will
+    lower merge widths which will trigger increase in write amplification. The reverse is also true.
+    )", EXPERIMENTAL) \
     DECLARE(Bool, merge_selector_enable_heuristic_to_remove_small_parts_at_right, true, R"(
     Enable heuristic for selecting parts for merge which removes parts from right
     side of range, if their size is less than specified ratio (0.01) of sum_size.
@@ -936,7 +957,14 @@ namespace ErrorCodes
     Allow to use adaptive writer buffers during writing dynamic subcolumns to
     reduce memory usage
     )", 0) \
-    DECLARE(UInt64, adaptive_write_buffer_initial_size, 16 * 1024, R"(
+    DECLARE(UInt64, min_columns_to_activate_adaptive_write_buffer, 500, R"(
+    Allow to reduce memory usage for tables with lots of columns by using adaptive writer buffers.
+
+    Possible values:
+    - 0 - unlimited
+    - 1 - always enabled
+    )", 0) \
+    DECLARE(NonZeroUInt64, adaptive_write_buffer_initial_size, 16 * 1024, R"(
     Initial size of an adaptive write buffer
     )", 0) \
     DECLARE(UInt64, min_free_disk_bytes_to_perform_insert, 0, R"(
@@ -2416,6 +2444,8 @@ void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_v
             /// In case the alias is being used (e.g. use enable_analyzer) we must change the original setting
             auto final_name = MergeTreeSettingsTraits::resolveName(change.name);
             auto setting_index = MergeTreeSettingsTraits::Accessor::instance().find(final_name);
+            if (setting_index == static_cast<size_t>(-1))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown setting in history: {}", final_name);
             auto previous_value = MergeTreeSettingsTraits::Accessor::instance().castValueUtil(setting_index, change.previous_value);
 
             if (get(final_name) != previous_value)

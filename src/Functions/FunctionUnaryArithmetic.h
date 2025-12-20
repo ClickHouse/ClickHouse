@@ -96,6 +96,7 @@ struct FixedStringUnaryOperationImpl
         ColumnFixedString::Chars & c)
     {
         size_t size = a.size();
+
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::apply(a[i]);
     }))

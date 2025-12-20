@@ -6,65 +6,90 @@ title: 'LIMIT Clause'
 doc_type: 'reference'
 ---
 
-# LIMIT Clause
+# LIMIT clause
 
-`LIMIT m` allows to select the first `m` rows from the result.
+The `LIMIT` clause controls how many rows are returned from your query results.
 
-`LIMIT n, m` allows to select the `m` rows from the result after skipping the first `n` rows. The `LIMIT m OFFSET n` syntax is equivalent.
+## Basic syntax {#basic-syntax}
 
-In the standard forms above, `n` and `m` are non-negative integers.
+**Select first rows:**
 
-Additionally, negative limits are supported:
+```sql
+LIMIT m
+```
 
-`LIMIT -m` selects the last `m` rows from the result.
+Returns the first `m` rows from the result, or all records when there are fewer than `m`.
 
-`LIMIT -m OFFSET -n` selects the last `m` rows after skipping the last `n` rows. The `LIMIT -n, -m` syntax is equivalent.
+**Alternative TOP syntax (MS SQL Server compatible):**
 
-Moreover, selecting a fraction of the result is also supported:
+```sql
+-- SELECT TOP number|percent column_name(s) FROM table_name
+SELECT TOP 10 * FROM numbers(100);
+SELECT TOP 0.1 * FROM numbers(100);
+```
 
-`LIMIT m` - if 0 < m < 1, then the first m * 100% of rows are returned.
+This is equivalent to `LIMIT m` and can be used for compatibility with Microsoft SQL Server queries.
 
-`LIMIT m OFFSET n` - if 0 < m < 1 and 0 < n < 1, then the first m * 100% of the result is returned after skipping the first n * 100% of rows. The `LIMIT n, m` syntax is equivalent.
+**Select with offset:**
 
-Examples:
-    • `LIMIT 0.1` - selects the first 10% of the result.
-    • `LIMIT 1 OFFSET 0.5` - selects the median row.
-    • `LIMIT 0.25 OFFSET 0.5` - selects 3rd quartile of the result.
+```sql
+LIMIT m OFFSET n
+-- or equivalently:
+LIMIT n, m
+```
 
-> **Note**
-> • The fraction must be a [Float64](../../data-types/float.md) number less than 1 and greater than zero.
-> • If a fractional number of rows results from the calculation, it is rounded up to the next whole number.
+Skips the first `n` rows, then returns the next `m` rows.
 
-> **Note**
-> • You can combine standard limit with fractional offset and vice versa.
-> • You can combine standard limit with negative offset and vice versa.
+In both forms, `n` and `m` must be non-negative integers.
 
-If there is no [ORDER BY](../../../sql-reference/statements/select/order-by.md) clause that explicitly sorts results, the choice of rows for the result may be arbitrary and non-deterministic.
+## Negative limits {#negative-limits}
 
-:::note    
-The number of rows in the result set can also depend on the [limit](../../../operations/settings/settings.md#limit) setting.
+Select rows from the *end* of the result set using negative values:
+
+| Syntax | Result |
+|--------|--------|
+| `LIMIT -m` | Last `m` rows |
+| `LIMIT -m OFFSET -n` | Last `m` rows after skipping the last `n` rows |
+| `LIMIT m OFFSET -n` | First `m` rows after skipping the last `n` rows |
+| `LIMIT -m OFFSET n` | Last `m` rows after skipping the first `n` rows |
+
+The `LIMIT -n, -m` syntax is equivalent to `LIMIT -m OFFSET -n`.
+
+## Fractional limits {#fractional-limits}
+
+Use decimal values between 0 and 1 to select a percentage of rows:
+
+| Syntax | Result |
+|--------|--------|
+| `LIMIT 0.1` | First 10% of rows |
+| `LIMIT 1 OFFSET 0.5` | The median row |
+| `LIMIT 0.25 OFFSET 0.5` | Third quartile (25% of rows after skipping the first 50%) |
+
+:::note
+- Fractions must be [Float64](../../data-types/float.md) values greater than 0 and less than 1.
+- Fractional row counts are rounded to the nearest whole number.
 :::
 
-## LIMIT ... WITH TIES Modifier {#limit--with-ties-modifier}
+## Combining limit types {#combining-limit-types}
 
-When you set `WITH TIES` modifier for `LIMIT n[,m]` and specify `ORDER BY expr_list`, you will get in result first `n` or `n,m` rows and all rows with same `ORDER BY` fields values equal to row at position `n` for `LIMIT n` and `m` for `LIMIT n,m`.
+You can mix standard integers with fractional or negative offsets:
 
-> **Note**  
-> • `WITH TIES` is currently not supported with negative `LIMIT`.  
+```sql
+LIMIT 10 OFFSET 0.5    -- 10 rows starting from the halfway point
+LIMIT 10 OFFSET -20    -- 10 rows after skipping the last 20
+```
 
-This modifier also can be combined with [ORDER BY ... WITH FILL modifier](/sql-reference/statements/select/order-by#order-by-expr-with-fill-modifier).
+## LIMIT ... WITH TIES {#limit--with-ties-modifier}
 
-For example, the following query
+The `WITH TIES` modifier includes additional rows that have the same `ORDER BY` values as the last row in your limit.
 
 ```sql
 SELECT * FROM (
-    SELECT number%50 AS n FROM numbers(100)
+    SELECT number % 50 AS n FROM numbers(100)
 ) ORDER BY n LIMIT 0, 5
 ```
 
-returns
-
-```text
+```response
 ┌─n─┐
 │ 0 │
 │ 0 │
@@ -74,17 +99,15 @@ returns
 └───┘
 ```
 
-but after apply `WITH TIES` modifier
+With `WITH TIES`, all rows matching the last value are included:
 
 ```sql
 SELECT * FROM (
-    SELECT number%50 AS n FROM numbers(100)
+    SELECT number % 50 AS n FROM numbers(100)
 ) ORDER BY n LIMIT 0, 5 WITH TIES
 ```
 
-it returns another rows set
-
-```text
+```response
 ┌─n─┐
 │ 0 │
 │ 0 │
@@ -95,4 +118,20 @@ it returns another rows set
 └───┘
 ```
 
-cause row number 6 have same value "2" for field `n` as row number 5
+Row 6 is included because it has the same value (`2`) as row 5.
+
+:::note
+`WITH TIES` is not supported with negative limits.
+:::
+
+This modifier can be combined with the [`ORDER BY ... WITH FILL`](/sql-reference/statements/select/order-by#order-by-expr-with-fill-modifier) modifier.
+
+## Considerations {#considerations}
+
+**Non-deterministic results:** Without an [`ORDER BY`](../../../sql-reference/statements/select/order-by.md) clause, the rows returned may be arbitrary and vary between query executions.
+
+**Server-side limit:** The number of rows returned can also be affected by the [limit](../../../operations/settings/settings.md#limit) setting.
+
+## See also {#see-also}
+
+- [LIMIT BY](/sql-reference/statements/select/limit-by) — Limits rows per group of values, useful for getting top N results within each category.
