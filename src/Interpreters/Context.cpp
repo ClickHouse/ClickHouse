@@ -5389,18 +5389,12 @@ std::shared_ptr<QueryViewsLog> Context::getQueryViewsLog() const
     return shared->system_logs->query_views_log;
 }
 
-std::shared_ptr<PartLog> Context::getPartLog(const String & part_database) const
+std::shared_ptr<PartLog> Context::getPartLog() const
 {
     SharedLockGuard lock(shared->mutex);
 
     /// No part log or system logs are shutting down.
     if (!shared->system_logs)
-        return {};
-
-    /// Will not log operations on system tables (including part_log itself).
-    /// It doesn't make sense and not allow to destruct PartLog correctly due to infinite logging and flushing,
-    /// and also make troubles on startup.
-    if (part_database == DatabaseCatalog::SYSTEM_DATABASE)
         return {};
 
     return shared->system_logs->part_log;
@@ -6220,16 +6214,15 @@ std::pair<Context::SampleBlockCache *, std::unique_lock<std::mutex>> Context::ge
     return std::make_pair(&getQueryContext()->sample_block_cache, std::unique_lock(getQueryContext()->sample_block_cache_mutex));
 }
 
-std::pair<Context::StorageMetadataCache *, std::unique_lock<std::mutex>> Context::getStorageMetadataCache() const
+QueryMetadataCachePtr Context::getQueryMetadataCache() const
 {
     chassert(hasQueryContext());
-    return std::make_pair(&getQueryContext()->storage_metadata_cache, std::unique_lock(getQueryContext()->storage_metadata_cache_mutex));
+    return getQueryContext()->query_metadata_cache.lock();
 }
 
-std::pair<Context::StorageSnapshotCache *, std::unique_lock<std::mutex>> Context::getStorageSnapshotCache() const
+void Context::setQueryMetadataCache(const QueryMetadataCachePtr & query_metadata_cache_)
 {
-    chassert(hasQueryContext());
-    return std::make_pair(&getQueryContext()->storage_snapshot_cache, std::unique_lock(getQueryContext()->storage_snapshot_cache_mutex));
+    query_metadata_cache = query_metadata_cache_;
 }
 
 bool Context::hasQueryParameters() const

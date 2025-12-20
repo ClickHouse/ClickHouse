@@ -1,4 +1,5 @@
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/BaseSettings.h>
@@ -235,16 +236,20 @@ Possible values:
 The maximum number of threads process indices.
 )", 0) \
     DECLARE(MaxThreads, max_threads, 0, R"(
-The maximum number of query processing threads, excluding threads for retrieving data from remote servers (see the 'max_distributed_connections' parameter).
+The maximum number of query processing threads, excluding threads for retrieving data from remote servers (see the ['max_distributed_connections'](/operations/settings/settings#max_distributed_connections) parameter).
 
 This parameter applies to threads that perform the same stages of the query processing pipeline in parallel.
-For example, when reading from a table, if it is possible to evaluate expressions with functions, filter with WHERE and pre-aggregate for GROUP BY in parallel using at least 'max_threads' number of threads, then 'max_threads' are used.
+For example, when reading from a table, if it is possible to evaluate expressions with functions, filter with `WHERE` and pre-aggregate for `GROUP BY` in parallel using at least 'max_threads' number of threads, then 'max_threads' are used.
 
-For queries that are completed quickly because of a LIMIT, you can set a lower 'max_threads'. For example, if the necessary number of entries are located in every block and max_threads = 8, then 8 blocks are retrieved, although it would have been enough to read just one.
-
+For queries that are completed quickly because of a LIMIT, you can set a lower 'max_threads'.
+For example, if the necessary number of entries are located in every block and max_threads = 8, then 8 blocks are retrieved, although it would have been enough to read just one.
 The smaller the `max_threads` value, the less memory is consumed.
 
-Cloud default value: `auto(3)`
+The `max_threads` setting by default matches the number of hardware threads available to ClickHouse.
+Without SMT (e.g. Intel HyperThreading), this corresponds to the number of CPU cores.
+
+For ClickHouse Cloud users, the default value will display as `auto(N)` where N matches the vCPU size of your service e.g. 2vCPU/8GiB, 4vCPU/16GiB etc.
+See the settings tab in the Cloud console for a list of all service sizes.
 )", 0) \
     DECLARE(Bool, use_concurrency_control, true, R"(
 Respect the server's concurrency control (see the `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores` global server settings). If disabled, it allows using a larger number of threads even if the server is overloaded (not recommended for normal usage, and needed mostly for tests).
@@ -1292,7 +1297,11 @@ Limit for number of sharding key values, turns off `optimize_skip_unused_shards`
 Too many values may require significant amount for processing, while the benefit is doubtful, since if you have huge number of values in `IN (...)`, then most likely the query will be sent to all shards anyway.
 )", 0) \
     DECLARE(Bool, optimize_skip_unused_shards, false, R"(
-Enables or disables skipping of unused shards for [SELECT](../../sql-reference/statements/select/index.md) queries that have sharding key condition in `WHERE/PREWHERE` (assuming that the data is distributed by sharding key, otherwise a query yields incorrect result).
+Enables or disables skipping of unused shards for [SELECT](../../sql-reference/statements/select/index.md) queries that have sharding key condition in `WHERE/PREWHERE`, and activates related optimizations for distributed queries (e.g. aggregation by sharding key).
+
+:::note
+Assumes that the data is distributed by sharding key, otherwise a query yields incorrect result.
+:::
 
 Possible values:
 
@@ -2078,7 +2087,7 @@ For testing of `PartsSplitter` - split read ranges into intersecting and non int
     DECLARE(Bool, enable_http_compression, true, R"(
 Enables or disables data compression in the response to an HTTP request.
 
-For more information, read the [HTTP interface description](../../interfaces/http.md).
+For more information, read the [HTTP interface description](/interfaces/http).
 
 Possible values:
 
@@ -2094,7 +2103,7 @@ Possible values: Numbers from 1 to 9.
     DECLARE(Bool, http_native_compression_disable_checksumming_on_decompress, false, R"(
 Enables or disables checksum verification when decompressing the HTTP POST data from the client. Used only for ClickHouse native compression format (not used with `gzip` or `deflate`).
 
-For more information, read the [HTTP interface description](../../interfaces/http.md).
+For more information, read the [HTTP interface description](/interfaces/http).
 
 Possible values:
 
@@ -2156,7 +2165,7 @@ Possible values:
     DECLARE(Bool, send_progress_in_http_headers, false, R"(
 Enables or disables `X-ClickHouse-Progress` HTTP response headers in `clickhouse-server` responses.
 
-For more information, read the [HTTP interface description](../../interfaces/http.md).
+For more information, read the [HTTP interface description](/interfaces/http).
 
 Possible values:
 
@@ -2484,12 +2493,6 @@ If it is set to true, then a user is allowed to executed distributed DDL queries
 )", 0) \
     DECLARE(Bool, allow_suspicious_codecs, false, R"(
 If it is set to true, allow to specify meaningless compression codecs.
-)", 0) \
-    DECLARE(Bool, enable_zstd_qat_codec, false, R"(
-If turned on, the ZSTD_QAT codec may be used to compress columns.
-)", 0) \
-    DECLARE(Bool, enable_deflate_qpl_codec, false, R"(
-If turned on, the DEFLATE_QPL codec may be used to compress columns.
 )", 0) \
     DECLARE(UInt64, query_profiler_real_time_period_ns, QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS, R"(
 Sets the period for a real clock timer of the [query profiler](../../operations/optimizing-performance/sampling-query-profiler.md). Real clock timer counts wall-clock time.
@@ -3398,6 +3401,14 @@ Possible values:
 
 - 1 — Tracing of profile events enabled.
 - 0 — Tracing of profile events disabled.
+)", 0) \
+    DECLARE(String, trace_profile_events_list, "", R"(
+When the setting `trace_profile_events` is enabled, limit the traced events to the specified list of comma-separated names.
+If the `trace_profile_events_list` is an empty string (by default), trace all profile events.
+
+Example value: 'DiskS3ReadMicroseconds,DiskS3ReadRequestsCount,SelectQueryTimeMicroseconds,ReadBufferFromS3Bytes'
+
+Using this setting allows more precise collection of data for a large number of queries, because otherwise the vast amount of events can overflow the internal system log queue and some portion of them will be dropped.
 )", 0) \
     \
     DECLARE(UInt64, memory_usage_overcommit_max_wait_microseconds, 5'000'000, R"(
@@ -5233,7 +5244,7 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
-    DECLARE(Bool, enable_shared_storage_snapshot_in_query, false, R"(
+    DECLARE(Bool, enable_shared_storage_snapshot_in_query, true, R"(
 If enabled, all subqueries within a single query will share the same StorageSnapshot for each table.
 This ensures a consistent view of the data across the entire query, even if the same table is accessed multiple times.
 
@@ -5765,7 +5776,7 @@ Enable multithreading after evaluating window functions to allow parallel stream
     DECLARE(Bool, query_plan_optimize_lazy_materialization, true, R"(
 Use query plan for lazy materialization optimization.
 )", 0) \
-    DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 100, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
+    DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10000, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0) \
     DECLARE(Bool, enable_lazy_columns_replication, true, R"(
 Enables lazy columns replication in JOIN and ARRAY JOIN, it allows to avoid unnecessary copy of the same rows multiple times in memory.
@@ -6811,15 +6822,14 @@ Replace external dictionary sources to Null on restore. Useful for testing purpo
         /* Parallel replicas */ \
     DECLARE_WITH_ALIAS(UInt64, allow_experimental_parallel_reading_from_replicas, 0, R"(
 Use up to `max_parallel_replicas` the number of replicas from each shard for SELECT query execution. Reading is parallelized and coordinated dynamically. 0 - disabled, 1 - enabled, silently disable them in case of failure, 2 - enabled, throw an exception in case of failure
-)", BETA, enable_parallel_replicas) \
+)", 0, enable_parallel_replicas) \
     DECLARE(UInt64, automatic_parallel_replicas_mode, 0, R"(
-🚨 HIGHLY EXPERIMENTAL 🚨
 Enable automatic switching to execution with parallel replicas based on collected statistics. Requires enabling `parallel_replicas_local_plan` and providing `cluster_for_parallel_replicas`.
 0 - disabled, 1 - enabled, 2 - only statistics collection is enabled (switching to execution with parallel replicas is disabled).
-)", 0) \
+)", EXPERIMENTAL) \
     DECLARE(UInt64, automatic_parallel_replicas_min_bytes_per_replica, 0, R"(
 Threshold of bytes to read per replica to enable parallel replicas automatically (applies only when `automatic_parallel_replicas_mode`=1). 0 means no threshold.
-)", 0) \
+)", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, max_parallel_replicas, 1000, R"(
 The maximum number of replicas for each shard when executing a query.
 
@@ -6850,7 +6860,7 @@ This setting is useful for any replicated table.
 )", 0) \
     DECLARE(ParallelReplicasMode, parallel_replicas_mode, ParallelReplicasMode::READ_TASKS, R"(
 Type of filter to use with custom key for parallel replicas. default - use modulo operation on the custom key, range - use range filter on custom key using all possible values for the value type of custom key.
-)", BETA) \
+)", 0) \
     DECLARE(UInt64, parallel_replicas_count, 0, R"(
 This is internal setting that should not be used directly and represents an implementation detail of the 'parallel replicas' mode. This setting will be automatically set up by the initiator server for distributed queries to the number of parallel replicas participating in query processing.
 )", BETA) \
@@ -6882,40 +6892,40 @@ Note: This setting will not cause any additional data to be filtered during quer
 )", BETA) \
     DECLARE(String, cluster_for_parallel_replicas, "", R"(
 Cluster for a shard in which current server is located
-)", BETA) \
+)", 0) \
     DECLARE(Bool, parallel_replicas_allow_in_with_subquery, true, R"(
 If true, subquery for IN will be executed on every follower replica.
-)", BETA) \
+)", 0) \
     DECLARE(Bool, parallel_replicas_for_non_replicated_merge_tree, false, R"(
 If true, ClickHouse will use parallel replicas algorithm also for non-replicated MergeTree tables
-)", BETA) \
+)", 0) \
     DECLARE(UInt64, parallel_replicas_min_number_of_rows_per_replica, 0, R"(
 Limit the number of replicas used in a query to (estimated rows to read / min_number_of_rows_per_replica). The max is still limited by 'max_parallel_replicas'
-)", BETA) \
+)", 0) \
     DECLARE(Bool, parallel_replicas_prefer_local_join, true, R"(
 If true, and JOIN can be executed with parallel replicas algorithm, and all storages of right JOIN part are *MergeTree, local JOIN will be used instead of GLOBAL JOIN.
-)", BETA) \
+)", 0) \
     DECLARE(UInt64, parallel_replicas_mark_segment_size, 0, R"(
 Parts virtually divided into segments to be distributed between replicas for parallel reading. This setting controls the size of these segments. Not recommended to change until you're absolutely sure in what you're doing. Value should be in range [128; 16384]
-)", BETA) \
+)", 0) \
     DECLARE(Bool, parallel_replicas_local_plan, true, R"(
 Build local plan for local replica
-)", BETA) \
+)", 0) \
     DECLARE(Bool, parallel_replicas_index_analysis_only_on_coordinator, true, R"(
 Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan
-)", BETA) \
+)", 0) \
     DECLARE(Bool, parallel_replicas_support_projection, true, R"(
 Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan and aggregation_in_order is inactive.
-)", BETA) \
+)", 0) \
     DECLARE(Bool, parallel_replicas_only_with_analyzer, true, R"(
 The analyzer should be enabled to use parallel replicas. With disabled analyzer query execution fallbacks to local execution, even if parallel reading from replicas is enabled. Using parallel replicas without the analyzer enabled is not supported
-)", BETA) \
+)", 0) \
     DECLARE(Bool, parallel_replicas_insert_select_local_pipeline, true, R"(
 Use local pipeline during distributed INSERT SELECT with parallel replicas
-)", BETA) \
+)", 0) \
     DECLARE(Milliseconds, parallel_replicas_connect_timeout_ms, 300, R"(
 The timeout in milliseconds for connecting to a remote replica during query execution with parallel replicas. If the timeout is expired, the corresponding replicas is not used for query execution
-)", BETA) \
+)", 0) \
     DECLARE(Bool, parallel_replicas_for_cluster_engines, true, R"(
 Replace table function engines with their -Cluster alternatives
 )", 0) \
@@ -7302,9 +7312,9 @@ Allows defining columns with [statistics](../../engines/table-engines/mergetree-
 )", EXPERIMENTAL, allow_experimental_statistic) \
     DECLARE(Bool, use_statistics_cache, false, R"(Use statistics cache in a query to avoid the overhead of loading statistics of every parts)", EXPERIMENTAL) \
     \
-    DECLARE(Bool, allow_experimental_full_text_index, false, R"(
-If set to true, allow using the experimental text index.
-)", EXPERIMENTAL) \
+    DECLARE_WITH_ALIAS(Bool, enable_full_text_index, false, R"(
+If set to true, allow using the text index.
+)", BETA, allow_experimental_full_text_index) \
     DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
 Allow to perform full text search filtering using only the inverted text index in query plan.
 )", 0) \
@@ -7518,6 +7528,8 @@ Multiple algorithms can be specified, e.g. 'dpsize,greedy'.
     MAKE_OBSOLETE(M, Bool, azure_sdk_use_native_client, true) \
     MAKE_OBSOLETE(M, Bool, allow_not_comparable_types_in_order_by, false) \
     MAKE_OBSOLETE(M, Bool, allow_not_comparable_types_in_comparison_functions, false) \
+    MAKE_OBSOLETE(M, Bool, enable_zstd_qat_codec, false) \
+    MAKE_OBSOLETE(M, Bool, enable_deflate_qpl_codec, false) \
 \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
@@ -7661,23 +7673,44 @@ void SettingsImpl::loadSettingsFromConfig(const String & path, const Poco::Util:
 
 void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
 {
-    /// Convert ptr and make simple check
-    auto * column_map = column ? &typeid_cast<ColumnMap &>(*column) : nullptr;
-    if (!column_map)
+    if (!column)
         return;
 
-    auto & offsets = column_map->getNestedColumn().getOffsets();
-    auto & tuple_column = column_map->getNestedData();
-    auto & key_column = tuple_column.getColumn(0);
-    auto & value_column = tuple_column.getColumn(1);
+    auto & column_map = typeid_cast<ColumnMap &>(*column);
+    auto & offsets = column_map.getNestedColumn().getOffsets();
+
+    auto & tuple_column = column_map.getNestedData();
+    auto & key_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(0));
+    auto & value_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(1));
 
     size_t size = 0;
-    for (const auto & setting : all(changed_only ? SKIP_UNCHANGED : SKIP_NONE))
+
+    /// Iterate over standard settings
+    const auto & accessor = Traits::Accessor::instance();
+    for (size_t i = 0; i < accessor.size(); i++)
     {
-        auto name = setting.getName();
+        if (changed_only && !accessor.isValueChanged(*this, i))
+            continue;
+
+        const auto & name = accessor.getName(i);
+        auto value = accessor.getValueString(*this, i);
         key_column.insertData(name.data(), name.size());
-        value_column.insertData(setting.getValueString());
-        size++;
+        value_column.insertData(value.data(), value.size());
+        ++size;
+    }
+
+    /// Iterate over the custom settings
+    for (const auto & custom : custom_settings_map)
+    {
+        const auto & setting_field = custom.second;
+        if (changed_only && !setting_field.changed)
+            continue;
+
+        const auto & name = custom.first;
+        auto value = setting_field.toString();
+        key_column.insertData(name.data(), name.size());
+        value_column.insertData(value.data(), value.size());
+        ++size;
     }
 
     offsets.push_back(offsets.back() + size);

@@ -133,13 +133,11 @@ def test_persistent_recursive_watch(started_cluster):
     node1.restart_clickhouse()
     keeper_utils.wait_until_connected(cluster, node1)
     client = get_fake_zk(node1)
-
-    client = get_fake_zk(node1)
     NODE_PATH = "/testPersistentWatch2"
     CHILD_NODE = "/testPersistentWatch2/child"
     FAKE_PATH = "/fakeNode"
 
-    for path in [NODE_PATH, CHILD_NODE, FAKE_PATH]:
+    for path in [CHILD_NODE, NODE_PATH, FAKE_PATH]:
         if client.exists(path):
             client.delete(path)
 
@@ -190,3 +188,143 @@ def test_persistent_recursive_watch(started_cluster):
     client.delete(CHILD_NODE)
     client.delete(NODE_PATH)
     client.delete(FAKE_PATH)
+
+def test_persistent_watch_event_fields(started_cluster):
+    node1.restart_clickhouse()
+    keeper_utils.wait_until_connected(cluster, node1)
+
+    client = get_fake_zk(node1)
+    NODE_PATH = "/testEventFields1"
+    OTHER_PATH = "/testEventFieldsOther1"
+
+    for path in [NODE_PATH, OTHER_PATH]:
+        if client.exists(path):
+            client.delete(path)
+
+    client.create(NODE_PATH, b"1")
+    client.create(OTHER_PATH, b"1")
+
+    events = []
+    event_lock = threading.Event()
+
+    def cb(event):
+        events.append(dict(type=event.type, path=event.path, state=getattr(event, "state", None)))
+        event_lock.set()
+
+    client.add_watch(NODE_PATH, cb, AddWatchMode.PERSISTENT)
+
+    event_lock.clear()
+    client.set(NODE_PATH, b"2")
+    event_lock.wait(5)
+    assert len(events) == 1
+    assert events[-1]["type"] == "CHANGED"
+    assert events[-1]["path"] == NODE_PATH
+    assert events[-1]["state"] == "CONNECTED"
+
+    event_lock.clear()
+    client.set(NODE_PATH, b"3")
+    event_lock.wait(5)
+    assert len(events) == 2
+    assert events[-1]["type"] == "CHANGED"
+    assert events[-1]["path"] == NODE_PATH
+    assert events[-1]["state"] == "CONNECTED"
+
+    client.set(OTHER_PATH, b"9")
+    time.sleep(0.3)
+    assert len(events) == 2
+
+    client.remove_all_watches(NODE_PATH, WatcherType.ANY)
+    client.set(NODE_PATH, b"after")
+    time.sleep(0.5)
+    assert len(events) == 2
+
+    if client.exists(NODE_PATH):
+        client.delete(NODE_PATH)
+    if client.exists(OTHER_PATH):
+        client.delete(OTHER_PATH)
+
+def test_persistent_recursive_watch_event_fields(started_cluster):
+    node1.restart_clickhouse()
+    keeper_utils.wait_until_connected(cluster, node1)
+
+    client = get_fake_zk(node1)
+    NODE_PATH = "/testEventFields2"
+    CHILD_NODE = f"{NODE_PATH}/child"
+    OTHER_PATH = "/testEventFieldsOther2"
+
+    for path in [CHILD_NODE, NODE_PATH, OTHER_PATH]:
+        if client.exists(path):
+            client.delete(path)
+
+    client.create(NODE_PATH, b"1")
+    client.create(CHILD_NODE, b"1")
+    client.create(OTHER_PATH, b"1")
+
+    events = []
+    event_lock = threading.Event()
+
+    def cb(event):
+        events.append(dict(type=event.type, path=event.path, state=getattr(event, "state", None)))
+        event_lock.set()
+
+    client.add_watch(NODE_PATH, cb, AddWatchMode.PERSISTENT_RECURSIVE)
+
+    event_lock.clear()
+    client.set(NODE_PATH, b"2")
+    event_lock.wait(5)
+    assert len(events) == 1
+    assert events[-1]["path"] == NODE_PATH
+    assert events[-1]["type"] == "CHANGED"
+    assert events[-1]["state"] == "CONNECTED"
+
+    event_lock.clear()
+    client.set(CHILD_NODE, b"3")
+    event_lock.wait(5)
+    assert len(events) == 2
+    assert events[-1]["path"] == NODE_PATH
+    assert events[-1]["type"] == "CHANGED"
+    assert events[-1]["state"] == "CONNECTED"
+
+    event_lock.clear()
+    client.set(OTHER_PATH, b"x")
+    time.sleep(0.3)
+    assert len(events) == 2
+
+    client.remove_all_watches(NODE_PATH, WatcherType.ANY)
+    client.set(NODE_PATH, b"after")
+    client.set(CHILD_NODE, b"after2")
+    time.sleep(0.5)
+    assert len(events) == 2
+
+    if client.exists(CHILD_NODE):
+        client.delete(CHILD_NODE)
+    if client.exists(NODE_PATH):
+        client.delete(NODE_PATH)
+    if client.exists(OTHER_PATH):
+        client.delete(OTHER_PATH)
+
+@pytest.mark.skip(reason="https://github.com/ClickHouse/ClickHouse/issues/92480")
+def test_persistent_watches_cleanup_on_close(started_cluster):
+    node1.restart_clickhouse()
+    keeper_utils.wait_until_connected(cluster, node1)
+
+    client = get_fake_zk(node1)
+    NODE_PATH = "/testPersistentCleanup"
+
+    if client.exists(NODE_PATH):
+        client.delete(NODE_PATH)
+    client.create(NODE_PATH, b"1")
+
+    def cb(_):
+        pass
+
+    client.add_watch(NODE_PATH, cb, AddWatchMode.PERSISTENT)
+    client.add_watch(NODE_PATH, cb, AddWatchMode.PERSISTENT_RECURSIVE)
+
+    destroy_zk_client(client)
+    for _ in range(20):
+        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="mntr")
+        if "zk_watch_count\t0" in data:
+            break
+        time.sleep(0.1)
+    assert "zk_watch_count\t0" in data
