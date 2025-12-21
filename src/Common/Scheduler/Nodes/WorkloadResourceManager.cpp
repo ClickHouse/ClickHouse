@@ -62,7 +62,7 @@ WorkloadResourceManager::Resource::Resource(const ASTPtr & resource_entity_)
     , resource_name(getEntityName(resource_entity))
     , unit(getResourceUnit(resource_entity_))
 {
-    scheduler.start("Sch." + resource_name);
+    scheduler.start(ThreadName::WORKLOAD_RESOURCE_MANAGER);
 }
 
 WorkloadResourceManager::Resource::~Resource()

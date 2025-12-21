@@ -637,4 +637,8 @@ void ASTCreateQuery::setTargetInnerEngine(ViewTarget::Kind target_kind, ASTPtr s
     targets->setInnerEngine(target_kind, storage_def);
 }
 
+bool ASTCreateQuery::isCreateQueryWithImmediateInsertSelect() const
+{
+    return select && !attach && !is_create_empty && !is_ordinary_view && (!(is_materialized_view || is_window_view) || is_populate);
+}
 }

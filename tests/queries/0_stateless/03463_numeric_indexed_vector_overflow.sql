@@ -49,6 +49,8 @@ SELECT numericIndexedVectorToMap(numericIndexedVectorPointwiseGreaterEqual(vec_1
 
 DROP TABLE uin_value_details;
 
+SET allow_suspicious_primary_key = 1;
+
 -- https://github.com/ClickHouse/ClickHouse/issues/82239
 SELECT 'Test with NaN, INFs and Nulls' AS test;
 

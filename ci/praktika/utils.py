@@ -53,13 +53,20 @@ class MetaClasses:
 
         @classmethod
         def from_fs(cls: Type[T], name) -> T:
-            with open(cls.file_name_static(name), "r", encoding="utf8") as f:
+            return cls.from_file(cls.file_name_static(name))
+
+        @classmethod
+        def from_file(cls: Type[T], path) -> T:
+            """
+            For non-default result file locations
+            """
+            with open(path, "r", encoding="utf8") as f:
                 try:
                     return cls.from_dict(json.load(f))
                 except json.decoder.JSONDecodeError as ex:
                     print(f"ERROR: failed to parse json, ex [{ex}]")
-                    print(f"JSON content [{cls.file_name_static(name)}]")
-                    Shell.check(f"cat {cls.file_name_static(name)}")
+                    print(f"JSON content [{path}]")
+                    Shell.check(f"cat {path}")
                     raise ex
 
         @classmethod
@@ -725,18 +732,27 @@ class Utils:
                 parent = str(path_obj.parent.resolve())
                 name = path_obj.name
                 path_out = f"{parent}/{name}.tar.gz"
+                archive_name = f"{name}.tar.gz"
                 Shell.check(
-                    f"cd {parent} && rm -f {name}.tar.gz && tar -cf - {name} | gzip > {name}.tar.gz",
+                    f"cd {quote(parent)} && rm -f {quote(archive_name)} && tar -cf - {quote(name)} | gzip > {quote(archive_name)}",
                     verbose=True,
                     strict=True,
                 )
             elif path_obj.is_file():
                 path_out = f"{path}.gz"
                 Shell.check(
-                    f"rm -f {path_out} && gzip -c '{path}' > '{path_out}'",
+                    f"rm -f {quote(path_out)} && gzip -c {quote(path)} > {quote(path_out)}",
                     verbose=True,
                     strict=True,
                 )
+            elif not path_obj.exists():
+                raise RuntimeError(
+                    f"Failed to compress file [{path}]: path does not exist"
+                )
+            else:
+                raise RuntimeError(f"Failed to compress file [{path}]")
+        else:
+            raise RuntimeError(f"Failed to compress file [{path}]: no gzip installed")
         return path_out
 
     @classmethod
