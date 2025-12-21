@@ -1,4 +1,3 @@
-#include <inflate.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 
 #include <Columns/ColumnString.h>
@@ -49,13 +48,6 @@ namespace ErrorCodes
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int CORRUPTED_DATA;
 }
-
-static std::vector<String> ALLOWED_TOKENIZERS
-    = {NgramsTokenExtractor::getExternalName(),
-       SplitByNonAlphaTokenExtractor::getExternalName(),
-       SplitByStringTokenExtractor::getExternalName(),
-       ArrayTokenExtractor::getExternalName(),
-       SparseGramsTokenExtractor::getExternalName()};
 
 static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 12;
 static constexpr UInt64 MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = 6;
@@ -1303,7 +1295,14 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
     std::unordered_map<String, Field> options = convertArgumentsToOptionsMap(index.arguments);
     const auto [tokenizer, params] = extractTokenizer(options);
 
-    auto token_extractor = TokenizerFactory::createTokenizer(tokenizer, params, ALLOWED_TOKENIZERS, index.name);
+    static std::vector<String> allowed_tokenizers
+        = {NgramsTokenExtractor::getExternalName(),
+           SplitByNonAlphaTokenExtractor::getExternalName(),
+           SplitByStringTokenExtractor::getExternalName(),
+           ArrayTokenExtractor::getExternalName(),
+           SparseGramsTokenExtractor::getExternalName()};
+
+    auto token_extractor = TokenizerFactory::createTokenizer(tokenizer, params, allowed_tokenizers, index.name);
 
     String preprocessor = extractOption<String>(options, ARGUMENT_PREPROCESSOR).value_or("");
     UInt64 dictionary_block_size = extractOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE).value_or(DEFAULT_DICTIONARY_BLOCK_SIZE);
@@ -1327,7 +1326,14 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     std::unordered_map<String, Field> options = convertArgumentsToOptionsMap(index.arguments);
     const auto [tokenizer, params] = extractTokenizer(options);
 
-    TokenizerFactory::createTokenizer(tokenizer, params, ALLOWED_TOKENIZERS, index.name, /*only_validate = */ true);
+    static std::vector<String> allowed_tokenizers
+        = {NgramsTokenExtractor::getExternalName(),
+           SplitByNonAlphaTokenExtractor::getExternalName(),
+           SplitByStringTokenExtractor::getExternalName(),
+           ArrayTokenExtractor::getExternalName(),
+           SparseGramsTokenExtractor::getExternalName()};
+
+    TokenizerFactory::createTokenizer(tokenizer, params, allowed_tokenizers, index.name, /*only_validate = */ true);
 
     UInt64 dictionary_block_size = extractOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE).value_or(DEFAULT_DICTIONARY_BLOCK_SIZE);
     if (dictionary_block_size == 0)
