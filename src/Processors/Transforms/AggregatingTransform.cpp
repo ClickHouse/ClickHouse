@@ -11,6 +11,8 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+
 #include <algorithm>
 #include <atomic>
 
@@ -153,12 +155,17 @@ public:
     using SharedDataPtr = std::shared_ptr<SharedData>;
 
     ConvertingAggregatedToChunksWithMergingSource(
-        AggregatingTransformParamsPtr params_, ManyAggregatedDataVariantsPtr data_, SharedDataPtr shared_data_, Arena * arena_)
+        AggregatingTransformParamsPtr params_,
+        ManyAggregatedDataVariantsPtr data_,
+        SharedDataPtr shared_data_,
+        Arena * arena_,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
         : ISource(std::make_shared<const Block>(params_->getHeader()), false)
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::move(shared_data_))
         , arena(arena_)
+        , updater(std::move(updater_))
     {
     }
 
@@ -175,7 +182,8 @@ protected:
             return {};
         }
 
-        Block block = params->aggregator.mergeAndConvertOneBucketToBlock(*data, arena, params->final, bucket_num, shared_data->is_cancelled);
+        Block block = params->aggregator.mergeAndConvertOneBucketToBlock(
+            *data, arena, params->final, bucket_num, shared_data->is_cancelled, updater);
         Chunk chunk = convertToChunk(block);
 
         shared_data->is_bucket_processed[bucket_num] = true;
@@ -188,6 +196,7 @@ private:
     ManyAggregatedDataVariantsPtr data;
     SharedDataPtr shared_data;
     Arena * arena;
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 };
 
 /// Asks Aggregator to convert accumulated aggregation state into blocks (without merging) and pushes them to later steps.
@@ -323,12 +332,17 @@ private:
 class ConvertingAggregatedToChunksTransform final : public IProcessor
 {
 public:
-    ConvertingAggregatedToChunksTransform(AggregatingTransformParamsPtr params_, ManyAggregatedDataVariantsPtr data_, size_t num_threads_)
+    ConvertingAggregatedToChunksTransform(
+        AggregatingTransformParamsPtr params_,
+        ManyAggregatedDataVariantsPtr data_,
+        size_t num_threads_,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
         : IProcessor({}, {params_->getHeader()})
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::make_shared<ConvertingAggregatedToChunksWithMergingSource::SharedData>())
         , num_threads(num_threads_)
+        , updater(std::move(updater_))
     {
     }
 
@@ -583,6 +597,8 @@ private:
 
     size_t num_threads;
 
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
+
     bool is_initialized = false;
     bool finished = false;
     bool parallelize_single_level_merge = false;
@@ -621,8 +637,12 @@ private:
         if (first->type == AggregatedDataVariants::Type::without_key || params->params.overflow_row)
         {
             params->aggregator.mergeWithoutKeyDataImpl(*data, shared_data->is_cancelled);
+            if (updater)
+                updater->recordAggregationStateSizes(*first, /*bucket=*/-1);
             auto block = params->aggregator.prepareBlockAndFillWithoutKey(
                 *first, params->final, first->type != AggregatedDataVariants::Type::without_key);
+            if (updater)
+                updater->recordAggregationKeySizes(params->aggregator, block);
 
             if (block.rows() > 0)
                 single_level_chunks.emplace_back(convertToChunk(block));
@@ -653,7 +673,11 @@ private:
 
 #define M(NAME) \
     else if (first->type == AggregatedDataVariants::Type::NAME) \
-        params->aggregator.mergeSingleLevelDataImpl<decltype(first->NAME)::element_type>(*data, shared_data->is_cancelled);
+    { \
+        params->aggregator.mergeSingleLevelDataImpl<decltype(first->NAME)::element_type>(*data, shared_data->is_cancelled); \
+        if (updater) \
+            updater->recordAggregationStateSizes(*first, /*bucket=*/-1); \
+    }
             if (false) {} // NOLINT
             APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
 #undef M
@@ -663,8 +687,14 @@ private:
 
         auto blocks = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ false>(*first, params->final);
         for (auto & block : blocks)
+        {
             if (block.rows() > 0)
+            {
+                if (updater)
+                    updater->recordAggregationKeySizes(params->aggregator, block);
                 single_level_chunks.emplace_back(convertToChunk(block));
+            }
+        }
 
         finished = true;
         data.reset();
@@ -679,7 +709,7 @@ private:
         {
             /// Select Arena to avoid race conditions
             Arena * arena = first->aggregates_pools.at(thread).get();
-            auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSource>(params, data, shared_data, arena);
+            auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSource>(params, data, shared_data, arena, updater);
 
             processors.emplace_back(std::move(source));
         }
@@ -723,7 +753,8 @@ AggregatingTransform::AggregatingTransform(
     size_t max_threads_,
     size_t temporary_data_merge_threads_,
     bool should_produce_results_in_order_of_bucket_number_,
-    bool skip_merging_)
+    bool skip_merging_,
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
     : IProcessor({std::move(header)}, {params_->getHeader()})
     , params(std::move(params_))
     , key_columns(params->params.keys_size)
@@ -734,6 +765,7 @@ AggregatingTransform::AggregatingTransform(
     , temporary_data_merge_threads(temporary_data_merge_threads_)
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
     , skip_merging(skip_merging_)
+    , updater(std::move(updater_))
 {
 }
 
@@ -932,7 +964,7 @@ void AggregatingTransform::initGenerate()
             auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants));
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
             processors.emplace_back(
-                std::make_shared<ConvertingAggregatedToChunksTransform>(params, std::move(prepared_data_ptr), max_threads));
+                std::make_shared<ConvertingAggregatedToChunksTransform>(params, std::move(prepared_data_ptr), max_threads, updater));
         }
         else
         {

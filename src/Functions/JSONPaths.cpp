@@ -355,7 +355,7 @@ private:
         if (global_discr == dynamic_column->getSharedVariantDiscriminator())
         {
             auto value = dynamic_column->getSharedVariant().getDataAt(variant_column.offsetAt(i));
-            ReadBufferFromMemory buf(value.data(), value.size());
+            ReadBufferFromMemory buf(value);
             auto type = decodeDataType(buf);
             return type->getName();
         }
@@ -365,7 +365,7 @@ private:
 
     std::optional<String> getDynamicValueTypeFromSharedData(std::string_view value) const
     {
-        ReadBufferFromMemory buf(value.data(), value.size());
+        ReadBufferFromMemory buf(value);
         auto type = decodeDataType(buf);
         if (isNothing(type))
             return std::nullopt;
@@ -406,7 +406,7 @@ SELECT json, JSONAllPaths(json) FROM test;
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionJSONPaths<JSONAllPathsImpl>>(documentation);
     }
 
@@ -439,7 +439,7 @@ SELECT json, JSONAllPathsWithTypes(json) FROM test;
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionJSONPaths<JSONAllPathsWithTypesImpl>>(documentation);
     }
 
@@ -472,7 +472,7 @@ SELECT json, JSONDynamicPaths(json) FROM test;
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionJSONPaths<JSONDynamicPathsImpl>>(documentation);
     }
 
@@ -505,7 +505,7 @@ SELECT json, JSONDynamicPathsWithTypes(json) FROM test;
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionJSONPaths<JSONDynamicPathsWithTypesImpl>>(documentation);
     }
 
@@ -538,7 +538,7 @@ SELECT json, JSONSharedDataPaths(json) FROM test;
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionJSONPaths<JSONSharedDataPathsImpl>>(documentation);
     }
 
@@ -571,7 +571,7 @@ SELECT json, JSONSharedDataPathsWithTypes(json) FROM test;
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionJSONPaths<JSONSharedDataPathsWithTypesImpl>>(documentation);
     }
 }

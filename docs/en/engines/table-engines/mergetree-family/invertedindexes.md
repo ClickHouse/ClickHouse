@@ -7,11 +7,11 @@ title: 'Full-text Search using Text Indexes'
 doc_type: 'reference'
 ---
 
-import PrivatePreviewBadge from '@theme/badges/PrivatePreviewBadge';
+import BetaBadge from '@theme/badges/BetaBadge';
 
 # Full-text search using text indexes
 
-<PrivatePreviewBadge/>
+<BetaBadge/>
 
 Text indexes in ClickHouse (also known as ["inverted indexes"](https://en.wikipedia.org/wiki/Inverted_index)) provide fast full-text capabilities on string data.
 The index maps each token in the column to the rows which contain the token.
@@ -24,7 +24,7 @@ More advanced tokenizers are available, for example for log data.
 To create a text index, first enable the corresponding experimental setting:
 
 ```sql
-SET allow_experimental_full_text_index = true;
+SET enable_full_text_index = true;
 ```
 
 A text index can be defined on a [String](/sql-reference/data-types/string.md), [FixedString](/sql-reference/data-types/fixedstring.md), [Array(String)](/sql-reference/data-types/array.md), [Array(FixedString)](/sql-reference/data-types/array.md), and [Map](/sql-reference/data-types/map.md) (via [mapKeys](/sql-reference/functions/tuple-map-functions.md/#mapkeys) and [mapValues](/sql-reference/functions/tuple-map-functions.md/#mapvalues) map functions) column using the following syntax:
@@ -62,7 +62,7 @@ ORDER BY key
   Note that each string can consist of multiple characters (`', '` in the example).
   The default separator list, if not specified explicitly (for example, `tokenizer = splitByString`), is a single whitespace `[' ']`.
 - `ngrams(N)` splits strings into equally large `N`-grams (also see function [ngrams](/sql-reference/functions/splitting-merging-functions.md/#ngrams)).
-  The ngram length can be specified using an optional integer parameter between 2 and 8, for example, `tokenizer = ngrams(3)`.
+  The ngram length can be specified using an optional integer parameter between 1 and 8, for example, `tokenizer = ngrams(3)`.
   The default ngram size, if not specified explicitly (for example, `tokenizer = ngrams`), is 3.
 - `sparseGrams(min_length, max_length, min_cutoff_length)` splits strings into variable-length n-grams of at least `min_length` and at most `max_length` (inclusive) characters (also see function [sparseGrams](/sql-reference/functions/string-functions#sparseGrams)).
   Unless specified explicitly, `min_length` and `max_length` default to 3 and 100.

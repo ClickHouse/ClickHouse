@@ -22,6 +22,7 @@
 #include <Core/Defines.h>
 #include <memory>
 #include <cassert>
+#include <Common/HashTable/Hash.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -341,6 +342,15 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     }
 };
 
+class HashMethodSerializedContext : public HashMethodContext
+{
+public:
+    explicit HashMethodSerializedContext(const HashMethodContextSettings & settings_)
+        : settings(settings_)
+    {}
+
+    HashMethodContextSettings settings;
+};
 
 /** Hash by concatenating serialized key values.
   * The serialized value differs in that it uniquely allows to deserialize it, having only the position with which it starts.
@@ -353,6 +363,11 @@ struct HashMethodSerialized
 {
     using Self = HashMethodSerialized<Value, Mapped, nullable, prealloc>;
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
+
+    static HashMethodContextPtr createContext(const HashMethodContextSettings & settings)
+    {
+        return std::make_shared<HashMethodSerializedContext>(settings);
+    }
 
     static constexpr bool has_cheap_key_calculation = false;
 
@@ -395,19 +410,30 @@ struct HashMethodSerialized
     PaddedPODArray<UInt64> row_sizes;
     Columns key_columns;
     bool optimize = true;
+    IColumn::SerializationSettings serialization_settings;
 
-    HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, bool optimize_)
+    HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr & context, bool optimize_)
         : key_columns(key_columns_, optimize_)
         , optimize(optimize_)
     {
+        const auto * hash_serialized_context = typeid_cast<const HashMethodSerializedContext *>(context.get());
+        if (!hash_serialized_context)
+        {
+            const auto & cached_val = *context;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid type for HashMethodSerialized context: {}",
+                            demangle(typeid(cached_val).name()));
+        }
+
+        serialization_settings.serialize_string_with_zero_byte = hash_serialized_context->settings.serialize_string_with_zero_byte;
+
         if constexpr (prealloc)
         {
             for (const auto & [key_column, null_map, _] : key_columns.string_key_columns)
-                key_column->collectSerializedValueSizes(row_sizes, null_map);
+                key_column->collectSerializedValueSizes(row_sizes, null_map, &serialization_settings);
             for (const auto & [key_column, null_map, _] : key_columns.fixed_size_key_columns)
-                key_column->collectSerializedValueSizes(row_sizes, null_map);
+                key_column->collectSerializedValueSizes(row_sizes, null_map, &serialization_settings);
             for (const auto & [key_column, null_map, _] : key_columns.other_key_columns)
-                key_column->collectSerializedValueSizes(row_sizes, null_map);
+                key_column->collectSerializedValueSizes(row_sizes, null_map, &serialization_settings);
         }
     }
 
@@ -424,23 +450,23 @@ struct HashMethodSerialized
             for (const auto & [key_column, null_map, _] : key_columns.string_key_columns)
             {
                 if constexpr (nullable)
-                    memory = key_column->serializeValueIntoMemoryWithNull(row, memory, null_map);
+                    memory = key_column->serializeValueIntoMemoryWithNull(row, memory, null_map, &serialization_settings);
                 else
-                    memory = key_column->serializeValueIntoMemory(row, memory);
+                    memory = key_column->serializeValueIntoMemory(row, memory, &serialization_settings);
             }
             for (const auto & [key_column, null_map, _] : key_columns.fixed_size_key_columns)
             {
                 if constexpr (nullable)
-                    memory = key_column->serializeValueIntoMemoryWithNull(row, memory, null_map);
+                    memory = key_column->serializeValueIntoMemoryWithNull(row, memory, null_map, &serialization_settings);
                 else
-                    memory = key_column->serializeValueIntoMemory(row, memory);
+                    memory = key_column->serializeValueIntoMemory(row, memory, &serialization_settings);
             }
             for (const auto & [key_column, null_map, _] : key_columns.other_key_columns)
             {
                 if constexpr (nullable)
-                    memory = key_column->serializeValueIntoMemoryWithNull(row, memory, null_map);
+                    memory = key_column->serializeValueIntoMemoryWithNull(row, memory, null_map, &serialization_settings);
                 else
-                    memory = key_column->serializeValueIntoMemory(row, memory);
+                    memory = key_column->serializeValueIntoMemory(row, memory, &serialization_settings);
             }
 
             return SerializedKeyHolder{key, pool};
@@ -453,23 +479,23 @@ struct HashMethodSerialized
             for (const auto & [key_column, null_map, _] : key_columns.string_key_columns)
             {
                 if constexpr (nullable)
-                    sum_size += key_column->serializeValueIntoArenaWithNull(row, pool, begin, null_map).size();
+                    sum_size += key_column->serializeValueIntoArenaWithNull(row, pool, begin, null_map, &serialization_settings).size();
                 else
-                    sum_size += key_column->serializeValueIntoArena(row, pool, begin).size();
+                    sum_size += key_column->serializeValueIntoArena(row, pool, begin, &serialization_settings).size();
             }
             for (const auto & [key_column, null_map, _] : key_columns.fixed_size_key_columns)
             {
                 if constexpr (nullable)
-                    sum_size += key_column->serializeValueIntoArenaWithNull(row, pool, begin, null_map).size();
+                    sum_size += key_column->serializeValueIntoArenaWithNull(row, pool, begin, null_map, &serialization_settings).size();
                 else
-                    sum_size += key_column->serializeValueIntoArena(row, pool, begin).size();
+                    sum_size += key_column->serializeValueIntoArena(row, pool, begin, &serialization_settings).size();
             }
             for (const auto & [key_column, null_map, _] : key_columns.other_key_columns)
             {
                 if constexpr (nullable)
-                    sum_size += key_column->serializeValueIntoArenaWithNull(row, pool, begin, null_map).size();
+                    sum_size += key_column->serializeValueIntoArenaWithNull(row, pool, begin, null_map, &serialization_settings).size();
                 else
-                    sum_size += key_column->serializeValueIntoArena(row, pool, begin).size();
+                    sum_size += key_column->serializeValueIntoArena(row, pool, begin, &serialization_settings).size();
             }
 
             return SerializedKeyHolder{{begin, sum_size}, pool};

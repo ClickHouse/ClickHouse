@@ -1,4 +1,5 @@
 #include <Common/LoggingFormatStringHelpers.h>
+#include <Common/StackTrace.h>
 #include <Common/thread_local_rng.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
@@ -7,6 +8,9 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/iter_find.hpp>
 
 #include <cfloat>
 #include <random>
@@ -20,6 +24,7 @@
     M(SelectQuery, "Same as Query, but only for SELECT queries.", ValueType::Number) \
     M(InsertQuery, "Same as Query, but only for INSERT queries.", ValueType::Number) \
     M(InitialQuery, "Same as Query, but only counts initial queries (see is_initial_query).", ValueType::Number) \
+    M(InitialSelectQuery, "Same as InitialQuery, but only for SELECT queries.", ValueType::Number) \
     M(QueriesWithSubqueries, "Count queries with all subqueries", ValueType::Number) \
     M(SelectQueriesWithSubqueries, "Count SELECT queries with all subqueries", ValueType::Number) \
     M(InsertQueriesWithSubqueries, "Count INSERT queries with all subqueries", ValueType::Number) \
@@ -31,6 +36,8 @@
     M(FailedInternalQuery, "Number of failed internal queries.", ValueType::Number) \
     M(FailedInternalSelectQuery, "Same as FailedInternalQuery, but only for SELECT queries.", ValueType::Number) \
     M(FailedInternalInsertQuery, "Same as FailedInternalQuery, but only for INSERT queries.", ValueType::Number) \
+    M(FailedInitialQuery, "Number of failed initial queries.", ValueType::Number) \
+    M(FailedInitialSelectQuery, "Same as FailedInitialQuery, but only for SELECT queries.", ValueType::Number) \
     M(FailedQuery, "Number of total failed queries, both internal and user queries.", ValueType::Number) \
     M(FailedSelectQuery, "Same as FailedQuery, but only for SELECT queries.", ValueType::Number) \
     M(FailedInsertQuery, "Same as FailedQuery, but only for INSERT queries.", ValueType::Number) \
@@ -107,9 +114,6 @@
     M(TextIndexReadSparseIndexBlocks, "Number of times a sparse index block has been read from the text index.", ValueType::Number) \
     M(TextIndexReaderTotalMicroseconds, "Total time spent reading the text index.", ValueType::Microseconds) \
     M(TextIndexReadGranulesMicroseconds, "Total time spent reading and analyzing granules of the text index.", ValueType::Microseconds) \
-    M(TextIndexBloomFilterTrueNegatives, "Number of times a token has been filtered by bloom filter.", ValueType::Number) \
-    M(TextIndexBloomFilterTruePositives, "Number of times a token has passed the bloom filter and has been found in the dictionary.", ValueType::Number) \
-    M(TextIndexBloomFilterFalsePositives, "Number of times a token has passed the bloom filter and has not been found in the dictionary.", ValueType::Number) \
     M(TextIndexReadPostings, "Number of times a posting list has been read from the text index.", ValueType::Number) \
     M(TextIndexUsedEmbeddedPostings, "Number of times a posting list embedded in the dictionary has been used.", ValueType::Number) \
     M(TextIndexUseHint, "Number of index granules where a direct reading from the text index was added as hint and was used.", ValueType::Number) \
@@ -393,6 +397,8 @@
     M(MergeHorizontalStageExecuteMilliseconds, "Total busy time spent for execution of horizontal stage of background merges", ValueType::Milliseconds) \
     M(MergeVerticalStageTotalMilliseconds, "Total time spent for vertical stage of background merges", ValueType::Milliseconds) \
     M(MergeVerticalStageExecuteMilliseconds, "Total busy time spent for execution of vertical stage of background merges", ValueType::Milliseconds) \
+    M(MergeTextIndexStageTotalMilliseconds, "Total time spent for text index stage of background merges", ValueType::Milliseconds) \
+    M(MergeTextIndexStageExecuteMilliseconds, "Total busy time spent for execution of text index stage of background merges", ValueType::Milliseconds) \
     M(MergeProjectionStageTotalMilliseconds, "Total time spent for projection stage of background merges", ValueType::Milliseconds) \
     M(MergeProjectionStageExecuteMilliseconds, "Total busy time spent for execution of projection stage of background merges", ValueType::Milliseconds) \
     M(MergePrewarmStageTotalMilliseconds, "Total time spent for prewarm stage of background merges", ValueType::Milliseconds) \
@@ -864,6 +870,7 @@ The server successfully detected this situation and will download merged part fr
     M(KafkaCommits, "Number of successful commits of consumed offsets to Kafka (normally should be the same as KafkaBackgroundReads)", ValueType::Number) \
     M(KafkaCommitFailures, "Number of failed commits of consumed offsets to Kafka (usually is a sign of some data duplication)", ValueType::Number) \
     M(KafkaConsumerErrors, "Number of errors reported by librdkafka during polls", ValueType::Number) \
+    M(KafkaMVNotReady, "Number of failed attempts to stream data to a materialized view that is not ready", ValueType::Number) \
     M(KafkaWrites, "Number of writes (inserts) to Kafka tables ", ValueType::Number) \
     M(KafkaRowsWritten, "Number of rows inserted into Kafka tables", ValueType::Number) \
     M(KafkaProducerFlushes, "Number of explicit flushes to Kafka producer", ValueType::Number) \
@@ -912,6 +919,10 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperGetRequest, "Number of get requests", ValueType::Number) \
     M(KeeperListRequest, "Number of list requests", ValueType::Number) \
     M(KeeperExistsRequest, "Number of exists requests", ValueType::Number) \
+    M(KeeperSetWatchesRequest, "Number of set watches requests", ValueType::Number) \
+    M(KeeperAddWatchRequest, "Number of add watches requests", ValueType::Number) \
+    M(KeeperRemoveWatchRequest, "Number of remove watches requests", ValueType::Number) \
+    M(KeeperCheckWatchRequest, "Number of remove watches requests", ValueType::Number) \
     M(KeeperRequestRejectedDueToSoftMemoryLimitCount, "Number requests that have been rejected due to soft memory limit exceeded", ValueType::Number) \
     \
     M(OverflowBreak, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'break' and the result is incomplete.", ValueType::Number) \
@@ -1250,6 +1261,9 @@ The server successfully detected this situation and will download merged part fr
     \
     M(LoadedStatisticsMicroseconds, "Elapsed time of loading statistics from parts", ValueType::Microseconds) \
     \
+    M(RuntimeDataflowStatisticsInputBytes, "Collected statistics on the number of bytes replicas would read if the query was executed with parallel replicas", ValueType::Number) \
+    M(RuntimeDataflowStatisticsOutputBytes, "Collected statistics on the number of bytes replicas would send to the initiator if the query was executed with parallel replicas", ValueType::Number) \
+    \
     M(S3CachedCredentialsProvidersReused, "Total number of reused credentials provider from the cache", ValueType::Number) \
     M(S3CachedCredentialsProvidersAdded, "Total number of newly added credentials providers to the cache", ValueType::Number) \
 
@@ -1315,7 +1329,7 @@ Counters::Counters(Counters && src) noexcept
     : counters(std::exchange(src.counters, nullptr))
     , counters_holder(std::move(src.counters_holder))
     , parent(src.parent.exchange(nullptr))
-    , trace_profile_events(src.trace_profile_events)
+    , trace_all_profile_events(src.trace_all_profile_events.load(std::memory_order_relaxed))
     , level(src.level)
 {
 }
@@ -1347,29 +1361,53 @@ Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
     return res;
 }
 
-const char * getName(Event event)
+static const std::array<std::string_view, END> names =
 {
-    static const char * strings[] =
-    {
-    #define M(NAME, DOCUMENTATION, VALUE_TYPE) #NAME,
-        APPLY_FOR_EVENTS(M)
-    #undef M
-    };
+#define M(NAME, DOCUMENTATION, VALUE_TYPE) #NAME,
+    APPLY_FOR_EVENTS(M)
+#undef M
+};
 
-    return strings[event];
+const std::string_view & getName(Event event)
+{
+    return names[event];
 }
 
-const char * getDocumentation(Event event)
+static const std::array<std::string_view, END> docs =
 {
-    static const char * strings[] =
+#define M(NAME, DOCUMENTATION, VALUE_TYPE) DOCUMENTATION,
+    APPLY_FOR_EVENTS(M)
+#undef M
+};
+
+const std::string_view & getDocumentation(Event event)
+{
+    return docs[event];
+}
+
+/// Get ProfileEvent by its name
+Event getByName(std::string_view name)
+{
+    static std::unordered_map<std::string_view, Event> map =
     {
-    #define M(NAME, DOCUMENTATION, VALUE_TYPE) DOCUMENTATION,
+#define M(NAME, DOCUMENTATION, VALUE_TYPE) {#NAME, ProfileEvents::NAME},
         APPLY_FOR_EVENTS(M)
-    #undef M
+#undef M
     };
 
-    return strings[event];
+    return map.at(name);
 }
+
+void Counters::setTraceProfileEvents(const String & events_list)
+{
+    for (auto it = boost::make_split_iterator(events_list, boost::first_finder(",", boost::is_equal()));
+        it != decltype(it)();
+        ++it)
+    {
+        setTraceProfileEvent(getByName(std::string_view(*it)));
+    }
+}
+
 
 ValueType getValueType(Event event)
 {
@@ -1464,8 +1502,10 @@ void Counters::increment(Event event, Count amount)
 
     do
     {
-        send_to_trace_log |= current->trace_profile_events;
         current->counters[event].fetch_add(amount, std::memory_order_relaxed);
+        send_to_trace_log |= current->counters[event].should_trace;
+        send_to_trace_log |= current->trace_all_profile_events.load(std::memory_order_relaxed);
+
         current = current->parent;
     } while (current != nullptr);
 

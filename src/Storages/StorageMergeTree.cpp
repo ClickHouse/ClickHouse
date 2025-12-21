@@ -178,7 +178,6 @@ StorageMergeTree::StorageMergeTree(
           std::move(storage_settings_),
           false, /// require_part_metadata
           mode)
-    , reader(*this)
     , writer(*this)
     , merger_mutator(*this)
     , support_transaction(supportTransaction(getDisks(), log.load()))
@@ -205,6 +204,10 @@ StorageMergeTree::StorageMergeTree(
 
 void StorageMergeTree::startup()
 {
+    /// Do not schedule any background jobs if current storage has static data files.
+    if (isStaticStorage())
+        return;
+
     clearEmptyParts();
 
     /// Temporary directories contain incomplete results of merges (after forced restart)
@@ -214,10 +217,6 @@ void StorageMergeTree::startup()
     /// NOTE background task will also do the above cleanups periodically.
     time_after_previous_cleanup_parts.restart();
     time_after_previous_cleanup_temporary_directories.restart();
-
-    /// Do not schedule any background jobs if current storage has static data files.
-    if (isStaticStorage())
-        return;
 
     try
     {
@@ -328,7 +327,7 @@ void StorageMergeTree::read(
     const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower()
         && local_context->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree];
 
-    auto plan = reader.read(
+    auto plan = MergeTreeDataSelectExecutor(*this).read(
         column_names,
         storage_snapshot,
         query_info,
@@ -412,7 +411,7 @@ void StorageMergeTree::alter(
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
 
     if (!query_settings[Setting::allow_suspicious_primary_key])
-        MergeTreeData::verifySortingKey(new_metadata.sorting_key);
+        MergeTreeData::verifySortingKey(new_metadata.sorting_key, merging_params);
 
     /// This alter can be performed at new_metadata level only
     if (commands.isSettingsAlter())

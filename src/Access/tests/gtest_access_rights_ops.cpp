@@ -546,3 +546,487 @@ TEST(AccessRights, Filter)
     res = root.getFilters("URL");
     ASSERT_EQ(res.size(), 0);
 }
+
+TEST(AccessRights, RevokeWithParameters)
+{
+    AccessRights root;
+    root.grantWithGrantOption(AccessType::SELECT);
+    root.grantWithGrantOption(AccessType::CREATE_USER);
+    root.revokeWildcard(AccessType::SELECT, "default", "zoo");
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON *.* WITH GRANT OPTION, GRANT CREATE USER ON * WITH GRANT OPTION, REVOKE SELECT ON default.zoo*");
+
+    root = {};
+    root.grantWithGrantOption(AccessType::SELECT);
+    root.grantWithGrantOption(AccessType::CREATE_USER);
+    root.revokeWildcard(AccessType::SELECT, "default", "foo", "bar");
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON *.* WITH GRANT OPTION, GRANT CREATE USER ON * WITH GRANT OPTION, REVOKE SELECT(bar*) ON default.foo");
+}
+
+TEST(AccessRights, ParialRevokeWithGrantOption)
+{
+    AccessRights root;
+    root.grant(AccessType::SELECT);
+    root.revoke(AccessType::SELECT, "default", "zookeeper");
+    ASSERT_FALSE(root.isGrantedWildcard(AccessType::SELECT, "default", "zoo"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "default", "zoo"));
+
+    root = {};
+    root.grantWithGrantOption(AccessType::SELECT);
+    root.revoke(AccessType::SELECT, "default", "zookeeper");
+    ASSERT_FALSE(root.isGrantedWildcard(AccessType::SELECT, "default", "zoo"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "default", "zoo"));
+}
+
+TEST(AccessRights, WildcardGrantEdgeCases)
+{
+    AccessRights root;
+    root.grantWildcard(AccessType::SELECT, "a");
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "abc"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "a"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "bcd"));
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON a*.*");
+
+    root = {};
+    root.grantWildcard(AccessType::SELECT, "test");
+    root.grant(AccessType::INSERT, "test");
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "test"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "testing"));
+    ASSERT_TRUE(root.isGranted(AccessType::INSERT, "test"));
+    ASSERT_FALSE(root.isGranted(AccessType::INSERT, "testing"));
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON test*.*, GRANT INSERT ON test.*");
+
+    root = {};
+    root.grantWildcard(AccessType::SELECT, "prod");
+    root.grantWildcard(AccessType::INSERT, "production");
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "prod"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "production"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "product"));
+    ASSERT_FALSE(root.isGranted(AccessType::INSERT, "prod"));
+    ASSERT_FALSE(root.isGranted(AccessType::INSERT, "product"));
+    ASSERT_TRUE(root.isGranted(AccessType::INSERT, "production"));
+    ASSERT_TRUE(root.isGranted(AccessType::INSERT, "production_v2"));
+
+    root = {};
+    root.grantWildcard(AccessType::SELECT, "db", "tbl");
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db", "tbl"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db", "tbl_backup"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db", "tbl123"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "db", "other"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "db2", "tbl"));
+
+    root = {};
+    root.grantWildcard(AccessType::SELECT, "db", "tbl", "col");
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db", "tbl", "col"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db", "tbl", "col_id"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db", "tbl", "column"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "db", "tbl", "other"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "db", "tbl"));
+
+    root = {};
+    root.grantWildcard(AccessType::SELECT, "sys");
+    root.grantWildcard(AccessType::INSERT, "sys", "log");
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "sys", "any_table", "any_col"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "system", "tables"));
+    ASSERT_TRUE(root.isGranted(AccessType::INSERT, "sys", "log_events"));
+    ASSERT_FALSE(root.isGranted(AccessType::INSERT, "sys", "data"));
+}
+
+TEST(AccessRights, PartialRevokeWithWildcard)
+{
+    AccessRights root;
+    root.grant(AccessType::SELECT);
+    root.revokeWildcard(AccessType::SELECT, "system");
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "default"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "production"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "system"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "system_logs"));
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON *.*, REVOKE SELECT ON system*.*");
+
+    root = {};
+    root.grantWildcard(AccessType::SELECT, "prod");
+    root.revoke(AccessType::SELECT, "production");
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "prod"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "product"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "production"));
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON prod*.*, REVOKE SELECT ON production.*");
+
+    root = {};
+    root.grantWildcard(AccessType::SELECT, "test");
+    root.revokeWildcard(AccessType::SELECT, "testing");
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "test"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "test_env"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "testing"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "testing_v2"));
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON test*.*, REVOKE SELECT ON testing*.*");
+
+    root = {};
+    root.grantWildcard(AccessType::SELECT, "db");
+    root.revoke(AccessType::SELECT, "db", "secret");
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db", "public"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db123", "any"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "db", "secret"));
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON db*.*, REVOKE SELECT ON db.secret");
+
+    root = {};
+    root.grant(AccessType::SELECT);
+    root.revokeWildcard(AccessType::SELECT, "secret");
+    root.revokeWildcard(AccessType::SELECT, "private");
+    root.revoke(AccessType::SELECT, "system");
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "public"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "secret"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "secret_data"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "private"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "private_logs"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "system"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "system_public"));
+
+    root = {};
+    root.grant(AccessType::SELECT);
+    root.revokeWildcard(AccessType::SELECT, "internal");
+    root.grant(AccessType::SELECT, "internal_public");
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "internal"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "internal_data"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "internal_public"));
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON *.*, REVOKE SELECT ON internal*.*, GRANT SELECT ON internal_public.*");
+}
+
+TEST(AccessRights, WildcardGrantOptionInteractions)
+{
+    AccessRights root;
+    root.grantWildcardWithGrantOption(AccessType::SELECT, "db");
+    root.revokeGrantOption(AccessType::SELECT, "db", "sensitive");
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db", "sensitive"));
+    ASSERT_TRUE(root.hasGrantOption(AccessType::SELECT, "db", "public"));
+    ASSERT_FALSE(root.hasGrantOption(AccessType::SELECT, "db", "sensitive"));
+    ASSERT_TRUE(root.hasGrantOption(AccessType::SELECT, "db123", "any"));
+
+    root = {};
+    root.grantWildcard(AccessType::SELECT, "prod");
+    root.grantWithGrantOption(AccessType::SELECT, "production");
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "prod"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "production"));
+    ASSERT_FALSE(root.hasGrantOption(AccessType::SELECT, "prod"));
+    ASSERT_TRUE(root.hasGrantOption(AccessType::SELECT, "production"));
+    ASSERT_FALSE(root.hasGrantOption(AccessType::SELECT, "product"));
+
+    root = {};
+    root.grantWildcardWithGrantOption(AccessType::SELECT, "test");
+    root.revokeWildcardGrantOption(AccessType::SELECT, "testing");
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "testing"));
+    ASSERT_TRUE(root.hasGrantOption(AccessType::SELECT, "test"));
+    ASSERT_FALSE(root.hasGrantOption(AccessType::SELECT, "testing"));
+    ASSERT_FALSE(root.hasGrantOption(AccessType::SELECT, "testing_v2"));
+    ASSERT_TRUE(root.hasGrantOption(AccessType::SELECT, "test_env"));
+
+    root = {};
+    root.grantWildcardWithGrantOption(AccessType::INSERT, "analytics");
+    ASSERT_TRUE(root.hasGrantOptionWildcard(AccessType::INSERT, "analytics"));
+    ASSERT_TRUE(root.hasGrantOptionWildcard(AccessType::INSERT, "analytics_v2"));
+    ASSERT_FALSE(root.hasGrantOptionWildcard(AccessType::INSERT, "other"));
+
+    root = {};
+    root.grantWildcardWithGrantOption(AccessType::SELECT, "db");
+    root.revokeWildcardGrantOption(AccessType::SELECT, "db", "tbl");
+    ASSERT_TRUE(root.hasGrantOption(AccessType::SELECT, "db", "other"));
+    ASSERT_TRUE(root.hasGrantOption(AccessType::SELECT, "db123", "any"));
+    ASSERT_FALSE(root.hasGrantOption(AccessType::SELECT, "db", "tbl"));
+    ASSERT_FALSE(root.hasGrantOption(AccessType::SELECT, "db", "tbl_backup"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db", "tbl"));
+}
+
+TEST(AccessRights, UnionWithPartialRevokes)
+{
+    AccessRights lhs;
+    AccessRights rhs;
+
+    lhs.grant(AccessType::SELECT);
+    lhs.revoke(AccessType::SELECT, "secret");
+    rhs.grant(AccessType::SELECT, "secret", "public_table");
+    lhs.makeUnion(rhs);
+    ASSERT_TRUE(lhs.isGranted(AccessType::SELECT, "default"));
+    ASSERT_TRUE(lhs.isGranted(AccessType::SELECT, "secret", "public_table"));
+    ASSERT_FALSE(lhs.isGranted(AccessType::SELECT, "secret"));
+
+    lhs = {};
+    rhs = {};
+    lhs.grant(AccessType::SELECT);
+    lhs.revokeWildcard(AccessType::SELECT, "sys");
+    rhs.grantWildcard(AccessType::SELECT, "system");
+    lhs.makeUnion(rhs);
+    ASSERT_TRUE(lhs.isGranted(AccessType::SELECT, "default"));
+    ASSERT_TRUE(lhs.isGranted(AccessType::SELECT, "system"));
+    ASSERT_TRUE(lhs.isGranted(AccessType::SELECT, "system_logs"));
+    ASSERT_FALSE(lhs.isGranted(AccessType::SELECT, "sys"));
+
+    lhs = {};
+    rhs = {};
+    lhs.grantWildcard(AccessType::SELECT, "prod");
+    rhs.grantWildcard(AccessType::INSERT, "prod");
+    lhs.makeUnion(rhs);
+    ASSERT_TRUE(lhs.isGranted(AccessType::SELECT, "production"));
+    ASSERT_TRUE(lhs.isGranted(AccessType::INSERT, "production"));
+    ASSERT_EQ(lhs.toString(), "GRANT SELECT, INSERT ON prod*.*");
+
+    lhs = {};
+    rhs = {};
+    lhs.grantWildcard(AccessType::SELECT, "test");
+    rhs.grantWildcard(AccessType::SELECT, "testing");
+    lhs.makeUnion(rhs);
+    ASSERT_TRUE(lhs.isGranted(AccessType::SELECT, "test"));
+    ASSERT_TRUE(lhs.isGranted(AccessType::SELECT, "testing"));
+    ASSERT_EQ(lhs.toString(), "GRANT SELECT ON test*.*");
+}
+
+TEST(AccessRights, IntersectionWithPartialRevokes)
+{
+    AccessRights lhs;
+    AccessRights rhs;
+
+    lhs.grant(AccessType::SELECT);
+    lhs.revoke(AccessType::SELECT, "secret");
+    rhs.grant(AccessType::SELECT);
+    rhs.revoke(AccessType::SELECT, "private");
+    lhs.makeIntersection(rhs);
+    ASSERT_TRUE(lhs.isGranted(AccessType::SELECT, "default"));
+    ASSERT_FALSE(lhs.isGranted(AccessType::SELECT, "secret"));
+    ASSERT_FALSE(lhs.isGranted(AccessType::SELECT, "private"));
+
+    lhs = {};
+    rhs = {};
+    lhs.grantWildcard(AccessType::SELECT, "test");
+    rhs.grant(AccessType::SELECT, "test");
+    rhs.grant(AccessType::SELECT, "testing");
+    lhs.makeIntersection(rhs);
+    ASSERT_TRUE(lhs.isGranted(AccessType::SELECT, "test"));
+    ASSERT_TRUE(lhs.isGranted(AccessType::SELECT, "testing"));
+    ASSERT_FALSE(lhs.isGranted(AccessType::SELECT, "test_env"));
+
+    lhs = {};
+    rhs = {};
+    lhs.grantWildcard(AccessType::SELECT, "prod");
+    rhs.grantWildcard(AccessType::SELECT, "production");
+    lhs.makeIntersection(rhs);
+    ASSERT_FALSE(lhs.isGranted(AccessType::SELECT, "prod"));
+    ASSERT_FALSE(lhs.isGranted(AccessType::SELECT, "product"));
+    ASSERT_TRUE(lhs.isGranted(AccessType::SELECT, "production"));
+    ASSERT_TRUE(lhs.isGranted(AccessType::SELECT, "production_v2"));
+
+    lhs = {};
+    rhs = {};
+    lhs.grant(AccessType::SELECT);
+    rhs.grant(AccessType::SELECT);
+    rhs.revokeWildcard(AccessType::SELECT, "sys");
+    lhs.makeIntersection(rhs);
+    ASSERT_TRUE(lhs.isGranted(AccessType::SELECT, "default"));
+    ASSERT_FALSE(lhs.isGranted(AccessType::SELECT, "sys"));
+    ASSERT_FALSE(lhs.isGranted(AccessType::SELECT, "system"));
+}
+
+TEST(AccessRights, DifferenceWithPartialRevokes)
+{
+    AccessRights lhs;
+    AccessRights rhs;
+
+    lhs.grant(AccessType::SELECT);
+    rhs.grant(AccessType::SELECT);
+    rhs.revoke(AccessType::SELECT, "secret");
+    lhs.makeDifference(rhs);
+    ASSERT_FALSE(lhs.isGranted(AccessType::SELECT, "default"));
+    ASSERT_TRUE(lhs.isGranted(AccessType::SELECT, "secret"));
+
+    lhs = {};
+    rhs = {};
+    lhs.grantWildcard(AccessType::SELECT, "test");
+    rhs.grant(AccessType::SELECT, "test");
+    lhs.makeDifference(rhs);
+    ASSERT_FALSE(lhs.isGranted(AccessType::SELECT, "test"));
+    ASSERT_TRUE(lhs.isGranted(AccessType::SELECT, "testing"));
+    ASSERT_TRUE(lhs.isGranted(AccessType::SELECT, "test_env"));
+
+    lhs = {};
+    rhs = {};
+    lhs.grant(AccessType::SELECT);
+    rhs.grant(AccessType::SELECT);
+    rhs.revokeWildcard(AccessType::SELECT, "internal");
+    lhs.makeDifference(rhs);
+    ASSERT_FALSE(lhs.isGranted(AccessType::SELECT, "default"));
+    ASSERT_TRUE(lhs.isGranted(AccessType::SELECT, "internal"));
+    ASSERT_TRUE(lhs.isGranted(AccessType::SELECT, "internal_data"));
+}
+
+TEST(AccessRights, ContainsWithWildcardsAndPartialRevokes)
+{
+    AccessRights lhs;
+    AccessRights rhs;
+
+    lhs.grantWildcard(AccessType::SELECT, "test");
+    rhs.grant(AccessType::SELECT, "testing");
+    ASSERT_TRUE(lhs.contains(rhs));
+
+    lhs = {};
+    rhs = {};
+    lhs.grantWildcard(AccessType::SELECT, "test");
+    rhs.grant(AccessType::SELECT, "prod");
+    ASSERT_FALSE(lhs.contains(rhs));
+
+    lhs = {};
+    rhs = {};
+    lhs.grant(AccessType::SELECT);
+    lhs.revoke(AccessType::SELECT, "secret");
+    rhs.grant(AccessType::SELECT, "default");
+    ASSERT_TRUE(lhs.contains(rhs));
+
+    lhs = {};
+    rhs = {};
+    lhs.grant(AccessType::SELECT);
+    lhs.revoke(AccessType::SELECT, "secret");
+    rhs.grant(AccessType::SELECT, "secret");
+    ASSERT_FALSE(lhs.contains(rhs));
+
+    lhs = {};
+    rhs = {};
+    lhs.grant(AccessType::SELECT);
+    lhs.revokeWildcard(AccessType::SELECT, "sys");
+    rhs.grant(AccessType::SELECT, "default");
+    rhs.grant(AccessType::SELECT, "prod");
+    ASSERT_TRUE(lhs.contains(rhs));
+
+    lhs = {};
+    rhs = {};
+    lhs.grant(AccessType::SELECT);
+    lhs.revokeWildcard(AccessType::SELECT, "sys");
+    rhs.grant(AccessType::SELECT, "system");
+    ASSERT_FALSE(lhs.contains(rhs));
+
+    lhs = {};
+    rhs = {};
+    lhs.grantWildcard(AccessType::SELECT, "testing");
+    rhs.grantWildcard(AccessType::SELECT, "test");
+    ASSERT_FALSE(lhs.contains(rhs));
+}
+
+TEST(AccessRights, ColumnLevelWildcardOperations)
+{
+    AccessRights root;
+    root.grant(AccessType::SELECT, "db", "users");
+    root.revokeWildcard(AccessType::SELECT, "db", "users", "secret");
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db", "users", "name"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db", "users", "email"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "db", "users", "secret"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "db", "users", "secret_key"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "db", "users"));
+
+    root = {};
+    root.grant(AccessType::SELECT, "db", "table");
+    root.revokeWildcard(AccessType::SELECT, "db", "table", "private");
+    root.revokeWildcard(AccessType::SELECT, "db", "table", "secret");
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db", "table", "public_col"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "db", "table", "private_data"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "db", "table", "secret_key"));
+
+    root = {};
+    root.grantWildcard(AccessType::SELECT, "db", "table", "col");
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db", "table", "col"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db", "table", "col_id"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db", "table", "column"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "db", "table", "other"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "db", "table"));
+
+    root = {};
+    root.grantWildcardWithGrantOption(AccessType::SELECT, "db", "table", "visible");
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db", "table", "visible"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db", "table", "visible_data"));
+    ASSERT_TRUE(root.hasGrantOption(AccessType::SELECT, "db", "table", "visible"));
+    ASSERT_TRUE(root.hasGrantOption(AccessType::SELECT, "db", "table", "visible_data"));
+    ASSERT_FALSE(root.hasGrantOption(AccessType::SELECT, "db", "table", "hidden"));
+}
+
+TEST(AccessRights, ComplexWildcardScenarios)
+{
+    AccessRights root;
+    root.grant(AccessType::ALL);
+    root.revokeWildcard(AccessType::SELECT, "internal");
+    root.grantWildcard(AccessType::SELECT, "internal_public");
+    root.revoke(AccessType::SELECT, "internal_public_secret");
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "default"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "internal"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "internal_data"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "internal_public"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "internal_public_api"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "internal_public_secret"));
+
+    root = {};
+    root.grantWildcard(AccessType::SELECT, "prod");
+    root.revokeWildcard(AccessType::SELECT, "prod", "secret");
+    root.grant(AccessType::SELECT, "prod", "secret_allowed");
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "production", "users"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "prod", "secret_data"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "prod", "secret_allowed"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "prod", "public"));
+
+    root = {};
+    root.grantWildcard(AccessType::SELECT, "analytics");
+    root.grantWildcard(AccessType::INSERT, "analytics_write");
+    root.revoke(AccessType::SELECT, "analytics_read_only", "sensitive");
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "analytics", "any"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "analytics_read_only", "normal"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "analytics_read_only", "sensitive"));
+    ASSERT_TRUE(root.isGranted(AccessType::INSERT, "analytics_write", "data"));
+    ASSERT_FALSE(root.isGranted(AccessType::INSERT, "analytics", "data"));
+
+    root = {};
+    root.grantWildcard(AccessType::SELECT, "");
+    root.revokeWildcard(AccessType::SELECT, "a");
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "b"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "z"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "a"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "abc"));
+
+    root = {};
+    root.grant(AccessType::SELECT);
+    root.revoke(AccessType::SELECT);
+    root.grantWildcard(AccessType::SELECT, "allowed");
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "default"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "allowed"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "allowed_db"));
+}
+
+TEST(AccessRights, PartialRevokePropagation)
+{
+    AccessRights root;
+    root.grant(AccessType::SELECT);
+    root.revoke(AccessType::SELECT, "db1", "secret");
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "db1", "secret"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db1", "public"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db2", "secret"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db2"));
+
+    root = {};
+    root.grant(AccessType::SELECT);
+    root.revokeWildcard(AccessType::SELECT, "temp");
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "permanent"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "temp"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "temp1"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "temporary"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "team"));
+
+    root = {};
+    root.grant(AccessType::SELECT, "db");
+    root.revoke(AccessType::SELECT, "db", "t1", "col1");
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db", "t1", "col2"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db", "t2"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "db", "t1", "col1"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "db", "t1"));
+
+    root = {};
+    root.grant(AccessType::SELECT);
+    root.grant(AccessType::INSERT);
+    root.revokeWildcard(AccessType::SELECT, "readonly");
+    root.revokeWildcard(AccessType::INSERT, "writeonly");
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "normal"));
+    ASSERT_TRUE(root.isGranted(AccessType::INSERT, "normal"));
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "readonly"));
+    ASSERT_TRUE(root.isGranted(AccessType::INSERT, "readonly"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "writeonly"));
+    ASSERT_FALSE(root.isGranted(AccessType::INSERT, "writeonly"));
+}

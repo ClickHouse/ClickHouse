@@ -217,7 +217,7 @@ evalMLMethod(model, x1, x2) FROM test_data
     };
     FunctionDocumentation::IntroducedIn introduced_in_linear = {20, 1};
     FunctionDocumentation::Category category_linear = FunctionDocumentation::Category::MachineLearning;
-    FunctionDocumentation documentation_linear = {description_linear, syntax_linear, arguments_linear, returned_value_linear, examples_linear, introduced_in_linear, category_linear};
+    FunctionDocumentation documentation_linear = {description_linear, syntax_linear, arguments_linear, {}, returned_value_linear, examples_linear, introduced_in_linear, category_linear};
 
     factory.registerFunction("stochasticLinearRegression", {createAggregateFunctionMLMethod<FuncLinearRegression>, {}, documentation_linear});
 
@@ -324,7 +324,7 @@ evalMLMethod(model, x1, x2) AS result FROM test_data)
     };
     FunctionDocumentation::IntroducedIn introduced_in_logistic = {20, 1};
     FunctionDocumentation::Category category_logistic = FunctionDocumentation::Category::MachineLearning;
-    FunctionDocumentation documentation_logistic = {description_logistic, syntax_logistic, arguments_logistic, returned_value_logistic, examples_logistic, introduced_in_logistic, category_logistic};
+    FunctionDocumentation documentation_logistic = {description_logistic, syntax_logistic, arguments_logistic, {}, returned_value_logistic, examples_logistic, introduced_in_logistic, category_logistic};
 
     factory.registerFunction("stochasticLogisticRegression", {createAggregateFunctionMLMethod<FuncLogisticRegression>, {}, documentation_logistic});
 }

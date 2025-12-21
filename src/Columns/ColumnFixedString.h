@@ -146,7 +146,7 @@ public:
         chars.resize_assume_reserved(chars.size() - n * elems);
     }
 
-    void deserializeAndInsertFromArena(ReadBuffer & in) override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
     void skipSerializedInArena(ReadBuffer & in) const override;
 
@@ -182,6 +182,8 @@ public:
 #endif
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
+
+    void filter(const IColumn::Filter & filt) override;
 
     void expand(const IColumn::Filter & mask, bool inverted) override;
 

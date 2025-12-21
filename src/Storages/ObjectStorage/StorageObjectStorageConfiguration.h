@@ -27,6 +27,8 @@ struct IObjectIterator;
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
 using ObjectIterator = std::shared_ptr<IObjectIterator>;
 
+struct StorageParsedArguments;
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -228,14 +230,11 @@ public:
 
     virtual void checkAlterIsPossible(const AlterCommands & commands)
     {
-        /// Check if any of the alter commands is ADD_INDEX and throw immediately
-        const bool alter_adds_index
-            = std::ranges::any_of(commands, [](const AlterCommand & c) { return c.type == AlterCommand::ADD_INDEX; });
-        if (alter_adds_index)
+        for (const auto & command : commands)
         {
-            const auto & features = StorageFactory::instance().getStorageFeatures(getEngineName());
-            if (!features.supports_skipping_indices)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Engine {} doesn't support skipping indices.", getEngineName());
+            if (!command.isCommentAlter())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
+                    command.type, getEngineName());
         }
     }
 
@@ -270,6 +269,7 @@ public:
     std::shared_ptr<IPartitionStrategy> partition_strategy;
 
 protected:
+    void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;
     virtual void fromDisk(const String & /*disk_name*/, ASTs & /*args*/, ContextPtr /*context*/, bool /*with_structure*/)

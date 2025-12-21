@@ -222,7 +222,6 @@ static inline T ALWAYS_INLINE packFixed(
     return key;
 }
 
-
 /** Pack elements with shuffle instruction.
   * See the explanation in ColumnsHashing.h
   */

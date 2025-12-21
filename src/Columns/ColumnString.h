@@ -206,9 +206,9 @@ public:
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
     void rollback(const ColumnCheckpoint & checkpoint) override;
 
-    void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
+    void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
 
-    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const final
+    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const SerializationSettings *) const final
     {
         size_t string_size = sizeAt(n);
         size_t offset = offsetAt(n);
@@ -220,7 +220,7 @@ public:
         return {pos, result_size};
     }
 
-    std::string_view serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null) const final
+    std::string_view serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null, const SerializationSettings * settings) const final
     {
         if (is_null)
         {
@@ -232,28 +232,26 @@ public:
                 return {memory, 1};
             }
 
-            auto serialized_value_size = getSerializedValueSize(n);
+            auto serialized_value_size = getSerializedValueSize(n, settings);
             if (serialized_value_size)
             {
                 size_t total_size = *serialized_value_size + 1 /* null map byte */;
                 memory = arena.allocContinue(total_size, begin);
                 *memory = 0;
-                serializeValueIntoMemory(n, memory + 1);
+                serializeValueIntoMemory(n, memory + 1, settings);
                 return {memory, total_size};
             }
 
             memory = arena.allocContinue(1, begin);
             *memory = 0;
-            auto res = serializeValueIntoArena(n, arena, begin);
+            auto res = serializeValueIntoArena(n, arena, begin, settings);
             return std::string_view(res.data() - 1, res.size() + 1);
         }
 
-        return serializeValueIntoArena(n, arena, begin);
+        return serializeValueIntoArena(n, arena, begin, settings);
     }
 
-    std::string_view serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-
-    char * serializeValueIntoMemory(size_t n, char * memory) const final
+    char * serializeValueIntoMemory(size_t n, char * memory, const SerializationSettings *) const final
     {
         size_t string_size = sizeAt(n);
         size_t offset = offsetAt(n);
@@ -264,7 +262,7 @@ public:
         return memory + string_size;
     }
 
-    char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const final
+    char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null, const SerializationSettings * settings) const final
     {
         if (is_null)
         {
@@ -274,11 +272,10 @@ public:
                 return memory;
         }
 
-        return serializeValueIntoMemory(n, memory);
+        return serializeValueIntoMemory(n, memory, settings);
     }
 
-    void deserializeAndInsertFromArena(ReadBuffer & in) override;
-    void deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in) override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
     void skipSerializedInArena(ReadBuffer & in) const override;
 
@@ -295,6 +292,8 @@ public:
 #endif
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+
+    void filter(const Filter & filt) override;
 
     void expand(const Filter & mask, bool inverted) override;
 

@@ -55,6 +55,7 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onProcessing()
     processing_start_time = now();
     processing_end_time = {};
     processed_rows = 0;
+    last_exception = {};
 }
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessed()
@@ -153,15 +154,25 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
 {
     if (created_processing_node)
     {
+        std::string current_exception;
         if (file_status->getException().empty())
         {
             if (std::current_exception())
-                file_status->onFailed(getCurrentExceptionMessage(true));
+            {
+                current_exception = getCurrentExceptionMessage(true);
+                file_status->onFailed(current_exception);
+            }
             else
                 file_status->onFailed("Unprocessed exception");
         }
+        else
+        {
+            chassert(file_status->state == FileStatus::State::Failed);
+        }
 
-        LOG_TEST(log, "Removing processing node in destructor for file: {}", path);
+        LOG_TEST(log, "Removing processing node in destructor for file: {} "
+                 "(state: {}, exception: {})",
+                 path, file_status->state.load(), current_exception);
         try
         {
             Coordination::Error code;
@@ -309,32 +320,30 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
 std::optional<ObjectStorageQueueIFileMetadata::SetProcessingResponseIndexes>
 ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requests & requests, const std::string & processing_id)
 {
-    if (metadata_ref_count.load() > 1)
+    std::unique_lock processing_lock(file_status->processing_lock, std::defer_lock);
+    if (!processing_lock.try_lock())
     {
-        std::unique_lock processing_lock(file_status->processing_lock, std::defer_lock);
-        if (!processing_lock.try_lock())
-        {
-            /// This is possible in case on the same server
-            /// there are more than one S3(Azure)Queue table processing the same keeper path.
-            LOG_TEST(log, "File {} is being processed on this server by another table on this server", path);
-            return std::nullopt;
-        }
+        /// This is possible in case on the same server
+        /// there are more than one S3(Azure)Queue table processing the same keeper path.
+        LOG_TEST(log, "File {} is being processed by another table on this server or"
+                 " another process insert thread in case parallel_insert = 1", path);
+        return std::nullopt;
+    }
 
-        auto state = file_status->state.load();
-        if (state == FileStatus::State::Processing
-            || state == FileStatus::State::Processed
-            || (state == FileStatus::State::Failed
-                && file_status->retries
-                && file_status->retries >= max_loading_retries))
-        {
-            LOG_TEST(log, "File {} has non-processable state `{}` (retries: {}/{})",
-                    path, state, file_status->retries.load(), max_loading_retries);
+    auto state = file_status->state.load();
+    if (state == FileStatus::State::Processing
+        || state == FileStatus::State::Processed
+        || (state == FileStatus::State::Failed
+            && file_status->retries
+            && file_status->retries >= max_loading_retries))
+    {
+        LOG_TEST(log, "File {} has non-processable state `{}` (retries: {}/{})",
+                path, state, file_status->retries.load(), max_loading_retries);
 
-            /// This is possible in case on the same server
-            /// there are more than one S3(Azure)Queue table processing the same keeper path.
-            LOG_TEST(log, "File {} is being processed on this server by another table on this server", path);
-            return std::nullopt;
-        }
+        /// This is possible in case on the same server
+        /// there are more than one S3(Azure)Queue table processing the same keeper path.
+        LOG_TEST(log, "File {} is being processed on this server by another table on this server", path);
+        return std::nullopt;
     }
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);
@@ -489,6 +498,13 @@ void ObjectStorageQueueIFileMetadata::finalizeProcessed()
 {
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueProcessedFiles);
 
+    SCOPE_EXIT({
+        file_status->onProcessed();
+        created_processing_node = false;
+
+        LOG_TRACE(log, "Set file {} as processed (rows: {})", path, file_status->processed_rows.load());
+    });
+
 #ifdef DEBUG_OR_SANITIZER_BUILD
     ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
     {
@@ -506,17 +522,18 @@ void ObjectStorageQueueIFileMetadata::finalizeProcessed()
             fmt::format("Expected path {} to exist while finalizing {}", processed_node_path, path));
     });
 #endif
-
-    file_status->onProcessed();
-    created_processing_node = false;
-
-    LOG_TRACE(log, "Set file {} as processed (rows: {})", path, file_status->processed_rows.load());
 }
 
 void ObjectStorageQueueIFileMetadata::finalizeFailed(const std::string & exception_message)
 {
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueFailedFiles);
 
+    SCOPE_EXIT({
+        file_status->onFailed(exception_message);
+        created_processing_node = false;
+
+        LOG_TRACE(log, "Set file {} as failed (rows: {})", path, file_status->processed_rows.load());
+    });
 #ifdef DEBUG_OR_SANITIZER_BUILD
     ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
     {
@@ -536,11 +553,6 @@ void ObjectStorageQueueIFileMetadata::finalizeFailed(const std::string & excepti
 
     });
 #endif
-
-    file_status->onFailed(exception_message);
-    created_processing_node = false;
-
-    LOG_TRACE(log, "Set file {} as failed (rows: {})", path, file_status->processed_rows.load());
 }
 
 void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(

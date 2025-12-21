@@ -289,19 +289,29 @@ ObjectStorageQueueSource::FileIterator::next()
                         }
                         else
                         {
-                            String data;
-                            for (const auto & path : processing_paths)
+                            auto processing_paths_responses = zk_client->tryGet(processing_paths);
+                            for (size_t i = 0; i < processing_paths_responses.size(); ++i)
                             {
-                                if (!zk_client->tryGet(path, data))
+                                const auto & response = processing_paths_responses[i];
+                                if (response.error == Coordination::Error::ZNONODE)
                                 {
-                                    LOG_TEST(log, "Path {} does not exist", path);
+                                    LOG_TEST(log, "Path {} does not exist", processing_paths[i]);
                                     failed = true;
                                     break;
                                 }
-
-                                LOG_TEST(log, "Having {}, current processor: {}", data, processor_info);
-                                if (data != processor_info)
+                                if (response.error == Coordination::Error::ZOK)
                                 {
+                                    LOG_TEST(log, "Having {}, current processor: {}", response.data, processor_info);
+                                    if (response.data != processor_info)
+                                    {
+                                        failed = true;
+                                        break;
+                                    }
+                                }
+                                else
+                                {
+                                    LOG_WARNING(log, "Unexpected error: {}, path: {}", response.error, processing_paths[i]);
+                                    chassert(false);
                                     failed = true;
                                     break;
                                 }
@@ -539,23 +549,25 @@ void ObjectStorageQueueSource::FileIterator::returnForRetry(ObjectInfoPtr object
 void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
 {
     std::lock_guard lock(mutex);
-    for (const auto & [processor, holders] : bucket_holders)
+    for (auto & [processor, holders] : bucket_holders)
     {
-        LOG_TEST(log, "Releasing {} bucket holders for processor {}", holders.size(), processor);
-
-        for (auto it = holders.begin(); it != holders.end(); ++it)
+        std::string buckets_str;
+        for (auto it = holders.begin(); it != holders.end();)
         {
             const auto & holder = *it;
             const auto bucket = holder->getBucketInfo()->bucket;
-            if (!holder->isFinished())
+            /// Only the last holder in the list of holders can be non-finished.
+            if (std::next(it) == holders.end())
             {
-                /// Only the last holder in the list of holders can be non-finished.
-                chassert(std::next(it) == holders.end());
-
-                /// Do not release non-finished bucket holder. We will continue processing it.
-                LOG_TEST(log, "Bucket {} is not finished yet, will not release it", bucket);
-                break;
+                if (!holder->isFinished())
+                {
+                    /// Do not release non-finished bucket holder. We will continue processing it.
+                    LOG_TEST(log, "Bucket {} is not finished yet, will not release it", bucket);
+                    break;
+                }
             }
+            else
+                chassert(holder->isFinished());
 
             /// Release bucket lock.
             holder->release();
@@ -564,8 +576,35 @@ void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
             auto cached_info = listed_keys_cache.find(bucket);
             if (cached_info != listed_keys_cache.end())
                 cached_info->second.processor.reset();
+
+            if (!buckets_str.empty())
+                buckets_str += ", ";
+            buckets_str += toString(bucket);
+
+            it = holders.erase(it);
+        }
+        LOG_TRACE(log, "Released {} bucket holders for processor {} ({})", holders.size(), processor, buckets_str);
+    }
+}
+
+std::string ObjectStorageQueueSource::FileIterator::bucketHoldersToString() const
+{
+    std::string processors_infos;
+    for (const auto & [processor, bucket_holder] : bucket_holders)
+    {
+        if (!processors_infos.empty())
+            processors_infos += ", ";
+
+        processors_infos += fmt::format("processor {} -> {} buckets ", processor, bucket_holder.size());
+        if (!bucket_holder.empty())
+        {
+            processors_infos += "(";
+            for (const auto & bucket : bucket_holder)
+                processors_infos += toString(bucket->getBucket()) + " ";
+            processors_infos += ")";
         }
     }
+    return processors_infos;
 }
 
 ObjectStorageQueueSource::FileIterator::NextKeyFromBucket
@@ -575,6 +614,17 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
     BucketHolder * current_bucket_holder = bucket_holder_it->second.empty() || bucket_holder_it->second.back()->isFinished()
         ? nullptr
         : bucket_holder_it->second.back().get();
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    if (current_bucket_holder)
+    {
+        ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+        {
+            auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+            chassert(current_bucket_holder->checkBucketOwnership(zk_client));
+        });
+    }
+#endif
 
     auto current_processor = toString(processor);
 
@@ -608,38 +658,34 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                 {
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
-                        "Expected current processor {} to be equal to {} for bucket {}",
+                        "Expected current processor {} to be equal to {} for bucket {} ({})",
                         current_processor,
                         bucket_processor.has_value() ? toString(bucket_processor.value()) : "None",
-                        bucket);
+                        bucket, bucketHoldersToString());
                 }
 
-                if (current_bucket_holder)
+                if (!bucket_keys.empty())
                 {
-                    if (!bucket_keys.empty())
-                    {
-                        /// Take the key from the front, the order is important.
-                        auto [object_info, file_metadata] = bucket_keys.front();
-                        bucket_keys.pop_front();
+                    /// Take the key from the front, the order is important.
+                    auto [object_info, file_metadata] = bucket_keys.front();
+                    bucket_keys.pop_front();
 
-                            LOG_TEST(log, "Current bucket: {}, will process file: {}",
-                                    bucket, object_info->getFileName());
+                    LOG_TEST(log, "Current bucket: {}, will process file: {}", bucket, object_info->getFileName());
 
-                        return {object_info, file_metadata, current_bucket_holder->getBucketInfo()};
-                    }
-
-                    LOG_TEST(log, "Cache of bucket {} is empty", bucket);
-
-                    /// No more keys in bucket, remove it from cache.
-                    listed_keys_cache.erase(it);
+                    return {object_info, file_metadata, current_bucket_holder->getBucketInfo()};
                 }
+
+                LOG_TEST(log, "Cache of bucket {} is empty", bucket);
+
+                /// No more keys in bucket, remove it from cache.
+                listed_keys_cache.erase(it);
             }
             else
             {
                 LOG_TEST(log, "Cache of bucket {} is empty", bucket);
             }
 
-            if (current_bucket_holder && iterator_finished)
+            if (iterator_finished)
             {
                 /// Bucket is fully processed, but we will release it later
                 /// - once we write and commit files via commit() method.
@@ -692,15 +738,15 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
 
                 bucket_holder_it->second.push_back(acquired_bucket);
                 current_bucket_holder = bucket_holder_it->second.back().get();
-
+                const std::string previous_processor = bucket_processor.has_value() ? toString(bucket_processor.value()) : "None";
                 bucket_processor = current_processor;
+
+                LOG_TRACE(log, "Processor {} acquired bucket: {} (keys cache: {}, processor: {}, previous processor: {})",
+                          current_processor, bucket, it->second.keys.size(), it->second.processor.value(), previous_processor);
 
                 /// Take the key from the front, the order is important.
                 auto [object_info, file_metadata] = bucket_keys.front();
                 bucket_keys.pop_front();
-
-                LOG_TEST(log, "Acquired bucket: {}, will process file: {}",
-                         bucket, object_info->getFileName());
 
                 return {object_info, file_metadata, current_bucket_holder->getBucketInfo()};
             }
@@ -740,10 +786,12 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
             auto acquired_bucket = metadata->tryAcquireBucket(bucket);
             if (acquired_bucket)
             {
+                LOG_TRACE(log, "Processor {} acquired bucket: {}, updated bucket cache", current_processor, bucket);
+
                 bucket_holder_it->second.push_back(acquired_bucket);
                 current_bucket_holder = bucket_holder_it->second.back().get();
-
                 bucket_cache.processor = current_processor;
+
                 if (!bucket_cache.keys.empty())
                 {
                     /// We have to maintain ordering between keys,
@@ -974,7 +1022,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 }
             }
 
-            LOG_DEBUG(log, "Will process file: {}", file_metadata->getPath());
+            LOG_TEST(log, "Will process file: {}", file_metadata->getPath());
 
             processed_files.emplace_back(file_metadata);
         }
@@ -1249,51 +1297,63 @@ void ObjectStorageQueueSource::finalizeCommit(
     if (processed_files.empty())
         return;
 
+    std::exception_ptr finalize_exception;
     for (const auto & [file_state, file_metadata, exception_during_read] : processed_files)
     {
-        switch (file_state)
+        try
         {
-            case FileState::Processed:
+            switch (file_state)
             {
-                if (insert_succeeded)
+                case FileState::Processed:
                 {
-                    file_metadata->finalizeProcessed();
+                    if (insert_succeeded)
+                    {
+                        file_metadata->finalizeProcessed();
+                    }
+                    else
+                    {
+                        file_metadata->finalizeFailed(exception_message);
+                    }
+                    break;
                 }
-                else
+                case FileState::Cancelled: [[fallthrough]];
+                case FileState::Processing:
                 {
+                    if (insert_succeeded)
+                    {
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Unexpected state {} of file {} while insert succeeded",
+                            file_state, file_metadata->getPath());
+                    }
+
                     file_metadata->finalizeFailed(exception_message);
+                    break;
                 }
-                break;
-            }
-            case FileState::Cancelled: [[fallthrough]];
-            case FileState::Processing:
-            {
-                if (insert_succeeded)
+                case FileState::ErrorOnRead:
                 {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Unexpected state {} of file {} while insert succeeded",
-                        file_state, file_metadata->getPath());
+                    chassert(!exception_during_read.empty());
+                    file_metadata->finalizeFailed(exception_during_read);
+                    break;
                 }
+            }
 
-                file_metadata->finalizeFailed(exception_message);
-                break;
-            }
-            case FileState::ErrorOnRead:
-            {
-                chassert(!exception_during_read.empty());
-                file_metadata->finalizeFailed(exception_during_read);
-                break;
-            }
+            appendLogElement(
+                file_metadata,
+                /* processed */insert_succeeded && file_state == FileState::Processed,
+                commit_id,
+                commit_time,
+                transaction_start_time_);
         }
-
-        appendLogElement(
-            file_metadata,
-            /* processed */insert_succeeded && file_state == FileState::Processed,
-            commit_id,
-            commit_time,
-            transaction_start_time_);
+        catch (...)
+        {
+            tryLogCurrentException(log);
+            if (!finalize_exception)
+                finalize_exception = std::current_exception();
+        }
     }
+    if (finalize_exception)
+        std::rethrow_exception(finalize_exception);
 }
 
 void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string & exception_message)

@@ -472,7 +472,7 @@ void BSONEachRowRowInputFormat::readMap(IColumn & column, const DataTypePtr & da
     {
         auto nested_bson_type = getBSONType(readBSONType(*in));
         auto name = readBSONKeyName(*in, current_key_name);
-        ReadBufferFromMemory buf(name.data(), name.size());
+        ReadBufferFromMemory buf(name);
         key_data_type->getDefaultSerialization()->deserializeWholeText(key_column, buf, format_settings);
         readField(value_column, value_data_type, nested_bson_type);
     }

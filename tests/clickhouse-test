@@ -1259,6 +1259,7 @@ class MergeTreeSettingsRandomizer:
         "auto_statistics_types": auto_statistics_generator(),
         "serialization_info_version": lambda: random.choice(["basic", "with_types"]),
         "string_serialization_version": lambda: random.choice(["single_stream", "with_size_stream"]),
+        "nullable_serialization_version": lambda: random.choice(["basic", "allow_sparse"]),
         "enable_shared_storage_snapshot_in_query": lambda: random.randint(0, 1),
     }
 
@@ -1744,7 +1745,9 @@ class TestCase:
         ):
             return FailureReason.SKIP
 
-        if "no-flaky-check" in tags and args.test_runs > 1:
+        if "no-flaky-check" in tags and args.flaky_check:
+            # skip for flaky and targeted check
+            #  main reason for using this tag - a test is not compatible with the thread fuzzer which is used in both jobs
             return FailureReason.SKIP
         if "stateful" in tags and args.no_stateful:
             return FailureReason.NO_STATEFUL
@@ -1758,8 +1761,9 @@ class TestCase:
 
         if tags:
             for build_flag in args.build_flags:
-                # We ignore no-buildflag for flaky tests
-                if "no-" + build_flag in tags and args.test_runs == 1:
+                # We ignore no-buildflag for flaky check (args.flaky_check and args.test_runs > 1)
+                # and do not ignore for targeted check (args.flaky_check and args.test_runs == 1)
+                if "no-" + build_flag in tags and not (args.flaky_check and args.test_runs > 1):
                     return FailureReason.BUILD
             for tag in tags:
                 tag = tag.replace("-", "_")
@@ -1981,6 +1985,7 @@ class TestCase:
 
         if (
             self.testcase_args.test_runs > 1
+            and self.testcase_args.flaky_check
             and total_time > TEST_MAX_RUN_TIME_IN_SECONDS
             and "long" not in self.tags
         ):
@@ -4171,6 +4176,11 @@ def parse_args():
         action="store_true",
         help="Run tests for further server upgrade testing by ignoring all"
         "drop queries in tests for collecting data from new version of server",
+    )
+    parser.add_argument(
+        "--flaky-check",
+        action="store_true",
+        help="Enables CI flakiness detection by running new tests multiple times. This mode adds specific checks for the flaky-check job and requires the --test-runs argument.",
     )
     parser.add_argument(
         "--secure",
