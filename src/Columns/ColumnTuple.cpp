@@ -461,6 +461,22 @@ ColumnPtr ColumnTuple::filter(const Filter & filt, ssize_t result_size_hint) con
     return ColumnTuple::create(new_columns);
 }
 
+void ColumnTuple::filter(const Filter & filt)
+{
+    if (columns.empty())
+    {
+        column_length = countBytesInFilter(filt);
+        return;
+    }
+
+    const size_t tuple_size = columns.size();
+
+    for (size_t i = 0; i < tuple_size; ++i)
+        columns[i]->filter(filt);
+
+    column_length = columns[0]->size();
+}
+
 void ColumnTuple::expand(const Filter & mask, bool inverted)
 {
     if (columns.empty())
@@ -477,7 +493,7 @@ ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
 {
     if (columns.empty())
     {
-        size_t result_size = limit ? limit : perm.size();
+        size_t result_size = limit ? std::min(limit, perm.size()) : perm.size();
         if (perm.size() < result_size)
             throw Exception(
                 ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of permutation ({}) is less than required ({})", perm.size(), result_size);
@@ -498,7 +514,7 @@ ColumnPtr ColumnTuple::index(const IColumn & indexes, size_t limit) const
 {
     if (columns.empty())
     {
-        size_t result_size = limit ? limit : indexes.size();
+        size_t result_size = limit ? std::min(limit, indexes.size()) : indexes.size();
         if (indexes.size() < result_size)
             throw Exception(
                 ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of indexes ({}) is less than required ({})", indexes.size(), result_size);

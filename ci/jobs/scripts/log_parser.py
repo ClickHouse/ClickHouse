@@ -168,6 +168,11 @@ class FuzzerLogParser:
                     )
                     letter_index += 1
                 result_name = f"Logical error: {format_message}"
+            # For most logical errors, the Stack Trace ID is redundant since the error message
+            # is sufficient to identify the issue. However, for certain errors, different stack
+            # traces may indicate different root causes - include STID in the failure name to
+            # distinguish them.
+            result_name += f" (STID: {stack_trace_id})"
         elif is_killed_by_signal or is_segfault:
             result_name += f" (STID: {stack_trace_id})"
         elif is_memory_limit_exceeded:
@@ -278,9 +283,6 @@ class FuzzerLogParser:
         # return all lines after Sanitizer error starting with "    #DIGITS "
         def _extract_sanitizer_trace(log_file):
             lines = []
-            sanitizer_pattern = re.compile(
-                r"(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:"
-            )
             stack_frame_pattern = re.compile(r"^\s+#\d+\s+")
             stack_frame_pattern_1st_line = re.compile(r"^\s+#0\s")
             # Pattern to remove ANSI escape codes (colors from tools like ripgrep)

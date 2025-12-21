@@ -1,4 +1,10 @@
-<!DOCTYPE html><html lang=en><head><meta charset=UTF-8><meta name=viewport content="width=device-width, initial-scale=1.0"><title>praktika report</title><style>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>praktika report</title>
+    <style>
 
         /* Default (Day Theme) */
         :root {
@@ -6,8 +12,8 @@
             --text-color: #000;
             --tile-background: #f9f9f9;
             --info-background: #e4e4e4;
-            --footer-background: #f1f1f1;
-            --footer-text-color: #000;
+            --footer-background: #333;
+            --footer-text-color: #fff;
             --status-width: 300px;
             --pending-bar-color: #f5e6a3;
             --skipped-bar-color: #ccc;
@@ -57,6 +63,8 @@
             --link-hover-color: #ffaa00;
             --file-link-color: #007efc;
             --file-link-hover-color: #004d9a;
+            --footer-background: #1F1F1C;
+            --footer-text-color: #fff;
         }
 
         #status-container {
@@ -125,9 +133,6 @@
             text-decoration: none;
         }
 
-        .json-key {
-            font-weight: bold;
-        }
         .external-link {
             color: var(--file-link-color);
             font-family: 'Source Code Pro', monospace, sans-serif;
@@ -185,8 +190,8 @@
             bottom: 0;
             left: 0;
             right: 0;
-            background-color: #1F1F1C;
-            color: white;
+            background-color: var(--footer-background);
+            color: var(--footer-text-color);
             font-size: 14px;
             display: flex;
             justify-content: space-between; /* Ensure the .left expands, and .right and .settings are aligned to the right */
@@ -194,7 +199,7 @@
         }
 
         #footer a {
-            color: white;
+            color: var(--footer-text-color);
             text-decoration: none;
         }
 
@@ -226,13 +231,13 @@
             color: #e0e0e0;
         }
 
-        #theme-toggle, #status-filter-toggle {
+        #theme-toggle, #status-filter-toggle, #sort-toggle {
             cursor: pointer;
-            color: white;
+            color: var(--footer-text-color);
             margin-left: 10px;
         }
 
-        #theme-toggle:hover {
+        #theme-toggle:hover, #sort-toggle:hover {
             color: #e0e0e0;
         }
 
@@ -339,7 +344,22 @@
             color: grey;
             font-weight: bold;
         }
-    </style></head><body><div id=status-container></div><div id=result-container></div><button id=toggle-status-bar onclick=toggleStatusBar()>‖</button><footer id=footer><div class=left></div><div class=right></div><div class=settings><span id=status-filter-toggle></span><span id=theme-toggle>🔆️</span></div></footer><script>
+    </style>
+</head>
+<body>
+    <div id="status-container"></div>
+    <div id="result-container"></div>
+    <button id="toggle-status-bar">‖</button>
+    <footer id="footer">
+        <div class="left"></div>
+        <div class="right"></div>
+        <div class="settings">
+            <span id="status-filter-toggle"></span>
+            <span id="sort-toggle">🔼</span>
+            <span id="theme-toggle">🔆️</span>
+        </div>
+    </footer>
+    <script>
     // Track all interval timers for cleanup
     const activeTimers = {
         intervals: [],
@@ -477,6 +497,51 @@
 
     document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
     document.getElementById('status-filter-toggle').addEventListener('click', toggleStatusFilter);
+    document.getElementById('sort-toggle').addEventListener('click', toggleSortByStatus);
+    document.getElementById('toggle-status-bar').addEventListener('click', toggleStatusBar);
+
+    function toggleSortByStatus() {
+        const current = localStorage.getItem('sortByStatus');
+        const newValue = current === 'true' ? 'false' : 'true';
+        localStorage.setItem('sortByStatus', newValue);
+
+        // Update the visual indicator
+        updateSortToggleIcon();
+
+        // Re-render all tables on the page
+        const tables = document.querySelectorAll('table');
+        tables.forEach(table => {
+            const tbody = table.querySelector('tbody');
+            if (tbody) {
+                // Get the original results order from a stored copy
+                const resultsData = tbody.resultsData;
+                const nestLevel = tbody.nestLevel;
+                const existingColumnsList = tbody.existingColumnsList;
+
+                if (resultsData && existingColumnsList) {
+                    populateTableRows(tbody, resultsData, nestLevel, existingColumnsList);
+                }
+            }
+        });
+    }
+
+    function updateSortToggleIcon() {
+        const toggle = document.getElementById('sort-toggle');
+        const sortEnabled = localStorage.getItem('sortByStatus') === 'true';
+        if (toggle) {
+            toggle.style.opacity = sortEnabled ? '1' : '0.5';
+            toggle.title = sortEnabled ? 'Status sorting enabled' : 'Status sorting disabled';
+        }
+    }
+
+    function getStatusPriority(status) {
+        const statusLower = (status || '').toLowerCase();
+        // Priority order: errors/failures first, then warnings, then success, then others
+        if (statusLower.includes('error') || statusLower.includes('fail') || statusLower.includes('dropped')) return 0;
+        if (statusLower.includes('pending') || statusLower.includes('running')) return 1;
+        if (statusLower.includes('success') || statusLower === 'ok') return 2;
+        return 3; // other statuses
+    }
 
     function formatTimestamp(timestamp, showDate = true) {
         const date = new Date(timestamp * 1000);
@@ -521,7 +586,7 @@
             const milliseconds = Math.floor((duration % 1) * 1000);
 
             const formattedSeconds = String(seconds);
-            const formattedMilliseconds = String(milliseconds).padStart(2, '0').slice(-2);
+            const formattedMilliseconds = String(milliseconds).padStart(2, 0).slice(-2);
 
             return `${formattedSeconds}.${formattedMilliseconds}`;
         }
@@ -741,9 +806,7 @@
 
         const currentLabel = document.createElement("div");
         currentLabel.style.textAlign = "left";
-        currentLabel.textContent = `duration: ${formatDuration(duration)}`;
-
-        topLabelBox.appendChild(currentLabel);
+        currentLabel.textContent = `duration: ${formatDurationMs(duration)}`;
 
         topLabelBox.appendChild(currentLabel);
         chartWrapper.appendChild(topLabelBox);
@@ -773,10 +836,10 @@
         bottomLabels.style.color = "#444";
 
         const minLabel = document.createElement("div");
-        minLabel.textContent = formatDuration(minValue);
+        minLabel.textContent = formatDurationMs(minValue);
 
         const maxLabel = document.createElement("div");
-        maxLabel.textContent = formatDuration(maxValue);
+        maxLabel.textContent = formatDurationMs(maxValue);
 
         bottomLabels.appendChild(minLabel);
         bottomLabels.appendChild(maxLabel);
@@ -785,7 +848,7 @@
         // --- Final assemble
         statusContainer.appendChild(chartWrapper);
 
-        function formatDuration(ms) {
+        function formatDurationMs(ms) {
             const s = Math.floor(ms / 1000);
             const h = Math.floor(s / 3600);
             const m = Math.floor((s % 3600) / 60);
@@ -802,7 +865,7 @@
 
     function addStorageUsageChartToStatus(usage_data) {
         const statusContainer = document.getElementById("status-container");
-        
+
         // Note: We don't need the extra style element anymore as we now handle margins directly
 
         if (!usage_data || !usage_data.uploaded || !usage_data.uploaded_details) {
@@ -849,7 +912,7 @@
         nameRow.style.letterSpacing = "-0.02em"; // Slightly condensed letter spacing
         nameRow.id = "storage-usage-name";
         nameRow.textContent = "uploaded:";
-        
+
         // Second line: XX% ...padding... YYYMB
         const detailsRow = document.createElement("div");
         detailsRow.style.display = "flex";
@@ -859,32 +922,32 @@
         detailsRow.id = "storage-usage-details";
         detailsRow.style.fontSize = "0.85em";
         detailsRow.style.color = "#666";
-        
+
         // Combined size and percentage info (right-aligned)
         const sizeAndPercentEl = document.createElement("span");
         sizeAndPercentEl.id = "storage-usage-size-percent";
         sizeAndPercentEl.style.marginLeft = "auto"; // Push to the right
         sizeAndPercentEl.textContent = `${uploadedMB} MB (100%)`; // Both size and percentage
-        
+
         detailsRow.appendChild(sizeAndPercentEl);
-        
+
         infoContainer.appendChild(nameRow);
         infoContainer.appendChild(detailsRow);
         chartWrapper.appendChild(infoContainer);
 
         // Fixed dimensions for the horizontal bar chart
         const barHeight = 24; // Thick bar
-        
+
         // Bar chart container - use 100% width to fit the widget perfectly
         const chartContainer = document.createElement("div");
         chartContainer.style.height = `${barHeight}px`;
         chartContainer.style.position = "relative";
         chartContainer.style.margin = "10px 0 0 0";
         chartContainer.style.cursor = "pointer";
-        
+
         // Create bars for each entry
         const barData = [];
-        
+
         // Use percentage-based widths instead of fixed pixels
         labels.forEach((label, index) => {
             const value = values[index];
@@ -892,7 +955,7 @@
             // Convert to percentage width with minimum visibility
             const percentWidth = Math.max(percent * 100, 0.5);
             const color = stringToColor(label);
-            
+
             const bar = document.createElement("div");
             bar.style.position = "absolute";
             bar.style.left = barData.length > 0 ? `${barData.reduce((sum, b) => sum + b.percentWidth, 0)}%` : "0";
@@ -901,14 +964,14 @@
             bar.style.backgroundColor = color;
             bar.style.transition = "opacity 0.2s";
             bar.dataset.label = label;
-            
+
             // Create tooltip data for this bar
             const sizeMB = (value / (1024 * 1024)).toFixed(2);
             const percentValue = ((value / uploaded) * 100).toFixed(1);
             bar.dataset.tooltip = `${label}: ${sizeMB} MB (${percentValue}%)`;
-            
+
             chartContainer.appendChild(bar);
-            
+
             barData.push({
                 label,
                 element: bar,
@@ -918,7 +981,7 @@
                 tooltip: `${label}: ${sizeMB} MB (${percentValue}%)`
             });
         });
-        
+
         chartWrapper.appendChild(chartContainer);
         statusContainer.appendChild(chartWrapper);
 
@@ -926,13 +989,13 @@
         const updateDisplay = (name, sizeMB, percent) => {
             const nameEl = document.getElementById("storage-usage-name");
             const sizePercentEl = document.getElementById("storage-usage-size-percent");
-            
+
             if (nameEl && sizePercentEl) {
                 nameEl.textContent = name;
                 sizePercentEl.textContent = `${sizeMB} MB (${percent}%)`;
             }
         };
-        
+
         // Show the total uploaded by default
         const showTotalUploaded = () => {
             updateDisplay("uploaded:", uploadedMB, 100);
@@ -944,11 +1007,11 @@
             const percent = ((segment.value / uploaded) * 100).toFixed(1);
             updateDisplay(segment.label, sizeMB, percent);
         };
-        
+
         // Highlight bar function
         function highlightBar(hoveredLabel) {
             let hoveredSegment = null;
-            
+
             barData.forEach(bar => {
                 if (bar.label === hoveredLabel) {
                     bar.element.style.opacity = "1";
@@ -958,7 +1021,7 @@
                     bar.element.style.opacity = "0.5";
                 }
             });
-            
+
             // Show details for hovered segment
             if (hoveredSegment) {
                 showSegmentDetails(hoveredSegment);
@@ -971,21 +1034,21 @@
                 bar.element.style.opacity = "1";
                 bar.element.style.boxShadow = "none";
             });
-            
+
             // Reset to show total uploaded
             showTotalUploaded();
         }
-        
+
         // Add hover effects to the bar segments
         barData.forEach(bar => {
             bar.element.addEventListener("mouseenter", () => highlightBar(bar.label));
             bar.element.addEventListener("mouseleave", () => resetBars());
         });
-        
+
         // Reset wrapper padding to default for text, but adjust for the bar
         chartWrapper.style.padding = "10px"; // Restore the standard padding
         chartWrapper.style.paddingBottom = "10px"; // Add extra bottom padding
-        
+
         // Only adjust the chart container (bar) to have full width
         chartContainer.style.marginLeft = "-10px"; // Offset the parent padding
         chartContainer.style.marginRight = "-10px"; // Offset the parent padding
@@ -1016,7 +1079,7 @@
         canvas.style.height = `${totalHeight}px`;
         canvas.style.display = "block";
         widget.appendChild(canvas);
-        
+
         // Move taskRects to outer scope so event handlers can access it
         let taskRects = [];
 
@@ -1067,7 +1130,7 @@
                     width = task.duration * scaleX;
                     color = getColorFromName(task.name);
                 }
-                
+
                 ctx.fillStyle = color;
                 ctx.fillRect(x, y, width, height);
 
@@ -1143,7 +1206,7 @@
         // Make widget re-usable by external updates
         widget.update = function (name, status, start_time, duration) {
             widget.innerHTML = '';
-            
+
             // Create name line with fixed height for two lines
             const nameLine = document.createElement('div');
             nameLine.textContent = name;
@@ -1154,7 +1217,7 @@
             nameLine.style.lineHeight = "1.3em";
             nameLine.style.textAlign = "left";
             widget.appendChild(nameLine);
-            
+
             addLine(status, getStatusClass(status));
             addLine(start_time ? formatTimestamp(start_time) : "0:00:00");
             if (duration != null) {
@@ -1234,12 +1297,34 @@
 
     function populateTableRows(tbody, results, nest_level, existingColumnsList) {
         const currentUrl = new URL(window.location.href);
+
+        // Store the original data in the tbody for later access
+        // Make a deep copy to preserve the original order
+        if (!tbody.resultsData) {
+            tbody.resultsData = JSON.parse(JSON.stringify(results));
+        }
+        tbody.nestLevel = nest_level;
+        tbody.existingColumnsList = existingColumnsList;
+
         // Clear existing rows
         tbody.innerHTML = '';
         const filter = localStorage.getItem('filter');
         const lastColumn = existingColumnsList[existingColumnsList.length - 1];
 
-        results.forEach((result, _index) => {
+        // Sort results by status if the feature is enabled
+        const sortByStatus = localStorage.getItem('sortByStatus') === 'true';
+
+        // Work with a copy so we don't mutate the original
+        let displayResults = [...results];
+        if (sortByStatus) {
+            displayResults.sort((a, b) => {
+                const statusA = a.status || '';
+                const statusB = b.status || '';
+                return getStatusPriority(statusA) - getStatusPriority(statusB);
+            });
+        }
+
+        displayResults.forEach((result, _index) => {
             const row = document.createElement('tr');
             const labels = result?.ext?.labels;
             const linklabels = result?.ext?.hlabels;
@@ -1470,18 +1555,19 @@
 
             // If the response is 304 (Not Modified), return existing metadata without fetching new data
             if (response.status === 304) {
-                return { data: null, lastModifiedTime, eTag, updated: false };
-            } else if (response.status === 403)
-                return { data: null, lastModifiedTime: null, eTag: null, updated: true };
+                return { data: null, lastModifiedTime, eTag, updated: false, status: 304 };
+            } else if (response.status === 403) {
+                return { data: null, lastModifiedTime: null, eTag: null, updated: true, status: 403 };
+            }
             // Extract headers
             const newLastModifiedTime = response.headers.get('Last-Modified');
             const newETag = response.headers.get('ETag');
             const jsonData = await response.json();
 
-            return { data: jsonData, lastModifiedTime: newLastModifiedTime, eTag: newETag, updated: true };
+            return { data: jsonData, lastModifiedTime: newLastModifiedTime, eTag: newETag, updated: true, status: 200 };
         } catch (error) {
             console.error('Error loading Results:', error);
-            return { data: null, lastModifiedTime: null, eTag: null, updated: true };
+            return { data: null, lastModifiedTime: null, eTag: null, updated: true, status: 0 };
         }
     }
 
@@ -1722,7 +1808,10 @@
         let hasNewData = false;
 
         if (!runtimeCache.commits || sha === 'latest') {
-            const { data, updated } = await fetchJson(`${baseUrl}/${suffix}/commits.json`);
+            const { data, updated, status } = await fetchJson(`${baseUrl}/${suffix}/commits.json`);
+            if (status === 403) {
+                return { error: 403, message: 'Report does not exist or expired' };
+            }
             if (updated) {
                 runtimeCache.commits = data ? data : [];
                 hasNewData = true;
@@ -1746,18 +1835,26 @@
         const results = await Promise.all(fetchTasks);
 
         if (nameParams.length > 1) {
-            const { data, updated } = results[0]; // First request result
+            const { data, updated, status } = results[0]; // First request result
+            if (status === 403) {
+                return { error: 403, message: 'Report does not exist or expired' };
+            }
             if (updated) {
                 runtimeCache.json1 = data;
                 hasNewData = true;
             }
         }
 
-        const { data, updated } = results[fetchTasks.length - 1]; // Last request result (always task0)
+        const { data, updated, status } = results[fetchTasks.length - 1]; // Last request result (always task0)
+        if (status === 403) {
+            return { error: 403, message: 'Report does not exist or expired' };
+        }
         if (updated) {
             runtimeCache.json0 = data;
             hasNewData = true;
-            data.links.forEach(storeLink);
+            if (data && data.links) {
+                data.links.forEach(storeLink);
+            }
         }
 
         return hasNewData;
@@ -1766,10 +1863,8 @@
     // Track for autorefresh toggle
     let openedInfoCnt = 0;
     let closedInfoCnt = 0;
-    
-    async function renderResultsAuto(PR, REF, sha, nameParams, base_url) {
-        let autoRefreshTimer = null; // Store the main refresh interval timer
 
+    async function renderResultsAuto(PR, REF, sha, nameParams, base_url) {
         function clearPage() {
             // First, clean up any existing timers and event listeners
             activeTimers.clearAll();
@@ -1812,7 +1907,20 @@
             const statusContainer = document.getElementById('status-container');
             const scrollTop = statusContainer ? statusContainer.scrollTop : 0;
 
-            if (await fetchData(PR, REF, sha, nameParams, base_url)) {
+            const fetchResult = await fetchData(PR, REF, sha, nameParams, base_url);
+
+            // Check if fetchData returned an error
+            if (fetchResult && typeof fetchResult === 'object' && fetchResult.error === 403) {
+                const resultsDiv = document.getElementById('result-container');
+                const textDiv = document.createElement('div');
+                textDiv.id = 'info-content';
+                textDiv.style.textAlign = 'center';
+                textDiv.textContent = fetchResult.message;
+                resultsDiv.appendChild(textDiv);
+                return;
+            }
+
+            if (fetchResult) {
                 // Clear timers, event listeners, and DOM before refreshing content
                 clearPage();
 
@@ -1832,7 +1940,7 @@
         await checkForUpdatesAndRender(true);
 
         // Setup periodic refresh using our timer management
-        autoRefreshTimer = activeTimers.addInterval(setInterval(() => {
+        activeTimers.addInterval(setInterval(() => {
             checkForUpdatesAndRender(false);
         }, 30000));
 
@@ -1879,8 +1987,13 @@
         if (savedTheme === 'night') {
             document.body.classList.add('night-theme');
         }
+        // Set sortByStatus to true by default if not set
+        if (localStorage.getItem('sortByStatus') === null) {
+            localStorage.setItem('sortByStatus', 'true');
+        }
         await init();
         toggleStatusFilter(true);
+        updateSortToggleIcon();
     });
 
     function createFavicon() {
@@ -1927,4 +2040,6 @@
         link.href = faviconURL;
     }
     createFavicon();
-</script></body></html>
+    </script>
+</body>
+</html>

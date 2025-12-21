@@ -24,8 +24,6 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
     if i % 3 == 2 and not upgrade_check:
         client_options.extend(
             [
-                "enable_deflate_qpl_codec=1",
-                "enable_zstd_qat_codec=1",
                 # For Replicated database
                 "distributed_ddl_output_mode=none",
                 "database_replicated_always_detach_permanently=1",
