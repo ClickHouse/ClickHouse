@@ -181,6 +181,10 @@ StorageMergeTree::StorageMergeTree(
 
 void StorageMergeTree::startup()
 {
+    /// Do not schedule any background jobs if current storage has static data files.
+    if (isStaticStorage())
+        return;
+
     clearEmptyParts();
 
     /// Temporary directories contain incomplete results of merges (after forced restart)
@@ -190,10 +194,6 @@ void StorageMergeTree::startup()
     /// NOTE background task will also do the above cleanups periodically.
     time_after_previous_cleanup_parts.restart();
     time_after_previous_cleanup_temporary_directories.restart();
-
-    /// Do not schedule any background jobs if current storage has static data files.
-    if (isStaticStorage())
-        return;
 
     try
     {
