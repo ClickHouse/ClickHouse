@@ -53,7 +53,6 @@ cd ci/tmp || { echo "ERROR: ci/tmp directory not found"; exit 1; }
 echo "Available profdata files:"
 ls -lh *.profdata 2>/dev/null || echo "No profdata files found"
 
-# Check if binaries exist (unit_tests_dbms might need decompression)
 echo "Checking for binaries..."
 ls -lh clickhouse unit_tests_dbms 2>/dev/null || echo "Warning: Some binaries not found"
 
@@ -75,6 +74,7 @@ else
 fi
 
 # Generate HTML coverage report
+echo "Generating coverage report..."
 "$LLVM_COV" show \
   ./clickhouse \
   ./unit_tests_dbms \
@@ -87,3 +87,19 @@ tar -czf clickhouse_coverage.tar.gz clickhouse_coverage
 
 # Keep results in ci/tmp (artifacts are uploaded from here)
 echo "Results stored in ci/tmp: merged.profdata, clickhouse_coverage.tar.gz"
+
+# Create result.json for the CI framework
+RESULT_FILE="./result.json"
+cat > "$RESULT_FILE" << EOF
+{
+  "name": "LLVM Coverage Merge",
+  "status": "success",
+  "start_time": null,
+  "duration": null,
+  "results": [],
+  "files": ["clickhouse_coverage.tar.gz", "merged.profdata"],
+  "info": "Coverage report generated successfully"
+}
+EOF
+
+echo "Result file created: $RESULT_FILE"
