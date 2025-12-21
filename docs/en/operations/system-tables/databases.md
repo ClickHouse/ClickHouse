@@ -45,7 +45,6 @@ SELECT * FROM system.databases;
 Database with Memory engine != temporary database.
 :::
 
-
 **See also**
 
 - [CREATE TEMPORARY DATABASE](../statements/create/databases.md#temporary)
