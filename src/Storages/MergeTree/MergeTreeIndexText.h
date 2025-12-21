@@ -160,6 +160,8 @@ struct PostingListRoaringCodec
     //TokenPostingsInfo serialize(MergeTreeIndexWriterStream & postings_stream, size_t posting_list_block_size);
     void serializeLargeImpl(const roaring::api::roaring_bitmap_t & postings, UInt64 header, WriteBuffer & ostr);
     void serialize(UInt64 header, WriteBuffer & ostr);
+
+    TokenPostingsInfo serializePostings(MergeTreeIndexWriterStream & postings_stream, size_t posting_list_block_size);
 };
 
 using PostingListRoaringCodecPtr = std::shared_ptr<PostingListRoaringCodec>;
@@ -175,12 +177,14 @@ using PostingListRoaringCodecPtr = std::shared_ptr<PostingListRoaringCodec>;
 struct PostingListBlockCodec
 {
     PostingsContainer32 * postings;
-    PostingListBlockCodec() : postings(nullptr) {}
-    void add(UInt32, PostingListsHolder &) {}
+    PostingListBlockCodec() : postings() {}
+    explicit PostingListBlockCodec(PostingsContainer32 * postings_) : postings(postings_) {}
+    void add(UInt32 value, PostingListsHolder &) { postings->add(value); }
     void serialize(UInt64 header, WriteBuffer & ostr);
     size_t size() const { return postings->size(); }
     UInt32 minimum() const { return postings->minimum(); }
     UInt32 maximum() const { return postings->maximum(); }
+    TokenPostingsInfo serializePostings(MergeTreeIndexWriterStream & postings_stream, size_t posting_list_block_size);
 };
 
 using PostingListBlockCodecPtr = std::shared_ptr<PostingListBlockCodec>;
@@ -193,13 +197,16 @@ struct PostingListBuilder
     PostingListBuilder() = default;
     explicit PostingListBuilder(PostingList * posting_list);
 
-    ALWAYS_INLINE void initialize(bool enable_compression)
+    ALWAYS_INLINE void initialize(bool enable_compression, std::list<PostingListCodec> & postings_list_holder)
     {
         chassert(std::holds_alternative<std::monostate>(codec));
         if (!enable_compression)
             codec = std::make_shared<PostingListRoaringCodec>();
         else
-            codec = std::make_shared<PostingListBlockCodec>();
+        {
+            auto & postings = postings_list_holder.emplace_back(std::in_place_type<PostingsContainer32>);
+            codec = std::make_shared<PostingListBlockCodec>(&std::get<PostingsContainer32>(postings));
+        }
     }
     /// Adds a value to small array or to the large Roaring Bitmap.
     /// If small array is converted to Roaring Bitmap after adding a value,
@@ -251,6 +258,15 @@ struct PostingListBuilder
     SmallContainer & getSmall() { return std::get<PostingListRoaringCodecPtr>(codec)->getSmall(); }
     const SmallContainer & getSmall() const { return std::get<PostingListRoaringCodecPtr>(codec)->getSmall(); }
     PostingList & getLarge() const { return std::get<PostingListRoaringCodecPtr>(codec)->getLarge(); }
+
+    TokenPostingsInfo serializePostings(MergeTreeIndexWriterStream & postings_stream, size_t posting_list_block_size)
+    {
+        if (std::holds_alternative<PostingListRoaringCodecPtr>(codec))
+            return std::get<PostingListRoaringCodecPtr>(codec)->serializePostings(postings_stream, posting_list_block_size);
+        if (std::holds_alternative<PostingListBlockCodecPtr>(codec))
+            return std::get<PostingListBlockCodecPtr>(codec)->serializePostings(postings_stream, posting_list_block_size);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The codec is not initialized yet.");
+    }
 private:
     std::variant<std::monostate, PostingListRoaringCodecPtr, PostingListBlockCodecPtr> codec;
 };

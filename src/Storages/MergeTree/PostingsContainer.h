@@ -89,11 +89,19 @@ public:
 
     size_t size() const { return total; }
     bool empty() const { return total == 0; }
-    T minimum() const { return T {}; }
-    T maximum() const { return T {}; }
+    T minimum() const { return header.base_value; }
+    T maximum() const { return prev_value; }
 
     ALWAYS_INLINE void add(T value)
     {
+        if (total == 0)
+        {
+            header.base_value = value;
+            prev_value = value;
+            current.emplace_back(value - prev_value);
+            ++total;
+            return;
+        }
         if (current.size() == kBlockSize)
         {
             compressBlock(current, temp_compression_data_buffer);
@@ -101,7 +109,8 @@ public:
         }
         /// Delta computation is intentionally deferred
         /// and will be applied later as part of the block compression step.
-        current.emplace_back(value);
+        current.emplace_back(value - prev_value);
+        prev_value = value;
         ++total;
     }
 
@@ -146,18 +155,13 @@ private:
 
     void compressBlock(std::vector<T> & segment, std::string & temp_compression_data)
     {
-        if (header.block_count == 0)
-        {
-            header.base_value = segment.front();
-            prev_value = header.base_value;
-        }
         ++header.block_count;
 
         /// Delta-encode this segment with a running base (prev_value),
         /// so it can be compressed efficiently and chained across segments.
-        std::adjacent_difference(segment.begin(), segment.end(), segment.begin());
-        segment.front() -= prev_value;
-        prev_value = segment.back();
+        /// std::adjacent_difference(segment.begin(), segment.end(), segment.begin());
+        /// segment.front() -= prev_value;
+        /// prev_value = segment.back();
         auto [cap, bits] = CodecTraits<T>::evaluateSizeAndMaxBits(segment.data(), segment.size());
         temp_compression_data.resize(cap);
         auto bytes = CodecTraits<T>::encode(segment.data(), segment.size(), bits, reinterpret_cast<unsigned char*>(temp_compression_data.data()));
