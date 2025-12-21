@@ -156,3 +156,34 @@ SELECT * FROM primes(18446744073709551616); -- { serverError ILLEGAL_TYPE_OF_ARG
 SELECT * FROM primes(rand()); -- { serverError BAD_ARGUMENTS }
 
 SELECT * FROM primes(10, -5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT *
+FROM system.primes
+WHERE ((prime + 10) % 5) = 1
+LIMIT 10;
+
+SELECT prime
+FROM system.primes
+WHERE prime BETWEEN toUInt64(1e14) AND toUInt64(1e14) + 100;
+
+SELECT prime FROM system.primes
+WHERE prime > toUInt64(1e15) LIMIT 1;
+
+SELECT prime FROM system.primes
+   WHERE (prime BETWEEN toUInt64(1e5) AND toUInt64(1e5) + 100)
+   OR (prime BETWEEN toUInt64(1e6) AND toUInt64(1e6) + 100)
+   OR (prime BETWEEN toUInt64(1e7) AND toUInt64(1e7) + 100)
+   OR (prime BETWEEN toUInt64(1e8) AND toUInt64(1e8) + 100)
+   OR (prime BETWEEN toUInt64(1e9) AND toUInt64(1e9) + 100)
+   OR (prime BETWEEN toUInt64(1e11) AND toUInt64(1e11) + 100)
+   OR (prime BETWEEN toUInt64(1e12) AND toUInt64(1e12) + 100)
+   OR (prime BETWEEN toUInt64(1e13) AND toUInt64(1e13) + 100)
+   OR (prime BETWEEN toUInt64(1e14) AND toUInt64(1e14) + 100)
+   OR (prime BETWEEN toUInt64(1e14) + 1000 AND toUInt64(1e14) + 1100)
+   OR (prime BETWEEN toUInt64(1e14) + 100000 AND toUInt64(1e14) + 100100)
+   OR (prime BETWEEN toUInt64(1e14) + 100000000 AND toUInt64(1e14) + 100000100)
+   OR (prime BETWEEN toUInt64(1e14) + 10000000000 AND toUInt64(1e14) + 10000000100)
+   OR (prime BETWEEN toUInt64(1e14) + 1000000000000 AND toUInt64(1e14) + 1000000000100)
+   OR (prime BETWEEN toUInt64(1e14) + 100000000000000 AND toUInt64(1e14) + 100000000000100)
+   OR (prime IN [2])
+   OR prime == 3;
