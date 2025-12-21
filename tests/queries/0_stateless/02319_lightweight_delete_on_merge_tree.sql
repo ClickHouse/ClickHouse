@@ -55,6 +55,8 @@ alter table t_light MATERIALIZE INDEX i_c SETTINGS mutations_sync=2;
 alter table t_light update b=-1 where a<3 SETTINGS mutations_sync=2;
 alter table t_light drop index i_c SETTINGS mutations_sync=2;
 
+optimize table t_light final SETTINGS mutations_sync=2;
+
 DETACH TABLE t_light;
 ATTACH TABLE t_light;
 CHECK TABLE t_light;
