@@ -187,3 +187,7 @@ SELECT prime FROM system.primes
    OR (prime BETWEEN toUInt64(1e14) + 100000000000000 AND toUInt64(1e14) + 100000000000100)
    OR (prime IN [2])
    OR prime == 3;
+
+SELECT prime
+FROM system.primes
+WHERE prime = 65537;
