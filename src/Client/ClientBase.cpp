@@ -1591,8 +1591,8 @@ void ClientBase::onProfileEvents(Block & block)
         const auto & host_names = typeid_cast<const ColumnString &>(*block.getByName("host_name").column);
         const auto & array_values = typeid_cast<const ColumnInt64 &>(*block.getByName("value").column).getData();
 
-        auto user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
-        auto system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
+        std::string_view user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
+        std::string_view system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
 
         HostToTimesMap thread_times;
         for (size_t i = 0; i < rows; ++i)

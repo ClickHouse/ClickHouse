@@ -4026,7 +4026,6 @@ enum FailPoint {
     replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault = 5;
     use_delayed_remote_source = 6;
     cluster_discovery_faults = 7;
-    replicated_sends_failpoint = 8;
     stripe_log_sink_write_fallpoint = 9;
     smt_commit_merge_mutate_zk_fail_after_op = 10;
     smt_commit_merge_mutate_zk_fail_before_op = 11;
