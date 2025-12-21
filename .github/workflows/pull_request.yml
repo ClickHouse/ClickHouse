@@ -3709,15 +3709,9 @@ jobs:
 
   install_packages_amd_release:
     runs-on: [self-hosted, style-checker]
-<<<<<<< HEAD
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_binary, build_amd_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_binary, build_amd_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, keeper_stress_pr]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYW1kX3JlbGVhc2Up') }}
     name: "Install packages (amd_release)"
-=======
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_binary, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, keeper_stress_pr]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYW1kX2RlYnVnKQ==') }}
-    name: "Install packages (amd_debug)"
->>>>>>> 2814a2f1811 (fix workflow failure)
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status }}
@@ -3756,7 +3750,7 @@ jobs:
 
   install_packages_arm_release:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_binary, build_arm_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_debug, build_amd_asan, build_arm_binary, build_arm_release, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, keeper_stress_pr]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYXJtX3JlbGVhc2Up') }}
     name: "Install packages (arm_release)"
     outputs:
