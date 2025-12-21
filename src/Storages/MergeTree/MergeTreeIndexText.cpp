@@ -45,9 +45,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int CORRUPTED_DATA;
-    extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_NUMBER_OF_COLUMNS;
+    extern const int CORRUPTED_DATA;
 }
 
 static std::vector<String> ALLOWED_TOKENIZERS
