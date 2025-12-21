@@ -2,7 +2,6 @@
 #include <Common/FailPoint.h>
 
 #include <boost/core/noncopyable.hpp>
-#include <chrono>
 #include <condition_variable>
 #include <mutex>
 
@@ -40,7 +39,6 @@ static struct InitFiu
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(use_delayed_remote_source) \
     REGULAR(cluster_discovery_faults) \
-    REGULAR(replicated_sends_failpoint) \
     REGULAR(stripe_log_sink_write_fallpoint) \
     ONCE(smt_commit_merge_mutate_zk_fail_after_op) \
     ONCE(smt_commit_merge_mutate_zk_fail_before_op) \

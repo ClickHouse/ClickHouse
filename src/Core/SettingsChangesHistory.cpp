@@ -39,11 +39,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
-
         addSettingsChanges(settings_changes_history, "26.1",
         {
             {"allow_experimental_temporary_databases", false, false, "New experimental setting."},
             {"show_others_temporary_databases_in_system_tables", false, false, "New experimental setting."},
+            {"trace_profile_events_list", "", "", "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
