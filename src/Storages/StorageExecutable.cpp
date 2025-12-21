@@ -41,6 +41,7 @@ namespace Setting
 namespace ExecutableSetting
 {
     extern const ExecutableSettingsBool send_chunk_header;
+    extern const ExecutableSettingsBool send_query_metadata;
     extern const ExecutableSettingsUInt64 pool_size;
     extern const ExecutableSettingsUInt64 max_command_execution_time;
     extern const ExecutableSettingsUInt64 command_termination_timeout;
@@ -124,7 +125,8 @@ StorageExecutable::StorageExecutable(
 
         .is_executable_pool = settings->is_executable_pool,
         .send_chunk_header = (*settings)[ExecutableSetting::send_chunk_header],
-        .execute_direct = true
+        .execute_direct = true,
+        .send_query_metadata = (*settings)[ExecutableSetting::send_query_metadata]
     };
 
     coordinator = std::make_unique<ShellCommandSourceCoordinator>(std::move(configuration));
@@ -201,7 +203,20 @@ void StorageExecutable::read(
         configuration.read_number_of_rows_from_process_output = true;
     }
 
-    auto pipe = coordinator->createPipe(script_path, settings->script_arguments, std::move(inputs), std::move(sample_block), context, configuration);
+    /// Build query metadata if send_query_metadata is enabled
+    std::optional<QueryMetadata> query_metadata;
+    if ((*settings)[ExecutableSetting::send_query_metadata])
+    {
+        QueryMetadata metadata;
+
+        /// Serialize the full query to string (including secrets/literal values)
+        if (query_info.query)
+            metadata.query_str = query_info.query->formatWithSecretsOneLine();
+
+        query_metadata = std::move(metadata);
+    }
+
+    auto pipe = coordinator->createPipe(script_path, settings->script_arguments, std::move(inputs), std::move(sample_block), context, configuration, query_metadata);
     IStorage::readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, context, shared_from_this());
     query_plan.addResources(std::move(resources));
 }
