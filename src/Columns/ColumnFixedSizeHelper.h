@@ -42,14 +42,15 @@ public:
         return reinterpret_cast<PODArrayBaseClass<element_size> *>(reinterpret_cast<char *>(this) + sizeof(*this))->push_back_raw(ptr);
     }
 
-    char * serializeValueIntoMemory(size_t n, char * memory) const final
+    char * serializeValueIntoMemory(size_t n, char * memory, const SerializationSettings *) const final
     {
         const char * raw_data_begin = getRawDataBegin<1>() + n * fixed_size;
         memcpy(memory, raw_data_begin, fixed_size);
         return memory + fixed_size;
     }
 
-    char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const final
+    char *
+    serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null, const SerializationSettings * settings) const final
     {
         if (is_null)
         {
@@ -59,17 +60,19 @@ public:
                 return memory;
         }
 
-        return this->serializeValueIntoMemory(n, memory);
+        return this->serializeValueIntoMemory(n, memory, settings);
     }
 
-    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const final
+    std::string_view
+    serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const SerializationSettings * settings) const final
     {
         char * memory = arena.allocContinue(fixed_size, begin);
-        this->serializeValueIntoMemory(n, memory);
+        this->serializeValueIntoMemory(n, memory, settings);
         return {memory, fixed_size};
     }
 
-    std::string_view serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null) const final
+    std::string_view serializeValueIntoArenaWithNull(
+        size_t n, Arena & arena, char const *& begin, const UInt8 * is_null, const SerializationSettings * settings) const final
     {
         if (is_null)
         {
@@ -81,23 +84,23 @@ public:
                 return {memory, 1};
             }
 
-            auto serialized_value_size = this->getSerializedValueSize(n);
+            auto serialized_value_size = this->getSerializedValueSize(n, settings);
             if (serialized_value_size)
             {
                 size_t total_size = *serialized_value_size + 1 /* null map byte */;
                 memory = arena.allocContinue(total_size, begin);
                 *memory = 0;
-                this->serializeValueIntoMemory(n, memory + 1);
+                this->serializeValueIntoMemory(n, memory + 1, settings);
                 return {memory, total_size};
             }
 
             memory = arena.allocContinue(1, begin);
             *memory = 0;
-            auto res = this->serializeValueIntoArena(n, arena, begin);
+            auto res = this->serializeValueIntoArena(n, arena, begin, settings);
             return std::string_view(res.data() - 1, res.size() + 1);
         }
 
-        return this->serializeValueIntoArena(n, arena, begin);
+        return this->serializeValueIntoArena(n, arena, begin, settings);
     }
 
     void setFixedSize(size_t size) { fixed_size = size; }
