@@ -60,11 +60,7 @@ protected:
 
         while (written < target)
         {
-            auto prime_opt = prime_generator.nextPrime();
-            if (!prime_opt)
-                break;
-
-            const UInt64 prime = *prime_opt;
+            auto prime = prime_generator.next();
 
             const UInt64 cur_prime_index = prime_index;
             ++prime_index;
@@ -171,14 +167,7 @@ protected:
 
         while (written < target)
         {
-            auto prime_opt = prime_generator.nextPrime();
-            if (!prime_opt)
-            {
-                interval_idx = intervals.size();
-                break;
-            }
-
-            const UInt64 prime = *prime_opt;
+            auto prime = prime_generator.next();
 
             const UInt64 cur_prime_index = prime_index;
             ++prime_index;
@@ -262,7 +251,7 @@ public:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Intervals in PrimesSimpleRangedSource must be sorted and non-overlapping");
         }
 
-        prime_generator.reset(intervals[0].first, intervals[0].second);
+        prime_generator.setRange(intervals[0].first, intervals[0].second);
     }
 
     String getName() const override { return "PrimesSimpleRange"; }
@@ -299,7 +288,7 @@ protected:
             {
                 ++interval_idx;
                 if (interval_idx < intervals.size())
-                    prime_generator.reset(intervals[interval_idx].first, intervals[interval_idx].second);
+                    prime_generator.setRange(intervals[interval_idx].first, intervals[interval_idx].second);
                 continue;
             }
 
