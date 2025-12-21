@@ -55,11 +55,11 @@ alter table t_light MATERIALIZE INDEX i_c SETTINGS mutations_sync=2;
 alter table t_light update b=-1 where a<3 SETTINGS mutations_sync=2;
 alter table t_light drop index i_c SETTINGS mutations_sync=2;
 
-optimize table t_light final SETTINGS mutations_sync=2;
-
 DETACH TABLE t_light;
 ATTACH TABLE t_light;
 CHECK TABLE t_light;
+
+SYSTEM STOP MERGES t_light;
 
 SELECT command, is_done FROM system.mutations WHERE database = currentDatabase() AND table = 't_light';
 
@@ -68,6 +68,8 @@ select count(*) from t_light;
 select * from t_light order by a;
 
 select table, partition, name, rows from system.parts where database = currentDatabase() AND active and table ='t_light' order by name;
+
+SYSTEM START MERGES t_light;
 
 optimize table t_light final SETTINGS mutations_sync=2;
 select count(*) from t_light;
