@@ -208,16 +208,41 @@ public:
 
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
 
-    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const SerializationSettings *) const final
+    std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const final
     {
-        size_t string_size = sizeAt(n);
+        bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
+        return byteSizeAt(n) + serialize_string_with_zero_byte;
+    }
+
+    std::string_view
+    serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const final
+    {
+        bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
+
+        size_t string_size = sizeAt(n) + serialize_string_with_zero_byte;
         size_t offset = offsetAt(n);
 
         auto result_size = sizeof(string_size) + string_size;
         char * pos = arena.allocContinue(result_size, begin);
         memcpy(pos, &string_size, sizeof(string_size));
-        memcpy(pos + sizeof(string_size), &chars[offset], string_size);
+        memcpy(pos + sizeof(string_size), &chars[offset], string_size - serialize_string_with_zero_byte);
+        if (serialize_string_with_zero_byte)
+            *(pos + sizeof(string_size) + string_size - 1) = 0;
         return {pos, result_size};
+    }
+
+    ALWAYS_INLINE char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const final
+    {
+        bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
+        size_t string_size = sizeAt(n) + serialize_string_with_zero_byte;
+        size_t offset = offsetAt(n);
+
+        memcpy(memory, &string_size, sizeof(string_size));
+        memory += sizeof(string_size);
+        memcpy(memory, &chars[offset], string_size - serialize_string_with_zero_byte);
+        if (serialize_string_with_zero_byte)
+            *(memory + string_size - 1) = 0;
+        return memory + string_size;
     }
 
     std::string_view serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null, const SerializationSettings * settings) const final
@@ -249,17 +274,6 @@ public:
         }
 
         return serializeValueIntoArena(n, arena, begin, settings);
-    }
-
-    char * serializeValueIntoMemory(size_t n, char * memory, const SerializationSettings *) const final
-    {
-        size_t string_size = sizeAt(n);
-        size_t offset = offsetAt(n);
-
-        memcpy(memory, &string_size, sizeof(string_size));
-        memory += sizeof(string_size);
-        memcpy(memory, &chars[offset], string_size);
-        return memory + string_size;
     }
 
     char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null, const SerializationSettings * settings) const final

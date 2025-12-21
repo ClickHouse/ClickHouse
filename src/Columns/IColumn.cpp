@@ -1,4 +1,3 @@
-#include <string_view>
 #include <Columns/IColumn.h>
 
 #include <Columns/ColumnAggregateFunction.h>
