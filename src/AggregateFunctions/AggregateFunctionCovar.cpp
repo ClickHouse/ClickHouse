@@ -100,6 +100,7 @@ FROM series
     FunctionDocumentation::Category covarPop_category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn covarPop_introduced_in = {1, 1};
     FunctionDocumentation covarPop_documentation = {covarPop_description, covarPop_syntax, covarPop_arguments, covarPop_parameters, covarPop_returned_value, covarPop_examples, covarPop_introduced_in, covarPop_category};
+
     factory.registerFunction("covarPop", {createAggregateFunctionStatisticsBinary<AggregateFunctionCovar, StatisticsFunctionKind::covarPop>, {}, covarPop_documentation});
 
     /// Synonyms for compatibility.
