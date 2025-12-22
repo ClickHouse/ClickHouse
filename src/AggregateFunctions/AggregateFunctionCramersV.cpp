@@ -44,7 +44,7 @@ For a bias corrected version of Cramer's V see: [cramersVBiasCorrected](./cramer
     FunctionDocumentation::Syntax syntax = "cramersV(column1, column2)";
     FunctionDocumentation::Arguments arguments = {
         {"column1", "First column to be compared.", {"(U)Int*", "Float*", "Decimal"}},
-        {"column2", "Second column to be compared.", {"U)Int*", "Float*", "Decimal"}}
+        {"column2", "Second column to be compared.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::Parameters docs_parameters = {};
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a value between 0 (corresponding to no association between the columns' values) to 1 (complete association).", {"Float64"}};
