@@ -492,66 +492,6 @@ SELECT anyLast(city), anyLastRespectNulls(city) FROM tab;
     FunctionDocumentation anyLast_documentation = {anyLast_description, anyLast_syntax, anyLast_arguments, {}, anyLast_returned_value, anyLast_examples, anyLast_introduced_in, anyLast_category};
 
     factory.registerFunction("anyLast", {createAggregateFunctionAnyLast, default_properties, anyLast_documentation}, AggregateFunctionFactory::Case::Sensitive);
-
-    /// last_value documentation
-    FunctionDocumentation::Description last_value_description = R"(
-Selects the last encountered value, similar to [`anyLast`](/sql-reference/aggregate-functions/reference/anylast), but could accept NULL.
-It is intended to be used with [Window Functions](/sql-reference/window-functions/index).
-Without Window Functions the result will be random if the source stream is not ordered.
-
-By default, the function never returns NULL, i.e. ignores NULL values in the input column.
-However, if the function is used with the `RESPECT NULLS` modifier, it returns the last value reads no matter if NULL or not.
-    )";
-    FunctionDocumentation::Syntax last_value_syntax = "last_value(column) [RESPECT NULLS|IGNORE NULLS]";
-    FunctionDocumentation::Arguments last_value_arguments = {
-        {"column", "The column name.", {"Any"}}
-    };
-    FunctionDocumentation::ReturnedValue last_value_returned_value = {"The last value encountered. If using `RESPECT NULLS`, can return NULL.", {"Any"}};
-    FunctionDocumentation::Examples last_value_examples = {
-    {
-        "Basic usage with IGNORE NULLS (default)",
-        R"(
-CREATE TABLE test_data (a Int64, b Nullable(Int64)) ENGINE = Memory;
-INSERT INTO test_data (a, b) VALUES (1, NULL), (2, 3), (4, 5), (6, NULL);
-
-SELECT last_value(b) FROM test_data ORDER BY a;
-        )",
-        R"(
-┌─last_value(b)─┐
-│             5 │
-└───────────────┘
-        )"
-    },
-    {
-        "Usage with RESPECT NULLS",
-        R"(
-SELECT last_value(b) RESPECT NULLS FROM test_data ORDER BY a;
-        )",
-        R"(
-┌─last_value(b)─┐
-│          ᴺᵁᴸᴸ │
-└───────────────┘
-        )"
-    },
-    {
-        "Stabilized result using ORDER BY",
-        R"(
-SELECT
-    last_value(b) RESPECT NULLS,
-    last_value(b) IGNORE NULLS
-FROM (SELECT * FROM test_data ORDER BY a ASC);
-        )",
-        R"(
-┌─last_value(b)─┬─last_value(b)─┐
-│          ᴺᵁᴸᴸ │             5 │
-└───────────────┴───────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn last_value_introduced_in = {21, 1};
-    FunctionDocumentation::Category last_value_category = FunctionDocumentation::Category::AggregateFunction;
-    FunctionDocumentation last_value_documentation = {last_value_description, last_value_syntax, last_value_arguments, {}, last_value_returned_value, last_value_examples, last_value_introduced_in, last_value_category};
-
-    factory.registerAlias("last_value", {"anyLast", {}, last_value_documentation}, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("last_value", "anyLast", AggregateFunctionFactory::Case::Insensitive);
 }
 }
