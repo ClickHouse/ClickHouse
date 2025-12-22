@@ -94,7 +94,10 @@ ISource::Status RemoteSource::prepare()
         return Status::Async;
 
     if (executor_finished)
+    {
+        getPort().finish();
         return Status::Finished;
+    }
 
     Status status = ISource::prepare();
     /// To avoid resetting the connection (because of "unfinished" query) in the
