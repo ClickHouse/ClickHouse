@@ -58,8 +58,6 @@ const char * auto_config_build[]
     "USE_ARROW", "@USE_ARROW@",
     "USE_ORC", "@USE_ORC@",
     "USE_MSGPACK", "@USE_MSGPACK@",
-    "USE_QPL", "@USE_QPL@",
-    "USE_QATLIB", "@USE_QATLIB@",
     "USE_DELTA_KERNEL_RS", "@USE_DELTA_KERNEL_RS@",
     "USE_XRAY", "@USE_XRAY@",
     "CLICKHOUSE_CLOUD", "@CLICKHOUSE_CLOUD@",

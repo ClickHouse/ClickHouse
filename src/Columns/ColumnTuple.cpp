@@ -461,14 +461,27 @@ ColumnPtr ColumnTuple::filter(const Filter & filt, ssize_t result_size_hint) con
     return ColumnTuple::create(new_columns);
 }
 
+void ColumnTuple::filter(const Filter & filt)
+{
+    if (columns.empty())
+    {
+        column_length = countBytesInFilter(filt);
+        return;
+    }
+
+    const size_t tuple_size = columns.size();
+
+    for (size_t i = 0; i < tuple_size; ++i)
+        columns[i]->filter(filt);
+
+    column_length = columns[0]->size();
+}
+
 void ColumnTuple::expand(const Filter & mask, bool inverted)
 {
     if (columns.empty())
     {
-        size_t bytes = countBytesInFilter(mask);
-        if (inverted)
-            bytes = mask.size() - bytes;
-        column_length = bytes;
+        column_length = mask.size();
         return;
     }
 
@@ -480,10 +493,12 @@ ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
 {
     if (columns.empty())
     {
-        if (limit == 0 && column_length != perm.size())
-            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of permutation ({}) doesn't match size of column ({})", perm.size(), column_length);
+        size_t result_size = limit ? std::min(limit, perm.size()) : perm.size();
+        if (perm.size() < result_size)
+            throw Exception(
+                ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of permutation ({}) is less than required ({})", perm.size(), result_size);
 
-        return cloneResized(limit ? std::min(column_length, limit) : column_length);
+        return cloneResized(result_size);
     }
 
     const size_t tuple_size = columns.size();
@@ -499,10 +514,12 @@ ColumnPtr ColumnTuple::index(const IColumn & indexes, size_t limit) const
 {
     if (columns.empty())
     {
-        if (indexes.size() < limit)
-            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of indexes is less than required");
+        size_t result_size = limit ? std::min(limit, indexes.size()) : indexes.size();
+        if (indexes.size() < result_size)
+            throw Exception(
+                ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of indexes ({}) is less than required ({})", indexes.size(), result_size);
 
-        return cloneResized(limit ? limit : column_length);
+        return cloneResized(result_size);
     }
 
     const size_t tuple_size = columns.size();

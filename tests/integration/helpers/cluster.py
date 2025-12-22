@@ -331,7 +331,6 @@ def check_postgresql_java_client_is_available(postgresql_java_client_id):
     p.communicate()
     return p.returncode == 0
 
-
 def check_mysql_dotnet_client_is_available(postgresql_java_client_id):
     p = subprocess.Popen(
         docker_exec(postgresql_java_client_id, "dotnet", "--version"),
@@ -517,6 +516,7 @@ class ClickHouseCluster:
         enable_thread_fuzzer=False,
         thread_fuzzer_settings={},
         azurite_default_port=0,
+        server_binaries=[],
     ):
         for param in list(os.environ.keys()):
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
@@ -744,6 +744,7 @@ class ClickHouseCluster:
         self.rabbitmq_ip = None
         self.rabbitmq_port = 5672
         self.rabbitmq_secure_port = 5671
+        self.rabbitmq_management_port = 15672
         self.rabbitmq_dir = p.abspath(p.join(self.instances_dir, "rabbitmq"))
         self.rabbitmq_cookie_file = os.path.join(self.rabbitmq_dir, "erlang.cookie")
         self.rabbitmq_logs_dir = os.path.join(self.rabbitmq_dir, "logs")
@@ -908,6 +909,8 @@ class ClickHouseCluster:
             )
 
         self.port_pool = PortPoolManager()
+        # For La Casa Del Dolor to run upgrades
+        self.server_binaries = server_binaries
 
     def compose_cmd(self, *args: str) -> List[str]:
         return ["docker", "compose", "--project-name", self.project_name, *args]
@@ -1097,14 +1100,16 @@ class ClickHouseCluster:
         except:
             pass
 
-        # Remove unused images
-        try:
-            logging.debug("Trying to prune unused images...")
+        # We used to remove unused images, but it is too aggressive and causes issues in
+        # CI because of races between pulling and pruning.
+        # https://github.com/ClickHouse/ClickHouse/issues/80470#issuecomment-3631989064
+        # try:
+        #     logging.debug("Trying to prune unused images...")
 
-            run_and_check(["docker", "image", "prune", "-f"])
-            logging.debug("Images pruned")
-        except:
-            pass
+        #     run_and_check(["docker", "image", "prune", "-f"])
+        #     logging.debug("Images pruned")
+        # except:
+        #     pass
 
         # Remove unused volumes
         try:
@@ -1548,6 +1553,7 @@ class ClickHouseCluster:
         env_variables["RABBITMQ_HOST"] = self.rabbitmq_host
         env_variables["RABBITMQ_PORT"] = str(self.rabbitmq_port)
         env_variables["RABBITMQ_SECURE_PORT"] = str(self.rabbitmq_secure_port)
+        env_variables["RABBITMQ_MANAGEMENT_PORT"] = str(self.rabbitmq_management_port)
         env_variables["RABBITMQ_LOGS"] = self.rabbitmq_logs_dir
         env_variables["RABBITMQ_LOGS_FS"] = "bind"
         env_variables["RABBITMQ_COOKIE_FILE"] = self.rabbitmq_cookie_file
@@ -2006,8 +2012,8 @@ class ClickHouseCluster:
                 )
             with_remote_database_disk = False
 
-        if with_remote_database_disk is None:
-            with_remote_database_disk = int(os.getenv("CLICKHOUSE_USE_DATABASE_DISK"))
+        if not with_dolor and with_remote_database_disk is None:
+            with_remote_database_disk = int(os.getenv("CLICKHOUSE_USE_DATABASE_DISK", "0"))
 
         if with_remote_database_disk:
             logging.debug(f"Instance {name}, with_remote_database_disk enabled")
@@ -2931,34 +2937,45 @@ class ClickHouseCluster:
 
         raise RuntimeError("Cannot wait RabbitMQ container")
 
-    def stop_rabbitmq_app(self, timeout=120):
+    @contextmanager
+    def pause_rabbitmq(self, timeout=120):
         run_rabbitmqctl(
             self.rabbitmq_docker_id, self.rabbitmq_cookie, "stop_app", timeout
         )
 
-    def start_rabbitmq_app(self, timeout=120):
-        run_rabbitmqctl(
-            self.rabbitmq_docker_id, self.rabbitmq_cookie, "start_app", timeout
-        )
-        self.wait_rabbitmq_to_start(timeout)
-
-    @contextmanager
-    def pause_rabbitmq(self, monitor=None, timeout=120):
-        if monitor is not None:
-            monitor.stop()
-        self.stop_rabbitmq_app(timeout)
-
         try:
             yield
         finally:
-            self.start_rabbitmq_app(timeout)
-            if monitor is not None:
-                monitor.start(self)
+            run_rabbitmqctl(
+                self.rabbitmq_docker_id, self.rabbitmq_cookie, "start_app", timeout
+            )
+            self.wait_rabbitmq_to_start(timeout)
 
-    def reset_rabbitmq(self, timeout=240):
-        self.stop_rabbitmq_app()
-        run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, "reset", timeout)
-        self.start_rabbitmq_app()
+    def reset_rabbitmq(self, timeout=120):
+        try:
+            resp = requests.get(f"http://{self.rabbitmq_ip}:{self.rabbitmq_management_port}/api/overview",
+                                auth=("root", "clickhouse"))
+            logging.debug(f"RabbitMQ statistics:\n{json.dumps(resp.json(), indent=2)}")
+        except:
+            pass
+        logging.debug("Resetting RabbitMQ by restarting container")
+        run_and_check(
+            f"docker stop --time {timeout} {self.rabbitmq_docker_id}",
+            shell=True,
+            nothrow=True,
+            timeout=timeout
+        )
+        run_and_check(
+            f"docker rm -f -v {self.rabbitmq_docker_id}",
+            shell=True,
+            nothrow=True,
+        )
+        subprocess_check_call(
+            self.base_rabbitmq_cmd + ["up", "-d", "--renew-anon-volumes"],
+            timeout=timeout,
+        )
+        self.rabbitmq_docker_id = self.get_instance_docker_id("rabbitmq1")
+        self.wait_rabbitmq_to_start(timeout)
 
     def run_rabbitmqctl(self, command):
         run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, command)
@@ -3350,7 +3367,7 @@ class ClickHouseCluster:
                         "Got exception pulling images: %s", kwargs["exception"]
                     )
 
-            retry(log_function=logging_pulling_images, retries=3, delay=8, jitter=8)(run_and_check, images_pull_cmd, nothrow=True)
+            retry(log_function=logging_pulling_images, retries=3, delay=8, jitter=8)(run_and_check, images_pull_cmd, nothrow=True, timeout=600)
 
             if self.with_zookeeper_secure and self.base_zookeeper_cmd:
                 logging.debug("Setup ZooKeeper Secure")
@@ -3821,6 +3838,41 @@ class ClickHouseCluster:
             self.up_called = True
             run_and_check(clickhouse_start_cmd)
             logging.debug("ClickHouse instance created")
+
+            # Copy binaries and start ClickHouse for dolor instances
+            for instance in self.instances.values():
+                if instance.with_dolor:
+                    i = 0
+                    for val in self.server_binaries:
+                        subprocess.run(
+                            [
+                                "docker",
+                                "cp",
+                                val,
+                                f"{instance.docker_id}:/usr/bin/clickhouse{i}",
+                            ],
+                            check=True,
+                        )
+                        if i == 0:
+                            # The first binary will be used first
+                            instance.exec_in_container(
+                                [
+                                    "ln",
+                                    "-sf",
+                                    f"/usr/bin/clickhouse{i}",
+                                    "/usr/bin/clickhouse",
+                                ],
+                                user="root",
+                            )
+                        i += 1
+                    self.exec_in_container(
+                        instance.docker_id, ["chmod", "+777", "/usr/bin/clickhouse"]
+                    )
+                    instance.exec_in_container(
+                        ["bash", "-c", instance.clickhouse_start_command],
+                        user=str(os.getuid()),
+                        detach=True,
+                    )
 
             start_timeout = 300.0  # seconds
             for instance in self.instances.values():
@@ -4337,7 +4389,11 @@ class ClickHouseInstance:
             self.krb5_conf = ""
 
         # Use a common path for data lakes on the filesystem
-        self.lakehouses_path = "- /var/lib/clickhouse/user_files/lakehouses:/var/lib/clickhouse/user_files/lakehouses" if with_dolor else ""
+        self.lakehouses_path = (
+            "- /var/lib/clickhouse/user_files/lakehouses:/var/lib/clickhouse/user_files/lakehouses"
+            if with_dolor
+            else ""
+        )
 
         self.docker_client = None
         self.ip_address = None
@@ -5671,7 +5727,9 @@ class ClickHouseInstance:
                 net_aliases = "aliases:"
                 net_alias1 = "- " + self.hostname
 
-        if not self.with_installed_binary:
+        if self.with_dolor:
+            binary_volume = ""
+        elif not self.with_installed_binary:
             binary_volume = "- " + self.server_bin_path + ":/usr/bin/clickhouse"
         else:
             binary_volume = "- " + self.server_bin_path + ":/usr/share/clickhouse_fresh"

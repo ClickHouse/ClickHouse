@@ -27,12 +27,11 @@ namespace ErrorCodes
 }
 
 /// A function to read file as a string.
-class FunctionFile : public IFunction, WithContext
+class FunctionFile : public IFunction
 {
 public:
     static constexpr auto name = "file";
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionFile>(context_); }
-    explicit FunctionFile(ContextPtr context_) : WithContext(context_) {}
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFile>(); }
 
     bool isVariadic() const override { return true; }
     String getName() const override { return name; }
@@ -114,11 +113,12 @@ public:
 
         res_offsets.resize(input_rows_count);
 
-        fs::path user_files_absolute_path = fs::canonical(fs::path(getContext()->getUserFilesPath()));
+        const auto & context = Context::getGlobalContextInstance();
+        fs::path user_files_absolute_path = fs::canonical(fs::path(context->getUserFilesPath()));
         std::string user_files_absolute_path_string = user_files_absolute_path.string();
 
         // If run in Local mode, no need for path checking.
-        bool need_check = getContext()->getApplicationType() != Context::ApplicationType::LOCAL;
+        bool need_check = context->getApplicationType() != Context::ApplicationType::LOCAL;
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
@@ -189,7 +189,7 @@ INSERT INTO table SELECT file('a.txt'), file('b.txt');
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 3};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionFile>(documentation);
 }
