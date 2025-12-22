@@ -733,6 +733,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {AggregatingMergeTree, mergeTreeTableSettings},
          {CollapsingMergeTree, mergeTreeTableSettings},
          {VersionedCollapsingMergeTree, mergeTreeTableSettings},
+         {GraphiteMergeTree, mergeTreeTableSettings},
          {File, fileTableSettings},
          {Null, {}},
          {Set, setTableSettings},
@@ -768,7 +769,19 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {ExternalDistributed, {}},
          {MaterializedPostgreSQL, {}},
          {ArrowFlight, {}},
-         {Alias, {}}});
+         {Alias, {}},
+         {TimeSeries, {}},
+         {HDFS, {}},
+         {Hive, {}},
+         {JDBC, {}},
+         {Kafka, {}},
+         {NATS, {}},
+         {ODBC, {}},
+         {RabbitMQ, {}},
+         {YTsaurus, {}},
+         {Executable, {}},
+         {ExecutablePool, {}},
+         {FileLog, {}}});
 
     allColumnSettings.insert(
         {{MergeTree, mergeTreeColumnSettings},
@@ -778,6 +791,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {AggregatingMergeTree, mergeTreeColumnSettings},
          {CollapsingMergeTree, mergeTreeColumnSettings},
          {VersionedCollapsingMergeTree, mergeTreeColumnSettings},
+         {GraphiteMergeTree, mergeTreeColumnSettings},
          {File, {}},
          {Null, {}},
          {Set, {}},
@@ -813,7 +827,19 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {ExternalDistributed, {}},
          {MaterializedPostgreSQL, {}},
          {ArrowFlight, {}},
-         {Alias, {}}});
+         {Alias, {}},
+         {TimeSeries, {}},
+         {HDFS, {}},
+         {Hive, {}},
+         {JDBC, {}},
+         {Kafka, {}},
+         {NATS, {}},
+         {ODBC, {}},
+         {RabbitMQ, {}},
+         {YTsaurus, {}},
+         {Executable, {}},
+         {ExecutablePool, {}},
+         {FileLog, {}}});
 
     allDictionaryLayoutSettings.insert(
         {{CACHE, cachedLayoutSettings},
