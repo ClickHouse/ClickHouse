@@ -102,7 +102,8 @@ SELECT quantileExactInclusive(0.1)(number), quantileExactInclusive(0.9)(number) 
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileExactInclusive::name, {createAggregateFunctionQuantile<FuncQuantileExactInclusive>, {}, documentation});
+    factory.registerFunction(NameQuantileExactInclusive::name, { createAggregateFunctionQuantile<FuncQuantileExactInclusive>, {}, documentation });
+
     FunctionDocumentation::Description description_quantiles = R"(
 Exactly computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously using the inclusive method.
 

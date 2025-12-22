@@ -73,7 +73,7 @@ Otherwise, the result of the calculation is rounded to the nearest multiple of 1
 For calculating page loading time quantiles, this function is more effective and accurate than [`quantile`](/sql-reference/aggregate-functions/reference/quantile).
 :::
 
-:::note    
+:::note
 If no values are passed to the function (when using `quantileTimingIf`), [NaN](/sql-reference/data-types/float#nan-and-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](/sql-reference/statements/select/order-by) for notes on sorting `NaN` values.
 :::
     )";
@@ -156,7 +156,7 @@ SELECT quantilesTiming(0.25, 0.5, 0.75)(response_time) FROM t;
     FunctionDocumentation::Category category_quantiles = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_quantiles = {description_quantiles, syntax_quantiles, arguments_quantiles, parameters_quantiles, returned_value_quantiles, examples_quantiles, introduced_in_quantiles, category_quantiles};
 
-    factory.registerFunction(NameQuantilesTiming::name, { createAggregateFunctionQuantile<FuncQuantilesTiming>, properties, documentation_quantiles });
+    factory.registerFunction(NameQuantilesTiming::name, {createAggregateFunctionQuantile<FuncQuantilesTiming>, properties, documentation_quantiles});
 
     /// 'median' is an alias for 'quantile'
     factory.registerAlias("medianTiming", NameQuantileTiming::name);

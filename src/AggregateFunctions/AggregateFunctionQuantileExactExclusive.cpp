@@ -142,7 +142,7 @@ SELECT quantilesExactExclusive(0.25, 0.5, 0.75, 0.9, 0.95, 0.99, 0.999)(number) 
     FunctionDocumentation::Category category_quantiles = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_quantiles = {description_quantiles, syntax_quantiles, arguments_quantiles, parameters_quantiles, returned_value_quantiles, examples_quantiles, introduced_in_quantiles, category_quantiles};
 
-    factory.registerFunction(NameQuantilesExactExclusive::name, { createAggregateFunctionQuantile<FuncQuantilesExactExclusive>, properties, documentation_quantiles });
+    factory.registerFunction(NameQuantilesExactExclusive::name, {createAggregateFunctionQuantile<FuncQuantilesExactExclusive>, properties, documentation_quantiles});
 }
 
 }

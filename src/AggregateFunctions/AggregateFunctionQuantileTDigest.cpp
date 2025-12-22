@@ -125,7 +125,7 @@ SELECT quantilesTDigest(0.25, 0.5, 0.75)(number) FROM numbers(100);
     FunctionDocumentation::Category category_quantiles = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_quantiles = {description_quantiles, syntax_quantiles, arguments_quantiles, parameters_quantiles, returned_value_quantiles, examples_quantiles, introduced_in_quantiles, category_quantiles};
 
-    factory.registerFunction(NameQuantilesTDigest::name, { createAggregateFunctionQuantile<FuncQuantilesTDigest>, properties, documentation_quantiles });
+    factory.registerFunction(NameQuantilesTDigest::name, {createAggregateFunctionQuantile<FuncQuantilesTDigest>, properties, documentation_quantiles});
 
     /// 'median' is an alias for 'quantile'
     factory.registerAlias("medianTDigest", NameQuantileTDigest::name);

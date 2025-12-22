@@ -195,6 +195,7 @@ SELECT quantile(val) FROM t;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
     factory.registerFunction(NameQuantile::name, {createAggregateFunctionQuantile<FuncQuantile>, {}, documentation});
+
     FunctionDocumentation::Description description_quantiles = R"(
 Computes multiple approximate [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously.
 
