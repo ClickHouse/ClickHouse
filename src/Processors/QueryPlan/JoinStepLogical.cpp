@@ -1,3 +1,4 @@
+#include <DataTypes/IDataType.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 
 #include <base/scope_guard.h>
@@ -587,6 +588,18 @@ bool canPushDownFromOn(const JoinOperator & join_operator, std::optional<JoinTab
     }
 }
 
+bool needToNegateOnCondition(const JoinOperator & join_operator, JoinTableSide side)
+{
+    if (join_operator.strictness != JoinStrictness::Anti)
+        return false;
+
+    /// If condition match ANTI JOIN condition, it should be filtered out.
+    /// This means that for LEFT ANTI JOIN we need to negate conditions pushed to LEFT side,
+    /// and for RIGHT ANTI JOIN we need to negate conditions pushed to RIGHT side.
+    return (join_operator.kind == JoinKind::Left && side == JoinTableSide::Left)
+        || (join_operator.kind == JoinKind::Right && side == JoinTableSide::Right);
+}
+
 using NameViewToNodeMapping = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
 
 
@@ -722,7 +735,7 @@ static SharedHeader blockWithActionsDAGOutput(const ActionsDAG & actions_dag)
 using QueryPlanNode = QueryPlan::Node;
 using QueryPlanNodePtr = QueryPlanNode *;
 
-JoinActionRef concatConditions(std::vector<JoinActionRef> & conditions, std::optional<JoinTableSide> side = {})
+JoinActionRef concatConditions(std::vector<JoinActionRef> & conditions, std::optional<JoinTableSide> side = {}, bool negate = false)
 {
     auto matching_point = std::ranges::partition(conditions,
         [side](const auto & node)
@@ -741,6 +754,15 @@ JoinActionRef concatConditions(std::vector<JoinActionRef> & conditions, std::opt
         result = toBoolIfNeeded(matching.front());
     else if (matching.size() > 1)
         result = JoinActionRef::transform({matching}, JoinActionRef::AddFunction(JoinConditionOperator::And));
+
+    if (negate && result)
+    {
+        /// TODO: Negate nullable condition via coalesce to false or other way?
+        if (isNullableOrLowCardinalityNullable(result.getType()))
+            return JoinActionRef{nullptr};
+
+        result = JoinActionRef::transform({result}, JoinActionRef::AddFunction(FunctionFactory::instance().get("not", nullptr)));
+    }
 
     conditions.erase(conditions.begin(), matching_point.begin());
     return result;
@@ -1346,8 +1368,11 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> JoinStepLogical::getFilterAc
     if (!canPushDownFromOn(join_operator, side))
         return {};
 
+    /// Negate condition in case of ANTI JOIN
+    bool negate_conjunction = needToNegateOnCondition(join_operator, side);
+
     auto & join_expression = join_operator.expression;
-    if (auto filter_condition = concatConditions(join_expression, side))
+    if (auto filter_condition = concatConditions(join_expression, side, negate_conjunction))
         return ActionsDAG::createActionsForConjunction({filter_condition.getNode()}, stream_header->getColumnsWithTypeAndName());
 
     return {};
