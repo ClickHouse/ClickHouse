@@ -1174,8 +1174,8 @@ void KeeperDispatcher::checkReconfigCommandActions(Poco::JSON::Object::Ptr recon
                 int32_t member_id = member_obj->getValue<int32_t>("id");
                 if (state_model.contains(member_id))
                 {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Reconfigure command cannot add server id {} to cluster because it's already present",
+                    LOG_INFO(log,
+                        "Reconfigure command cannot add server id {} to cluster because it's already present, will do nothing",
                         member_id);
                 }
                 state_model[member_id] = false;
