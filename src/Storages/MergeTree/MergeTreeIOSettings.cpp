@@ -40,6 +40,7 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool compress_primary_key;
     extern const MergeTreeSettingsBool use_adaptive_write_buffer_for_dynamic_subcolumns;
+    extern const MergeTreeSettingsUInt64 min_columns_to_activate_adaptive_write_buffer;
     extern const MergeTreeSettingsBool use_compact_variant_discriminators_serialization;
     extern const MergeTreeSettingsNonZeroUInt64 marks_compress_block_size;
     extern const MergeTreeSettingsString marks_compression_codec;
@@ -87,6 +88,7 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , object_shared_data_serialization_version(data_part->isZeroLevel() ? (*storage_settings)[MergeTreeSetting::object_shared_data_serialization_version_for_zero_level_parts] : (*storage_settings)[MergeTreeSetting::object_shared_data_serialization_version])
     , object_shared_data_buckets(isCompactPart(data_part) ? (*storage_settings)[MergeTreeSetting::object_shared_data_buckets_for_compact_part] : (*storage_settings)[MergeTreeSetting::object_shared_data_buckets_for_wide_part])
     , use_adaptive_write_buffer_for_dynamic_subcolumns((*storage_settings)[MergeTreeSetting::use_adaptive_write_buffer_for_dynamic_subcolumns])
+    , min_columns_to_activate_adaptive_write_buffer((*storage_settings)[MergeTreeSetting::min_columns_to_activate_adaptive_write_buffer])
     , adaptive_write_buffer_initial_size((*storage_settings)[MergeTreeSetting::adaptive_write_buffer_initial_size])
 {
 }

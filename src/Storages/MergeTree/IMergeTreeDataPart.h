@@ -91,6 +91,7 @@ public:
 
     IMergeTreeDataPart(
         const MergeTreeData & storage_,
+        const MergeTreeSettings & storage_settings,
         const String & name_,
         const MergeTreePartInfo & info_,
         const MutableDataPartStoragePtr & data_part_storage_,
@@ -472,7 +473,8 @@ public:
 
     const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & getProjectionParts() const { return projection_parts; }
 
-    MergeTreeDataPartBuilder getProjectionPartBuilder(const String & projection_name, bool is_temp_projection = false);
+    MergeTreeDataPartBuilder
+    getProjectionPartBuilder(const String & projection_name, ProjectionDescriptionRawPtr projection, bool is_temp_projection = false);
 
     void addProjectionPart(const String & projection_name, std::shared_ptr<IMergeTreeDataPart> && projection_part);
 
@@ -705,7 +707,7 @@ protected:
     /// They can be hardlinks to some newer parts.
     std::pair<bool, NameSet> canRemovePart() const;
 
-    void initializeIndexGranularityInfo();
+    void initializeIndexGranularityInfo(const MergeTreeSettings & storage_settings);
 
     virtual void doCheckConsistency(bool require_part_metadata) const;
 

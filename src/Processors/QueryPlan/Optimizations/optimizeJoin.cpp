@@ -30,6 +30,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <ranges>
 #include <Core/Joins.h>
@@ -505,12 +506,6 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
 
     graph.inputs.push_back(node);
     RelationStats stats = estimateReadRowsCount(*node);
-    if (!label.empty() && !graph.context->dummy_stats.empty())
-    {
-        auto dummy_stats = getDummyStats(graph.context->dummy_stats, label);
-        if (!dummy_stats.table_name.empty())
-            stats = std::move(dummy_stats);
-    }
 
     std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
     if (num_rows_from_cache)
@@ -579,6 +574,8 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
 
     auto [expression_actions_dag, expression_actions_sources] = expression_actions.detachActionsDAG();
 
+    auto existing_outputs = std::ranges::to<std::unordered_set>(query_graph.expression_actions.getActionsDAG()->getOutputs());
+
     ActionsDAG::NodeMapping node_mapping;
     query_graph.expression_actions.getActionsDAG()->mergeInplace(std::move(expression_actions_dag), node_mapping, true);
 
@@ -607,7 +604,8 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
     for (const auto * out_node : join_outputs)
     {
         if (out_node->type == ActionsDAG::ActionType::INPUT ||
-            out_node->type == ActionsDAG::ActionType::COLUMN)
+            out_node->type == ActionsDAG::ActionType::COLUMN ||
+            existing_outputs.contains(out_node))
             continue;
 
         auto source = JoinActionRef(out_node, query_graph.expression_actions).getSourceRelations();

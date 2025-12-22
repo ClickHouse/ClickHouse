@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 #include <Common/Exception.h>
+#include <Processors/Transforms/LazilyMaterializingTransform.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
@@ -152,23 +153,6 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             extras.profile_callback);
     };
 
-    auto can_skip_mark = [&](const DataPartPtr & data_part)
-    {
-        switch (data_part->storage.merging_params.mode)
-        {
-            case MergeTreeData::MergingParams::Replacing:
-            case MergeTreeData::MergingParams::Coalescing:
-                /**
-                 * When a text index created on a table with the ReplacingMergeTree or CoalescingMergeTree engine, marks cannot
-                 * be directly skipped due to search terms might exist only on the old parts but does not exist in new parts.
-                 * Replacing and Coalescing merge strategies would handle such cases but it still needs the range marks to operate.
-                 */
-                return false;
-            default:
-                return true;
-        }
-    };
-
     new_readers.main = create_reader(read_info->task_columns.columns, false);
 
     bool is_vector_search = read_info->read_hints.vector_search_results.has_value();
@@ -178,13 +162,21 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
     for (const auto & pre_columns_per_step : read_info->task_columns.pre_columns)
     {
         if (const auto * index_read_task = getIndexReadTaskForReadStep(read_info->index_read_tasks, pre_columns_per_step))
+        {
+            /// Do not skip marks for queries with FINAL in the reader,
+            /// because it may affect the result of the merging algorithm.
+            bool can_skip_marks = !index_read_task->is_final;
+
             new_readers.prewhere.push_back(createMergeTreeReaderIndex(
                 new_readers.main.get(),
                 index_read_task->index,
                 pre_columns_per_step,
-                index_read_task->is_final && can_skip_mark(read_info->data_part) /* this condition only applies to a FINAL query. */));
+                can_skip_marks));
+        }
         else
+        {
             new_readers.prewhere.push_back(create_reader(pre_columns_per_step, true));
+        }
 
         if (is_vector_search)
             new_readers.prewhere.back()->data_part_info_for_read->setReadHints(read_info->read_hints, pre_columns_per_step);
@@ -273,6 +265,7 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
 void MergeTreeReadTask::initializeReadersChain(
     const PrewhereExprInfo & prewhere_actions,
     MergeTreeIndexBuildContextPtr index_build_context,
+    LazyMaterializingRowsPtr lazy_materializing_rows,
     const ReadStepsPerformanceCounters & read_steps_performance_counters)
 {
     if (readers_chain.isInitialized())
@@ -280,8 +273,8 @@ void MergeTreeReadTask::initializeReadersChain(
 
     PrewhereExprInfo all_prewhere_actions;
 
-    if (index_build_context)
-        initializeIndexReader(*index_build_context);
+    if (index_build_context || lazy_materializing_rows)
+        initializeIndexReader(index_build_context, lazy_materializing_rows);
 
     for (const auto & step : info->mutation_steps)
         all_prewhere_actions.steps.push_back(step);
@@ -292,14 +285,24 @@ void MergeTreeReadTask::initializeReadersChain(
     readers_chain = createReadersChain(readers, all_prewhere_actions, read_steps_performance_counters);
 }
 
-void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContext & index_build_context)
+void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContextPtr & index_build_context, const LazyMaterializingRowsPtr & lazy_materializing_rows)
 {
     /// Optionally initialize the index filter for the current read task. If the build context exists and contains
     /// relevant read ranges for the current part, retrieve or construct index filter for all involved skip indexes.
     /// This filter will later be used to filter granules during the first reading step.
-    auto index_read_result = index_build_context.getPreparedIndexReadResult(*this);
-    if (index_read_result)
-        readers.prepared_index = std::make_unique<MergeTreeReaderIndex>(readers.main.get(), std::move(index_read_result));
+    MergeTreeIndexReadResultPtr index_read_result;
+    if (index_build_context)
+        index_read_result = index_build_context->getPreparedIndexReadResult(*this);
+
+    const PaddedPODArray<UInt64> * part_rows = nullptr;
+    if (lazy_materializing_rows)
+    {
+        part_rows = &lazy_materializing_rows->rows_in_parts[getInfo().part_index_in_query];
+        // std::cerr << "Initialized index for part " << getInfo().part_index_in_query << " with " << part_rows->size() << " rows\n";
+    }
+
+    if (index_read_result || lazy_materializing_rows)
+        readers.prepared_index = std::make_unique<MergeTreeReaderIndex>(readers.main.get(), std::move(index_read_result), part_rows);
 }
 
 UInt64 MergeTreeReadTask::estimateNumRows() const

@@ -339,6 +339,7 @@ if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
     ln -sf $SRC_PATH/config.d/storage_conf_02963.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_02961.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_03517.xml $DEST_SERVER_PATH/config.d/
+    ln -sf $SRC_PATH/config.d/storage_conf_03755.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/users.d/s3_cache.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/users.d/s3_cache_new.xml $DEST_SERVER_PATH/users.d/
 fi
