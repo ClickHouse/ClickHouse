@@ -758,12 +758,16 @@ JoinActionRef concatConditions(
                 return true;
         });
 
+    JoinActionRef result(nullptr);
+
     std::vector<JoinActionRef> matching(conditions.begin(), matching_point.begin());
+    if (matching.empty())
+        return result;
+
     /// Leave at least one condition if needed
     if (!params.can_extract_everything && matching.size() == conditions.size())
         matching.pop_back(); /// TODO: Select condition depending on selectivity?
 
-    JoinActionRef result(nullptr);
     if (matching.size() == 1)
         result = toBoolIfNeeded(matching.front());
     else if (matching.size() > 1)
