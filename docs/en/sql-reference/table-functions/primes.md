@@ -34,7 +34,7 @@ SELECT * FROM primes() LIMIT 10 OFFSET 10;
 SELECT * FROM system.primes LIMIT 10 OFFSET 10;
 ```
 
-### Examples
+### Examples {#examples}
 
 The first 10 primes.
 ```sql
@@ -87,7 +87,7 @@ LIMIT 7;
   └────────┘
 ```
 
-### Note
+### Note {#note}
 - The fastest forms are the plain range and point-filter variants that use the default step (`1`), for example `primes(N)` or `primes() LIMIT N`. These forms use an optimized prime generator to compute very large primes efficiently. For example, the following query executes almost instantly:
 
 ```sql
