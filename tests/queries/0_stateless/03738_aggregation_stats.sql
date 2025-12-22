@@ -17,7 +17,7 @@ FROM t1
 JOIN (SELECT key1 AS key, sum(value) FROM t2 GROUP BY key) AS tt2
 ON t1.n = tt2.key
 )
-WHERE explain LIKE '% Join%' OR explain LIKE '% ReadFromMergeTree%' OR explain LIKE '% Aggregating%';
+WHERE explain LIKE '% Join%' OR explain LIKE '% ResultRows:%' OR explain LIKE '% ReadFromMergeTree%' OR explain LIKE '% Aggregating%';
 
 
 SELECT '===== Aggregation by 2 columns and NDV1*NDV2 < total rows ======';
@@ -29,7 +29,7 @@ FROM t1
 JOIN (SELECT key1, key2, sum(value) FROM t2 GROUP BY key1, key2) AS tt2
 ON t1.n = tt2.key1
 )
-WHERE explain LIKE '% Join%' OR explain LIKE '% ReadFromMergeTree%' OR explain LIKE '% Aggregating%';
+WHERE explain LIKE '% Join%' OR explain LIKE '% ResultRows:%' OR explain LIKE '% ReadFromMergeTree%' OR explain LIKE '% Aggregating%';
 
 
 SELECT '===== Aggregation by 2 columns and NDV1*NDV2 > total rows ======';
@@ -41,7 +41,7 @@ FROM t1
 JOIN (SELECT key1, key3, sum(value) FROM t2 GROUP BY key1, key3) AS tt2
 ON t1.n = tt2.key1
 )
-WHERE explain LIKE '% Join%' OR explain LIKE '% ReadFromMergeTree%' OR explain LIKE '% Aggregating%';
+WHERE explain LIKE '% Join%' OR explain LIKE '% ResultRows:%' OR explain LIKE '% ReadFromMergeTree%' OR explain LIKE '% Aggregating%';
 
 
 SELECT '====== Aggregation by 0 columns =====';
@@ -53,5 +53,4 @@ FROM t1
 JOIN (SELECT 7 AS key, sum(value) FROM t2) AS tt2
 ON t1.n = tt2.key
 )
-WHERE explain LIKE '% Join%' OR explain LIKE '% ReadFromMergeTree%' OR explain LIKE '% Aggregating%';
-
+WHERE explain LIKE '% Join%' OR explain LIKE '% ResultRows:%' OR explain LIKE '% ReadFromMergeTree%' OR explain LIKE '% Aggregating%';
