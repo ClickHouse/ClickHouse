@@ -64,6 +64,8 @@ private:
 #if defined(OS_LINUX)
     EventFD startup_event_fd;
 #endif
+
+    void finishExecutor();
 };
 
 /// Totals source from RemoteQueryExecutor.
