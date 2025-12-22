@@ -8,8 +8,6 @@ namespace DB
 {
 
 class IMergeTreeIndexCondition;
-class IMergeTreeDataPart;
-struct IMergeTreeIndex;
 
 /// Represents a substream of a merge tree index.
 /// By default skip indexes have one substream (skp_idx_<name>.idx),
@@ -52,8 +50,8 @@ struct MergeTreeIndexDeserializationState
 {
     MergeTreeIndexVersion version;
     const IMergeTreeIndexCondition * condition;
-    const IMergeTreeDataPart & part;
-    const IMergeTreeIndex & index;
+    String path_to_data_part;
+    String index_name;
     size_t index_mark;
 };
 

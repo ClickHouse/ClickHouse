@@ -2,6 +2,7 @@
 
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
+#include <base/StringRef.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/KeysNullMap.h>
@@ -224,14 +225,14 @@ static inline T ALWAYS_INLINE packFixed(
 
 /** Serialize keys into a continuous chunk of memory.
   */
-static inline std::string_view ALWAYS_INLINE serializeKeysToPoolContiguous( /// NOLINT
+static inline StringRef ALWAYS_INLINE serializeKeysToPoolContiguous( /// NOLINT
     size_t i, size_t keys_size, const ColumnRawPtrs & key_columns, Arena & pool, const IColumn::SerializationSettings * settings)
 {
     const char * begin = nullptr;
 
     size_t sum_size = 0;
     for (size_t j = 0; j < keys_size; ++j)
-        sum_size += key_columns[j]->serializeValueIntoArena(i, pool, begin, settings).size();
+        sum_size += key_columns[j]->serializeValueIntoArena(i, pool, begin, settings).size;
 
     return {begin, sum_size};
 }

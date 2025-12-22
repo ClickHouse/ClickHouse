@@ -50,7 +50,8 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         data_part_info_for_read_->getIndexGranularityInfo(),
         settings.save_marks_in_cache,
         settings.read_settings,
-        settings_.load_marks_asynchronously ? &data_part_info_for_read_->getContext()->getLoadMarksThreadpool() : nullptr,
+        settings_.read_settings.load_marks_asynchronously
+            ? &data_part_info_for_read_->getContext()->getLoadMarksThreadpool() : nullptr,
         data_part_info_for_read_->getIndexGranularityInfo().mark_type.with_substreams
             ? columns_substreams.getTotalSubstreams() : data_part_info_for_read_->getColumns().size()))
     , profile_callback(profile_callback_)
@@ -191,7 +192,8 @@ void MergeTreeReaderCompact::readData(
 
         if (seek_to_substream_mark)
         {
-            size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], name_and_type, substream_path, storage_settings);
+            auto stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+            size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], stream_name);
             stream.seekToMarkAndColumn(from_mark, substream_position);
         }
 
@@ -233,7 +235,8 @@ void MergeTreeReaderCompact::readData(
 
             deserialize_settings.seek_stream_to_current_mark_callback = [&](const ISerialization::SubstreamPath & substream_path)
             {
-                size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], name_and_type, substream_path, storage_settings);
+                auto stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+                size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], stream_name);
                 stream.seekToMarkAndColumn(from_mark, substream_position);
             };
         }
@@ -413,7 +416,8 @@ void MergeTreeReaderCompact::readPrefix(size_t column_idx, size_t from_mark, Mer
 
         if (seek_to_substream_mark)
         {
-            size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], column, substream_path, storage_settings);
+            auto stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+            size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], stream_name);
             stream.seekToMarkAndColumn(from_mark, substream_position);
         }
 

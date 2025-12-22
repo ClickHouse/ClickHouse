@@ -18,12 +18,25 @@ namespace BuzzHouse
 {
 
 const std::vector<std::vector<OutFormat>> QueryOracle::oracleFormats
-    = {{OutFormat::OUT_CSV}, {OutFormat::OUT_TabSeparated}, {OutFormat::OUT_Values}};
+    = {{OutFormat::OUT_CSV},
+       {OutFormat::OUT_JSON,
+        OutFormat::OUT_JSONColumns,
+        OutFormat::OUT_JSONColumnsWithMetadata,
+        OutFormat::OUT_JSONCompact,
+        OutFormat::OUT_JSONCompactColumns,
+        OutFormat::OUT_JSONCompactEachRow,
+        OutFormat::OUT_JSONCompactStringsEachRow,
+        OutFormat::OUT_JSONEachRow,
+        OutFormat::OUT_JSONLines,
+        OutFormat::OUT_JSONObjectEachRow,
+        OutFormat::OUT_JSONStringsEachRow},
+       {OutFormat::OUT_TabSeparated, OutFormat::OUT_TabSeparatedRaw},
+       {OutFormat::OUT_Values}};
 
 /// Correctness query oracle
-/// SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED>;
+/// SELECT COUNT(*) FROM <FROM_CLAUSE> [PRE]WHERE <PRED>;
 /// or
-/// SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE> HAVING <PRED2>;
+/// SELECT COUNT(*) FROM <FROM_CLAUSE> [PRE]WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE> HAVING <PRED2>;
 void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1)
 {
     TopSelect * ts = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
@@ -46,7 +59,8 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
     gen.levels[gen.current_level].allow_aggregates = gen.levels[gen.current_level].allow_window_funcs = false;
     if (combination != 1)
     {
-        BinaryExpr * bexpr = ssc->mutable_where()->mutable_expr()->mutable_expr()->mutable_comp_expr()->mutable_binary_expr();
+        WhereStatement * wexpr = rg.nextSmallNumber() < 8 ? ssc->mutable_where() : ssc->mutable_pre_where();
+        BinaryExpr * bexpr = wexpr->mutable_expr()->mutable_expr()->mutable_comp_expr()->mutable_binary_expr();
 
         bexpr->set_op(BinaryOperator::BINOP_EQ);
         bexpr->mutable_rhs()->mutable_lit_val()->mutable_special_val()->set_val(
@@ -78,7 +92,7 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
 
 /// SELECT ifNull(SUM(PRED),0) FROM <FROM_CLAUSE>;
 /// or
-/// SELECT ifNull(SUM(PRED2),0) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE>;
+/// SELECT ifNull(SUM(PRED2),0) FROM <FROM_CLAUSE> [PRE]WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE>;
 void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2)
 {
     TopSelect * ts = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
@@ -105,7 +119,8 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
     }
     else
     {
-        ExprComparisonHighProbability & expr = const_cast<ExprComparisonHighProbability &>(ssc1.where().expr());
+        const WhereStatement & wexpr = ssc1.has_where() ? ssc1.where() : ssc1.pre_where();
+        ExprComparisonHighProbability & expr = const_cast<ExprComparisonHighProbability &>(wexpr.expr());
 
         sfc2->add_args()->set_allocated_expr(expr.release_expr());
     }
@@ -301,7 +316,6 @@ void QueryOracle::dumpOracleIntermediateSteps(
             {
                 trunc->mutable_cluster()->set_cluster(cluster.value());
             }
-            trunc->set_sync(true);
             /// Import data again
             generateImportQuery(rg, gen, t2, next1, next3);
 
@@ -351,87 +365,52 @@ void QueryOracle::dumpOracleIntermediateSteps(
         break;
         case DumpOracleStrategy::BACKUP_RESTORE: {
             SQLQuery next1;
-            SQLQuery next3;
+            SQLQuery next2;
             std::optional<String> cluster;
             BackupRestore * bac = next1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_backup_restore();
-            BackupRestore * res = next3.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_backup_restore();
-            SettingValues * bsett = nullptr;
-            SettingValues * rsett = nullptr;
-            BackupRestoreObject * baco = bac->mutable_backup_element()->mutable_bobject();
-            const String dname = t.getDatabaseName();
-            const String tname = t.getTableName();
-            const bool table_has_partitions = t.isMergeTreeFamily() && fc.tableHasPartitions(false, dname, tname);
+            BackupRestore * res = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_backup_restore();
+            SettingValues * bac_vals = nullptr;
+            SettingValues * res_vals = nullptr;
 
             bac->set_command(BackupRestore_BackupCommand_BACKUP);
             res->set_command(BackupRestore_BackupCommand_RESTORE);
-
-            t.setName(baco->mutable_object()->mutable_est(), false);
-            cluster = gen.backupOrRestoreObject(baco, SQLObject::TABLE, t);
+            cluster = gen.backupOrRestoreObject(bac->mutable_backup_element()->mutable_bobject(), SQLObject::TABLE, t);
+            cluster = gen.backupOrRestoreObject(res->mutable_backup_element()->mutable_bobject(), SQLObject::TABLE, t);
             if (cluster.has_value())
             {
                 bac->mutable_cluster()->set_cluster(cluster.value());
                 res->mutable_cluster()->set_cluster(cluster.value());
-            }
-            if (table_has_partitions && rg.nextSmallNumber() < 4)
-            {
-                baco->add_partitions()->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname));
             }
 
             gen.setBackupDestination(rg, bac);
             res->set_backup_number(bac->backup_number());
             res->set_out(bac->out());
             res->mutable_params()->CopyFrom(bac->params());
-            res->mutable_backup_element()->mutable_bobject()->CopyFrom(bac->backup_element().bobject());
 
             bac->set_sync(BackupRestore_SyncOrAsync_SYNC);
             res->set_sync(BackupRestore_SyncOrAsync_SYNC);
             if (rg.nextSmallNumber() < 4)
             {
-                bsett = bac->mutable_setting_values();
-                gen.generateSettingValues(rg, backupSettings, bsett);
-                SetValue * sv = bsett->has_set_value() ? bsett->add_other_values() : bsett->mutable_set_value();
-
-                /// Make sure to backup everything
-                sv->set_property("structure_only");
-                sv->set_value("0");
+                bac_vals = bac->mutable_setting_values();
+                gen.generateSettingValues(rg, backupSettings, bac_vals);
             }
             if (rg.nextSmallNumber() < 4)
             {
-                bsett = bsett ? bsett : bac->mutable_setting_values();
-                gen.generateSettingValues(rg, formatSettings, bsett);
+                bac_vals = bac_vals ? bac_vals : bac->mutable_setting_values();
+                gen.generateSettingValues(rg, formatSettings, bac_vals);
             }
             if (rg.nextSmallNumber() < 4)
             {
-                rsett = res->mutable_setting_values();
-                gen.generateSettingValues(rg, restoreSettings, rsett);
-                SetValue * sv = rsett->has_set_value() ? rsett->add_other_values() : rsett->mutable_set_value();
-
-                /// Make sure to recover everything
-                sv->set_property("structure_only");
-                sv->set_value("0");
+                res_vals = res->mutable_setting_values();
+                gen.generateSettingValues(rg, restoreSettings, res_vals);
             }
             if (rg.nextSmallNumber() < 4)
             {
-                rsett = rsett ? rsett : res->mutable_setting_values();
-                gen.generateSettingValues(rg, formatSettings, rsett);
+                res_vals = res_vals ? res_vals : res->mutable_setting_values();
+                gen.generateSettingValues(rg, formatSettings, res_vals);
             }
-
             intermediate_queries.emplace_back(next1);
-            if (baco->partitions_size() == 0)
-            {
-                /// Truncate table, so it is restored into an empty one
-                SQLQuery next2;
-                Truncate * trunc = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_trunc();
-
-                t.setName(trunc->mutable_est(), false);
-                if (cluster.has_value())
-                {
-                    trunc->mutable_cluster()->set_cluster(cluster.value());
-                }
-                trunc->set_sync(true);
-                intermediate_queries.emplace_back(next2);
-            }
-            intermediate_queries.emplace_back(next3);
+            intermediate_queries.emplace_back(next2);
         }
         break;
     }
@@ -780,6 +759,15 @@ void QueryOracle::swapQuery(RandomGenerator & rg, StatementGenerator & gen, goog
     {
         auto & ssc = static_cast<SelectStatementCore &>(mes);
 
+        if ((ssc.has_pre_where() || ssc.has_where()) && rg.nextSmallNumber() < 5)
+        {
+            /// Swap WHERE and PREWHERE
+            auto * prewhere = ssc.release_pre_where();
+            auto * where = ssc.release_where();
+
+            ssc.set_allocated_pre_where(where);
+            ssc.set_allocated_where(prewhere);
+        }
         if (ssc.has_from())
         {
             swapQuery(rg, gen, const_cast<JoinedQuery &>(ssc.from().tos()));
@@ -1108,7 +1096,7 @@ void QueryOracle::replaceQueryWithTablePeers(
         Insert * ins = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
         SelectStatementCore * sel = ins->mutable_select()->mutable_select()->mutable_select_core();
 
-        if (t.isMergeTreeFamily() && t.can_run_merges)
+        if (t.isMergeTreeFamily())
         {
             /// Apply delete mask
             SQLQuery next;
@@ -1163,21 +1151,18 @@ void QueryOracle::setIntermediateStepSuccess(const bool success)
 
 void QueryOracle::processFirstOracleQueryResult(const int errcode, ExternalIntegrations & ei)
 {
-    if (can_test_oracle_result)
+    if (!errcode)
     {
-        if (!errcode)
+        if (measure_performance)
         {
-            if (measure_performance)
-            {
-                other_steps_sucess &= ei.getPerformanceMetricsForLastQuery(PeerTableDatabase::None, this->res1);
-            }
-            else
-            {
-                md5_hash1.hashFile(qcfile.generic_string(), first_digest);
-            }
+            other_steps_sucess &= ei.getPerformanceMetricsForLastQuery(PeerTableDatabase::None, this->res1);
         }
-        first_errcode = errcode;
+        else
+        {
+            md5_hash1.hashFile(qcfile.generic_string(), first_digest);
+        }
     }
+    first_errcode = errcode;
 }
 
 void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalIntegrations & ei, const String & oracle_name)
@@ -1185,7 +1170,8 @@ void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalInte
     if (other_steps_sucess && can_test_oracle_result)
     {
         if (((first_errcode && !errcode) || (!first_errcode && errcode))
-            && !fc.oracle_ignore_error_codes.contains(static_cast<uint32_t>(first_errcode ? first_errcode : errcode)))
+            && (fc.oracle_ignore_error_codes.find(static_cast<uint32_t>(first_errcode ? first_errcode : errcode))
+                == fc.oracle_ignore_error_codes.end()))
         {
             throw DB::Exception(
                 DB::ErrorCodes::BUZZHOUSE,

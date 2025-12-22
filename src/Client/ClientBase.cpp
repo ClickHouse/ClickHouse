@@ -268,8 +268,8 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
 
     struct Id
     {
-        std::string_view name;
-        std::string_view host_name;
+        StringRef name;
+        StringRef host_name;
 
         bool operator<(const Id & rhs) const
         {
@@ -1579,7 +1579,7 @@ void ClientBase::onProfileEvents(Block & block)
         for (size_t i = 0; i < rows; ++i)
         {
             auto thread_id = array_thread_id[i];
-            std::string host_name{host_names.getDataAt(i)};
+            auto host_name = host_names.getDataAt(i).toString();
 
             /// In ProfileEvents packets thread id 0 specifies common profiling information
             /// for all threads executing current query on specific host. So instead of summing per thread
@@ -3141,7 +3141,7 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
                         {
                             if (!result.empty())
                                 result += "\n";
-                            result.append(column->getDataAt(i));
+                            result += column->getDataAt(i).toString();
                         }
                     }
                     break;
@@ -3405,11 +3405,6 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
 
     if (options.contains("prompt"))
         getClientConfiguration().setString("prompt", options["prompt"].as<std::string>());
-
-    if (options.contains("oauth-url"))
-        getClientConfiguration().setString("oauth-url", options["oauth-url"].as<std::string>());
-    if (options.contains("oauth-client-id"))
-        getClientConfiguration().setString("oauth-client-id", options["oauth-client-id"].as<std::string>());
 
     if (options.contains("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());

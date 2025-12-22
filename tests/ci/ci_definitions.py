@@ -123,7 +123,7 @@ class BuildNames(metaclass=WithIter):
     BINARY_RISCV64 = "binary_riscv64"
     BINARY_S390X = "binary_s390x"
     BINARY_LOONGARCH64 = "binary_loongarch64"
-    ARM_FUZZERS = "arm_fuzzers"
+    FUZZERS = "fuzzers"
 
 
 class JobNames(metaclass=WithIter):
