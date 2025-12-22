@@ -71,7 +71,7 @@ REGISTER_FUNCTION(Perimeter)
 
         FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<FunctionPerimeter<CartesianPoint>>(documentation);
     }
@@ -91,7 +91,7 @@ REGISTER_FUNCTION(Perimeter)
 
         FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
 
         factory.registerFunction<FunctionPerimeter<SphericalPoint>>(documentation);

@@ -281,7 +281,7 @@ void ProgressTable::writeTable(
         if (col_doc_width)
         {
             message << setColorForDocumentation();
-            const auto * doc = getDocumentation(event_name_to_event.at(name));
+            std::string_view doc = getDocumentation(event_name_to_event.at(name));
             writeWithWidthStrict(message, doc, col_doc_width);
         }
 
