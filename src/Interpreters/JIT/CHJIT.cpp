@@ -3,26 +3,17 @@
 #if USE_EMBEDDED_COMPILER
 
 #include <sys/mman.h>
-#include <cmath>
-#include <iostream>
-
 #include <boost/noncopyable.hpp>
 
 #include <llvm/Analysis/CGSCCPassManager.h>
 #include <llvm/Analysis/LoopAnalysisManager.h>
-#include <llvm/Analysis/TargetTransformInfo.h>
 #include <llvm/Passes/PassBuilder.h>
-#include <llvm/IR/BasicBlock.h>
-#include <llvm/IR/DataLayout.h>
-#include <llvm/IR/DerivedTypes.h>
-#include <llvm/IR/Function.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Mangler.h>
 #include <llvm/IR/Type.h>
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/ExecutionEngine/JITSymbol.h>
 #include <llvm/ExecutionEngine/SectionMemoryManager.h>
-#include <llvm/ExecutionEngine/JITEventListener.h>
 #include <llvm/TargetParser/SubtargetFeature.h>
 #include <llvm/MC/TargetRegistry.h>
 #include <llvm/Support/DynamicLibrary.h>
@@ -34,8 +25,6 @@
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <Core/Types.h>
-#include <Core/Field.h>
-#include <Functions/DivisionUtils.h>
 
 
 namespace DB
@@ -49,64 +38,28 @@ namespace ErrorCodes
     extern const int CANNOT_MPROTECT;
 }
 
+
+/// These functions will be provided to the linker of JIT code,
+/// so it can call them to work with big integers on platforms without native support.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wbit-int-extension"
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+
 using BitInt128 = signed _BitInt(128);
 using BitUInt128 = unsigned _BitInt(128);
+
+extern "C" BitInt128 __divti3(BitInt128, BitInt128);
+extern "C" BitInt128 __modti3(BitInt128, BitInt128);
+
+extern "C" BitInt128 __fixsfti(float);
+extern "C" BitInt128 __fixdfti(double);
+
+extern "C" float __floattisf(BitInt128);
+extern "C" float __floatuntisf(BitUInt128);
+extern "C" double __floattidf(BitInt128);
+extern "C" double __floatuntidf(BitUInt128);
+
 #pragma clang diagnostic pop
-
-
-static BitInt128 divideInt128(BitInt128 left, BitInt128 right)
-{
-    return left / right;
-}
-
-static BitInt128 moduloInt128(BitInt128 left, BitInt128 right)
-{
-    return left % right;
-}
-
-
-static BitInt128 castFloatToInt128(float from)
-{
-    return static_cast<BitInt128>(from);
-}
-
-static BitInt128 castDoubleToInt128(double from)
-{
-    return static_cast<BitInt128>(from);
-}
-
-static BitInt128 castFloatToUInt128(float from)
-{
-    return static_cast<BitUInt128>(from);
-}
-
-static BitInt128 castDoubleToUInt128(double from)
-{
-    return static_cast<BitUInt128>(from);
-}
-
-
-static float castInt128ToFloat(BitInt128 from)
-{
-    return static_cast<float>(from);
-}
-
-static double castInt128ToDouble(BitInt128 from)
-{
-    return static_cast<double>(from);
-}
-
-static float castUInt128ToFloat(BitUInt128 from)
-{
-    return static_cast<float>(from);
-}
-
-static double castUInt128ToDouble(BitUInt128 from)
-{
-    return static_cast<double>(from);
-}
 
 
 /** Simple module to object file compiler.
@@ -438,20 +391,17 @@ CHJIT::CHJIT()
     symbol_resolver->registerSymbol("memcpy", reinterpret_cast<void *>(&memcpy));
     symbol_resolver->registerSymbol("memcmp", reinterpret_cast<void *>(&memcmp));
 
-    double (*fmod_ptr)(double, double) = &fmod;
-    symbol_resolver->registerSymbol("fmod", reinterpret_cast<void *>(fmod_ptr));
-    symbol_resolver->registerSymbol("__divti3", reinterpret_cast<void *>(&divideInt128));
-    symbol_resolver->registerSymbol("__modti3", reinterpret_cast<void *>(&moduloInt128));
+    symbol_resolver->registerSymbol("fmod", reinterpret_cast<void *>(static_cast<double (*)(double, double)>(&fmod)));
+    symbol_resolver->registerSymbol("__divti3", reinterpret_cast<void *>(&__divti3));
+    symbol_resolver->registerSymbol("__modti3", reinterpret_cast<void *>(&__modti3));
 
-    symbol_resolver->registerSymbol("__fixsfti", reinterpret_cast<void *>(&castFloatToInt128));
-    symbol_resolver->registerSymbol("__fixsfunti", reinterpret_cast<void *>(&castFloatToUInt128));
-    symbol_resolver->registerSymbol("__fixdfti", reinterpret_cast<void *>(&castDoubleToInt128));
-    symbol_resolver->registerSymbol("__fixdfunti", reinterpret_cast<void *>(&castDoubleToUInt128));
+    symbol_resolver->registerSymbol("__fixsfti", reinterpret_cast<void *>(&__fixsfti));
+    symbol_resolver->registerSymbol("__fixdfti", reinterpret_cast<void *>(&__fixdfti));
 
-    symbol_resolver->registerSymbol("__floattisf", reinterpret_cast<void *>(&castInt128ToFloat));
-    symbol_resolver->registerSymbol("__floatuntisf", reinterpret_cast<void *>(&castUInt128ToFloat));
-    symbol_resolver->registerSymbol("__floattidf", reinterpret_cast<void *>(&castInt128ToDouble));
-    symbol_resolver->registerSymbol("__floatuntidf", reinterpret_cast<void *>(&castUInt128ToDouble));
+    symbol_resolver->registerSymbol("__floattisf", reinterpret_cast<void *>(&__floattisf));
+    symbol_resolver->registerSymbol("__floatuntisf", reinterpret_cast<void *>(&__floatuntisf));
+    symbol_resolver->registerSymbol("__floattidf", reinterpret_cast<void *>(&__floattidf));
+    symbol_resolver->registerSymbol("__floatuntidf", reinterpret_cast<void *>(&__floatuntidf));
 }
 
 CHJIT::~CHJIT() = default;
