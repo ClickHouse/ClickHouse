@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database, no-parallel-replicas, no-parallel, no-random-merge-tree-settings
+-- EXPLAIN output may differ
+
 DROP TABLE IF EXISTS test_pk_long;
 DROP TABLE IF EXISTS test_pk_long_back;
 DROP TABLE IF EXISTS test_pk;
@@ -37,6 +40,7 @@ INSERT INTO test_pk_long_back SELECT toDateTime('2001-01-01') + number, number %
 
 -- { echoOn }
 
+EXPLAIN indexes = 1
 SELECT
     toDate(dt) AS dt,
     count()
@@ -45,6 +49,7 @@ WHERE (dt >= '2001-01-02') AND (dt <= '2001-01-11') AND (key = '1')
 GROUP BY dt
 ORDER BY dt ASC;
 
+EXPLAIN indexes = 1
 SELECT
     toDate(dt) AS dt,
     count()
@@ -53,6 +58,7 @@ WHERE (dt >= '2001-01-02') AND (dt <= '2001-01-11') AND (key = '1')
 GROUP BY dt
 ORDER BY dt ASC;
 
+EXPLAIN indexes = 1
 SELECT
     toDate(dt) AS dt,
     count()
