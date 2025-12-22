@@ -39,10 +39,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
-
         addSettingsChanges(settings_changes_history, "26.1",
         {
-            {"input_format_binary_max_type_complexity", 1000, 1000, "Added new setting to control max number of type nodes when decoding binary types. Protects against malicious inputs."},
+            {"input_format_binary_max_type_complexity", 1000, 1000, "Add a new setting to control max number of type nodes when decoding binary types. Protects against malicious inputs."},
+            {"trace_profile_events_list", "", "", "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {

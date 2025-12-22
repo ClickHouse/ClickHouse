@@ -376,8 +376,8 @@ private:
     void generateNextKill(RandomGenerator & rg, Kill * kil);
     void generateUptDelWhere(RandomGenerator & rg, const SQLTable & t, Expr * expr);
     std::optional<String>
-    alterSingleTable(RandomGenerator & rg, SQLTable & t, uint32_t nalters, bool no_oracle, bool can_update, Alter * at);
-    void generateAlter(RandomGenerator & rg, Alter * at);
+    alterSingleTable(RandomGenerator & rg, SQLTable & t, uint32_t nalters, bool no_oracle, bool can_update, bool in_parallel, Alter * at);
+    void generateAlter(RandomGenerator & rg, bool in_parallel, Alter * at);
     void generateHotTableSettingsValues(RandomGenerator & rg, bool create, SettingValues * vals);
     void generateSettingValues(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SettingValues * vals);
     void generateSettingValues(
