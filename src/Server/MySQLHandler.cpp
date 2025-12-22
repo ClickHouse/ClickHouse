@@ -39,7 +39,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsBool prefer_column_name_to_alias;
     extern const SettingsSeconds receive_timeout;
     extern const SettingsSeconds send_timeout;
@@ -522,7 +522,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
 
         /// --- Workaround for Bug 56173.
         auto settings = query_context->getSettingsCopy();
-        if (!settings[Setting::allow_experimental_analyzer])
+        if (!settings[Setting::enable_analyzer])
         {
             settings[Setting::prefer_column_name_to_alias] = true;
             query_context->setSettings(settings);

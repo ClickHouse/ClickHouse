@@ -43,7 +43,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsBool allow_statistics_optimize;
     extern const SettingsBool format_display_secrets_in_show_and_select;
     extern const SettingsUInt64 query_plan_max_step_description_length;
@@ -518,7 +518,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         {
             auto settings = checkAndGetSettings<QuerySyntaxSettings>(ast.getSettings());
 
-            if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            if (query_context->getSettingsRef()[Setting::enable_analyzer])
             {
                 bool explain_ok = explainQueryTree(ast.getExplainedQuery(), query_context, QueryTreeSettings{
                     .run_passes = settings.run_query_tree_passes,
@@ -532,7 +532,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 if (explain_ok)
                     break;
                 auto query_context_mutable = Context::createCopy(query_context);
-                query_context_mutable->setSetting("allow_experimental_analyzer", false);
+                query_context_mutable->setSetting("enable_analyzer", false);
                 query_context = std::move(query_context_mutable);
             }
 
@@ -544,7 +544,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         }
         case ASTExplainQuery::QueryTree:
         {
-            if (!query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            if (!query_context->getSettingsRef()[Setting::enable_analyzer])
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "EXPLAIN QUERY TREE is only supported with a new analyzer. SET enable_analyzer = 1.");
 
@@ -567,7 +567,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             ContextPtr context;
 
-            if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            if (query_context->getSettingsRef()[Setting::enable_analyzer])
             {
                 InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, options);
                 context = interpreter.getContext();
@@ -622,7 +622,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 QueryPlan plan;
                 ContextPtr context;
 
-                if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+                if (query_context->getSettingsRef()[Setting::enable_analyzer])
                 {
                     InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, options);
                     context = interpreter.getContext();
@@ -685,7 +685,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             QueryPlan plan;
             ContextPtr context = query_context;
 
-            if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            if (context->getSettingsRef()[Setting::enable_analyzer])
             {
                 InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, SelectQueryOptions());
                 context = interpreter.getContext();
