@@ -4,7 +4,6 @@ description: 'The result is equal to the square root of varSamp. Unlike this fun
 sidebar_position: 191
 slug: /sql-reference/aggregate-functions/reference/stddevsampstable
 title: 'stddevSampStable'
-doc_type: 'reference'
 ---
 
 # stddevSampStable
