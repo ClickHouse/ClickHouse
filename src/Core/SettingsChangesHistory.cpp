@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.1",
         {
             {"trace_profile_events_list", "", "", "New setting"},
+            {"merge_tree_exclusion_search_max_steps", 0, 0, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
