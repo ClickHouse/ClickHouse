@@ -1,5 +1,3 @@
-#include <optional>
-
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
@@ -8,19 +6,18 @@
 #include <Storages/System/StorageSystemPrimes.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <TableFunctions/registerTableFunctions.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
-#include <base/types.h>
-#include <TableFunctions/registerTableFunctions.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int BAD_ARGUMENTS;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -94,9 +91,7 @@ StoragePtr TableFunctionPrimes::executeImpl(
 
         if (arguments.size() >= 4)
             throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Table function '{}' cannot have more than three params",
-                getName());
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' cannot have more than three params", getName());
 
         if (!arguments.empty())
         {
@@ -108,19 +103,13 @@ StoragePtr TableFunctionPrimes::executeImpl(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function {} requires step to be a positive number", getName());
 
             auto res = std::make_shared<StorageSystemPrimes>(
-                StorageID(getDatabaseName(), table_name),
-                std::string{"prime"},
-                length,
-                offset,
-                step);
+                StorageID(getDatabaseName(), table_name), std::string{"prime"}, length, offset, step);
 
             res->startup();
             return res;
         }
 
-        auto res = std::make_shared<StorageSystemPrimes>(
-            StorageID(getDatabaseName(), table_name),
-            std::string{"prime"});
+        auto res = std::make_shared<StorageSystemPrimes>(StorageID(getDatabaseName(), table_name), std::string{"prime"});
 
         res->startup();
         return res;
@@ -136,7 +125,25 @@ StoragePtr TableFunctionPrimes::executeImpl(
 
 void registerTableFunctionPrimes(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionPrimes>({.documentation = {}, .allow_readonly = true});
+    factory.registerFunction<TableFunctionPrimes>({.documentation = {
+        .description = R"(Returns tables with a single UInt64 column `prime` containing prime numbers in ascending order, starting from 2.)",
+        .syntax = "primes() | primes(N) | primes(N, M) | primes(N, M, S)",
+        .arguments = {
+            {"N", "If used as primes(N): number of primes to return. If used as primes(N, M[, S]): starting prime index (0-based).", {"UInt64"}},
+            {"M", "Number of primes to return (only for primes(N, M) and primes(N, M, S)).", {"UInt64"}},
+            {"S", "Step by prime index (S >= 1), only for primes(N, M, S).", {"UInt64"}},
+        },
+        .returned_value = {"A table with a single UInt64 column `prime`.", {"UInt64"}},
+        .examples = {
+            {"The first 10 primes", "SELECT * FROM primes(10);", ""},
+            {"The first 10 primes using LIMIT", "SELECT prime FROM primes() LIMIT 10;", ""},
+            {"Skip the first 10 primes and then return next 10", "SELECT prime FROM primes() LIMIT 10 OFFSET 10;", ""},
+            {"The first prime after 1e15", "SELECT prime FROM primes() WHERE prime > toUInt64(1e15) LIMIT 1;", ""},
+            {"The first 7 Mersenne primes", "SELECT prime FROM primes() WHERE bitAnd(prime, prime + 1) = 0 LIMIT 7;", ""},
+        },
+        .introduced_in = {26, 1},
+        .category = FunctionDocumentation::Category::TableFunction,
+    }, .allow_readonly = true});
 }
 
 }
