@@ -75,11 +75,11 @@ theilsU(column1, column2)
         R"(
 SELECT theilsU(a, b)
 FROM (
-  SELECT
-    number % 10 AS a,
-    number % 4 AS b
-  FROM
-    numbers(150)
+    SELECT
+        number % 10 AS a,
+        number % 4 AS b
+    FROM
+        numbers(150)
 );
         )",
         R"(

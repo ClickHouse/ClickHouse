@@ -129,10 +129,14 @@ SELECT uniqCombined(15)(number) FROM numbers(1e5);
     FunctionDocumentation documentation_uniqCombined = {description_uniqCombined, syntax_uniqCombined, arguments_uniqCombined, parameters_uniqCombined, returned_value_uniqCombined, examples_uniqCombined, introduced_in_uniqCombined, category_uniqCombined};
 
     factory.registerFunction("uniqCombined",
+    {
         [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return createAggregateFunctionUniqCombined(false, name, argument_types, parameters);
-        }, {.documentation = documentation_uniqCombined});
+        },
+        {},
+        documentation_uniqCombined
+    });
     /// uniqCombined64 documentation
     FunctionDocumentation::Description description_uniqCombined64 = R"(
 Calculates the approximate number of different argument values.
@@ -190,12 +194,12 @@ SELECT uniqCombined64(number) FROM numbers(1e10);
 SELECT uniqCombined(number) FROM numbers(1e10);
         )",
         R"(
-   ┌─uniqCombined64(number)─┐
-1. │             9998568925 │ -- 10.00 billion
-   └────────────────────────┘
-   ┌─uniqCombined(number)─┐
-1. │           5545308725 │ -- 5.55 billion
-   └──────────────────────┘
+┌─uniqCombined64(number)─┐
+│             9998568925 │ -- 10.00 billion
+└────────────────────────┘
+┌─uniqCombined(number)─┐
+│           5545308725 │ -- 5.55 billion
+└──────────────────────┘
         )"
     }
     };
@@ -204,10 +208,14 @@ SELECT uniqCombined(number) FROM numbers(1e10);
     FunctionDocumentation documentation_uniqCombined64 = {description_uniqCombined64, syntax_uniqCombined64, arguments_uniqCombined64, parameters_uniqCombined64, returned_value_uniqCombined64, examples_uniqCombined64, introduced_in_uniqCombined64, category_uniqCombined64};
 
     factory.registerFunction("uniqCombined64",
+        {
         [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return createAggregateFunctionUniqCombined(true, name, argument_types, parameters);
-        }, {.documentation = documentation_uniqCombined64});
+        },
+        {},
+        documentation_uniqCombined64
+    });
 }
 
 }
