@@ -87,10 +87,13 @@ def test_jemalloc_percpu_arena():
     )
     assert int(result) == int(1), result
 
-    # should fail because of abort_conf:true
-    # This needs to pin the CPU > 0 manually because docked doesn't do it and
-    # /sys/devices/system/cpu/online is not enough.
+    # jemalloc compares sysconf(_SC_NPROCESSORS_ONLN) and sysconf(_SC_NPROCESSORS_CONF) to determine the CPU topology info
+    # Apparently sometimes _SC_NPROCESSORS_ONLN SOMETIMES ignores the override of /sys/devices/system/cpu/online and it should be equal to
+    # _SC_NPROCESSORS_CONF
+    # Latter it also checks sched_getaffinity() + CPU_COUNT(&set), so, we rely also on --cpuset-cpus (taskset) in order to trigger the
+    # second condition
     with pytest.raises(subprocess.CalledProcessError):
+        # should fail because of abort_conf:true but:
         run_with_cpu_limit(
             'clickhouse local -q "select 1"',
             "--cpuset-cpus", f"{CPU_ID}",
