@@ -216,7 +216,7 @@ bool DistributedAsyncInsertBatch::recoverBatch()
 
         try
         {
-            ReadBufferFromFile header_buffer(files.back());
+            ReadBufferFromFile header_buffer(file);
             const DistributedAsyncInsertHeader & header = DistributedAsyncInsertHeader::read(header_buffer, parent.log);
             if (header.rows)
             {
