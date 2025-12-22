@@ -735,7 +735,17 @@ static SharedHeader blockWithActionsDAGOutput(const ActionsDAG & actions_dag)
 using QueryPlanNode = QueryPlan::Node;
 using QueryPlanNodePtr = QueryPlanNode *;
 
-JoinActionRef concatConditions(std::vector<JoinActionRef> & conditions, std::optional<JoinTableSide> side = {}, bool negate = false)
+struct ConcantConditionsParameters
+{
+    const bool negate = false;
+    const bool can_extract_everything = true;
+};
+
+JoinActionRef concatConditions(
+    std::vector<JoinActionRef> & conditions,
+    std::optional<JoinTableSide> side = {},
+    ConcantConditionsParameters params = {}
+)
 {
     auto matching_point = std::ranges::partition(conditions,
         [side](const auto & node)
@@ -749,13 +759,17 @@ JoinActionRef concatConditions(std::vector<JoinActionRef> & conditions, std::opt
         });
 
     std::vector<JoinActionRef> matching(conditions.begin(), matching_point.begin());
+    /// Leave at least one condition if needed
+    if (!params.can_extract_everything && matching.size() == conditions.size())
+        matching.pop_back(); /// TODO: Select condition depending on selectivity?
+
     JoinActionRef result(nullptr);
     if (matching.size() == 1)
         result = toBoolIfNeeded(matching.front());
     else if (matching.size() > 1)
         result = JoinActionRef::transform({matching}, JoinActionRef::AddFunction(JoinConditionOperator::And));
 
-    if (negate && result)
+    if (params.negate && result)
     {
         /// TODO: Negate nullable condition via coalesce to false or other way?
         if (isNullableOrLowCardinalityNullable(result.getType()))
@@ -1367,10 +1381,12 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> JoinStepLogical::getFilterAc
         return {};
 
     /// Negate condition in case of ANTI JOIN
-    bool negate_conjunction = needToNegateOnCondition(join_operator, side);
+    const bool negate_conjunction = needToNegateOnCondition(join_operator, side);
+    /// Check if condition can be extracted completely
+    const bool allow_join_on_const = TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH);
 
     auto & join_expression = join_operator.expression;
-    if (auto filter_condition = concatConditions(join_expression, side, negate_conjunction))
+    if (auto filter_condition = concatConditions(join_expression, side, { .negate = negate_conjunction, .can_extract_everything = allow_join_on_const }))
         return ActionsDAG::createActionsForConjunction({filter_condition.getNode()}, stream_header->getColumnsWithTypeAndName());
 
     return {};

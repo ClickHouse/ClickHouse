@@ -2122,6 +2122,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
 
     table_join->getTableJoin().kind = join_kind;
 
+    table_join->setIsJoinWithConstant(join_constant != std::nullopt);
+
     if (join_node.isOnJoinExpression())
     {
         const auto & join_clauses = join_clauses_and_actions.join_clauses;
@@ -2155,6 +2157,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
             if (join_clause_key_nodes_size == 0 && can_move_out_residuals)
             {
                 table_join->getTableJoin().kind = JoinKind::Cross;
+                table_join->setIsJoinWithConstant(true);
                 table_join_clauses.pop_back();
                 continue;
             }
