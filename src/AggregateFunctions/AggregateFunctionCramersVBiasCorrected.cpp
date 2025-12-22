@@ -52,7 +52,7 @@ The function can be heavily biased, so this version of Cramer's V uses the [bias
         {"column1", "First column to be compared.", {"Any"}},
         {"column2", "Second column to be compared.", {"Any"}}
     };
-    FunctionDocumentation::Parameters parameters = {};
+    FunctionDocumentation::Parameters docs_parameters = {};
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a value between 0 (corresponding to no association between the columns' values) to 1 (complete association).", {"Float64"}};
     FunctionDocumentation::Examples examples = {
     {
@@ -79,7 +79,7 @@ FROM
     };
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn introduced_in = {22, 1};
-    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, docs_parameters, returned_value, examples, introduced_in, category};
     factory.registerFunction(CramersVBiasCorrectedData::getName(),
     {
         [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
