@@ -13,6 +13,8 @@ def main():
     wf = os.environ.get("WORKFLOW_NAME", "")
     if wf == "PR":
         os.environ.setdefault("KEEPER_RUN_WEEKLY", "0")
+        # Run a single representative scenario on PRs unless explicitly overridden
+        os.environ.setdefault("KEEPER_INCLUDE_IDS", "CHA-01")
     else:
         os.environ.setdefault("KEEPER_RUN_WEEKLY", "1")
     # Keep PR job fast/reliable by default; can be overridden via env
