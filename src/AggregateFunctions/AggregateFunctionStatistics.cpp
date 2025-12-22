@@ -568,12 +568,17 @@ FROM
     FunctionDocumentation::Category covarSampStable_category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn covarSampStable_introduced_in = {1, 1};
     FunctionDocumentation covarSampStable_documentation = {covarSampStable_description, covarSampStable_syntax, covarSampStable_arguments, covarSampStable_parameters, covarSampStable_returned_value, covarSampStable_examples, covarSampStable_introduced_in, covarSampStable_category};
-    factory.registerFunction("covarSampStable", [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    factory.registerFunction("covarSampStable",
     {
-        assertNoParameters(name, parameters);
-        assertBinary(name, argument_types);
-        return std::make_shared<AggregateFunctionCovariance<false>>(CovarKind::covarSampStable, argument_types);
-    }, covarSampStable_documentation);
+        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            assertNoParameters(name, parameters);
+            assertBinary(name, argument_types);
+            return std::make_shared<AggregateFunctionCovariance<false>>(CovarKind::covarSampStable, argument_types);
+        },
+        {},
+        covarSampStable_documentation
+    });
 
     FunctionDocumentation::Description covarPopStable_description = R"(
 Calculates the population covariance:
@@ -610,12 +615,17 @@ FROM series
     FunctionDocumentation::Category covarPopStable_category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn covarPopStable_introduced_in = {1, 1};
     FunctionDocumentation covarPopStable_documentation = {covarPopStable_description, covarPopStable_syntax, covarPopStable_arguments, covarPopStable_parameters, covarPopStable_returned_value, covarPopStable_examples, covarPopStable_introduced_in, covarPopStable_category};
-    factory.registerFunction("covarPopStable", [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    factory.registerFunction("covarPopStable",
     {
-        assertNoParameters(name, parameters);
-        assertBinary(name, argument_types);
-        return std::make_shared<AggregateFunctionCovariance<false>>(CovarKind::covarPopStable, argument_types);
-    }, covarPopStable_documentation);
+        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            assertNoParameters(name, parameters);
+            assertBinary(name, argument_types);
+            return std::make_shared<AggregateFunctionCovariance<false>>(CovarKind::covarPopStable, argument_types);
+        },
+        {},
+        covarPopStable_documentation
+    });
 
     factory.registerFunction("corrStable", [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
     {

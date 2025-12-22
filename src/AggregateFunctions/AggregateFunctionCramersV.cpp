@@ -94,12 +94,16 @@ FROM
     FunctionDocumentation::IntroducedIn introduced_in = {22, 1};
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
     factory.registerFunction(CramersVData::getName(),
+    {
         [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             assertBinary(name, argument_types);
             assertNoParameters(name, parameters);
             return std::make_shared<AggregateFunctionCrossTab<CramersVData>>(argument_types);
-        }, documentation);
+        },
+        {},
+        documentation
+    });
 }
 
 }
