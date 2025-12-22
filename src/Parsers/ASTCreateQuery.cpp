@@ -284,8 +284,6 @@ String ASTCreateQuery::getID(char delim) const
 
 void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    frame.need_parens = false;
-
     if (database && !table)
     {
         ostr

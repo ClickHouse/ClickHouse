@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int TOO_DEEP_AST;
     extern const int UNKNOWN_ELEMENT_IN_AST;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -333,6 +334,49 @@ std::string IAST::dumpTree(size_t indent) const
     WriteBufferFromOwnString wb;
     dumpTree(wb, indent);
     return wb.str();
+}
+
+void IAST::format(WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    FormatState state;
+    FormatStateStacked frame;
+    if (parenthesized)
+        ostr.write('(');
+    formatImpl(ostr, settings, state, std::move(frame));
+    if (parenthesized)
+        ostr.write(')');
+}
+
+void IAST::format(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    if (parenthesized)
+        ostr.write('(');
+    formatImpl(ostr, settings, state, std::move(frame));
+    if (parenthesized)
+        ostr.write(')');
+}
+
+void IAST::format(FormattingBuffer out) const
+{
+    if (parenthesized)
+        out.ostr.write('(');
+    formatImpl(out.ostr, out.settings, out.state, out.frame);
+    if (parenthesized)
+        out.ostr.write(')');
+}
+
+void IAST::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    if (parenthesized)
+        ostr.write('(');
+    formatImpl(FormattingBuffer{ostr, settings, state, std::move(frame)});
+    if (parenthesized)
+        ostr.write(')');
+}
+
+void IAST::formatImpl(FormattingBuffer /*out*/) const
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown element in AST: {}", getID());
 }
 
 }

@@ -53,13 +53,6 @@ void ASTSelectWithUnionQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSe
         return "";
     };
 
-    auto is_except = [](SelectUnionMode mode)
-    {
-        return mode == SelectUnionMode::EXCEPT_DEFAULT
-            || mode == SelectUnionMode::EXCEPT_ALL
-            || mode == SelectUnionMode::EXCEPT_DISTINCT;
-    };
-
     auto get_mode = [&](ASTs::const_iterator it)
     {
         return is_normalized
@@ -77,33 +70,7 @@ void ASTSelectWithUnionQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSe
                 << settings.nl_or_ws;
         }
 
-        bool need_parens = false;
-
-        /// EXCEPT can be confused with the asterisk modifier:
-        /// SELECT * EXCEPT SELECT 1 -- two queries
-        /// SELECT * EXCEPT col      -- a modifier for asterisk
-        /// For this reason, add parentheses when formatting any side of EXCEPT.
-        ASTs::const_iterator next = it;
-        ++next;
-        if ((it != list_of_selects->children.begin() && is_except(get_mode(it)))
-            || (next != list_of_selects->children.end() && is_except(get_mode(next))))
-            need_parens = true;
-
-        /// If this is a subtree with another chain of selects, we also need parens.
-        auto * union_node = (*it)->as<ASTSelectWithUnionQuery>();
-        if (union_node)
-            need_parens = true;
-
-        if (need_parens)
-        {
-            ostr << indent_str;
-            auto subquery = std::make_shared<ASTSubquery>(*it);
-            subquery->format(ostr, settings, state, frame);
-        }
-        else
-        {
-            (*it)->format(ostr, settings, state, frame);
-        }
+        (*it)->format(ostr, settings, state, frame);
     }
 }
 
