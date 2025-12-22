@@ -152,7 +152,7 @@ Chunk IRowInputFormat::read()
             return (!max_block_size_rows || rows < max_block_size_rows) && (!max_block_size_bytes || bytes < max_block_size_bytes);
         };
 
-        for (size_t rows = 0; (below_some_min_threshold(rows, total_bytes) || num_rows == 0) && below_any_max_threshold(rows, total_bytes)
+        for (size_t rows = 0; ((below_some_min_threshold(rows, total_bytes) && below_any_max_threshold(rows, total_bytes)) || num_rows == 0)
              && continue_reading;
              ++rows)
         {
