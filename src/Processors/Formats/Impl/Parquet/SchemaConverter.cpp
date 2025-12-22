@@ -133,12 +133,7 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElem
         return element.name;
     const auto & map = column_mapper->getFieldIdToClickHouseName();
     if (!element.__isset.field_id)
-    {
-        /// Does iceberg require that parquet files have field ids?
-        /// Our iceberg writer currently doesn't write them.
-        //throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Missing field_id for column {}", element.name);
-        return element.name;
-    }
+        throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Missing field_id for column {}", element.name);
     auto it = map.find(element.field_id);
     if (it == map.end())
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Parquet file has column {} with field_id {} that is not in datalake metadata", element.name, element.field_id);
@@ -275,19 +270,15 @@ void SchemaConverter::processSubtree(TraversalNode & node)
     }
 }
 
-static bool isPrimitiveNode(const parq::SchemaElement & elem)
+bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
 {
     /// `parquet.thrift` says "[num_children] is not set when the element is a primitive type".
-    /// If it's set but has value 0, logically it should be an empty tuple/struct.
+    /// If it's set but has value 0, logically it would make sense to interpret it as empty tuple/struct.
     /// But in practice some writers are sloppy about it and set this field to 0 (rather than unset)
     /// for primitive columns. E.g.
     /// tests/queries/0_stateless/data_hive/partitioning/non_existing_column=Elizabeth/sample.parquet
-    return !elem.__isset.num_children || (elem.num_children == 0 && elem.__isset.type);
-}
-
-bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
-{
-    if (!isPrimitiveNode(*node.element))
+    bool is_primitive = !node.element->__isset.num_children || (node.element->num_children == 0 && node.element->__isset.type);
+    if (!is_primitive)
         return false;
 
     primitive_column_idx += 1;
@@ -477,18 +468,13 @@ bool SchemaConverter::processSubtreeMap(TraversalNode & node)
 bool SchemaConverter::processSubtreeArrayOuter(TraversalNode & node)
 {
     /// Array:
-    ///   required/optional group `name` (List):
+    ///   required group `name` (List):
     ///     repeated group "list":
     ///       <recurse> "element"
     ///
     /// I.e. it's a double-wrapped burrito. To unwrap it into one Array, we have to coordinate
     /// across two levels of recursion: processSubtreeArrayOuter for the outer wrapper,
     /// processSubtreeArrayInner for the inner wrapper.
-    ///
-    /// But hudi writes arrays differently, without the inner group:
-    ///   required/optional group `name` (List):
-    ///     repeated <recurse> "array"
-    /// This probably makes it indinsinguishable from a single-element tuple.
 
     if (node.element->converted_type != parq::ConvertedType::LIST && !node.element->logicalType.__isset.LIST)
         return false;
@@ -497,12 +483,10 @@ bool SchemaConverter::processSubtreeArrayOuter(TraversalNode & node)
     if (node.element->num_children != 1)
         return false;
     const parq::SchemaElement & child = file_metadata.schema.at(schema_idx);
-    if (child.repetition_type != parq::FieldRepetitionType::REPEATED)
+    if (child.repetition_type != parq::FieldRepetitionType::REPEATED || child.num_children != 1)
         return false;
 
-    bool has_inner_group = child.num_children == 1;
-
-    TraversalNode subnode = node.prepareToRecurse(has_inner_group ? SchemaContext::ListTuple : SchemaContext::ListElement, node.type_hint);
+    TraversalNode subnode = node.prepareToRecurse(SchemaContext::ListTuple, node.type_hint);
     processSubtree(subnode);
 
     if (!node.requested || !subnode.output_idx.has_value())
@@ -941,12 +925,7 @@ void SchemaConverter::processPrimitiveColumn(
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for timestamp logical type: {}", thriftToString(element));
 
         /// Can't leave int -> DateTime64 conversion to castColumn as it interprets the integer as seconds.
-        String timezone = "UTC";
-        if (!options.format.parquet.local_time_as_utc &&
-            ((logical.__isset.TIMESTAMP && !logical.TIMESTAMP.isAdjustedToUTC) ||
-             (logical.__isset.TIME && !logical.TIME.isAdjustedToUTC)))
-            timezone = "";
-        out_inferred_type = std::make_shared<DataTypeDateTime64>(scale, timezone);
+        out_inferred_type = std::make_shared<DataTypeDateTime64>(scale, "UTC");
         auto converter = std::make_shared<IntConverter>();
         /// Note: TIMESTAMP is always INT64. INT32 is only for weird unimportant case of TIME_MILLIS
         /// (i.e. time of day rather than timestamp).

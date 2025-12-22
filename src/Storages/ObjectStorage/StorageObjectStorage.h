@@ -1,6 +1,6 @@
 #pragma once
 #include <Core/SchemaInferenceMode.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/IStorage.h>
@@ -36,6 +36,10 @@ struct IPartitionStrategy;
 class StorageObjectStorage : public IStorage
 {
 public:
+    using ObjectInfo = RelativePathWithMetadata;
+    using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
+    using ObjectInfos = std::vector<ObjectInfoPtr>;
+
     StorageObjectStorage(
         StorageObjectStorageConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
@@ -51,7 +55,6 @@ public:
         bool is_datalake_query,
         bool distributed_processing_ = false,
         ASTPtr partition_by_ = nullptr,
-        ASTPtr order_by_ = nullptr,
         bool is_table_function_ = false,
         bool lazy_init = false);
 
@@ -92,8 +95,6 @@ public:
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
     bool isDataLake() const override { return configuration->isDataLakeConfiguration(); }
-
-    bool isObjectStorage() const override { return true; }
 
     bool supportsReplication() const override { return configuration->isDataLakeConfiguration(); }
 
@@ -183,7 +184,6 @@ protected:
     /// (One of the reading replicas, not the initiator).
     const bool distributed_processing;
     bool supports_prewhere = false;
-    bool supports_tuple_elements = false;
     /// Whether we need to call `configuration->update()`
     /// (e.g. refresh configuration) on each read() method call.
     bool update_configuration_on_read_write = true;

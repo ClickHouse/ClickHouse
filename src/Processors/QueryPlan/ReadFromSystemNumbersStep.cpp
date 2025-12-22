@@ -11,7 +11,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/System/StorageSystemNumbers.h>
-#include <base/types.h>
 #include <fmt/format.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
@@ -336,11 +335,8 @@ namespace
 /// Whether we should push limit down to scan.
 bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSelectQuery::LimitInfo & lim_info)
 {
-    /// Reject negative, fractional, and zero limits for pushdown
-    if (lim_info.is_limit_length_negative
-        || lim_info.fractional_limit > 0
-        || lim_info.fractional_offset > 0
-        || lim_info.limit_length == 0)
+    /// Reject negative and zero limits for pushdown
+    if (lim_info.is_limit_length_negative || lim_info.limit_length == 0)
         return false;
 
     chassert(query_info.query);
