@@ -157,6 +157,7 @@ struct PostingListBuilder
 {
     PostingListBuilder() = default;
     explicit PostingListBuilder(PostingList * posting_list);
+    explicit PostingListBuilder(PostingListCodec & postings_codec);
 
     ALWAYS_INLINE void initialize(std::list<PostingListCodec> & postings_list_holder, const MergeTreeIndexTextParams & param)
     {

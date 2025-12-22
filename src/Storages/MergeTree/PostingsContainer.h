@@ -6,6 +6,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 #include <roaring/roaring.hh>
+#include <Storages/MergeTree/MergedPartOffsets.h>
 
 
 namespace DB
@@ -133,6 +134,29 @@ public:
         ++cardinality;
     }
 
+    void add(std::vector<T> & values)
+    {
+        chassert(values.size() == kBlockSize);
+        if (values.empty())
+            return;
+        if (total == postings_list_segment_size)
+            flushSegment();
+        if (total == 0)
+        {
+            segments.emplace_back();
+            segments.back().header.base_value = values.front();
+            segments.back().compressed_data_offset = compressed_data.size();
+        }
+        current.swap(values);
+        auto new_prev_value = current.back();
+        std::adjacent_difference(current.begin(), current.end(), current.begin());
+        current[0] -= prev_value;
+        prev_value = new_prev_value;
+        total += current.size();
+        cardinality += current.size();
+        compressBlock(current, temp_compression_data_buffer);
+    }
+
     /// Serializes posting list to a WriteBuffer-like output.
     template<typename Out>
     size_t serialize(Out & out, TokenPostingsInfo & info)
@@ -144,8 +168,8 @@ public:
     }
 
     /// Reads postings data back from an Input buffer (ReadBuffer).
-    template<typename In, typename Container>
-    void deserialize(In & in, Container & out)
+    template<typename In>
+    void deserialize(In & in, PostingList & out)
     {
         ContainerHeader header;
         deserializeFrom(in, header);
@@ -156,7 +180,30 @@ public:
         for (size_t i = 0; i < static_cast<size_t>(header.block_count); ++i)
             decompressBlock(in, temp_buffer, temp_compress_buffer, [&out] (auto & temp) { out.addMany(temp.size(), temp.data()); });
     }
+    template<typename In>
+    void deserialize(In & in, PostingsContainerImpl<T> & target, const size_t index, const MergedPartOffsets & merged_part_offsets)
+    {
+        ContainerHeader header;
+        deserializeFrom(in, header);
+        prev_value = header.base_value;
+        std::string temp_buffer;
+        std::vector<T> temp_compress_buffer;
+        temp_compress_buffer.reserve(kBlockSize);
+        for (size_t i = 0; i < static_cast<size_t>(header.block_count); ++i)
+            decompressBlock(in, temp_buffer, temp_compress_buffer, [&merged_part_offsets, index, &target] (auto & temp)
+            {
+                for (auto & offset : temp)
+                    target.add(merged_part_offsets[index, offset]);
+           });
+    }
 
+    void clear()
+    {
+        reset();
+        cardinality = 0;
+        compressed_data.clear();
+        segments.clear();
+    }
     size_t getSizeInBytes() const { return compressed_data.size(); }
 private:
     void reset()
@@ -198,11 +245,6 @@ private:
         ++segments.back().header.block_count;
         segments.back().last_value = prev_value;
 
-        /// Delta-encode this segment with a running base (prev_value),
-        /// so it can be compressed efficiently and chained across segments.
-        /// std::adjacent_difference(segment.begin(), segment.end(), segment.begin());
-        /// segment.front() -= prev_value;
-        /// prev_value = segment.back();
         auto [cap, bits] = CodecTraits<T>::evaluateSizeAndMaxBits(segment.data(), segment.size());
         temp_compression_data.resize(cap);
         auto bytes = CodecTraits<T>::encode(segment.data(), segment.size(), bits, reinterpret_cast<unsigned char*>(temp_compression_data.data()));

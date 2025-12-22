@@ -141,7 +141,7 @@ private:
     /// Tokens infos accumulated for the current dictionary block.
     std::vector<TokenPostingsInfo> output_infos;
     /// Postings accumulated for the current token.
-    PostingList output_postings;
+    PostingListCodec output_postings;
     /// Sparse index accumulated for the task. Flushed only once in the end of the task.
     MutableColumnPtr sparse_index_tokens;
     MutableColumnPtr sparse_index_offsets;

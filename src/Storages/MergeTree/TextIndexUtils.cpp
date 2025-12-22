@@ -14,6 +14,7 @@
 #include <Disks/SingleDiskVolume.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
+#include <Storages/MergeTree/PostingsContainer.h>
 
 namespace DB
 {
@@ -316,14 +317,18 @@ PostingListPtr MergeTextIndexesTask::adjustPartOffsets(size_t source_num, Postin
 void MergeTextIndexesTask::flushPostingList()
 {
     auto * postings_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPostings);
-    PostingListBuilder builder(&output_postings);
+    PostingListBuilder builder(output_postings);
     auto token_info = TextIndexSerialization::serializePostings(builder, *postings_stream, params.posting_list_block_size);
 
-    if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
-        token_info.embedded_postings = std::make_shared<PostingList>(output_postings);
-
+    if (!params.enable_postings_compression)
+    {
+        auto & postings = std::get<PostingList>(output_postings);
+        if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
+            token_info.embedded_postings = std::make_shared<PostingList>(postings);
+    }
     output_infos.push_back(token_info);
-    output_postings.clear();
+    std::visit([] (auto & codec) { codec.clear(); }, output_postings);
+    //output_postings.clear();
 }
 
 void MergeTextIndexesTask::flushDictionaryBlock()
@@ -365,7 +370,10 @@ void MergeTextIndexesTask::flushDictionaryBlock()
     }
 
     output_tokens = ColumnString::create();
-    output_postings.clear();
+    if (params.enable_postings_compression)
+        std::get<PostingsContainer32>(output_postings).clear();
+    else
+        std::get<PostingList>(output_postings).clear();
     output_infos.clear();
 }
 
@@ -382,6 +390,10 @@ bool MergeTextIndexesTask::executeStep()
     if (!is_initialized)
     {
         is_initialized = true;
+        if (params.enable_postings_compression)
+            output_postings.emplace<PostingsContainer32>();
+        else
+            output_postings.emplace<PostingList>();
         initializeQueue();
         /// Write marks for compatibility with other skip indexes.
         writeMarks(output_streams);
@@ -401,7 +413,9 @@ bool MergeTextIndexesTask::executeStep()
 
         if (isNewToken(current))
         {
-            if (!output_postings.isEmpty())
+            //if (!output_postings.isEmpty())
+            bool empty = params.enable_postings_compression ? std::get<PostingsContainer32>(output_postings).empty() : std::get<PostingList>(output_postings).isEmpty();
+            if (!empty)
                 flushPostingList();
 
             if (output_tokens->size() >= params.dictionary_block_size)
@@ -410,14 +424,30 @@ bool MergeTextIndexesTask::executeStep()
             output_tokens->insertFrom(*inputs[current->order].tokens, current->getRow());
         }
 
-        auto read_postings = readPostingLists(current->order);
-
-        for (auto & posting : read_postings)
+        if (!params.enable_postings_compression)
         {
-            posting = adjustPartOffsets(current->order, posting);
-            output_postings |= *posting;
+            auto read_postings = readPostingLists(current->order);
+            auto & postings = std::get<PostingList>(output_postings);
+            for (auto &posting: read_postings)
+            {
+                posting = adjustPartOffsets(current->order, posting);
+                postings |= *posting;
+            }
         }
-
+        else
+        {
+            auto source_num = current->order;
+            const auto & token_info = inputs[source_num].token_infos[queue.current()->getRow()];
+            auto * stream = input_streams[source_num].at(MergeTreeIndexSubstream::Type::TextIndexPostings);
+            auto * data_buffer = stream->getDataBuffer();
+            PostingsContainer32 postings_input(params.enable_postings_compression);
+            auto & target = std::get<PostingsContainer32>(output_postings);
+            for (const auto offset_in_file : token_info.offsets)
+            {
+                stream->seekToMark({offset_in_file, 0});
+                postings_input.deserialize(*data_buffer, target, source_num, *merged_part_offsets);
+            }
+        }
         if (!current->isLast())
         {
             queue.next();
@@ -434,7 +464,8 @@ bool MergeTextIndexesTask::executeStep()
 
 void MergeTextIndexesTask::finalize()
 {
-    if (!output_postings.isEmpty())
+    bool empty = params.enable_postings_compression ? std::get<PostingsContainer32>(output_postings).empty() : std::get<PostingList>(output_postings).isEmpty();
+    if (!empty)
         flushPostingList();
 
     if (!output_tokens->empty())

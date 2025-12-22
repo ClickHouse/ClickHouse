@@ -1018,6 +1018,20 @@ PostingListBuilder::PostingListBuilder(PostingList * posting_list)
     : codec(std::make_shared<PostingListRoaringCodec>(posting_list))
 {
 }
+#if 0
+PostingListBuilder::PostingListBuilder(PostingsContainer32 * posting_list)
+    : codec(std::make_shared<PostingListBlockCodec>(posting_list))
+{
+}
+#endif
+PostingListBuilder::PostingListBuilder(PostingListCodec &postings_codec)
+{
+    if (std::holds_alternative<PostingsContainer32>(postings_codec))
+        codec = std::make_shared<PostingListBlockCodec>(&std::get<PostingsContainer32>(postings_codec));
+    else
+        codec = std::make_shared<PostingListRoaringCodec>(&std::get<PostingList>(postings_codec));
+}
+
 
 void PostingListRoaringCodec::add(UInt32 value, PostingListsHolder & postings_holder)
 {
