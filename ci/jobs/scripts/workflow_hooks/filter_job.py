@@ -48,20 +48,10 @@ FUNCTIONAL_TEST_FLAKY_CHECK_JOBS = [
 
 _info_cache = None
 
-def trace_lines(frame, event, arg):
-    if event == "line":
-        lineno = frame.f_lineno
-        filename = frame.f_code.co_filename
-        print(f"{filename}:{lineno}")
-    return trace_lines
-
 def should_skip_job(job_name):
     global _info_cache
     if _info_cache is None:
         _info_cache = Info()
-
-    import sys
-    sys.settrace(trace_lines)
 
     changed_files = _info_cache.get_kv_data("changed_files")
     if not changed_files:
@@ -168,7 +158,7 @@ def should_skip_job(job_name):
     if (
         " Bug Fix" in _info_cache.pr_body
         and job_name == JobNames.BUGFIX_VALIDATE_IT
-        and not has_new_integration_tests(_info_cache.get_changed_files())
+#        and not has_new_integration_tests(_info_cache.get_changed_files())
     ):
         return True, "Skipped, no integration tests updates"
 
