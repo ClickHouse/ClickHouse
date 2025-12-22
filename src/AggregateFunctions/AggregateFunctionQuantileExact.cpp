@@ -82,7 +82,7 @@ quantileExact(level)(expr)
     FunctionDocumentation::Parameters parameters = {
         {"level", "Optional. Level of quantile. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates median.", {"Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Quantile of the specified level. For numeric data types the output format will be the same as the input format.", {"Same as input", "Date", "DateTime"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Quantile of the specified level. For numeric data types the output format will be the same as the input format.", {"(U)Int*", "Float*", "Decimal*", "Date", "DateTime"}};
     FunctionDocumentation::Examples examples = {
     {
         "Computing exact quantile",
