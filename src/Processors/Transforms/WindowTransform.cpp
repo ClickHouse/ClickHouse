@@ -2934,7 +2934,7 @@ FROM
         )"
     }
     };
-    FunctionDocumentation::Category exponentialTimeDecayedSum_category = FunctionDocumentation::Category::WindowFunction;
+    FunctionDocumentation::Category exponentialTimeDecayedSum_category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn exponentialTimeDecayedSum_introduced_in = {21, 12};
     FunctionDocumentation exponentialTimeDecayedSum_documentation = {exponentialTimeDecayedSum_description, exponentialTimeDecayedSum_syntax, exponentialTimeDecayedSum_arguments, exponentialTimeDecayedSum_parameters, exponentialTimeDecayedSum_returned_value, exponentialTimeDecayedSum_examples, exponentialTimeDecayedSum_introduced_in, exponentialTimeDecayedSum_category};
     factory.registerFunction("exponentialTimeDecayedSum", {[](const std::string & name,
@@ -3030,7 +3030,7 @@ FROM
         )"
     }
     };
-    FunctionDocumentation::Category exponentialTimeDecayedMax_category = FunctionDocumentation::Category::WindowFunction;
+    FunctionDocumentation::Category exponentialTimeDecayedMax_category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn exponentialTimeDecayedMax_introduced_in = {21, 12};
     FunctionDocumentation exponentialTimeDecayedMax_documentation = {exponentialTimeDecayedMax_description, exponentialTimeDecayedMax_syntax, exponentialTimeDecayedMax_arguments, exponentialTimeDecayedMax_parameters, exponentialTimeDecayedMax_returned_value, exponentialTimeDecayedMax_examples, exponentialTimeDecayedMax_introduced_in, exponentialTimeDecayedMax_category};
     factory.registerFunction("exponentialTimeDecayedMax", {[](const std::string & name,
