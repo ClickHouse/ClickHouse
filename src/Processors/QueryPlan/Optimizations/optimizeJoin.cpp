@@ -105,11 +105,19 @@ NameSet backTrackColumnsInDag(const String & input_name, const ActionsDAG & acti
 
             auto [_, inserted] = visited_nodes.insert(node);
             if (!inserted)
+            {
+                /// Node was already visited, check if it was an input or if it was already remapped to and input
+                if (input_nodes.contains(node))
+                    output_names.insert(out_node->result_name);
                 break;
+            }
 
             if (input_nodes.contains(node))
             {
+                /// We reached an input node so add the current output node name to list of remapped
                 output_names.insert(out_node->result_name);
+                /// Also add this output node to the list of inputs to handle more aliases pointing to it
+                input_nodes.insert(out_node);
                 break;
             }
 
