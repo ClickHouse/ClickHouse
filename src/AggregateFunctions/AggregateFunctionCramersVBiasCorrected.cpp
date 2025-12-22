@@ -60,7 +60,7 @@ The function can be heavily biased, so this version of Cramer's V uses the [bias
         R"(
 SELECT
     cramersV(a, b),
-    cramersVBiasCorrected(a ,b)
+    cramersVBiasCorrected(a, b)
 FROM
     (
         SELECT
