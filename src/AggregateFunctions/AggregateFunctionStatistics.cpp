@@ -524,12 +524,17 @@ SELECT round(varSampStable(x),3) AS var_samp_stable FROM test_data;
     FunctionDocumentation::Category category_varSampStable = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_varSampStable = {description_varSampStable, syntax_varSampStable, arguments_varSampStable, {}, returned_value_varSampStable, examples_varSampStable, introduced_in_varSampStable, category_varSampStable};
 
-    factory.registerFunction("varSampStable", [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    factory.registerFunction("varSampStable",
     {
-        assertNoParameters(name, parameters);
-        assertUnary(name, argument_types);
-        return std::make_shared<AggregateFunctionVariance>(VarKind::varSampStable, argument_types[0]);
-    }, documentation_varSampStable);
+        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            assertNoParameters(name, parameters);
+            assertUnary(name, argument_types);
+            return std::make_shared<AggregateFunctionVariance>(VarKind::varSampStable, argument_types[0]);
+        },
+        {},
+        documentation_varSampStable
+    });
 
     /// varPopStable documentation
     FunctionDocumentation::Description description_varPopStable = R"(
@@ -572,12 +577,17 @@ FROM test_data;
     FunctionDocumentation::Category category_varPopStable = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_varPopStable = {description_varPopStable, syntax_varPopStable, arguments_varPopStable, {}, returned_value_varPopStable, examples_varPopStable, introduced_in_varPopStable, category_varPopStable};
 
-    factory.registerFunction("varPopStable", [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    factory.registerFunction("varPopStable",
     {
-        assertNoParameters(name, parameters);
-        assertUnary(name, argument_types);
-        return std::make_shared<AggregateFunctionVariance>(VarKind::varPopStable, argument_types[0]);
-    }, documentation_varPopStable);
+        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            assertNoParameters(name, parameters);
+            assertUnary(name, argument_types);
+            return std::make_shared<AggregateFunctionVariance>(VarKind::varPopStable, argument_types[0]);
+        },
+        {},
+        documentation_varPopStable
+    });
 
     factory.registerFunction("stddevSampStable", [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
     {
