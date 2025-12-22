@@ -3140,7 +3140,7 @@ Returns the exponentially smoothed weighted moving average of values of a time s
     )";
     FunctionDocumentation::Syntax exponentialTimeDecayedAvg_syntax = "exponentialTimeDecayedAvg(x)(v, t)";
     FunctionDocumentation::Arguments exponentialTimeDecayedAvg_arguments = {
-        {"v", "Value.", {"U)Int*", "Float*", "Decimal"}},
+        {"v", "Value.", {"(U)Int*", "Float*", "Decimal"}},
         {"t", "Time.", {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}
     };
     FunctionDocumentation::Parameters exponentialTimeDecayedAvg_parameters = {
