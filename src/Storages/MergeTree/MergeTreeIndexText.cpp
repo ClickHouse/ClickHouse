@@ -158,26 +158,7 @@ void PostingsSerialization::serialize(PostingListBuilder & postings, UInt64 head
 
 void PostingsSerialization::serialize(const roaring::api::roaring_bitmap_t & postings, UInt64 header, WriteBuffer & ostr)
 {
-    if (header & RawPostings)
-    {
-        roaring::api::roaring_uint32_iterator_t it;
-        roaring_iterator_init(&postings, &it);
-
-        while (it.has_value)
-        {
-            writeVarUInt(it.current_value, ostr);
-            roaring::api::roaring_uint32_iterator_advance(&it);
-        }
-    }
-    else
-    {
-        size_t num_bytes = roaring::api::roaring_bitmap_portable_size_in_bytes(&postings);
-        writeVarUInt(num_bytes, ostr);
-
-        std::vector<char> memory(num_bytes);
-        roaring::api::roaring_bitmap_portable_serialize(&postings, memory.data());
-        ostr.write(memory.data(), num_bytes);
-    }
+    PostingListRoaringCodec::serializeLargeImpl(postings, header, ostr);
 }
 
 PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality)

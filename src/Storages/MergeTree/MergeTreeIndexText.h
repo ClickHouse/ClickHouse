@@ -158,7 +158,7 @@ struct PostingListRoaringCodec
     const SmallContainer & getSmall() const { return small; }
     PostingList & getLarge() const { return *large.postings; }
     //TokenPostingsInfo serialize(MergeTreeIndexWriterStream & postings_stream, size_t posting_list_block_size);
-    void serializeLargeImpl(const roaring::api::roaring_bitmap_t & postings, UInt64 header, WriteBuffer & ostr);
+    static void serializeLargeImpl(const roaring::api::roaring_bitmap_t & postings, UInt64 header, WriteBuffer & ostr);
     void serialize(UInt64 header, WriteBuffer & ostr);
 
     TokenPostingsInfo serializePostings(MergeTreeIndexWriterStream & postings_stream, size_t posting_list_block_size);
