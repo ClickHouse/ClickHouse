@@ -219,7 +219,7 @@ FROM test
     FunctionDocumentation::Category covarPopMatrix_category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn covarPopMatrix_introduced_in = {23, 2};
     FunctionDocumentation covarPopMatrix_documentation = {covarPopMatrix_description, covarPopMatrix_syntax, covarPopMatrix_arguments, covarPopMatrix_parameters, covarPopMatrix_returned_value, covarPopMatrix_examples, covarPopMatrix_introduced_in, covarPopMatrix_category};
-    factory.registerFunction("covarPopMatrix", createAggregateFunctionVarianceMatrix<AggregateFunctionCovarPopMatrix>);
+    factory.registerFunction("covarPopMatrix", {createAggregateFunctionVarianceMatrix<AggregateFunctionCovarPopMatrix>, AggregateFunctionProperties{}, covarPopMatrix_documentation });
 
     FunctionDocumentation::Description corrMatrix_description = R"(
 Computes the correlation matrix over N variables.
@@ -261,7 +261,7 @@ FROM test
     FunctionDocumentation::Category corrMatrix_category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn corrMatrix_introduced_in = {23, 2};
     FunctionDocumentation corrMatrix_documentation = {corrMatrix_description, corrMatrix_syntax, corrMatrix_arguments, corrMatrix_parameters, corrMatrix_returned_value, corrMatrix_examples, corrMatrix_introduced_in, corrMatrix_category};
-    factory.registerFunction("corrMatrix", createAggregateFunctionVarianceMatrix<AggregateFunctionCorrMatrix>);
+    factory.registerFunction("corrMatrix", {createAggregateFunctionVarianceMatrix<AggregateFunctionCorrMatrix>, AggregateFunctionProperties{}, corrMatrix_documentation });
 }
 
 }

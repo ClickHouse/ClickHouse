@@ -565,11 +565,16 @@ FROM series
     FunctionDocumentation::IntroducedIn corrStable_introduced_in = {1, 1};
     FunctionDocumentation corrStable_documentation = {corrStable_description, corrStable_syntax, corrStable_arguments, corrStable_parameters, corrStable_returned_value, corrStable_examples, corrStable_introduced_in, corrStable_category};
 
-    factory.registerFunction("corrStable", [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    factory.registerFunction("corrStable",
     {
-        assertNoParameters(name, parameters);
-        assertBinary(name, argument_types);
-        return std::make_shared<AggregateFunctionCovariance<true>>(CovarKind::corrStable, argument_types);
+        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            assertNoParameters(name, parameters);
+            assertBinary(name, argument_types);
+            return std::make_shared<AggregateFunctionCovariance<true>>(CovarKind::corrStable, argument_types);
+        },
+        AggregateFunctionProperties{},
+        corrStable_documentation
     });
 }
 
