@@ -53,24 +53,15 @@ private:
     /// Per-dictionary state which may cover multiple IColumns.
     std::unordered_map<LCDictionaryKey, LCDictState, LCDictionaryKeyHash> lc_dict_states;
 
+    /// mask[i] == 0 -> row i is known duplicate (by LC index) and is never inserted.
     template <typename Method>
     void buildFilter(
         Method & method,
         const ColumnRawPtrs & key_columns,
         IColumn::Filter & filter,
         size_t rows,
-        SetVariants & variants) const;
-
-    /// Same as buildFilter, but respects an mask:
-    /// mask[i] == 0 -> row i is known duplicate (by LC index) and is never inserted.
-    template <typename Method>
-    void buildFilterWithMask(
-        Method & method,
-        const ColumnRawPtrs & columns,
-        IColumn::Filter & filter,
-        size_t rows,
         SetVariants & variants,
-        const IColumn::Filter & mask) const;
+        const IColumn::Filter * mask) const;
 
     /// For a single LowCardinality key column, build a mask of rows that are
     /// the first occurrence of their LC dictionary index for this dictionary identity. Then, only those

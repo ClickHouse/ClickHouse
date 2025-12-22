@@ -38,49 +38,41 @@ void DistinctTransform::buildFilter(
     const ColumnRawPtrs & columns,
     IColumn::Filter & filter,
     const size_t rows,
-    SetVariants & variants) const
-{
-    typename Method::State state(columns, key_sizes, nullptr);
-
-    for (size_t i = 0; i < rows; ++i)
-    {
-        auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
-
-        /// Emit the record if there is no such key in the current set yet.
-        /// Skip it otherwise.
-        filter[i] = emplace_result.isInserted();
-    }
-}
-
-template <typename Method>
-void DistinctTransform::buildFilterWithMask(
-    Method & method,
-    const ColumnRawPtrs & columns,
-    IColumn::Filter & filter,
-    const size_t rows,
     SetVariants & variants,
-    const IColumn::Filter & mask) const
+    const IColumn::Filter * mask) const
 {
     typename Method::State state(columns, key_sizes, nullptr);
 
-    for (size_t i = 0; i < rows; ++i)
+    if (mask)
     {
-        if (!mask[i])
+        for (size_t i = 0; i < rows; ++i)
         {
-            /// Already known duplicate row (by LC index), skip insertion
-            filter[i] = 0;
-            continue;
-        }
+            if (!(*mask)[i])
+            {
+                /// Already known duplicate row (by LC index), skip insertion
+                filter[i] = 0;
+                continue;
+            }
 
-        auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
-        filter[i] = emplace_result.isInserted();
+            auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+            filter[i] = emplace_result.isInserted();
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < rows; ++i)
+        {
+            auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+
+            /// Emit the record if there is no such key in the current set yet.
+            /// Skip it otherwise.
+            filter[i] = emplace_result.isInserted();
+        }
     }
 }
 
 IColumn::Filter DistinctTransform::buildLowCardinalityMask(const ColumnLowCardinality & column, size_t num_rows)
 {
-    IColumn::Filter mask(num_rows, 0);
-
     const auto & dictionary = column.getDictionary();
     const auto dict_size = dictionary.size();
 
@@ -103,20 +95,26 @@ IColumn::Filter DistinctTransform::buildLowCardinalityMask(const ColumnLowCardin
     /// If we've already seen all dictionary indices for this dictionary,
     /// then no row in this chunk (and also other chunks with the same dictionary) can produce a new distinct value.
     if (state.seen_count == dict_size)
-        return mask;
+        return {}; /// empty mask == no candidates
 
     auto & seen = state.seen_indices;
 
     const auto index_type_size = column.getSizeOfIndexType();
     const IColumn & indexes_column = *column.getIndexesPtr();
 
-    auto handle_index = [&](UInt64 idx, size_t row)
+    IColumn::Filter mask;
+
+    auto handle_index = [&](size_t idx, size_t row)
     {
         chassert(idx < dict_size);
         if (!seen[idx])
         {
             seen[idx] = 1;
             ++state.seen_count;
+
+            if (mask.empty())
+                mask.resize_fill(num_rows);
+
             mask[row] = 1; /// first time we see this dictionary index for this dictionary
         }
     };
@@ -127,35 +125,35 @@ IColumn::Filter DistinctTransform::buildLowCardinalityMask(const ColumnLowCardin
         {
             const auto & col = assert_cast<const ColumnUInt8 &>(indexes_column).getData();
             for (size_t row = 0; row < num_rows; ++row)
-                handle_index(col[row], row);
+                handle_index(static_cast<size_t>(col[row]), row);
             break;
         }
         case sizeof(UInt16):
         {
             const auto & col = assert_cast<const ColumnUInt16 &>(indexes_column).getData();
             for (size_t row = 0; row < num_rows; ++row)
-                handle_index(col[row], row);
+                handle_index(static_cast<size_t>(col[row]), row);
             break;
         }
         case sizeof(UInt32):
         {
             const auto & col = assert_cast<const ColumnUInt32 &>(indexes_column).getData();
             for (size_t row = 0; row < num_rows; ++row)
-                handle_index(col[row], row);
+                handle_index(static_cast<size_t>(col[row]), row);
             break;
         }
         case sizeof(UInt64):
         {
             const auto & col = assert_cast<const ColumnUInt64 &>(indexes_column).getData();
             for (size_t row = 0; row < num_rows; ++row)
-                handle_index(col[row], row);
+                handle_index(static_cast<size_t>(col[row]), row);
             break;
         }
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for LowCardinality column in DistinctTransform");
     }
 
-    return mask;
+    return mask; /// if empty, then means no candidates in this chunk
 }
 
 void DistinctTransform::transform(Chunk & chunk)
@@ -186,15 +184,17 @@ void DistinctTransform::transform(Chunk & chunk)
     for (auto pos : key_columns_pos)
         column_ptrs.emplace_back(columns[pos].get());
 
-    bool has_lc_mask{false};
-    IColumn::Filter lc_mask;
+    std::optional<IColumn::Filter> lc_mask;
 
     if (key_columns_pos.size() == 1)
     {
         if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(column_ptrs[0]))
         {
-            lc_mask = buildLowCardinalityMask(*lc, num_rows);
-            has_lc_mask = true;
+            lc_mask.emplace(buildLowCardinalityMask(*lc, num_rows));
+
+            /// Empty mask -> no candidate rows in this chunk, emit nothing.
+            if (lc_mask->empty())
+                return;
         }
     }
 
@@ -210,11 +210,8 @@ void DistinctTransform::transform(Chunk & chunk)
             break;
 #define M(NAME) \
         case SetVariants::Type::NAME: \
-            if (has_lc_mask) \
-                buildFilterWithMask(*data.NAME, column_ptrs, filter, num_rows, data, lc_mask); \
-            else \
-                buildFilter(*data.NAME, column_ptrs, filter, num_rows, data); \
-            break;
+            buildFilter(*data.NAME, column_ptrs, filter, num_rows, data, lc_mask ? &*lc_mask : nullptr); \
+        break;
         APPLY_FOR_SET_VARIANTS(M)
 #undef M
     }
