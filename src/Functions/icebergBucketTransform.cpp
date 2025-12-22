@@ -109,20 +109,30 @@ public:
                                                         .get("toUInt128", context)
                                                         ->build(arguments)
                                                         ->execute(arguments, std::make_shared<DataTypeUInt128>(), input_rows_count, false);
-            const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(intermediate_representation.get());
-            const IColumn & wrapper_column = const_column ? const_column->getDataColumn() : *intermediate_representation.get();
-            const ColumnVector<UInt128> & uuid_column = checkAndGetColumn<const ColumnVector<UInt128> &>(wrapper_column);
+            const IColumn * wrapper_column = intermediate_representation.get();
+            size_t idx_mask = ~size_t(0);
+            if (const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(intermediate_representation.get()))
+            {
+                wrapper_column = &const_column->getDataColumn();
+                idx_mask = 0;
+            }
+            const ColumnVector<UInt128> & uuid_column = checkAndGetColumn<const ColumnVector<UInt128> &>(*wrapper_column);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                UInt128 value = uuid_column.getData()[i];
+                UInt128 value = uuid_column.getData()[i & idx_mask];
                 result_data[i] = hashUnderlyingIntBigEndian(value, /*reduce_two_complement*/ false);
             }
         }
         else if (which.isDateTime64())
         {
-            const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(arguments[0].column.get());
-            const IColumn & wrapper_column = const_column ? const_column->getDataColumn() : *arguments[0].column.get();
-            const auto & source_col = checkAndGetColumn<DataTypeDateTime64::ColumnType>(wrapper_column);
+            const IColumn * wrapper_column = arguments[0].column.get();
+            size_t idx_mask = ~size_t(0);
+            if (const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(arguments[0].column.get()))
+            {
+                wrapper_column = &const_column->getDataColumn();
+                idx_mask = 0;
+            }
+            const auto & source_col = checkAndGetColumn<DataTypeDateTime64::ColumnType>(*wrapper_column);
             const ColumnDateTime64 * decimal_column = &source_col;
             assert(decimal_column != nullptr);
             UInt32 scale = decimal_column->getScale();
@@ -134,7 +144,7 @@ public:
             }
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                    DateTime64 value = decimal_column->getElement(i);
+                    DateTime64 value = decimal_column->getElement(i & idx_mask);
                     Int64 value_int = value.convertTo<Int64>();
                     if (scale == 9)
                     {
@@ -145,30 +155,35 @@ public:
         }
         else if (which.isDecimal())
         {
-            const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(arguments[0].column.get());
-            const IColumn & wrapper_column = const_column ? const_column->getDataColumn() : *arguments[0].column.get();
+            const IColumn * wrapper_column = arguments[0].column.get();
+            size_t idx_mask = ~size_t(0);
+            if (const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(arguments[0].column.get()))
+            {
+                wrapper_column = &const_column->getDataColumn();
+                idx_mask = 0;
+            }
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 UInt128 value;
                 if (which.isDecimal32())
                 {
-                    const ColumnDecimal<Decimal32> * decimal_column = typeid_cast<const ColumnDecimal<Decimal32> *>(&wrapper_column);
-                    value = decimal_column->getElement(i).value;
+                    const ColumnDecimal<Decimal32> * decimal_column = typeid_cast<const ColumnDecimal<Decimal32> *>(wrapper_column);
+                    value = decimal_column->getElement(i & idx_mask).value;
                 }
                 else if (which.isDecimal64())
                 {
-                    const ColumnDecimal<Decimal64> * decimal_column = typeid_cast<const ColumnDecimal<Decimal64> *>(&wrapper_column);
-                    value = decimal_column->getElement(i).value;
+                    const ColumnDecimal<Decimal64> * decimal_column = typeid_cast<const ColumnDecimal<Decimal64> *>(wrapper_column);
+                    value = decimal_column->getElement(i & idx_mask).value;
                 }
                 else if (which.isDecimal128())
                 {
-                    const ColumnDecimal<Decimal128> * decimal_column = typeid_cast<const ColumnDecimal<Decimal128> *>(&wrapper_column);
-                    value = decimal_column->getElement(i).value;
+                    const ColumnDecimal<Decimal128> * decimal_column = typeid_cast<const ColumnDecimal<Decimal128> *>(wrapper_column);
+                    value = decimal_column->getElement(i & idx_mask).value;
                 }
                 else if (which.isDecimal256())
                 {
-                    const ColumnDecimal<Decimal256> * decimal_column = typeid_cast<const ColumnDecimal<Decimal256> *>(&wrapper_column);
-                    value = decimal_column->getElement(i).value;
+                    const ColumnDecimal<Decimal256> * decimal_column = typeid_cast<const ColumnDecimal<Decimal256> *>(wrapper_column);
+                    value = decimal_column->getElement(i & idx_mask).value;
                 }
                 else
                 {
