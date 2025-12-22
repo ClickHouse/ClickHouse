@@ -586,12 +586,21 @@ getColumnsForNewDataPart(
     }
 
     SerializationInfo::Settings settings;
-    /// If mutations doesn't affect all columns we must use serialization info settings from source part,
+    /// If mutations doesn't affect all columns we must i serialization info settings from source part,
     /// because data files of some columns might be copied without actual serialization, so changes in serialization
     /// settings will not be applied for them (for example, new serialization versions for data types).
     if (!affects_all_columns)
     {
-        settings = serialization_infos.getSettings();
+        settings = SerializationInfo::Settings
+        {
+            (*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+            false,
+            serialization_infos.getSettings().version,
+            serialization_infos.getSettings().string_serialization_version,
+            serialization_infos.getSettings().nullable_serialization_version,
+        };
+
+        // settings = serialization_infos.getSettings();
     }
     /// Otherwise use fresh settings from storage.
     else
