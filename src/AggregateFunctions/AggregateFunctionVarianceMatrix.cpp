@@ -205,12 +205,12 @@ SELECT arrayMap(x -> round(x, 3), arrayJoin(covarSampMatrix(a, b, c, d))) AS cov
 FROM test
         )",
         R"(
-   ┌─covarSampMatrix─────────────┐
-1. │ [9.167,-1.956,4.534,7.498]  │
-2. │ [-1.956,45.634,7.206,2.369] │
-3. │ [4.534,7.206,38.011,5.283]  │
-4. │ [7.498,2.369,5.283,11.034]  │
-   └─────────────────────────────┘
+┌─covarSampMatrix─────────────┐
+│ [9.167,-1.956,4.534,7.498]  │
+│ [-1.956,45.634,7.206,2.369] │
+│ [4.534,7.206,38.011,5.283]  │
+│ [7.498,2.369,5.283,11.034]  │
+└─────────────────────────────┘
         )"
     }
     };
@@ -218,7 +218,7 @@ FROM test
     FunctionDocumentation::IntroducedIn covarSampMatrix_introduced_in = {23, 2};
     FunctionDocumentation covarSampMatrix_documentation = {covarSampMatrix_description, covarSampMatrix_syntax, covarSampMatrix_arguments, covarSampMatrix_parameters, covarSampMatrix_returned_value, covarSampMatrix_examples, covarSampMatrix_introduced_in, covarSampMatrix_category};
     factory.registerFunction("covarSampMatrix", {createAggregateFunctionVarianceMatrix<AggregateFunctionCovarSampMatrix>, {}, covarSampMatrix_documentation});
-    
+
     FunctionDocumentation::Description covarPopMatrix_description = R"(
 Returns the population covariance matrix over N variables.
     )";
@@ -247,20 +247,20 @@ SELECT arrayMap(x -> round(x, 3), arrayJoin(covarPopMatrix(a, b, c, d))) AS cova
 FROM test
         )",
         R"(
-   ┌─covarPopMatrix────────────┐
-1. │ [8.25,-1.76,4.08,6.748]   │
-2. │ [-1.76,41.07,6.486,2.132] │
-3. │ [4.08,6.486,34.21,4.755]  │
-4. │ [6.748,2.132,4.755,9.93]  │
-   └───────────────────────────┘
+┌─covarPopMatrix────────────┐
+│ [8.25,-1.76,4.08,6.748]   │
+│ [-1.76,41.07,6.486,2.132] │
+│ [4.08,6.486,34.21,4.755]  │
+│ [6.748,2.132,4.755,9.93]  │
+└───────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::Category covarPopMatrix_category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn covarPopMatrix_introduced_in = {23, 2};
     FunctionDocumentation covarPopMatrix_documentation = {covarPopMatrix_description, covarPopMatrix_syntax, covarPopMatrix_arguments, covarPopMatrix_parameters, covarPopMatrix_returned_value, covarPopMatrix_examples, covarPopMatrix_introduced_in, covarPopMatrix_category};
-    factory.registerFunction("covarPopMatrix", {createAggregateFunctionVarianceMatrix<AggregateFunctionCovarPopMatrix>, {}, covarPopMatrix_documentation} );
-    
+    factory.registerFunction("covarPopMatrix", {createAggregateFunctionVarianceMatrix<AggregateFunctionCovarPopMatrix>, {}, covarPopMatrix_documentation});
+
     FunctionDocumentation::Description corrMatrix_description = R"(
 Computes the correlation matrix over N variables.
     )";
@@ -289,12 +289,12 @@ SELECT arrayMap(x -> round(x, 3), arrayJoin(corrMatrix(a, b, c, d))) AS corrMatr
 FROM test
         )",
         R"(
-   ┌─corrMatrix─────────────┐
-1. │ [1,-0.096,0.243,0.746] │
-2. │ [-0.096,1,0.173,0.106] │
-3. │ [0.243,0.173,1,0.258]  │
-4. │ [0.746,0.106,0.258,1]  │
-   └────────────────────────┘
+┌─corrMatrix─────────────┐
+│ [1,-0.096,0.243,0.746] │
+│ [-0.096,1,0.173,0.106] │
+│ [0.243,0.173,1,0.258]  │
+│ [0.746,0.106,0.258,1]  │
+└────────────────────────┘
         )"
     }
     };
