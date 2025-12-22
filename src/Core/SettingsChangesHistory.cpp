@@ -44,6 +44,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_case_insensitive_columns", false, false, "New setting"},
             {"enable_case_insensitive_tables", false, false, "New setting"},
             {"enable_case_insensitive_databases", false, false, "New setting"},
+            {"input_format_binary_max_type_complexity", 1000, 1000, "Add a new setting to control max number of type nodes when decoding binary types. Protects against malicious inputs."},
             {"trace_profile_events_list", "", "", "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.12",
