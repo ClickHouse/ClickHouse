@@ -8,7 +8,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #include <Storages/ObjectStorage/HDFS/HDFSErrorWrapper.h>
-#include <Core/UUID.h>
+#include <Common/Logger.h>
 #include <memory>
 #include <Poco/Util/AbstractConfiguration.h>
 
