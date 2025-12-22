@@ -91,24 +91,32 @@ else
     exit 1
 fi
 
+./clickhouse --version
+
 # Generate HTML coverage report
 echo "Generating coverage report..."
 # The coverage data references paths like "ci/tmp/build/base/base/..."
 # We created symlinks so those paths now resolve to actual source files
 # Ignore contrib files (coverage is disabled for them)
-"$LLVM_COV" show \
-  ./clickhouse \
-  ./unit_tests_dbms \
-  -instr-profile=merged.profdata \
-  -format=html \
-  -output-dir=clickhouse_coverage \
-  -ignore-filename-regex='.*/contrib/.*|contrib/.*'
+llvm-cov-21 show   \
+        -instr-profile=merged.profdata   \
+        -object ./clickhouse   \
+        -object ./unit_tests_dbms   \
+        -format=html   \
+        -output-dir=cov_html   \
+        -show-line-counts-or-regions   \
+        -show-expansions \
+        -path-equivalence=ci/tmp/build,/home/ubuntu/ClickHouse \
+        -ignore-filename-regex='contrib'
+
+# Create tar.gz archive
+tar -czf cov_html.tar.gz cov_html
 
 # Keep results in ci/tmp (artifacts are uploaded from here)
-echo "Results stored in ci/tmp: merged.profdata, clickhouse_coverage/"
+echo "Results stored in ci/tmp: merged.profdata, cov_html.tar.gz"
 
 # Create result.json for the CI framework
-RESULT_FILE="./LLVM Coverage Merge.json"
+RESULT_FILE=".//LLVM Coverage Merge.json"
 cat > "$RESULT_FILE" << EOF
 {
   "name": "LLVM Coverage Merge",
@@ -116,7 +124,7 @@ cat > "$RESULT_FILE" << EOF
   "start_time": null,
   "duration": null,
   "results": [],
-  "files": ["clickhouse_coverage", "clickhouse_coverage/index.html", "merged.profdata"],
+  "files": ["cov_html.tar.gz", "cov_html/index.html", "merged.profdata"],
   "info": "Coverage report generated successfully"
 }
 EOF
