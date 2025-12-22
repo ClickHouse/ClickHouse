@@ -28,7 +28,6 @@ extern const SettingsOverflowMode read_overflow_mode_leaf;
 namespace ErrorCodes
 {
 extern const int TOO_MANY_ROWS;
-extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 }
 
