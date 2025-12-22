@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -181,6 +182,43 @@ struct RuntimeHashStatisticsContext
     }
 };
 
+RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_step, const RelationStats & input_stats)
+{
+    const auto & aggregator_params = aggregating_step.getAggregatorParameters();
+    std::optional<Float64> total_number_of_distinct_values = 1;
+    RelationStats aggregation_stats;
+    for (const auto & key : aggregator_params.keys)
+    {
+        auto key_stats = input_stats.column_stats.find(key);
+        if (key_stats == input_stats.column_stats.end())
+        {
+            /// Cannot calculate total number of groups if we don't know NDV of any of the aggregation columns
+            total_number_of_distinct_values.reset();
+            continue;
+        }
+
+        UInt64 key_number_of_distinct_values = key_stats->second.num_distinct_values;
+
+        if (input_stats.estimated_rows)
+            key_number_of_distinct_values = std::min(key_number_of_distinct_values, *input_stats.estimated_rows);
+
+        aggregation_stats.column_stats[key].num_distinct_values = key_number_of_distinct_values;
+
+        /// For now assume that aggregation columns are independent, so multiply their NDVs
+        if (total_number_of_distinct_values)
+            *total_number_of_distinct_values *= key_number_of_distinct_values;
+    }
+
+    if (total_number_of_distinct_values && input_stats.estimated_rows)
+        total_number_of_distinct_values = std::min(*total_number_of_distinct_values, Float64(*input_stats.estimated_rows));
+    else
+        total_number_of_distinct_values = input_stats.estimated_rows;
+
+    aggregation_stats.estimated_rows = total_number_of_distinct_values;
+
+    return aggregation_stats;
+}
+
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr)
 {
     IQueryPlanStep * step = node.step.get();
@@ -275,6 +313,13 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         auto stats = estimateReadRowsCount(*node.children.front(), predicate);
         remapColumnStats(stats.column_stats, filter_step->getExpression());
         return stats;
+    }
+
+    if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(step))
+    {
+        auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        auto aggregation_stats = estimateAggregatingStepStats(*aggregating_step, stats);
+        return aggregation_stats;
     }
 
     if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
