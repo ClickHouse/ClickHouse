@@ -42,4 +42,4 @@ def test_select(started_cluster):
     name = node1.query("SELECT zookeeper_cluster_name FROM system.zookeeper_info limit 1")
     assert (name == "zookeeper\n")
     indices = node1.query("SELECT index FROM system.zookeeper_info")
-    assert (indices == "1\n2\n3\n")
+    assert (indices == "0\n1\n2\n")
