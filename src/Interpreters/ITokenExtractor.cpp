@@ -79,7 +79,7 @@ UInt64 TokenizerFactory::extractNgramParam(std::span<const Field> params)
     if (ngram_size < MIN_NGRAM_SIZE)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Incorrect param of tokenizer '{}': ngram length must be larger than {} but got {}",
+            "Incorrect param of tokenizer '{}': ngram length must be at least {}, but got {}",
             NgramsTokenExtractor::getExternalName(),
             MIN_NGRAM_SIZE,
             ngram_size);

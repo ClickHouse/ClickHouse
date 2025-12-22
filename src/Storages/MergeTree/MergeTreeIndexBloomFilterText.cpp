@@ -832,25 +832,25 @@ void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach
     if (index.type == NgramsTokenExtractor::getName())
     {
         if (index.arguments.size() != 4)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`ngrambf` index must have exactly 4 arguments.");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`ngrambf` index must have exactly 4 arguments");
 
         UInt64 ngram_length = index.arguments[0].safeGet<UInt64>();
         if (ngram_length < 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`ngrambf` length must be larger than 0.");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ngram length must be at least 0");
 
         first_bf_param_idx = 1;
     }
     else if (index.type == SplitByNonAlphaTokenExtractor::getName())
     {
         if (index.arguments.size() != 3)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`tokenbf` index must have exactly 3 arguments.");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`tokenbf` index must have exactly 3 arguments");
 
         first_bf_param_idx = 0;
     }
     else if (index.type == SparseGramsTokenExtractor::getBloomFilterIndexName())
     {
         if (index.arguments.size() != 5 && index.arguments.size() != 6)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`sparseGrams` index must have exactly 5 or 6 arguments.");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`sparseGrams` index must have exactly 5 or 6 arguments");
 
         if (index.arguments.size() == 5)
             first_bf_param_idx = 2;
