@@ -2674,7 +2674,8 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     try
     {
         {
-            Transaction transaction(*dest_table_storage, local_context->getCurrentTransaction().get());
+            auto txn = local_context->getCurrentTransaction();
+            Transaction transaction(*dest_table_storage, txn.get());
 
             auto src_data_parts_lock = lockParts();
             auto dest_data_parts_lock = dest_table_storage->lockParts();
@@ -2686,8 +2687,18 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
                 dest_table_storage->renameTempPartAndReplaceUnlocked(part, transaction, dest_data_parts_lock, /*rename_in_transaction=*/ false);
             }
 
-            removePartsFromWorkingSet(local_context->getCurrentTransaction().get(), src_parts, true, src_data_parts_lock);
-            transaction.commit(src_data_parts_lock);
+            auto future_parts = initCoverageWithNewEmptyParts(src_parts);
+            auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
+
+            for (auto & part : new_data_parts)
+                renameTempPartAndReplaceUnlocked(part, src_data_parts_lock, transaction, /*rename_in_transaction=*/true);
+
+            transaction.renameParts();
+            transaction.commit();
+
+            /// Remove covered parts without waiting for old_parts_lifetime seconds.
+            for (auto & part: src_parts)
+                part->remove_time.store(0, std::memory_order_relaxed);
         }
 
         clearOldPartsFromFilesystem();
