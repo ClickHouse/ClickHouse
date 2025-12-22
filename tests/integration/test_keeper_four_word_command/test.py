@@ -111,6 +111,8 @@ def do_some_action(
     fake_ephemeral_event = None
 
     def fake_ephemeral_callback(event):
+        if not keeper_utils.is_znode_watch_event(event):
+            return
         print("Fake watch triggered")
         nonlocal fake_ephemeral_event
         fake_ephemeral_event = event
@@ -748,6 +750,7 @@ def test_cmd_ydld(started_cluster):
                 )
         assert keeper_utils.is_follower(cluster, node)
 
+
 def test_cmd_lgrq(started_cluster):
     zk = None
     try:
@@ -756,22 +759,22 @@ def test_cmd_lgrq(started_cluster):
         reset_conn_stats()
 
         zk = get_fake_zk(node1.name, timeout=30.0)
-        if not zk.exists('/test_lgrq'):
-            zk.create('/test_lgrq', ephemeral=True)
+        if not zk.exists("/test_lgrq"):
+            zk.create("/test_lgrq", ephemeral=True)
 
-        assert not node1.contains_in_log('Received request:')
-
-        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="lgrq")
-        assert data == 'enabled'
-
-        zk.set('/test_lgrq', 'newdata'.encode())
-        assert node1.contains_in_log('Received request:')
+        assert not node1.contains_in_log("Received request:")
 
         data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="lgrq")
-        assert data == 'disabled'
+        assert data == "enabled"
+
+        zk.set("/test_lgrq", "newdata".encode())
+        assert node1.contains_in_log("Received request:")
+
+        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="lgrq")
+        assert data == "disabled"
         node1.rotate_logs()
 
-        zk.set('/test_lgrq', 'newdata'.encode())
-        assert not node1.contains_in_log('Received request:')
+        zk.set("/test_lgrq", "newdata".encode())
+        assert not node1.contains_in_log("Received request:")
     finally:
         destroy_zk_client(zk)

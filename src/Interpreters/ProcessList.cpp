@@ -53,6 +53,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsBool trace_profile_events;
+    extern const SettingsString trace_profile_events_list;
     extern const SettingsMilliseconds low_priority_query_wait_time_ms;
 }
 
@@ -294,7 +295,22 @@ ProcessList::EntryPtr ProcessList::insert(
                 thread_group->memory_tracker.setSampleProbability(settings[Setting::memory_profiler_sample_probability]);
                 thread_group->memory_tracker.setSampleMinAllocationSize(settings[Setting::memory_profiler_sample_min_allocation_size]);
                 thread_group->memory_tracker.setSampleMaxAllocationSize(settings[Setting::memory_profiler_sample_max_allocation_size]);
-                thread_group->performance_counters.setTraceProfileEvents(settings[Setting::trace_profile_events]);
+
+                /// Set up tracing of profile events
+                if (settings[Setting::trace_profile_events])
+                {
+                    const String & list_of_events_to_trace = settings[Setting::trace_profile_events_list];
+                    if (!list_of_events_to_trace.empty())
+                    {
+                        /// Trace specific profile events
+                        thread_group->performance_counters.setTraceProfileEvents(list_of_events_to_trace);
+                    }
+                    else
+                    {
+                        /// Trace all profile events
+                        thread_group->performance_counters.setTraceAllProfileEvents();
+                    }
+                }
             }
 
             thread_group->memory_tracker.setDescription("Query");

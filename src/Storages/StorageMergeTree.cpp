@@ -66,6 +66,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char storage_merge_tree_background_clear_old_parts_pause[];
+    extern const char storage_shared_merge_tree_mutate_pause_before_wait[];
 }
 
 namespace Setting
@@ -204,6 +205,10 @@ StorageMergeTree::StorageMergeTree(
 
 void StorageMergeTree::startup()
 {
+    /// Do not schedule any background jobs if current storage has static data files.
+    if (isStaticStorage())
+        return;
+
     clearEmptyParts();
 
     /// Temporary directories contain incomplete results of merges (after forced restart)
@@ -213,10 +218,6 @@ void StorageMergeTree::startup()
     /// NOTE background task will also do the above cleanups periodically.
     time_after_previous_cleanup_parts.restart();
     time_after_previous_cleanup_temporary_directories.restart();
-
-    /// Do not schedule any background jobs if current storage has static data files.
-    if (isStaticStorage())
-        return;
 
     try
     {
@@ -770,7 +771,10 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
     }
 
     if (query_context->getSettingsRef()[Setting::mutations_sync] > 0 || query_context->getCurrentTransaction())
+    {
+        FailPointInjection::pauseFailPoint(FailPoints::storage_shared_merge_tree_mutate_pause_before_wait);
         waitForMutation(version, false);
+    }
 }
 
 std::unique_ptr<PlainLightweightUpdateLock> StorageMergeTree::getLockForLightweightUpdate(const MutationCommands & commands, const ContextPtr & local_context)
@@ -888,6 +892,40 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
     /// There's no way a transaction may finish before a mutation that was started by the transaction.
     /// But sometimes we need to check status of an unrelated mutation, in this case we don't care about transactions.
     assert(txn || mutation_entry.tid.isPrehistoric() || from_another_mutation);
+
+    /// Check deadlock: if this mutation belongs to a transaction, check if there are
+    /// intermediate mutations between it and an earlier mutation from the same transaction
+    /// Scenario:
+    /// 1. mutation_1 (txn 1)  is submitted
+    /// 2. mutation_2 (no txn) is submitted - will wait for mutation_1 (txn 1) to commit or rollback
+    /// 3. mutation_3 (txn 1)  is submitted - will wait for mutation_2 to finish: Deadlock!
+    if (txn && !from_another_mutation)
+    {
+        /// Scan backwards to find the most recent mutation from the same transaction
+        for (auto it = current_mutation_it; it != current_mutations_by_version.begin();)
+        {
+            --it;
+
+            const auto & earlier_mutation = it->second;
+            if (earlier_mutation.tid == mutation_entry.tid)
+            {
+                if (++it != current_mutation_it)
+                {
+                    result.latest_failed_part = "";
+                    result.latest_fail_reason = fmt::format(
+                        "Deadlock detected: mutation {} in transaction {} depends on earlier mutation {} "
+                        "from the same transaction with intermediate mutations in between. ",
+                        mutation_entry.file_name, mutation_entry.tid, earlier_mutation.file_name);
+                    result.latest_fail_error_code_name = ErrorCodes::getName(ErrorCodes::LOGICAL_ERROR);
+                    result.latest_fail_time = time(nullptr);
+                    return result;
+                }
+
+                break;
+            }
+        }
+    }
+
     auto data_parts = getVisibleDataPartsVector(txn);
     for (const auto & data_part : data_parts)
     {
@@ -1435,6 +1473,19 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find transaction {} that has started mutation {} "
                                 "that is going to be applied to part {}",
                                 first_mutation_tid, mutations_begin_it->second.file_name, part->name);
+        }
+        else
+        {
+            /// Mutate visible parts only (similar to mutation with transaction)
+            /// NOTE Do not mutate parts in an active transaction.
+            /// Mutation without transaction should wait for the transaction to commit or rollback.
+            if (!part->version.isVisible(Tx::MaxCommittedCSN, Tx::EmptyTID))
+            {
+                LOG_DEBUG(log, "Cannot mutate part {} because it's not visible (outdated, being created or removed "
+                          "in an active transaction) to mutation {}.",
+                          part->name, mutations_begin_it->second.file_name);
+                continue;
+            }
         }
 
         auto commands = std::make_shared<MutationCommands>();
