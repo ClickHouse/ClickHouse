@@ -116,7 +116,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     std::unique_ptr<QueryPipelineBuilder> joined_pipeline;
     /// Sharding requires both pipelines to have the same number of streams.
     /// When stream counts don't match, fall back to the
-    /// regular join pipeline which handles different stream counts 
+    /// regular join pipeline which handles different stream counts
     bool use_sharding = !primary_key_sharding.empty() && pipelines[0]->getNumStreams() == pipelines[1]->getNumStreams();
     if (!use_sharding)
     {
