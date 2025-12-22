@@ -205,7 +205,7 @@ singleValueOrNull(x)
     )";
     FunctionDocumentation::Parameters parameters = {};
     FunctionDocumentation::Arguments arguments = {
-        {"x", "Column of any data type (except Map, Array or Tuple which cannot be of type Nullable).", {"Any*"}}
+        {"x", "Column of any data type (except Map, Array or Tuple which cannot be of type Nullable).", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the unique value, if there is only one unique non-NULL value in `x`. `NULL`, if there are zero or at least two distinct values.", {"Nullable(T)"}};
     FunctionDocumentation::Examples examples = {
