@@ -353,6 +353,32 @@ def test_insert_quorum_with_ttl(started_cluster):
 
     zero.query(f"DROP TABLE IF EXISTS {table_name} ON CLUSTER cluster")
 
+def test_insert_quorum_with_ttl_parts_cleanup(started_cluster):
+    table_name = "test_insert_quorum_with_ttl_parts_cleanup" + uuid.uuid4().hex
+
+    create_query = (
+        f"CREATE TABLE {table_name} "
+        "(a Int8, d Date) "
+        "Engine = ReplicatedMergeTree('/clickhouse/tables/{table}', '{replica}') "
+        "PARTITION BY d ORDER BY a "
+        "TTL d + INTERVAL 1 DAY DELETE " \
+        "SETTINGS cleanup_delay_period=2, merge_tree_clear_old_parts_interval_seconds=2"
+    )
+
+    zero.query(create_query)
+    first.query(create_query)
+
+    zero.query(f"INSERT INTO {table_name}(a,d) VALUES(1, '2025-12-01')", settings={"insert_quorum_timeout": 5000, "insert_quorum": 2, "insert_quorum_parallel": 0})
+
+    zero.query(f"ALTER TABLE {table_name} MATERIALIZE TTL SETTINGS alter_sync=2, mutations_sync=2")
+    first.query(f"SYSTEM SYNC REPLICA {table_name}")
+    zero.query(f"SYSTEM SYNC REPLICA {table_name}")
+
+    time.sleep(5)
+
+    assert TSV("") == TSV(zero.query(f"SELECT a FROM {table_name} SETTINGS select_sequential_consistency=1"))
+
+    zero.query(f"DROP TABLE IF EXISTS {table_name} ON CLUSTER cluster")
 
 def test_insert_quorum_with_keeper_loss_connection(started_cluster):
     table_name = "test_insert_quorum_with_keeper_loss_" + uuid.uuid4().hex
