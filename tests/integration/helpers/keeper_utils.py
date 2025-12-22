@@ -12,7 +12,7 @@ from typing import Iterable, List, Optional, Sequence, Union
 from helpers.kazoo_client import KazooClientWithImplicitRetries
 from kazoo.exceptions import ConnectionLoss, OperationTimeoutError
 from kazoo.handlers.threading import KazooTimeoutError
-from kazoo.client import KazooClient
+from kazoo.client import EventType, KazooClient
 
 from helpers.client import CommandRequest
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
@@ -77,7 +77,9 @@ class KeeperException(Exception):
 class KeeperClient(object):
     SEPARATOR = b"\a\a\a\a\n"
 
-    def __init__(self, bin_path: str, host: str, port: int, connection_tries=30, identity=None):
+    def __init__(
+        self, bin_path: str, host: str, port: int, connection_tries=30, identity=None
+    ):
         self.bin_path = bin_path
         self.host = host
         self.port = port
@@ -102,7 +104,7 @@ class KeeperClient(object):
                         "error",
                         "--tests-mode",
                         "--no-confirmation",
-                        *identity_arg
+                        *identity_arg,
                     ],
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
@@ -255,13 +257,17 @@ class KeeperClient(object):
     @classmethod
     @contextlib.contextmanager
     def from_cluster(
-        cls, cluster: ClickHouseCluster, keeper_node: str, port: Optional[int] = None, identity: Optional[str] = None
+        cls,
+        cluster: ClickHouseCluster,
+        keeper_node: str,
+        port: Optional[int] = None,
+        identity: Optional[str] = None,
     ) -> "KeeperClient":
         client = cls(
             cluster.server_bin_path,
             cluster.get_instance_ip(keeper_node),
             port or cluster.zookeeper_port,
-            identity=identity
+            identity=identity,
         )
 
         try:
@@ -451,3 +457,12 @@ def reset_zookeeper_config(
     """Resets the keeper config to default or to a given path on the disk"""
     with open(file_path, "r", encoding="utf-8") as cf:
         replace_zookeeper_config(nodes, cf.read())
+
+
+def is_znode_watch_event(event: EventType) -> bool:
+    return event.type in [
+        EventType.CREATED,
+        EventType.DELETED,
+        EventType.CHANGED,
+        EventType.CHILD,
+    ]

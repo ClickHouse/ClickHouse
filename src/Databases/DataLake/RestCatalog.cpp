@@ -29,6 +29,11 @@
 #include <Poco/URI.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Parser.h>
+#include <Poco/Net/HTTPClientSession.h>
+#include <Poco/Net/HTTPResponse.h>
+#include <Poco/Net/HTTPSClientSession.h>
+#include <Poco/Net/SSLManager.h>
+#include <Poco/StreamCopier.h>
 
 
 namespace DB::ErrorCodes
@@ -86,6 +91,19 @@ std::string correctAPIURI(const std::string & uri)
     if (uri.ends_with("v1"))
         return uri;
     return std::filesystem::path(uri) / "v1";
+}
+
+String encodeNamespaceForURI(const String & namespace_name)
+{
+    String encoded;
+    for (const auto & ch : namespace_name)
+    {
+        if (ch == '.')
+            encoded += "%1F";
+        else
+            encoded.push_back(ch);
+    }
+    return encoded;
 }
 
 }
@@ -230,12 +248,11 @@ std::string RestCatalog::retrieveAccessToken() const
     /// 1. support oauth2-server-uri
     /// https://github.com/apache/iceberg/blob/918f81f3c3f498f46afcea17c1ac9cdc6913cb5c/open-api/rest-catalog-open-api.yaml#L183C82-L183C99
 
-    DB::HTTPHeaderEntries headers;
-    headers.emplace_back("Content-Type", "application/x-www-form-urlencoded");
-    headers.emplace_back("Accepts", "application/json; charset=UTF-8");
-
     Poco::URI url;
     DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
+    size_t body_size = 0;
+    String body;
+
     if (oauth_server_uri.empty() && !oauth_server_use_request_body)
     {
         url = Poco::URI(base_url / oauth_tokens_endpoint);
@@ -250,11 +267,20 @@ std::string RestCatalog::retrieveAccessToken() const
     }
     else
     {
+        String encoded_auth_scope;
+        String encoded_client_id;
+        String encoded_client_secret;
+        Poco::URI::encode(auth_scope, auth_scope, encoded_auth_scope);
+        Poco::URI::encode(client_id, client_id, encoded_client_id);
+        Poco::URI::encode(client_secret, client_secret, encoded_client_secret);
+
+        body = fmt::format(
+            "grant_type=client_credentials&scope={}&client_id={}&client_secret={}",
+            encoded_auth_scope, encoded_client_id, encoded_client_secret);
+        body_size = body.size();
         out_stream_callback = [&](std::ostream & os)
         {
-            os << fmt::format(
-                "grant_type=client_credentials&scope={}&client_id={}&client_secret={}",
-                auth_scope, client_id, client_secret);
+            os << body;
         };
 
         if (oauth_server_uri.empty())
@@ -264,19 +290,23 @@ std::string RestCatalog::retrieveAccessToken() const
     }
 
     const auto & context = getContext();
-    auto wb = DB::BuilderRWBufferFromHTTP(url)
-        .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
-        .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
-        .withSettings(context->getReadSettings())
-        .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
-        .withHostFilter(&context->getRemoteHostFilter())
-        .withOutCallback(std::move(out_stream_callback))
-        .withSkipNotFound(false)
-        .withHeaders(headers)
-        .create(credentials);
+    auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
+    auto session = makeHTTPSession(DB::HTTPConnectionGroupType::HTTP, url, timeouts, {});
+
+    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_POST, url.getPathAndQuery(),
+                                Poco::Net::HTTPMessage::HTTP_1_1);
+    request.setContentType("application/x-www-form-urlencoded");
+    request.setContentLength(body_size);
+    request.set("Accept", "application/json");
+
+    std::ostream & os = session->sendRequest(request);
+    out_stream_callback(os);
+
+    Poco::Net::HTTPResponse response;
+    std::istream & rs = session->receiveResponse(response);
 
     std::string json_str;
-    readJSONObjectPossiblyInvalid(json_str, *wb);
+    Poco::StreamCopier::copyToString(rs, json_str);
 
     Poco::JSON::Parser parser;
     Poco::Dynamic::Var res_json = parser.parse(json_str);
@@ -366,7 +396,7 @@ DB::Names RestCatalog::getTables() const
 
     auto execute_for_each_namespace = [&](const std::string & current_namespace)
     {
-        runner(
+        runner.enqueueAndKeepTrack(
         [=, &tables, &mutex, this]
         {
             auto tables_in_namespace = getTables(current_namespace);
@@ -511,7 +541,8 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
 
 DB::Names RestCatalog::getTables(const std::string & base_namespace, size_t limit) const
 {
-    const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / base_namespace / "tables";
+    auto encoded_namespace = encodeNamespaceForURI(base_namespace);
+    const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encoded_namespace / "tables";
 
     auto buf = createReadBuffer(config.prefix / endpoint);
     return parseTables(*buf, base_namespace, limit);
@@ -610,7 +641,7 @@ bool RestCatalog::getTableMetadataImpl(
         headers.emplace_back("X-Iceberg-Access-Delegation", "vended-credentials");
     }
 
-    const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / namespace_name / "tables" / table_name;
+    const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encodeNamespaceForURI(namespace_name) / "tables" / table_name;
     auto buf = createReadBuffer(config.prefix / endpoint, /* params */{}, headers);
 
     if (buf->eof())

@@ -168,7 +168,7 @@ public:
                     };
 
                     for (size_t i = 0; i < std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS); ++i)
-                        runner(thread_func, Priority{});
+                        runner.enqueueAndKeepTrack(thread_func, Priority{});
                 }
                 catch (...)
                 {

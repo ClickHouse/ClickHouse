@@ -375,6 +375,7 @@ BlockIO InterpreterSystemQuery::execute()
         }
         case Type::SYNC_FILE_CACHE:
         {
+            getContext()->checkAccess(AccessType::SYSTEM_SYNC_FILE_CACHE);
             LOG_DEBUG(log, "Will perform 'sync' syscall (it can take time).");
             sync();
             break;
