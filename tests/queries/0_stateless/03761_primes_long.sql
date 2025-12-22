@@ -1,5 +1,7 @@
 -- Tags: long
 
+SET max_rows_to_read = 150000000;
+
 SELECT 'First 100 twin primes greater than 10^15';
 WITH
     toUInt64(1e15) AS lo,
