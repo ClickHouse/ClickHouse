@@ -15,6 +15,9 @@ FractionalOffsetTransform::FractionalOffsetTransform(const Block & header_, Floa
     : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_))
     , fractional_offset(fractional_offset_)
 {
+    if (fractional_offset <= 0.0 || fractional_offset >= 1.0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "OFFSET fraction must be in (0, 1) range non-inclusive");
+
     ports_data.resize(num_streams);
 
     size_t cur_stream = 0;
