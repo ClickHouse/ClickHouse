@@ -104,14 +104,11 @@ echo "Generating coverage report..."
   -output-dir=clickhouse_coverage \
   -ignore-filename-regex='.*/contrib/.*|contrib/.*'
 
-# Create tar.gz archive
-tar -czf clickhouse_coverage.tar.gz clickhouse_coverage
-
 # Keep results in ci/tmp (artifacts are uploaded from here)
-echo "Results stored in ci/tmp: merged.profdata, clickhouse_coverage.tar.gz"
+echo "Results stored in ci/tmp: merged.profdata, clickhouse_coverage/"
 
 # Create result.json for the CI framework
-RESULT_FILE="./result.json"
+RESULT_FILE="./LLVM Coverage Merge.json"
 cat > "$RESULT_FILE" << EOF
 {
   "name": "LLVM Coverage Merge",
@@ -119,7 +116,7 @@ cat > "$RESULT_FILE" << EOF
   "start_time": null,
   "duration": null,
   "results": [],
-  "files": ["clickhouse_coverage.tar.gz", "merged.profdata"],
+  "files": ["clickhouse_coverage", "clickhouse_coverage/index.html", "merged.profdata"],
   "info": "Coverage report generated successfully"
 }
 EOF
