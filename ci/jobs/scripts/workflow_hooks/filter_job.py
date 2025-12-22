@@ -48,11 +48,19 @@ FUNCTIONAL_TEST_FLAKY_CHECK_JOBS = [
 
 _info_cache = None
 
+def trace_lines(frame, event, arg):
+    if event == "line":
+        lineno = frame.f_lineno
+        filename = frame.f_code.co_filename
+        print(f"{filename}:{lineno}")
+    return trace_lines
 
 def should_skip_job(job_name):
     global _info_cache
     if _info_cache is None:
         _info_cache = Info()
+
+    sys.settrace(trace_lines)
 
     changed_files = _info_cache.get_kv_data("changed_files")
     if not changed_files:
