@@ -549,10 +549,10 @@ void ObjectStorageQueueSource::FileIterator::returnForRetry(ObjectInfoPtr object
 void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
 {
     std::lock_guard lock(mutex);
-    size_t released_holders = 0;
     for (auto & [processor, holders] : bucket_holders)
     {
         std::string buckets_str;
+        size_t released_holders = 0;
         for (auto it = holders.begin(); it != holders.end();)
         {
             const auto & holder = *it;
@@ -662,7 +662,7 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                 }
                 else if (bucket_processor.value() != current_processor)
                 {
-                    std::string processor_info;
+                    std::optional<std::string> processor_info;
                     ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
                     {
                         auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
@@ -676,7 +676,7 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                         bucket_processor.has_value() ? toString(bucket_processor.value()) : "None",
                         bucket,
                         current_bucket_holder->getBucketInfo()->toString(),
-                        processor_info, bucketHoldersToString());
+                        processor_info.value_or("None"), bucketHoldersToString());
                 }
 
                 if (!bucket_keys.empty())

@@ -104,7 +104,7 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
     bool isFinished() const { return finished; }
 
     bool checkBucketOwnership(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client);
-    std::string getProcessorInfo(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client);
+    std::optional<std::string> getProcessorInfo(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client);
 
     void release();
 
