@@ -4184,6 +4184,8 @@ services:
                 {net_aliases}
                     {net_alias1}
         init: {init_flag}
+        devices:
+            - /dev/loop-control
 """
 
 

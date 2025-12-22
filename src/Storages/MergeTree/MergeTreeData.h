@@ -1997,4 +1997,6 @@ struct CurrentlySubmergingEmergingTagger
 void incrementMutationsCounters(MutationCounters & mutation_counters, const MutationCommands & commands);
 void decrementMutationsCounters(MutationCounters & mutation_counters, const MutationCommands & commands);
 
+String replaceFileNameToHashIfNeeded(const String & file_name, const MergeTreeSettings & storage_settings, const IDataPartStorage * data_part_storage);
+
 }

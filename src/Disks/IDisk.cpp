@@ -294,7 +294,7 @@ bool IDisk::isCaseInsensitive()
 {
     /// For readonly disk we cannot perform the case sensitivity check.
     if (isReadOnly())
-        return false;
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot check if filesystem is case insensitive: disk {} is readonly", name);
 
     if (is_case_sensitivity_checked)
         return is_case_insensitive;

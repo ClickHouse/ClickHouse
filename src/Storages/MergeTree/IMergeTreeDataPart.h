@@ -28,6 +28,8 @@
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 
+#include "MergeTreeSettings.h"
+
 namespace zkutil
 {
     class ZooKeeper;
