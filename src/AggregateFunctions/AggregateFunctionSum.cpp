@@ -184,7 +184,7 @@ sumKahan(x)
         {"x", "Input value.", {"Integer", "Float", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_kahan = {
-        "Returns the sum of numbers.", {"U)Int*", "Float*", "Decimal"}
+        "Returns the sum of numbers.", {"(U)Int*", "Float*", "Decimal"}
     };
     FunctionDocumentation::Examples examples_kahan = {
     {
