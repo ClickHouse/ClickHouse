@@ -123,7 +123,7 @@ std::vector<Interval> rangesToIntervals(const std::vector<Range> & ranges)
     return intervals;
 }
 
-/// Maybe this part not needed if KeyCondition already simplies the intervals.
+/// Maybe this part not needed if KeyCondition already simplifies the intervals.
 /// But let's keep it regardless to be safe from future changes to other components.
 void mergeIntervals(std::vector<Interval> & intervals)
 {

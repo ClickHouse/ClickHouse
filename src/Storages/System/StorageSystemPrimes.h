@@ -13,7 +13,7 @@ namespace DB
   *
   * Parameters:
   *   limit  - how many rows (primes) to produce
-  *   offset - how many primes to skip from the begining (0-based in prime-index space)
+  *   offset - how many primes to skip from the beginning (0-based in prime-index space)
   *   step   - step in prime-index space (1 means every prime)
   *
   * In text, after skipping `offset` primes, take every `step`-th prime until `limit` primes are taken.
