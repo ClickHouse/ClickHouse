@@ -115,7 +115,7 @@ SELECT sum(salary) FROM employees;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("sum", {createAggregateFunctionSum<AggregateFunctionSumSimple>, AggregateFunctionFactory::Case::Insensitive, documentation});
+    factory.registerFunction("sum", {createAggregateFunctionSum<AggregateFunctionSumSimple>, {}, documentation}, AggregateFunctionFactory::Case::Insensitive);
     factory.registerFunction("sumWithOverflow", createAggregateFunctionSum<AggregateFunctionSumWithOverflow>);
     factory.registerFunction("sumKahan", createAggregateFunctionSum<AggregateFunctionSumKahan>);
 }
