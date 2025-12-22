@@ -541,9 +541,6 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
     }
     else if (join_expression_constant.has_value())
     {
-        if (!TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JOIN ON constant supported only with join algorithm 'hash'");
-
         bool join_expression_value = join_expression_constant.value();
         if (!join_expression_value)
         {

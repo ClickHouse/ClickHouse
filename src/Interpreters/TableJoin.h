@@ -215,8 +215,6 @@ private:
 
     std::shared_ptr<const IKeyValueEntity> right_kv_storage;
 
-    bool is_join_with_constant = false;
-
     bool enable_analyzer = false;
 
     Names requiredJoinedNames() const;
@@ -375,16 +373,6 @@ public:
 
     size_t rightKeyInclusion(const String & name) const;
     NameSet requiredRightKeys() const;
-
-    bool isJoinWithConstant() const
-    {
-        return is_join_with_constant;
-    }
-
-    void setIsJoinWithConstant(bool is_join_with_constant_value)
-    {
-        is_join_with_constant = is_join_with_constant_value;
-    }
 
     bool leftBecomeNullable(const DataTypePtr & column_type) const;
     bool rightBecomeNullable(const DataTypePtr & column_type) const;
