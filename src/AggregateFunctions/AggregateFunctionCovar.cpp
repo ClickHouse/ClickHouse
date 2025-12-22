@@ -62,7 +62,7 @@ FROM series LIMIT 1
     FunctionDocumentation::IntroducedIn covarSamp_introduced_in = {1, 1};
     FunctionDocumentation covarSamp_documentation = {covarSamp_description, covarSamp_syntax, covarSamp_arguments, covarSamp_parameters, covarSamp_returned_value, covarSamp_examples, covarSamp_introduced_in, covarSamp_category};
     factory.registerFunction("covarSamp", {createAggregateFunctionStatisticsBinary<AggregateFunctionCovar, StatisticsFunctionKind::covarSamp>, {}, covarSamp_documentation});
-    
+
     FunctionDocumentation::Description covarPop_description = R"(
 Calculates the population covariance:
 
