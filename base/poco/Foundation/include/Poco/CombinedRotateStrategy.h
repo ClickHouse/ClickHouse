@@ -4,7 +4,6 @@
 #include <Poco/RotateStrategy.h>
 #include <Poco/Ascii.h>
 #include <vector>
-#include <iostream>
 
 
 namespace Poco
@@ -14,7 +13,7 @@ namespace Poco
 class CombinedRotateStrategy : public RotateStrategy
 {
 public:
-    CombinedRotateStrategy(const std::string & _rotation, std::string & _times)
+    CombinedRotateStrategy(const std::string & _rotation, const std::string & _times)
     {
         rotation = parseRotation(_rotation); /// Parse rotation size and time or interval
 
@@ -106,7 +105,7 @@ private:
         if (unit == "daily")
             interval = Timespan(1 * Timespan::DAYS);
         else if (unit == "weekly")
-            interval = Timespan(7 *  Timespan::DAYS);
+            interval = Timespan(7 * Timespan::DAYS);
         else if (unit == "monthly")
             interval = Timespan(30 * Timespan::DAYS);
         else if (unit == "seconds") // for testing only
@@ -174,7 +173,9 @@ private:
             res.size = parseSize(rotation, pos); /// To handle the case when an interval is specified before a size
 
         if (!res.size && !res.interval && !res.time && !parseNever(rotation))
-            throw InvalidArgumentException("rotation", std::string(rotation));
+            throw InvalidArgumentException(
+                "Invalid rotation format '" + std::string(rotation) +
+                "'. Expected formats: <size>[K|M|G], <interval>, [<size>,]<interval>, or 'never'.");
 
         return res;
     }
