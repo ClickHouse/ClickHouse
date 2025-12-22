@@ -60,6 +60,7 @@ def should_skip_job(job_name):
     if _info_cache is None:
         _info_cache = Info()
 
+    import sys
     sys.settrace(trace_lines)
 
     changed_files = _info_cache.get_kv_data("changed_files")
