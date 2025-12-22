@@ -451,7 +451,7 @@ SELECT any(city), anyRespectNulls(city) FROM tab;
 
     AggregateFunctionProperties default_properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
 
-    factory.registerFunction("any", {createAggregateFunctionAny, default_properties});
+    factory.registerFunction("any", {createAggregateFunctionAny, default_properties, documentation});
     factory.registerAlias("any_value", "any", AggregateFunctionFactory::Case::Insensitive);
     factory.registerAlias("first_value", "any", AggregateFunctionFactory::Case::Insensitive);
 
@@ -491,7 +491,7 @@ SELECT anyLast(city), anyLastRespectNulls(city) FROM tab;
     FunctionDocumentation::Category anyLast_category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation anyLast_documentation = {anyLast_description, anyLast_syntax, anyLast_arguments, {}, anyLast_returned_value, anyLast_examples, anyLast_introduced_in, anyLast_category};
 
-    factory.registerFunction("anyLast", createAggregateFunctionAnyLast, default_properties, anyLast_documentation, AggregateFunctionFactory::Case::Sensitive);
+    factory.registerFunction("anyLast", {createAggregateFunctionAnyLast, default_properties, anyLast_documentation}, AggregateFunctionFactory::Case::Sensitive);
 
     /// last_value documentation
     FunctionDocumentation::Description last_value_description = R"(
