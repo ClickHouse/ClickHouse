@@ -103,17 +103,17 @@ llvm-cov-21 show   \
         -object ./clickhouse   \
         -object ./unit_tests_dbms   \
         -format=html   \
-        -output-dir=cov_html   \
+        -output-dir=llvm_coverage_html_report   \
         -show-line-counts-or-regions   \
         -show-expansions \
         -path-equivalence=ci/tmp/build,/home/ubuntu/ClickHouse \
         -ignore-filename-regex='contrib'
 
 # Create tar.gz archive
-tar -czf cov_html.tar.gz cov_html
+tar -czf llvm_coverage_html_report.tar.gz llvm_coverage_html_report
 
 # Keep results in ci/tmp (artifacts are uploaded from here)
-echo "Results stored in ci/tmp: merged.profdata, cov_html.tar.gz"
+echo "Results stored in ci/tmp: merged.profdata, llvm_coverage_html_report.tar.gz"
 
 # Create result.json for the CI framework
 RESULT_FILE=".//LLVM Coverage Merge.json"
@@ -124,7 +124,7 @@ cat > "$RESULT_FILE" << EOF
   "start_time": null,
   "duration": null,
   "results": [],
-  "files": ["cov_html.tar.gz", "cov_html/index.html", "merged.profdata"],
+  "files": ["llvm_coverage_html_report.tar.gz", "llvm_coverage_html_report/index.html", "merged.profdata"],
   "info": "Coverage report generated successfully"
 }
 EOF
