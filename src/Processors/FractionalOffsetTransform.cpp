@@ -125,7 +125,7 @@ FractionalOffsetTransform::Status FractionalOffsetTransform::pullData(PortsData 
 
     /// Detect blocks that will 100% get removed by the offset and remove them as early as possible.
     /// example: if we have 10 blocks with the same num of rows and offset 0.1 we can freely drop the first block even before reading all data.
-    while (!chunks_cache.empty() && std::ceil(rows_cnt * fractional_offset) - evicted_rows_cnt >= chunks_cache.front().chunk.getNumRows())
+    while (!chunks_cache.empty() && static_cast<UInt64>(std::ceil(rows_cnt * fractional_offset)) - evicted_rows_cnt >= chunks_cache.front().chunk.getNumRows())
     {
         evicted_rows_cnt += chunks_cache.front().chunk.getNumRows();
         chunks_cache.pop_front();
