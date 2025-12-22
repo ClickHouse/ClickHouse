@@ -130,7 +130,8 @@ void PostingListRoaringCodec::serializeLargeImpl(const roaring::api::roaring_bit
 void PostingListBlockCodec::serialize(UInt64 header, WriteBuffer & ostr)
 {
     chassert(header & PostingsSerialization::Flags::CompressedPostings);
-    postings->serialize(ostr);
+    TokenPostingsInfo info;
+    postings->serialize(ostr, info);
 }
 
 void PostingListRoaringCodec::serialize(UInt64 header, WriteBuffer & ostr)
@@ -168,7 +169,6 @@ PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 head
         chassert(header & PostingsSerialization::CompressedPostings);
         auto postings = std::make_shared<PostingList>();
         deserializePostings(istr, *postings);
-        chassert(cardinality == postings->cardinality());
         return postings;
     }
     if (header & Flags::RawPostings)
@@ -623,10 +623,12 @@ void serializeTokensFrontCoding(
 /// we need only to adjust the pointers to the containers.
 std::vector<roaring::api::roaring_bitmap_t> splitPostings(const PostingList & postings, size_t block_size)
 {
+    auto po = postings.cardinality();
     std::vector<roaring::api::roaring_bitmap_t> result;
     result.reserve((postings.cardinality() + block_size - 1) / block_size);
     const auto & container = postings.roaring.high_low_container;
 
+    (void) po;
     auto create_bitmap_view = [&](size_t begin, size_t size)
     {
         roaring::api::roaring_bitmap_t bitmap;
@@ -690,58 +692,15 @@ void serializeTokensImpl(
 
 }
 
-TokenPostingsInfo PostingListBlockCodec::serializePostings(MergeTreeIndexWriterStream & postings_stream, size_t posting_list_block_size)
+TokenPostingsInfo PostingListBlockCodec::serializePostings(MergeTreeIndexWriterStream & postings_stream, size_t)
 {
-    (void) posting_list_block_size;
     using enum PostingsSerialization::Flags;
     TokenPostingsInfo info;
     info.header = 0;
     info.cardinality = size();
-
     info.header |= CompressedPostings;
-    info.offsets.emplace_back(postings_stream.plain_hashing.count());
-    info.ranges.emplace_back(minimum(), maximum());
-    serialize(info.header, postings_stream.plain_hashing);
-#if 0
-    if (info.cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
-    {
-        info.header |= RawPostings;
-        info.header |= EmbeddedPostings;
-        return info;
-    }
-    else if (info.cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
-    {
-        info.header |= RawPostings;
-        info.header |= SingleBlock;
-    }
-    else if (info.cardinality <= posting_list_block_size)
-    {
-        info.header |= SingleBlock;
-    }
 
-    if (info.header & SingleBlock)
-    {
-        info.offsets.emplace_back(postings_stream.plain_hashing.count());
-        info.ranges.emplace_back(minimum(), maximum());
-        serialize(info.header, postings_stream.plain_hashing);
-    }
-    else
-    {
-        chassert(isLarge());
-        getLarge().runOptimize();
-        auto blocks = splitPostings(getLarge(), posting_list_block_size);
-
-        for (const auto & block : blocks)
-        {
-            if (roaring::api::roaring_bitmap_get_cardinality(&block) == 0)
-                continue;
-
-            info.offsets.emplace_back(postings_stream.plain_hashing.count());
-            info.ranges.emplace_back(roaring::api::roaring_bitmap_minimum(&block), roaring::api::roaring_bitmap_maximum(&block));
-            PostingsSerialization::serialize(block, info.header, postings_stream.plain_hashing);
-        }
-    }
-#endif
+    postings->serialize(postings_stream.plain_hashing, info);
     return info;
 }
 
@@ -1108,7 +1067,7 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
 
             auto & posting_list_builder = it->getMapped();
             if (inserted)
-                posting_list_builder.initialize(params.enable_postings_compression, posting_lists);
+                posting_list_builder.initialize(posting_lists, params);
             posting_list_builder.add(current_row, posting_lists);
             ++num_processed_tokens;
             return false;

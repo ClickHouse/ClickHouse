@@ -2,9 +2,11 @@
 #include <Common/Exception.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/MergeTree/IntegerCodecTrait.h>
+#include <Storages/MergeTree/MergeTreeIndexTextCommon.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 #include <roaring/roaring.hh>
+
 
 namespace DB
 {
@@ -81,25 +83,41 @@ class PostingsContainerImpl
         T base_value {};
         uint32_t block_count = 0;
     };
+    struct SegmentDesc
+    {
+        ContainerHeader header;
+        size_t compressed_data_offset = 0;
+        size_t compressed_data_size = 0;
+        T last_value;
+        SegmentDesc() = default;
+    };
 public:
-    explicit PostingsContainerImpl()
+    PostingsContainerImpl() = default;
+    explicit PostingsContainerImpl(size_t postings_list_block_size)
+        : postings_list_segment_size(postings_list_block_size)
     {
         current.reserve(kBlockSize);
     }
 
-    size_t size() const { return total; }
-    bool empty() const { return total == 0; }
-    T minimum() const { return header.base_value; }
-    T maximum() const { return prev_value; }
+    size_t size() const { return cardinality; }
+    bool empty() const { return cardinality == 0; }
 
     ALWAYS_INLINE void add(T value)
     {
+        if (total == postings_list_segment_size)
+        {
+            flushSegment();
+        }
         if (total == 0)
         {
-            header.base_value = value;
+            segments.emplace_back();
+            segments.back().header.base_value = value;
+            segments.back().compressed_data_offset = compressed_data.size();
+
             prev_value = value;
             current.emplace_back(value - prev_value);
             ++total;
+            ++cardinality;
             return;
         }
         if (current.size() == kBlockSize)
@@ -112,22 +130,25 @@ public:
         current.emplace_back(value - prev_value);
         prev_value = value;
         ++total;
+        ++cardinality;
     }
 
     /// Serializes posting list to a WriteBuffer-like output.
     template<typename Out>
-    size_t serialize(Out & out)
+    size_t serialize(Out & out, TokenPostingsInfo & info)
     {
         if (!current.empty())
             compressBlock(current, temp_compression_data_buffer);
-        return serializeTo(out);
+
+        return serializeTo(out, info);
     }
 
     /// Reads postings data back from an Input buffer (ReadBuffer).
     template<typename In, typename Container>
     void deserialize(In & in, Container & out)
     {
-        deserializeFrom(in);
+        ContainerHeader header;
+        deserializeFrom(in, header);
         prev_value = header.base_value;
         std::string temp_buffer;
         std::vector<T> temp_compress_buffer;
@@ -138,24 +159,44 @@ public:
 
     size_t getSizeInBytes() const { return compressed_data.size(); }
 private:
-    template<typename Out>
-    size_t serializeTo(Out & out) const
+    void reset()
     {
-        auto offset = out.offset();
-        writeContainerHeader(header, out);
-        out.write(compressed_data.data(), compressed_data.size());
-        return out.offset() - offset;
+        current.clear();
+        total = 0;
+        prev_value = {};
+    }
+
+    void flushSegment()
+    {
+       chassert(total <= postings_list_segment_size);
+       if (!current.empty())
+           compressBlock(current, temp_compression_data_buffer);
+        reset();
+    }
+    template<typename Out>
+    size_t serializeTo(Out & out, TokenPostingsInfo & info) const
+    {
+        auto offset = out.count();
+        for (auto & segment_desc : segments)
+        {
+            info.offsets.emplace_back(out.count());
+            info.ranges.emplace_back(segment_desc.header.base_value, segment_desc.last_value);
+            writeContainerHeader(segment_desc.header, out);
+            out.write(compressed_data.data() + segment_desc.compressed_data_offset, segment_desc.compressed_data_size);
+        }
+        return out.count() - offset;
     }
 
     template<typename In>
-    void deserializeFrom(In & in)
+    void deserializeFrom(In & in, ContainerHeader & header)
     {
         readContainerHeader(header, in);
     }
 
     void compressBlock(std::vector<T> & segment, std::string & temp_compression_data)
     {
-        ++header.block_count;
+        ++segments.back().header.block_count;
+        segments.back().last_value = prev_value;
 
         /// Delta-encode this segment with a running base (prev_value),
         /// so it can be compressed efficiently and chained across segments.
@@ -166,12 +207,17 @@ private:
         temp_compression_data.resize(cap);
         auto bytes = CodecTraits<T>::encode(segment.data(), segment.size(), bits, reinterpret_cast<unsigned char*>(temp_compression_data.data()));
 
+        auto f1 = compressed_data.size();
         ///	Write the BlockHeader followed by the compressed posting list data.
         BlockHeader block_header { static_cast<uint16_t>(segment.size()), static_cast<uint16_t>(bits), static_cast<uint32_t>(bytes) };
         WriteBufferFromString compressed_buffer(compressed_data, AppendModeTag {});
         writeBlockHeader(block_header, compressed_buffer);
         compressed_buffer.write(temp_compression_data.data(), bytes);
         compressed_buffer.finalize();
+        auto f2 = compressed_data.size();
+        segments.back().compressed_data_size = compressed_data.size() - segments.back().compressed_data_offset;
+        (void) f1;
+        (void) f2;
     }
 
     template<typename Out>
@@ -242,12 +288,14 @@ private:
         prev_value = temp.empty() ? prev_value : temp.back();
         consumer(temp);
     }
-    ContainerHeader header;
     std::string compressed_data;
     std::string temp_compression_data_buffer;
     T prev_value = {};
     size_t total = 0;
     std::vector<T> current;
+    size_t postings_list_segment_size = 0;
+    std::vector<SegmentDesc> segments;
+    size_t cardinality = 0;
 };
 
 using PostingsContainer32 = PostingsContainerImpl<uint32_t>;

@@ -19,7 +19,8 @@
 
 #include <roaring/roaring.hh>
 
-#include "PostingsContainer.h"
+#include <Storages/MergeTree/PostingsContainer.h>
+#include <Storages/MergeTree/MergeTreeIndexTextCommon.h>
 
 namespace DB
 {
@@ -72,44 +73,6 @@ namespace DB
   * - Number of uncompressed bytes of the posting list (VarUInt).
   * - A binary serialized Roaring Bitmap (see Roaring::write and Roaring::read)
   */
-
-struct MergeTreeIndexTextParams
-{
-    size_t dictionary_block_size = 0;
-    size_t dictionary_block_frontcoding_compression = 1;
-    size_t posting_list_block_size = 1024 * 1024;
-    String preprocessor;
-    bool enable_postings_compression = false;
-};
-
-using PostingList = roaring::Roaring;
-using PostingListPtr = std::shared_ptr<PostingList>;
-
-/// Closed range of rows.
-struct RowsRange
-{
-    size_t begin;
-    size_t end;
-
-    RowsRange() = default;
-    RowsRange(size_t begin_, size_t end_) : begin(begin_), end(end_) {}
-
-    bool intersects(const RowsRange & other) const;
-};
-
-/// Stores information about posting list for a token.
-struct TokenPostingsInfo
-{
-    UInt64 header = 0;
-    UInt32 cardinality = 0;
-    std::vector<UInt64> offsets;
-    std::vector<RowsRange> ranges;
-    PostingListPtr embedded_postings;
-
-    /// Returns indexes of posting list blocks to read for the given range of rows.
-    std::vector<size_t> getBlocksToRead(const RowsRange & range) const;
-};
-
 using PostingListCodec = std::variant<PostingList, PostingsContainer32>;
 using PostingListsHolder = std::list<PostingListCodec>;
 
@@ -182,8 +145,6 @@ struct PostingListBlockCodec
     void add(UInt32 value, PostingListsHolder &) { postings->add(value); }
     void serialize(UInt64 header, WriteBuffer & ostr);
     size_t size() const { return postings->size(); }
-    UInt32 minimum() const { return postings->minimum(); }
-    UInt32 maximum() const { return postings->maximum(); }
     TokenPostingsInfo serializePostings(MergeTreeIndexWriterStream & postings_stream, size_t posting_list_block_size);
 };
 
@@ -197,14 +158,14 @@ struct PostingListBuilder
     PostingListBuilder() = default;
     explicit PostingListBuilder(PostingList * posting_list);
 
-    ALWAYS_INLINE void initialize(bool enable_compression, std::list<PostingListCodec> & postings_list_holder)
+    ALWAYS_INLINE void initialize(std::list<PostingListCodec> & postings_list_holder, const MergeTreeIndexTextParams & param)
     {
         chassert(std::holds_alternative<std::monostate>(codec));
-        if (!enable_compression)
+        if (!param.enable_postings_compression)
             codec = std::make_shared<PostingListRoaringCodec>();
         else
         {
-            auto & postings = postings_list_holder.emplace_back(std::in_place_type<PostingsContainer32>);
+            auto & postings = postings_list_holder.emplace_back(std::in_place_type<PostingsContainer32>, param.posting_list_block_size);
             codec = std::make_shared<PostingListBlockCodec>(&std::get<PostingsContainer32>(postings));
         }
     }
@@ -225,22 +186,6 @@ struct PostingListBuilder
             return std::get<PostingListRoaringCodecPtr>(codec)->size();
         if (std::holds_alternative<PostingListBlockCodecPtr>(codec))
             return std::get<PostingListBlockCodecPtr>(codec)->size();
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The codec is not initialized yet.");
-    }
-    UInt32 minimum() const
-    {
-        if (std::holds_alternative<PostingListRoaringCodecPtr>(codec))
-            return std::get<PostingListRoaringCodecPtr>(codec)->minimum();
-        if (std::holds_alternative<PostingListBlockCodecPtr>(codec))
-            return std::get<PostingListBlockCodecPtr>(codec)->minimum();
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The codec is not initialized yet.");
-    }
-    UInt32 maximum() const
-    {
-        if (std::holds_alternative<PostingListRoaringCodecPtr>(codec))
-            return std::get<PostingListRoaringCodecPtr>(codec)->maximum();
-        if (std::holds_alternative<PostingListBlockCodecPtr>(codec))
-            return std::get<PostingListBlockCodecPtr>(codec)->maximum();
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The codec is not initialized yet.");
     }
     void serialize(UInt64 header, WriteBuffer & ostr)
