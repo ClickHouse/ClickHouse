@@ -48,6 +48,14 @@ namespace
     }
 }
 
+std::string ObjectStorageQueueOrderedFileMetadata::BucketInfo::toString() const
+{
+    WriteBufferFromOwnString wb;
+    wb << "bucket " << bucket << ", ";
+    wb << "processor info " << processor_info;
+    return wb.str();
+}
+
 ObjectStorageQueueOrderedFileMetadata::BucketHolder::BucketHolder(
     const Bucket & bucket_,
     const std::string & bucket_lock_path_,
@@ -69,16 +77,24 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolder::BucketHolder(
 
 bool ObjectStorageQueueOrderedFileMetadata::BucketHolder::checkBucketOwnership(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client)
 {
-    std::string data;
-    /// No retries, because they must be done on a higher level.
-    if (!zk_client->tryGet(bucket_info->bucket_lock_path, data))
+    auto processor_info = getProcessorInfo(zk_client);
+    if (!processor_info.has_value())
         return false;
 
     LOG_TEST(
         log, "Bucket lock node {} has owner: {}, current owner: {}",
-        bucket_info->bucket_lock_path, data, bucket_info->processor_info);
+        bucket_info->bucket_lock_path, processor_info.value(), bucket_info->processor_info);
 
-    return data == bucket_info->processor_info;
+    return processor_info.value() == bucket_info->processor_info;
+}
+
+std::optional<std::string> ObjectStorageQueueOrderedFileMetadata::BucketHolder::getProcessorInfo(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client)
+{
+    std::string data;
+    /// No retries, because they must be done on a higher level.
+    if (zk_client->tryGet(bucket_info->bucket_lock_path, data))
+        return data;
+    return std::nullopt;
 }
 
 void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()

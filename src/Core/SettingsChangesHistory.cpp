@@ -39,12 +39,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
-
         addSettingsChanges(settings_changes_history, "26.1",
         {
             {"enable_case_insensitive_columns", false, false, "New setting"},
             {"enable_case_insensitive_tables", false, false, "New setting"},
             {"enable_case_insensitive_databases", false, false, "New setting"},
+            {"trace_profile_events_list", "", "", "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {

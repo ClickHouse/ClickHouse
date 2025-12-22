@@ -661,10 +661,18 @@ class Result(MetaClasses.Serializable):
                         )
                     res = result if isinstance(result, bool) else not bool(result)
                     if (with_info_on_failure and not res) or with_info:
-                        if isinstance(result, bool):
-                            info_lines.extend(buffer.getvalue().splitlines())
-                        else:
-                            info_lines.extend(str(result).splitlines())
+                        output = (
+                            buffer.getvalue()
+                            if isinstance(result, bool)
+                            else str(result)
+                        )
+                        info_lines.extend(output.splitlines())
+                        # Write callable output to log file for consistency with shell commands
+                        if log_file and output:
+                            with open(log_file, "a") as f:
+                                f.write(
+                                    output if output.endswith("\n") else output + "\n"
+                                )
                 else:
                     # Run shell command in a specified directory with logging and verbosity
                     exit_code = Shell.run(
@@ -674,10 +682,8 @@ class Result(MetaClasses.Serializable):
                         retries=retries,
                         retry_errors=retry_errors,
                     )
-                    log_output = Shell.get_output(
-                        f"tail -n {MAX_LINES_IN_INFO+1} {log_file}"  # +1 to get the truncation message
-                    )
                     if with_info or (with_info_on_failure and exit_code != 0):
+                        log_output = Shell.get_output(f"cat {log_file}")
                         info_lines += log_output.splitlines()
                     res = exit_code == 0
 
@@ -686,22 +692,22 @@ class Result(MetaClasses.Serializable):
                     print(f"Execution stopped due to failure in [{command_}]")
                     break
 
+        # Apply truncation if info_lines exceeds MAX_LINES_IN_INFO
+        truncated = False
+        if len(info_lines) > MAX_LINES_IN_INFO:
+            truncated_count = len(info_lines) - MAX_LINES_IN_INFO
+            info_lines = [
+                f"~~~~~ truncated {truncated_count} lines ~~~~~"
+            ] + info_lines[-MAX_LINES_IN_INFO:]
+            truncated = True
+
         # Create and return the result object with status and log file (if any)
         return Result.create_from(
             name=name,
             status=res,
             stopwatch=stop_watch_,
-            info=(
-                info_lines
-                if len(info_lines) < MAX_LINES_IN_INFO
-                else [
-                    f"~~~~~ truncated {len(info_lines)-MAX_LINES_IN_INFO} lines ~~~~~"
-                ]
-                + info_lines[-MAX_LINES_IN_INFO:]
-            ),
-            files=(
-                [log_file] if with_log or len(info_lines) >= MAX_LINES_IN_INFO else None
-            ),
+            info=info_lines,
+            files=([log_file] if (with_log or truncated) and log_file else None),
         )
 
     def do_not_block_pipeline_on_failure(self):

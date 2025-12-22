@@ -1,8 +1,8 @@
 #pragma once
 
+#include <Common/MemoryTracker.h>
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
-#include <Common/CurrentThread.h>
 
 namespace DB
 {
@@ -17,7 +17,6 @@ struct TSA_SCOPED_LOCKABLE LockGuardWithStopWatch final
 
     const char * caller{nullptr};
     LoggerRawPtr log;
-    UInt64 thread_id{0};
 
     std::optional<Stopwatch> wait_watch;
     std::optional<std::lock_guard<std::mutex>> lock;
@@ -27,9 +26,6 @@ struct TSA_SCOPED_LOCKABLE LockGuardWithStopWatch final
         : caller(caller_)
         , log(log_)
     {
-        if (CurrentThread::isInitialized())
-            thread_id = CurrentThread::get().thread_id;
-
         wait_watch.emplace(CLOCK_MONOTONIC);
         lock.emplace(mutex_);
         wait_watch->stop();
@@ -51,14 +47,14 @@ struct TSA_SCOPED_LOCKABLE LockGuardWithStopWatch final
 
         if (wait_watch->elapsedMilliseconds() > THRESHOLD_MILLISECONDS)
         {
-            LOG_WARNING(log, "Lock acquisition took {} ms for thread {} in [{}], Stack trace (when copying this message, always include the lines below):\n{}",
-                wait_watch->elapsedMilliseconds(), thread_id, caller, StackTrace().toString());
+            LOG_WARNING(log, "Lock acquisition took {} ms in [{}], Stack trace (when copying this message, always include the lines below):\n{}",
+                wait_watch->elapsedMilliseconds(), caller, StackTrace().toString());
         }
 
         if (lock_watch->elapsedMilliseconds() > THRESHOLD_MILLISECONDS)
         {
-            LOG_WARNING(log, "Lock was held for {} ms by thread {} in [{}], Stack trace (when copying this message, always include the lines below):\n{}",
-                lock_watch->elapsedMilliseconds(), thread_id, caller, StackTrace().toString());
+            LOG_WARNING(log, "Lock was held for {} ms in [{}], Stack trace (when copying this message, always include the lines below):\n{}",
+                lock_watch->elapsedMilliseconds(), caller, StackTrace().toString());
         }
     }
 
