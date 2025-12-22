@@ -9,7 +9,6 @@
 #include <Common/JSONParsers/RapidJSONParser.h>
 #endif
 #include <Common/JSONParsers/DummyJSONParser.h>
-#include "boost/parameter/aux_/set.hpp"
 
 namespace DB
 {
