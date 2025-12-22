@@ -1978,6 +1978,14 @@ void StatementGenerator::getNextPeerTableDatabase(RandomGenerator & rg, SQLBase 
 
 void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_external_integrations, SQLBase & b)
 {
+    if (b.random_engine)
+    {
+        /// Doesn't matter what to pick
+        std::uniform_int_distribution<uint32_t> engine_range(1, static_cast<uint32_t>(TableEngineValues_MAX));
+
+        b.teng = static_cast<TableEngineValues>(engine_range(rg.generator));
+        return;
+    }
     /// Make sure `is_determistic is already set`
     const uint32_t noption = rg.nextSmallNumber();
     const LakeStorage storage = b.getPossibleLakeStorage();
@@ -2722,8 +2730,15 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     this->staged_dictionaries[tname] = std::move(next);
 }
 
-DatabaseEngineValues StatementGenerator::getNextDatabaseEngine(RandomGenerator & rg)
+DatabaseEngineValues StatementGenerator::getNextDatabaseEngine(RandomGenerator & rg, const SQLDatabase & d)
 {
+    if (d.random_engine)
+    {
+        /// Doesn't matter what to pick
+        std::uniform_int_distribution<uint32_t> engine_range(1, static_cast<uint32_t>(DatabaseEngineValues_MAX));
+
+        return static_cast<DatabaseEngineValues>(engine_range(rg.generator));
+    }
     chassert(this->ids.empty());
     this->ids.emplace_back(DAtomic);
     if (fc.allow_memory_tables && (fc.engine_mask & allow_memory) != 0)
@@ -2793,7 +2808,7 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     DatabaseEngine * deng = cd->mutable_dengine();
 
     SQLDatabase::setRandomDatabase(rg, next);
-    next.deng = this->getNextDatabaseEngine(rg);
+    next.deng = this->getNextDatabaseEngine(rg, next);
     deng->set_engine(next.deng);
     if (!next.isSharedDatabase() && rg.nextSmallNumber() < 2)
     {
