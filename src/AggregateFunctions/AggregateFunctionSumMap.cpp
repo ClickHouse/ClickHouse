@@ -810,8 +810,6 @@ FROM VALUES('a Array(Int32), b Array(Int64)', ([1, 2], [2, 2]), ([2, 3], [1, 1])
         return std::make_shared<AggregateFunctionMinMap<false>>(keys_type, values_types, arguments, params);
     }, {}, minMap_documentation});
 
-    factory.registerAlias("minMap", "minMappedArrays");
-
     FunctionDocumentation::Description maxMap_description = R"(
 Calculates the maximum from `value` array according to the keys specified in the `key` array.
 
@@ -854,8 +852,6 @@ FROM VALUES('a Array(Char), b Array(Int64)', (['x', 'y'], [2, 2]), (['y', 'z'], 
             return std::make_shared<AggregateFunctionMaxMap<true>>(keys_type, values_types, arguments, params);
         return std::make_shared<AggregateFunctionMaxMap<false>>(keys_type, values_types, arguments, params);
     }, {}, maxMap_documentation});
-
-    factory.registerAlias("maxMap", "maxMappedArrays");
 
     // these functions could be renamed to *MappedArrays too, but it would
     // break backward compatibility
