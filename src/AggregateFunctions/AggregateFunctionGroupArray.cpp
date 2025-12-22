@@ -972,7 +972,7 @@ SELECT groupArraySample(3)(concat('light-', color)) as newcolors FROM default.co
     FunctionDocumentation::Category category_groupArraySample = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_groupArraySample = {description_groupArraySample, syntax_groupArraySample, arguments_groupArraySample, parameters_groupArraySample, returned_value_groupArraySample, examples_groupArraySample, introduced_in_groupArraySample, category_groupArraySample};
 
-factory.registerFunction("groupArraySample", { createAggregateFunctionGroupArraySample, properties, documentation_groupArraySample});
+factory.registerFunction("groupArraySample", {createAggregateFunctionGroupArraySample, properties, documentation_groupArraySample});
 
     /// groupArrayLast
     FunctionDocumentation::Description description_groupArrayLast = R"(

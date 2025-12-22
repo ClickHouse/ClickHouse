@@ -473,7 +473,7 @@ SELECT groupArrayIntersect(a) AS intersection FROM numbers;
 
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
-    factory.registerFunction("groupArrayIntersect", { createAggregateFunctionGroupArrayIntersect, properties, documentation });
+    factory.registerFunction("groupArrayIntersect", {createAggregateFunctionGroupArrayIntersect, properties, documentation});
 }
 
 }
