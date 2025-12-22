@@ -2472,12 +2472,16 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
             auto index_file_name = index_name_escaped + index_substream.suffix + index_substream.extension;
             auto index_marks_file_name = index_name_escaped + index_substream.suffix + getMarksFileExtension();
 
-            /// If part does not contain index
             auto bin_checksum = checksums.files.find(index_file_name);
             if (bin_checksum != checksums.files.end())
             {
                 substream_size.data_compressed = bin_checksum->second.file_size;
-                substream_size.data_uncompressed = bin_checksum->second.uncompressed_size;
+
+                /// For uncompressed files, the size of the uncompressed data is the same as the file size.
+                if (MergeTreeIndexSubstream::isCompressed(index_substream.type))
+                    substream_size.data_uncompressed = bin_checksum->second.uncompressed_size;
+                else
+                    substream_size.data_uncompressed = bin_checksum->second.file_size;
             }
 
             auto mrk_checksum = checksums.files.find(index_marks_file_name);
