@@ -709,7 +709,10 @@ std::map<std::string, std::string> ReplicatedMergeTreeSink::commitPart(
 
             /// If we cannot get the node, then probably it was removed in the meantime. Just skip it then.
             if (resp.error == Coordination::Error::ZNONODE)
+            {
                 retry_context.conflict_block_id_to_part_name[path] = "";
+                continue;
+            }
 
             const String & part_name = resp.data;
             retry_context.conflict_block_id_to_part_name[path] = part_name;
@@ -837,7 +840,8 @@ std::map<std::string, std::string> ReplicatedMergeTreeSink::commitPart(
         {
             /// prefilter by cache
             auto conflicts = detectConflictsInAsyncBlockIDs(block_ids);
-            std::move(conflicts.begin(), conflicts.end(), std::back_inserter(retry_context.conflict_block_ids));
+            auto conflists_pathes = getBlockIdsPaths(storage.zookeeper_path, conflicts, is_async_insert);
+            std::move(conflists_pathes.begin(), conflists_pathes.end(), std::back_inserter(retry_context.conflict_block_ids));
 
             if (!retry_context.conflict_block_ids.empty())
             {
