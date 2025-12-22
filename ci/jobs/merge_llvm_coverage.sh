@@ -109,14 +109,14 @@ llvm-cov-21 show   \
         -path-equivalence=ci/tmp/build,/home/ubuntu/ClickHouse \
         -ignore-filename-regex='contrib'
 
-# Create tar.gz archive
-tar -czf llvm_coverage_html_report.tar.gz llvm_coverage_html_report
+# Create tar.gz archive (recursively archive all files)
+tar -czf llvm_coverage_html_report.tar.gz -C . llvm_coverage_html_report
 
 # Keep results in ci/tmp (artifacts are uploaded from here)
 echo "Results stored in ci/tmp: merged.profdata, llvm_coverage_html_report.tar.gz"
 
-# Create result.json for the CI framework
-RESULT_FILE=".//LLVM Coverage Merge.json"
+# Create result.json for the CI framework (ensure it's in ci/tmp)
+RESULT_FILE="LLVM Coverage Merge.json"
 cat > "$RESULT_FILE" << EOF
 {
   "name": "LLVM Coverage Merge",
