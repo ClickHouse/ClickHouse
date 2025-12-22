@@ -387,9 +387,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         left_stream_filter_push_down_input_columns_available = false;
 
     if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Left)
-        right_stream_filter_push_down_input_columns_available = false;
+        right_stream_filter_push_down_input_columns_available = logical_join->getJoinOperator().strictness == JoinStrictness::Semi;
     else if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Right)
-        left_stream_filter_push_down_input_columns_available = false;
+        left_stream_filter_push_down_input_columns_available = logical_join->getJoinOperator().strictness == JoinStrictness::Semi;
 
     /** We disable push down to right table in cases:
       * 1. Right side is already filled. Example: JOIN with Dictionary.
