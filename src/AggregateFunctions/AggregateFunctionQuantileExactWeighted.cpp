@@ -475,12 +475,12 @@ CREATE TABLE t (
 ) ENGINE = Memory;
 
 -- Insert the sample data
-INSERT INTO t VALUES 
+INSERT INTO t VALUES
 (0, 3),
 (1, 2),
 (2, 1),
 (5, 4);
-        
+
 SELECT quantileExactWeighted(n, val) FROM t;
         )",
         R"(
@@ -540,12 +540,12 @@ SELECT
     quantileExactWeightedInterpolated(0.99)(number, 1),
     quantile(0.99)(number),
     quantileInterpolatedWeighted(0.99)(number, 1)
-FROM numbers(9)        
+FROM numbers(9)
         )",
         R"(
 ┌─quantileExactWeightedInterpolated(0.99)(number, 1)─┬─quantile(0.99)(number)─┬─quantileInterpolatedWeighted(0.99)(number, 1)─┐
 │                                               7.92 │                   7.92 │                                             8 │
-└────────────────────────────────────────────────────┴────────────────────────┴───────────────────────────────────────────────┘        
+└────────────────────────────────────────────────────┴────────────────────────┴───────────────────────────────────────────────┘
         )"
     }
     };
