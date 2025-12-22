@@ -13,7 +13,6 @@ from helpers.iceberg_utils import (
 def test_filesystem_cache(started_cluster_iceberg_with_spark, storage_type):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
-    cache_name = started_cluster_iceberg_with_spark.filesystem_cache_name
     TABLE_NAME = "test_filesystem_cache_" + storage_type + "_" + get_uuid_str()
 
     write_iceberg_from_df(
@@ -36,7 +35,7 @@ def test_filesystem_cache(started_cluster_iceberg_with_spark, storage_type):
 
     query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
     instance.query(
-        f"SELECT * FROM {TABLE_NAME} SETTINGS filesystem_cache_name = '{cache_name}'",
+        f"SELECT * FROM {TABLE_NAME} SETTINGS filesystem_cache_name = 'cach1'",
         query_id=query_id,
     )
 
@@ -62,7 +61,7 @@ def test_filesystem_cache(started_cluster_iceberg_with_spark, storage_type):
 
     query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
     instance.query(
-        f"SELECT * FROM {TABLE_NAME} SETTINGS filesystem_cache_name = '{cache_name}'",
+        f"SELECT * FROM {TABLE_NAME} SETTINGS filesystem_cache_name = 'cache1'",
         query_id=query_id,
     )
 

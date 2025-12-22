@@ -148,7 +148,7 @@ def test_jbod_ha_fetch_partition(start_cluster):
 
         # Mimic disk failure
         node2.exec_in_container(
-            ["bash", "-c", "mount -t proc proc /jbod1"], privileged=True, user="root"
+            ["bash", "-c", "mount -t proc proc /test_jbod_ha_jbod1"], privileged=True, user="root"
         )
         time.sleep(5)
 
@@ -161,7 +161,7 @@ def test_jbod_ha_fetch_partition(start_cluster):
 
         # Mimic disk recovery, just in case we add more tests later
         node1.exec_in_container(
-            ["bash", "-c", "umount  /jbod1"],
+            ["bash", "-c", "umount  /test_jbod_ha_jbod1"],
             privileged=True,
             user="root",
         )
