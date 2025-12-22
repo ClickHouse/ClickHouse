@@ -895,7 +895,7 @@ GROUP BY user_id;
     FunctionDocumentation::Category category_groupArrayArray = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_groupArrayArray = {description_groupArrayArray, syntax_groupArrayArray, arguments_groupArrayArray, {}, returned_value_groupArrayArray, examples_groupArrayArray, introduced_in_groupArrayArray, category_groupArrayArray};
 
-    factory.registerFunction("groupArrayArray", createAggregateFunctionGroupArray<false>, properties, documentation_groupArrayArray, AggregateFunctionFactory::Case::Sensitive);
+    factory.registerFunction("groupArrayArray", {createAggregateFunctionGroupArray<false>, properties, documentation_groupArrayArray}, AggregateFunctionFactory::Case::Sensitive);
     factory.registerAlias("array_concat_agg", "groupArrayArray", AggregateFunctionFactory::Case::Insensitive);
 
     /// groupArraySample
@@ -916,7 +916,7 @@ groupArraySample(max_size[, seed])(x)
         {"x", "Argument (column name or expression).", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_groupArraySample = {
-        "Array of randomly selected x arguments.", 
+        "Array of randomly selected x arguments.",
         {"Array(T)"}
     };
     FunctionDocumentation::Examples examples_groupArraySample = {
@@ -928,7 +928,7 @@ CREATE TABLE default.colors (
     color String
 ) ENGINE = Memory;
 
-INSERT INTO default.colors VALUES 
+INSERT INTO default.colors VALUES
 (1, 'red'),
 (2, 'blue'),
 (3, 'green'),
@@ -1010,7 +1010,7 @@ SELECT groupArrayLast(2)(number+1) numbers FROM numbers(10);
     {
         "Comparison with groupArray",
         R"(
--- Compare with groupArray (first values)  
+-- Compare with groupArray (first values)
 SELECT groupArray(2)(number+1) numbers FROM numbers(10);)",
         R"(
 ┌─numbers─┐
@@ -1022,8 +1022,8 @@ SELECT groupArray(2)(number+1) numbers FROM numbers(10);)",
     FunctionDocumentation::IntroducedIn introduced_in_groupArrayLast = {23, 1};
     FunctionDocumentation::Category category_groupArrayLast = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_groupArrayLast = {description_groupArrayLast, syntax_groupArrayLast, arguments_groupArrayLast, parameters_groupArrayLast, returned_value_groupArrayLast, examples_groupArrayLast, introduced_in_groupArrayLast, category_groupArrayLast};
-    
-    factory.registerFunction("groupArrayLast", createAggregateFunctionGroupArray<true>, properties, documentation_groupArrayLast);
+
+    factory.registerFunction("groupArrayLast", {createAggregateFunctionGroupArray<true>, properties, documentation_groupArrayLast});
 }
 
 }

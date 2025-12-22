@@ -453,11 +453,11 @@ CREATE TABLE numbers (
 ) ENGINE = Memory;
 
 -- Insert sample data
-INSERT INTO numbers VALUES 
+INSERT INTO numbers VALUES
     ([1,2,4]),
     ([1,5,2,8,-1,0]),
     ([1,5,7,5,8,2]);
-    
+
 SELECT groupArrayIntersect(a) AS intersection FROM numbers;
             )",
             R"(
@@ -473,7 +473,7 @@ SELECT groupArrayIntersect(a) AS intersection FROM numbers;
 
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
-    factory.registerFunction("groupArrayIntersect", { createAggregateFunctionGroupArrayIntersect, properties }, documentation);
+    factory.registerFunction("groupArrayIntersect", { createAggregateFunctionGroupArrayIntersect, properties, documentation });
 }
 
 }

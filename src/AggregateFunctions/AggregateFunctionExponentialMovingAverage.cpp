@@ -105,9 +105,9 @@ The function returns a weighted average: the older the time point, the less weig
         R"(
 -- Input table with temperature data
 SELECT exponentialMovingAverage(5)(temperature, timestamp)
-FROM VALUES('temperature Int32, timestamp Int32', 
-    (95, 1), (95, 2), (95, 3), (96, 4), (96, 5), (96, 6), (96, 7), 
-    (97, 8), (97, 9), (97, 10), (97, 11), (98, 12), (98, 13), (98, 14), 
+FROM VALUES('temperature Int32, timestamp Int32',
+    (95, 1), (95, 2), (95, 3), (96, 4), (96, 5), (96, 6), (96, 7),
+    (97, 8), (97, 9), (97, 10), (97, 11), (98, 12), (98, 13), (98, 14),
     (98, 15), (99, 16), (99, 17), (99, 18), (100, 19), (100, 20))
         )",
         R"(
@@ -131,7 +131,7 @@ FROM
         number AS time,
         exponentialMovingAverage(10)(value, time) OVER (Rows BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS exp_smooth
     FROM numbers(50)
-)        
+)
         )",
         R"(
 ┌─value─┬─time─┬─round(exp_smooth, 3)─┬─bar────────────────────────────────────────┐
@@ -182,10 +182,10 @@ FROM
 │     1 │   44 │                0.753 │ █████████████████████████████████████▋     │
 │     1 │   45 │                 0.77 │ ██████████████████████████████████████▍    │
 │     1 │   46 │                0.785 │ ███████████████████████████████████████▎   │
-│     1 │   47 │                  0.8 │ ███████████████████████████████████████▊   │  
+│     1 │   47 │                  0.8 │ ███████████████████████████████████████▊   │
 │     1 │   48 │                0.813 │ ████████████████████████████████████████▋  │
 │     1 │   49 │                0.825 │ █████████████████████████████████████████▎ │
-└───────┴──────┴──────────────────────┴────────────────────────────────────────────┘        
+└───────┴──────┴──────────────────────┴────────────────────────────────────────────┘
         )"
     }
     {
@@ -227,6 +227,7 @@ ORDER BY time ASC
     FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
     factory.registerFunction("exponentialMovingAverage",
+    {
         [](const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *) -> AggregateFunctionPtr
         {
             assertBinary(name, argument_types);
@@ -235,7 +236,10 @@ ORDER BY time ASC
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Both arguments for aggregate function {} must have numeric type, got {}", name, type->getName());
             return std::make_shared<AggregateFunctionExponentialMovingAverage>(argument_types, params);
-        }, documentation);
+        },
+        {},
+        documentation
+    });
 }
 
 }
