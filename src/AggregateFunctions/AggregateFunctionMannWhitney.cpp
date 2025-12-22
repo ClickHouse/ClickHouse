@@ -288,12 +288,12 @@ This test does not assume that data have normal distribution.
 mannWhitneyUTest[(alternative[, continuity_correction])](sample_data, sample_index)
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"sample_data", "Sample data.", {"[Integer](/sql-reference/data-types/int-uint)", "[Float](/sql-reference/data-types/float)", "[Decimal](/sql-reference/data-types/decimal)"}},
-        {"sample_index", "Sample index.", {"[Integer](/sql-reference/data-types/int-uint)"}}
+        {"sample_data", "Sample data.", {"(U)Int*", "Float*", "Decimal*"}},
+        {"sample_index", "Sample index.", {"(U)Int*"}}
     };
     FunctionDocumentation::Parameters parameters = {
-        {"alternative", "Optional. Alternative hypothesis. (default: 'two-sided') 'two-sided': two populations are not stochastically equal. 'greater': values in the first sample are stochastically greater than those in the second sample. 'less': values in the first sample are stochastically less than those in the second sample.", {"String"}},
-        {"continuity_correction", "Optional. If not 0 then continuity correction in the normal approximation for the p-value is applied. (default: 1)", {"UInt64"}}
+        {"alternative", "Optional. Alternative hypothesis. 'two-sided' (default): two populations are not stochastically equal. 'greater': values in the first sample are stochastically greater than those in the second sample. 'less': values in the first sample are stochastically less than those in the second sample.", {"String"}},
+        {"continuity_correction", "Optional. If not 0 then continuity correction in the normal approximation for the p-value is applied. The default value is 1.", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple with two elements: calculated U-statistic and calculated p-value.", {"Tuple(Float64, Float64)"}};
     FunctionDocumentation::Examples examples = {
