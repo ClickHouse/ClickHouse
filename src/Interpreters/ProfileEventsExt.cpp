@@ -71,7 +71,7 @@ static void dumpProfileEvents(ProfileEventsSnapshot const & snapshot, DB::Mutabl
             continue;
 
         std::string_view desc = getName(event);
-        name_column->insertData(desc.data(), desc.size());
+        name_column->insertData(desc);
         value_column->insert(value);
         rows++;
     }

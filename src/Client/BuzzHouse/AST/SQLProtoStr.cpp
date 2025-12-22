@@ -3450,8 +3450,8 @@ CONV_FN(TableEngine, te)
 
         ret += " ENGINE = ";
         if (te.has_toption()
-            && ((teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree)
-                || teng == TableEngineValues::Set || teng == TableEngineValues::Join))
+            && ((teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::GraphiteMergeTree) || teng == TableEngineValues::Set
+                || teng == TableEngineValues::Join))
         {
             ret += TableEngineOption_Name(te.toption()).substr(1);
         }

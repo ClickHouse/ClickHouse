@@ -65,19 +65,18 @@ namespace ErrorCodes
   */
 
 
-class FunctionDictHelper : public WithContext
+class FunctionDictHelper
 {
 public:
-    explicit FunctionDictHelper(ContextPtr context_) : WithContext(context_) {}
+    explicit FunctionDictHelper(ContextPtr context_) : context(context_) {}
 
     std::shared_ptr<const IDictionary> getDictionary(const String & dictionary_name)
     {
-        auto current_context = getContext();
-        auto dict = current_context->getExternalDictionariesLoader().getDictionary(dictionary_name, current_context);
+        auto dict = context->getExternalDictionariesLoader().getDictionary(dictionary_name, context);
 
         if (!access_checked)
         {
-            current_context->checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
+            context->checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
             access_checked = true;
         }
 
@@ -143,8 +142,10 @@ public:
 
     DictionaryStructure getDictionaryStructure(const String & dictionary_name) const
     {
-        return getContext()->getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, getContext());
+        return context->getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, context);
     }
+
+    const ContextPtr context;
 
 private:
     /// Access cannot be not granted, since in this case checkAccess() will throw and access_checked will not be updated.
@@ -643,7 +644,7 @@ private:
         ColumnPtr mask_column,
         const DataTypePtr & result_type) const
     {
-        auto if_func = FunctionFactory::instance().get("if", helper.getContext());
+        auto if_func = FunctionFactory::instance().get("if", helper.context);
         ColumnsWithTypeAndName if_args =
         {
             {mask_column, std::make_shared<DataTypeUInt8>(), {}},
