@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.1",
         {
             {"trace_profile_events_list", "", "", "New setting"},
+            {"type_json_use_partial_match_to_skip_paths_by_regexp", false, true, "Add new setting that allows to use partial match in regexp paths skip in JSON type parsing"},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
