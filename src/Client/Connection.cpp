@@ -1311,10 +1311,6 @@ UInt64 Connection::receivePacketType()
     if (last_input_packet_type)
         return *last_input_packet_type;
 
-    /// If we already disconnected
-    if (!in)
-        throw Exception(ErrorCodes::NETWORK_ERROR, "Connection to {} terminated", getDescription());
-
     UInt64 type;
     readVarUInt(type, *in);
     return last_input_packet_type.emplace(type);
@@ -1325,10 +1321,6 @@ Packet Connection::receivePacket()
 {
     try
     {
-        /// If we already disconnected
-        if (!in)
-            throw Exception(ErrorCodes::NETWORK_ERROR, "Connection to {} terminated", getDescription());
-
         Packet res;
 
         /// Have we already read packet type?
