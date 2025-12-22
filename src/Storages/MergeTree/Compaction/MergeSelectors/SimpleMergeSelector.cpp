@@ -201,8 +201,7 @@ size_t calculateRangeWithStochasticSliding(size_t parts_count, size_t parts_thre
 
 void selectWithinPartsRange(
     RangesIterator range_it,
-    size_t max_total_size_to_merge,
-    size_t max_rows_in_part,
+    const MergeConstraint & constraint,
     const IMergeSelector::RangeFilter & range_filter,
     Estimator & estimator,
     const SimpleMergeSelector::Settings & settings,
@@ -283,10 +282,10 @@ void selectWithinPartsRange(
             max_size = std::max(max_size, cur_size);
             min_age = std::min(min_age, cur_age);
 
-            if (sum_size > max_total_size_to_merge)
+            if (sum_size > constraint.max_size_bytes)
                 break;
 
-            if (sum_rows > max_rows_in_part)
+            if (sum_rows > constraint.max_size_rows)
                 break;
 
             auto range_begin = parts.begin() + begin;
@@ -308,9 +307,8 @@ void selectWithinPartsRange(
 
 PartsRanges SimpleMergeSelector::select(
     const PartsRanges & parts_ranges,
-    const MergeSizes & max_merge_sizes,
-    const RangeFilter & range_filter,
-    size_t max_rows_in_part) const
+    const MergeConstraints & merge_constraints,
+    const RangeFilter & range_filter) const
 {
     Estimator estimator(parts_ranges);
 
@@ -320,12 +318,12 @@ PartsRanges SimpleMergeSelector::select(
 
     /// Using max size constraint to create more merge candidates
     for (auto range_it = parts_ranges.begin(); range_it != parts_ranges.end(); ++range_it)
-        selectWithinPartsRange(range_it, max_merge_sizes[0], max_rows_in_part, range_filter, estimator, settings, min_size_to_lower_base_log, max_size_to_lower_base_log);
+        selectWithinPartsRange(range_it, merge_constraints[0], range_filter, estimator, settings, min_size_to_lower_base_log, max_size_to_lower_base_log);
 
     PartsRanges result;
-    for (size_t max_merge_size : max_merge_sizes)
+    for (const auto & constraint : merge_constraints)
     {
-        if (auto range = estimator.buildMergeRange(max_merge_size))
+        if (auto range = estimator.buildMergeRange(constraint.max_size_bytes))
             result.push_back(std::move(range.value()));
         else
             break;

@@ -9,12 +9,12 @@ namespace DB
 
 PartsRanges TrivialMergeSelector::select(
     const PartsRanges & parts_ranges,
-    const MergeSizes & max_merge_sizes,
-    const RangeFilter & range_filter,
-    size_t max_rows_in_part) const
+    const MergeConstraints & merge_constraints,
+    const RangeFilter & range_filter) const
 {
-    chassert(max_merge_sizes.size() == 1, "Multi Select is not supported for TrivialMergeSelector");
-    const size_t max_total_size_to_merge = max_merge_sizes[0];
+    chassert(merge_constraints.size() == 1, "Multi Select is not supported for TrivialMergeSelector");
+    const size_t max_total_size_to_merge = merge_constraints[0].max_size_bytes;
+    const size_t max_rows_in_part = merge_constraints[0].max_size_rows;
 
     size_t num_partitions = parts_ranges.size();
     if (num_partitions == 0)

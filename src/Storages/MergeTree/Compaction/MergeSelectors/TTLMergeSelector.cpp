@@ -10,20 +10,20 @@ static bool canIncludeToRange(size_t part_size, size_t part_rows, time_t part_tt
 
 class ITTLMergeSelector::MergeRangesConstructor
 {
-    std::optional<PartsRange> buildRange(const CenterPosition & center_position, size_t max_total_size_to_merge, size_t max_rows_in_part)
+    std::optional<PartsRange> buildRange(const CenterPosition & center_position, const MergeConstraint & constraint)
     {
         const auto & [range, center, _] = center_position;
-        if (center->size > max_total_size_to_merge)
+        if (center->size > constraint.max_size_bytes)
             return std::nullopt;
 
-        if (center->rows > max_rows_in_part)
+        if (center->rows > constraint.max_size_rows)
             return std::nullopt;
 
         if (disjoint_set.isCovered(range, center))
             return std::nullopt;
 
-        size_t usable_memory = max_total_size_to_merge - center->size;
-        size_t usable_rows = max_rows_in_part - center->rows;
+        size_t usable_memory = constraint.max_size_bytes - center->size;
+        size_t usable_rows = constraint.max_size_rows - center->rows;
         PartsIterator left = merge_selector.findLeftRangeBorder(center_position, usable_memory, usable_rows, disjoint_set);
         PartsIterator right = merge_selector.findRightRangeBorder(center_position, usable_memory, usable_rows, disjoint_set);
 
@@ -45,7 +45,7 @@ public:
     {
     }
 
-    std::optional<PartsRange> buildMergeRange(size_t max_total_size_to_merge, size_t max_rows_in_part)
+    std::optional<PartsRange> buildMergeRange(const MergeConstraint & constraint)
     {
         constexpr static auto range_compare = [](const CenterPosition & lhs, const CenterPosition & rhs)
         {
@@ -64,7 +64,7 @@ public:
             const auto center = std::move(centers.back());
             centers.pop_back();
 
-            if (auto range = buildRange(center, max_total_size_to_merge, max_rows_in_part))
+            if (auto range = buildRange(center, constraint))
                 return range;
         }
 
@@ -175,16 +175,15 @@ ITTLMergeSelector::ITTLMergeSelector(const PartitionIdToTTLs * merge_due_times_,
 
 PartsRanges ITTLMergeSelector::select(
     const PartsRanges & parts_ranges,
-    const MergeSizes & max_merge_sizes,
-    const RangeFilter & range_filter,
-    size_t max_rows_in_part) const
+    const MergeConstraints & merge_constraints,
+    const RangeFilter & range_filter) const
 {
     MergeRangesConstructor constructor(*this, parts_ranges, range_filter);
 
     PartsRanges result;
-    for (size_t max_merge_size : max_merge_sizes)
+    for (const auto & constraint : merge_constraints)
     {
-        if (auto range = constructor.buildMergeRange(max_merge_size, max_rows_in_part))
+        if (auto range = constructor.buildMergeRange(constraint))
             result.push_back(std::move(range.value()));
         else
             break;

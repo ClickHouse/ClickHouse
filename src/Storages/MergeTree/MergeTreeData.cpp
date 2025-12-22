@@ -1698,14 +1698,6 @@ Int64 MergeTreeData::getMaxBlockNumber() const
     return max_block_num;
 }
 
-size_t MergeTreeData::getMaxAllowedRowsInPart() const
-{
-    auto metadata_snapshot = getInMemoryMetadataPtr();
-    const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
-    bool has_text_index = secondary_indices.hasType("text");
-    return has_text_index ? std::numeric_limits<UInt32>::max() : std::numeric_limits<UInt64>::max();
-}
-
 void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const String & name, const DiskPtr & disk)
 {
     auto & current_ptr = root_by_partition[info.getPartitionId()];
@@ -4586,7 +4578,10 @@ static bool hasTextIndexMaterialization(const MutationCommands & commands, Stora
             continue;
 
         auto it = std::ranges::find_if(secondary_indices, [&](const IndexDescription & index) { return index.name == command.index_name; });
-        if (it != secondary_indices.end() && it->type == "text")
+        if (it == secondary_indices.end())
+            continue;
+
+        if (it->type == "text" || it->type == "vector_similarity")
             return true;
     }
     return false;

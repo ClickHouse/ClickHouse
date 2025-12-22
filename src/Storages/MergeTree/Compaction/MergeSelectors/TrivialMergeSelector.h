@@ -23,9 +23,8 @@ public:
 
     PartsRanges select(
         const PartsRanges & parts_ranges,
-        const MergeSizes & max_merge_sizes,
-        const RangeFilter & range_filter,
-        size_t max_rows_in_part) const override;
+        const MergeConstraints & merge_constraints,
+        const RangeFilter & range_filter) const override;
 
 private:
     const Settings settings;
