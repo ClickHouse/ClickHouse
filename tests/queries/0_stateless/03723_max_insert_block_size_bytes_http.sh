@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-async-insert
+# no-async-insert: Test expects new part for each insert
 
 # Tests how input format parsers form blocks based on min/max thresholds
 # 1. Creates 4 test tables
