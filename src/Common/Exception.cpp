@@ -11,6 +11,7 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Logger.h>
 #include <Common/SensitiveDataMasker.h>
+#include <Common/StackTrace.h>
 #include <Common/config_version.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/formatReadable.h>
@@ -24,6 +25,8 @@
 #include <cxxabi.h>
 
 #include <Poco/String.h>
+
+static_assert(STD_EXCEPTION_HAS_STACK_TRACE == 1);
 
 namespace fs = std::filesystem;
 
@@ -63,7 +66,7 @@ void abortOnFailedAssertion(const String & description)
 bool terminate_on_any_exception = false;
 std::atomic_bool abort_on_logical_error = false;
 static int terminate_status_code = 128 + SIGABRT;
-std::function<void(std::string_view format_string, int code, bool remote, const Exception::FramePointers & trace)> Exception::callback = {};
+std::function<void(std::string_view format_string, int code, bool remote, const Exception::Trace & trace)> Exception::callback = {};
 
 constexpr bool debug_or_sanitizer_build =
 #ifdef DEBUG_OR_SANITIZER_BUILD
@@ -77,7 +80,7 @@ false
 /// - Aborts the process if error code is LOGICAL_ERROR.
 /// - Increments error codes statistics.
 static size_t handle_error_code(
-    const std::string & msg, std::string_view format_string, int code, bool remote, const Exception::FramePointers & trace)
+    const std::string & msg, std::string_view format_string, int code, bool remote, const Exception::Trace & trace)
 {
     // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
     // Log the message before we fail.
@@ -96,6 +99,8 @@ static size_t handle_error_code(
 
     return ErrorCodes::increment(code, remote, msg, std::string(format_string), trace);
 }
+
+template Exception::Exception(int, FormatStringHelperImpl<>);
 
 
 Exception::MessageMasked::MessageMasked(const std::string & msg_, std::string format_string_)
@@ -144,12 +149,10 @@ Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
     capture_thread_frame_pointers = getThreadFramePointers();
-#ifdef STD_EXCEPTION_HAS_STACK_TRACE
     auto * stack_trace_frames = exc.get_stack_trace_frames();
     auto stack_trace_size = exc.get_stack_trace_size();
     __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
     set_stack_trace(stack_trace_frames, stack_trace_size);
-#endif
 }
 
 static int getCodeForSTDException(const std::exception & exc)
@@ -167,12 +170,10 @@ Exception::Exception(CreateFromSTDTag, const std::exception & exc)
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
     capture_thread_frame_pointers = getThreadFramePointers();
-#ifdef STD_EXCEPTION_HAS_STACK_TRACE
     auto * stack_trace_frames = exc.get_stack_trace_frames();
     auto stack_trace_size = exc.get_stack_trace_size();
     __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
     set_stack_trace(stack_trace_frames, stack_trace_size);
-#endif
 }
 
 void Exception::addMessage(const MessageMasked & msg_masked)
@@ -185,16 +186,10 @@ void Exception::addMessage(const MessageMasked & msg_masked)
 
 std::string getExceptionStackTraceString(const std::exception & e)
 {
-#ifdef STD_EXCEPTION_HAS_STACK_TRACE
     auto * stack_trace_frames = e.get_stack_trace_frames();
     auto stack_trace_size = e.get_stack_trace_size();
     __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
     return StackTrace::toString(stack_trace_frames, 0, stack_trace_size);
-#else
-    if (const auto * db_exception = dynamic_cast<const Exception *>(&e))
-        return db_exception->getStackTraceString();
-    return {};
-#endif
 }
 
 std::string getExceptionStackTraceString(std::exception_ptr e)
@@ -216,13 +211,12 @@ std::string getExceptionStackTraceString(std::exception_ptr e)
 
 std::string Exception::getStackTraceString() const
 {
-#ifdef STD_EXCEPTION_HAS_STACK_TRACE
     auto * stack_trace_frames = get_stack_trace_frames();
     auto stack_trace_size = get_stack_trace_size();
     __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
     String thread_stack_trace;
     std::for_each(capture_thread_frame_pointers.rbegin(), capture_thread_frame_pointers.rend(),
-        [&thread_stack_trace](StackTrace::FramePointers & frame_pointers)
+        [&thread_stack_trace](FramePointers & frame_pointers)
         {
             thread_stack_trace +=
                 "\nJob's origin stack trace:\n" +
@@ -231,34 +225,17 @@ std::string Exception::getStackTraceString() const
     );
 
     return StackTrace::toString(stack_trace_frames, 0, stack_trace_size) + thread_stack_trace;
-#else
-    return trace.toString();
-#endif
 }
 
-Exception::FramePointers Exception::getStackFramePointers() const
+Exception::Trace Exception::getStackFramePointers() const
 {
-    FramePointers frame_pointers;
-#ifdef STD_EXCEPTION_HAS_STACK_TRACE
+    Trace frame_pointers;
+    frame_pointers.resize(get_stack_trace_size());
+    for (size_t i = 0; i < frame_pointers.size(); ++i)
     {
-        frame_pointers.resize(get_stack_trace_size());
-        for (size_t i = 0; i < frame_pointers.size(); ++i)
-        {
-            frame_pointers[i] = get_stack_trace_frames()[i];
-        }
-        __msan_unpoison(frame_pointers.data(), frame_pointers.size() * sizeof(frame_pointers[0]));
+        frame_pointers[i] = get_stack_trace_frames()[i];
     }
-#else
-    {
-        size_t stack_trace_size = trace.getSize();
-        size_t stack_trace_offset = trace.getOffset();
-        frame_pointers.reserve(stack_trace_size - stack_trace_offset);
-        for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
-        {
-            frame_pointers.push_back(trace.getFramePointers()[i]);
-        }
-    }
-#endif
+    __msan_unpoison(frame_pointers.data(), frame_pointers.size() * sizeof(frame_pointers[0]));
     return frame_pointers;
 }
 
@@ -307,7 +284,7 @@ bool Exception::isErrorCodeImportant() const
 Exception::~Exception()
 try
 {
-    if (logged != nullptr && !logged->load(std::memory_order_relaxed) && isErrorCodeImportant())
+    if (!logged.load(std::memory_order_relaxed) && isErrorCodeImportant())
     {
         LOG_ERROR(getLogger("ForcedCriticalErrorsLogger"), "{}", getExceptionMessage(*this, /*with_stacktrace=*/ true));
     }

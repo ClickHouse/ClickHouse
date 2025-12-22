@@ -186,7 +186,7 @@ namespace Setting
 {
     extern const SettingsBool allow_drop_detached;
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_full_text_index;
+    extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_statistics_optimize;
     extern const SettingsBool allow_suspicious_indices;
@@ -4102,9 +4102,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     auto [auto_statistics_types, statistics_changed] = MergeTreeData::getNewImplicitStatisticsTypes(new_metadata, *settings_from_storage);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
 
-    if (AlterCommands::hasTextIndex(new_metadata) && !settings[Setting::allow_experimental_full_text_index])
+    if (AlterCommands::hasTextIndex(new_metadata) && !settings[Setting::enable_full_text_index])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Experimental text index feature is not enabled (turn on setting 'allow_experimental_full_text_index')");
+                "Text index feature is not enabled (turn on setting 'enable_full_text_index')");
 
     /// If adaptive index granularity is disabled, certain vector search queries with PREWHERE run into LOGICAL_ERRORs.
     ///     CREATE TABLE tab (`id` Int32, `vec` Array(Float32), INDEX idx vec TYPE  vector_similarity('hnsw', 'L2Distance') GRANULARITY 100000000) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity_bytes = 0;
@@ -10073,7 +10073,11 @@ StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr(bool bypass_metadata_ca
         || !query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query])
         return IStorage::getInMemoryMetadataPtr(bypass_metadata_cache);
 
-    auto [cache, lock] = query_context->getStorageMetadataCache();
+    auto query_metadata_cache = query_context->getQueryMetadataCache();
+    if (!query_metadata_cache)
+        return IStorage::getInMemoryMetadataPtr(bypass_metadata_cache);
+
+    auto [cache, lock] = query_metadata_cache->getStorageMetadataCache();
     auto it = cache->find(this);
     if (it != cache->end())
         return it->second;
@@ -10081,7 +10085,8 @@ StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr(bool bypass_metadata_ca
     return cache->emplace(this, IStorage::getInMemoryMetadataPtr(bypass_metadata_cache)).first->second;
 }
 
-StorageSnapshotPtr MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const
+StorageSnapshotPtr
+MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const
 {
     if (without_data)
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::make_unique<SnapshotData>());
@@ -10126,7 +10131,11 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & 
     if (!query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query] || !query_context->hasQueryContext())
         return createStorageSnapshot(metadata_snapshot, query_context, false);
 
-    auto [cache, lock] = query_context->getStorageSnapshotCache();
+    auto query_metadata_cache = query_context->getQueryMetadataCache();
+    if (!query_metadata_cache)
+        return createStorageSnapshot(metadata_snapshot, query_context, false);
+
+    auto [cache, lock] = query_metadata_cache->getStorageSnapshotCache();
     auto it = cache->find(this);
     if (it != cache->end())
         return it->second;
