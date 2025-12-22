@@ -727,6 +727,7 @@ MergeTreePartsLoaderThreadsActive
 MergeTreeReadTaskRequestsSent
 MergeTreeSettings
 MergerMutator
+Mersenne
 MessagePack
 Metastore
 MetroHash
