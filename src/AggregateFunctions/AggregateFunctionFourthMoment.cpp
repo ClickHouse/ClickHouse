@@ -53,7 +53,7 @@ kurtPop(expr)
     FunctionDocumentation::Arguments arguments = {
         {"expr", "[Expression](/sql-reference/syntax#expressions) returning a number.", {"(U)Int*", "Float*", "Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"The kurtosis of the given distribution.", {"[Float64](/sql-reference/data-types/float)"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the kurtosis of the given distribution.", {"Float64"}};
     FunctionDocumentation::Examples examples = {
     {
         "Computing kurtosis",
