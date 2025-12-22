@@ -87,11 +87,11 @@ class Result(MetaClasses.Serializable):
                 "WARNING: No results and no status provided - setting status to error"
             )
             status = Result.Status.ERROR
-        if not name:
-            name = _Environment.get().JOB_NAME
-            if not name:
-                print("ERROR: Failed to guess the .name")
-                raise
+        # if not name:
+        #     name = _Environment.get().JOB_NAME
+        #     if not name:
+        #         print("ERROR: Failed to guess the .name")
+        #         raise
         start_time = None
         duration = None
         if not stopwatch:
@@ -312,6 +312,14 @@ class Result(MetaClasses.Serializable):
             self.ext["labels"] = []
         self.ext["labels"].append(label)
 
+    def get_labels(self):
+        return self.ext.get("labels", [])
+
+    def has_label(self, label):
+        return label in self.ext.get("labels", []) or label in [
+            x[0] for x in self.ext.get("hlabels", [])
+        ]
+
     def set_comment(self, comment):
         self.ext["comment"] = comment
 
@@ -448,6 +456,20 @@ class Result(MetaClasses.Serializable):
                 # Recursively process children with updated path
                 leaves.extend(cls._flat_failed_leaves(r, path=path))
         return leaves
+
+    def to_failed_results_with_flat_leaves(self):
+        """
+        Creates a minimal result tree containing only failed jobs with their failed leaf results flattened.
+        Returns a two-level structure: top-level failed jobs -> flat list of their failed leaf results.
+        """
+        result = copy.deepcopy(self)
+        failed_results = []
+        for r in result.results:
+            if not r.is_ok():
+                r.results = self._flat_failed_leaves(r)
+                failed_results.append(r)
+        result.results = failed_results
+        return result
 
     def update_sub_result(self, result: "Result", drop_nested_results=False):
         assert self.results, "BUG?"
@@ -639,10 +661,18 @@ class Result(MetaClasses.Serializable):
                         )
                     res = result if isinstance(result, bool) else not bool(result)
                     if (with_info_on_failure and not res) or with_info:
-                        if isinstance(result, bool):
-                            info_lines.extend(buffer.getvalue().splitlines())
-                        else:
-                            info_lines.extend(str(result).splitlines())
+                        output = (
+                            buffer.getvalue()
+                            if isinstance(result, bool)
+                            else str(result)
+                        )
+                        info_lines.extend(output.splitlines())
+                        # Write callable output to log file for consistency with shell commands
+                        if log_file and output:
+                            with open(log_file, "a") as f:
+                                f.write(
+                                    output if output.endswith("\n") else output + "\n"
+                                )
                 else:
                     # Run shell command in a specified directory with logging and verbosity
                     exit_code = Shell.run(
@@ -652,10 +682,8 @@ class Result(MetaClasses.Serializable):
                         retries=retries,
                         retry_errors=retry_errors,
                     )
-                    log_output = Shell.get_output(
-                        f"tail -n {MAX_LINES_IN_INFO+1} {log_file}"  # +1 to get the truncation message
-                    )
                     if with_info or (with_info_on_failure and exit_code != 0):
+                        log_output = Shell.get_output(f"cat {log_file}")
                         info_lines += log_output.splitlines()
                     res = exit_code == 0
 
@@ -664,22 +692,22 @@ class Result(MetaClasses.Serializable):
                     print(f"Execution stopped due to failure in [{command_}]")
                     break
 
+        # Apply truncation if info_lines exceeds MAX_LINES_IN_INFO
+        truncated = False
+        if len(info_lines) > MAX_LINES_IN_INFO:
+            truncated_count = len(info_lines) - MAX_LINES_IN_INFO
+            info_lines = [
+                f"~~~~~ truncated {truncated_count} lines ~~~~~"
+            ] + info_lines[-MAX_LINES_IN_INFO:]
+            truncated = True
+
         # Create and return the result object with status and log file (if any)
         return Result.create_from(
             name=name,
             status=res,
             stopwatch=stop_watch_,
-            info=(
-                info_lines
-                if len(info_lines) < MAX_LINES_IN_INFO
-                else [
-                    f"~~~~~ truncated {len(info_lines)-MAX_LINES_IN_INFO} lines ~~~~~"
-                ]
-                + info_lines[-MAX_LINES_IN_INFO:]
-            ),
-            files=(
-                [log_file] if with_log or len(info_lines) >= MAX_LINES_IN_INFO else None
-            ),
+            info=info_lines,
+            files=([log_file] if (with_log or truncated) and log_file else None),
         )
 
     def do_not_block_pipeline_on_failure(self):
@@ -843,6 +871,7 @@ class ResultInfo:
     TIMEOUT = "Timeout"
 
     GH_STATUS_ERROR = "Failed to set GH commit status"
+    OPEN_ISSUES_CHECK_ERROR = "Failed to check open issues"
 
     NOT_FINALIZED = (
         "Job failed to produce Result due to a script error or CI runner issue"

@@ -1,22 +1,27 @@
-#include <base/getFQDNOrHostName.h>
-#include <base/demangle.h>
-#include <Common/DateLUTImpl.h>
-#include <Interpreters/InstrumentationManager.h>
-#include <Interpreters/TraceLog.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsDateTime.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <IO/WriteBufferFromArena.h>
+#include <Interpreters/InstrumentationManager.h>
+#include <Interpreters/TraceLog.h>
+#include <base/demangle.h>
+#include <base/getFQDNOrHostName.h>
 #include <Common/ClickHouseRevision.h>
+#include <Common/DateLUTImpl.h>
+#include <Common/Dwarf.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/SymbolIndex.h>
-#include <Common/Dwarf.h>
-#include <IO/WriteBufferFromArena.h>
 
 #include <filesystem>
 
@@ -195,84 +200,98 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
-    columns[i++]->insert(getFQDNOrHostName());
-    columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
-    columns[i++]->insert(event_time);
-    columns[i++]->insert(event_time_microseconds);
-    columns[i++]->insert(timestamp_ns);
-    columns[i++]->insert(ClickHouseRevision::getVersionRevision());
-    columns[i++]->insert(static_cast<UInt8>(trace_type));
-    columns[i++]->insert(cpu_id);
-    columns[i++]->insert(thread_id);
+    const auto & hostname = getFQDNOrHostName();
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(hostname.data(), hostname.size());
+    typeid_cast<ColumnUInt16 &>(*columns[i++]).getData().push_back(DateLUT::instance().toDayNum(event_time).toUnderType());
+    typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(event_time);
+    typeid_cast<ColumnDateTime64 &>(*columns[i++]).getData().push_back(event_time_microseconds);
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(timestamp_ns);
+    typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(ClickHouseRevision::getVersionRevision());
+    typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(static_cast<UInt8>(trace_type));
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(cpu_id);
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(thread_id);
     auto thread_name_str = toString(thread_name);
-    columns[i++]->insertData(thread_name_str.data(), thread_name_str.size());
-    columns[i++]->insertData(query_id.data(), query_id.size());
-    columns[i++]->insert(Array(trace.begin(), trace.end()));
-    columns[i++]->insert(size);
-    columns[i++]->insert(ptr);
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(thread_name_str.data(), thread_name_str.size());
+    typeid_cast<ColumnString &>(*columns[i++]).insertData(query_id.data(), query_id.size());
+
+    auto & column_trace = typeid_cast<ColumnArray &>(*columns[i++]);
+    auto & column_trace_inner = typeid_cast<ColumnUInt64 &>(column_trace.getData());
+    column_trace_inner.getData().insert(column_trace_inner.getData().end(), trace.begin(), trace.end());
+    auto & offsets = column_trace.getOffsets();
+    offsets.push_back(offsets.back() + trace.size());
+
+    typeid_cast<ColumnInt64 &>(*columns[i++]).getData().push_back(size);
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(ptr);
     if (memory_context.has_value())
-        columns[i++]->insert(static_cast<Int8>(memory_context.value()));
+        typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(static_cast<Int8>(memory_context.value()));
     else
-        columns[i++]->insert(static_cast<Int8>(TraceSender::MEMORY_CONTEXT_UNKNOWN));
+        typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(static_cast<Int8>(TraceSender::MEMORY_CONTEXT_UNKNOWN));
     if (memory_blocked_context.has_value())
-        columns[i++]->insert(static_cast<Int8>(memory_blocked_context.value()));
+        typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(static_cast<Int8>(memory_blocked_context.value()));
     else
-        columns[i++]->insert(static_cast<Int8>(TraceSender::MEMORY_CONTEXT_UNKNOWN));
+        typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(static_cast<Int8>(TraceSender::MEMORY_CONTEXT_UNKNOWN));
 
-    String event_name;
     if (event != ProfileEvents::end())
-        event_name = ProfileEvents::getName(event);
+    {
+        auto event_name = ProfileEvents::getName(event);
+        typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(event_name.data(), event_name.size());
+    }
+    else
+    {
+        typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertDefault();
+    }
 
-    columns[i++]->insert(event_name);
-    columns[i++]->insert(increment);
+    typeid_cast<ColumnInt64 &>(*columns[i++]).getData().push_back(increment);
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
     if (symbolize)
     {
-        Array symbols;
-        Array lines;
-        size_t num_frames = trace.size();
-        symbols.reserve(num_frames);
-        lines.reserve(num_frames);
+        auto & column_symbols = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_symbols_inner = typeid_cast<ColumnLowCardinality &>(column_symbols.getData());
+
+        auto & column_lines = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_lines_inner = typeid_cast<ColumnLowCardinality &>(column_lines.getData());
 
         const SymbolIndex & symbol_index = SymbolIndex::instance();
-
+        size_t num_frames = trace.size();
         for (size_t frame = 0; frame < num_frames; ++frame)
         {
             if (const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(trace[frame])))
             {
-                std::string_view mangled_symbol(symbol->name);
-
                 auto demangled = tryDemangle(symbol->name);
                 if (demangled)
-                    symbols.emplace_back(std::string_view(demangled.get()));
+                    column_symbols_inner.insertData(demangled.get(), strlen(demangled.get()));
                 else
-                    symbols.emplace_back(std::string_view(symbol->name));
+                    column_symbols_inner.insertData(symbol->name, strlen(symbol->name));
 
-                lines.emplace_back(AddressToLineCache::get(trace[frame]));
+                column_lines_inner.insert(AddressToLineCache::get(trace[frame]));
             }
             else
             {
-                symbols.emplace_back(String());
-                lines.emplace_back(String());
+                column_symbols_inner.insertDefault();
+                column_lines_inner.insertDefault();
             }
         }
 
-        columns[i++]->insert(symbols);
-        columns[i++]->insert(lines);
+        column_symbols.getOffsets().push_back(column_symbols.getOffsets().back() + num_frames);
+        column_lines.getOffsets().push_back(column_lines.getOffsets().back() + num_frames);
     }
     else
 #endif
     {
-        columns[i++]->insertDefault();
-        columns[i++]->insertDefault();
+        typeid_cast<ColumnArray &>(*columns[i++]).insertDefault();
+        typeid_cast<ColumnArray &>(*columns[i++]).insertDefault();
     }
 
-    columns[i++]->insert(function_id > 0 ? function_id : Field());
-    columns[i++]->insert(!function_name.empty() ? function_name : Field());
-    columns[i++]->insert(!handler.empty() ? handler : Field());
-    columns[i++]->insert(entry_type.has_value() ? entry_type.value() : Field());
-    columns[i++]->insert(duration_nanoseconds.has_value() ? duration_nanoseconds.value() : Field());
+    typeid_cast<ColumnNullable &>(*columns[i++])
+        .insertData(function_id > 0 ? reinterpret_cast<const char *>(&function_id) : nullptr, sizeof(function_id));
+    typeid_cast<ColumnNullable &>(*columns[i++])
+        .insertData(!function_name.empty() > 0 ? function_name.data() : nullptr, function_name.size());
+    typeid_cast<ColumnNullable &>(*columns[i++]).insertData(!handler.empty() > 0 ? handler.data() : nullptr, handler.size());
+    typeid_cast<ColumnNullable &>(*columns[i++])
+        .insertData(entry_type.has_value() ? reinterpret_cast<const char *>(&entry_type.value()) : nullptr, sizeof(Instrumentation::EntryType));
+    typeid_cast<ColumnNullable &>(*columns[i++])
+        .insertData(duration_nanoseconds.has_value() ? reinterpret_cast<const char *>(&duration_nanoseconds.value()) : nullptr, sizeof(UInt64));
 }
 
 }
