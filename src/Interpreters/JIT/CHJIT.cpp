@@ -55,6 +55,7 @@ using BitInt128 = signed _BitInt(128);
 using BitUInt128 = unsigned _BitInt(128);
 #pragma clang diagnostic pop
 
+
 static BitInt128 divideInt128(BitInt128 left, BitInt128 right)
 {
     return left / right;
@@ -65,9 +66,31 @@ static BitInt128 moduloInt128(BitInt128 left, BitInt128 right)
     return left % right;
 }
 
+
+static BitInt128 castFloatToInt128(float from)
+{
+    return static_cast<BitInt128>(from);
+}
+
 static BitInt128 castDoubleToInt128(double from)
 {
     return static_cast<BitInt128>(from);
+}
+
+static BitInt128 castFloatToUInt128(float from)
+{
+    return static_cast<BitUInt128>(from);
+}
+
+static BitInt128 castDoubleToUInt128(double from)
+{
+    return static_cast<BitUInt128>(from);
+}
+
+
+static float castInt128ToFloat(BitInt128 from)
+{
+    return static_cast<float>(from);
 }
 
 static double castInt128ToDouble(BitInt128 from)
@@ -75,20 +98,16 @@ static double castInt128ToDouble(BitInt128 from)
     return static_cast<double>(from);
 }
 
+static float castUInt128ToFloat(BitUInt128 from)
+{
+    return static_cast<float>(from);
+}
+
 static double castUInt128ToDouble(BitUInt128 from)
 {
     return static_cast<double>(from);
 }
 
-static BitInt128 castFloatToInt128(float from)
-{
-    return static_cast<BitInt128>(from);
-}
-
-static float castInt128ToFloat(BitInt128 from)
-{
-    return static_cast<float>(from);
-}
 
 /** Simple module to object file compiler.
   * Result object cannot be used as machine code directly, it should be passed to linker.
@@ -423,11 +442,16 @@ CHJIT::CHJIT()
     symbol_resolver->registerSymbol("fmod", reinterpret_cast<void *>(fmod_ptr));
     symbol_resolver->registerSymbol("__divti3", reinterpret_cast<void *>(&divideInt128));
     symbol_resolver->registerSymbol("__modti3", reinterpret_cast<void *>(&moduloInt128));
+
+    symbol_resolver->registerSymbol("__fixsfti", reinterpret_cast<void *>(&castFloatToInt128));
+    symbol_resolver->registerSymbol("__fixsfunti", reinterpret_cast<void *>(&castFloatToUInt128));
     symbol_resolver->registerSymbol("__fixdfti", reinterpret_cast<void *>(&castDoubleToInt128));
+    symbol_resolver->registerSymbol("__fixdfunti", reinterpret_cast<void *>(&castDoubleToUInt128));
+
+    symbol_resolver->registerSymbol("__floattisf", reinterpret_cast<void *>(&castInt128ToFloat));
+    symbol_resolver->registerSymbol("__floatuntisf", reinterpret_cast<void *>(&castUInt128ToFloat));
     symbol_resolver->registerSymbol("__floattidf", reinterpret_cast<void *>(&castInt128ToDouble));
     symbol_resolver->registerSymbol("__floatuntidf", reinterpret_cast<void *>(&castUInt128ToDouble));
-    symbol_resolver->registerSymbol("__fixsfti", reinterpret_cast<void *>(&castFloatToInt128));
-    symbol_resolver->registerSymbol("__floattisf", reinterpret_cast<void *>(&castInt128ToFloat));
 }
 
 CHJIT::~CHJIT() = default;
