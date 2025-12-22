@@ -1,4 +1,5 @@
 -- Tags: no-parallel
+-- no-parallel - when executing in parallel, we might have table/db name collisions
 
 SET allow_experimental_analyzer = 1;
 

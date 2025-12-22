@@ -163,7 +163,7 @@ struct QualifiedTable
 
     bool operator<(const QualifiedTable & other) const
     {
-        return database < other.database || (database == other.database && table < other.table);
+        return std::tie(database, table) < std::tie(other.database, other.table);
     }
 };
 
@@ -226,7 +226,7 @@ IdentifierResolveResult tryResolveTableIdentifierFallback(
     }
 
     // We do this by trying to resolve the table in the CI-matched database directly
-    if (!ci_tables_on && db_candidates.size() == 1 && parts.size() != 1)
+    if (!ci_tables_on && db_candidates.size() == 1 && part.size() == 2)
     {
         const auto & resolved_db = *db_candidates.begin();
 
