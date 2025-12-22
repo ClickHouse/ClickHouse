@@ -123,25 +123,29 @@ IColumn::Filter DistinctTransform::buildLowCardinalityMask(const ColumnLowCardin
 
     switch (index_type_size)
     {
-        case sizeof(UInt8): {
+        case sizeof(UInt8):
+        {
             const auto & col = assert_cast<const ColumnUInt8 &>(indexes_column).getData();
             for (size_t row = 0; row < num_rows; ++row)
                 handle_index(col[row], row);
             break;
         }
-        case sizeof(UInt16): {
+        case sizeof(UInt16):
+        {
             const auto & col = assert_cast<const ColumnUInt16 &>(indexes_column).getData();
             for (size_t row = 0; row < num_rows; ++row)
                 handle_index(col[row], row);
             break;
         }
-        case sizeof(UInt32): {
+        case sizeof(UInt32):
+        {
             const auto & col = assert_cast<const ColumnUInt32 &>(indexes_column).getData();
             for (size_t row = 0; row < num_rows; ++row)
                 handle_index(col[row], row);
             break;
         }
-        case sizeof(UInt64): {
+        case sizeof(UInt64):
+        {
             const auto & col = assert_cast<const ColumnUInt64 &>(indexes_column).getData();
             for (size_t row = 0; row < num_rows; ++row)
                 handle_index(col[row], row);
