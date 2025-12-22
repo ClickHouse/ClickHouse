@@ -89,6 +89,9 @@ void KafkaConsumer2::createConsumer(cppkafka::Configuration consumer_config)
     // Create a consumer and subscribe to topics
     consumer = std::make_shared<cppkafka::Consumer>(std::move(consumer_config));
     consumer->set_destroy_flags(RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE);
+
+    // Enable background SASL callbacks for OAUTHBEARER authentication.
+    rd_kafka_sasl_background_callbacks_enable(consumer->get_handle());
 }
 
 CppKafkaConsumerPtr && KafkaConsumer2::moveConsumer()

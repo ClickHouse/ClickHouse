@@ -16,8 +16,8 @@ namespace DB::AWSMSKIAMAuth
 /// Matches patterns: *.kafka[-serverless].<region>[.vpce].amazonaws.com
 String extractRegionFromBroker(const String & broker_address);
 
-/// Setup AWS MSK IAM authentication for Kafka (stateless design)
-/// This configures librdkafka to use OAUTHBEARER with a stateless callback
+/// Setup AWS MSK IAM authentication for Kafka
+/// This configures librdkafka to use OAUTHBEARER with a callback
 /// that generates AWS MSK IAM tokens on-demand from configuration
 ///
 /// @param kafka_config cppkafka Configuration object to modify

@@ -81,6 +81,9 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
     consumer = std::make_shared<cppkafka::Consumer>(std::move(consumer_config));
     consumer->set_destroy_flags(RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE);
 
+    // Enable background SASL callbacks for OAUTHBEARER authentication.
+    rd_kafka_sasl_background_callbacks_enable(consumer->get_handle());
+
     // called (synchronously, during poll) when we enter the consumer group
     consumer->set_assignment_callback([this](const cppkafka::TopicPartitionList & topic_partitions)
     {

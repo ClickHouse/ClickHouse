@@ -22,6 +22,7 @@
 #include <aws/core/http/URI.h>
 #include <aws/core/utils/memory/stl/AWSStreamFwd.h>
 #include <chrono>
+#include <mutex>
 
 namespace DB
 {
@@ -39,6 +40,13 @@ namespace
 {
     constexpr std::chrono::seconds TOKEN_LIFETIME{300};
     constexpr std::chrono::seconds PRESIGNED_URL_EXPIRY{900};
+
+    /// Simple cache to avoid recreating credentials provider on each callback
+    struct
+    {
+        std::mutex mutex;
+        std::shared_ptr<S3::S3CredentialsProviderChain> provider;
+    } g_provider_cache;
 
     String generateAWSMSKToken(
         const String & region,
@@ -130,16 +138,25 @@ namespace
             if (region.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "AWS region not found in OAuth bearer configuration");
 
-            auto aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
-                region, {}, 0, {}, false, false, false, false, {}, {});
+            // Reuse cached provider, create only once
+            std::shared_ptr<S3::S3CredentialsProviderChain> provider;
+            {
+                std::lock_guard lock(g_provider_cache.mutex);
+                if (!g_provider_cache.provider)
+                {
+                    auto aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
+                        region, {}, 0, {}, false, false, false, false, {}, {});
 
-            S3::CredentialsConfiguration credentials_configuration;
-            credentials_configuration.use_environment_credentials = use_environment_credentials;
+                    S3::CredentialsConfiguration credentials_configuration;
+                    credentials_configuration.use_environment_credentials = use_environment_credentials;
 
-            auto credentials_provider = std::make_shared<S3::S3CredentialsProviderChain>(
-                aws_client_configuration, Aws::Auth::AWSCredentials{}, credentials_configuration);
+                    g_provider_cache.provider = std::make_shared<S3::S3CredentialsProviderChain>(
+                        aws_client_configuration, Aws::Auth::AWSCredentials{}, credentials_configuration);
+                }
+                provider = g_provider_cache.provider;
+            }
 
-            auto credentials = credentials_provider->GetAWSCredentials();
+            auto credentials = provider->GetAWSCredentials();
 
             if (credentials.IsEmpty())
             {
@@ -245,6 +262,9 @@ void setupAuthentication(
     kafka_config.set("sasl.oauthbearer.config", uri.getRawQuery());
     kafka_config.set("sasl.mechanism", "OAUTHBEARER");
     kafka_config.set("security.protocol", "SASL_SSL");
+
+    // Enable SASL queue to allow background authentication callbacks
+    rd_kafka_conf_enable_sasl_queue(kafka_config.get_handle(), 1);
 
     rd_kafka_conf_set_oauthbearer_token_refresh_cb(
         kafka_config.get_handle(), oauthBearerTokenRefreshCallback);
