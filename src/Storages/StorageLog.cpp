@@ -255,7 +255,7 @@ void LogSource::readPrefix(const NameAndTypePair & name_and_type, ISerialization
         if (cache.contains(ISerialization::getSubcolumnNameForStream(path)))
             return nullptr;
 
-        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
+        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path);
 
         const auto & data_file_it = storage.data_files_by_names.find(data_file_name);
         if (data_file_it == storage.data_files_by_names.end())
