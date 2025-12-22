@@ -69,6 +69,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"filesystem_cache_allow_background_download", true, true, "New setting to control background downloads in filesystem cache per query."},
             {"show_processlist_include_internal", false, true, "New setting."},
             {"serialize_string_in_memory_with_zero_byte", true, true, "New setting"},
+            {"enable_positional_arguments_for_projections", true, false, "New setting to control positional arguments in projections."},
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {
@@ -105,7 +106,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_receive_timeout_ms", 3000, 3000, "New setting"},
             {"distributed_cache_send_timeout_ms", 3000, 3000, "New setting"},
             {"distributed_cache_tcp_keep_alive_timeout_ms", 2900, 2900, "New setting"},
-            {"enable_positional_arguments_for_projections", true, false, "New setting to control positional arguments in projections."},
         });
         addSettingsChanges(settings_changes_history, "25.9",
         {
