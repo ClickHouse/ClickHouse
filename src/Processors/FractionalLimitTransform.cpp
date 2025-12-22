@@ -6,7 +6,6 @@
 #include <Processors/Port.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <base/types.h>
-#include <sys/stat.h>
 
 namespace DB
 {
@@ -199,11 +198,13 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
     /// will 100% get pushed and push them as early as possible.
     if (offset_fraction == 0 && !chunks_cache.empty())
     {
-        auto output = *chunks_cache.front().output_port;
+        auto & output = *chunks_cache.front().output_port;
         /// Check can output?
         if (output.isFinished())
         {
-            input.close();
+            /// Once an output port is finished nothing can be pushed to it anymore
+            while (!chunks_cache.empty() && chunks_cache.front().output_port->isFinished())
+                chunks_cache.pop_front();
             return Status::Finished;
         }
         if (!output.canPush())
