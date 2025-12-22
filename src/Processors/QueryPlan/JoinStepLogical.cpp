@@ -556,6 +556,7 @@ JoinActionRef toBoolIfNeeded(JoinActionRef condition)
     return condition;
 }
 
+/// If side is not specified, check if filter can be executed after JOIN itself.
 bool canPushDownFromOn(const JoinOperator & join_operator, std::optional<JoinTableSide> side = {})
 {
     switch (join_operator.strictness)
@@ -576,10 +577,10 @@ bool canPushDownFromOn(const JoinOperator & join_operator, std::optional<JoinTab
         }
         case JoinStrictness::Semi:
             /// We can push down to both sides for LEFT SEMI and RIGHT SEMI joins
-            return true;
+            return side.has_value();
         case JoinStrictness::Anti:
             /// We can push down to both sides for LEFT ANTI and RIGHT ANTI joins
-            return true;
+            return side.has_value();
         default:
             /// TODO: Support RightAny strictness?
             return false;
