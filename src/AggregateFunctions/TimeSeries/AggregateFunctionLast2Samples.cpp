@@ -130,10 +130,10 @@ This function is experimental, enable it by setting `allow_experimental_ts_to_gr
 timeSeriesLastTwoSamples(timestamp, value)
     )";
     FunctionDocumentation::Arguments arguments_timeSeriesLastTwoSamples = {
-        {"timestamp", "Timestamp of the sample.", {"DateTime", "DateTime64", "UInt*", "Int*"}},
+        {"timestamp", "Timestamp of the sample.", {"DateTime", "DateTime64", "(U)Int*", "Int*"}},
         {"value", "Value of the time series corresponding to the timestamp.", {"Float32", "Float64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_timeSeriesLastTwoSamples = {"Returns a Tuple(Array(DateTime), Array(Float64)) - a pair of arrays of equal length from 0 to 2. The first array contains the timestamps of sampled time series, the second array contains the corresponding values of the time series.", {"Tuple(Array(DateTime), Array(Float64))"}};
+    FunctionDocumentation::ReturnedValue returned_value_timeSeriesLastTwoSamples = {"Returns a pair of arrays of equal length from 0 to 2. The first array contains the timestamps of sampled time series, the second array contains the corresponding values of the time series.", {"Tuple(Array(DateTime), Array(Float64))"}};
     FunctionDocumentation::Examples examples_timeSeriesLastTwoSamples = {
     {
         "Example table for raw data, and a table for storing re-sampled data",
@@ -202,21 +202,21 @@ ORDER BY metric_id, timestamp;
 3    2024-12-12 12:00:28.170    24
 3    2024-12-12 12:00:29.069    6
 3    2024-12-12 12:00:29.969    14
-3    2024-12-12 12:00:30.869    25        
+3    2024-12-12 12:00:30.869    25
         )"
     },
     {
         "Query the last 2 sample for timestamps '2024-12-12 12:00:15' and '2024-12-12 12:00:30'",
         R"(
 -- Check re-sampled data
-SELECT metric_id, grid_timestamp, (finalizeAggregation(samples).1 as timestamp, finalizeAggregation(samples).2 as value) 
+SELECT metric_id, grid_timestamp, (finalizeAggregation(samples).1 as timestamp, finalizeAggregation(samples).2 as value)
 FROM t_resampled_timeseries_15_sec
 WHERE metric_id = 3 AND grid_timestamp BETWEEN '2024-12-12 12:00:15' AND '2024-12-12 12:00:30'
-ORDER BY metric_id, grid_timestamp;        
+ORDER BY metric_id, grid_timestamp;
         )",
         R"(
 3    2024-12-12 12:00:15    (['2024-12-12 12:00:14.670','2024-12-12 12:00:13.770'],[19,8])
-3    2024-12-12 12:00:30    (['2024-12-12 12:00:29.969','2024-12-12 12:00:29.069'],[14,6])        
+3    2024-12-12 12:00:30    (['2024-12-12 12:00:29.969','2024-12-12 12:00:29.069'],[14,6])
         )"
     },
     {
@@ -236,7 +236,7 @@ SELECT
     timeSeriesInstantRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)
 FROM t_raw_timeseries
 WHERE metric_id = 3 AND timestamp BETWEEN start_ts - interval window_seconds seconds AND end_ts
-GROUP BY metric_id;        
+GROUP BY metric_id;
         )",
         R"(
 3    [11,8,-18,8,11]    [12.222222222222221,8.88888888888889,1.1111111111111112,8.88888888888889,12.222222222222221]
@@ -265,7 +265,7 @@ FROM (
 GROUP BY metric_id;
         )",
         R"(
-3    [11,8,-18,8,11]    [12.222222222222221,8.88888888888889,1.1111111111111112,8.88888888888889,12.222222222222221]        
+3    [11,8,-18,8,11]    [12.222222222222221,8.88888888888889,1.1111111111111112,8.88888888888889,12.222222222222221]
         )"
     }
     };

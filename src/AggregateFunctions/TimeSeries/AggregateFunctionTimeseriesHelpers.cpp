@@ -471,7 +471,7 @@ FROM
     {
         "Using array arguments",
         R"(
--- it is possible to pass multiple samples of timestamps and values as Arrays of equal size        
+-- it is possible to pass multiple samples of timestamps and values as Arrays of equal size
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values,
@@ -549,7 +549,7 @@ FROM
     {
         "Using array arguments",
         R"(
--- it is possible to pass multiple samples of timestamps and values as Arrays of equal size        
+-- it is possible to pass multiple samples of timestamps and values as Arrays of equal size
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values,
@@ -618,9 +618,9 @@ FROM
 );
         )",
         R"(
-   ┌─timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-1. │ [NULL,NULL,0,0.1,0.11,0.15,NULL,NULL,0.15]                                              │
-   └─────────────────────────────────────────────────────────────────────────────────────────┘
+┌─timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
+│ [NULL,NULL,0,0.1,0.11,0.15,NULL,NULL,0.15]                                              │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     },
     {
@@ -636,9 +636,9 @@ WITH
 SELECT timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values);
         )",
         R"(
-   ┌─timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-1. │ [NULL,NULL,0,0.1,0.11,0.15,NULL,NULL,0.15]                                                │
-   └───────────────────────────────────────────────────────────────────────────────────────────┘        
+┌─timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
+│ [NULL,NULL,0,0.1,0.11,0.15,NULL,NULL,0.15]                                                │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -695,9 +695,9 @@ FROM
 );
         )",
         R"(
-   ┌─timeSeriesPredictLinearToGrid(start_ts, end_ts, step_seconds, window_seconds, predict_offset)(timestamp, value)─┐
-1. │ [NULL,NULL,1,9.166667,11.6,16.916666,NULL,NULL,16.5]                                                            │
-   └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─timeSeriesPredictLinearToGrid(start_ts, end_ts, step_seconds, window_seconds, predict_offset)(timestamp, value)─┐
+│ [NULL,NULL,1,9.166667,11.6,16.916666,NULL,NULL,16.5]                                                            │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     },
     {
@@ -714,9 +714,9 @@ WITH
 SELECT timeSeriesPredictLinearToGrid(start_ts, end_ts, step_seconds, window_seconds, predict_offset)(timestamps, values);
         )",
         R"(
-   ┌─timeSeriesPredictLinearToGrid(start_ts, end_ts, step_seconds, window_seconds, predict_offset)(timestamp, value)─┐
-1. │ [NULL,NULL,1,9.166667,11.6,16.916666,NULL,NULL,16.5]                                                            │
-   └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘        
+┌─timeSeriesPredictLinearToGrid(start_ts, end_ts, step_seconds, window_seconds, predict_offset)(timestamp, value)─┐
+│ [NULL,NULL,1,9.166667,11.6,16.916666,NULL,NULL,16.5]                                                            │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -792,7 +792,7 @@ SELECT timeSeriesChangesToGrid(start_ts, end_ts, step_seconds, window_seconds)(t
         R"(
 ┌─timeSeriesChangesToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
 │ [NULL,NULL,0,1,1,1,NULL,0,1,2]                                                            │
-└───────────────────────────────────────────────────────────────────────────────────────────┘       
+└───────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -867,7 +867,7 @@ SELECT timeSeriesResetsToGrid(start_ts, end_ts, step_seconds, window_seconds)(ti
         R"(
 ┌─timeSeriesResetsToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
 │ [NULL,NULL,0,1,1,0,NULL,0,1,2]                                                           │
-└──────────────────────────────────────────────────────────────────────────────────────────┘        
+└──────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
