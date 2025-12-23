@@ -124,9 +124,9 @@ static struct InitFiu
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
     ONCE(database_replicated_drop_after_removing_keeper_failed) \
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
-    PAUSEABLE_ONCE(rmt_mutate_task_pause_in_prepare) \
+    PAUSEABLE(rmt_mutate_task_pause_in_prepare) \
+    PAUSEABLE(rmt_merge_selecting_task_pause_when_scheduled) \
     PAUSEABLE_ONCE(smt_mutate_task_pause_in_prepare) \
-    PAUSEABLE_ONCE(rmt_merge_selecting_task_pause_when_scheduled) \
     PAUSEABLE_ONCE(smt_merge_selecting_task_pause_when_scheduled) \
     ONCE(shared_set_full_update_fails_when_initializing) \
     PAUSEABLE(after_kill_part_pause) \
@@ -147,13 +147,24 @@ std::mutex FailPointInjection::mu;
 
 struct FailPointChannel
 {
-    std::condition_variable cv;
-    bool notified = false;
+    /// Condition variable for target threads to wait when paused at failpoint
+    std::condition_variable pause_cv;
+
+    /// Condition variable for target threads to wait for resume notification
+    std::condition_variable resume_cv;
+
+    /// Number of threads currently paused at this failpoint
+    size_t pause_count = 0;
+
+    /// Resume epoch: incremented on each notify or disable to wake up waiting threads.
+    /// Threads record the epoch when they start waiting, and only wake up
+    /// if the current epoch is greater than their recorded epoch.
+    size_t resume_epoch = 0;
 };
 
 void FailPointInjection::pauseFailPoint(const String & fail_point_name)
 {
-    fiu_do_on(fail_point_name.c_str(), FailPointInjection::wait(fail_point_name););
+    fiu_do_on(fail_point_name.c_str(), FailPointInjection::notifyPauseAndWaitForResume(fail_point_name););
 }
 
 void FailPointInjection::enableFailPoint(const String & fail_point_name)
@@ -189,25 +200,82 @@ void FailPointInjection::disableFailPoint(const String & fail_point_name)
     std::lock_guard lock(mu);
     if (auto iter = fail_point_wait_channels.find(fail_point_name); iter != fail_point_wait_channels.end())
     {
-        /// can not rely on deconstruction to do the notify_all things, because
-        /// if someone wait on this, the deconstruct will never be called.
-        iter->second->notified = true;
-        iter->second->cv.notify_all();
+        /// Increment resume_epoch to wake up all waiting threads.
+        ++iter->second->resume_epoch;
+        iter->second->resume_cv.notify_all();
+        iter->second->pause_cv.notify_all();
         fail_point_wait_channels.erase(iter);
     }
     fiu_disable(fail_point_name.c_str());
 }
 
-void FailPointInjection::wait(const String & fail_point_name)
+void FailPointInjection::notifyFailPoint(const String & fail_point_name)
+{
+    std::lock_guard lock(mu);
+    if (auto iter = fail_point_wait_channels.find(fail_point_name); iter != fail_point_wait_channels.end())
+    {
+        /// Increment resume_epoch to mark a new notification cycle
+        ++iter->second->resume_epoch;
+        iter->second->resume_cv.notify_all();
+    }
+    else
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find channel for fail point {}", fail_point_name);
+    }
+}
+
+void FailPointInjection::notifyPauseAndWaitForResume(const String & fail_point_name)
 {
     std::unique_lock lock(mu);
     auto iter = fail_point_wait_channels.find(fail_point_name);
     if (iter == fail_point_wait_channels.end())
-        /// We may get here if pauseFailPoint was called in parallel with disableFailPoint.
         return;
+
     auto channel = iter->second;
-    /// Note: this may unlock and re-lock the mutex, invalidating `iter`.
-    channel->cv.wait(lock, [&] { return channel->notified; });
+    size_t my_resume_epoch = channel->resume_epoch;
+
+    /// Signal that a thread has reached and paused at this failpoint
+    ++channel->pause_count;
+    channel->pause_cv.notify_all();
+
+    /// Wait for resume_epoch to be incremented by notify or disable
+    channel->resume_cv.wait(lock, [&] {
+        return channel->resume_epoch > my_resume_epoch;
+    });
+
+    --channel->pause_count;
+
+}
+
+void FailPointInjection::waitForPause(const String & fail_point_name)
+{
+    std::unique_lock lock(mu);
+    auto iter = fail_point_wait_channels.find(fail_point_name);
+    if (iter == fail_point_wait_channels.end())
+        return;
+
+    auto channel = iter->second;
+
+    /// Wait until at least one thread has paused at this failpoint
+    channel->pause_cv.wait(lock, [&] {
+        return channel->pause_count > 0;
+    });
+}
+
+void FailPointInjection::waitForResume(const String & fail_point_name)
+{
+    std::unique_lock lock(mu);
+    auto iter = fail_point_wait_channels.find(fail_point_name);
+    if (iter == fail_point_wait_channels.end())
+        return;
+
+    auto channel = iter->second;
+    size_t my_resume_epoch = channel->resume_epoch;
+
+    /// Wait for resume_epoch to be incremented by notify or disable
+    channel->resume_cv.wait(lock, [&] {
+        return channel->resume_epoch > my_resume_epoch;
+    });
 }
 
 #else // USE_LIBFIU
@@ -228,7 +296,19 @@ void FailPointInjection::disableFailPoint(const String &)
 {
 }
 
+void FailPointInjection::notifyFailPoint(const String &)
+{
+}
+
 void FailPointInjection::wait(const String &)
+{
+}
+
+void FailPointInjection::waitForPause(const String &)
+{
+}
+
+void FailPointInjection::waitForResume(const String &)
 {
 }
 
