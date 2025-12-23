@@ -27,7 +27,27 @@ def run_command_in_container(cmd, *args):
     ]
 
     logging.debug("Command: %s", " ".join(command))
-    return subprocess.check_output(command)
+
+    result = subprocess.run(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False  # Don't raise immediately
+    )
+
+   if result.returncode != 0:
+        logging.error(f"Command failed with exit code {result.returncode}")
+        logging.error(f"Stderr: {result.stderr.decode()}")
+        logging.error(f"Stdout: {result.stdout.decode()}")
+
+        raise subprocess.CalledProcessError(
+            result.returncode,
+            command,
+            result.stdout,
+            result.stderr
+        )
+
+    return result.stdout
 
 
 def run_with_cpu_limit(cmd, num_cpus, *args):
