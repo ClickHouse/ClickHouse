@@ -104,7 +104,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
         /// Remove partition by
         te.clear_partition_by();
     }
-    if (teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree)
+    if (teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::GraphiteMergeTree)
     {
         if (te.has_primary_key() && te.has_order() && rg.nextSmallNumber() < 5)
         {
@@ -250,7 +250,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             newd.set_if_not_exists(true);
             deng->set_engine(t.db->deng);
             t.db->setName(newd.mutable_database());
-            t.db->finishDatabaseSpecification(deng, t.db->nparams > 0);
+            t.db->finishDatabaseSpecification(deng);
             CreateDatabaseToString(buf, newd);
             res &= !performQuery(buf + ";");
         }
@@ -285,7 +285,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
 bool ClickHouseIntegratedDatabase::truncatePeerTableOnRemote(const SQLTable & t)
 {
     chassert(t.hasDatabasePeer());
-    return !performQuery(fmt::format("{} {};", truncateStatement(), getTableName(t.db, t.tname)));
+    return !performQuery(fmt::format("{} {} SYNC;", truncateStatement(), getTableName(t.db, t.tname)));
 }
 
 bool ClickHouseIntegratedDatabase::performQueryOnServerOrRemote(const PeerTableDatabase pt, const String & query)

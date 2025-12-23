@@ -8,6 +8,7 @@ import uuid
 from collections import defaultdict
 from pathlib import Path
 
+from ci.jobs.scripts.log_parser import FuzzerLogParser
 from ci.praktika import Secret
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -826,24 +827,61 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 command=f"! awk 'found && /^[^[:space:]]/ {{ print; exit }} /^Traceback \(most recent call last\):/ {{ found=1 }} found {{ print }}' {temp_dir}/job.log | head -n 100 | tee /dev/stderr | grep -q .",
             )
         )
-        results.append(
-            Result.from_commands_run(
-                name="Sanitizer assert (in stderr.log)",
-                command=f"! sed -n '/.*anitizer/,${{p}}' {self.log_dir}/stderr*.log | grep -a -v \"ASan doesn't fully support makecontext/swapcontext functions\" | head -n 100 | tee /dev/stderr | grep -q .",
-            )
+
+        def pick_latest_file(pattern: str) -> Path | None:
+            log_dir = Path(self.log_dir)
+            candidates = list(log_dir.glob(pattern))
+            candidates = [p for p in candidates if p.is_file()]
+            if not candidates:
+                return None
+            return max(candidates, key=lambda p: p.stat().st_mtime)
+
+        sanitizer_hits = Shell.get_output(
+            f"sed -n '/.*anitizer/,${{p}}' {self.log_dir}/stderr*.log 2>/dev/null | "
+            f'grep -a -v "ASan doesn\'t fully support makecontext/swapcontext functions" | '
+            "head -n 1 || true"
         )
-        results.append(
-            Result.from_commands_run(
-                name="Fatal messages (in clickhouse-server.log or clickhouse-server.err.log)",
-                command=f"cd {self.log_dir} && ! grep -a '<Fatal>' clickhouse-server*.log | head -n200 | tee /dev/stderr | grep -q .",
-            )
+        fatal_hits = Shell.get_output(
+            f"cd {self.log_dir} && grep -a '<Fatal>' clickhouse-server*.log 2>/dev/null | head -n 1 || true"
         )
-        results.append(
-            Result.from_commands_run(
-                name="Logical error thrown (in clickhouse-server.log or clickhouse-server.err.log)",
-                command=f"cd {self.log_dir} && ! grep -a -A10 'Code: 49. DB::Exception: ' clickhouse-server*.log | head -n100 | tee /dev/stderr | grep -q .",
-            )
-        )
+        if sanitizer_hits or fatal_hits:
+            server_log = pick_latest_file(
+                "clickhouse-server*.err.log"
+            ) or pick_latest_file("clickhouse-server*.log")
+            stderr_log = pick_latest_file("stderr*.log")
+            if not (server_log or stderr_log):
+                results.append(
+                    Result.create_from(
+                        name="Sanitizer assert or Fatal messages in server logs",
+                        info="no server logs found",
+                        status=Result.StatusExtended.FAIL,
+                    )
+                )
+            else:
+                try:
+                    log_parser = FuzzerLogParser(
+                        server_log=str(server_log),
+                        stderr_log=str(stderr_log),
+                        fuzzer_log="",
+                    )
+                    name, description, files = log_parser.parse_failure()
+                    results.append(
+                        Result.create_from(
+                            name=name,
+                            info=description,
+                            status=Result.StatusExtended.FAIL,
+                            files=files,
+                        )
+                    )
+                except Exception:
+                    results.append(
+                        Result.create_from(
+                            name="Failed to parse sanitizer/fatal failure from server logs",
+                            info=traceback.format_exc(),
+                            status=Result.StatusExtended.FAIL,
+                        )
+                    )
+
         results.append(
             Result.from_commands_run(
                 name="Lost s3 keys",

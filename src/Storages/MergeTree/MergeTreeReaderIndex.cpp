@@ -10,7 +10,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-MergeTreeReaderIndex::MergeTreeReaderIndex(const IMergeTreeReader * main_reader_, MergeTreeIndexReadResultPtr index_read_result_)
+MergeTreeReaderIndex::MergeTreeReaderIndex(const IMergeTreeReader * main_reader_, MergeTreeIndexReadResultPtr index_read_result_, const PaddedPODArray<UInt64> * lazy_materializing_rows_)
     : IMergeTreeReader(
           main_reader_->data_part_info_for_read,
           {},
@@ -23,9 +23,10 @@ MergeTreeReaderIndex::MergeTreeReaderIndex(const IMergeTreeReader * main_reader_
           main_reader_->settings)
     , main_reader(main_reader_)
     , index_read_result(std::move(index_read_result_))
+    , lazy_materializing_rows(lazy_materializing_rows_)
 {
-    chassert(index_read_result);
-    chassert(index_read_result->skip_index_read_result || index_read_result->projection_index_read_result);
+    chassert(lazy_materializing_rows || index_read_result);
+    chassert(lazy_materializing_rows || index_read_result->skip_index_read_result || index_read_result->projection_index_read_result);
 }
 
 size_t MergeTreeReaderIndex::readRows(
@@ -45,12 +46,19 @@ size_t MergeTreeReaderIndex::readRows(
             res_columns.size());
     }
 
+    // std::cerr << "MergeTreeReaderIndex::readRows from_mark " << from_mark
+    //     << " max_rows_to_read " << max_rows_to_read
+    //     << " rows_offset " << rows_offset
+    //     << " continue_reading " << continue_reading << "\n";
+
     /// Determine the starting row.
-    size_t starting_row;
-    if (continue_reading)
-        starting_row = current_row + rows_offset;
-    else
-        starting_row = data_part_info_for_read->getIndexGranularity().getMarkStartingRow(from_mark) + rows_offset;
+    if (!continue_reading)
+        current_row = data_part_info_for_read->getIndexGranularity().getMarkStartingRow(from_mark);
+
+    size_t starting_row = current_row + rows_offset;
+
+    if (!continue_reading && lazy_materializing_rows)
+        next_lazy_row_it = std::lower_bound(lazy_materializing_rows->begin(), lazy_materializing_rows->end(), starting_row);
 
     /// Clamp max_rows_to_read.
     size_t total_rows = data_part_info_for_read->getIndexGranularity().getTotalRows();
@@ -58,7 +66,7 @@ size_t MergeTreeReaderIndex::readRows(
         max_rows_to_read = std::min(max_rows_to_read, total_rows - starting_row);
     max_rows_to_read = std::min(max_rows_to_read, data_part_info_for_read->getRowCount());
     /// If projection index is available, attempt to construct the filter column
-    if (index_read_result->projection_index_read_result)
+    if (index_read_result && index_read_result->projection_index_read_result)
     {
         ColumnPtr & filter_column = res_columns.front();
 
@@ -84,15 +92,59 @@ size_t MergeTreeReaderIndex::readRows(
         }
     }
 
+    if (lazy_materializing_rows)
+    {
+        // std::cerr << "MergeTreeReaderIndex::readRows lazy_materializing_rows " << lazy_materializing_rows->size() << "\n";
+        // std::cerr << "from " << starting_row << " max_to_read " << max_rows_to_read << "\n";
+        ColumnPtr & filter_column = res_columns.front();
+
+        if (filter_column == nullptr)
+        {
+            filter_column = ColumnUInt8::create();
+        }
+        else if (!typeid_cast<const ColumnUInt8 *>(filter_column.get()))
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Illegal type {} of column for projection index filter. Must be UInt8",
+                filter_column->getName());
+        }
+
+        /// If there are rows to read, apply bitmap filtering.
+        if (max_rows_to_read > 0)
+        {
+            auto mutable_filter_column = filter_column->assumeMutable();
+            auto & filter_data = static_cast<ColumnUInt8 &>(*mutable_filter_column).getData();
+            size_t old_size = filter_data.size();
+            filter_data.resize(old_size + max_rows_to_read);
+            memset(filter_data.begin() + old_size, 0, max_rows_to_read);
+
+            if (next_lazy_row_it != lazy_materializing_rows->end())
+            {
+                if (*next_lazy_row_it < starting_row)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Next lazy materializing row {} is less than starting row {}", *next_lazy_row_it, starting_row);
+            }
+
+            while (next_lazy_row_it != lazy_materializing_rows->end() && *next_lazy_row_it < starting_row + max_rows_to_read)
+            {
+                // std::cerr << ": " << *next_lazy_row_it << " -> " << (*next_lazy_row_it + old_size - starting_row) << "\n";
+                filter_data[old_size + *next_lazy_row_it - starting_row] = 1;
+                ++next_lazy_row_it;
+            }
+            // std::cerr << "Added rows " << (next_lazy_row_it - it) << std::endl;
+            filter_column = std::move(mutable_filter_column);
+        }
+    }
+
     current_row += max_rows_to_read;
     return max_rows_to_read;
 }
 
 bool MergeTreeReaderIndex::canSkipMark(size_t mark, size_t /*current_task_last_mark*/)
 {
-    auto skip_index_read_result = index_read_result->skip_index_read_result;
-    if (skip_index_read_result)
+    if (index_read_result && index_read_result->skip_index_read_result)
     {
+        auto skip_index_read_result = index_read_result->skip_index_read_result;
         chassert(mark < skip_index_read_result->granules_selected.size());
 
         if (!skip_index_read_result->granules_selected.at(mark))
@@ -109,7 +161,8 @@ bool MergeTreeReaderIndex::canSkipMark(size_t mark, size_t /*current_task_last_m
             }
         }
     }
-    if (index_read_result->projection_index_read_result)
+
+    if (index_read_result && index_read_result->projection_index_read_result)
     {
         size_t begin = data_part_info_for_read->getIndexGranularity().getMarkStartingRow(mark);
         size_t end = begin + data_part_info_for_read->getIndexGranularity().getMarkRows(mark);

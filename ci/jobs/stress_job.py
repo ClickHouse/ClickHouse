@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import List, Tuple
 
 from ci.jobs.scripts.docker_image import DockerImage
+from ci.jobs.scripts.log_parser import FuzzerLogParser
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
@@ -205,15 +206,73 @@ def run_stress_test(upgrade_check: bool = False) -> None:
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
-    state, description, test_results, additional_logs = process_results(
+    is_oom = False
+
+    if Path(result_path / "dmesg.log").is_file():
+        is_oom = Shell.check(
+            "grep -q -F -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' "
+            f"{result_path}/dmesg.log"
+        )
+
+    # Check for OOM (signal 9) in server logs
+    if server_log_path.exists():
+        server_log_oom = Shell.check(
+            f"rg -Fqa ' <Fatal> Application: Child process was terminated by signal 9' "
+            f"{server_log_path}/clickhouse-server*.log"
+        )
+        is_oom = is_oom or server_log_oom
+
+    _state, _description, test_results, additional_logs = process_results(
         result_path, server_log_path
     )
 
+    server_died = False
+    test_results = []
+    for test_result in test_results:
+        if test_result.name == "Server died":
+            # This result from stress.py indicates a server crash - we use it as a flag
+            # to trigger detailed log parsing below, but don't include it in the CI report
+            # since we'll create a more informative result from the parsed logs
+            server_died = True
+        elif not test_result.is_ok():
+            test_results.append(test_result)
+
+    if server_died:
+        server_err_log = server_log_path / "clickhouse-server.err.log"
+        stderr_log = result_path / "stderr.log"
+        if not (server_err_log.exists() and stderr_log.exists()):
+            test_results.append(
+                Result.create_from(
+                    name="Unknown error",
+                    info="no server logs found",
+                    status=Result.Status.FAILED,
+                )
+            )
+        else:
+            log_parser = FuzzerLogParser(
+                server_log=server_err_log,
+                stderr_log=stderr_log if stderr_log.exists() else "",
+                fuzzer_log="",
+            )
+            name, description, files = log_parser.parse_failure()
+            test_results.append(
+                Result.create_from(
+                    name=name,
+                    info=description,
+                    status=Result.StatusExtended.FAIL,
+                    files=files,
+                )
+            )
+
     r = Result.create_from(
         results=test_results,
+        status=Result.Status.SUCCESS if not test_results else "",
         stopwatch=stopwatch,
-        info=description,
     )
+    if not r.is_ok() and is_oom:
+        r.set_status(Result.Status.SUCCESS)
+        r.set_info("OOM error (allowed in stress tests)")
+
     if not r.is_ok():
         r.set_files(additional_logs)
     r.complete_job()
