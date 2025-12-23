@@ -538,6 +538,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         !patch_parts.empty() ||
         global_ctx->cleanup ||
         global_ctx->deduplicate ||
+        hasLightweightDelete(global_ctx->future_part) ||
         global_ctx->merging_params.mode != MergeTreeData::MergingParams::Ordinary;
 
     prepareProjectionsToMergeAndRebuild();
@@ -805,6 +806,23 @@ void MergeTask::addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const Str
     global_ctx->gathering_columns.emplace_back(name, type);
 }
 
+bool MergeTask::hasLightweightDelete(const FutureMergedMutatedPartPtr & future_part)
+{
+    for (const auto & part : future_part->parts)
+    {
+        if (part->hasLightweightDelete())
+            return true;
+    }
+
+    for (const auto & patch_part : future_part->patch_parts)
+    {
+        if (patch_part->hasLightweightDelete())
+            return true;
+    }
+
+    return false;
+}
+
 bool MergeTask::isVerticalLightweightDelete(const GlobalRuntimeContext & global_ctx)
 {
     if (global_ctx.merging_params.mode != MergeTreeData::MergingParams::Ordinary)
@@ -816,27 +834,7 @@ bool MergeTask::isVerticalLightweightDelete(const GlobalRuntimeContext & global_
     if (!(*global_ctx.data_settings)[MergeTreeSetting::vertical_merge_optimize_lightweight_delete])
         return false;
 
-    bool has_lightweight_delete = false;
-
-    for (const auto & part : global_ctx.future_part->parts)
-    {
-        if (part->hasLightweightDelete())
-        {
-            has_lightweight_delete = true;
-            break;
-        }
-    }
-
-    for (const auto & patch_part : global_ctx.future_part->patch_parts)
-    {
-        if (patch_part->hasLightweightDelete())
-        {
-            has_lightweight_delete = true;
-            break;
-        }
-    }
-
-    return has_lightweight_delete;
+    return hasLightweightDelete(global_ctx.future_part);
 }
 
 
