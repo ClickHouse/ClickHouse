@@ -56,6 +56,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_join_disjunctions_push_down", false, true, "Enabled this optimization."},
             {"join_runtime_bloom_filter_max_ratio_of_set_bits", 0.7, 0.7, "New setting"},
             {"use_primary_key", true, true, "New setting controlling whether MergeTree uses the primary key for granule-level pruning."},
+            {"insert_select_deduplicate", InsertSelectDeduplicateMode::ENABLE_EVEN_FOR_BAD_QUERIES, InsertSelectDeduplicateMode::ENABLE_WHEN_PROSSIBLE, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
@@ -99,7 +100,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_positional_arguments_for_projections", true, false, "New setting to control positional arguments in projections."},
             {"enable_full_text_index", false, false, "Text index was moved to Beta."},
             {"enable_shared_storage_snapshot_in_query", false, true, "Enable share storage snapshot in query by default"},
-            {"insert_select_deduplicate", Field{"auto"}, Field{"auto"}, "New setting"},
+            {"insert_select_deduplicate", InsertSelectDeduplicateMode::ENABLE_EVEN_FOR_BAD_QUERIES, InsertSelectDeduplicateMode::ENABLE_EVEN_FOR_BAD_QUERIES, "New setting"},
             {"output_format_pretty_named_tuples_as_json", false, true, "New setting to control whether named tuples in Pretty format are output as JSON objects"},
         });
         addSettingsChanges(settings_changes_history, "25.11",
