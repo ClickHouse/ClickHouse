@@ -11,7 +11,6 @@ def has_ci_sink():
     """Return True if CI ClickHouse test-stat credentials are available."""
     try:
         from tests.ci.clickhouse_helper import ClickHouseHelper  # type: ignore
-
         _ = ClickHouseHelper()
         return True
     except Exception:
