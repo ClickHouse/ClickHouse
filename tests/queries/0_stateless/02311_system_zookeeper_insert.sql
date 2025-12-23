@@ -44,6 +44,9 @@ drop table if exists test_zkinsert;
 
 SELECT '------- Insert into auxiliary zookeeper --------';
 
+-- prepare the root node for auxiliary zookeeper
+insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot', '');
+
 create table test_zkinsert (
 	name String,
 	path String,
@@ -54,7 +57,7 @@ create table test_zkinsert (
 -- test recursive create and big transaction
 insert into test_zkinsert (name, path, value) values ('c', '/1-insert-testc/c/c/c/c/c/c', 11), ('e', '/1-insert-testc/c/c/d', 10), ('c', '/1-insert-testc/c/c/c/c/c/c/c', 10), ('c', '/1-insert-testc/c/c/c/c/c/c', 9), ('f', '/1-insert-testc/c/c/d', 11), ('g', '/1-insert-testc/c/c/d', 12), ('g', '/1-insert-testc/c/c/e', 13), ('g', '/1-insert-testc/c/c/f', 14), ('g', '/1-insert-testc/c/c/kk', 14);
 -- insert same value, suppose to have no side effects
-insert into system.zookeeper (name, path, value) SELECT name, '/' || currentDatabase() || path, value from test_zkinsert;
+insert into system.zookeeper (name, path, value, zookeeperName) SELECT name, '/' || currentDatabase() || path, value, zookeeperName from test_zkinsert;
 
 SELECT * FROM (SELECT path, name, value FROM system.zookeeper WHERE zookeeperName = 'zookeeper2' ORDER BY path, name) WHERE path LIKE '/' || currentDatabase() || '/1-insert-test%';
 
@@ -67,7 +70,7 @@ insert into test_zkinsert (name, path, value) values ('testc', '/2-insert-testz/
 insert into test_zkinsert (name, path) values ('testc', '/2-insert-testz//c/cd/');
 insert into test_zkinsert (name, value, path) values ('testb', 'z', '/2-insert-testx');
 
-insert into system.zookeeper (name, path, value) SELECT name, '/' || currentDatabase() || path, value from test_zkinsert;
+insert into system.zookeeper (name, path, value, zookeeperName) SELECT name, '/' || currentDatabase() || path, value, zookeeperName from test_zkinsert;
 
 SELECT * FROM (SELECT path, name, value FROM system.zookeeper WHERE zookeeperName = 'zookeeper2' ORDER BY path, name) WHERE path LIKE '/' || currentDatabase() || '/2-insert-test%';
 

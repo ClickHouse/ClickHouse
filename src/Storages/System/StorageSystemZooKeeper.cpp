@@ -342,7 +342,10 @@ ColumnsDescription StorageSystemZooKeeper::getColumnsDescription()
         description.modify(name, [&](ColumnDescription & column)
         {
             /// We only allow column `name`, `path`, `value` to insert.
-            if (column.name != "name" && column.name != "path" && column.name != "value")
+            if (column.name != "name"
+                && column.name != "path"
+                && column.name != "value"
+                && column.name != "zookeeperName")
                 column.default_desc.kind = ColumnDefaultKind::Materialized;
         });
     }
@@ -382,11 +385,6 @@ static bool isPathNode(const ActionsDAG::Node * node)
 
 static void extractNameImpl(const ActionsDAG::Node & node, String & res, ContextPtr context)
 {
-    /// Only one name is allowed
-    if (!res.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "SELECT from system.zookeeper table cannot have multiple different filters by zookeeperName.");
-
     if (node.type != ActionsDAG::ActionType::FUNCTION)
         return;
 
@@ -421,7 +419,12 @@ static void extractNameImpl(const ActionsDAG::Node & node, String & res, Context
             return;
 
         /// Only inserted if the key doesn't exists already
-        res = value->column->getDataAt(0);
+        auto candidate = value->column->getDataAt(0);
+        /// Only one name is allowed
+        if (!res.empty() && res != candidate)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "SELECT from system.zookeeper table cannot have multiple different filters by zookeeperName.");
+        res = candidate;
     }
 }
 
