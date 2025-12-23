@@ -150,12 +150,12 @@ void SQLBase::setDeterministic(const FuzzConfig & fc, RandomGenerator & rg, SQLB
 
 bool SQLBase::supportsFinal(const TableEngineValues teng)
 {
-    return teng >= TableEngineValues::ReplacingMergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree;
+    return teng >= TableEngineValues::ReplacingMergeTree && teng <= TableEngineValues::GraphiteMergeTree;
 }
 
 bool SQLBase::isMergeTreeFamily() const
 {
-    return teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree;
+    return teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::GraphiteMergeTree;
 }
 
 bool SQLBase::isLogFamily() const

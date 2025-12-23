@@ -104,8 +104,6 @@ namespace Setting
     extern const SettingsUInt64 async_insert_max_data_size;
     extern const SettingsBool calculate_text_stack_trace;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
-    extern const SettingsBool enable_deflate_qpl_codec;
-    extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsUInt64 idle_connection_timeout;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
@@ -2542,9 +2540,7 @@ CompressionCodecPtr TCPHandler::getCompressionCodec(const Settings & query_setti
             method,
             level,
             !query_settings[Setting::allow_suspicious_codecs],
-            query_settings[Setting::allow_experimental_codecs],
-            query_settings[Setting::enable_deflate_qpl_codec],
-            query_settings[Setting::enable_zstd_qat_codec]);
+            query_settings[Setting::allow_experimental_codecs]);
 
         return CompressionCodecFactory::instance().get(method, level);
     }

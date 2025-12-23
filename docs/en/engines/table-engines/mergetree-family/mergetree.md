@@ -488,7 +488,7 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
 
 ### Text index {#text}
 
-Supports full-text search, see [here](invertedindexes.md) for details.
+Supports full-text search, see [here](textindexes.md) for details.
 
 #### Vector similarity {#vector-similarity}
 
@@ -570,6 +570,39 @@ SELECT <column list expr> [GROUP BY] <group keys expr> [ORDER BY] <expr>
 ```
 
 Projections can be modified or dropped with the [ALTER](/sql-reference/statements/alter/projection.md) statement.
+
+### Projection indexes {#projection-index}
+
+Projection indexes extend the projection subsystem by providing a lightweight, explicit way to define projection-level indexes. 
+Conceptually, a projection index is still a projection, but with simplified syntax and clearer intent: it defines an expression which is dedicated to filtering, rather than serving as materialized data.
+
+#### Syntax {#projection-index-syntax}
+```sql
+PROJECTION <name> INDEX <index_expr> TYPE <index_type>
+````
+
+Example:
+
+```sql
+CREATE TABLE example
+(
+    id UInt64,
+    region String,
+    user_id UInt32,
+    PROJECTION region_proj INDEX region TYPE basic,
+    PROJECTION uid_proj INDEX user_id TYPE basic
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+#### Index types {#projection-index-types}
+
+Currently supported:
+
+* **basic**: equivalent to a normal MergeTree index on the expression.
+
+The framework allows adding more index types in the future.
 
 ### Projection storage {#projection-storage}
 Projections are stored inside the part directory. It's similar to an index but contains a subdirectory that stores an anonymous `MergeTree` table's part. The table is induced by the definition query of the projection. If there is a `GROUP BY` clause, the underlying storage engine becomes [AggregatingMergeTree](aggregatingmergetree.md), and all aggregate functions are converted to `AggregateFunction`. If there is an `ORDER BY` clause, the `MergeTree` table uses it as its primary key expression. During the merge process the projection part is merged via its storage's merge routine. The checksum of the parent table's part is combined with the projection's part. Other maintenance jobs are similar to skip indices.

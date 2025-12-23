@@ -396,12 +396,6 @@ void StatementGenerator::generateNextCodecs(RandomGenerator & rg, CodecList * cl
         switch (cc)
         {
             case COMP_LZ4HC:
-            case COMP_ZSTD_QAT:
-                if (rg.nextBool())
-                {
-                    cp->add_params()->set_ival(rg.randomInt<uint32_t>(1, 12));
-                }
-                break;
             case COMP_ZSTD:
                 if (rg.nextBool())
                 {
@@ -1864,18 +1858,14 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             }
             if (rg.nextBool())
             {
+                std::uniform_int_distribution<uint32_t> next_dist(1, 100000);
+
+                idef->add_params()->set_unescaped_sval("posting_list_block_size = " + std::to_string(next_dist(rg.generator)));
+            }
+            if (rg.nextBool())
+            {
                 idef->add_params()->set_unescaped_sval(
                     "dictionary_block_frontcoding_compression = " + std::to_string(rg.nextBool() ? 1 : 0));
-            }
-            if (rg.nextBool())
-            {
-                idef->add_params()->set_unescaped_sval(
-                    "max_cardinality_for_embedded_postings = " + std::to_string(rg.randomInt<uint32_t>(0, 8192)));
-            }
-            if (rg.nextBool())
-            {
-                idef->add_params()->set_unescaped_sval(
-                    "bloom_filter_false_positive_rate = 0." + std::to_string(rg.randomInt<uint32_t>(1, 9)));
             }
         }
         break;
@@ -1988,6 +1978,14 @@ void StatementGenerator::getNextPeerTableDatabase(RandomGenerator & rg, SQLBase 
 
 void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_external_integrations, SQLBase & b)
 {
+    if (b.random_engine)
+    {
+        /// Doesn't matter what to pick
+        std::uniform_int_distribution<uint32_t> engine_range(1, static_cast<uint32_t>(TableEngineValues_MAX));
+
+        b.teng = static_cast<TableEngineValues>(engine_range(rg.generator));
+        return;
+    }
     /// Make sure `is_determistic is already set`
     const uint32_t noption = rg.nextSmallNumber();
     const LakeStorage storage = b.getPossibleLakeStorage();
@@ -2732,8 +2730,15 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     this->staged_dictionaries[tname] = std::move(next);
 }
 
-DatabaseEngineValues StatementGenerator::getNextDatabaseEngine(RandomGenerator & rg)
+DatabaseEngineValues StatementGenerator::getNextDatabaseEngine(RandomGenerator & rg, const SQLDatabase & d)
 {
+    if (d.random_engine)
+    {
+        /// Doesn't matter what to pick
+        std::uniform_int_distribution<uint32_t> engine_range(1, static_cast<uint32_t>(DatabaseEngineValues_MAX));
+
+        return static_cast<DatabaseEngineValues>(engine_range(rg.generator));
+    }
     chassert(this->ids.empty());
     this->ids.emplace_back(DAtomic);
     if (fc.allow_memory_tables && (fc.engine_mask & allow_memory) != 0)
@@ -2803,7 +2808,7 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     DatabaseEngine * deng = cd->mutable_dengine();
 
     SQLDatabase::setRandomDatabase(rg, next);
-    next.deng = this->getNextDatabaseEngine(rg);
+    next.deng = this->getNextDatabaseEngine(rg, next);
     deng->set_engine(next.deng);
     if (!next.isSharedDatabase() && rg.nextSmallNumber() < 2)
     {

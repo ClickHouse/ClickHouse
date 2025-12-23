@@ -3,7 +3,7 @@
 -- Tests that text indexes can be build on and used with Array columns.
 
 SET enable_analyzer = 1;
-SET allow_experimental_full_text_index = 1;
+SET enable_full_text_index = 1;
 
 DROP TABLE IF EXISTS tab;
 
@@ -12,8 +12,8 @@ CREATE TABLE tab
     id UInt32,
     arr Array(String),
     arr_fixed Array(FixedString(3)),
-    INDEX array_idx(arr) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1,
-    INDEX array_fixed_idx(arr_fixed) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1,
+    INDEX array_idx(arr) TYPE text(tokenizer = 'splitByNonAlpha'),
+    INDEX array_fixed_idx(arr_fixed) TYPE text(tokenizer = 'splitByNonAlpha')
 )
 ENGINE = MergeTree()
 ORDER BY (id)
