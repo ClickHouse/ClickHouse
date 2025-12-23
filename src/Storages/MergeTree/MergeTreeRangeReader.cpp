@@ -88,6 +88,8 @@ static void filterColumns(Columns & columns, const FilterWithCachedCount & filte
 
             if (canInplaceFilter(column, filter.getColumn()))
             {
+                /// The contract is - not to filter in-place if the column is shared. But if there're some shared subcolumns,
+                /// we'll clone them via IColumn::mutate() and then safely filter in-place.
                 auto mutable_column = IColumn::mutate(std::move(column));
                 mutable_column->filter(filter_data);
                 column = std::move(mutable_column);

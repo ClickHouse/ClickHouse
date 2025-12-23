@@ -4,7 +4,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-RUNS=${RUNS:-25}
 # This test covers #88605 and #90695 - different occurences of the same issue - calling shrinkToFit on a shared column.
 # Due to flaky nature of the problem, the test repeats same queries multiple times in order the trigger a simultanuous
 # attempt to shrink at several exec threads.
@@ -30,7 +29,9 @@ setup() {
 }
 
 run_queries() {
-    for i in $(seq 1 "$RUNS"); do
+    # During 30 seconds we gonna hammer server with these SELECT queries. Before the fix, it'd crash with high probability. Not crashing is the expected success.
+    local TIMELIMIT=$((SECONDS+30))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         $CLICKHOUSE_CLIENT -q "
             SELECT v FROM const_node_1 PREWHERE and(materialize(255), *) ORDER BY v FORMAT NULL;
             SELECT median(3) IGNORE NULLS FROM const_node_2 PREWHERE and(materialize(toNullable(materialize(1))), not(materialize(100) = *)) FORMAT NULL;
