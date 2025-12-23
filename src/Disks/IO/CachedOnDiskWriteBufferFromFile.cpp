@@ -230,6 +230,9 @@ FileSegment & FileSegmentRangeWriter::allocateFileSegment(size_t offset, FileSeg
         }
         else if (file_segment.getCurrentWriteOffset() != offset)
         {
+            /// Note: this exception can happen if you configure
+            /// max_file_segment_size < 2 * boundary_alignment, which is a misconfiguration,
+            /// but difficult to validate.
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Writing at offset {}, but covering file segment has write offset {} ({})",

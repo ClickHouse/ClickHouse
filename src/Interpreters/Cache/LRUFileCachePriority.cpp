@@ -633,7 +633,7 @@ void LRUFileCachePriority::holdImpl(
     total_hold_size += size;
     total_hold_elements += elements;
 
-    // LOG_TEST(log, "Hold {} by size and {} by elements", size, elements);
+    LOG_TEST(log, "Hold {} by size and {} by elements", size, elements);
 }
 
 void LRUFileCachePriority::releaseImpl(size_t size, size_t elements)
@@ -646,7 +646,7 @@ void LRUFileCachePriority::releaseImpl(size_t size, size_t elements)
     total_hold_size -= size;
     total_hold_elements -= elements;
 
-    // LOG_TEST(log, "Released {} by size and {} by elements", size, elements);
+    LOG_TEST(log, "Released {} by size and {} by elements", size, elements);
 }
 
 }
