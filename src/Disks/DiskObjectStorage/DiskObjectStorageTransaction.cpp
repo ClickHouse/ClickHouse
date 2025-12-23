@@ -176,6 +176,9 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
     {
         if (!metadata_storage.existsFile(path))
         {
+            if (if_exists)
+                return;
+
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Metadata path '{}' doesn't exist or isn't a regular file", path);
         }
 
@@ -254,6 +257,9 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
         {
             if (!metadata_storage.existsFile(path))
             {
+                if (if_exists)
+                    continue;
+
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Metadata path '{}' doesn't exist or isn't a regular file", path);
             }
 
