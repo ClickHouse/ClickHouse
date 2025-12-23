@@ -16,6 +16,12 @@ def build_gp3_jitter(
     sb.set_workload_config("workloads/prod_mix.yaml", duration=duration_s)
     from .core.scenario_builder import with_gp3_disk, with_jitter
 
+    sb.pre({
+        "kind": "ensure_paths",
+        "on": "leader",
+        "paths": ["/e2e/prod", "/e2e/prod/create", "/e2e/prod/set"],
+    })
+
     with_jitter(
         sb,
         delay_ms=delay_ms,
@@ -29,6 +35,9 @@ def build_gp3_jitter(
     sb.gate({"type": "error_rate_le"})
     sb.gate({"type": "p99_le"})
     sb.gate({"type": "log_sanity_ok"})
+    sb.gate({"type": "print_summary"})
+    sb.gate({"type": "mntr_print"})
+    sb.gate({"type": "count_paths", "prefixes": ["/e2e/prod", "/e2e/prod/create", "/e2e/prod/set"]})
     return sb.build()
 
 
