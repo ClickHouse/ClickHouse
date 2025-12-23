@@ -430,7 +430,7 @@ void copyAzureBlobStorageFile(
                           e.StatusCode, src_container_for_logging, src_blob, dest_container_for_logging, dest_blob);
         }
     }
-    if (!g)
+    if (!is_native_copy_done)
     {
         /// Copy through read and write
         LOG_TRACE(log, "Reading and writing Blob: {} from Container: {}", src_blob, src_container_for_logging);
