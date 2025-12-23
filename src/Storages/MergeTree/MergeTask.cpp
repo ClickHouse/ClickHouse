@@ -1513,7 +1513,7 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             ReadableSize(global_ctx->merge_list_element_ptr->bytes_read_uncompressed / elapsed_seconds));
     }
 
-    if (global_ctx->merged_part_offsets && !global_ctx->projections_to_merge.empty())
+    if (global_ctx->merged_part_offsets && !global_ctx->merged_part_offsets->isFinalized())
         global_ctx->merged_part_offsets->flush();
 
     for (const auto & projection : global_ctx->projections_to_merge)
