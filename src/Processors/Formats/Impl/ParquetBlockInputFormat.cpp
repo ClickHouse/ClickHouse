@@ -1400,6 +1400,8 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
 
 void registerInputFormatParquet(FormatFactory & factory)
 {
+    auto log = getLogger("ParquetMetadataCache");
+    LOG_DEBUG(log, "checking for v3 reader setting in format factory");
     factory.registerFileBucketInfo(
         "Parquet",
         []
@@ -1407,7 +1409,7 @@ void registerInputFormatParquet(FormatFactory & factory)
             return std::make_shared<ParquetFileBucketInfo>();
         }
     );
-
+    LOG_DEBUG(log, "beginning registerRandomAccessInputFormat");
     factory.registerRandomAccessInputFormat(
         "Parquet",
         [](ReadBuffer & buf,
@@ -1418,11 +1420,36 @@ void registerInputFormatParquet(FormatFactory & factory)
            FormatParserSharedResourcesPtr parser_shared_resources,
            FormatFilterInfoPtr format_filter_info) -> InputFormatPtr
         {
+            auto lambda_logger = getLogger("ParquetMetadataCache");
+            LOG_DEBUG(lambda_logger, "checking for v3 reader setting in format factory lambda");
             size_t min_bytes_for_seek
                 = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
-            auto ptr = std::make_shared<ParquetBlockInputFormat>(
-                buf, std::make_shared<const Block>(sample), settings, std::move(parser_shared_resources), format_filter_info, min_bytes_for_seek);
-            return ptr;
+            if (settings.parquet.use_native_reader_v3)
+            {
+                LOG_DEBUG(lambda_logger, "using native reader v3 in ParquetBlockInputFormat with metadata cache");
+                ParquetMetadataCachePtr metadata_cache = CurrentThread::getQueryContext()->getParquetMetadataCache();
+                return std::make_shared<ParquetV3BlockInputFormat>(
+                    buf,
+                    std::make_shared<const Block>(sample),
+                    settings,
+                    std::move(parser_shared_resources),
+                    std::move(format_filter_info),
+                    min_bytes_for_seek,
+                    metadata_cache
+                );
+            }
+            else
+            {
+                LOG_DEBUG(lambda_logger, "using arrow reader in ParquetBlockInputFormat without metadata cache");
+                return std::make_shared<ParquetBlockInputFormat>(
+                    buf,
+                     std::make_shared<const Block>(sample),
+                    settings,
+                    std::move(parser_shared_resources),
+                    std::move(format_filter_info),
+                    min_bytes_for_seek
+                );
+            }
         });
     factory.markFormatSupportsSubsetOfColumns("Parquet");
     factory.registerPrewhereSupportChecker("Parquet", [](const FormatSettings & settings)
@@ -1433,6 +1460,7 @@ void registerInputFormatParquet(FormatFactory & factory)
 
 void registerParquetSchemaReader(FormatFactory & factory)
 {
+    auto log = getLogger("ParquetMetadataCache");
     factory.registerSplitter("Parquet", []
         {
             return std::make_shared<ParquetBucketSplitter>();
@@ -1441,8 +1469,11 @@ void registerParquetSchemaReader(FormatFactory & factory)
         "Parquet",
         [](ReadBuffer & buf, const FormatSettings & settings) -> SchemaReaderPtr
         {
+            auto lambda_logger = getLogger("ParquetMetadataCache");
+            LOG_DEBUG(lambda_logger, "checking for v3 reader setting in registerSchemaReader");
             if (settings.parquet.use_native_reader_v3)
             {
+                LOG_DEBUG(lambda_logger, "using native reader v3 in ParquetSchemaReader with metadata cache");
                 auto metadata_cache = CurrentThread::getQueryContext()->getParquetMetadataCache();
                 return std::make_shared<NativeParquetSchemaReader>(buf, settings, metadata_cache);
             }

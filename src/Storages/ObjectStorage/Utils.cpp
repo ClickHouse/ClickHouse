@@ -4,6 +4,7 @@
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/IO/getThreadPoolReader.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Formats/FormatFactory.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCacheKey.h>
@@ -247,6 +248,51 @@ ParseFromDiskResult parseFromDisk(ASTs args, bool with_structure, ContextPtr con
         result.compression_method = compression_method_value.value();
     }
     return result;
+}
+
+static bool isParquetFromContentType(const ObjectMetadata & metadata)
+{
+    /// there's no official MIME type for parquet, so we will do our best
+    /// based off the most common headers
+    auto check_content_type_header = [](const String & header, const ObjectMetadata & meta)-> bool {
+        auto content_type_header = meta.attributes.find(header);
+        if (content_type_header != meta.attributes.end())
+        {
+            const String & content_type = content_type_header->second;
+            return content_type == "application/parquet" ||
+                content_type == "application/vnd.apache.parquet" ||
+                content_type == "application/octet-stream" ||
+                content_type == "binary/octet-stream";
+        }
+        return false;
+    };
+    bool upper_content_type = check_content_type_header("Content-Type", metadata);
+    bool lower_content_type = check_content_type_header("content-type", metadata);
+    return upper_content_type || lower_content_type;
+}
+
+static bool isParquetFromFileName(const RelativePathWithMetadata & object_info)
+{
+    const String & format = FormatFactory::instance().getFormatFromFileName(object_info.getFileName());
+    if (format == "Parquet" || format == "ParquetV3")
+        return true;
+    return false;
+}
+
+static bool isParquetFromFileSuffix(const RelativePathWithMetadata & object_info)
+{
+    return object_info.getFileName().ends_with(".parquet") || object_info.getFileName().ends_with(".parq");
+}
+
+bool isParquetFormat(RelativePathWithMetadata & object_info, const ObjectStoragePtr & object_storage)
+{
+    if (!object_info.metadata)
+        object_info.metadata = object_storage->getObjectMetadata(object_info.getPath(), /*with_tags=*/ false);
+
+    bool parquet_from_config = isParquetFromFileSuffix(object_info);
+    bool parquet_from_file_name = isParquetFromFileName(object_info);
+    bool parquet_from_content_type = isParquetFromContentType(*object_info.metadata);
+    return parquet_from_config || parquet_from_file_name || parquet_from_content_type;
 }
 
 namespace Setting

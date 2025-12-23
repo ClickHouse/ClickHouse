@@ -11,6 +11,7 @@
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadBufferFromParquetWithSchemaCaching.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCacheKey.h>
@@ -70,6 +71,7 @@ namespace Setting
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
     extern const SettingsBool table_engine_read_through_distributed_cache;
     extern const SettingsUInt64 s3_path_filter_limit;
+    extern const SettingsBool use_parquet_metadata_cache;
 }
 
 namespace ErrorCodes
@@ -736,9 +738,10 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
                 || object_storage->getType() == ObjectStorageType::S3);
     }
 
-    /// We need object metadata for two cases:
+    /// We need object metadata for a few use cases:
     /// 1. object size suggests whether we need to use prefetch
     /// 2. object etag suggests a cache key in case we use filesystem cache
+    /// 3. object etag as a caching key for parquet metadata caching
     if (!object_info.metadata)
         object_info.metadata = object_storage->getObjectMetadata(object_info.getPath(), /*with_tags=*/ false);
 
@@ -842,6 +845,14 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         impl = object_storage->readObject(
             StoredObject(object_info.getPath(), "", object_size),
             use_async_buffer ? modified_read_settings.withNestedBuffer(/* seekable */true) : modified_read_settings);
+    }
+
+    if (settings[Setting::use_parquet_metadata_cache] 
+        && !object_info.metadata->etag.empty()
+        && isParquetFormat(object_info, object_storage))
+    {
+        std::pair<std::string, std::string> cache_key = std::make_pair(object_info.getPath(), object_info.metadata->etag);
+        impl = std::make_unique<ReadBufferFromParquetWithSchemaCaching>(std::move(impl), cache_key);
     }
 
     if (!use_async_buffer)

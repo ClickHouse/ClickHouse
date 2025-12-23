@@ -9,6 +9,7 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/SharedThreadPools.h>
+#include <IO/ReadBufferFromParquetWithSchemaCaching.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
@@ -94,13 +95,20 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
 
         reader.emplace();
         reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
+        auto log = getLogger("ParquetMetadataCache");
         if (metadata_cache)
         {
-            auto [file_path, file_attr] = extractObjectAttributes(*in);
-            ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_path, file_attr);
-            reader->reader.file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
-                return Parquet::Reader::readFileMetaData(reader->reader.prefetcher);
-            });
+            if (auto* buffer_with_key = dynamic_cast<ReadBufferFromParquetWithSchemaCaching*>(in))
+            {
+                if (auto maybe_cached_key = buffer_with_key->consumeParquetCacheKey())
+                {
+                    auto [file_name, etag] = maybe_cached_key.value();
+                    ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, etag);
+                    reader->reader.file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
+                        return Parquet::Reader::readFileMetaData(reader->reader.prefetcher);
+                    });
+                }
+            }
         }
         else
         {
@@ -123,11 +131,20 @@ Chunk ParquetV3BlockInputFormat::read()
         Parquet::Prefetcher temp_prefetcher;
         parquet::format::FileMetaData file_metadata;
         temp_prefetcher.init(in, read_options, parser_shared_resources);
+        auto log = getLogger("ParquetMetadataCache");
         if (metadata_cache)
         {
-            auto [file_path, file_attr] = extractObjectAttributes(*in);
-            ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_path, file_attr);
-            file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() { return Parquet::Reader::readFileMetaData(temp_prefetcher); });
+            if (auto * buffer_with_key = dynamic_cast<ReadBufferFromParquetWithSchemaCaching *>(in))
+            {
+                if (auto maybe_cache_key = buffer_with_key->consumeParquetCacheKey())
+                {
+                    auto [file_name, etag] = maybe_cache_key.value();
+                    ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, etag);
+                    file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
+                        return Parquet::Reader::readFileMetaData(temp_prefetcher);
+                    });
+                }
+            }
         }
         else
         {
@@ -189,11 +206,20 @@ void NativeParquetSchemaReader::initializeIfNeeded()
         return;
     Parquet::Prefetcher prefetcher;
     prefetcher.init(&in, read_options, /*parser_shared_resources_=*/ nullptr);
+    auto log = getLogger("ParquetMetadataCache");
     if (metadata_cache)
     {
-        auto [file_path, file_attr] = extractObjectAttributes(in);
-        ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_path, file_attr);
-        file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() { return Parquet::Reader::readFileMetaData(prefetcher); });
+        if (auto* buffer_with_key = dynamic_cast<ReadBufferFromParquetWithSchemaCaching*>(&in))
+        {
+            if (auto maybe_cache_key = buffer_with_key->consumeParquetCacheKey())
+            {
+                auto [file_name, etag] = maybe_cache_key.value();
+                ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, etag);
+                file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
+                    return Parquet::Reader::readFileMetaData(prefetcher); 
+                });
+            }
+        }
     }
     else
     {
