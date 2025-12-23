@@ -181,6 +181,26 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
+SELECT '-- ngram size must be an unsigned int.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = ngrams(-1))
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- ngram size cannot be larger than max UInt64.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = ngrams(18_446_744_073_709_551_616))
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
 SELECT 'Test sparseGrams tokenizer.';
 
 CREATE TABLE tab

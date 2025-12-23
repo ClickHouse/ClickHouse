@@ -23,12 +23,11 @@ namespace ErrorCodes
 }
 
 static constexpr UInt64 MIN_NGRAM_SIZE = 1;
-/// static constexpr UInt64 MAX_NGRAM_SIZE = 4096; /// (*)
 static constexpr UInt64 DEFAULT_NGRAM_SIZE = 3;
 static constexpr UInt64 DEFAULT_SPARSE_GRAMS_MIN_LENGTH = 3;
-static constexpr UInt64 DEFAULT_SPARSE_GRAMS_MAX_LENGTH = 100; /// (**)
+static constexpr UInt64 DEFAULT_SPARSE_GRAMS_MAX_LENGTH = 100;
 
-/// (*) Contrary to intuition and sparse ngrams (**), there is no upper length for ngrams.
+/// Unlike for sparse ngrams, there is no upper length for ngrams.
 /// Such a limit historically existed for the text index and SQL function hasToken() but not for the bloom filter skip index.
 /// Since the lower/upper limit checks in this file are central to all of these, we need to go with the lowest common denominator for backward compatibility.
 

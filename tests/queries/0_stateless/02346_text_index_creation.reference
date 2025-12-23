@@ -4,6 +4,8 @@ Test single tokenizer argument.
 -- tokenizer can be identifier or function.
 Test ngrams tokenizer.
 -- ngram size must be larger than 0.
+-- ngram size must be an unsigned int.
+-- ngram size cannot be larger than max UInt64.
 Test sparseGrams tokenizer.
 -- min_length must be between 3 and 100.
 -- max_length must be bigger than min_length.
