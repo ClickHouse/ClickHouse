@@ -226,6 +226,11 @@ ColumnPtr ColumnMap::filter(const Filter & filt, ssize_t result_size_hint) const
     return ColumnMap::create(filtered);
 }
 
+void ColumnMap::filter(const Filter & filt)
+{
+    nested->filter(filt);
+}
+
 void ColumnMap::expand(const IColumn::Filter & mask, bool inverted)
 {
     nested->expand(mask, inverted);
