@@ -1566,6 +1566,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
          {"format_custom_result_after_delimiter", CHSetting(nastyStrings, {}, false)},
          {"format_tsv_null_representation", CHSetting(nastyStrings, {}, false)},
          {"input_format_binary_decode_types_in_binary_format", trueOrFalseSettingNoOracle},
+         {"input_format_binary_max_type_complexity", CHSetting(rowsRange, {}, false)},
          {"input_format_csv_arrays_as_nested_csv", trueOrFalseSettingNoOracle},
          {"input_format_csv_detect_header", trueOrFalseSettingNoOracle},
          {"input_format_csv_enum_as_number", trueOrFalseSettingNoOracle},
