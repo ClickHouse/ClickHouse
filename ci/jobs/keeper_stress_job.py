@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import argparse
 import subprocess
 import time
 from pathlib import Path
@@ -9,17 +10,42 @@ from praktika.utils import Shell, Utils
 
 
 def main():
+    # Parse optional CLI args similar to integration jobs
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--test", nargs="+")
+    parser.add_argument("--keeper-include-ids")
+    parser.add_argument("--faults")
+    parser.add_argument("--duration", type=int)
+    parser.add_argument("--param")
+    args, _ = parser.parse_known_args()
     # Ensure weekly selection defaults depend on workflow: PR disables weekly, Nightly enables
     wf = os.environ.get("WORKFLOW_NAME", "")
-    if wf == "PR":
+    jn = os.environ.get("JOB_NAME", "")
+    is_pr = (wf == "PR") or ("(PR)" in jn)
+    if is_pr:
         os.environ.setdefault("KEEPER_RUN_WEEKLY", "0")
         # Run a single representative scenario on PRs unless explicitly overridden
         os.environ.setdefault("KEEPER_INCLUDE_IDS", "CHA-01")
+        # Make PR runs snappy and predictable
+        os.environ.setdefault("KEEPER_READY_TIMEOUT", "60")
+        os.environ.setdefault("KEEPER_BENCH_CLIENTS", "32")
+        os.environ.setdefault("KEEPER_DISABLE_S3", "1")
     else:
         os.environ.setdefault("KEEPER_RUN_WEEKLY", "1")
+    # Always keep containers/logs on fail for local/CI triage unless explicitly disabled
+    os.environ.setdefault("KEEPER_KEEP_ON_FAIL", "1")
     # Keep PR job fast/reliable by default; can be overridden via env
     os.environ.setdefault("KEEPER_FAULTS", "off")
     os.environ.setdefault("KEEPER_DURATION", "120")
+
+    # Apply custom KEY=VALUE envs passed via --param to mirror integration jobs UX
+    if args.param:
+        for pair in str(args.param).split(","):
+            if not pair.strip():
+                continue
+            if "=" in pair:
+                k, v = pair.split("=", 1)
+                os.environ[str(k).strip()] = str(v)
 
     stop_watch = Utils.Stopwatch()
     results = []
@@ -39,9 +65,10 @@ def main():
                 break
             time.sleep(2)
 
-    # Respect optional duration override if provided
-    dur = os.environ.get("KEEPER_DURATION")
-    dur_arg = f" --duration={int(dur)}" if dur else ""
+    # Respect optional duration override from CLI first, then env
+    dur_cli = args.duration
+    dur_env = os.environ.get("KEEPER_DURATION")
+    dur_arg = f" --duration={int(dur_cli)}" if dur_cli else (f" --duration={int(dur_env)}" if dur_env else "")
 
     # Install Python dependencies required by Keeper stress framework (PyYAML, etc.)
     install_cmd = (
@@ -119,11 +146,31 @@ def main():
     ch_path = final_ch
 
     # Construct pytest command (Result.from_pytest_run adds 'pytest' itself)
-    # - quiet output, show per-test durations, run the keeper stress suite
-    cmd = f"-q tests/stress/keeper/tests --durations=0{dur_arg}"
+    # - show prints (-s), verbose (-vv), show per-test durations; run selected tests (or whole suite)
+    tests_target = " ".join(args.test) if args.test else "tests/stress/keeper/tests"
+    extra = []
+    if args.keeper_include_ids:
+        extra.append(f"--keeper-include-ids={args.keeper_include_ids}")
+    if args.faults:
+        extra.append(f"--faults={args.faults}")
+    # Global test timeout ~= bench + readiness + overhead
+    try:
+        dur_val = int(args.duration or os.environ.get("KEEPER_DURATION", 120))
+    except Exception:
+        dur_val = 120
+    try:
+        ready_val = int(os.environ.get("KEEPER_READY_TIMEOUT", 120))
+    except Exception:
+        ready_val = 120
+    timeout_val = max(180, min(1800, dur_val + ready_val + 120))
+    extra.append(f"--timeout={timeout_val}")
+    if is_pr:
+        extra.append("--maxfail=1")
+    cmd = f"-s -vv {tests_target} --durations=0{dur_arg} {' '.join(extra)}".rstrip()
 
     # Prepare env for pytest
     env = os.environ.copy()
+    env["KEEPER_PYTEST_TIMEOUT"] = str(timeout_val)
     # IMPORTANT: containers launched by docker-compose will bind-mount this exact host path
     # Mount the installed binary to avoid noexec on repo mounts and ensure parity with host-side tools
     server_bin_for_mount = ch_path
@@ -171,16 +218,34 @@ def main():
                 maybe = [
                     inst / "docker.log",
                 ]
-                for i in range(1, 4):
+                for i in range(1, 6):
                     maybe.append(inst / f"keeper{i}" / "docker-compose.yml")
                     maybe.append(inst / f"keeper{i}" / "logs" / "clickhouse-server.log")
                     maybe.append(inst / f"keeper{i}" / "logs" / "clickhouse-server.err.log")
+                # attach emitted keeper config fragments (per node)
+                for i in range(1, 6):
+                    maybe.append(inst / f"keeper{i}" / "configs" / "config.d" / f"keeper_config_keeper{i}.xml")
                 for p in maybe:
                     try:
                         if p.exists():
                             files_to_attach.append(str(p))
                     except Exception:
                         pass
+                # Print concise tails directly to job output for quick triage
+                tail_cmds = []
+                for i in range(1, 4):
+                    err = inst / f"keeper{i}" / "logs" / "clickhouse-server.err.log"
+                    log = inst / f"keeper{i}" / "logs" / "clickhouse-server.log"
+                    conf = inst / f"keeper{i}" / "configs" / "config.d" / f"keeper_config_keeper{i}.xml"
+                    if conf:
+                        tail_cmds.append(f"echo '==== keeper{i} config ====' && sed -n '1,120p' '{conf}'")
+                    tail_cmds.append(f"echo '==== keeper{i} err ====' && tail -n 120 '{err}' || true")
+                    tail_cmds.append(f"echo '==== keeper{i} log ====' && tail -n 120 '{log}' || true")
+                # docker inventory and service logs (best-effort)
+                tail_cmds.append("echo '==== docker ps (keepers) ====' && docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}' | sed -n '1,200p'")
+                tail_cmds.append("for n in $(docker ps --format '{{.Names}}' | grep -E 'keeper[0-9]+' || true); do echo '==== docker logs' $n '===='; docker logs --tail 200 $n || true; done")
+                if tail_cmds:
+                    results.append(Result.from_commands_run(name="Keeper debug tails", command=tail_cmds))
     except Exception:
         pass
 

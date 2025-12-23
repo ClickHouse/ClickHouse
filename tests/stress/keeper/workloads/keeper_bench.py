@@ -204,12 +204,21 @@ class KeeperBench:
             "duration_s": self.duration_s,
         }
         # Execute the bench tool (replay mode or generator mode)
+        # Hard-cap execution: duration + 30s, if `timeout` is available in container
+        hard_cap = max(5, int(self.duration_s) + 30)
+        prefix = ""
+        try:
+            if has_bin(self.node, "timeout"):
+                prefix = f"timeout -s SIGKILL {hard_cap}"
+        except Exception:
+            prefix = ""
         if self.replay_path:
             hosts = _parse_hosts(self.servers)
             hflags = " ".join(f"-h {h}" for h in hosts)
-            cmd = f"{self._bench_cmd()} --input-request-log {self.replay_path} {hflags} -c {int(clients)} -t {int(self.duration_s)} --continue_on_errors --config /tmp/keeper_bench.yaml"
+            base = f"{self._bench_cmd()} --input-request-log {self.replay_path} {hflags} -c {int(clients)} -t {int(self.duration_s)} --continue_on_errors --config /tmp/keeper_bench.yaml"
         else:
-            cmd = f"{self._bench_cmd()} --config /tmp/keeper_bench.yaml -t {int(self.duration_s)}"
+            base = f"{self._bench_cmd()} --config /tmp/keeper_bench.yaml -t {int(self.duration_s)}"
+        cmd = f"{prefix} {base}".strip()
         run_out = sh(self.node, cmd)
         # Parse JSON output if present
         out = sh(

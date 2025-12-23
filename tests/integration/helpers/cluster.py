@@ -4310,7 +4310,7 @@ class ClickHouseInstance:
         # and there is no other way to kill clickhouse properly (easily), since
         # clickhosue is spawned with --daemon, and it is not a child neither in
         # the same session.
-        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill tail; pkill clickhouse' INT TERM; {}; coproc tail -f /dev/null; wait $$!\"".format(
+        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill tail; pkill clickhouse' INT TERM; {}; ( while true; do chmod -R a+rX /var/log/clickhouse-server 2>/dev/null || true; sleep 1; done ) & coproc tail -f /dev/null; wait $$!\"".format(
             self.clickhouse_start_command_in_daemon
         )
 
