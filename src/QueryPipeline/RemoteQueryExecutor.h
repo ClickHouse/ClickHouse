@@ -221,8 +221,7 @@ public:
     /// return true if parallel replica packet was processed
     bool processParallelReplicaPacketIfAny();
 
-    /// Check if finish() has been called
-    bool isFinishCalled() const { return finish_called; }
+    bool isFinished() const { return finished; }
 
 private:
     RemoteQueryExecutor(
@@ -279,9 +278,6 @@ private:
       * read all packets before EndOfStream
       */
     bool finished = false;
-
-    /// Keep track of whether finish() has been called to avoid double-calling
-    bool finish_called = false;
 
     /** Cancel query request was sent to all replicas because data is not needed anymore
       * This behaviour may occur when:

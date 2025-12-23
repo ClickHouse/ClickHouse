@@ -93,7 +93,7 @@ ISource::Status RemoteSource::prepare()
     if (is_async_state)
         return Status::Async;
 
-    if (query_executor->isFinishCalled())
+    if (query_executor->isFinished())
     {
         getPort().finish();
         return Status::Finished;

@@ -778,10 +778,8 @@ void RemoteQueryExecutor::finish()
 {
     LockAndBlocker guard(was_cancelled_mutex);
 
-    /// We only allow one finish call to avoid double-cancellation
-    if (isFinishCalled())
-        return;
-    finish_called = true;
+    /// To make sure finish is only called once
+    SCOPE_EXIT({ finished = true; });
 
     /** If one of:
       * - nothing started to do;
