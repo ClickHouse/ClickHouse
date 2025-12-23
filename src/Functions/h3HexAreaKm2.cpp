@@ -124,7 +124,7 @@ Returns average hexagon area in square kilometers at the given [H3](#h3-index) r
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3HexAreaKm2>(documentation);
 }
 
