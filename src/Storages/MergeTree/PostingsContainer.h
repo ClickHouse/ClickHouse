@@ -8,7 +8,7 @@
 #include <roaring/roaring.hh>
 #include <Storages/MergeTree/MergedPartOffsets.h>
 
-
+#pragma clang optimize off
 namespace DB
 {
 
@@ -179,7 +179,7 @@ public:
     size_t size() const { return cardinality; }
     bool empty() const { return cardinality == 0; }
 
-    ALWAYS_INLINE void add(T value)
+    void add(T value)
     {
         if (total == postings_list_segment_size)
         {
@@ -197,6 +197,7 @@ public:
             ++cardinality;
             return;
         }
+
         if (current.size() == kBlockSize)
         {
             compressBlock(current, temp_compression_data_buffer);
@@ -417,7 +418,10 @@ public:
             decodeNextBlock();
     }
 
-    ValueType operator*() const { return current_value; }
+    ValueType operator*() const
+    {
+        return current_value;
+    }
     Iterator & operator++()
     {
         advance();
@@ -425,7 +429,7 @@ public:
     }
     bool operator==(const Iterator & rhs) const
     {
-        return is_end == rhs.is_end && current_offset == rhs.current_offset;
+        return is_end == rhs.is_end && index == rhs.index;
     }
     bool operator!=(const Iterator & rhs) const { return !(*this == rhs); }
 
@@ -436,53 +440,46 @@ private:
         if (is_end)
             return;
         ++current_index;
-        ++current_offset;
+
         if (current_index == current.size() || current.empty())
             decodeNextBlock();
+        if (!is_end)
+            current_value = current[current_index];
     }
 
     void decodeNextBlock()
     {
         chassert(current_index == current.size() || current.empty());
-        chassert(current_containers <= total_containers);
-        while ((current_index == current.size() || current.empty()) && is_end)
+        if (total_blocks == 0 && current_containers < total_containers)
         {
-            if (total_blocks == 0)
-            {
-                if (current_containers == total_containers)
-                {
-                    is_end = true;
-                    break;
-                }
-                auto offset_in_file = info.offsets[current_containers];
-                stream.seekToMark({offset_in_file, 0});
+            auto offset_in_file = info.offsets[current_containers];
+            stream.seekToMark({offset_in_file, 0});
 
-                ContainerHeader header;
-                CodecUtils<ValueType>::readContainerHeader(header, *stream.getDataBuffer());
-                prev_value = header.base_value;
+            ContainerHeader header;
+            CodecUtils<ValueType>::readContainerHeader(header, *stream.getDataBuffer());
+            prev_value = header.base_value;
 
-                total_blocks = header.block_count;
-                ++current_containers;
-                current_block = 0;
-                continue;
-            }
-            if (current_index == current.size() || current.empty())
-            {
-                CodecUtils<ValueType>::decodeOneBlock(*stream.getDataBuffer(), prev_value, current, temp_buffer);
-
-                ++current_block;
-                if (current_block == total_blocks)
-                {
-                    ++current_containers;
-                    total_blocks = 0;
-                }
-                current_index = 0;
-                if (current.empty())
-                    is_end = true;
-                else
-                    current_value = current[current_index];
-            }
+            total_blocks = header.block_count;
+            ++current_containers;
+            current_block = 0;
         }
+        if (current_block < total_blocks)
+        {
+            current.clear();
+            CodecUtils<ValueType>::decodeOneBlock(*stream.getDataBuffer(), prev_value, current, temp_buffer);
+            ++current_block;
+            if (current_block == total_blocks)
+                total_blocks = 0;
+
+            current_index = 0;
+            if (current.empty())
+                is_end = true;
+            else
+                current_value = current[current_index];
+            return;
+        }
+        if (current_containers == total_containers)
+            is_end = true;
     }
 
     std::string temp_buffer;
@@ -499,7 +496,6 @@ private:
     size_t total_containers = 0;
     size_t current_containers = 0;
 
-    size_t current_offset = 0;
     bool is_end = false;
     size_t index = 0;
 };
