@@ -69,32 +69,16 @@ class ClusterBuilder:
         )
         if coord_overrides_xml:
             extra_coord += coord_overrides_xml
-        # Shared blocks reused across instances
-        backend_extra = (
-            "<experimental_use_rocksdb>1</experimental_use_rocksdb>"
-            if backend == "rocksdb"
-            else ""
-        )
+        # Minimal, broadly-supported coordination settings
         coord_settings = (
             "<coordination_settings>"
             "<operation_timeout_ms>10000</operation_timeout_ms>"
             "<session_timeout_ms>30000</session_timeout_ms>"
             "<heart_beat_interval_ms>500</heart_beat_interval_ms>"
-            "<election_timeout_lower_bound_ms>1000</election_timeout_lower_bound_ms>"
-            "<election_timeout_upper_bound_ms>2000</election_timeout_upper_bound_ms>"
-            "<force_sync>true</force_sync>"
-            "<quorum_reads>false</quorum_reads>"
             "<shutdown_timeout>5000</shutdown_timeout>"
-            "<startup_timeout>30000</startup_timeout>"
-            + backend_extra
-            + extra_coord
-            + "</coordination_settings>"
+            "</coordination_settings>"
         )
-        feature_flags_xml = (
-            "<feature_flags>"
-            + "".join(f"<{k}>{1 if v else 0}</{k}>" for k, v in ff.items())
-            + "</feature_flags>"
-        )
+        feature_flags_xml = ""
         enable_ctrl = bool(CONTROL_PORT) and parse_bool(
             os.environ.get("KEEPER_ENABLE_CONTROL", "0")
         )
@@ -116,25 +100,20 @@ class ClusterBuilder:
                 "<storage_path>/var/lib/clickhouse/coordination</storage_path>"
             )
         else:
-            disk_select = (
-                "<latest_log_storage_disk>local_log_disk</latest_log_storage_disk>"
-                "<latest_snapshot_storage_disk>local_snapshot_disk</latest_snapshot_storage_disk>"
-                "<old_log_storage_disk>local_log_disk</old_log_storage_disk>"
-                "<old_snapshot_storage_disk>local_snapshot_disk</old_snapshot_storage_disk>"
-                "<log_storage_disk>local_log_disk</log_storage_disk>"
-                "<snapshot_storage_disk>local_snapshot_disk</snapshot_storage_disk>"
-                "<storage_path>/var/lib/clickhouse/coordination</storage_path>"
-            )
+            # Use server defaults for local disks to avoid collisions with base configs
+            disk_select = ""
         # Zookeeper client nodes xml
         zk_nodes = "".join(
             f"<node><host>{h}</host><port>{CLIENT_PORT}</port></node>" for h in names
         )
         # Disks definition xml (local + optional S3)
-        disks_xml = [
-            "<local_log_disk><type>local</type><path>/var/lib/clickhouse/coordination/log/</path></local_log_disk>",
-            "<local_snapshot_disk><type>local</type><path>/var/lib/clickhouse/coordination/snapshots/</path></local_snapshot_disk>",
-        ]
+        disks_xml = []
         if use_s3:
+            # Define only when using S3 to keep local case minimal
+            disks_xml = [
+                "<local_log_disk><type>local</type><path>/var/lib/clickhouse/coordination/log/</path></local_log_disk>",
+                "<local_snapshot_disk><type>local</type><path>/var/lib/clickhouse/coordination/snapshots/</path></local_snapshot_disk>",
+            ]
             ep = (MINIO_ENDPOINT or "").rstrip("/") if use_minio else None
             ak = MINIO_ACCESS_KEY
             sk = MINIO_SECRET_KEY
@@ -164,23 +143,29 @@ class ClusterBuilder:
             ]
         )
         disks_block = (
-            "<storage_configuration><disks>"
-            + "\n".join(disks_xml)
-            + "</disks></storage_configuration>"
+            ("<storage_configuration><disks>" + "\n".join(disks_xml) + "</disks></storage_configuration>")
+            if disks_xml
+            else ""
         )
-        prom_block = f"<prometheus><endpoint>/metrics</endpoint><port>{PROM_PORT}</port><metrics>true</metrics><events>true</events><asynchronous_metrics>true</asynchronous_metrics></prometheus>"
-        zk_block = f"<zookeeper>{zk_nodes}</zookeeper>"
+        # Avoid emitting additional top-level sections that may already exist in base config
+        prom_block = ""
+        # Do not inject <zookeeper> for keeper_server tests to avoid collisions with base configs
+        zk_block = ""
         for i, name in enumerate(names, start=start_sid):
-            # Build a single per-node config file with all required sections
+            # Build a single per-node config file with all required sections (minimal to avoid collisions)
+            path_block = (
+                "<log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>"
+                "<snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>"
+                if not use_s3
+                else ""
+            )
             keeper_server = (
                 "<keeper_server>"
                 f"<tcp_port>{CLIENT_PORT}</tcp_port>"
                 f"<server_id>{i}</server_id>"
-                "<log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>"
-                "<snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>"
+                + path_block
                 + http_ctrl
                 + coord_settings
-                + "<digest_enabled>true</digest_enabled>"
                 + feature_flags_xml
                 + "<raft_configuration>\n"
                 + peers_xml
@@ -188,33 +173,20 @@ class ClusterBuilder:
                 + disk_select
                 + "</keeper_server>"
             )
-            macros_block = f"<macros><replica>{name}</replica><shard>1</shard></macros>"
-            # Open SQL port for readiness checks (helpers wait on port 9000)
-            net_block = "<listen_host>::</listen_host><tcp_port>9000</tcp_port>"
-            full_xml = (
-                "<clickhouse>"
-                + keeper_server
-                + net_block
-                + disks_block
-                + prom_block
-                + zk_block
-                + macros_block
-                + "</clickhouse>"
+            macros_block = ""
+            # Ensure server listens on container IPs; do not duplicate tcp_port
+            net_block = (
+                "<listen_host>0.0.0.0</listen_host>"
+                "<listen_try>1</listen_try>"
             )
+            # Emit valid XML document with root <clickhouse>: keeper_server + listen_host (+disks only if using S3)
+            full_xml = "<clickhouse>" + keeper_server + net_block + disks_block + "</clickhouse>"
             (conf_dir / f"keeper_config_{name}.xml").write_text(full_xml)
             cfgs = [f"configs/{cname}/keeper_config_{name}.xml"]
             inst = cluster.add_instance(
                 name, main_configs=cfgs, with_zookeeper=False, stay_alive=True
             )
             nodes.append(inst)
-
-        # Ensure a clean instances dir to avoid create_dir collisions
-        inst_dir = pathlib.Path(cluster.instances_dir)
-        if inst_dir.exists():
-            try:
-                shutil.rmtree(inst_dir, ignore_errors=True)
-            except Exception:
-                pass
 
         cluster.start()
         return cluster, nodes

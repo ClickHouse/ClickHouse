@@ -7,6 +7,7 @@ import time
 import uuid
 
 import pytest
+import os as _os
 import yaml
 
 from ..faults import apply_step as apply_step_dispatcher
@@ -157,7 +158,7 @@ def _snapshot_and_sink(nodes, stage, scenario_id, topo, run_meta, sink_url, run_
         sink_clickhouse(sink_url, "keeper_metrics_ts", metrics_ts_rows)
 
 
-@pytest.mark.timeout(2400)
+@pytest.mark.timeout(int(_os.environ.get("KEEPER_PYTEST_TIMEOUT", "2400") or 2400))
 def test_scenario(scenario, cluster_factory, request, run_meta):
     start_ts = time.time()
     topo = scenario.get("topology", 3)
