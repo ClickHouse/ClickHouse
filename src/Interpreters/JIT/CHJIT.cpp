@@ -48,6 +48,7 @@ namespace ErrorCodes
 using BitInt128 = signed _BitInt(128);
 using BitUInt128 = unsigned _BitInt(128);
 
+/// NOLINTBEGIN
 extern "C" BitInt128 __divti3(BitInt128, BitInt128);
 extern "C" BitInt128 __modti3(BitInt128, BitInt128);
 
@@ -58,6 +59,7 @@ extern "C" float __floattisf(BitInt128);
 extern "C" float __floatuntisf(BitUInt128);
 extern "C" double __floattidf(BitInt128);
 extern "C" double __floatuntidf(BitUInt128);
+/// NOLINTEND
 
 #pragma clang diagnostic pop
 
