@@ -1833,13 +1833,21 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
                 buf2 += "]";
                 buf += buf2;
             }
-            else if (has_paren && next_tokenizer == "sparseGrams" && rg.nextBool())
+            else if (has_paren && next_tokenizer == "sparseGrams")
             {
-                std::uniform_int_distribution<uint32_t> next_dist(0, rg.nextBool() ? 10 : 100);
+                /// sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
+                const uint32_t nextra = rg.randomInt<uint32_t>(0, 3);
 
-                buf += std::to_string(next_dist(rg.generator));
-                buf += ", ";
-                buf += std::to_string(next_dist(rg.generator));
+                for (uint32_t i = 0; i < nextra; i++)
+                {
+                    std::uniform_int_distribution<uint32_t> next_dist(0, rg.nextBool() ? 100 : 1000);
+
+                    if (i != 0)
+                    {
+                        buf += ", ";
+                    }
+                    buf += std::to_string(next_dist(rg.generator));
+                }
             }
             buf += has_paren ? ")" : "";
             idef->add_params()->set_unescaped_sval(std::move(buf));
