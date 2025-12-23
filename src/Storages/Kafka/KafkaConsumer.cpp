@@ -150,27 +150,25 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
     });
 }
 
-UInt64 KafkaConsumer::currentTimestamp64() const
+boost::optional<cppkafka::MessageTimestamp> KafkaConsumer::currentTimestamp() const
 {
     assert(current[-1]);
     const auto & mts = current[-1].get_timestamp();
-    if (mts.has_value())
+    if (mts.has_value() && mts->get_type() == cppkafka::MessageTimestamp::CREATE_TIME)
     {
-        if (mts->get_type() == cppkafka::MessageTimestamp::CREATE_TIME)
-        {
             auto ts = mts->get_timestamp();
             UInt64 ts64 = std::chrono::duration_cast<std::chrono::seconds>(ts).count();
             memorizeCurrentTimestamp(ts64);
-            return ts64;
-        }
     }
-    return {};
+    return mts;
 }
 
-void KafkaConsumer::memorizeCurrentTimestamp(UInt64 mts) const
+void KafkaConsumer::memorizeCurrentTimestamp(UInt64 ts64) const
 {
-    timestamp_per_topic_partition.insert_or_assign({currentTopic(), currentPartition()}, mts);
+    std::lock_guard<std::mutex> lock(timestamp_mutex);
+    timestamp_per_topic_partition.insert_or_assign({currentTopic(), currentPartition()}, ts64);
 }
+
 
 ConsumerPtr && KafkaConsumer::moveConsumer()
 {
@@ -611,14 +609,20 @@ KafkaConsumer::Stat KafkaConsumer::getStat() const
     {
         const auto & topic = cpp_assignments[num].get_topic();
         const auto & partition = cpp_assignments[num].get_partition();
-        auto tsit = timestamp_per_topic_partition.find({topic, partition});
+
+        auto timestamp64 = [&]()
+        {
+            std::lock_guard<std::mutex> lock(timestamp_mutex);
+            auto tsit = timestamp_per_topic_partition.find({topic, partition});
+            return tsit == timestamp_per_topic_partition.end() ? 0 : tsit->second;
+        }();
 
         assignments.push_back({
             topic,
             partition,
             cpp_offsets[num].get_offset(),
             std::nullopt,
-            tsit == timestamp_per_topic_partition.end() ? 0 : tsit->second,
+            timestamp64,
         });
     }
 

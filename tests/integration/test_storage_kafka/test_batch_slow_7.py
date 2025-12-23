@@ -65,6 +65,7 @@ def kafka_setup_teardown():
 
 # Tests
 
+
 @pytest.mark.parametrize(
     "create_query_generator",
     [k.generate_old_create_table_query, k.generate_new_create_table_query],
@@ -91,13 +92,15 @@ def test_kafka_consumer_reschedule_logging(kafka_cluster, create_query_generator
         },
     )
 
-    instance.query(f"""
+    instance.query(
+        f"""
         {create_query};
 
         CREATE MATERIALIZED VIEW test.{kafka_table}_destination
         ENGINE=MergeTree ORDER BY tuple() AS
         SELECT key, value FROM test.{kafka_table};
-    """)
+    """
+    )
 
     messages = [json.dumps({"key": j, "value": j}) for j in range(50)]
     k.kafka_produce(kafka_cluster, topic_name, messages)
@@ -106,8 +109,75 @@ def test_kafka_consumer_reschedule_logging(kafka_cluster, create_query_generator
     instance.wait_for_log_line(f"{kafka_table}.*Committed offset 50")
 
     # Check that the log shows the correct reschedule interval
-    instance.wait_for_log_line(f"{kafka_table}.*Rescheduling in {test_reschedule_ms} ms")
+    instance.wait_for_log_line(
+        f"{kafka_table}.*Rescheduling in {test_reschedule_ms} ms"
+    )
 
     # Verify messages consumed
     result = int(instance.query(f"SELECT count() FROM test.{kafka_table}_destination"))
     assert result == 50
+
+
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [k.generate_old_create_table_query, k.generate_new_create_table_query],
+)
+def test_system_kafka_consumers_timestamp(kafka_cluster, create_query_generator):
+    suffix = k.random_string(6)
+    kafka_table = f"kafka_{suffix}"
+
+    admin_client = KafkaAdminClient(
+        bootstrap_servers=f"localhost:{kafka_cluster.kafka_port}"
+    )
+
+    topic_name = "system_kafka_consumers_timestamp" + k.get_topic_postfix(
+        create_query_generator
+    )
+
+    with k.kafka_topic(admin_client, topic_name):
+
+        k.kafka_produce(
+            kafka_cluster,
+            topic_name,
+            ["1|foo", "2|bar", "42|answer", "100|multi\n101|row\n103|message"],
+        )
+
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.{kafka_table} SYNC;
+            DROP TABLE IF EXISTS test.{kafka_table}_view SYNC;
+
+            {create_query_generator(
+                kafka_table,
+                "a UInt64, b String",
+                topic_list=topic_name,
+                consumer_group=topic_name,
+                format="CSV",
+                settings={
+                    "format_csv_delimiter":"|",
+                    "kafka_commit_on_select": 1
+                }
+            )};
+
+            CREATE MATERIALIZED VIEW test.{kafka_table}_view ENGINE=MergeTree ORDER BY tuple() AS SELECT * FROM test.{kafka_table};
+            """
+        )
+        instance.query_with_retry(
+            f"SELECT count() FROM test.{kafka_table}_view",
+            check_callback=lambda res: int(res) == 4,
+        )
+
+        time.sleep(5)
+
+        latency = int(
+            instance.query(
+                f"""
+            SELECT now() - assignments.produce_time[1] AS assignments_produce_time
+            FROM system.kafka_consumers WHERE database='test' and table='{kafka_table}';
+            """
+            )
+        )
+        assert latency > 3 and latency < 20
+
+        instance.query_with_retry(f"DROP TABLE test.{kafka_table}_view SYNC")
+        instance.query(f"DROP TABLE test.{kafka_table}")

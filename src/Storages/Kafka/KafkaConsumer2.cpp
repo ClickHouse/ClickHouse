@@ -12,7 +12,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/DateLUT.h>
 #include <Common/ProfileEvents.h>
-#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 
 
@@ -35,11 +34,6 @@ using namespace std::chrono_literals;
 static constexpr auto EVENT_POLL_TIMEOUT = 50ms;
 static constexpr auto DRAIN_TIMEOUT_MS = 5000ms;
 static constexpr auto GET_KAFKA_METADATA_TIMEOUT_MS = 1000ms;
-
-bool KafkaConsumer2::TopicPartition::operator<(const KafkaConsumer2::TopicPartition & other) const
-{
-    return std::tie(topic, partition_id) < std::tie(other.topic, other.partition_id);
-}
 
 KafkaConsumer2::KafkaConsumer2(
     LoggerPtr log_,
@@ -408,14 +402,6 @@ UInt64 KafkaConsumer2::currentTimestamp64() const
         }
     }
     return {};
-}
-
-std::size_t KafkaConsumer2::TopicPartitionHash::operator()(const KafkaConsumer2::TopicPartition & tp) const
-{
-    SipHash s;
-    s.update(tp.topic);
-    s.update(tp.partition_id);
-    return s.get64();
 }
 
 }
