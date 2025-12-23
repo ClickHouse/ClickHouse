@@ -3,6 +3,7 @@
 -- Tests vector search with Distributed tables
 
 SET enable_analyzer = 1;
+SET prefer_localhost_replica = 1;
 
 -- Create local table with vector similarity index
 DROP TABLE IF EXISTS tab_local SYNC;
