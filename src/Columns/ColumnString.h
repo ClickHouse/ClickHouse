@@ -118,10 +118,10 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    StringRef getDataAt(size_t n) const override
+    std::string_view getDataAt(size_t n) const override
     {
         chassert(n < size());
-        return StringRef(&chars[offsetAt(n)], sizeAt(n));
+        return std::string_view(reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n));
     }
 
     bool isDefaultAt(size_t n) const override
@@ -205,18 +205,18 @@ public:
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
     void rollback(const ColumnCheckpoint & checkpoint) override;
 
-    void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
+    void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    ALWAYS_INLINE char * serializeValueIntoMemory(size_t n, char * memory) const override;
+    std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
 
-    void batchSerializeValueIntoMemory(std::vector<char *> & memories) const override;
+    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
+    ALWAYS_INLINE char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
 
-    const char * deserializeAndInsertFromArena(const char * pos) override;
-    const char * deserializeAndInsertAggregationStateValueFromArena(const char * pos) override;
+    void batchSerializeValueIntoMemory(std::vector<char *> & memories, const IColumn::SerializationSettings * settings) const override;
 
-    const char * skipSerializedInArena(const char * pos) const override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
+
+    void skipSerializedInArena(ReadBuffer & in) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
@@ -231,6 +231,8 @@ public:
 #endif
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+
+    void filter(const Filter & filt) override;
 
     void expand(const Filter & mask, bool inverted) override;
 

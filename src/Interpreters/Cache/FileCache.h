@@ -215,9 +215,14 @@ public:
     using IterateFunc = std::function<void(const FileSegmentInfo &)>;
     void iterate(IterateFunc && func, const UserID & user_id);
 
+    using CacheIteratorPtr = CacheMetadata::IteratorPtr;
+    CacheIteratorPtr getCacheIterator(const UserID & user_id);
+
     void applySettingsIfPossible(const FileCacheSettings & new_settings, FileCacheSettings & actual_settings);
 
     void freeSpaceRatioKeepingThreadFunc();
+
+    const String & getName() const { return name; }
 
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
@@ -242,6 +247,7 @@ private:
     const bool use_split_cache;
     const double split_cache_ratio;
 
+    String name;
     LoggerPtr log;
 
     std::exception_ptr init_exception;

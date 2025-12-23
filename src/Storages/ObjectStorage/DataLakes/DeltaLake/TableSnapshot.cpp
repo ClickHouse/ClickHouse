@@ -16,9 +16,11 @@
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 #include <Common/escapeForFileName.h>
+#include <Common/setThreadName.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
@@ -60,7 +62,7 @@ Field parseFieldFromString(const String & value, DB::DataTypePtr data_type)
     {
         ReadBufferFromString buffer(value);
         auto col = data_type->createColumn();
-        auto serialization = data_type->getSerialization({ISerialization::Kind::DEFAULT});
+        auto serialization = data_type->getSerialization({ISerialization::Kind::DEFAULT}, {});
         serialization->deserializeWholeText(*col, buffer, FormatSettings{});
         return (*col)[0];
     }
@@ -140,7 +142,7 @@ public:
             {
                 /// Attach to current query thread group, to be able to
                 /// have query id in logs and metrics from scanDataFunc.
-                DB::ThreadGroupSwitcher switcher(thread_group, "TableSnapshot");
+                DB::ThreadGroupSwitcher switcher(thread_group, DB::ThreadName::DATALAKE_TABLE_SNAPSHOT);
                 scanDataFunc();
             });
     }
@@ -422,8 +424,6 @@ private:
     ThreadFromGlobalPool thread;
 };
 
-static constexpr auto LATEST_SNAPSHOT_VERSION = -1;
-
 TableSnapshot::TableSnapshot(
     KernelHelperPtr helper_,
     DB::ObjectStoragePtr object_storage_,
@@ -448,7 +448,12 @@ void TableSnapshot::updateSettings(const DB::ContextPtr & context)
     enable_expression_visitor_logging = settings[DB::Setting::delta_lake_enable_expression_visitor_logging];
     throw_on_engine_visitor_error = settings[DB::Setting::delta_lake_throw_on_engine_predicate_error];
     enable_engine_predicate = settings[DB::Setting::delta_lake_enable_engine_predicate];
-    if (settings[DB::Setting::delta_lake_snapshot_version].value != LATEST_SNAPSHOT_VERSION)
+
+    if (settings[DB::Setting::delta_lake_snapshot_version].value == LATEST_SNAPSHOT_VERSION)
+    {
+        snapshot_version_to_read = std::nullopt;
+    }
+    else
     {
         if (settings[DB::Setting::delta_lake_snapshot_version].value < 0)
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Snapshot version cannot be a negative value");

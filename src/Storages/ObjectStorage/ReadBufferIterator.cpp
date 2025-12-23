@@ -7,7 +7,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
 
-
 namespace DB
 {
 namespace Setting
@@ -120,20 +119,8 @@ void ReadBufferIterator::setNumRowsToLastFile(size_t num_rows)
 
 void ReadBufferIterator::setSchemaToLastFile(const ColumnsDescription & columns)
 {
-    if (query_settings.schema_inference_use_cache
-        && query_settings.schema_inference_mode == SchemaInferenceMode::UNION)
-    {
+    if (query_settings.schema_inference_use_cache)
         schema_cache.addColumns(getKeyForSchemaCache(*current_object_info, *format), columns);
-    }
-}
-
-void ReadBufferIterator::setResultingSchema(const ColumnsDescription & columns)
-{
-    if (query_settings.schema_inference_use_cache
-        && query_settings.schema_inference_mode == SchemaInferenceMode::DEFAULT)
-    {
-        schema_cache.addManyColumns(getKeysForSchemaCache(), columns);
-    }
 }
 
 void ReadBufferIterator::setFormatName(const String & format_name)

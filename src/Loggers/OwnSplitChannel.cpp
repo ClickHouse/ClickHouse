@@ -94,7 +94,7 @@ void pushExtendedMessageToInternalTCPTextLogQueue(
 void logToSystemTextLogQueue(
     const std::shared_ptr<SystemLogQueue<TextLogElement>> & text_log_locked,
     const ExtendedLogMessage & msg_ext,
-    const std::string & msg_thread_name)
+    ThreadName msg_thread_name)
 {
     const Poco::Message & msg = *msg_ext.base;
     TextLogElement elem;
@@ -137,7 +137,7 @@ void logToSystemTextLogQueue(
 }
 
 void OwnSplitChannel::logSplit(
-    const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, const std::string & msg_thread_name)
+    const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, ThreadName msg_thread_name)
 {
     const Poco::Message & msg = *msg_ext.base;
 
@@ -304,7 +304,7 @@ public:
 
     Message msg; /// Need to keep a copy until we finish logging
     ExtendedLogMessage msg_ext;
-    std::string msg_thread_name;
+    ThreadName msg_thread_name;
 };
 
 
@@ -336,7 +336,7 @@ void AsyncLogMessageQueue::enqueueMessage(AsyncLogMessagePtr message)
 
     if (unlikely(dropped_messages))
     {
-        String log = "We've dropped " + toString(dropped_messages) + " log messages in this channel due to queue overflow";
+        String log = fmt::format("We've dropped {} log messages in this channel due to queue overflow", dropped_messages);
         auto async_message = std::make_shared<AsyncLogMessage>(Poco::Message("AsyncLogMessageQueue", log, Poco::Message::PRIO_WARNING));
         async_message->msg_ext.query_id.clear();
         message_queue.push_back(async_message);
@@ -476,7 +476,7 @@ AsyncLogQueueSizes OwnAsyncSplitChannel::getAsynchronousMetrics()
 
 void OwnAsyncSplitChannel::runChannel(size_t i)
 {
-    setThreadName("AsyncLog");
+    DB::setThreadName(ThreadName::ASYNC_LOGGER);
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
     auto notification = queues[i]->waitDequeueMessage();
     const auto & extended_channel = channels[i];
@@ -540,7 +540,7 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
 
 void OwnAsyncSplitChannel::runTextLog()
 {
-    setThreadName("AsyncTextLog", true);
+    DB::setThreadName(ThreadName::ASYNC_TEXT_LOG);
 
     auto log_notification = [](auto & message, const std::shared_ptr<SystemLogQueue<TextLogElement>> & text_log_locked)
     {
