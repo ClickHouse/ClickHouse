@@ -13,7 +13,7 @@
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/LazilyReadFromMergeTree.h>
 #include <Processors/QueryPlan/JoinLazyColumnsStep.h>
-#include <Processors/Transforms/LazilyMaterializingTransform.h>
+#include <Processors/Transforms/LazyMaterializingTransform.h>
 
 namespace DB::ErrorCodes
 {

@@ -1,7 +1,7 @@
 #include <Processors/Sources/LazyReadFromMergeTreeSource.h>
 #include <Processors/QueryPlan/LazilyReadFromMergeTree.h>
 #include <Storages/MergeTree/MergeTreeReadPoolInOrder.h>
-#include <Processors/Transforms/LazilyMaterializingTransform.h>
+#include <Processors/Transforms/LazyMaterializingTransform.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <QueryPipeline/Pipe.h>
