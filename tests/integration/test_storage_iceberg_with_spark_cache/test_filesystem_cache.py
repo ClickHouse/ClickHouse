@@ -35,7 +35,7 @@ def test_filesystem_cache(started_cluster_iceberg_with_spark, storage_type):
 
     query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
     instance.query(
-        f"SELECT * FROM {TABLE_NAME} SETTINGS filesystem_cache_name = 'cach1'",
+        f"SELECT * FROM {TABLE_NAME} SETTINGS filesystem_cache_name = 'cache1'",
         query_id=query_id,
     )
 
