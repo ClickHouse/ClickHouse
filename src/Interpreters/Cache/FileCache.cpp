@@ -194,7 +194,7 @@ const FileCache::OriginInfo & FileCache::getCommonOrigin()
     return origin;
 }
 
-FileCache::OriginInfo FileCache::getCommonOriginWithSegmentKeyType(const fs::path& filename) const
+FileCache::OriginInfo FileCache::getCommonOriginWithSegmentKeyType(const fs::path & filename) const
 {
     auto origin = FileCache::getCommonOrigin();
     if (!use_split_cache)
@@ -1646,7 +1646,8 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
             continue;
         auto data_key = keys_dir;
         data_key.append(getKeyTypePrefix(type));
-        // LOG_DEBUG(log, "Load cache from {}", data_key);
+        LOG_DEBUG(log, "Load cache from {}", data_key.c_str());
+
         if (fs::exists(data_key))
         {
             origin_tmp.segment_type = type;

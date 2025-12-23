@@ -12,6 +12,7 @@
                 <disk>split_cache_disk</disk>
                 <path>/cache1/</path>
                 <max_size>5Mi</max_size>
+                <max_file_segment_size>1Ki</max_file_segment_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <use_split_cache>1</use_split_cache>
                 <split_cache_ratio>0.2</split_cache_ratio>
@@ -22,11 +23,21 @@
                 <disk>split_cache_disk</disk>
                 <path>/cache2/</path>
                 <max_size>5Mi</max_size>
+                <max_file_segment_size>1Ki</max_file_segment_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <use_split_cache>1</use_split_cache>
                 <split_cache_ratio>0.2</split_cache_ratio>
                 <cache_policy>LRU</cache_policy>
             </split_cache_lru>
+            <lru>
+                <type>cache</type>
+                <disk>split_cache_disk</disk>
+                <path>/lru/</path>
+                <max_size>5Mi</max_size>
+                <max_file_segment_size>1Ki</max_file_segment_size>
+                <cache_on_write_operations>1</cache_on_write_operations>
+                <cache_policy>SLRU</cache_policy>
+            </lru>
         </disks>
         <policies>
             <split_cache_slru>
@@ -47,6 +58,15 @@
                     </main>
                 </volumes>
             </split_cache_lru>
+            <lru>
+                <volumes>
+                    <main>
+                        <disk>lru</disk>
+                        <!-- To make test more determenistic -->
+                        <prefer_not_to_merge>true</prefer_not_to_merge>
+                    </main>
+                </volumes>
+            </lru>
         </policies>
     </storage_configuration>
 </clickhouse>
