@@ -439,7 +439,7 @@ MergeTreeData::DataPartsVector StorageMergeTreeIndex::getFilteredDataParts(const
     auto part_names = filtered_block.getByPosition(0).column;
     const auto & part_names_str = assert_cast<const ColumnString &>(*part_names);
 
-    HashSet<StringRef> part_names_set;
+    HashSet<std::string_view> part_names_set;
     for (size_t i = 0; i < part_names_str.size(); ++i)
         part_names_set.insert(part_names_str.getDataAt(i));
 

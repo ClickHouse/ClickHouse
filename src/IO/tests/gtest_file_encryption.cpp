@@ -117,7 +117,7 @@ TEST_P(FileEncryptionCipherTest, Encryption)
     {
         WriteBufferFromOwnString buf;
         encryptor.setOffset(base_offset);
-        encryptor.encrypt(input.data(), i, buf);  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+        encryptor.encrypt(input.data(), i, buf); /// NOLINT(bugprone-suspicious-stringview-data-usage)
         ASSERT_EQ(expected.substr(0, i), buf.str());
     }
 }
@@ -151,7 +151,7 @@ TEST_P(FileEncryptionCipherTest, Decryption)
     for (size_t i = 0; i <= expected.size(); ++i)
     {
         encryptor.setOffset(base_offset);
-        encryptor.decrypt(input.data(), i, buf.data());  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+        encryptor.decrypt(input.data(), i, buf.data()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
         ASSERT_EQ(expected.substr(0, i), buf.substr(0, i));
     }
 }
@@ -230,7 +230,7 @@ TEST(FileEncryptionPositionUpdateTest, Decryption)
     header.init_vector = InitVector::random();
 
     auto lwb = std::make_unique<WriteBufferFromFile>(tmp_path);
-    WriteBufferFromEncryptedFile wb(10, std::move(lwb), key, header);
+    WriteBufferFromEncryptedFile wb(10, std::move(lwb), key, header, /*old_file_size=*/0, /*use_adaptive_buffer_size_=*/ false, /*adaptive_buffer_initial_size=*/ 0);
     auto data = getRandomASCIIString(20);
     wb.write(data.data(), data.size());
     wb.finalize();
