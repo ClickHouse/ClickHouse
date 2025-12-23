@@ -247,9 +247,6 @@ bool maybeRemoveOnCluster(const ASTPtr & query_ptr, ContextPtr context)
         return true;
     }
 
-    if (database_name != query_on_cluster->cluster)
-        return false;
-
     return false;
 }
 
