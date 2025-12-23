@@ -139,7 +139,7 @@ void ExceptionKeepingTransform::work()
                 onException(data.exception);
                 cancel();
             }
-            else if (canGenerate())
+            else
                 stage = Stage::Generate;
         }
 
@@ -169,25 +169,11 @@ void ExceptionKeepingTransform::work()
     }
     else if (stage == Stage::Finish)
     {
-        GenerateResult res;
-        if (auto exception = runStep([this, &res] { res = getRemaining(); }, thread_group))
+        if (auto exception = runStep([this] { onFinish(); }, thread_group))
         {
             stage = Stage::Exception;
             ready_output = true;
             data.exception = exception;
-            onException(data.exception);
-            cancel();
-        }
-        else if (res.chunk)
-        {
-            data.chunk = std::move(res.chunk);
-            ready_output = true;
-        }
-        else if (auto finish_exception = runStep([this] { onFinish(); }, thread_group))
-        {
-            stage = Stage::Exception;
-            ready_output = true;
-            data.exception = finish_exception;
             onException(data.exception);
             cancel();
         }

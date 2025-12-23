@@ -372,7 +372,7 @@ void SerializationArray::serializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 }
 
-void SerializationArray::deserializeOffsetsBinaryBulk(
+bool SerializationArray::deserializeOffsetsBinaryBulk(
     ColumnPtr & offsets_column,
     size_t limit,
     ISerialization::DeserializeBinaryBulkSettings & settings,
@@ -390,8 +390,11 @@ void SerializationArray::deserializeOffsetsBinaryBulk(
             insertArraySizesToOffsets(offsets_column, cached_column, cached_column->size() - num_read_rows, cached_column->size());
         else
             offsets_column = arraySizesToOffsets(*cached_column);
+
+        return true;
     }
-    else if (auto * stream = settings.getter(settings.path))
+
+    if (auto * stream = settings.getter(settings.path))
     {
         size_t prev_size = offsets_column->size();
 
@@ -416,7 +419,11 @@ void SerializationArray::deserializeOffsetsBinaryBulk(
         /// Add array sizes read from current range into the cache.
         if (cache)
             addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, arrayOffsetsToSizes(*offsets_column), offsets_column->size() - prev_size);
+
+        return true;
     }
+
+    return false;
 }
 
 std::pair<size_t, size_t> SerializationArray::deserializeOffsetsBinaryBulkAndGetNestedOffsetAndLimit(
@@ -429,7 +436,8 @@ std::pair<size_t, size_t> SerializationArray::deserializeOffsetsBinaryBulkAndGet
     const auto & offsets_data = assert_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData();
     size_t prev_last_offset = offsets_data.back();
     size_t prev_offset_size = offsets_data.size();
-    deserializeOffsetsBinaryBulk(offsets_column, offset + limit, settings, cache);
+    if (!deserializeOffsetsBinaryBulk(offsets_column, offset + limit, settings, cache))
+        return {0, 0};
 
     size_t skipped_nested_rows = 0;
 
@@ -477,6 +485,9 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
 
     if (unlikely(nested_limit > MAX_ARRAYS_SIZE))
         throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array sizes are too large: {}", nested_limit);
+
+    /// Adjust value size hint. Divide it to the average array size.
+    settings.avg_value_size_hint = nested_limit ? settings.avg_value_size_hint / nested_limit * offset_values.size() : 0;
 
     nested->deserializeBinaryBulkWithMultipleStreams(
         nested_column, skipped_nested_rows, nested_limit, settings, state, cache);
@@ -535,16 +546,6 @@ static ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reade
         if constexpr (throw_exception)
             throw Exception(ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT, "Array does not start with '[' character");
         return ReturnType(false);
-    }
-    else
-    {
-        skipWhitespaceIfAny(istr);
-        if (istr.eof())
-        {
-            if constexpr (throw_exception)
-                throw Exception(ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT, "Cannot read array from text, expected opening bracket '[' or array element");
-            return ReturnType(false);
-        }
     }
 
     auto on_error_no_throw = [&]()

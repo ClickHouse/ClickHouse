@@ -7,7 +7,6 @@ import threading
 import time
 import uuid
 
-
 import pytest
 from pathlib import Path
 
@@ -697,7 +696,7 @@ def test_wrong_s3_syntax(started_cluster):
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
     expected_err_msg = "Code: 42"  # NUMBER_OF_ARGUMENTS_DOESNT_MATCH
 
-    query = "create table test_table_s3_syntax (id UInt32) ENGINE = S3('', '', '', '', '', '', '', '', '', '')"
+    query = "create table test_table_s3_syntax (id UInt32) ENGINE = S3('', '', '', '', '', '', '', '', '')"
     assert expected_err_msg in instance.query_and_get_error(query)
 
     expected_err_msg = "Code: 36"  # BAD_ARGUMENTS
@@ -2918,4 +2917,45 @@ def test_partition_by_without_wildcard(started_cluster):
 CREATE TABLE {table_name} (a Int32, b Int32, c String) ENGINE = S3('{url}', format = 'Parquet')
 PARTITION BY (b, c)
 """
+    )
+
+def test_schema_inference_cache_multi_path(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+    s3_path_prefix = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_schema_infer_cache"
+    query1 = "insert into table function s3('{}/{}', 'Parquet', '{}') settings s3_truncate_on_insert=1 values {}".format(
+        s3_path_prefix,
+        "test1.parquet",
+        "column1 UInt32, column2 String",
+        "(1, 'a'), (2, 'b')",
+    )
+    query2 = "insert into table function s3('{}/{}', 'Parquet', '{}') settings s3_truncate_on_insert=1 values {}".format(
+        s3_path_prefix,
+        "test2.parquet",
+        "column1 String, column2 UInt32",
+        "('a', 1), ('b', 2)",
+    )
+
+    run_query(instance, query1)
+    run_query(instance, query2)
+
+    # Sleep so files last modification time is in the past
+    time.sleep(2)
+
+    instance.query(f"DESCRIBE TABLE s3('{s3_path_prefix}/*')")
+
+    assert "a\t1\nb\t2\n" == instance.query(
+        f"SELECT * FROM s3('{s3_path_prefix}/test2.parquet')"
+    )
+    assert "1\ta\n2\tb\n" == instance.query(
+        f"SELECT * FROM s3('{s3_path_prefix}/test1.parquet')"
+    )
+
+    instance.query(f"DESCRIBE TABLE url('{s3_path_prefix}/{{test1.parquet,test2.parquet}}')")
+
+    assert "a\t1\nb\t2\n" == instance.query(
+        f"SELECT * FROM url('{s3_path_prefix}/test2.parquet')"
+    )
+    assert "1\ta\n2\tb\n" == instance.query(
+        f"SELECT * FROM url('{s3_path_prefix}/test1.parquet')"
     )

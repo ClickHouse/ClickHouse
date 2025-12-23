@@ -10,13 +10,14 @@
 
 namespace DB
 {
-class ArrowFlightConnection;
 
 class ArrowFlightSource : public ISource
 {
 public:
+    using FlightClientPtr = std::shared_ptr<arrow::flight::FlightClient>;
+
     ArrowFlightSource(
-        std::shared_ptr<ArrowFlightConnection> connection_,
+        const FlightClientPtr & client_,
         const std::string & query_,
         const Block & sample_block_,
         const std::vector<std::string> & column_names_,
@@ -30,7 +31,7 @@ protected:
     Chunk generate() override;
 
 private:
-    std::shared_ptr<ArrowFlightConnection> connection;
+    FlightClientPtr client;
     std::string query;
 
     Block sample_block;

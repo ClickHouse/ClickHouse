@@ -6,7 +6,6 @@ sidebar_label: 'External Data'
 sidebar_position: 130
 slug: /engines/table-engines/special/external-data
 title: 'External Data for Query Processing'
-doc_type: 'reference'
 ---
 
 # External data for query processing

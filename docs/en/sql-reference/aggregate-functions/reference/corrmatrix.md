@@ -3,7 +3,6 @@ description: 'Computes the correlation matrix over N variables.'
 sidebar_position: 118
 slug: /sql-reference/aggregate-functions/reference/corrmatrix
 title: 'corrMatrix'
-doc_type: 'reference'
 ---
 
 # corrMatrix

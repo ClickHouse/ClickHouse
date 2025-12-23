@@ -5,7 +5,6 @@
 
 #include <Poco/Message.h>
 
-#include <Common/SharedMutex.h>
 #include <Core/NamesAndAliases.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/SystemLog.h>
@@ -70,7 +69,7 @@ protected:
     void addSettingsForQuery(ContextMutablePtr & mutable_context, IAST::QueryKind query_kind) const override;
 
 private:
-    mutable SharedMutex prepare_mutex;
+    mutable std::shared_mutex prepare_mutex;
     String prefix_to_ignore;
 };
 

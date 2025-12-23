@@ -160,8 +160,8 @@ public:
         {
             pfds[0].revents = 0;
             pfds[1].revents = 0;
-            int num_events = pollWithTimeout(pfds, num_pfds, timeout_milliseconds);
-            if (num_events <= 0)
+            size_t num_events = pollWithTimeout(pfds, num_pfds, timeout_milliseconds);
+            if (0 == num_events)
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Pipe read timeout exceeded {} milliseconds", timeout_milliseconds);
 
             bool has_stdout = pfds[0].revents > 0;

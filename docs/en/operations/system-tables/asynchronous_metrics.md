@@ -4,7 +4,6 @@ description: 'System table containing metrics that are calculated periodically i
 keywords: ['system table', 'asynchronous_metrics']
 slug: /operations/system-tables/asynchronous_metrics
 title: 'system.asynchronous_metrics'
-doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';

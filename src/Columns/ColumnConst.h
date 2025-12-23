@@ -174,27 +174,27 @@ public:
         s -= n;
     }
 
-    StringRef serializeValueIntoArena(size_t, Arena & arena, char const *& begin) const override
+    StringRef
+    serializeValueIntoArena(size_t, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override
     {
-        return data->serializeValueIntoArena(0, arena, begin);
+        return data->serializeValueIntoArena(0, arena, begin, settings);
     }
 
-    char * serializeValueIntoMemory(size_t, char * memory) const override
+    char * serializeValueIntoMemory(size_t, char * memory, const IColumn::SerializationSettings * settings) const override
     {
-        return data->serializeValueIntoMemory(0, memory);
+        return data->serializeValueIntoMemory(0, memory, settings);
     }
 
-    const char * deserializeAndInsertFromArena(const char * pos) override
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override
     {
-        const auto * res = data->deserializeAndInsertFromArena(pos);
+        data->deserializeAndInsertFromArena(in, settings);
         data->popBack(1);
         ++s;
-        return res;
     }
 
-    const char * skipSerializedInArena(const char * pos) const override
+    void skipSerializedInArena(ReadBuffer & in) const override
     {
-        return data->skipSerializedInArena(pos);
+        data->skipSerializedInArena(in);
     }
 
     void updateHashWithValue(size_t, SipHash & hash) const override

@@ -97,6 +97,7 @@ public:
 private:
     IServer & server;
     LoggerPtr log;
+    arrow::flight::Location location;
     const Poco::Net::SocketAddress address_to_listen;
     std::optional<ThreadFromGlobalPool> server_thread;
     bool initialized = false;

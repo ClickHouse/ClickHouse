@@ -117,7 +117,7 @@ public:
         const float min_hit_rate_to_use_consecutive_keys_optimization = 0.;
         StatsCollectingParams stats_collecting_params;
 
-        bool enable_producing_buckets_out_of_order_in_aggregation = true;
+        bool serialize_string_with_zero_byte = false;
 
         static size_t getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by);
 
@@ -142,7 +142,7 @@ public:
             bool optimize_group_by_constant_keys_,
             float min_hit_rate_to_use_consecutive_keys_optimization_,
             const StatsCollectingParams & stats_collecting_params_,
-            bool enable_producing_buckets_out_of_order_in_aggregation_);
+            bool serialize_string_with_zero_byte_);
 
         /// Only parameters that matter during merge.
         Params(
@@ -151,7 +151,8 @@ public:
             bool overflow_row_,
             size_t max_threads_,
             size_t max_block_size_,
-            float min_hit_rate_to_use_consecutive_keys_optimization_);
+            float min_hit_rate_to_use_consecutive_keys_optimization_,
+            bool serialize_string_with_zero_byte_);
 
         Params cloneWithKeys(const Names & keys_, bool only_merge_ = false)
         {
@@ -414,7 +415,7 @@ private:
         size_t row_begin,
         size_t row_end,
         AggregateFunctionInstruction * aggregate_instructions,
-        AggregateDataPtr * places,
+        const std::unique_ptr<AggregateDataPtr[]> & places,
         size_t key_start,
         bool has_only_one_value_since_last_reset,
         bool all_keys_are_const,

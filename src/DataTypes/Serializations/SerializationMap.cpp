@@ -492,9 +492,8 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    const auto & column_map = assert_cast<const ColumnMap &>(*column);
-    ColumnPtr nested_ptr = column_map.getNestedColumnPtr();
-    nested->deserializeBinaryBulkWithMultipleStreams(nested_ptr, rows_offset, limit, settings, state, cache);
+    auto & column_map = assert_cast<ColumnMap &>(*column->assumeMutable());
+    nested->deserializeBinaryBulkWithMultipleStreams(column_map.getNestedColumnPtr(), rows_offset, limit, settings, state, cache);
 }
 
 }

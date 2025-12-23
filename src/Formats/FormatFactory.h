@@ -9,7 +9,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <base/types.h>
 #include <Common/Allocator.h>
-#include <Common/NamePrompter.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -59,7 +58,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
 /** Allows to create an IInputFormat or IOutputFormat by the name of the format.
   * Note: format and compression are independent things.
   */
-class FormatFactory final : private boost::noncopyable, public IHints<2>
+class FormatFactory final : private boost::noncopyable
 {
 public:
     /** Fast reading data from buffer and save result to memory.
@@ -77,7 +76,6 @@ public:
     using FileSegmentationEngineCreator = std::function<FileSegmentationEngine(
         const FormatSettings & settings)>;
 
-    std::vector<String> getAllRegisteredNames() const override;
 private:
     // On the input side, there are two kinds of formats:
     //  * InputCreator - formats parsed sequentially, e.g. CSV. Almost all formats are like this.

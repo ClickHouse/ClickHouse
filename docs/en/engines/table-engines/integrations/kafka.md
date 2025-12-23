@@ -5,15 +5,13 @@ description: 'The Kafka Table Engine can be used to publish works with Apache Ka
 sidebar_label: 'Kafka'
 sidebar_position: 110
 slug: /engines/table-engines/integrations/kafka
-title: 'Kafka table engine'
-keywords: ['Kafka', 'table engine']
-doc_type: 'guide'
+title: 'Kafka'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# Kafka table engine
+# Kafka
 
 :::note
 If you're on ClickHouse Cloud, we recommend using [ClickPipes](/integrations/clickpipes) instead. ClickPipes natively supports private network connections, scaling ingestion and cluster resources independently, and comprehensive monitoring for streaming Kafka data into ClickHouse.
@@ -280,6 +278,17 @@ If `allow_experimental_kafka_offsets_storage_in_keeper` is enabled, then two mor
 Either both of the settings must be specified or neither of them. When both of them are specified, then a new, experimental Kafka engine will be used. The new engine doesn't depend on storing the committed offsets in Kafka, but stores them in ClickHouse Keeper. It still tries to commit the offsets to Kafka, but it only depends on those offsets when the table is created. In any other circumstances (table is restarted, or recovered after some error) the offsets stored in ClickHouse Keeper will be used as an offset to continue consuming messages from. Apart from the committed offset, it also stores how many messages were consumed in the last batch, so if the insert fails, the same amount of messages will be consumed, thus enabling deduplication if necessary.
 
 Example:
+
+```sql
+CREATE TABLE experimental_kafka (key UInt64, value UInt64)
+ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
+SETTINGS
+  kafka_keeper_path = '/clickhouse/{database}/experimental_kafka',
+  kafka_replica_name = 'r1'
+SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+```
+
+Or to utilize the `uuid` and `replica` macros similarly to ReplicatedMergeTree:
 
 ```sql
 CREATE TABLE experimental_kafka (key UInt64, value UInt64)

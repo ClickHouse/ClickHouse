@@ -284,7 +284,7 @@ def main():
                 link_to_master_head_binary = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
             if not info.is_local_run or not (Path(temp_dir) / "clickhouse").exists():
                 print(
-                    f"NOTE: ClickHouse binary will be downloaded to [{temp_dir}] from [{link_to_master_head_binary}]"
+                    f"NOTE: Clickhouse binary will be downloaded to [{temp_dir}] from [{link_to_master_head_binary}]"
                 )
                 if info.is_local_run:
                     time.sleep(10)
@@ -418,7 +418,7 @@ def main():
         print("Collect logs")
 
         def collect_logs():
-            CH.prepare_logs(all=test_result and not test_result.is_ok(), info=info)
+            CH.prepare_logs(all=test_result and not test_result.is_ok())
 
         results.append(
             Result.from_commands_run(
@@ -443,15 +443,12 @@ def main():
             )
             force_ok_exit = True
 
-    if test_result:
-        test_result.sort()
-
     Result.create_from(
         results=results,
         stopwatch=stop_watch,
         files=CH.logs + debug_files,
         info=job_info,
-    ).complete_job(do_not_block_pipeline_on_failure=force_ok_exit)
+    ).complete_job(force_ok_exit=force_ok_exit)
 
 
 if __name__ == "__main__":

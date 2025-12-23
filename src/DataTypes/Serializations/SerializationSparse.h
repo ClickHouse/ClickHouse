@@ -106,24 +106,4 @@ private:
     SerializationPtr nested;
 };
 
-struct SubstreamsCacheSparseOffsetsElement : public ISerialization::ISubstreamsCacheElement
-{
-    explicit SubstreamsCacheSparseOffsetsElement(
-        ColumnPtr offsets_,
-        size_t old_size_,
-        size_t read_rows_,
-        size_t skipped_values_rows_)
-        : offsets(std::move(offsets_))
-        , old_size(old_size_)
-        , read_rows(read_rows_)
-        , skipped_values_rows(skipped_values_rows_)
-    {
-    }
-
-    ColumnPtr offsets;
-    size_t old_size = 0;
-    size_t read_rows = 0;
-    size_t skipped_values_rows = 0;
-};
-
 }

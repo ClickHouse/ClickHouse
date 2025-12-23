@@ -195,11 +195,13 @@ private:
         bool deduplicate{false};
         Names deduplicate_by_columns{};
         bool cleanup{false};
-        bool vertical_lightweight_delete{false};
 
         NamesAndTypesList gathering_columns{};
+        NameSet merge_required_key_columns{};
         NamesAndTypesList merging_columns{};
+        NamesAndTypesList merging_columns_expired_by_ttl{};
         NamesAndTypesList storage_columns{};
+        NamesAndTypesList storage_columns_expired_by_ttl{};
         MergeTreeData::DataPart::Checksums checksums_gathered_columns{};
         ColumnsSubstreams gathered_columns_substreams{};
 
@@ -319,7 +321,7 @@ private:
 
         MergeAlgorithm chooseMergeAlgorithm() const;
         void createMergedStream() const;
-        void extractMergingAndGatheringColumns(const std::unordered_set<String> & exclude_index_names) const;
+        void extractMergingAndGatheringColumns() const;
 
         void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) override
         {
@@ -486,8 +488,8 @@ private:
 
     static bool enabledBlockNumberColumn(GlobalRuntimeContextPtr global_ctx);
     static bool enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx);
+
     static void addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type);
-    static bool isVerticalLightweightDelete(const GlobalRuntimeContext & global_ctx);
 };
 
 /// FIXME

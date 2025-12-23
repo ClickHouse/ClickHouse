@@ -1044,18 +1044,8 @@ function checkCredentials() {
     });
 }
 
-function resetCredentialsStatus() {
-    [user_elem, password_elem].forEach(e => { e.classList.remove('ok'); e.classList.remove('fail'); });
-}
-
-user_elem.addEventListener('input', resetCredentialsStatus);
-password_elem.addEventListener('input', resetCredentialsStatus);
-
-/// The password is usually copy-pasted.
-/// To not worry about extracting the clipboard data, but use the value instead,
-/// and not worry too much about input/paste race, add the timeout.
-user_elem.addEventListener('paste', () => setTimeout(checkCredentials, 100));
-password_elem.addEventListener('paste', () => setTimeout(checkCredentials, 100));
+user_elem.addEventListener('input', checkCredentials);
+password_elem.addEventListener('input', checkCredentials);
 
 
 function queryToColor(str) {

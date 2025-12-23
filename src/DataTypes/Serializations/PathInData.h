@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <Core/Field.h>
+#include <bitset>
 
 namespace DB
 {

@@ -184,15 +184,7 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node1",
-            main_configs=["configs/backups.xml","configs/cluster.xml"],
-            user_configs=[],
-            stay_alive=True,
-            with_iceberg_catalog=True,
-        )
-
-        cluster.add_instance(
-            "node2",
-            main_configs=["configs/backups.xml","configs/cluster.xml"],
+            main_configs=["configs/backups.xml"],
             user_configs=[],
             stay_alive=True,
             with_iceberg_catalog=True,
@@ -259,14 +251,14 @@ def test_list_tables(started_cluster):
     assert (
         tables_list
         == node.query(
-            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{root_namespace}%' ORDER BY name SETTINGS show_data_lake_catalogs_in_system_tables = true"
+            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{root_namespace}%' ORDER BY name"
         ).strip()
     )
     node.restart_clickhouse()
     assert (
         tables_list
         == node.query(
-            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{root_namespace}%' ORDER BY name SETTINGS show_data_lake_catalogs_in_system_tables = true"
+            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{root_namespace}%' ORDER BY name"
         ).strip()
     )
 
@@ -304,7 +296,7 @@ def test_many_namespaces(started_cluster):
             table_name = f"{namespace}.{table}"
             assert int(
                 node.query(
-                    f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and name = '{table_name}' SETTINGS show_data_lake_catalogs_in_system_tables = true"
+                    f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and name = '{table_name}'"
                 )
             )
 

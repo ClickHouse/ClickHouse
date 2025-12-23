@@ -35,7 +35,6 @@ namespace CurrentMetrics
 namespace DB
 {
 class ZooKeeperLog;
-class AggregatedZooKeeperLog;
 class ZooKeeperWithFaultInjection;
 class BackgroundSchedulePoolTaskHolder;
 
@@ -188,10 +187,34 @@ class ZooKeeper
     /// ZooKeeperWithFaultInjection wants access to `impl` pointer to reimplement some async functions with faults
     friend class DB::ZooKeeperWithFaultInjection;
 
-    explicit ZooKeeper(ZooKeeperArgs args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr, std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_ = nullptr);
+    explicit ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
 
     /// Allows to keep info about availability zones when starting a new session
-    ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_, std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_, Strings availability_zones_, std::unique_ptr<Coordination::IKeeper> existing_impl);
+    ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_, Strings availability_zones_, std::unique_ptr<Coordination::IKeeper> existing_impl);
+
+    /** Config of the form:
+        <zookeeper>
+            <node>
+                <host>example1</host>
+                <port>2181</port>
+                <!-- Optional. Enables communication over SSL . -->
+                <secure>1</secure>
+            </node>
+            <node>
+                <host>example2</host>
+                <port>2181</port>
+                <!-- Optional. Enables communication over SSL . -->
+                <secure>1</secure>
+            </node>
+            <session_timeout_ms>30000</session_timeout_ms>
+            <operation_timeout_ms>10000</operation_timeout_ms>
+            <!-- Optional. Chroot suffix. Should exist. -->
+            <root>/path/to/zookeeper/node</root>
+            <!-- Optional. Zookeeper digest ACL string. -->
+            <identity>user:password</identity>
+        </zookeeper>
+    */
+    ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
 
     /// See addCheckSessionOp
     void initSession();
@@ -204,9 +227,9 @@ public:
 
     std::vector<ShuffleHost> shuffleHosts() const;
 
-    static Ptr create(ZooKeeperArgs args_,
-                      std::shared_ptr<DB::ZooKeeperLog> zk_log_,
-                      std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_);
+    static Ptr create(const Poco::Util::AbstractConfiguration & config,
+                      const std::string & config_name,
+                      std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
     template <typename... Args>
     static Ptr createWithoutKillingPreviousSessions(Args &&... args)
@@ -225,8 +248,6 @@ public:
     bool expired();
 
     bool isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const;
-
-    Coordination::WatchCallbackPtrOrEventPtr createWatchFromRawCallback(const String & id, const Coordination::IKeeper::WatchCallbackCreator & creator);
 
     /// Create a znode.
     /// Throw an exception if something went wrong.
@@ -259,8 +280,8 @@ public:
     /// * The node has children.
     Coordination::Error tryRemove(const std::string & path, int32_t version = -1);
 
-    bool exists(const std::string & path, Coordination::Stat * stat = nullptr, const Coordination::EventPtr & watch = nullptr);
-    bool existsWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallbackPtrOrEventPtr watch_callback);
+    bool exists(const std::string & path, Coordination::Stat * stat = nullptr, const EventPtr & watch = nullptr);
+    bool existsWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
 
     using MultiExistsResponse = MultiReadResponses<Coordination::ExistsResponse, true>;
     template <typename TIter>
@@ -277,8 +298,9 @@ public:
 
     bool anyExists(const std::vector<std::string> & paths);
 
-    std::string get(const std::string & path, Coordination::Stat * stat = nullptr, const Coordination::EventPtr & watch = nullptr);
-    std::string getWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallbackPtrOrEventPtr watch_callback);
+    std::string get(const std::string & path, Coordination::Stat * stat = nullptr, const EventPtr & watch = nullptr);
+    std::string getWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
+    std::string getWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallbackPtr watch_callback);
 
     using MultiGetResponse = MultiReadResponses<Coordination::GetResponse, false>;
     using MultiTryGetResponse = MultiReadResponses<Coordination::GetResponse, true>;
@@ -301,14 +323,21 @@ public:
         const std::string & path,
         std::string & res,
         Coordination::Stat * stat = nullptr,
-        const Coordination::EventPtr & watch = nullptr,
+        const EventPtr & watch = nullptr,
         Coordination::Error * code = nullptr);
 
     bool tryGetWatch(
         const std::string & path,
         std::string & res,
         Coordination::Stat * stat,
-        Coordination::WatchCallbackPtrOrEventPtr watch_callback,
+        Coordination::WatchCallback watch_callback,
+        Coordination::Error * code = nullptr);
+
+    bool tryGetWatch(
+        const std::string & path,
+        std::string & res,
+        Coordination::Stat * stat,
+        Coordination::WatchCallbackPtr watch_callback,
         Coordination::Error * code = nullptr);
 
     template <typename TIter>
@@ -337,12 +366,17 @@ public:
 
     Strings getChildren(const std::string & path,
                         Coordination::Stat * stat = nullptr,
-                        const Coordination::EventPtr & watch = nullptr,
+                        const EventPtr & watch = nullptr,
                         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     Strings getChildrenWatch(const std::string & path,
                              Coordination::Stat * stat,
-                             Coordination::WatchCallbackPtrOrEventPtr watch_callback,
+                             Coordination::WatchCallback watch_callback,
+                             Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
+
+    Strings getChildrenWatch(const std::string & path,
+                             Coordination::Stat * stat,
+                             Coordination::WatchCallbackPtr watch_callback,
                              Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     using MultiGetChildrenResponse = MultiReadResponses<Coordination::ListResponse, false>;
@@ -356,7 +390,7 @@ public:
             start,
             end,
             [list_request_type](const auto & path) { return zkutil::makeListRequest(path, list_request_type); },
-            [&](const auto & path) { return asyncGetChildren(path, list_request_type); });
+            [&](const auto & path) { return asyncGetChildren(path, {}, list_request_type); });
     }
 
     MultiGetChildrenResponse
@@ -371,14 +405,21 @@ public:
         const std::string & path,
         Strings & res,
         Coordination::Stat * stat = nullptr,
-        const Coordination::EventPtr & watch = nullptr,
+        const EventPtr & watch = nullptr,
         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     Coordination::Error tryGetChildrenWatch(
         const std::string & path,
         Strings & res,
         Coordination::Stat * stat,
-        Coordination::WatchCallbackPtrOrEventPtr watch_callback,
+        Coordination::WatchCallback watch_callback,
+        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
+
+    Coordination::Error tryGetChildrenWatch(
+        const std::string & path,
+        Strings & res,
+        Coordination::Stat * stat,
+        Coordination::WatchCallbackPtr watch_callback,
         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     template <typename TIter>
@@ -489,23 +530,26 @@ public:
     FutureCreate asyncTryCreateNoThrow(const std::string & path, const std::string & data, int32_t mode);
 
     using FutureGet = std::future<Coordination::GetResponse>;
-    FutureGet asyncGet(const std::string & path);
+    FutureGet asyncGet(const std::string & path, Coordination::WatchCallback watch_callback = {});
     /// Like the previous one but don't throw any exceptions on future.get()
-    FutureGet asyncTryGetNoThrow(const std::string & path, Coordination::WatchCallbackPtrOrEventPtr watch_callback = {});
+    FutureGet asyncTryGetNoThrow(const std::string & path, Coordination::WatchCallback watch_callback = {});
+
+    FutureGet asyncTryGetNoThrow(const std::string & path, Coordination::WatchCallbackPtr watch_callback = {});
 
     using FutureExists = std::future<Coordination::ExistsResponse>;
-    FutureExists asyncExists(const std::string & path);
+    FutureExists asyncExists(const std::string & path, Coordination::WatchCallback watch_callback = {});
     /// Like the previous one but don't throw any exceptions on future.get()
-    FutureExists asyncTryExistsNoThrow(const std::string & path, Coordination::WatchCallbackPtrOrEventPtr watch_callback = {});
+    FutureExists asyncTryExistsNoThrow(const std::string & path, Coordination::WatchCallback watch_callback = {});
 
     using FutureGetChildren = std::future<Coordination::ListResponse>;
     FutureGetChildren asyncGetChildren(
         const std::string & path,
+        Coordination::WatchCallback watch_callback = {},
         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
     /// Like the previous one but don't throw any exceptions on future.get()
     FutureGetChildren asyncTryGetChildrenNoThrow(
         const std::string & path,
-        Coordination::WatchCallbackPtrOrEventPtr watch_callback = {},
+        Coordination::WatchCallbackPtr watch_callback = {},
         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     using FutureSet = std::future<Coordination::SetResponse>;
@@ -562,6 +606,8 @@ public:
 
     void finalize(const String & reason);
 
+    void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
+
     UInt32 getSessionUptime() const { return static_cast<UInt32>(session_uptime.elapsedSeconds()); }
 
     uint64_t getSessionTimeoutMS() const { return args.session_timeout_ms; }
@@ -600,13 +646,15 @@ private:
     Coordination::Error createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
     Coordination::Error removeImpl(const std::string & path, int32_t version);
     Coordination::Error getImpl(
-        const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallbackPtrOrEventPtr watch_callback);
+        const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
+    Coordination::Error getImpl(
+        const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallbackPtr watch_callback);
     Coordination::Error setImpl(const std::string & path, const std::string & data, int32_t version, Coordination::Stat * stat);
     Coordination::Error getChildrenImpl(
         const std::string & path,
         Strings & res,
         Coordination::Stat * stat,
-        Coordination::WatchCallbackPtrOrEventPtr watch_callback,
+        Coordination::WatchCallbackPtr watch_callback,
         Coordination::ListRequestType list_request_type);
     Coordination::Error getACLImpl(const std::string & path, Coordination::ACLs & res, Coordination::Stat * stat);
 
@@ -614,7 +662,7 @@ private:
     std::pair<Coordination::Error, std::string>
     multiImpl(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid);
 
-    Coordination::Error existsImpl(const std::string & path, Coordination::Stat * stat_, Coordination::WatchCallbackPtrOrEventPtr watch_callback);
+    Coordination::Error existsImpl(const std::string & path, Coordination::Stat * stat_, Coordination::WatchCallback watch_callback);
     Coordination::Error syncImpl(const std::string & path, std::string & returned_path);
 
     using RequestFactory = std::function<Coordination::RequestPtr(const std::string &)>;
@@ -666,7 +714,6 @@ private:
 
     LoggerPtr log = nullptr;
     std::shared_ptr<DB::ZooKeeperLog> zk_log;
-    std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log;
 
     AtomicStopwatch session_uptime;
 

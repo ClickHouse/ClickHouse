@@ -23,7 +23,6 @@
 #include <Parsers/ASTSubquery.h>
 
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
@@ -65,7 +64,7 @@ namespace DB
 namespace VirtualColumnUtils
 {
 
-void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
+void buildSetsForDagImpl(const ActionsDAG & dag, const ContextPtr & context, bool ordered)
 {
     for (const auto & node : dag.getNodes())
     {
@@ -81,11 +80,26 @@ void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
                 if (!future_set->get())
                 {
                     if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get()))
-                        set_from_subquery->buildSetInplace(context);
+                    {
+                        if (ordered)
+                            set_from_subquery->buildOrderedSetInplace(context);
+                        else
+                            set_from_subquery->buildSetInplace(context);
+                    }
                 }
             }
         }
     }
+}
+
+void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
+{
+    buildSetsForDagImpl(dag, context, /* ordered = */ false);
+}
+
+void buildOrderedSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
+{
+    buildSetsForDagImpl(dag, context, /* ordered = */ true);
 }
 
 ExpressionActionsPtr buildFilterExpression(ActionsDAG dag, ContextPtr context)
@@ -298,23 +312,18 @@ void addRequestedFileLikeStorageVirtualsToChunk(
         else if (virtual_column.name == "_row_number")
         {
 #if USE_PARQUET
-            auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>();
+            auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumOffset>();
             if (chunk_info)
             {
                 size_t row_num_offset = chunk_info->row_num_offset;
-                const auto & applied_filter = chunk_info->applied_filter;
-                size_t num_indices = applied_filter.has_value() ? applied_filter->size() : chunk.getNumRows();
                 auto column = ColumnInt64::create();
-                for (size_t i = 0; i < num_indices; ++i)
-                    if (!applied_filter.has_value() || applied_filter.value()[i])
-                        column->insertValue(i + row_num_offset);
-                auto null_map = ColumnUInt8::create(chunk.getNumRows(), 0);
-                chunk.addColumn(ColumnNullable::create(std::move(column), std::move(null_map)));
+                for (size_t i = 0; i < chunk.getNumRows(); ++i)
+                    column->insertValue(i + row_num_offset);
+                chunk.addColumn(std::move(column));
                 return;
             }
 #endif
-            /// Row numbers not known, _row_number = NULL.
-            chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), -1)->convertToFullColumnIfConst());
         }
     }
 }

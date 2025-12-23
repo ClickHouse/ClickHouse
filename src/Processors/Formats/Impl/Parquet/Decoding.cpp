@@ -41,7 +41,7 @@ struct BitPackedRLEDecoder : public PageDecoder
             requireRemainingBytes(1);
             bit_width = size_t(UInt8(*data));
             data += 1;
-            if (bit_width > 8 * sizeof(T))
+            if (bit_width > 8 * sizeof(T) || (bit_width == 0 && limit > 1))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid dict indices bit width: {}", bit_width);
         }
         else
@@ -120,7 +120,7 @@ struct BitPackedRLEDecoder : public PageDecoder
     {
         if (bit_width == 0)
         {
-            /// bit_width == 0 means all values are 0.
+            /// bit_width == 0 can be used for dictionary indices if the dictionary has only one value.
             if constexpr (!skip)
                 memset(out, 0, num_values * sizeof(T));
             return;
@@ -1096,8 +1096,6 @@ void IntConverter::convertField(std::span<const char> data, bool /*is_max*/, Fie
     UInt64 val = 0;
     switch (input_size)
     {
-        case 1: val = unalignedLoad<UInt8>(data.data()); break;
-        case 2: val = unalignedLoad<UInt16>(data.data()); break;
         case 4: val = unalignedLoad<UInt32>(data.data()); break;
         case 8: val = unalignedLoad<UInt64>(data.data()); break;
         default: chassert(false);

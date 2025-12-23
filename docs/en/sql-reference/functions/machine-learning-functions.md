@@ -3,7 +3,6 @@ description: 'Documentation for Machine Learning Functions'
 sidebar_label: 'Machine Learning'
 slug: /sql-reference/functions/machine-learning-functions
 title: 'Machine Learning Functions'
-doc_type: 'reference'
 ---
 
 # Machine learning functions

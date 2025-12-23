@@ -527,25 +527,13 @@ namespace
 
         void setSchemaToLastFile(const ColumnsDescription & columns) override
         {
-            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_file]
-                || getContext()->getSettingsRef()[Setting::schema_inference_mode] != SchemaInferenceMode::UNION)
+            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_file])
                 return;
 
             /// For union mode, schema can be different for different files, so we need to
             /// cache last inferred schema only for last processed file.
             auto cache_key = getKeyForSchemaCache(paths[current_index - 1], *format, format_settings, getContext());
             StorageFile::getSchemaCache(getContext()).addColumns(cache_key, columns);
-        }
-
-        void setResultingSchema(const ColumnsDescription & columns) override
-        {
-            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_file]
-                || getContext()->getSettingsRef()[Setting::schema_inference_mode] != SchemaInferenceMode::DEFAULT)
-                return;
-
-            /// For default mode we cache resulting schema for all paths.
-            auto cache_keys = getKeysForSchemaCache(paths, *format, format_settings, getContext());
-            StorageFile::getSchemaCache(getContext()).addManyColumns(cache_keys, columns);
         }
 
         String getLastFilePath() const override
@@ -793,8 +781,7 @@ namespace
 
         void setSchemaToLastFile(const ColumnsDescription & columns) override
         {
-            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_file]
-                || getContext()->getSettingsRef()[Setting::schema_inference_mode] != SchemaInferenceMode::UNION)
+            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_file])
                 return;
 
             /// For union mode, schema can be different for different files in archive, so we need to
@@ -802,22 +789,6 @@ namespace
             auto & schema_cache = StorageFile::getSchemaCache(getContext());
             auto cache_key = getKeyForSchemaCache(last_read_file_path, *format, format_settings, getContext());
             schema_cache.addColumns(cache_key, columns);
-        }
-
-        void setResultingSchema(const ColumnsDescription & columns) override
-        {
-            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_file]
-                || getContext()->getSettingsRef()[Setting::schema_inference_mode] != SchemaInferenceMode::DEFAULT)
-                return;
-
-            /// For default mode we cache resulting schema for all paths.
-            /// Also add schema for initial paths (maybe with globes) in cache,
-            /// so next time we won't iterate through files (that can be expensive).
-            for (const auto & archive : archive_info.paths_to_archives)
-                paths_for_schema_cache.emplace_back(fmt::format("{}::{}", archive, archive_info.path_in_archive));
-            auto & schema_cache = StorageFile::getSchemaCache(getContext());
-            auto cache_keys = getKeysForSchemaCache(paths_for_schema_cache, *format, format_settings, getContext());
-            schema_cache.addManyColumns(cache_keys, columns);
         }
 
         void setFormatName(const String & format_name) override
@@ -1669,8 +1640,9 @@ void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
 
 void ReadFromFile::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
-    info = updateFormatPrewhereInfo(info, query_info.row_level_filter, prewhere_info_value);
+    info = updateFormatPrewhereInfo(info, prewhere_info_value);
     query_info.prewhere_info = prewhere_info_value;
+    prewhere_info = prewhere_info_value;
     output_header = std::make_shared<const Block>(info.source_header);
 }
 
@@ -1719,9 +1691,9 @@ void StorageFile::read(
         PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
 
     if (query_info.prewhere_info)
-        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);
 
-    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
+    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info))
         && context->getSettingsRef()[Setting::optimize_count_from_files];
 
     auto reading = std::make_unique<ReadFromFile>(
@@ -1780,7 +1752,8 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         progress_callback(FileProgress(0, storage->total_bytes_to_read));
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(ctx->getSettingsRef(), num_streams);
-    auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, ctx, nullptr, query_info.row_level_filter, query_info.prewhere_info);
+    auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, ctx, nullptr);
+    format_filter_info->prewhere_info = prewhere_info;
 
     for (size_t i = 0; i < num_streams; ++i)
     {

@@ -38,12 +38,12 @@ PRELIMINARY_JOBS = [
 
 INTEGRATION_TEST_FLAKY_CHECK_JOBS = [
     "Build (amd_asan)",
-    "Integration tests (amd_asan, flaky check)",
+    "Integration tests (asan, flaky check)",
 ]
 
 FUNCTIONAL_TEST_FLAKY_CHECK_JOBS = [
     "Build (amd_asan)",
-    "Stateless tests (amd_asan, flaky check)",
+    "Stateless tests (asan, flaky check)",
 ]
 
 _info_cache = None
@@ -78,7 +78,7 @@ def should_skip_job(job_name):
     ):
         return (
             True,
-            f"Skipped, labeled with '{Labels.CI_INTEGRATION_FLAKY}' - run integration test flaky check job only",
+            f"Skipped, labeled with '{Labels.CI_INTEGRATION_FLAKY}' - run integration test jobs only",
         )
 
     if (

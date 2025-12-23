@@ -45,9 +45,15 @@ StorageSystemFilesystemCache::StorageSystemFilesystemCache(const StorageID & tab
 
 void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    auto caches = FileCacheFactory::instance().getAll();
+    auto caches_by_name = FileCacheFactory::instance().getAll();
+    std::unordered_set<FileCacheFactory::FileCacheDataPtr> caches;
+    for (const auto & [_, cache_data] : caches_by_name)
+        caches.insert(cache_data);
+    std::unordered_map<FileCacheFactory::FileCacheDataPtr, std::vector<std::string>> caches_by_instance;
+    for (const auto & [cache_name, cache_data] : caches_by_name)
+        caches_by_instance[cache_data].push_back(cache_name);
 
-    for (const auto & [cache_name, cache_data] : caches)
+    for (const auto & cache_data : caches)
     {
         const auto & cache = cache_data->cache;
         if (!cache->isInitialized())
@@ -55,36 +61,39 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
 
         cache->iterate([&](const FileSegment::Info & file_segment)
         {
-            size_t i = 0;
-            res_columns[i++]->insert(cache_name);
-            res_columns[i++]->insert(cache->getBasePath());
+            for (const auto & cache_name : caches_by_instance.at(cache_data))
+            {
+                size_t i = 0;
+                res_columns[i++]->insert(cache_name);
+                res_columns[i++]->insert(cache->getBasePath());
 
-            /// Do not use `file_segment->getPath` here because it will lead to nullptr dereference
-            /// (because file_segments in getSnapshot doesn't have `cache` field set)
+                /// Do not use `file_segment->getPath` here because it will lead to nullptr dereference
+                /// (because file_segments in getSnapshot doesn't have `cache` field set)
 
-            const auto path = cache->getFileSegmentPath(
-                file_segment.key, file_segment.offset, file_segment.kind,
-                FileCache::UserInfo(file_segment.user_id, file_segment.user_weight));
-            res_columns[i++]->insert(path);
-            res_columns[i++]->insert(file_segment.key.toString());
-            res_columns[i++]->insert(file_segment.range_left);
-            res_columns[i++]->insert(file_segment.range_right);
-            res_columns[i++]->insert(file_segment.size);
-            res_columns[i++]->insert(FileSegment::stateToString(file_segment.state));
-            res_columns[i++]->insert(file_segment.download_finished_time);
-            res_columns[i++]->insert(file_segment.cache_hits);
-            res_columns[i++]->insert(file_segment.references);
-            res_columns[i++]->insert(file_segment.downloaded_size);
-            res_columns[i++]->insert(toString(file_segment.kind));
-            res_columns[i++]->insert(file_segment.is_unbound);
-            res_columns[i++]->insert(file_segment.user_id);
+                const auto path = cache->getFileSegmentPath(
+                    file_segment.key, file_segment.offset, file_segment.kind,
+                    FileCache::UserInfo(file_segment.user_id, file_segment.user_weight));
+                res_columns[i++]->insert(path);
+                res_columns[i++]->insert(file_segment.key.toString());
+                res_columns[i++]->insert(file_segment.range_left);
+                res_columns[i++]->insert(file_segment.range_right);
+                res_columns[i++]->insert(file_segment.size);
+                res_columns[i++]->insert(FileSegment::stateToString(file_segment.state));
+                res_columns[i++]->insert(file_segment.download_finished_time);
+                res_columns[i++]->insert(file_segment.cache_hits);
+                res_columns[i++]->insert(file_segment.references);
+                res_columns[i++]->insert(file_segment.downloaded_size);
+                res_columns[i++]->insert(toString(file_segment.kind));
+                res_columns[i++]->insert(file_segment.is_unbound);
+                res_columns[i++]->insert(file_segment.user_id);
 
-            std::error_code ec;
-            auto size = fs::file_size(path, ec);
-            if (!ec)
-                res_columns[i++]->insert(size);
-            else
-                res_columns[i++]->insertDefault();
+                std::error_code ec;
+                auto size = fs::file_size(path, ec);
+                if (!ec)
+                    res_columns[i++]->insert(size);
+                else
+                    res_columns[i++]->insertDefault();
+            }
         }, FileCache::getCommonUser().user_id);
     }
 }

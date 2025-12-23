@@ -5,7 +5,6 @@ sidebar_label: 'URL'
 sidebar_position: 80
 slug: /engines/table-engines/special/url
 title: 'URL Table Engine'
-doc_type: 'reference'
 ---
 
 # `URL` table engine

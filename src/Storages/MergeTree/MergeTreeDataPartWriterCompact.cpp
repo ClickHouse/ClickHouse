@@ -212,7 +212,6 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPer
     }
 
     result_block = permuteBlockIfNeeded(result_block, permutation);
-    calculateAndSerializeStatistics(result_block);
 
     if (header.empty())
         header = result_block.cloneEmpty();
@@ -236,6 +235,7 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPer
         auto granules_to_write = getGranulesToWrite(*index_granularity, flushed_block.rows(), getCurrentMark(), /* last_block = */ false);
         writeDataBlockPrimaryIndexAndSkipIndices(flushed_block, granules_to_write);
         setCurrentMark(getCurrentMark() + granules_to_write.size());
+        calculateAndSerializeStatistics(flushed_block);
     }
 }
 
@@ -503,7 +503,11 @@ void MergeTreeDataPartWriterCompact::ColumnsBuffer::add(MutableColumns && column
     else
     {
         for (size_t i = 0; i < columns.size(); ++i)
+        {
+            /// Fix dynamic structure so it won't changed after insertion of new rows.
+            accumulated_columns[i]->fixDynamicStructure();
             accumulated_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
+        }
     }
 }
 

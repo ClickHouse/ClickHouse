@@ -26,13 +26,13 @@
 
 #include <IO/CompressedReadBufferWrapper.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Storages/ObjectStorage/DataLakes/Common/Common.h>
+#include <Storages/ObjectStorage/DataLakes/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
 #include <Storages/ColumnsDescription.h>
-#include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergIterator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
@@ -212,7 +212,7 @@ SingleThreadIcebergKeysIterator::SingleThreadIcebergKeysIterator(
     Iceberg::ManifestFileContentType manifest_file_content_type_,
     StorageObjectStorageConfigurationWeakPtr configuration_,
     const ActionsDAG * filter_dag_,
-    Iceberg::TableStateSnapshotPtr table_snapshot_,
+    Iceberg::IcebergTableStateSnapshotPtr table_snapshot_,
     Iceberg::IcebergDataSnapshotPtr data_snapshot_,
     PersistentTableComponents persistent_components_)
     : object_storage(object_storage_)
@@ -246,18 +246,15 @@ IcebergIterator::IcebergIterator(
     StorageObjectStorageConfigurationWeakPtr configuration_,
     const ActionsDAG * filter_dag_,
     IDataLakeMetadata::FileProgressCallback callback_,
-    Iceberg::TableStateSnapshotPtr table_snapshot_,
+    Iceberg::IcebergTableStateSnapshotPtr table_snapshot_,
     Iceberg::IcebergDataSnapshotPtr data_snapshot_,
     PersistentTableComponents persistent_components_)
     : filter_dag(filter_dag_ ? std::make_unique<ActionsDAG>(filter_dag_->clone()) : nullptr)
     , object_storage(std::move(object_storage_))
-    , table_state_snapshot(table_snapshot_)
-    , persistent_components(persistent_components_)
     , data_files_iterator(
           object_storage,
           local_context_,
-          [](const Iceberg::ManifestFilePtr & manifest_file)
-          { return manifest_file->getFilesWithoutDeleted(Iceberg::FileContentType::DATA); },
+          [](const Iceberg::ManifestFilePtr & manifest_file) { return manifest_file->getFilesWithoutDeleted(Iceberg::FileContentType::DATA); },
           Iceberg::ManifestFileContentType::DATA,
           configuration_,
           filter_dag.get(),
@@ -281,40 +278,10 @@ IcebergIterator::IcebergIterator(
           data_snapshot_,
           persistent_components_)
     , blocking_queue(100)
-    , producer_task(local_context_->getSchedulePool().createTask(
-          "IcebergMetaReaderThread",
-          [this]
-          {
-              while (!blocking_queue.isFinished())
-              {
-                  std::optional<ManifestFileEntry> entry;
-                  try
-                  {
-                      entry = data_files_iterator.next();
-                  }
-                  catch (...)
-                  {
-                      std::lock_guard lock(exception_mutex);
-                      if (!exception)
-                      {
-                          exception = std::current_exception();
-                      }
-                      blocking_queue.finish();
-                      break;
-                  }
-                  if (!entry.has_value())
-                      break;
-                  while (!blocking_queue.push(std::move(entry.value())))
-                  {
-                      if (blocking_queue.isFinished())
-                      {
-                          break;
-                      }
-                  }
-              }
-              blocking_queue.finish();
-          }))
+    , producer_task(std::nullopt)
     , callback(std::move(callback_))
+    , format(configuration_.lock()->format)
+    , compression_method(configuration_.lock()->compression_method)
 {
     auto delete_file = deletes_iterator.next();
     while (delete_file.has_value())
@@ -331,8 +298,38 @@ IcebergIterator::IcebergIterator(
     }
     std::sort(equality_deletes_files.begin(), equality_deletes_files.end());
     std::sort(position_deletes_files.begin(), position_deletes_files.end());
-
-    producer_task->activateAndSchedule();
+    producer_task.emplace(
+        [this]()
+        {
+            while (!blocking_queue.isFinished())
+            {
+                std::optional<ManifestFileEntry> entry;
+                try
+                {
+                    entry = data_files_iterator.next();
+                }
+                catch (...)
+                {
+                    std::lock_guard lock(exception_mutex);
+                    if (!exception)
+                    {
+                        exception = std::current_exception();
+                    }
+                    blocking_queue.finish();
+                    break;
+                }
+                if (!entry.has_value())
+                    break;
+                while (!blocking_queue.push(std::move(entry.value())))
+                {
+                    if (blocking_queue.isFinished())
+                    {
+                        break;
+                    }
+                }
+            }
+            blocking_queue.finish();
+        });
 }
 
 ObjectInfoPtr IcebergIterator::next(size_t)
@@ -350,8 +347,6 @@ ObjectInfoPtr IcebergIterator::next(size_t)
         {
             object_info->addEqualityDeleteObject(equality_delete);
         }
-        object_info->schema_id_relevant_to_iterator = table_state_snapshot->schema_id;
-
         ProfileEvents::increment(ProfileEvents::IcebergMetadataReturnedObjectInfos);
         return object_info;
     }
@@ -364,7 +359,6 @@ ObjectInfoPtr IcebergIterator::next(size_t)
             throw DB::Exception(exception_code, "Iceberg iterator is failed with exception: {}", exception_message);
         }
     }
-
     return nullptr;
 }
 
@@ -376,7 +370,10 @@ size_t IcebergIterator::estimatedKeysCount()
 IcebergIterator::~IcebergIterator()
 {
     blocking_queue.finish();
-    producer_task->deactivate();
+    if (producer_task)
+    {
+        producer_task->join();
+    }
 }
 }
 

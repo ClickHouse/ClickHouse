@@ -71,16 +71,12 @@ def started_cluster():
             ],
             user_configs=[
                 "configs/users.xml",
-                "configs/enable_keeper_fault_injection.xml",
             ],
             stay_alive=True,
         )
         cluster.add_instance(
             "instance2",
-            user_configs=[
-                "configs/users.xml",
-                "configs/enable_keeper_fault_injection.xml",
-            ],
+            user_configs=["configs/users.xml"],
             with_minio=True,
             with_zookeeper=True,
             main_configs=[
@@ -121,22 +117,6 @@ def started_cluster():
                 "configs/remote_servers_245.xml",
             ],
             with_installed_binary=True,
-        )
-        cluster.add_instance(
-            "instance_without_keeper_fault_injection",
-            with_minio=True,
-            with_azurite=True,
-            with_zookeeper=True,
-            main_configs=[
-                "configs/zookeeper.xml",
-                "configs/s3queue_log.xml",
-                "configs/remote_servers.xml",
-                "configs/disable_streaming.xml",
-            ],
-            user_configs=[
-                "configs/users.xml",
-            ],
-            stay_alive=True,
         )
 
         logging.info("Starting cluster...")
@@ -1228,16 +1208,16 @@ def test_create_or_replace_table(started_cluster):
 
 def test_persistent_processing_nodes_cleanup(started_cluster):
     node = started_cluster.instances["instance"]
-    table_name = f"max_persistent_processing_nodes_cleanup_{generate_random_string()}"
+    table_name = "max_persistent_processing_nodes_cleanup"
     dst_table_name = f"{table_name}_dst"
-    keeper_path = f"/clickhouse/test_{table_name}"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
 
     create_table(
         started_cluster,
         node,
         table_name,
-        "ordered",
+        "unordered",
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
@@ -1252,33 +1232,26 @@ def test_persistent_processing_nodes_cleanup(started_cluster):
 
     zk = started_cluster.get_kazoo_client("zoo1")
     zk.create(f"{keeper_path}/processing/test", b"somedata")
-    assert b"somedata" == zk.get(f"{keeper_path}/processing/test")[0]
-
-    bucket_lock_path = f"{keeper_path}/buckets/0/lock"
-    zk.create(bucket_lock_path, b"somedata")
+    zk.create(f"{keeper_path}/persistent_processing/test", b"somedata")
+    assert b"somedata" == zk.get(f"{keeper_path}/persistent_processing/test")[0]
 
     time.sleep(5)
+    assert b"somedata" == zk.get(f"{keeper_path}/persistent_processing/test")[0]
+    time.sleep(6)
+    try:
+        zk.get(f"{keeper_path}/persistent_processing/test")[0]
+        assert False
+    except NoNodeError:
+        pass
     assert b"somedata" == zk.get(f"{keeper_path}/processing/test")[0]
-    assert b"somedata" == zk.get(bucket_lock_path)[0]
-    time.sleep(10)
-    try:
-        zk.get(f"{keeper_path}/processing/test")[0]
-        assert False
-    except NoNodeError:
-        pass
-    try:
-        zk.get(bucket_lock_path)
-        assert False
-    except NoNodeError:
-        pass
 
 
 def test_persistent_processing(started_cluster):
     node = started_cluster.instances["instance"]
-    table_name = f"max_persistent_processing_{generate_random_string()}"
+    table_name = "max_persistent_processing"
     dst_table_name = f"{table_name}_dst"
     mv_name = f"{table_name}_mv"
-    keeper_path = f"/clickhouse/test_{table_name}"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
     format = "a Int32, b String"
 
@@ -1308,7 +1281,7 @@ def test_persistent_processing(started_cluster):
     )
 
     zk = started_cluster.get_kazoo_client("zoo1")
-    nodes = zk.get_children(f"{keeper_path}/processing")
+    nodes = zk.get_children(f"{keeper_path}/persistent_processing")
     assert len(nodes) == 0
 
     node.query(
@@ -1320,13 +1293,13 @@ def test_persistent_processing(started_cluster):
     )
     node.query(
         f"""
-        CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT * FROM {table_name} WHERE NOT sleepEachRow(0.5);
+        CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT * FROM {table_name} WHERE NOT sleepEachRow(1);
         """
     )
 
     found = False
-    for _ in range(20):
-        nodes = zk.get_children(f"{keeper_path}/processing")
+    for _ in range(10):
+        nodes = zk.get_children(f"{keeper_path}/persistent_processing")
         if len(nodes) > 0:
             found = True
             break
@@ -1335,28 +1308,24 @@ def test_persistent_processing(started_cluster):
 
     time.sleep(10)
 
-    nodes = zk.get_children(f"{keeper_path}/processing")
+    nodes = zk.get_children(f"{keeper_path}/persistent_processing")
     assert len(nodes) == 0
 
 
-@pytest.mark.parametrize("mode", ["unordered", "ordered"])
-def test_persistent_processing_failed_commit_retries(started_cluster, mode):
-    node = started_cluster.instances["instance_without_keeper_fault_injection"]
-    table_name = (
-        f"max_persistent_processing_failed_commit_retries_{generate_random_string()}"
-    )
+def test_persistent_processing_failed_commit_retries(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = f"max_persistent_processing_failed_commit_retries_{generate_random_string()}"
     dst_table_name = f"{table_name}_dst"
     mv_name = f"{table_name}_mv"
-    keeper_path = f"/clickhouse/test_{table_name}"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
     format = "a Int32, b String"
 
-    processing_threads = 16
     create_table(
         started_cluster,
         node,
         table_name,
-        mode,
+        "unordered",
         files_path,
         format=format,
         additional_settings={
@@ -1369,7 +1338,6 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
             "cleanup_interval_max_ms": 500,
             "polling_max_timeout_ms": 1000,
             "polling_backoff_ms": 100,
-            "processing_threads_num": processing_threads,
         },
     )
     i = [0]
@@ -1385,18 +1353,8 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
     insert()
 
     zk = started_cluster.get_kazoo_client("zoo1")
-    nodes = zk.get_children(f"{keeper_path}/processing")
+    nodes = zk.get_children(f"{keeper_path}/persistent_processing")
     assert len(nodes) == 0
-    is_ordered = mode == "ordered"
-    if is_ordered:
-        nodes = zk.get_children(f"{keeper_path}/buckets")
-        assert len(nodes) == processing_threads
-        for id in range(processing_threads):
-            try:
-                zk.get(f"{keeper_path}/buckets/{id}/lock")
-                assert False
-            except NoNodeError:
-                pass
 
     node.query(
         f"""
@@ -1409,27 +1367,18 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
     node.query(f"SYSTEM ENABLE FAILPOINT object_storage_queue_fail_commit_once")
     node.query(
         f"""
-        CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT * FROM {table_name} WHERE NOT sleepEachRow(0.5);
+        CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT * FROM {table_name} WHERE NOT sleepEachRow(0.3);
         """
     )
 
     found = False
-    for _ in range(100):
-        nodes = zk.get_children(f"{keeper_path}/processing")
+    for _ in range(10):
+        nodes = zk.get_children(f"{keeper_path}/persistent_processing")
         if len(nodes) > 0:
             found = True
             break
-        time.sleep(0.1)
+        time.sleep(1)
     assert found
-    if is_ordered:
-        locked_buckets = 0
-        for id in range(processing_threads):
-            try:
-                zk.get(f"{keeper_path}/buckets/{id}/lock")
-                locked_buckets += 1
-            except NoNodeError:
-                pass
-        assert locked_buckets > 0
 
     found = False
     for _ in range(10):
@@ -1441,8 +1390,6 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
         time.sleep(1)
     assert found
 
-    node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_commit_once")
-
     assert node.contains_in_log(
         f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 1/6"
     )
@@ -1450,7 +1397,7 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
         f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 5/6"
     )
 
-    nodes = zk.get_children(f"{keeper_path}/processing")
+    nodes = zk.get_children(f"{keeper_path}/persistent_processing")
     assert len(nodes) == 0
 
     node.query(f"SYSTEM ENABLE FAILPOINT object_storage_queue_fail_commit")
@@ -1474,19 +1421,9 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
 
     found = False
     for _ in range(30):
-        nodes = zk.get_children(f"{keeper_path}/processing")
+        nodes = zk.get_children(f"{keeper_path}/persistent_processing")
         if len(nodes) == 0:
             found = True
             break
         time.sleep(1)
-    nodes = zk.get_children(f"{keeper_path}/processing")
-    assert found, f"Nodes: {nodes}"
-
-    node.query(f"DROP TABLE default.{table_name} SYNC")
-    if is_ordered:
-        for id in range(processing_threads):
-            try:
-                zk.get(f"{keeper_path}/buckets/{id}/lock")
-                assert False
-            except NoNodeError:
-                pass
+    assert found

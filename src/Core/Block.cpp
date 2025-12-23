@@ -226,7 +226,7 @@ void Block::insertUnique(ColumnWithTypeAndName elem)
     if (elem.name.empty())
         throw Exception(ErrorCodes::AMBIGUOUS_COLUMN_NAME, "Column name in Block cannot be empty");
 
-    if (!index_by_name.contains(elem.name))
+    if (index_by_name.end() == index_by_name.find(elem.name))
         insert(std::move(elem));
 }
 
@@ -907,7 +907,7 @@ Serializations Block::getSerializations(const SerializationInfoByName & hints) c
     {
         auto it = hints.find(column.name);
         if (it == hints.end())
-            res.push_back(column.type->getSerialization(hints.getSettings()));
+            res.push_back(column.type->getDefaultSerialization());
         else
             res.push_back(column.type->getSerialization(*it->second));
     }

@@ -11,9 +11,6 @@
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
 
-
-#include <IO/WriteBufferFromString.h>
-#include <IO/copyData.h>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/ObjectStorages/ObjectStorageIteratorAsync.h>
 #include <Interpreters/Context.h>
@@ -187,7 +184,6 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
         if (client_ptr->IsClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskAzureListObjects);
 
-        blob_list_response = client_ptr->ListBlobs(options);
         const auto & blobs_list = blob_list_response.Blobs;
 
         for (const auto & blob : blobs_list)
@@ -203,19 +199,15 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
                     {}}));
         }
 
-        if (max_keys)
-        {
-            ssize_t keys_left = static_cast<ssize_t>(max_keys) - children.size();
-            if (keys_left <= 0)
-                break;
-            options.PageSizeHint = keys_left;
-        }
+        if (max_keys && children.size() >= max_keys)
+            break;
     }
 }
 
 std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
+    std::optional<size_t>,
     std::optional<size_t>) const
 {
     auto settings_ptr = settings.get();
@@ -230,23 +222,6 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
         read_settings.remote_read_buffer_restrict_seek,
         /* read_until_position */0);
 }
-
-SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
-    const StoredObject & object,
-    const ReadSettings & read_settings,
-    size_t max_size_bytes,
-    std::optional<size_t> read_hint) const
-{
-    auto buffer = readObject(object, read_settings, read_hint);
-    SmallObjectDataWithMetadata result;
-    WriteBufferFromString out(result.data);
-    copyDataMaxBytes(*buffer, out, max_size_bytes);
-    out.finalize();
-
-    result.metadata = dynamic_cast<ReadBufferFromAzureBlobStorage *>(buffer.get())->getObjectMetadataFromTheLastRequest();
-    return result;
-}
-
 
 /// Open the file for write and return WriteBufferFromFileBase object.
 std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NOLINT
@@ -344,18 +319,6 @@ ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path) c
     return result;
 }
 
-std::optional<ObjectMetadata> AzureObjectStorage::tryGetObjectMetadata(const std::string & path) const
-try
-{
-    return getObjectMetadata(path);
-}
-catch (const Azure::Storage::StorageException & e)
-{
-    if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
-        return {};
-    throw;
-}
-
 void AzureObjectStorage::copyObject( /// NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
@@ -414,6 +377,11 @@ void AzureObjectStorage::applyNewSettings(
     client.set(std::move(new_client));
 }
 
+
+ObjectStorageConnectionInfoPtr AzureObjectStorage::getConnectionInfo() const
+{
+    return DB::getAzureObjectStorageConnectionInfo(connection_params);
+}
 
 }
 
