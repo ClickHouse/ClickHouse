@@ -47,7 +47,7 @@ def start_cluster():
 
 def test_credentials_from_metadata():
     node.query(
-        f"INSERT INTO FUNCTION s3('http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/test1.jsonl') SELECT * FROM numbers(100)"
+        f"INSERT INTO FUNCTION s3('http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/test1.jsonl') SELECT * FROM numbers(100) SETTINGS s3_truncate_on_insert = 1"
     )
 
     assert (
@@ -74,7 +74,7 @@ def test_credentials_from_metadata():
 
 def test_credentials_provider_caching():
     node.query(
-        f"INSERT INTO FUNCTION s3('http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/test_caching.jsonl') SELECT * FROM numbers(10)"
+        f"INSERT INTO FUNCTION s3('http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/test_caching.jsonl') SELECT * FROM numbers(10) SETTINGS s3_truncate_on_insert = 1"
     )
 
     for _ in range(10):
