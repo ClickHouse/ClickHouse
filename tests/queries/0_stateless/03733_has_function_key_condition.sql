@@ -373,3 +373,25 @@ WHERE has([toDate('2020-01-01'), toDate('2020-01-02'), toDate('2020-01-03')], to
 SELECT count()
 FROM test_has_idx_func_key
 WHERE toDate(ts) IN ('2020-01-01', '2020-01-02', '2020-01-03');
+
+DROP TABLE IF EXISTS t1;
+
+CREATE TABLE t1
+(
+    c1 UInt64
+)
+ENGINE = MergeTree()
+ORDER BY (c1);
+
+INSERT INTO t1 VALUES (1);
+
+WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
+    EXPLAIN indexes = 1
+    SELECT count()
+    FROM t1
+    WHERE has([], c1)
+)) AS plan SELECT arrayJoin(03733_explain_index(plan, 'PrimaryKey')) AS explain;
+
+SELECT count()
+FROM t1
+WHERE has([], c1);
