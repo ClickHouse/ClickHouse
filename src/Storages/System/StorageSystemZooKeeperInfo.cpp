@@ -180,7 +180,7 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
                         res_columns[5]->insert(true);
                     else
                         res_columns[5]->insert(false);
-	            }
+                }
                 else
                     res_columns[5]->insertDefault();
 
