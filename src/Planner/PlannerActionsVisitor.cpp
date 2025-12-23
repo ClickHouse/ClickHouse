@@ -40,6 +40,7 @@
 
 #include <Core/Settings.h>
 #include <fmt/format.h>
+#include <stack>
 
 
 namespace DB
@@ -593,13 +594,13 @@ public:
     }
 
     template <typename FunctionOrOverloadResolver>
-    const ActionsDAG::Node * addFunctionIfNecessary(const std::string & node_name, ActionsDAG::NodeRawConstPtrs children, const FunctionOrOverloadResolver & function)
+    const ActionsDAG::Node * addFunctionIfNecessary(const std::string & node_name, ActionsDAG::NodeRawConstPtrs children, const FunctionOrOverloadResolver & function, const ActionsDAG::AddFunctionSettings & add_function_settings = {})
     {
         auto it = node_name_to_node.find(node_name);
         if (it != node_name_to_node.end())
             return it->second;
 
-        const auto * node = &actions_dag.addFunction(function, children, node_name);
+        const auto * node = &actions_dag.addFunction(function, children, node_name, add_function_settings);
         node_name_to_node[node->result_name] = node;
 
         return node;
@@ -692,6 +693,7 @@ private:
     NodeNameAndNodeMinLevel visitQuery(const QueryTreeNodePtr & node);
 
     std::vector<ActionsScopeNode> actions_stack;
+    std::stack<ActionsDAG::AddFunctionSettings> add_function_settings_stack;
     std::unordered_map<QueryTreeNodePtr, std::string> node_to_node_name;
     CorrelatedSubtrees correlated_subtrees;
     const PlannerContextPtr planner_context;
@@ -1116,6 +1118,9 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         return {function_node_name, Levels(0)};
     }
 
+    IFunction::ShortCircuitSettings short_circuit_settings;
+    add_function_settings_stack.push(ActionsDAG::AddFunctionSettings(function_node.getFunction()->isShortCircuit(short_circuit_settings, function_node.getArgumentColumns().size())));
+
     const auto & function_arguments = function_node.getArguments().getNodes();
     size_t function_arguments_size = function_arguments.size();
 
@@ -1148,6 +1153,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         levels.add(node_levels);
     }
 
+    add_function_settings_stack.pop();
+
     ActionsDAG::NodeRawConstPtrs children;
     children.reserve(function_arguments_size);
 
@@ -1166,7 +1173,11 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     }
     else
     {
-        actions_stack[level].addFunctionIfNecessary(function_node_name, children, function_node);
+        actions_stack[level].addFunctionIfNecessary(
+            function_node_name,
+            children,
+            function_node,
+            add_function_settings_stack.empty() ? ActionsDAG::AddFunctionSettings() : add_function_settings_stack.top());
     }
 
     size_t actions_stack_size = actions_stack.size();
