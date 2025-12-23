@@ -981,7 +981,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
             auto filter_actions_dag = std::make_shared<ActionsDAG>();
             for (const auto & column : required_column_names)
             {
-                ///
+                /// Skip columns that don't exists in this table. It may happen when we use merge over tables with different schemas.
                 if (!storage_columns.has(column))
                     continue;
 
