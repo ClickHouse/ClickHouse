@@ -715,16 +715,7 @@ void MutationsInterpreter::prepare(bool dry_run)
     bool need_rebuild_projections = false;
     std::vector<String> read_columns;
 
-    if (has_lightweight_delete_materialization)
-    {
-        auto & stage = stages.emplace_back(context);
-        stage.affects_all_columns = true;
-
-        need_rebuild_indexes = true;
-        need_rebuild_projections = true;
-    }
-
-    if (has_rewrite_parts)
+    if (has_lightweight_delete_materialization || has_rewrite_parts)
     {
         auto & stage = stages.emplace_back(context);
         stage.affects_all_columns = true;
