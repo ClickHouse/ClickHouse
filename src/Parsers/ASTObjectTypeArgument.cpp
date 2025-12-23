@@ -34,8 +34,6 @@ void ASTObjectTypedPathArgument::formatImpl(
     type->format(ostr, settings, state, frame);
 }
 
-
-
 ASTPtr ASTObjectTypeArgument::clone() const
 {
     auto res = std::make_shared<ASTObjectTypeArgument>(*this);
