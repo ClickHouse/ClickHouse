@@ -250,30 +250,40 @@ Block InterpreterInsertQuery::getSampleBlock(
     bool allow_materialized,
     bool add_aliases)
 {
-    Block table_sample_insertable = metadata_snapshot->getSampleBlockInsertable();
-    NameToNameMap aliases;
-
-    const auto & columns_description = metadata_snapshot->getColumns();
-    if (columns_description.hasDefaults())
+    Block sample_block;
+    /// Prepare sample block for INSERT
+    for (const auto & column : metadata_snapshot->getColumns())
     {
-        /// If we have explicit columns list, for regular INSERTs we need to resolve aliases to columns they point to here,
-        /// to allow INSERTs with formats that does not support columns subset, since for those formats we cannot add new columns,
-        /// i.e. INSERT INTO x (alias) VALUES (y)
-        ///
-        /// And also for other formats we need to add column that aliases points to materialize them later
-        aliases = MaterializingAliasesTransform::getAliasToColumnMap(columns_description.getDefaults());
-
+        /// Insertable columns
+        if (column.default_desc.kind == ColumnDefaultKind::Default || column.default_desc.kind == ColumnDefaultKind::Ephemeral)
+            sample_block.insert(ColumnWithTypeAndName(column.type, column.name));
+        /// insert_allow_materialized_columns
+        if (allow_materialized && column.default_desc.kind == ColumnDefaultKind::Materialized)
+            sample_block.insert(ColumnWithTypeAndName(column.type, column.name));
         /// If format supports columns subset we need to add columns as aliases, to let MaterializingAliasesTransform materialize them (and avoid rejecting them)
         /// Otherwise if will resolve alises to columns, then format will not find those columns
-        if (add_aliases)
+        if (add_aliases && column.default_desc.kind == ColumnDefaultKind::Alias)
         {
-            const auto & columns = metadata_snapshot->getColumns();
-            for (const auto & column_with_type_and_name : MaterializingAliasesTransform::getColumnAliases(columns))
-                table_sample_insertable.insert(column_with_type_and_name);
+            const ASTPtr & alias_expression = column.default_desc.expression;
+            if (typeid_cast<const ASTIdentifier *>(alias_expression.get()))
+                sample_block.insert(ColumnWithTypeAndName(column.type, column.name));
         }
     }
+    if (allow_virtuals)
+    {
+        Block table_sample_virtuals = table->getVirtualsHeader();
+        for (const auto & column : table_sample_virtuals)
+            sample_block.insert(column);
+    }
 
-    std::vector<size_t> missing_positions;
+    const auto & columns_description = metadata_snapshot->getColumns();
+    /// If we have explicit columns list, for regular INSERTs we need to resolve aliases to columns they point to here,
+    /// to allow INSERTs with formats that does not support columns subset, since for those formats we cannot add new columns,
+    /// i.e. INSERT INTO x (alias) VALUES (y)
+    ///
+    /// And also for other formats we need to add column that aliases points to materialize them later
+    NameToNameMap aliases = MaterializingAliasesTransform::getAliasToColumnMap(columns_description.getDefaults());
+
     std::unordered_set<String> inserted_names;
 
     ColumnsWithTypeAndName res{names.size()};
@@ -287,55 +297,20 @@ Block InterpreterInsertQuery::getSampleBlock(
                 current_name,
                 table->getStorageID().getNameForLogs());
 
-        const ColumnWithTypeAndName * insertable_col = table_sample_insertable.findByName(current_name);
+        const ColumnWithTypeAndName * insertable_col = sample_block.findByName(current_name);
         if (!insertable_col)
         {
             if (auto alias_it = aliases.find(current_name); alias_it != aliases.end())
-                insertable_col = table_sample_insertable.findByName(alias_it->second);
+                insertable_col = sample_block.findByName(alias_it->second);
         }
         if (!insertable_col)
-            missing_positions.emplace_back(i);
+            throw Exception(
+                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                "No such column {} in table {}",
+                current_name,
+                table->getStorageID().getNameForLogs());
         else
             res[i] = *insertable_col;
-    }
-
-    if (!missing_positions.empty())
-    {
-        Block table_sample_physical = metadata_snapshot->getSampleBlock();
-        Block table_sample_virtuals;
-        if (allow_virtuals)
-            table_sample_virtuals = table->getVirtualsHeader();
-
-        /// Columns are not ordinary or ephemeral
-        for (auto pos : missing_positions)
-        {
-            const auto & current_name = names[pos];
-
-            if (table_sample_physical.has(current_name))
-            {
-                /// Column is materialized
-                if (!allow_materialized)
-                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert column {}, because it is MATERIALIZED column", current_name);
-                res[pos] = table_sample_physical.getByName(current_name);
-            }
-            else if (table_sample_virtuals.has(current_name))
-            {
-                res[pos] = table_sample_virtuals.getByName(current_name);
-            }
-            else if (auto alias_it = aliases.find(current_name); alias_it != aliases.end())
-            {
-                res[pos] = table_sample_physical.getByName(alias_it->second);
-            }
-            else
-            {
-                /// The table does not have a column with that name
-                throw Exception(
-                    ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-                    "No such column {} in table {}",
-                    current_name,
-                    table->getStorageID().getNameForLogs());
-            }
-        }
     }
 
     if (add_aliases)
@@ -343,7 +318,7 @@ Block InterpreterInsertQuery::getSampleBlock(
         for (const auto & [alias, column] : aliases)
         {
             if (!inserted_names.contains(column))
-                res.emplace_back(table_sample_insertable.getByName(column));
+                res.emplace_back(sample_block.getByName(column));
         }
     }
 
