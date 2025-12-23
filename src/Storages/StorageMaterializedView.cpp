@@ -845,8 +845,10 @@ bool StorageMaterializedView::supportsDynamicSubcolumns() const
 
 void StorageMaterializedView::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
+    auto backup_data_from_materialized_view_targets
+        = backup_entries_collector.getBackupSettings().backup_data_from_materialized_view_targets;
     /// We backup the target table's data only if it's inner.
-    if (hasInnerTable() && fixed_uuid)
+    if (backup_data_from_materialized_view_targets && hasInnerTable() && fixed_uuid)
     {
         if (auto table = tryGetTargetTable())
             table->backupData(backup_entries_collector, data_path_in_backup, partitions);

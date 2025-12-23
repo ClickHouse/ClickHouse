@@ -13,16 +13,17 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
+#include <Storages/StorageMaterializedView.h>
 #include <base/chrono_io.h>
 #include <base/insertAtEnd.h>
 #include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <base/sort.h>
-#include <Common/setThreadName.h>
 #include <Common/escapeForFileName.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Common/intExp2.h>
 #include <Common/quoteString.h>
+#include <Common/setThreadName.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
@@ -796,8 +797,44 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
     if (backup_settings.structure_only)
         return;
 
+    auto filter_fn = [&](const auto & item) -> bool
+    {
+        if (backup_settings.backup_data_from_materialized_view_targets)
+            return true;
+
+        const auto & [name, info] = item;
+
+        /// Skip table data for materialized view targets.
+        auto dependents = DatabaseCatalog::instance().getReferentialDependents(info.storage->getStorageID());
+        auto is_mv_targeting_table = [&](const StorageID & mv_candidate, const StoragePtr & target) -> bool
+        {
+            auto table = DatabaseCatalog::instance().tryGetTable(mv_candidate, context);
+            if (!table || table->getName() != "MaterializedView")
+                return false;
+
+            auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get());
+            return mv && mv->getTargetTable() == target;
+        };
+
+        for (const auto & dependent : dependents)
+        {
+            if (is_mv_targeting_table(dependent, info.storage))
+            {
+                LOG_TRACE(
+                    log,
+                    "Skipping table data for {} (a target of {}.{} materialized view)",
+                    name.getFullName(),
+                    dependent.database_name,
+                    dependent.table_name);
+                return false;
+            }
+        }
+        return true;
+    };
+
+
     ThreadPoolCallbackRunnerLocal<void> runner(threadpool, ThreadName::BACKUP_COLLECTOR);
-    for (const auto & table_name : table_infos | boost::adaptors::map_keys)
+    for (const auto & table_name : table_infos | std::views::filter(filter_fn) | std::views::keys)
     {
         runner.enqueueAndKeepTrack([&]()
         {
