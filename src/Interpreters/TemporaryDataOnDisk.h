@@ -52,7 +52,7 @@ struct TemporaryDataOnDiskSettings
     size_t max_size_on_disk = 0;
 
     /// Compression codec for temporary data, if empty no compression will be used. LZ4 by default
-    String compression_codec = "";
+    String compression_codec = {};
 
     /// Read/Write internal buffer size
     size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
