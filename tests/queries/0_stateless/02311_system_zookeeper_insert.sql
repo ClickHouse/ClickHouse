@@ -56,7 +56,7 @@ insert into test_zkinsert (name, path, value) values ('c', '/1-insert-testc/c/c/
 -- insert same value, suppose to have no side effects
 insert into system.zookeeper (name, path, value) SELECT name, '/' || currentDatabase() || path, value from test_zkinsert;
 
-SELECT * FROM (SELECT path, name, value FROM system.zookeeper ORDER BY path, name) WHERE path LIKE '/' || currentDatabase() || '/1-insert-test%';
+SELECT * FROM (SELECT path, name, value FROM system.zookeeper WHERE zookeeperName = 'zookeeper2' ORDER BY path, name) WHERE path LIKE '/' || currentDatabase() || '/1-insert-test%';
 
 SELECT '-------------------------';
 
@@ -69,6 +69,6 @@ insert into test_zkinsert (name, value, path) values ('testb', 'z', '/2-insert-t
 
 insert into system.zookeeper (name, path, value) SELECT name, '/' || currentDatabase() || path, value from test_zkinsert;
 
-SELECT * FROM (SELECT path, name, value FROM system.zookeeper ORDER BY path, name) WHERE path LIKE '/' || currentDatabase() || '/2-insert-test%';
+SELECT * FROM (SELECT path, name, value FROM system.zookeeper WHERE zookeeperName = 'zookeeper2' ORDER BY path, name) WHERE path LIKE '/' || currentDatabase() || '/2-insert-test%';
 
 drop table if exists test_zkinsert;
