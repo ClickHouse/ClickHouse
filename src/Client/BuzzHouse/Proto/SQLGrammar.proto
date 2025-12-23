@@ -3306,6 +3306,7 @@ message IndexDef {
 message ProjectionDef {
     required Projection proj = 1;
     required Select select = 2;
+    optional SettingValues setting_values = 3;
 }
 
 message ConstraintDef {

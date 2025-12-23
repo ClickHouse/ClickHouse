@@ -1933,6 +1933,25 @@ void StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, 
     generateSelect(rg, true, false, ncols, allow_groupby | allow_orderby, std::nullopt, pdef->mutable_select());
     this->levels.clear();
     this->inside_projection = false;
+    /// Add projection settings
+    if (rg.nextBool())
+    {
+        SettingValues * svs = pdef->mutable_setting_values();
+        const auto & engineSettings = allTableSettings.at(t.teng);
+
+        if (!engineSettings.empty() && rg.nextSmallNumber() < 9)
+        {
+            generateSettingValues(rg, engineSettings, svs);
+        }
+        if (t.isMergeTreeFamily() && !fc.hot_table_settings.empty() && rg.nextBool())
+        {
+            generateHotTableSettingsValues(rg, false, svs);
+        }
+        if (!svs->has_set_value() || rg.nextSmallNumber() < 4)
+        {
+            generateSettingValues(rg, serverSettings, svs);
+        }
+    }
     to_add.insert(pname);
 }
 
