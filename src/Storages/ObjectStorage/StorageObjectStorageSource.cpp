@@ -214,20 +214,18 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         else
         {
             // Validate that extracted paths match the glob pattern to prevent scanning unallowed data
-            Strings validated_paths;
             re2::RE2 matcher(makeRegexpPatternFromGlobs(reading_path.path));
-            if (matcher.ok())
-            {
-                for (const auto & path : paths.value())
-                {
-                    const auto relative_path = fs::relative(path, configuration->getNamespace()).string();
-                    if (RE2::FullMatch(relative_path, matcher))
-                        validated_paths.push_back(relative_path);
-                }
-            }
-            else
+            if (!matcher.ok())
                 throw Exception(
                     ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", reading_path.path, matcher.error());
+
+            Strings validated_paths;
+            for (const auto & path : paths.value())
+            {
+                const auto relative_path = fs::relative(path, configuration->getNamespace()).string();
+                if (RE2::FullMatch(relative_path, matcher))
+                    validated_paths.push_back(relative_path);
+            }
 
             iterator = std::make_unique<KeysIterator>(
                 validated_paths,
