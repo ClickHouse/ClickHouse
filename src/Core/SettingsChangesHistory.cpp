@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"input_format_binary_max_type_complexity", 1000, 1000, "Add a new setting to control max number of type nodes when decoding binary types. Protects against malicious inputs."},
             {"trace_profile_events_list", "", "", "New setting"},
+            {"insert_select_deduplicate", InsertSelectDeduplicateMode::ENABLE_EVEN_FOR_BAD_QUERIES, InsertSelectDeduplicateMode::ENABLE_WHEN_PROSSIBLE, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
@@ -86,7 +87,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_positional_arguments_for_projections", true, false, "New setting to control positional arguments in projections."},
             {"enable_full_text_index", false, false, "Text index was moved to Beta."},
             {"enable_shared_storage_snapshot_in_query", false, true, "Enable share storage snapshot in query by default"},
-            {"insert_select_deduplicate", Field{"auto"}, Field{"auto"}, "New setting"},
+            {"insert_select_deduplicate", InsertSelectDeduplicateMode::ENABLE_EVEN_FOR_BAD_QUERIES, InsertSelectDeduplicateMode::ENABLE_EVEN_FOR_BAD_QUERIES, "New setting"},
             {"output_format_pretty_named_tuples_as_json", false, true, "New setting to control whether named tuples in Pretty format are output as JSON objects"},
         });
         addSettingsChanges(settings_changes_history, "25.11",

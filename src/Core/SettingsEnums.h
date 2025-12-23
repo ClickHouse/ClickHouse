@@ -534,4 +534,14 @@ enum class ArrowFlightDescriptorType : uint8_t
 
 DECLARE_SETTING_ENUM(ArrowFlightDescriptorType)
 
+enum class InsertSelectDeduplicateMode : uint8_t
+{
+    DISABLE = 0,
+    FORCE_ENABLE,
+    ENABLE_WHEN_PROSSIBLE,
+    ENABLE_EVEN_FOR_BAD_QUERIES
+};
+
+DECLARE_SETTING_ENUM(InsertSelectDeduplicateMode)
+
 }
