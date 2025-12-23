@@ -167,7 +167,7 @@ CREATE MATERIALIZED VIEW mv_resampled_timeseries TO t_resampled_timeseries_15_se
 )
 AS SELECT
     metric_id,
-    ceil(toUnixTimestamp(timestamp + interval 999 millisecond) / 15, 0) * 15 AS grid_timestamp,   -- Round timestamp up to the next grid point
+    ceil(toUnixTimestamp(timestamp + interval 999 millisecond) / 15, 0) * 15 AS grid_timestamp, -- Round timestamp up to the next grid point
     initializeAggregation('timeSeriesLastTwoSamplesState', timestamp, value) AS samples
 FROM t_raw_timeseries
 ORDER BY metric_id, grid_timestamp;

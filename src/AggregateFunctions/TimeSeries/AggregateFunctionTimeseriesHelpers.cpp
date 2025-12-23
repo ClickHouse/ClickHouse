@@ -291,7 +291,7 @@ timeSeriesRateToGrid(start_timestamp, end_timestamp, grid_step, staleness)(times
         "Basic usage with individual timestamp-value pairs",
         R"(
 WITH
-    -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window paramater
+    -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values, -- array of values corresponding to timestamps above
     90 AS start_ts,       -- start of timestamp grid
@@ -368,7 +368,7 @@ timeSeriesDeltaToGrid(start_timestamp, end_timestamp, grid_step, staleness)(time
         "Basic usage with individual timestamp-value pairs",
         R"(
 WITH
-    -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window paramater
+    -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values, -- array of values corresponding to timestamps above
     90 AS start_ts,      -- start of timestamp grid
@@ -445,7 +445,7 @@ timeSeriesInstantRateToGrid(start_timestamp, end_timestamp, grid_step, staleness
         "Basic usage with individual timestamp-value pairs",
         R"(
 WITH
-    -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window paramater
+    -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values, -- array of values corresponding to timestamps above
     90 AS start_ts,       -- start of timestamp grid
@@ -523,7 +523,7 @@ timeSeriesInstantDeltaToGrid(start_timestamp, end_timestamp, grid_step, stalenes
         "Basic usage with individual timestamp-value pairs",
         R"(
 WITH
-    -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window paramater
+    -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values, -- array of values corresponding to timestamps above
     90 AS start_ts,       -- start of timestamp grid
@@ -676,7 +676,7 @@ timeSeriesPredictLinearToGrid(start_timestamp, end_timestamp, grid_step, stalene
         "Calculate predict_linear values on the grid [90, 105, 120, 135, 150, 165, 180, 195, 210] with a 60 second offset",
         R"(
 WITH
-    -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window paramater
+    -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values, -- array of values corresponding to timestamps above
     90 AS start_ts,       -- start of timestamp grid
@@ -754,7 +754,7 @@ timeSeriesChangesToGrid(start_timestamp, end_timestamp, grid_step, staleness)(ti
         "Calculate changes values on the grid [90, 105, 120, 135, 150, 165, 180, 195, 210, 225]",
         R"(
 WITH
-    -- NOTE: the gap between 130 and 190 is to show how values are filled for ts = 180 according to window paramater
+    -- NOTE: the gap between 130 and 190 is to show how values are filled for ts = 180 according to window parameter
     [110, 120, 130, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 1, 3, 5, 5, 8, 12, 13]::Array(Float32) AS values, -- array of values corresponding to timestamps above
     90 AS start_ts,       -- start of timestamp grid
@@ -829,7 +829,7 @@ timeSeriesResetsToGrid(start_timestamp, end_timestamp, grid_step, staleness)(tim
         "Calculate resets values on the grid [90, 105, 120, 135, 150, 165, 180, 195, 210, 225]",
         R"(
 WITH
-    -- NOTE: the gap between 130 and 190 is to show how values are filled for ts = 180 according to window paramater
+    -- NOTE: the gap between 130 and 190 is to show how values are filled for ts = 180 according to window parameter
     [110, 120, 130, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 3, 2, 6, 6, 4, 2, 0]::Array(Float32) AS values, -- array of values corresponding to timestamps above
     90 AS start_ts,       -- start of timestamp grid
@@ -907,7 +907,7 @@ timeSeriesResampleToGridWithStaleness(start_timestamp, end_timestamp, grid_step,
         "Basic usage with individual timestamp-value pairs",
         R"(
 WITH
-    -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to staleness window paramater
+    -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to staleness window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values, -- array of values corresponding to timestamps above
     90 AS start_ts,       -- start of timestamp grid
