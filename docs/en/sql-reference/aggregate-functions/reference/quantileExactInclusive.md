@@ -15,7 +15,7 @@ To get exact value, all the passed values ​​are combined into an array, whic
 
 This function is equivalent to [PERCENTILE.INC](https://support.microsoft.com/en-us/office/percentile-inc-function-680f9539-45eb-410b-9a5e-c1355e5fe2ed) Excel function, ([type R7](https://en.wikipedia.org/wiki/Quantile#Estimating_quantiles_from_a_sample)).
 
-When using multiple `quantileExactInclusive` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantilesExactInclusive](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantilesexactinclusive) function.
+When using multiple `quantileExactInclusive` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantilesExactInclusive](../../../sql-reference/aggregate-functions/reference/quantilesExactInclusive) function.
 
 **Syntax**
 

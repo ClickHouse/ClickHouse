@@ -16,7 +16,7 @@ $$
 
 <br/>
 :::note
-This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`corrStable`](../reference/corrstable.md) function. It is slower but provides a more accurate result.
+This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`corrStable`](../reference/corrStable.md) function. It is slower but provides a more accurate result.
 :::
 
 **Syntax**

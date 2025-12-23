@@ -40,7 +40,7 @@ Where:
 - `mean(x)` is the arithmetic mean of the data set.
 - `n` is the number of data points in the data set.
 
-The function assumes that the input data set represents a sample from a larger population. If you want to calculate the variance of the entire population (when you have the complete data set), you should use [`varPop`](../reference/varpop.md) instead.
+The function assumes that the input data set represents a sample from a larger population. If you want to calculate the variance of the entire population (when you have the complete data set), you should use [`varPop`](../reference/varPop.md) instead.
 
 **Example**
 

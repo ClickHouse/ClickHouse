@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 # covarSampStable
 
-Calculates the value of `Σ((x - x̅)(y - y̅)) / (n - 1)`. Similar to [covarSamp](../reference/covarsamp.md) but works slower while providing a lower computational error.
+Calculates the value of `Σ((x - x̅)(y - y̅)) / (n - 1)`. Similar to [covarSamp](../reference/covarSamp.md) but works slower while providing a lower computational error.
 
 **Syntax**
 

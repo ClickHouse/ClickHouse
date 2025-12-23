@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 ## varSampStable {#varsampstable}
 
-Calculate the sample variance of a data set. Unlike [`varSamp`](../reference/varsamp.md), this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
+Calculate the sample variance of a data set. Unlike [`varSamp`](../reference/varSamp.md), this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
 
 **Syntax**
 
@@ -30,7 +30,7 @@ Alias: `VAR_SAMP_STABLE`
 
 **Implementation details**
 
-The `varSampStable` function calculates the sample variance using the same formula as the [`varSamp`](../reference/varsamp.md):
+The `varSampStable` function calculates the sample variance using the same formula as the [`varSamp`](../reference/varSamp.md):
 
 $$
 \sum\frac{(x - \text{mean}(x))^2}{(n - 1)}
