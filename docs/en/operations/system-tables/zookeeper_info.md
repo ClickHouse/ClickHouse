@@ -54,6 +54,4 @@ Columns:
 -   `leader_committed_log_idx` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The ZooKeeper leader committed log index.
 -   `target_committed_log_idx` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The ZooKeeper target committed log index.
 -   `last_snapshot_idx` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The ZooKeeper last snapshot index.
-
-
-
+g
