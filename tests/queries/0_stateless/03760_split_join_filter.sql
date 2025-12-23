@@ -12,6 +12,7 @@ INSERT INTO customer SELECT number, 100, 100 FROM numbers(10);
 SET enable_analyzer=1;
 SET enable_parallel_replicas=0;
 SET enable_join_runtime_filters=0;
+SET query_plan_join_swap_table = 0;
 
 SELECT explain FROM (
         EXPLAIN actions = 1
