@@ -5,7 +5,7 @@ def gen_queries():
     create_template = "create table tab_00386 (a Int8, b String, c Tuple(Int8), d Tuple(Tuple(Int8)), e Tuple(Int8, String), f Tuple(Tuple(Int8, String))) engine = MergeTree order by ({}) partition by {}"
     drop_query = "drop table if exists tab_00386"
     values = ("1", "'a'", "tuple(1)", "tuple(tuple(1))", "(1, 'a')", "tuple((1, 'a'))")
-    insert_query = "insert into tab_00386 values (1, 'a', tuple(1), tuple(tuple(1)), (1, 'a'), tuple((1, 'a')))"
+    insert_query = "insert into tab_00386 values (1, 'a', tuple(1), tuple(tuple(1)), (1, 'a'), tuple((1, 'a'))) settings min_insert_block_size_bytes=0"
     columns = tuple("a b c d".split())
     order_by_columns = tuple("a b c".split())
     partition_by_columns = tuple(" tuple() a".split())
