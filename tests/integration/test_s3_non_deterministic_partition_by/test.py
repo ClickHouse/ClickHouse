@@ -2,16 +2,15 @@ import pytest
 import time
 from helpers.cluster import ClickHouseCluster
 
-cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance(
-    "node",
-    with_minio=True,
-)
 
-
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def started_cluster():
     try:
+        cluster = ClickHouseCluster(__file__)
+        node = cluster.add_instance(
+            "node",
+            with_minio=True,
+        )
         cluster.start()
         yield cluster
     finally:
@@ -23,6 +22,8 @@ def test_s3_non_deterministic_partition_by(started_cluster):
     Test that the S3 table engine doesn't cache the results of non-deterministic functions (e.g. now()) when calculating the partition key.
     """
 
+    node = started_cluster.instances["node"]
+
     node.query(
         f"""
         CREATE TABLE t
@@ -30,7 +31,7 @@ def test_s3_non_deterministic_partition_by(started_cluster):
             s String
         )
         ENGINE = S3('http://minio1:9001/{started_cluster.minio_bucket}/{{_partition_id}}.parquet', 'minio', 'ClickHouse_Minio_P@ssw0rd')
-        PARTITION BY toString(now64(9))
+        PARTITION BY concat(s, toString(now64(9)))
         """
     )
 
@@ -46,4 +47,4 @@ def test_s3_non_deterministic_partition_by(started_cluster):
     assert len(parquet_files) == 2
     assert parquet_files[0] != parquet_files[1]
 
-    node.query("DROP TABLE t")
+    node.query("DROP TABLE t SYNC")
