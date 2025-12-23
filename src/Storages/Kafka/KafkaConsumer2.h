@@ -9,6 +9,7 @@
 #include <cppkafka/topic_partition.h>
 #include <cppkafka/topic_partition_list.h>
 #include <Common/CurrentMetrics.h>
+#include "SimpleTopicPartition.h"
 
 namespace CurrentMetrics
 {
@@ -36,29 +37,34 @@ public:
     static inline constexpr int BEGINNING_OFFSET = RD_KAFKA_OFFSET_BEGINNING;
     static inline constexpr int END_OFFSET = RD_KAFKA_OFFSET_END;
 
-    struct TopicPartition
-    {
-        String topic;
-        int32_t partition_id;
+    // struct TopicPartition
+    // {
+    //     String topic;
+    //     int32_t partition_id;
 
-        bool operator==(const TopicPartition &) const = default;
-        bool operator<(const TopicPartition & other) const;
-    };
+    //     bool operator==(const TopicPartition &) const = default;
+    //     bool operator<(const TopicPartition & other) const;
+    // };
 
+    // using TopicPartitions = std::vector<TopicPartition>;
+
+    // struct TopicPartitionHash
+    // {
+    //     std::size_t operator()(const TopicPartition & tp) const;
+    // };
+
+    // struct TopicPartitionEquality
+    // {
+    //     bool operator()(const TopicPartition & lhs, const TopicPartition & rhs) const
+    //     {
+    //         return lhs.topic == rhs.topic && lhs.partition_id == rhs.partition_id;
+    //     }
+    // };
+
+    using TopicPartition = SimpleTopicPartition;
     using TopicPartitions = std::vector<TopicPartition>;
-
-    struct TopicPartitionHash
-    {
-        std::size_t operator()(const TopicPartition & tp) const;
-    };
-
-    struct TopicPartitionEquality
-    {
-        bool operator()(const TopicPartition & lhs, const TopicPartition & rhs) const
-        {
-            return lhs.topic == rhs.topic && lhs.partition_id == rhs.partition_id;
-        }
-    };
+    using TopicPartitionHash = SimpleTopicPartitionHash;
+    using TopicPartitionEquality = SimpleTopicPartitionEquality;
 
     struct TopicPartitionOffset : public TopicPartition
     {

@@ -45,6 +45,7 @@ struct ConsumerStatistics // system.kafka_consumers data
         Int32 partition_id;
         Int64 current_offset;
         std::optional<Int64> intent_size;
+        UInt64 timestamp;
     };
     using Assignments = std::vector<Assignment>;
 

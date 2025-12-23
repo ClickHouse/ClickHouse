@@ -150,6 +150,20 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
     });
 }
 
+boost::optional<cppkafka::MessageTimestamp> KafkaConsumer::currentTimestamp() const
+{
+    assert(current[-1]);
+    const auto & mts = current[-1].get_timestamp();
+    if (mts.has_value())
+        memorizeCurrentTimestamp(mts.value());
+    return mts;
+}
+
+void KafkaConsumer::memorizeCurrentTimestamp(const cppkafka::MessageTimestamp & mts) const
+{
+    timestamp_per_topic_partition.insert_or_assign({currentTopic(), currentPartition()}, mts);
+}
+
 ConsumerPtr && KafkaConsumer::moveConsumer()
 {
     // messages & assignment should be destroyed before consumer
@@ -587,11 +601,29 @@ KafkaConsumer::Stat KafkaConsumer::getStat() const
 
     for (size_t num = 0; num < cpp_assignments.size(); ++num)
     {
+        auto get_stamp = [](const boost::optional<cppkafka::MessageTimestamp> & mts)
+        {
+            if (mts.has_value())
+            {
+                if (mts->get_type() == cppkafka::MessageTimestamp::CREATE_TIME)
+                {
+                    auto ts = mts->get_timestamp();
+                    return static_cast<UInt64>(std::chrono::duration_cast<std::chrono::seconds>(ts).count());
+                }
+            }
+            return UInt64();
+        };
+
+        const auto & topic = cpp_assignments[num].get_topic();
+        const auto & partition = cpp_assignments[num].get_partition();
+        auto tsit = timestamp_per_topic_partition.find({topic, partition});
+
         assignments.push_back({
-            cpp_assignments[num].get_topic(),
-            cpp_assignments[num].get_partition(),
+            topic,
+            partition,
             cpp_offsets[num].get_offset(),
             std::nullopt,
+            tsit == timestamp_per_topic_partition.end() ? 0 : get_stamp(tsit->second),
         });
     }
 

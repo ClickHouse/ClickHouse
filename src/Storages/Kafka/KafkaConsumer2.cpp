@@ -36,7 +36,7 @@ static constexpr auto EVENT_POLL_TIMEOUT = 50ms;
 static constexpr auto DRAIN_TIMEOUT_MS = 5000ms;
 static constexpr auto GET_KAFKA_METADATA_TIMEOUT_MS = 1000ms;
 
-bool KafkaConsumer2::TopicPartition::operator<(const TopicPartition & other) const
+bool KafkaConsumer2::TopicPartition::operator<(const KafkaConsumer2::TopicPartition & other) const
 {
     return std::tie(topic, partition_id) < std::tie(other.topic, other.partition_id);
 }
@@ -394,7 +394,7 @@ void KafkaConsumer2::resetIfStopped()
     }
 }
 
-std::size_t KafkaConsumer2::TopicPartitionHash::operator()(const TopicPartition & tp) const
+std::size_t KafkaConsumer2::TopicPartitionHash::operator()(const KafkaConsumer2::TopicPartition & tp) const
 {
     SipHash s;
     s.update(tp.topic);
