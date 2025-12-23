@@ -156,7 +156,7 @@ RestCatalog::Config RestCatalog::loadConfig()
     std::string json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
 
-    LOG_TEST(log, "Received catalog configuration settings: {}", json_str);
+    LOG_DEBUG(log, "Received catalog configuration settings: {}", json_str);
 
     Poco::JSON::Parser parser;
     Poco::Dynamic::Var json = parser.parse(json_str);
@@ -170,7 +170,7 @@ RestCatalog::Config RestCatalog::loadConfig()
     auto overrides_object = object->get("overrides").extract<Poco::JSON::Object::Ptr>();
     parseCatalogConfigurationSettings(overrides_object, result);
 
-    LOG_TEST(log, "Parsed catalog configuration settings: {}", result.toString());
+    LOG_DEBUG(log, "Parsed catalog configuration settings: {}", result.toString());
     return result;
 }
 
@@ -323,7 +323,7 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
             .create(credentials);
     };
 
-    LOG_TEST(log, "Requesting: {}", url.toString());
+    LOG_DEBUG(log, "Requesting: {}", url.toString());
 
     try
     {
@@ -441,7 +441,7 @@ RestCatalog::Namespaces RestCatalog::getNamespaces(const std::string & base_name
     {
         auto buf = createReadBuffer(config.prefix / NAMESPACES_ENDPOINT, params);
         auto namespaces = parseNamespaces(*buf, base_namespace);
-        LOG_TEST(log, "Loaded {} namespaces in base namespace {}", namespaces.size(), base_namespace);
+        LOG_DEBUG(log, "Loaded {} namespaces in base namespace {}", namespaces.size(), base_namespace);
         return namespaces;
     }
     catch (const DB::HTTPException & e)
@@ -469,7 +469,7 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, buf);
 
-    LOG_TEST(log, "Received response: {}", json_str);
+    LOG_DEBUG(log, "Received response: {}", json_str);
 
     try
     {
@@ -600,7 +600,7 @@ bool RestCatalog::getTableMetadataImpl(
     const std::string & table_name,
     TableMetadata & result) const
 {
-    LOG_TEST(log, "Checking table {} in namespace {}", table_name, namespace_name);
+    LOG_DEBUG(log, "Checking table {} in namespace {}", table_name, namespace_name);
 
     DB::HTTPHeaderEntries headers;
     if (result.requiresCredentials())
@@ -619,7 +619,7 @@ bool RestCatalog::getTableMetadataImpl(
 
     if (buf->eof())
     {
-        LOG_TEST(log, "Table doesn't exist (endpoint: {})", endpoint);
+        LOG_DEBUG(log, "Table doesn't exist (endpoint: {})", endpoint);
         return false;
     }
 
@@ -629,7 +629,7 @@ bool RestCatalog::getTableMetadataImpl(
 #ifdef DEBUG_OR_SANITIZER_BUILD
     /// This log message might contain credentials,
     /// so log it only for debugging.
-    LOG_TEST(log, "Received metadata for table {}: {}", table_name, json_str);
+    LOG_DEBUG(log, "Received metadata for table {}: {}", table_name, json_str);
 #endif
 
     Poco::JSON::Parser parser;
@@ -647,7 +647,7 @@ bool RestCatalog::getTableMetadataImpl(
         {
             location = metadata_object->get("location").extract<String>();
             result.setLocation(location);
-            LOG_TEST(log, "Location for table {}: {}", table_name, location);
+            LOG_DEBUG(log, "Location for table {}: {}", table_name, location);
         }
         else
         {
