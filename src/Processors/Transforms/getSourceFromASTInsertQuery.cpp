@@ -24,6 +24,7 @@ namespace Setting
 {
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsBool insert_allow_alias_columns;
 }
 
 namespace ErrorCodes
@@ -90,10 +91,13 @@ Pipe getSourceFromInputFormat(
             });
         }
 
-        pipe.addSimpleTransform([&, columns_defaults = columns.getDefaults()](const SharedHeader & cur_header)
+        if (context->getSettingsRef()[Setting::insert_allow_alias_columns])
         {
-            return std::make_shared<MaterializingAliasesTransform>(cur_header, columns_defaults, *format);
-        });
+            pipe.addSimpleTransform([&, columns_defaults = columns.getDefaults()](const SharedHeader & cur_header)
+            {
+                return std::make_shared<MaterializingAliasesTransform>(cur_header, columns_defaults, *format);
+            });
+        }
     }
 
     return pipe;

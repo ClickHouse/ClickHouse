@@ -131,6 +131,7 @@ namespace Setting
     extern const SettingsString promql_table;
     extern const SettingsFloatAuto promql_evaluation_time;
     extern const SettingsBool into_outfile_create_parent_directories;
+    extern const SettingsBool insert_allow_alias_columns;
 }
 
 namespace ErrorCodes
@@ -2055,10 +2056,13 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
             return std::make_shared<AddingDefaultsTransform>(header, columns_description, *source, client_context);
         });
 
-        pipe.addSimpleTransform([&, columns_defaults = columns_description.getDefaults()](const SharedHeader & header)
+        if (client_context->getSettingsRef()[Setting::insert_allow_alias_columns])
         {
-            return std::make_shared<MaterializingAliasesTransform>(header, columns_defaults, *source);
-        });
+            pipe.addSimpleTransform([&, columns_defaults = columns_description.getDefaults()](const SharedHeader & header)
+            {
+                return std::make_shared<MaterializingAliasesTransform>(header, columns_defaults, *source);
+            });
+        }
     }
 
     sendDataFromPipe(std::move(pipe), parsed_query, have_more_data);

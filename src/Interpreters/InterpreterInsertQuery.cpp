@@ -91,6 +91,7 @@ namespace Setting
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsUInt64 max_distributed_depth;
     extern const SettingsBool enable_global_with_statement;
+    extern const SettingsBool insert_allow_alias_columns;
 }
 
 namespace MergeTreeSetting
@@ -202,9 +203,16 @@ Block InterpreterInsertQuery::getSampleBlock(
     bool no_destination,
     bool allow_materialized)
 {
+    bool allow_aliases = context_->getSettingsRef()[Setting::insert_allow_alias_columns];
+
+    /// If format supports columns subset we need to add columns as aliases, to let MaterializingAliasesTransform materialize them (and avoid rejecting them)
     bool add_aliases = false;
     if (!query.format.empty())
-        add_aliases = FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(query.format, context_) && metadata_snapshot->getColumns().hasDefaults();
+    {
+        add_aliases = allow_aliases
+            && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(query.format, context_)
+            && metadata_snapshot->getColumns().hasDefaults();
+    }
 
     /// If the query does not include information about columns
     if (!query.columns)
@@ -215,7 +223,6 @@ Block InterpreterInsertQuery::getSampleBlock(
             return metadata_snapshot->getSampleBlockWithVirtuals(table->getVirtualsList());
 
         auto header = metadata_snapshot->getSampleBlockNonMaterialized();
-        /// Do not require explicit columns definitions for inserting into ALIAS for format that supports columns subset
         if (add_aliases)
         {
             const auto & columns = metadata_snapshot->getColumns();
@@ -239,6 +246,7 @@ Block InterpreterInsertQuery::getSampleBlock(
     return getSampleBlock(names, table, metadata_snapshot,
         /*allow_virtuals=*/ no_destination,
         /*allow_materialized=*/ allow_materialized,
+        /*allow_aliases=*/ allow_aliases,
         /*add_aliases=*/ add_aliases);
 }
 
@@ -248,6 +256,7 @@ Block InterpreterInsertQuery::getSampleBlock(
     const StorageMetadataPtr & metadata_snapshot,
     bool allow_virtuals,
     bool allow_materialized,
+    bool allow_aliases,
     bool add_aliases)
 {
     Block sample_block;
@@ -260,8 +269,6 @@ Block InterpreterInsertQuery::getSampleBlock(
         /// insert_allow_materialized_columns
         if (allow_materialized && column.default_desc.kind == ColumnDefaultKind::Materialized)
             sample_block.insert(ColumnWithTypeAndName(column.type, column.name));
-        /// If format supports columns subset we need to add columns as aliases, to let MaterializingAliasesTransform materialize them (and avoid rejecting them)
-        /// Otherwise if will resolve alises to columns, then format will not find those columns
         if (add_aliases && column.default_desc.kind == ColumnDefaultKind::Alias)
         {
             const ASTPtr & alias_expression = column.default_desc.expression;
@@ -276,13 +283,16 @@ Block InterpreterInsertQuery::getSampleBlock(
             sample_block.insert(column);
     }
 
-    const auto & columns_description = metadata_snapshot->getColumns();
-    /// If we have explicit columns list, for regular INSERTs we need to resolve aliases to columns they point to here,
-    /// to allow INSERTs with formats that does not support columns subset, since for those formats we cannot add new columns,
-    /// i.e. INSERT INTO x (alias) VALUES (y)
-    ///
-    /// And also for other formats we need to add column that aliases points to materialize them later
-    NameToNameMap aliases = MaterializingAliasesTransform::getAliasToColumnMap(columns_description.getDefaults());
+    NameToNameMap aliases;
+    if (allow_aliases)
+    {
+        /// If we have explicit columns list, for regular INSERTs we need to resolve aliases to columns they point to here,
+        /// to allow INSERTs with formats that does not support columns subset, since for those formats we cannot add new columns,
+        /// i.e. INSERT INTO x (alias) VALUES (y)
+        ///
+        /// And also for other formats we need to add column that aliases points to materialize them later
+        aliases = MaterializingAliasesTransform::getAliasToColumnMap(metadata_snapshot->getColumns().getDefaults());
+    }
 
     std::unordered_set<String> inserted_names;
 

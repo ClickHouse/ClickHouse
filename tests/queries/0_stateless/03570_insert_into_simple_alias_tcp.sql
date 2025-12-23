@@ -2,6 +2,7 @@
 -- - INSERT via http
 
 SET input_format_skip_unknown_fields=0;
+SET insert_allow_alias_columns=1;
 
 DROP TABLE IF EXISTS alias_insert_test;
 CREATE TABLE alias_insert_test
@@ -41,6 +42,7 @@ INSERT INTO alias_insert_test (uid, login, rating) FORMAT JSONEachRow {"uid": 7,
 -- INSERT INTO alias_insert_test FORMAT JSONEachRow {"uid": 7, "login": "foo", "rating": 70., "user_name": "james"}; -- { serverError DUPLICATE_COLUMN }
 
 -- negative cases
+INSERT INTO alias_insert_test (uid, login, rating) SETTINGS insert_allow_alias_columns=0 VALUES (99, 'FAIL', 999.0); -- { serverError NO_SUCH_COLUMN_IN_TABLE }
 INSERT INTO alias_insert_test (user_id, username_normalized, rating) VALUES (99, 'FAIL', 999.0); -- { serverError NO_SUCH_COLUMN_IN_TABLE }
 INSERT INTO alias_insert_test (user_id, user_name, rating_normalized) VALUES (99, 'FAIL', 999.0); -- { serverError NO_SUCH_COLUMN_IN_TABLE }
 

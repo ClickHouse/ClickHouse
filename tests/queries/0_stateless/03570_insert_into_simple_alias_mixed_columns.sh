@@ -4,7 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-CLICKHOUSE_URL+="&input_format_skip_unknown_fields=0"
+CLICKHOUSE_URL+="&input_format_skip_unknown_fields=0&insert_allow_alias_columns=1"
 
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "DROP TABLE IF EXISTS alias_insert_test"
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "

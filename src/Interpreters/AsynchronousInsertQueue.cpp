@@ -81,6 +81,7 @@ namespace Setting
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsString insert_deduplication_token;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
+    extern const SettingsBool insert_allow_alias_columns;
     extern const SettingsUInt64 log_queries_cut_to_length;
     extern const SettingsUInt64 max_columns_to_read;
     extern const SettingsBool optimize_trivial_count_query;
@@ -1181,13 +1182,13 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         {
             auto shared_header = std::make_shared<const Block>(header);
 
-            if (insert_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields])
+            bool input_format_defaults_for_omitted_fields = insert_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields];
+            bool insert_allow_alias_columns = insert_context->getSettingsRef()[Setting::insert_allow_alias_columns];
+            if (input_format_defaults_for_omitted_fields && insert_allow_alias_columns)
             {
-                auto adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(
-                    shared_header, columns, *format, insert_context);
+                auto adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(shared_header, columns, *format, insert_context);
 
-                auto materializing_aliases_transform = std::make_shared<MaterializingAliasesTransform>(
-                    shared_header, columns.getDefaults(), *format);
+                auto materializing_aliases_transform = std::make_shared<MaterializingAliasesTransform>(shared_header, columns.getDefaults(), *format);
 
                 transformer = std::make_shared<CompositeSimpleTransform>(shared_header, std::vector<CompositeSimpleTransform::SimpleTransformPtr>
                 {
@@ -1195,9 +1196,10 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
                     std::move(adding_defaults_transform),
                 });
             }
-            else
-                transformer = std::make_shared<MaterializingAliasesTransform>(
-                    shared_header, columns.getDefaults(), *format);
+            else if (input_format_defaults_for_omitted_fields)
+                transformer = std::make_shared<AddingDefaultsTransform>(shared_header, columns, *format, insert_context);
+            else if (insert_allow_alias_columns)
+                transformer = std::make_shared<MaterializingAliasesTransform>(shared_header, columns.getDefaults(), *format);
         }
     }
 

@@ -2410,6 +2410,9 @@ Send unknown packet instead of data Nth data packet
     DECLARE(Bool, insert_allow_materialized_columns, false, R"(
 If setting is enabled, Allow materialized columns in INSERT.
 )", 0) \
+    DECLARE(Bool, insert_allow_alias_columns, false, R"(
+If setting is enabled, allow simple ALIAS columns (alias that points directly to another column) in INSERT.
+)", EXPERIMENTAL) \
     DECLARE(Seconds, http_connection_timeout, DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT, R"(
 HTTP connection timeout (in seconds).
 
