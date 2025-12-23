@@ -39,12 +39,13 @@ bool canBeNativeType(const IDataType & type)
         return canBeNativeType(*data_type_nullable.getNestedType());
     }
 
-    return ((data_type.isInt() || data_type.isUInt()) && type.getSizeOfValueInMemory() <= MAX_NATIVE_INT_SIZE)
-        || data_type.isNativeFloat()
-        || data_type.isDate() || data_type.isDate32()
-        || data_type.isDateTime() || data_type.isDateTime64()
-        || data_type.isTime() || data_type.isTime64()
-        || data_type.isEnum() || data_type.isDecimal();
+    return type.getSizeOfValueInMemory() <= MAX_NATIVE_INT_SIZE
+        && (data_type.isInt() || data_type.isUInt()
+            || data_type.isNativeFloat()
+            || data_type.isDate() || data_type.isDate32()
+            || data_type.isDateTime() || data_type.isDateTime64()
+            || data_type.isTime() || data_type.isTime64()
+            || data_type.isEnum() || data_type.isDecimal());
 }
 
 bool canBeNativeType(const DataTypePtr & type)
