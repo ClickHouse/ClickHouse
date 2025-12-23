@@ -2,7 +2,6 @@
 #include <type_traits>
 #include <AggregateFunctions/AggregateFunctionAvg.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 
 

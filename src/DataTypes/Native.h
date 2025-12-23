@@ -30,14 +30,20 @@ bool canBeNativeType(const IDataType & type);
 /// Returns true if type can be native LLVM type, false otherwise
 bool canBeNativeType(const DataTypePtr & type);
 
+#if defined(__x86_64__)
+#define MAX_NATIVE_INT_SIZE 16
+#else /// AArch64 doesn't have instructions for Int128 (or LLVM can't use them), other platforms probably neither
+#define MAX_NATIVE_INT_SIZE 8
+#endif
+
 template <typename Type>
 static constexpr bool canBeNativeType()
 {
     if constexpr (std::is_same_v<Type, Float32> || std::is_same_v<Type, Float64>)
         return true;
-    else if constexpr (is_integer<Type> && sizeof(Type) <= 16)
+    else if constexpr (is_integer<Type> && sizeof(Type) <= MAX_NATIVE_INT_SIZE)
         return true;
-    else if constexpr (is_decimal<Type> && sizeof(Type) <= 16)
+    else if constexpr (is_decimal<Type> && sizeof(Type) <= MAX_NATIVE_INT_SIZE)
         return true;
     else
         return false;
