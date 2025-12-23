@@ -104,7 +104,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
         /// Remove partition by
         te.clear_partition_by();
     }
-    if (teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree)
+    if (teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::GraphiteMergeTree)
     {
         if (te.has_primary_key() && te.has_order() && rg.nextSmallNumber() < 5)
         {
