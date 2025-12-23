@@ -3067,6 +3067,24 @@ void Context::setCurrentDatabase(const String & name)
     setCurrentDatabaseWithLock(name, lock);
 }
 
+String Context::getCurrentTablePrefix() const
+{
+    SharedLockGuard lock(mutex);
+    return current_table_prefix;
+}
+
+void Context::setCurrentTablePrefix(const String & prefix)
+{
+    std::lock_guard lock(mutex);
+    current_table_prefix = prefix;
+}
+
+void Context::clearCurrentTablePrefix()
+{
+    std::lock_guard lock(mutex);
+    current_table_prefix.clear();
+}
+
 void Context::setCurrentQueryId(const String & query_id)
 {
     /// Generate random UUID, but using lower quality RNG,

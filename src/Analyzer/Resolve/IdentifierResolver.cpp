@@ -148,45 +148,40 @@ QueryTreeNodePtr IdentifierResolver::wrapExpressionNodeInTupleElement(QueryTreeN
 
 /// Resolve identifier functions implementation
 
-/// Try resolve table identifier from database catalog
-std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const Identifier & table_identifier, const ContextPtr & context)
+struct TableResolutionCandidate
 {
-    size_t parts_size = table_identifier.getPartsSize();
-    if (parts_size < 1 || parts_size > 2)
-        throw Exception(ErrorCodes::INVALID_IDENTIFIER,
-            "Expected table identifier to contain 1 or 2 parts. Actual '{}'",
-            table_identifier.getFullName());
-
+    std::shared_ptr<TableNode> node;
     std::string database_name;
     std::string table_name;
+};
 
-    if (table_identifier.isCompound())
-    {
-        database_name = table_identifier[0];
-        table_name = table_identifier[1];
-    }
-    else
-    {
-        table_name = table_identifier[0];
-    }
-
+/// here we try resolving a table with explicit database and table names
+static std::shared_ptr<TableNode> tryResolveTableWithNames(const std::string & database_name, const std::string & table_name, const ContextPtr & context)
+{
     StorageID storage_id(database_name, table_name);
-    storage_id = context->resolveStorageID(storage_id);
+
+    /// avoid throwing if database doesn't exist
+    storage_id = context->tryResolveStorageID(storage_id);
+    if (storage_id.empty())
+        return {};
+
     bool is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
 
     StoragePtr storage;
     TableLockHolder storage_lock;
 
     if (is_temporary_table)
-        storage = DatabaseCatalog::instance().getTable(storage_id, context);
+    {
+        storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
+    }
     else if (auto refresh_task = context->getRefreshSet().tryGetTaskForInnerTable(storage_id))
     {
-        /// If table is the target of a refreshable materialized view, it needs additional
-        /// synchronization to make sure we see all of the data (e.g. if refresh happened on another replica).
         std::tie(storage, storage_lock) = refresh_task->getAndLockTargetTable(storage_id, context);
     }
     else
+    {
         storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
+    }
 
     if (!storage && storage_id.hasUUID())
     {
@@ -196,9 +191,9 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
         if (database)
             storage = database->tryGetTable(table_name, context);
     }
+
     if (!storage)
         return {};
-
 
     if (!storage_lock)
         storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
@@ -209,6 +204,93 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
         result->setTemporaryTableName(table_name);
 
     return result;
+}
+
+/// Try resolve table identifier from database catalog
+std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const Identifier & table_identifier, const ContextPtr & context)
+{
+    size_t parts_size = table_identifier.getPartsSize();
+    if (parts_size < 1)
+        throw Exception(
+            ErrorCodes::INVALID_IDENTIFIER,
+            "Expected table identifier to contain at least 1 part. Actual '{}'",
+            table_identifier.getFullName());
+
+    /// table prefix from session context (set by USE db.prefix)
+    String table_prefix;
+    if (auto session = context->getSessionContext())
+        table_prefix = session->getCurrentTablePrefix();
+
+    /// Single part: table name, possibly with prefix
+    if (parts_size == 1)
+    {
+        const std::string & table_name = table_identifier[0];
+
+        /// If prefix is set, first try prefix.table_name
+        if (!table_prefix.empty())
+        {
+            std::string prefixed_name = table_prefix + "." + table_name;
+            if (auto result = tryResolveTableWithNames({}, prefixed_name, context))
+                return result;
+        } /// TODO: consider removing prefixes if there are >1 prefix (because local db can have dots)
+
+        /// Fall back to just table_name
+        return tryResolveTableWithNames({}, table_name, context);
+    }
+
+    /// Two parts: could be db.table or table with dots in current database
+    /// The parser already joined extra parts into the table name, so parts[0] is
+    /// potential database and parts[1] is potential table name (may contain dots)
+    std::vector<TableResolutionCandidate> candidates;
+
+    /// Try as database.table (original interpretation)
+    std::string db_name = table_identifier[0];
+    std::string tbl_name = table_identifier[1];
+    if (auto result = tryResolveTableWithNames(db_name, tbl_name, context))
+    {
+        candidates.push_back({result, db_name, tbl_name});
+    }
+
+    /// Try as table with dots in current database
+    std::string full_table_name = table_identifier.getFullName();
+    if (auto result = tryResolveTableWithNames({}, full_table_name, context))
+    {
+        candidates.push_back({result, {}, full_table_name});
+    }
+
+    /// If prefix is set, also try prefix.full_table_name
+    if (!table_prefix.empty())
+    {
+        std::string prefixed_name = table_prefix + "." + full_table_name;
+        if (auto result = tryResolveTableWithNames({}, prefixed_name, context))
+        {
+            candidates.push_back({result, {}, prefixed_name});
+        }
+    }
+
+    if (candidates.empty())
+        return {};
+
+    if (candidates.size() == 1)
+        return candidates[0].node;
+
+    /// Multiple candidates found - this is ambiguous
+    std::string candidates_str;
+    for (const auto & candidate : candidates)
+    {
+        if (!candidates_str.empty())
+            candidates_str += ", ";
+        if (candidate.database_name.empty())
+            candidates_str += "table `" + candidate.table_name + "` in current database";
+        else
+            candidates_str += "database `" + candidate.database_name + "` table `" + candidate.table_name + "`";
+    }
+
+    throw Exception(
+        ErrorCodes::AMBIGUOUS_IDENTIFIER,
+        "Ambiguous table identifier '{}'. Could refer to: {}. Please use backticks to qualify the exact name.",
+        table_identifier.getFullName(),
+        candidates_str);
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, const ContextPtr & context)

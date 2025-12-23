@@ -349,6 +349,7 @@ protected:
     mutable bool need_recalculate_access = true;
     String current_database;
     std::unique_ptr<Settings> settings{};  /// Setting for query execution.
+    String current_table_prefix; /// Table prefix set by USE db.prefix command
 
     using ProgressCallback = std::function<void(const Progress & progress)>;
     ProgressCallback progress_callback;  /// Callback for tracking progress of query execution.
@@ -989,6 +990,11 @@ public:
     String getCurrentDatabase() const;
     String getCurrentQueryId() const { return client_info.current_query_id; }
 
+    /// Table prefix for compound table names (set by USE db.prefix)
+    String getCurrentTablePrefix() const;
+    void setCurrentTablePrefix(const String & prefix);
+    void clearCurrentTablePrefix();
+
     /// Id of initiating query for distributed queries; or current query id if it's not a distributed query.
     String getInitialQueryId() const;
 
@@ -1010,7 +1016,10 @@ public:
     bool hasInsertionTable() const { return !insertion_table_info.table.empty(); }
     bool hasInsertionTableColumnNames() const { return insertion_table_info.column_names.has_value(); }
     bool hasInsertionTableColumnsDescription() const { return insertion_table_info.columns_description.has_value(); }
-    void setInsertionTable(StorageID db_and_table, std::optional<Names> column_names = std::nullopt, std::optional<ColumnsDescription> column_description = std::nullopt);
+    void setInsertionTable(
+        StorageID db_and_table,
+        std::optional<Names> column_names = std::nullopt,
+        std::optional<ColumnsDescription> columns_description = std::nullopt);
     const StorageID & getInsertionTable() const { return insertion_table_info.table; }
     const std::optional<Names> & getInsertionTableColumnNames() const{ return insertion_table_info.column_names; }
     const std::optional<ColumnsDescription> & getInsertionTableColumnsDescription() const { return insertion_table_info.columns_description; }

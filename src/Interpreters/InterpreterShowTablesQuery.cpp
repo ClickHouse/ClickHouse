@@ -162,18 +162,69 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     if (query.temporary && !query.getFrom().empty())
         throw Exception(ErrorCodes::SYNTAX_ERROR, "The `FROM` and `TEMPORARY` cannot be used together in `SHOW TABLES`");
 
-    String database = getContext()->resolveDatabase(query.getFrom());
+    String database;
+    String table_prefix;
+    String from_str = query.getFrom();
+
+    if (!from_str.empty())
+    {
+        /// check if FROM contains a compound name like db.prefix
+        if (DatabaseCatalog::instance().isDatabaseExist(from_str))
+        {
+            database = from_str;
+        }
+        else
+        {
+            /// try to split into db.prefix
+            size_t first_dot = from_str.find('.');
+            if (first_dot != String::npos)
+            {
+                String db_part = from_str.substr(0, first_dot);
+                if (DatabaseCatalog::instance().isDatabaseExist(db_part))
+                {
+                    database = db_part;
+                    table_prefix = from_str.substr(first_dot + 1) + ".";
+                }
+                else
+                {
+                    database = getContext()->resolveDatabase(from_str);
+                }
+            }
+            else
+            {
+                database = getContext()->resolveDatabase(from_str);
+            }
+        }
+    }
+    else
+    {
+        database = getContext()->getCurrentDatabase();
+        /// use current table prefix if set (from session context)
+        if (auto session = getContext()->getSessionContext())
+        {
+            String current_prefix = session->getCurrentTablePrefix();
+            if (!current_prefix.empty())
+                table_prefix = current_prefix + ".";
+        }
+    }
+
     DatabaseCatalog::instance().assertDatabaseExists(database);
 
     WriteBufferFromOwnString rewritten_query;
 
     if (query.full)
     {
-        rewritten_query << "SELECT name, engine FROM system.";
+        if (!table_prefix.empty())
+            rewritten_query << "SELECT substr(name, " << (table_prefix.size() + 1) << ") AS n, engine FROM system.";
+        else
+            rewritten_query << "SELECT name, engine FROM system.";
     }
     else
     {
-        rewritten_query << "SELECT name FROM system.";
+        if (!table_prefix.empty())
+            rewritten_query << "SELECT substr(name, " << (table_prefix.size() + 1) << ") AS n FROM system.";
+        else
+            rewritten_query << "SELECT name FROM system.";
     }
 
     if (query.dictionaries)
@@ -191,6 +242,10 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     }
     else
         rewritten_query << "database = " << DB::quote << database;
+
+    /// add table prefix filter
+    if (!table_prefix.empty())
+        rewritten_query << " AND name LIKE " << DB::quote << (table_prefix + "%");
 
     if (!query.like.empty())
         rewritten_query
