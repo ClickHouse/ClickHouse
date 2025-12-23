@@ -425,17 +425,12 @@ void copyAzureBlobStorageFile(
         }
         catch (const Azure::Storage::StorageException & e)
         {
-            if (e.StatusCode == Azure::Core::Http::HttpStatusCode::Unauthorized)
-            {
-                LOG_TRACE(log, "Copy operation has thrown unauthorized access error, which indicates that the storage account of the source & destination are not the same. "
-                               "Will attempt to copy using read & write. source container = {} blob = {} and destination container = {} blob = {}",
-                          src_container_for_logging, src_blob, dest_container_for_logging, dest_blob);
-            }
-            else
-                throw;
+            LOG_TRACE(log, "Copy operation has thrown error access error {}. "
+                            "Will attempt to copy using read & write. source container = {} blob = {} and destination container = {} blob = {}",
+                          e.StatusCode, src_container_for_logging, src_blob, dest_container_for_logging, dest_blob);
         }
     }
-    if (!is_native_copy_done)
+    if (!g)
     {
         /// Copy through read and write
         LOG_TRACE(log, "Reading and writing Blob: {} from Container: {}", src_blob, src_container_for_logging);
