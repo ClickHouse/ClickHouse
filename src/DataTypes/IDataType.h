@@ -577,7 +577,6 @@ inline bool isNullableOrLowCardinalityNullable(const DataTypePtr & data_type)
 
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;
 template <typename DataType> constexpr bool IsDataTypeNumber = false;
-template <typename DataType> constexpr bool IsDataTypeNativeNumber = false;
 template <typename DataType> constexpr bool IsDataTypeDateOrDateTime = false;
 template <typename DataType> constexpr bool IsDataTypeDateOrDateTimeOrTime = false;
 template <typename DataType> constexpr bool IsDataTypeDate = false;
@@ -608,9 +607,6 @@ template <> inline constexpr bool IsDataTypeDecimal<DataTypeDateTime64> = true;
 template <> inline constexpr bool IsDataTypeDecimal<DataTypeTime64> = true;
 
 template <typename T> constexpr bool IsDataTypeNumber<DataTypeNumber<T>> = true;
-template <typename T>
-requires std::is_arithmetic_v<T>
-constexpr bool IsDataTypeNativeNumber<DataTypeNumber<T>> = true;
 
 template <> inline constexpr bool IsDataTypeDate<DataTypeDate> = true;
 template <> inline constexpr bool IsDataTypeDate<DataTypeDate32> = true;
