@@ -22,6 +22,11 @@
                 <subject_alt_name>URI:spiffe://bar.com/foo/*/far</subject_alt_name>
             </ssl_certificates>
         </stewie>
+        <alice>
+            <ssl_certificates>
+                <subject_alt_name>EMAIL:alice@example.com</subject_alt_name>
+            </ssl_certificates>
+        </alice>
         <peter>
             <no_password/>
         </peter>
