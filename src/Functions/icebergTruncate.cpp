@@ -194,7 +194,7 @@ REGISTER_FUNCTION(IcebergTruncate)
     FunctionDocumentation::IntroducedIn introduced_in = {25, 3};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
 
-    factory.registerFunction<FunctionIcebergTruncate>({description, syntax, arguments, returned_value, examples, introduced_in, category});
+    factory.registerFunction<FunctionIcebergTruncate>({description, syntax, arguments, {}, returned_value, examples, introduced_in, category});
 }
 
 }

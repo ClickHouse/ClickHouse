@@ -187,6 +187,18 @@ DOCKERS = [
         depends_on=[],
     ),
     Docker.Config(
+        name="clickhouse/test-mysql80",
+        path="./ci/docker/integration/mysql80",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
+        name="clickhouse/test-mysql57",
+        path="./ci/docker/integration/mysql57",
+        platforms=Docker.Platforms.AMD,
+        depends_on=[],
+    ),
+    Docker.Config(
         name="clickhouse/mysql-golang-client",
         path="./ci/docker/integration/mysql_golang_client",
         platforms=Docker.Platforms.arm_amd,
@@ -305,7 +317,7 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     RISCV64 = "riscv64"
     S390X = "s390x"
     LOONGARCH64 = "loongarch64"
-    FUZZERS = "fuzzers"
+    ARM_FUZZERS = "arm_fuzzers"
 
 
 class JobNames:
@@ -342,8 +354,8 @@ class JobNames:
 
 
 class ToolSet:
-    COMPILER_C = "clang-19"
-    COMPILER_CPP = "clang++-19"
+    COMPILER_C = "clang-21"
+    COMPILER_CPP = "clang++-21"
 
     COMPILER_CACHE = "sccache"
     COMPILER_CACHE_LEGACY = "sccache"
@@ -396,7 +408,7 @@ class ArtifactNames:
     TGZ_AMD_RELEASE = "TGZ_AMD_RELEASE"
     TGZ_ARM_RELEASE = "TGZ_ARM_RELEASE"
 
-    FUZZERS = "FUZZERS"
+    ARM_FUZZERS = "ARM_FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
 
 
@@ -482,7 +494,7 @@ class ArtifactConfigs:
         ]
     )
     fuzzers = Artifact.Config(
-        name=ArtifactNames.FUZZERS,
+        name=ArtifactNames.ARM_FUZZERS,
         type=Artifact.Type.S3,
         path=[
             f"{TEMP_DIR}/build/programs/*_fuzzer",

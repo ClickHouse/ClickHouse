@@ -74,7 +74,7 @@ StorageObjectStorageQuerySettings StorageHDFSConfiguration::getQuerySettings(con
     };
 }
 
-void StorageHDFSConfiguration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
+void HDFSStorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
     if (args.empty() || args.size() > getMaxNumberOfArguments(with_structure))
         throw Exception(
@@ -83,8 +83,6 @@ void StorageHDFSConfiguration::fromAST(ASTs & args, ContextPtr context, bool wit
             getMaxNumberOfArguments(with_structure),
             getSignatures(with_structure));
 
-
-    std::string url_str;
     url_str = checkAndGetLiteralArgument<String>(args[0], "url");
 
     for (auto & arg : args)
@@ -110,14 +108,10 @@ void StorageHDFSConfiguration::fromAST(ASTs & args, ContextPtr context, bool wit
     {
         compression_method = checkAndGetLiteralArgument<String>(args[2], "compression_method");
     }
-
-    setURL(url_str);
 }
 
-void StorageHDFSConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr)
+void HDFSStorageParsedArguments::fromNamedCollection(const NamedCollection & collection, ContextPtr /*context*/)
 {
-    std::string url_str;
-
     auto filename = collection.getOrDefault<String>("filename", "");
     if (!filename.empty())
         url_str = std::filesystem::path(collection.get<String>("url")) / filename;
@@ -128,8 +122,6 @@ void StorageHDFSConfiguration::fromNamedCollection(const NamedCollection & colle
     compression_method = collection.getOrDefault<String>("compression_method",
                                                          collection.getOrDefault<String>("compression", "auto"));
     structure = collection.getOrDefault<String>("structure", "auto");
-
-    setURL(url_str);
 }
 
 void StorageHDFSConfiguration::setURL(const std::string & url_)
@@ -152,12 +144,8 @@ void StorageHDFSConfiguration::setURL(const std::string & url_)
     LOG_TRACE(getLogger("StorageHDFSConfiguration"), "Using URL: {}, path: {}", url, path.path);
 }
 
-void StorageHDFSConfiguration::addStructureAndFormatToArgsIfNeeded(
-    ASTs & args,
-    const String & structure_,
-    const String & format_,
-    ContextPtr context,
-    bool with_structure)
+static void addStructureAndFormatToArgsIfNeededHDFS(
+    ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
 {
     if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
     {
@@ -179,8 +167,12 @@ void StorageHDFSConfiguration::addStructureAndFormatToArgsIfNeeded(
     else
     {
         size_t count = args.size();
-        if (count == 0 || count > getMaxNumberOfArguments())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 1 to {} arguments in table function hdfs, got {}", getMaxNumberOfArguments(), count);
+        if (count == 0 || count > HDFSStorageParsedArguments::getMaxNumberOfArguments())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Expected 1 to {} arguments in table function hdfs, got {}",
+                HDFSStorageParsedArguments::getMaxNumberOfArguments(),
+                count);
 
         auto format_literal = std::make_shared<ASTLiteral>(format_);
         auto structure_literal = std::make_shared<ASTLiteral>(structure_);
@@ -217,6 +209,32 @@ void StorageHDFSConfiguration::addStructureAndFormatToArgsIfNeeded(
     }
 }
 
+void StorageHDFSConfiguration::initializeFromParsedArguments(const HDFSStorageParsedArguments & parsed_arguments)
+{
+    StorageObjectStorageConfiguration::initializeFromParsedArguments(parsed_arguments);
+}
+
+void StorageHDFSConfiguration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
+{
+    HDFSStorageParsedArguments parsed_arguments;
+    parsed_arguments.fromAST(args, context, with_structure);
+    initializeFromParsedArguments(parsed_arguments);
+    setURL(parsed_arguments.url_str);
+}
+
+void StorageHDFSConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
+{
+    HDFSStorageParsedArguments parsed_arguments;
+    parsed_arguments.fromNamedCollection(collection, context);
+    initializeFromParsedArguments(parsed_arguments);
+    setURL(parsed_arguments.url_str);
+}
+
+void StorageHDFSConfiguration::addStructureAndFormatToArgsIfNeeded(
+    ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
+{
+    addStructureAndFormatToArgsIfNeededHDFS(args, structure_, format_, context, with_structure);
+}
 }
 
 #endif
