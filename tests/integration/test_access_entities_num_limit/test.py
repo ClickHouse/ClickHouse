@@ -131,4 +131,4 @@ def test_access_limit_replicated(started_cluster):
 
     assert "Too many access entities" in node2.query_and_get_error("create user ux")
 
-    clear(node, users, roles)
+    clear(node1, users, roles)
