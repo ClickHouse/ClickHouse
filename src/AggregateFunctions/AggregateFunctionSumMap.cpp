@@ -856,21 +856,91 @@ FROM multi_metrics;
         return std::make_shared<AggregateFunctionSumMap<false, false>>(keys_type, values_types, arguments, params);
     }, {}, sumMap_documentation});
 
-    factory.registerFunction("minMappedArrays", [](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
+    FunctionDocumentation::Description minMap_description = R"(
+Calculates the minimum from `value` array according to the keys specified in the `key` array.
+
+:::note
+- Passing a tuple of keys and value arrays is identical to passing an array of keys and an array of values.
+- The number of elements in `key` and `value` must be the same for each row that is totaled.
+:::
+    )";
+    FunctionDocumentation::Syntax minMap_syntax = R"(
+minMap(key, value)
+minMap(Tuple(key, value))
+    )";
+    FunctionDocumentation::Arguments minMap_arguments = {
+        {"key", "Array of keys.", {"Array(T)"}},
+        {"value", "Array of values.", {"Array(T)"}}
+    };
+    FunctionDocumentation::ReturnedValue minMap_returned_value = {"Returns a tuple of two arrays: keys in sorted order, and values calculated for the corresponding keys.", {"Tuple(Array(T), Array(T))"}};
+    FunctionDocumentation::Examples minMap_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT minMap(a, b)
+FROM VALUES('a Array(Int32), b Array(Int64)', ([1, 2], [2, 2]), ([2, 3], [1, 1]));
+        )",
+        R"(
+┌─minMap(a, b)───────────┐
+│ ([1, 2, 3], [2, 1, 1]) │
+└────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn minMap_introduced_in = {20, 5};
+    FunctionDocumentation::Category minMap_category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation minMap_documentation = {minMap_description, minMap_syntax, minMap_arguments, {}, minMap_returned_value, minMap_examples, minMap_introduced_in, minMap_category};
+
+    factory.registerFunction("minMappedArrays", {[](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
     {
         auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
         if (tuple_argument)
             return std::make_shared<AggregateFunctionMinMap<true>>(keys_type, values_types, arguments, params);
         return std::make_shared<AggregateFunctionMinMap<false>>(keys_type, values_types, arguments, params);
-    });
+    }, {}, minMap_documentation});
 
-    factory.registerFunction("maxMappedArrays", [](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
+    FunctionDocumentation::Description maxMap_description = R"(
+Calculates the maximum from `value` array according to the keys specified in the `key` array.
+
+:::note
+- Passing a tuple of keys and value arrays is identical to passing an array of keys and an array of values.
+- The number of elements in `key` and `value` must be the same for each row that is totaled.
+:::
+    )";
+    FunctionDocumentation::Syntax maxMap_syntax = R"(
+maxMap(key, value)
+maxMap(Tuple(key, value))
+    )";
+    FunctionDocumentation::Arguments maxMap_arguments = {
+        {"key", "Array of keys.", {"Array(T)"}},
+        {"value", "Array of values.", {"Array(T)"}}
+    };
+    FunctionDocumentation::ReturnedValue maxMap_returned_value = {"Returns a tuple of two arrays: keys in sorted order, and values calculated for the corresponding keys.", {"Tuple(Array(T), Array(T))"}};
+    FunctionDocumentation::Examples maxMap_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT maxMap(a, b)
+FROM VALUES('a Array(Char), b Array(Int64)', (['x', 'y'], [2, 2]), (['y', 'z'], [3, 1]));
+        )",
+        R"(
+┌─maxMap(a, b)────────────────┐
+│ [['x', 'y', 'z'], [2, 3, 1]]│
+└─────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn maxMap_introduced_in = {20, 5};
+    FunctionDocumentation::Category maxMap_category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation maxMap_documentation = {maxMap_description, maxMap_syntax, maxMap_arguments, {}, maxMap_returned_value, maxMap_examples, maxMap_introduced_in, maxMap_category};
+
+    factory.registerFunction("maxMappedArrays", {[](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
     {
         auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
         if (tuple_argument)
             return std::make_shared<AggregateFunctionMaxMap<true>>(keys_type, values_types, arguments, params);
         return std::make_shared<AggregateFunctionMaxMap<false>>(keys_type, values_types, arguments, params);
-    });
+    }, {}, maxMap_documentation});
 
     // these functions could be renamed to *MappedArrays too, but it would
     // break backward compatibility
