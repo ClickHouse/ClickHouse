@@ -51,7 +51,8 @@ void SortNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
 
     buffer << ", with_fill: " << with_fill;
 
-    buffer << ", is_natural: " << is_natural;
+    if (is_natural)
+        buffer << ", is_natural: " << is_natural;
 
     buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION\n";
     getExpression()->dumpTreeImpl(buffer, format_state, indent + 4);

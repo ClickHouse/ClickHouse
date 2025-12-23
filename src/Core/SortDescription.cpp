@@ -138,8 +138,12 @@ static std::string getSortDescriptionDump(const SortDescription & description, c
 
         buffer << "(type: " << header_types[i]->getName()
             << ", direction: " << description[i].direction
-            << ", nulls_direction: " << description[i].nulls_direction
-            << ")";
+            << ", nulls_direction: " << description[i].nulls_direction;
+
+        if (description[i].is_natural)
+            buffer << ", natural: true";
+
+        buffer << ")";
     }
 
     return buffer.str();
@@ -157,6 +161,13 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
 
     if (!description.compile_sort_description || sort_description_types.empty())
         return;
+
+    // Natural sort is not supported in compiled sort description
+    for (const auto & desc : description)
+    {
+        if (desc.is_natural)
+            return;
+    }
 
     for (const auto & type : sort_description_types)
     {
