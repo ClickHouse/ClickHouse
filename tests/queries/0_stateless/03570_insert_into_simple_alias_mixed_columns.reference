@@ -1,1 +1,1 @@
-Block is ambiguous, contains values in both columns, in login alias and column it refers to user_name
+Column 'login' is an ALIAS for 'user_name'. Cannot provide values for both columns

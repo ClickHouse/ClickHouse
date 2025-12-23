@@ -55,7 +55,7 @@ void MaterializingAliasesTransform::transform(Chunk & chunk)
 
         /// Both columns were set in the input data, this is not supported (though it can be, but does not worth it)
         if (column_has_values(column_idx))
-            throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Block is ambiguous, contains values in both columns, in {} alias and column it refers to {}", alias, column);
+            throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column '{}' is an ALIAS for '{}'. Cannot provide values for both columns", alias, column);
 
         /// At this point we are sure that alias column has values, and column itself does not.
         columns[column_idx] = columns[alias_idx];

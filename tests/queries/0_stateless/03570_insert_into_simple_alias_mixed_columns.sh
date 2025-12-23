@@ -31,5 +31,7 @@ ORDER BY user_id
     echo '{"user_id": 5, "login": "john", "rating": 50.}'
     echo '{"user_id": 5, "user_name": "mike", "rating": 50.}'
 ) | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT+INTO+alias_insert_test+FORMAT+JSONEachRow" --data-binary @- |& (
-    grep -o 'Block is ambiguous, contains values in both columns, in login alias and column it refers to user_name'
+    grep -o "Column 'login' is an ALIAS for 'user_name'. Cannot provide values for both columns"
 )
+
+exit 0
