@@ -989,6 +989,9 @@ Allows or restricts using not comparable types (like JSON/AggregateFunction) in 
     DECLARE(Bool, allow_not_comparable_types_in_comparison_functions, false, R"(
 Allows or restricts using not comparable types (like JSON/AggregateFunction) in comparison functions `equal/less/greater/etc`.
 )", 0) \
+    DECLARE(Bool, use_variant_default_implementation_for_comparisons, true, R"(
+Enables or disables default implementation for Variant type in comparison functions.
+)", 0) \
     DECLARE(Bool, compile_expressions, true, R"(
 Compile some scalar functions and operators to native code.
 )", 0) \

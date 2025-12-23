@@ -46,6 +46,7 @@ namespace Setting
 {
 extern const SettingsBool short_circuit_function_evaluation_for_nulls;
 extern const SettingsDouble short_circuit_function_evaluation_for_nulls_threshold;
+extern const SettingsBool use_variant_default_implementation_for_comparisons;
 }
 
 namespace ErrorCodes
@@ -676,29 +677,48 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
     {
         checkNumberOfArguments(arguments.size());
 
-        /// Special case: if there are MULTIPLE arguments and ALL of them are Variants,
-        /// don't use VariantAdaptor. This allows functions (especially comparisons) to work
-        /// directly on ColumnVariant objects, which have built-in logic for cross-variant
-        /// comparisons using discriminator ordering.
         bool has_variant = false;
-        bool all_variants = true;
         for (const auto & arg : arguments)
         {
             if (isVariant(arg.type))
+            {
                 has_variant = true;
-            else
-                all_variants = false;
+                break;
+            }
         }
 
-        /// Only skip VariantAdaptor if:
-        /// 1. We have Variant arguments
-        /// 2. Either not all are Variants, OR there's only one argument (single Variant needs unwrapping)
-        if (has_variant && (!all_variants || arguments.size() == 1))
+        if (has_variant)
         {
-            DataTypes data_types(arguments.size());
-            for (size_t i = 0; i < arguments.size(); ++i)
-                data_types[i] = arguments[i].type;
-            return std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(data_types));
+            /// For comparison functions, check setting to allow disabling Variant adaptor for compatibility
+            bool skip_variant_adaptor = false;
+            auto name = getName();
+            if (name == "equals" || name == "notEquals" || name == "less" || name == "greater"
+                || name == "lessOrEquals" || name == "greaterOrEquals")
+            {
+                try
+                {
+                    if (auto query_context = CurrentThread::get().getQueryContext())
+                    {
+                        const auto & settings = query_context->getSettingsRef();
+                        /// If setting is disabled, skip the Variant adaptor to use built-in comparison
+                        if (!settings[Setting::use_variant_default_implementation_for_comparisons])
+                            skip_variant_adaptor = true;
+                    }
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+
+                }
+            }
+
+            if (!skip_variant_adaptor)
+            {
+                DataTypes data_types(arguments.size());
+                for (size_t i = 0; i < arguments.size(); ++i)
+                    data_types[i] = arguments[i].type;
+                return std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(data_types));
+            }
         }
     }
 

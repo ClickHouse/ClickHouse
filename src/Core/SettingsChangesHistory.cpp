@@ -48,6 +48,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_paimon_partition_pruning", false, false, "New setting."},
             {"query_plan_text_index_add_hint", true, true, "New setting"},
             {"text_index_hint_max_selectivity", 0.2, 0.2, "New setting"},
+            {"use_variant_default_implementation_for_comparisons", false, true, "Enable default implementation for Variant type in comparison functions"},
             {"allow_experimental_time_time64_type", false, true, "Enable Time and Time64 type by default"},
             {"enable_time_time64_type", false, true, "Enable Time and Time64 type by default"},
             {"delta_lake_snapshot_start_version", -1, -1, "New setting."},
