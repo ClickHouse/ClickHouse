@@ -60,6 +60,12 @@ ASTPtr ASTColumnDeclaration::clone() const
         res->children.push_back(res->settings);
     }
 
+    if (uuid)
+    {
+        res->uuid = uuid->clone();
+        res->children.push_back(res->uuid);
+    }
+
     return res;
 }
 
@@ -130,6 +136,12 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
         settings->format(ostr, format_settings, state, frame);
         ostr << ')';
     }
+
+    if (uuid)
+    {
+        ostr << ' '  << "COLUMN_UUID"  << ' ';
+        uuid->format(ostr, format_settings, state, frame);
+    }
 }
 
 void ASTColumnDeclaration::forEachPointerToChild(std::function<void(void **)> f)
@@ -154,5 +166,6 @@ void ASTColumnDeclaration::forEachPointerToChild(std::function<void(void **)> f)
     visit_child(ttl);
     visit_child(collation);
     visit_child(settings);
+    visit_child(uuid);
 }
 }

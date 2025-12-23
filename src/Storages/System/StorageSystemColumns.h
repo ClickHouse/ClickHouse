@@ -13,7 +13,7 @@ class Context;
 class StorageSystemColumns final : public IStorage
 {
 public:
-    explicit StorageSystemColumns(const StorageID & table_id_);
+    explicit StorageSystemColumns(const StorageID & table_id_, ContextPtr context);
 
     std::string getName() const override { return "SystemColumns"; }
 

@@ -8,6 +8,7 @@
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Core/Names.h>
+#include <Core/ServerSettings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNested.h>
@@ -64,6 +65,11 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsBool enable_uuids_for_columns;
+}
+
 namespace ErrorCodes
 {
     extern const int NO_SUCH_COLUMN_IN_TABLE;
@@ -97,6 +103,7 @@ ColumnDescription & ColumnDescription::operator=(const ColumnDescription & other
 
     name = other.name;
     type = other.type;
+    uuid = other.uuid;
     default_desc = other.default_desc;
     comment = other.comment;
     codec = other.codec ? other.codec->clone() : nullptr;
@@ -114,6 +121,7 @@ ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) noe
 
     name = std::move(other.name);
     type = std::move(other.type);
+    uuid = std::move(other.uuid);
     default_desc = std::move(other.default_desc);
     comment = std::move(other.comment);
 
@@ -136,6 +144,7 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
 
     return name == other.name
         && type->equals(*other.type)
+        && uuid == other.uuid
         && default_desc == other.default_desc
         && statistics == other.statistics
         && ast_to_str(codec) == ast_to_str(other.codec)
@@ -256,6 +265,12 @@ void ColumnDescription::readText(ReadBuffer & buf)
 }
 
 ColumnsDescription::ColumnsDescription(std::initializer_list<ColumnDescription> ordinary)
+{
+    for (auto && elem : ordinary)
+        add(elem);
+}
+
+ColumnsDescription::ColumnsDescription(const std::vector<ColumnDescription> & ordinary)
 {
     for (auto && elem : ordinary)
         add(elem);
