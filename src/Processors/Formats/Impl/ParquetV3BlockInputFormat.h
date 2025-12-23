@@ -73,6 +73,7 @@ private:
     void initializeIfNeeded();
 
     Parquet::ReadOptions read_options;
+    const FormatSettings & format_settings;
     parquet::format::FileMetaData file_metadata;
     bool initialized = false;
     ParquetMetadataCachePtr metadata_cache;

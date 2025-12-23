@@ -9,7 +9,6 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/SharedThreadPools.h>
-#include <IO/ReadBufferFromParquetWithSchemaCaching.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
@@ -96,19 +95,13 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
         reader.emplace();
         reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
         auto log = getLogger("ParquetMetadataCache");
-        if (metadata_cache)
+        if (metadata_cache && format_settings.parquet.metadata_cache_key.has_value())
         {
-            if (auto* buffer_with_key = dynamic_cast<ReadBufferFromParquetWithSchemaCaching*>(in))
-            {
-                if (auto maybe_cached_key = buffer_with_key->consumeParquetCacheKey())
-                {
-                    auto [file_name, etag] = maybe_cached_key.value();
-                    ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, etag);
-                    reader->reader.file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
-                        return Parquet::Reader::readFileMetaData(reader->reader.prefetcher);
-                    });
-                }
-            }
+            auto [file_name, etag] = format_settings.parquet.metadata_cache_key.value();
+            ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, etag);
+            reader->reader.file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
+                return Parquet::Reader::readFileMetaData(reader->reader.prefetcher);
+            });
         }
         else
         {
@@ -132,19 +125,13 @@ Chunk ParquetV3BlockInputFormat::read()
         parquet::format::FileMetaData file_metadata;
         temp_prefetcher.init(in, read_options, parser_shared_resources);
         auto log = getLogger("ParquetMetadataCache");
-        if (metadata_cache)
+        if (metadata_cache && format_settings.parquet.metadata_cache_key.has_value())
         {
-            if (auto * buffer_with_key = dynamic_cast<ReadBufferFromParquetWithSchemaCaching *>(in))
-            {
-                if (auto maybe_cache_key = buffer_with_key->consumeParquetCacheKey())
-                {
-                    auto [file_name, etag] = maybe_cache_key.value();
-                    ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, etag);
-                    file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
-                        return Parquet::Reader::readFileMetaData(temp_prefetcher);
-                    });
-                }
-            }
+            auto [file_name, etag] = format_settings.parquet.metadata_cache_key.value();
+            ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, etag);
+            file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
+                return Parquet::Reader::readFileMetaData(temp_prefetcher);
+            });
         }
         else
         {
@@ -192,10 +179,11 @@ void ParquetV3BlockInputFormat::resetParser()
 
 NativeParquetSchemaReader::NativeParquetSchemaReader(
     ReadBuffer & in_,
-    const FormatSettings & format_settings,
+    const FormatSettings & format_settings_,
     ParquetMetadataCachePtr metadata_cache_)
     : ISchemaReader(in_)
-    , read_options(convertReadOptions(format_settings))
+    , read_options(convertReadOptions(format_settings_))
+    , format_settings(format_settings_)
     , metadata_cache(metadata_cache_)
 {
 }
@@ -207,19 +195,13 @@ void NativeParquetSchemaReader::initializeIfNeeded()
     Parquet::Prefetcher prefetcher;
     prefetcher.init(&in, read_options, /*parser_shared_resources_=*/ nullptr);
     auto log = getLogger("ParquetMetadataCache");
-    if (metadata_cache)
+    if (metadata_cache && format_settings.parquet.metadata_cache_key.has_value())
     {
-        if (auto* buffer_with_key = dynamic_cast<ReadBufferFromParquetWithSchemaCaching*>(&in))
-        {
-            if (auto maybe_cache_key = buffer_with_key->consumeParquetCacheKey())
-            {
-                auto [file_name, etag] = maybe_cache_key.value();
-                ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, etag);
-                file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
-                    return Parquet::Reader::readFileMetaData(prefetcher); 
-                });
-            }
-        }
+        auto [file_name, etag] = format_settings.parquet.metadata_cache_key.value();
+        ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, etag);
+        file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
+            return Parquet::Reader::readFileMetaData(prefetcher);
+        });
     }
     else
     {

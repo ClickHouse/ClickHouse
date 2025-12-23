@@ -271,28 +271,16 @@ static bool isParquetFromContentType(const ObjectMetadata & metadata)
     return upper_content_type || lower_content_type;
 }
 
-static bool isParquetFromFileName(const RelativePathWithMetadata & object_info)
+static bool isParquetFromFormat(const StorageObjectStorageConfigurationPtr & conf)
 {
-    const String & format = FormatFactory::instance().getFormatFromFileName(object_info.getFileName());
-    if (format == "Parquet" || format == "ParquetV3")
+    if (conf->format == "Parquet" || conf->format == "parquet")
         return true;
     return false;
 }
 
-static bool isParquetFromFileSuffix(const RelativePathWithMetadata & object_info)
+bool isParquetFormat(const ObjectInfoPtr & object_info, const StorageObjectStorageConfigurationPtr & conf)
 {
-    return object_info.getFileName().ends_with(".parquet") || object_info.getFileName().ends_with(".parq");
-}
-
-bool isParquetFormat(RelativePathWithMetadata & object_info, const ObjectStoragePtr & object_storage)
-{
-    if (!object_info.metadata)
-        object_info.metadata = object_storage->getObjectMetadata(object_info.getPath(), /*with_tags=*/ false);
-
-    bool parquet_from_config = isParquetFromFileSuffix(object_info);
-    bool parquet_from_file_name = isParquetFromFileName(object_info);
-    bool parquet_from_content_type = isParquetFromContentType(*object_info.metadata);
-    return parquet_from_config || parquet_from_file_name || parquet_from_content_type;
+    return isParquetFromFormat(conf) || isParquetFromContentType(object_info->relative_path_with_metadata.metadata.value());
 }
 
 namespace Setting

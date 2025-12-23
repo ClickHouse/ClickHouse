@@ -7,12 +7,12 @@ namespace DB
 
 bool ParquetMetadataCacheKey::operator==(const ParquetMetadataCacheKey & other) const
 {
-    return file_path == other.file_path && file_attr == other.file_attr;
+    return file_path == other.file_path && etag == other.etag;
 }
 
 size_t ParquetMetadataCacheKeyHash::operator()(const ParquetMetadataCacheKey & key) const
 {
-    return std::hash<String>{}(key.file_path + key.file_attr);
+    return std::hash<String>{}(key.file_path + key.etag);
 }
 
 ParquetMetadataCacheCell::ParquetMetadataCacheCell(parquet::format::FileMetaData metadata_)
@@ -31,9 +31,9 @@ size_t ParquetMetadataCacheWeightFunction::operator()(const ParquetMetadataCache
 }
 
 ParquetMetadataCache::ParquetMetadataCache(
-    const String & cache_policy, 
-    size_t max_size_in_bytes, 
-    size_t max_count, 
+    const String & cache_policy,
+    size_t max_size_in_bytes,
+    size_t max_count,
     double size_ratio)
     : Base(cache_policy,
         CurrentMetrics::ParquetMetadataCacheBytes,

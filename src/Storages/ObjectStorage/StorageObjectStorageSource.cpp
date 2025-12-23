@@ -11,7 +11,6 @@
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/ReadBufferFromParquetWithSchemaCaching.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCacheKey.h>
@@ -636,6 +635,35 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             true /* is_remote_fs */,
             compression_method,
             need_only_count);
+ 
+        if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache])
+        {
+            if (isParquetFormat(object_info, configuration)
+                && !object_info->getObjectMetadata()->etag.empty())
+            {
+                auto format_settings_with_metadata_cache_key = format_settings;
+                if (!format_settings_with_metadata_cache_key.has_value())
+                {
+                    format_settings_with_metadata_cache_key.emplace(getFormatSettings(context_));
+                }
+                std::pair<std::string, std::string> cache_key = std::make_pair(
+                    object_info->getPath(),
+                    object_info->getObjectMetadata()->etag);
+                format_settings_with_metadata_cache_key->parquet.metadata_cache_key = cache_key;
+                auto input_format_with_metadata_cache_key = FormatFactory::instance().getInput(
+                object_info->getFileFormat().value_or(configuration->format),
+                *read_buf,
+                initial_header,
+                context_,
+                max_block_size,
+                format_settings_with_metadata_cache_key,
+                parser_shared_resources,
+                filter_info,
+                true /* is_remote_fs */,
+                compression_method,
+                need_only_count);
+            }
+        } 
 
         input_format->setBucketsToRead(object_info->file_bucket_info);
         input_format->setSerializationHints(read_from_format_info.serialization_hints);
@@ -845,14 +873,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         impl = object_storage->readObject(
             StoredObject(object_info.getPath(), "", object_size),
             use_async_buffer ? modified_read_settings.withNestedBuffer(/* seekable */true) : modified_read_settings);
-    }
-
-    if (settings[Setting::use_parquet_metadata_cache] 
-        && !object_info.metadata->etag.empty()
-        && isParquetFormat(object_info, object_storage))
-    {
-        std::pair<std::string, std::string> cache_key = std::make_pair(object_info.getPath(), object_info.metadata->etag);
-        impl = std::make_unique<ReadBufferFromParquetWithSchemaCaching>(std::move(impl), cache_key);
     }
 
     if (!use_async_buffer)
