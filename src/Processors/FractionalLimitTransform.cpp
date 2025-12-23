@@ -194,7 +194,7 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
     ///
     /// Detect blocks that will 100% get removed by the fractional offset and remove them as early as possible.
     /// example: if we have 10 blocks with same num of rows and offset 0.1 we can freely drop the first block even before reading all data.
-    while (!chunks_cache.empty() && static_cast<UInt64>(std::ceil(rows_cnt * offset_fraction)) - rows_read_from_cache >= chunks_cache.front().chunk.getNumRows())
+    while (!chunks_cache.empty() && static_cast<UInt64>(std::ceil(rows_cnt * offset_fraction)) >= chunks_cache.front().chunk.getNumRows() + rows_read_from_cache)
     {
         rows_read_from_cache += chunks_cache.front().chunk.getNumRows();
         chunks_cache.pop_front();
@@ -224,7 +224,7 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
             remaining_offset = offset - rows_read_from_cache;
 
         UInt64 curr_limit = static_cast<UInt64>(std::ceil(rows_cnt * limit_fraction));
-        if (curr_limit - outputed_rows_cnt >= num_rows - remaining_offset)
+        if (curr_limit + remaining_offset >= num_rows + outputed_rows_cnt)
         {
             /// If we still have an integral offset that didn't cause the chunk
             /// to be dropped entirely above then its offset in part of the chunk => split it
