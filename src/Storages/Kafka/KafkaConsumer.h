@@ -81,8 +81,9 @@ public:
     String currentKey() const { return current[-1].get_key(); }
     auto currentOffset() const { return current[-1].get_offset(); }
     auto currentPartition() const { return current[-1].get_partition(); }
-    boost::optional<cppkafka::MessageTimestamp> currentTimestamp() const;
-    void memorizeCurrentTimestamp(const cppkafka::MessageTimestamp & mts) const;
+    auto currentTimestamp() const { return current[-1].get_timestamp(); }
+    UInt64 currentTimestamp64() const;
+    void memorizeCurrentTimestamp(UInt64 mts) const;
     const auto & currentHeaderList() const { return current[-1].get_header_list(); }
     const cppkafka::Buffer & currentPayload() const { return current[-1].get_payload(); }
     void setExceptionInfo(const std::string & text, bool with_stacktrace) override;
@@ -165,7 +166,7 @@ private:
     /// Last used time (for TTL)
     std::atomic<UInt64> last_used_usec = 0;
 
-    mutable std::unordered_map<SimpleTopicPartition, cppkafka::MessageTimestamp, SimpleTopicPartitionHash, SimpleTopicPartitionEquality> timestamp_per_topic_partition;
+    mutable std::unordered_map<SimpleTopicPartition, UInt64, SimpleTopicPartitionHash, SimpleTopicPartitionEquality> timestamp_per_topic_partition;
 
     void doPoll();
     void cleanUnprocessed();

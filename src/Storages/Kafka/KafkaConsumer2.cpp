@@ -394,6 +394,22 @@ void KafkaConsumer2::resetIfStopped()
     }
 }
 
+UInt64 KafkaConsumer2::currentTimestamp64() const
+{
+    assert(current[-1]);
+    const auto & mts = current[-1].get_timestamp();
+    if (mts.has_value())
+    {
+        if (mts->get_type() == cppkafka::MessageTimestamp::CREATE_TIME)
+        {
+            auto ts = mts->get_timestamp();
+            UInt64 ts64 = std::chrono::duration_cast<std::chrono::seconds>(ts).count();
+            return ts64;
+        }
+    }
+    return {};
+}
+
 std::size_t KafkaConsumer2::TopicPartitionHash::operator()(const KafkaConsumer2::TopicPartition & tp) const
 {
     SipHash s;

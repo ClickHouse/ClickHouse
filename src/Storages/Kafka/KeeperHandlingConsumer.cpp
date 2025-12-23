@@ -68,6 +68,11 @@ boost::optional<cppkafka::MessageTimestamp> KeeperHandlingConsumer::MessageInfo:
     return kafka_consumer.currentTimestamp();
 }
 
+UInt64 KeeperHandlingConsumer::MessageInfo::currentTimestamp64() const
+{
+    return kafka_consumer.currentTimestamp64();
+}
+
 const cppkafka::Message::HeaderListType & KeeperHandlingConsumer::MessageInfo::currentHeaderList() const
 {
     return kafka_consumer.currentHeaderList();
@@ -565,19 +570,7 @@ std::optional<KeeperHandlingConsumer::OffsetGuard> KeeperHandlingConsumer::poll(
             ++consumed_messages;
             last_read_offset = message_info.currentOffset();
 
-            auto get_stamp = [](const boost::optional<cppkafka::MessageTimestamp> & mts)
-            {
-                if (mts.has_value())
-                {
-                    if (mts->get_type() == cppkafka::MessageTimestamp::CREATE_TIME)
-                    {
-                        auto ts = mts->get_timestamp();
-                        return static_cast<UInt64>(std::chrono::duration_cast<std::chrono::seconds>(ts).count());
-                    }
-                }
-                return UInt64();
-            };
-            timestamp = get_stamp(message_info.currentTimestamp());
+            timestamp = message_info.currentTimestamp64();
         }
 
 
@@ -595,20 +588,18 @@ std::optional<KeeperHandlingConsumer::OffsetGuard> KeeperHandlingConsumer::poll(
 
 StorageKafkaUtils::ConsumerStatistics KeeperHandlingConsumer::getStat() const
 {
-    // using CommittedOffsetAndIntentSize = std::pair<int64_t, std::optional<uint64_t>>;
-    struct CommittedOffsetAndIntentSize
+    struct TopPartInfo
     {
         int64_t committed_offset;
         std::optional<uint64_t> intent_size;
-        uint64_t timestamp;
-
+        UInt64 timestamp;
     };
-    using CommittedOffsetAndIntentSizes = std::unordered_map<
+    using TopPartInfos = std::unordered_map<
         KafkaConsumer2::TopicPartition,
-        CommittedOffsetAndIntentSize,
+        TopPartInfo,
         KafkaConsumer2::TopicPartitionHash,
         KafkaConsumer2::TopicPartitionEquality>;
-    CommittedOffsetAndIntentSizes committed_offsets_and_intent_sizes;
+    TopPartInfos committed_offsets_and_intent_sizes;
     KafkaConsumer2::Stat consumer_stat;
     {
         std::lock_guard lock(topic_partition_locks_mutex);

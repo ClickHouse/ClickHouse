@@ -37,30 +37,6 @@ public:
     static inline constexpr int BEGINNING_OFFSET = RD_KAFKA_OFFSET_BEGINNING;
     static inline constexpr int END_OFFSET = RD_KAFKA_OFFSET_END;
 
-    // struct TopicPartition
-    // {
-    //     String topic;
-    //     int32_t partition_id;
-
-    //     bool operator==(const TopicPartition &) const = default;
-    //     bool operator<(const TopicPartition & other) const;
-    // };
-
-    // using TopicPartitions = std::vector<TopicPartition>;
-
-    // struct TopicPartitionHash
-    // {
-    //     std::size_t operator()(const TopicPartition & tp) const;
-    // };
-
-    // struct TopicPartitionEquality
-    // {
-    //     bool operator()(const TopicPartition & lhs, const TopicPartition & rhs) const
-    //     {
-    //         return lhs.topic == rhs.topic && lhs.partition_id == rhs.partition_id;
-    //     }
-    // };
-
     using TopicPartition = SimpleTopicPartition;
     using TopicPartitions = std::vector<TopicPartition>;
     using TopicPartitionHash = SimpleTopicPartitionHash;
@@ -128,6 +104,7 @@ public:
     auto currentOffset() const { return current[-1].get_offset(); }
     auto currentPartition() const { return current[-1].get_partition(); }
     auto currentTimestamp() const { return current[-1].get_timestamp(); }
+    UInt64 currentTimestamp64() const;
     const auto & currentHeaderList() const { return current[-1].get_header_list(); }
     String currentPayload() const { return current[-1].get_payload(); }
 

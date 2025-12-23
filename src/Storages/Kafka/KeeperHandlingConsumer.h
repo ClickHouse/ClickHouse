@@ -51,6 +51,7 @@ public:
         String currentKey() const;
         String currentPayload() const;
         boost::optional<cppkafka::MessageTimestamp> currentTimestamp() const;
+        UInt64 currentTimestamp64() const;
         const cppkafka::Message::HeaderListType & currentHeaderList() const;
 
     private:
