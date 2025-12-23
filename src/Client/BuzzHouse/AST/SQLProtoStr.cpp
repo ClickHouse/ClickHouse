@@ -2731,8 +2731,16 @@ CONV_FN(FetchStatement, fet)
     ExprToString(ret, fet.row_count());
     ret += " ";
     ret += RowsKeyword_Name(fet.rows()).substr(4);
-    ret += " ";
-    ret += fet.only() ? "ONLY" : "WITH TIES";
+}
+
+void LimitStatementToString(String & ret, const bool has_offset, const LimitStatement & lim)
+{
+    ret += "LIMIT ";
+    ExprToString(ret, lim.limit());
+    if (!has_offset && lim.with_ties())
+    {
+        ret += " WITH TIES";
+    }
 }
 
 void OffsetStatementToString(String & ret, const bool has_limit, const OffsetStatement & off)
@@ -2749,6 +2757,12 @@ void OffsetStatementToString(String & ret, const bool has_limit, const OffsetSta
     {
         ret += " ";
         FetchStatementToString(ret, off.fetch());
+        ret += " ";
+        ret += off.with_ties() ? "WITH TIES" : "ONLY";
+    }
+    else if (has_limit && off.comma() && off.with_ties())
+    {
+        ret += " WITH TIES";
     }
 }
 
@@ -2832,8 +2846,8 @@ CONV_FN(SelectStatementCore, ssc)
     }
     if (ssc.has_limit())
     {
-        ret += " LIMIT ";
-        ExprToString(ret, ssc.limit());
+        ret += " ";
+        LimitStatementToString(ret, ssc.has_offset(), ssc.limit());
     }
     if (ssc.has_offset() && (ssc.has_limit() || !ssc.has_limit_by()))
     {
@@ -3204,6 +3218,12 @@ CONV_FN(ProjectionDef, proj_def)
     ret += " (";
     SelectToString(ret, proj_def.select());
     ret += ")";
+    if (proj_def.has_setting_values())
+    {
+        ret += " WITH SETTINGS (";
+        SettingValuesToString(ret, proj_def.setting_values());
+        ret += ")";
+    }
 }
 
 CONV_FN(ConstraintDef, const_def)
@@ -3436,8 +3456,8 @@ CONV_FN(TableEngine, te)
 
         ret += " ENGINE = ";
         if (te.has_toption()
-            && ((teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree)
-                || teng == TableEngineValues::Set || teng == TableEngineValues::Join))
+            && ((teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::GraphiteMergeTree) || teng == TableEngineValues::Set
+                || teng == TableEngineValues::Join))
         {
             ret += TableEngineOption_Name(te.toption()).substr(1);
         }
@@ -4372,13 +4392,13 @@ CONV_FN(ModifyColumnSetting, mcp)
     SettingValuesToString(ret, mcp.setting_values());
 }
 
-CONV_FN(SettingList, pl)
+CONV_FN(SettingList, sl)
 {
-    ret += pl.setting();
-    for (int i = 0; i < pl.other_settings_size(); i++)
+    ret += sl.setting();
+    for (int i = 0; i < sl.other_settings_size(); i++)
     {
         ret += ", ";
-        ret += pl.other_settings(i);
+        ret += sl.other_settings(i);
     }
 }
 

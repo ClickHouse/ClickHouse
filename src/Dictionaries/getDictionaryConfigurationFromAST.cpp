@@ -12,6 +12,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Core/Names.h>
+#include <Core/Field.h>
 #include <Common/FieldVisitorToString.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
@@ -166,7 +167,7 @@ void buildLayoutConfiguration(
                 pair->second->formatForErrorMessage());
         }
 
-        const auto value_field = value_literal->value;
+        const Field & value_field = value_literal->value;
 
         if (value_field.getType() != Field::Types::UInt64 && value_field.getType() != Field::Types::Float64 && value_field.getType() != Field::Types::String)
         {
@@ -188,7 +189,7 @@ void buildLayoutConfiguration(
         }
 
         AutoPtr<Element> layout_type_parameter_element(doc->createElement(pair->first));
-        AutoPtr<Text> value_to_append(doc->createTextNode(toString(value_field)));
+        AutoPtr<Text> value_to_append(doc->createTextNode(fieldToString(value_field)));
         layout_type_parameter_element->appendChild(value_to_append);
         layout_type_element->appendChild(layout_type_parameter_element);
     }

@@ -182,6 +182,14 @@ public:
 
     String fail_point_name;
 
+    enum class FailPointAction
+    {
+        UNSPECIFIED,
+        PAUSE,
+        RESUME
+    };
+    FailPointAction fail_point_action = FailPointAction::UNSPECIFIED;
+
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
 
     std::vector<String> src_replicas;

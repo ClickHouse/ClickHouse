@@ -138,14 +138,7 @@ def main():
         "max_insert_rows": random.randint(min_insert_rows, max_insert_rows),
         "min_string_length": min_string_length,
         "max_string_length": random.randint(min_string_length, min_string_length + 500),
-        "max_parallel_queries": (
-            1
-            if (
-                any(x in Info().job_name for x in ["tsan", "asan", "msan"])
-                or random.randint(1, 2) == 1
-            )
-            else random.randint(1, 5)
-        ),
+        "max_parallel_queries": 1,
         "max_number_alters": (1 if random.randint(1, 2) == 1 else random.randint(1, 4)),
         "fuzz_floating_points": random.choice([True, False]),
         "enable_fault_injection_settings": random.choice([True, False]),
@@ -156,6 +149,7 @@ def main():
         "compare_success_results": False,  # This can give false positives, so disable it
         "allow_infinite_tables": False,  # Creating too many issues
         "allow_health_check": False, # I have to test this first
+        "enable_compatibility_settings": random.randint(1, 4) == 1,
         "allow_hardcoded_inserts": allow_hardcoded_inserts,
         "client_file_path": "/var/lib/clickhouse/user_files",
         "server_file_path": "/var/lib/clickhouse/user_files",
@@ -232,11 +226,14 @@ def main():
             "min_bytes_for_wide_part",
             "min_rows_for_full_part_storage",
             "min_rows_for_wide_part",
+            "ratio_of_defaults_for_sparse_serialization",
             "remove_empty_parts",
+            "string_serialization_version",
             "ttl_only_drop_parts",
             "use_const_adaptive_granularity",
             "vertical_merge_algorithm_min_bytes_to_activate",
             "vertical_merge_algorithm_min_rows_to_activate",
+            "vertical_merge_algorithm_min_columns_to_activate"
         ],
     }
     with open(buzz_config_file, "w") as outfile:

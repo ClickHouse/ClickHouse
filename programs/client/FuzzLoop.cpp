@@ -605,7 +605,6 @@ bool Client::buzzHouse()
     else
     {
         String full_query2;
-        String full_query3;
         std::vector<BuzzHouse::SQLQuery> peer_queries;
         bool has_cloud_features = true;
         BuzzHouse::RandomGenerator rg(
@@ -638,7 +637,6 @@ bool Client::buzzHouse()
         loadSystemTables(*fuzz_config);
 
         full_query2.reserve(8192);
-        full_query3.reserve(8192);
         BuzzHouse::StatementGenerator gen(*fuzz_config, *external_integrations, has_cloud_features);
         BuzzHouse::QueryOracle qo(*fuzz_config);
         while (server_up && !buzz_done)
@@ -729,11 +727,11 @@ bool Client::buzzHouse()
                     }
 
                     sq2.Clear();
-                    full_query2.resize(0);
+                    full_query.resize(0);
                     qo.generateOracleSelectQuery(rg, BuzzHouse::PeerQuery::None, gen, sq2);
-                    BuzzHouse::SQLQueryToString(full_query2, sq2);
-                    fuzz_config->outf << full_query2 << std::endl;
-                    server_up &= processBuzzHouseQuery(full_query2);
+                    BuzzHouse::SQLQueryToString(full_query, sq2);
+                    fuzz_config->outf << full_query << std::endl;
+                    server_up &= processBuzzHouseQuery(full_query);
                     qo.processFirstOracleQueryResult(error_code, *external_integrations);
 
                     sq3.Clear();
@@ -745,11 +743,11 @@ bool Client::buzzHouse()
                     qo.setIntermediateStepSuccess(!have_error);
 
                     sq4.Clear();
-                    full_query3.resize(0);
+                    full_query.resize(0);
                     qo.maybeUpdateOracleSelectQuery(rg, gen, sq2, sq4);
-                    BuzzHouse::SQLQueryToString(full_query3, sq4);
-                    fuzz_config->outf << full_query3 << std::endl;
-                    server_up &= processBuzzHouseQuery(full_query3);
+                    BuzzHouse::SQLQueryToString(full_query, sq4);
+                    fuzz_config->outf << full_query << std::endl;
+                    server_up &= processBuzzHouseQuery(full_query);
                     qo.processSecondOracleQueryResult(error_code, *external_integrations, "Multi setting query");
                 }
                 else if (dump_oracle && nopt < (correctness_oracle + settings_oracle + dump_oracle + 1))
@@ -764,8 +762,10 @@ bool Client::buzzHouse()
                     const uint32_t optimize_table = 20 * static_cast<uint32_t>(test_content && tbl.get().can_run_merges);
                     const uint32_t reattach_table = 20 * static_cast<uint32_t>(test_content);
                     const uint32_t backup_restore_table = 20 * static_cast<uint32_t>(test_content);
-                    const uint32_t dump_table = 50;
-                    const uint32_t prob_space2 = optimize_table + reattach_table + backup_restore_table + dump_table;
+                    const uint32_t alter_update_table = 20 * static_cast<uint32_t>(test_content);
+                    const uint32_t insert_count_table = 20 * static_cast<uint32_t>(test_content && tbl.get().areInsertsAppends());
+                    const uint32_t dump_table = 40;
+                    const uint32_t prob_space2 = optimize_table + reattach_table + backup_restore_table + alter_update_table + insert_count_table + dump_table;
                     std::uniform_int_distribution<uint32_t> next_dist2(1, prob_space2);
                     const uint32_t nopt2 = next_dist2(rg.generator);
                     BuzzHouse::DumpOracleStrategy strategy = BuzzHouse::DumpOracleStrategy::DUMP_TABLE;
@@ -782,12 +782,22 @@ bool Client::buzzHouse()
                     {
                         strategy = BuzzHouse::DumpOracleStrategy::BACKUP_RESTORE;
                     }
+                    else if (
+                        alter_update_table && nopt2 < (optimize_table + reattach_table + backup_restore_table + alter_update_table + 1))
+                    {
+                        strategy = BuzzHouse::DumpOracleStrategy::ALTER_UPDATE;
+                    }
+                    else if (
+                        alter_update_table && nopt2 < (optimize_table + reattach_table + backup_restore_table + alter_update_table + insert_count_table + 1))
+                    {
+                        strategy = BuzzHouse::DumpOracleStrategy::INSERT_COUNT;
+                    }
 
                     if (test_content)
                     {
                         /// Dump table content and read it later to look for correctness
                         full_query.resize(0);
-                        qo.dumpTableContent(rg, gen, test_content, tbl, sq1);
+                        qo.dumpTableContent(rg, gen, strategy, test_content, tbl, sq1, sq2);
                         BuzzHouse::SQLQueryToString(full_query, sq1);
                         fuzz_config->outf << full_query << std::endl;
                         server_up &= processBuzzHouseQuery(full_query);
@@ -798,15 +808,17 @@ bool Client::buzzHouse()
                     for (const auto & entry : intermediate_queries)
                     {
                         /// Run each from the chosen strategy
-                        full_query2.resize(0);
-                        BuzzHouse::SQLQueryToString(full_query2, entry);
-                        fuzz_config->outf << full_query2 << std::endl;
-                        server_up &= processBuzzHouseQuery(full_query2);
+                        full_query.resize(0);
+                        BuzzHouse::SQLQueryToString(full_query, entry);
+                        fuzz_config->outf << full_query << std::endl;
+                        server_up &= processBuzzHouseQuery(full_query);
                         qo.setIntermediateStepSuccess(!have_error);
                     }
 
                     if (test_content)
                     {
+                        full_query.resize(0);
+                        BuzzHouse::SQLQueryToString(full_query, sq2);
                         fuzz_config->outf << full_query << std::endl;
                         server_up &= processBuzzHouseQuery(full_query);
                         qo.processSecondOracleQueryResult(error_code, *external_integrations, "Dump and read table");
