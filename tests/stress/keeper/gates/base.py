@@ -1,5 +1,7 @@
 import re
 import time
+from pathlib import Path
+from kazoo.client import KazooClient
 
 from ..framework.core.settings import DEFAULT_ERROR_RATE, DEFAULT_P99_MS
 from ..framework.core.util import wait_until
@@ -132,6 +134,58 @@ def error_rate_le(summary, max_ratio=DEFAULT_ERROR_RATE):
         )
     except Exception:
         return
+
+
+def _zk_count_descendants(zk, path):
+    try:
+        if not zk.exists(path):
+            return 0
+        children = zk.get_children(path)
+        total = 0
+        for c in children:
+            sub = (path.rstrip("/") + "/" + c) if path != "/" else "/" + c
+            total += 1
+            total += _zk_count_descendants(zk, sub)
+        return total
+    except Exception:
+        return 0
+
+
+def count_paths(nodes, prefixes):
+    hosts = [h.strip() for h in (servers_arg(nodes) or "").split() if h.strip()]
+    hostlist = ",".join(hosts) if hosts else "localhost:9181"
+    zk = None
+    try:
+        zk = KazooClient(hosts=hostlist, timeout=10.0)
+        zk.start(timeout=10.0)
+        results = []
+        for p in (prefixes or []):
+            try:
+                cnt = _zk_count_descendants(zk, str(p))
+                print(f"[keeper] count_paths prefix={p} count={cnt}")
+                results.append((str(p), int(cnt)))
+            except Exception:
+                print(f"[keeper] count_paths prefix={p} count=0")
+                results.append((str(p), 0))
+        try:
+            repo_root = Path(__file__).parents[4]
+            out = repo_root / "tests" / "stress" / "keeper" / "tests" / "keeper_counts.txt"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            with open(out, "w", encoding="utf-8") as f:
+                for p, c in results:
+                    f.write(f"{p},{c}\n")
+        except Exception:
+            pass
+        return
+    except Exception:
+        return
+    finally:
+        try:
+            if zk is not None:
+                zk.stop()
+                zk.close()
+        except Exception:
+            pass
 
 
 def election_time_le(ctx, max_s=10.0):
@@ -426,6 +480,72 @@ def apply_gate(gate, nodes, leader, ctx, summary):
             gate.get("metrics") or {},
             aggregate=str(gate.get("aggregate", "sum")),
         )
+    if gtype == "count_paths":
+        return count_paths(nodes, gate.get("prefixes") or [])
+    if gtype == "mntr_print":
+        try:
+            for n in nodes or []:
+                try:
+                    m = mntr(n) or {}
+                    zc = int(m.get("zk_znode_count", 0) or 0)
+                    wc = int(m.get("zk_watch_count", 0) or 0)
+                    ec = int(m.get("zk_ephemerals_count", 0) or 0)
+                    ds = int(m.get("zk_approximate_data_size", 0) or 0)
+                    print(
+                        f"[keeper] mntr node={n.name} zk_znode_count={zc} zk_ephemerals_count={ec} zk_watch_count={wc} zk_data_size={ds}"
+                    )
+                except Exception:
+                    print(f"[keeper] mntr node={getattr(n, 'name', 'node')} error")
+        except Exception:
+            pass
+        return
+    if gtype == "print_summary":
+        try:
+            s = summary or {}
+            ops = int(s.get("ops", 0) or 0)
+            errs = int(s.get("errors", 0) or 0)
+            p50 = int(s.get("p50_ms", 0) or 0)
+            p95 = int(s.get("p95_ms", 0) or 0)
+            p99 = int(s.get("p99_ms", 0) or 0)
+            rr = s.get("read_ratio")
+            wr = s.get("write_ratio")
+            extra = []
+            if rr is not None:
+                try:
+                    extra.append(f"read_ratio={float(rr):.3f}")
+                except Exception:
+                    pass
+            if wr is not None:
+                try:
+                    extra.append(f"write_ratio={float(wr):.3f}")
+                except Exception:
+                    pass
+            extra_str = (" "+" ".join(extra)) if extra else ""
+            print(f"[keeper] bench_summary ops={ops} errors={errs} p50={p50}ms p95={p95}ms p99={p99}ms{extra_str}")
+            try:
+                repo_root = Path(__file__).parents[4]
+                out = repo_root / "tests" / "stress" / "keeper" / "tests" / "keeper_summary.txt"
+                out.parent.mkdir(parents=True, exist_ok=True)
+                with open(out, "w", encoding="utf-8") as f:
+                    f.write(
+                        f"ops={ops} errors={errs} p50_ms={p50} p95_ms={p95} p99_ms={p99}"
+                    )
+                    if rr is not None:
+                        try:
+                            f.write(f" read_ratio={float(rr):.3f}")
+                        except Exception:
+                            pass
+                    if wr is not None:
+                        try:
+                            f.write(f" write_ratio={float(wr):.3f}")
+                        except Exception:
+                            pass
+                    f.write("\n")
+            except Exception:
+                pass
+        except Exception:
+            pass
+        return
     if gtype == "config_converged":
         return config_converged(nodes, timeout_s=int(gate.get("timeout_s", 30)))
     if gtype == "config_members_len_eq":

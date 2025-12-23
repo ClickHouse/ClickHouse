@@ -15,8 +15,8 @@ def four(node, cmd):
         pass
     # Fallbacks: keeper-client variants (avoid history file by setting HOME)
     for c in [
-        f"timeout 2s HOME=/tmp clickhouse keeper-client --host 127.0.0.1 --port {CLIENT_PORT} -q '{cmd}'",
-        f"timeout 2s HOME=/tmp clickhouse keeper-client -p {CLIENT_PORT} -q '{cmd}'",
+        f"HOME=/tmp timeout 2s clickhouse keeper-client --host 127.0.0.1 --port {CLIENT_PORT} -q '{cmd}'",
+        f"HOME=/tmp timeout 2s clickhouse keeper-client -p {CLIENT_PORT} -q '{cmd}'",
     ]:
         try:
             out = sh(node, c + " 2>/dev/null")["out"]

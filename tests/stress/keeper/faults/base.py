@@ -1,9 +1,9 @@
 import time
 
 from ..framework.core.registry import fault_registry
-from ..framework.core.settings import RAFT_PORT
-from ..framework.core.util import resolve_targets, wait_until
-from ..framework.io.probes import count_leaders, four, is_leader, ready, wchs_total
+from ..framework.core.settings import RAFT_PORT, CLIENT_PORT
+from ..framework.core.util import resolve_targets, wait_until, sh
+from ..framework.io.probes import count_leaders, four, is_leader, ready, wchs_total, mntr
 
 
 def apply_step(step, nodes, leader, ctx):
@@ -43,6 +43,46 @@ def apply_step(step, nodes, leader, ctx):
         # Run each step once (no scheduler loop)
         for sub in step.get("steps") or []:
             apply_step(sub, nodes, leader, ctx)
+        return
+    if kind == "ensure_paths":
+        paths = [str(p).strip() for p in (step.get("paths") or []) if str(p).strip()]
+        if not paths:
+            return
+        def _mk_one(node, p):
+            full = "/"
+            for seg in [s for s in str(p).split("/") if s]:
+                full = (full.rstrip("/") + "/" + seg)
+                try:
+                    sh(
+                        node,
+                        f"timeout 2s HOME=/tmp clickhouse keeper-client --host 127.0.0.1 --port {CLIENT_PORT} -q \"touch '{full}'\" || true",
+                    )
+                except Exception:
+                    pass
+                try:
+                    sh(
+                        node,
+                        f"timeout 2s HOME=/tmp clickhouse keeper-client --host 127.0.0.1 --port {CLIENT_PORT} -q \"touch '{full}'\" || true",
+                    )
+                except Exception:
+                    pass
+                try:
+                    sh(
+                        node,
+                        f"timeout 2s HOME=/tmp clickhouse keeper-client --host 127.0.0.1 --port {CLIENT_PORT} -q \"ls '{full}'\" >/dev/null 2>&1 || true",
+                    )
+                except Exception:
+                    pass
+        for t in resolve_targets(step.get("on", "leader"), nodes, leader):
+            for p in paths:
+                _mk_one(t, p)
+        try:
+            for t in resolve_targets(step.get("on", "leader"), nodes, leader):
+                m = mntr(t)
+                zc = m.get("zk_znode_count") if isinstance(m, dict) else None
+                print(f"[keeper] ensure_paths node={t.name} zk_znode_count={zc}")
+        except Exception:
+            pass
         return
     if kind == "run_bench":
         from ..workloads.adapter import servers_arg

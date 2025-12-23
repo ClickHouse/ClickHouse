@@ -30,7 +30,7 @@ from ..gates.base import apply_gate, single_leader
 from ..workloads.adapter import servers_arg
 from ..workloads.keeper_bench import KeeperBench
 
-WORKDIR = pathlib.Path(__file__).parents[2]
+WORKDIR = pathlib.Path(__file__).parents[1]
 
 
 def _apply_step(step, nodes, leader, ctx):
@@ -158,9 +158,36 @@ def _snapshot_and_sink(nodes, stage, scenario_id, topo, run_meta, sink_url, run_
         sink_clickhouse(sink_url, "keeper_metrics_ts", metrics_ts_rows)
 
 
+def _push_ci_check_result(check_name, check_status, check_duration, check_start_time):
+    try:
+        from tests.ci.clickhouse_helper import (
+            ClickHouseHelper,
+            prepare_tests_results_for_clickhouse,
+        )  # type: ignore
+        from tests.ci.pr_info import PRInfo  # type: ignore
+    except Exception:
+        return
+    try:
+        helper = ClickHouseHelper()
+        pr_info = PRInfo()
+        events = prepare_tests_results_for_clickhouse(
+            pr_info,
+            [],
+            check_status,
+            float(check_duration),
+            str(check_start_time),
+            "",
+            str(check_name),
+        )
+        helper.insert_events_into("default", "checks", events, safe=True)
+    except Exception:
+        return
+
+
 @pytest.mark.timeout(int(_os.environ.get("KEEPER_PYTEST_TIMEOUT", "2400") or 2400))
 def test_scenario(scenario, cluster_factory, request, run_meta):
     start_ts = time.time()
+    check_start_time = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(start_ts))
     topo = scenario.get("topology", 3)
     backend = scenario.get("backend") or request.config.getoption("--keeper-backend")
     # Effective run_meta per test with the scenario-selected backend
@@ -380,6 +407,15 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
         _snapshot_and_sink(
             nodes, "post", scenario.get("id", ""), topo, run_meta_eff, sink_url, run_id
         )
+        try:
+            _push_ci_check_result(
+                f"keeper_stress:{scenario.get('id','')}",
+                "success",
+                time.time() - start_ts,
+                check_start_time,
+            )
+        except Exception:
+            pass
     except Exception:
         # Emit minimal reproducible scenario to a file for debugging
         try:
@@ -400,6 +436,15 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
                 run_meta_eff,
                 sink_url,
                 run_id,
+            )
+        except Exception:
+            pass
+        try:
+            _push_ci_check_result(
+                f"keeper_stress:{scenario.get('id','')}",
+                "failure",
+                time.time() - start_ts,
+                check_start_time,
             )
         except Exception:
             pass

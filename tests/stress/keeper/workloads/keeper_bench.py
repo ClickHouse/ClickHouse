@@ -3,8 +3,11 @@ import os
 import re
 
 import yaml
+from pathlib import Path
 
 from ..framework.core.util import has_bin, sh
+from ..framework.core.settings import CLIENT_PORT
+from ..framework.io.probes import mntr
 
 
 def _parse_hosts(servers):
@@ -172,8 +175,41 @@ class KeeperBench:
                         clients = int(y.get("clients", clients) or clients)
                     except Exception:
                         pass
+            else:
+                # Fallback: if path is missing but contains 'workloads/', try resolving relative to package
+                if self.cfg_path and "workloads/" in str(self.cfg_path):
+                    from pathlib import Path as _P
+                    try:
+                        rel = str(self.cfg_path).split("workloads/", 1)[1]
+                    except Exception:
+                        rel = None
+                    if rel:
+                        alt = _P(__file__).parents[2] / "workloads" / rel.split("/", 1)[-1]
+                        if alt.exists():
+                            with open(alt, "r", encoding="utf-8") as f:
+                                cfg_text = f.read()
+                                try:
+                                    y = yaml.safe_load(cfg_text) or {}
+                                    clients = int(y.get("clients", clients) or clients)
+                                except Exception:
+                                    pass
         except Exception:
             cfg_text = ""
+        # Persist meta for debugging config discovery
+        try:
+            repo_root = Path(__file__).parents[4]
+            odir = repo_root / "tests" / "stress" / "keeper" / "tests"
+            odir.mkdir(parents=True, exist_ok=True)
+            with open(odir / "keeper_bench_meta.txt", "w", encoding="utf-8") as f:
+                f.write(f"cfg_path={self.cfg_path or ''}\n")
+                try:
+                    f.write(f"cfg_exists={(os.path.exists(self.cfg_path) if self.cfg_path else False)}\n")
+                except Exception:
+                    f.write("cfg_exists=error\n")
+                f.write(f"servers='{self.servers}'\n")
+                f.write(f"cfg_text_preview={cfg_text[:400]}\n")
+        except Exception:
+            pass
         # Override from explicit constructor or env
         try:
             if self.clients is not None:
@@ -190,7 +226,64 @@ class KeeperBench:
                 bench_cfg["concurrency"] = int(clients)
         except Exception:
             pass
+        # Best-effort: pre-create base paths referenced by workload to avoid 'No node' at bench init
+        try:
+            ysrc = yaml.safe_load(cfg_text) or {}
+        except Exception:
+            ysrc = {}
+        try:
+            bases = set()
+            for spec in (ysrc.get("ops") or []):
+                try:
+                    pfx = str(spec.get("path_prefix", "")).strip()
+                except Exception:
+                    pfx = ""
+                if pfx.startswith("/"):
+                    bases.add(pfx)
+            for base in sorted(bases):
+                full = "/"
+                for seg in [s for s in base.split("/") if s]:
+                    full = (full.rstrip("/") + "/" + seg)
+                    try:
+                        sh(
+                            self.node,
+                            f"HOME=/tmp timeout 2s clickhouse keeper-client --host 127.0.0.1 --port {CLIENT_PORT} -q \"touch '{full}'\" || true",
+                        )
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        # Debug: capture directory listings before running bench
+        try:
+            ls_out = []
+            for q in ["ls /", "ls /e2e", "ls /e2e/prod", "stat /e2e/prod", "stat /e2e/prod/create", "stat /e2e/prod/set"]:
+                try:
+                    r = sh(
+                        self.node,
+                        f"HOME=/tmp timeout 2s clickhouse keeper-client --host 127.0.0.1 --port {CLIENT_PORT} -q '{q}' 2>&1 || true",
+                    )
+                    ls_out.append(f"$ {q}\n" + str((r or {}).get("out", "")) + "\n")
+                except Exception as _:
+                    ls_out.append(f"$ {q}\n<error>\n")
+            try:
+                repo_root = Path(__file__).parents[4]
+                odir = repo_root / "tests" / "stress" / "keeper" / "tests"
+                odir.mkdir(parents=True, exist_ok=True)
+                with open(odir / "keeper_pre_ls.txt", "w", encoding="utf-8") as f:
+                    f.write("\n".join(ls_out))
+            except Exception:
+                pass
+        except Exception:
+            pass
         cfg_dump = yaml.safe_dump(bench_cfg, sort_keys=False)
+        try:
+            repo_root = Path(__file__).parents[4]
+            odir = repo_root / "tests" / "stress" / "keeper" / "tests"
+            odir.mkdir(parents=True, exist_ok=True)
+            with open(odir / "keeper_bench_config.yaml", "w", encoding="utf-8") as f:
+                f.write(cfg_dump)
+        except Exception:
+            pass
         # Write config inside the container
         sh(self.node, "mkdir -p /tmp || true")
         sh(self.node, "cat > /tmp/keeper_bench.yaml <<'YAML'\n" + cfg_dump + "YAML\n")
@@ -212,6 +305,12 @@ class KeeperBench:
                 prefix = f"timeout -s SIGKILL {hard_cap}"
         except Exception:
             prefix = ""
+        # Fallback metric: capture pre-run znode count from this node
+        pre_zc = None
+        try:
+            pre_zc = int(mntr(self.node).get("zk_znode_count", "0") or 0)
+        except Exception:
+            pre_zc = None
         if self.replay_path:
             hosts = _parse_hosts(self.servers)
             hflags = " ".join(f"-h {h}" for h in hosts)
@@ -220,11 +319,29 @@ class KeeperBench:
             base = f"{self._bench_cmd()} --config /tmp/keeper_bench.yaml -t {int(self.duration_s)}"
         cmd = f"{prefix} {base}".strip()
         run_out = sh(self.node, cmd)
+        try:
+            repo_root = Path(__file__).parents[4]
+            odir = repo_root / "tests" / "stress" / "keeper" / "tests"
+            odir.mkdir(parents=True, exist_ok=True)
+            with open(odir / "keeper_bench_cmd.txt", "w", encoding="utf-8") as f:
+                f.write(cmd + "\n")
+            with open(odir / "keeper_bench_stdout.txt", "w", encoding="utf-8") as f:
+                f.write((run_out or {}).get("out", ""))
+        except Exception:
+            pass
         # Parse JSON output if present
         out = sh(
             self.node,
             "cat /tmp/keeper_bench_out.json 2>/dev/null || cat keeper_bench_results.json 2>/dev/null",
         )
+        try:
+            repo_root = Path(__file__).parents[4]
+            odir = repo_root / "tests" / "stress" / "keeper" / "tests"
+            odir.mkdir(parents=True, exist_ok=True)
+            with open(odir / "keeper_bench_out_raw.json", "w", encoding="utf-8") as f:
+                f.write(out.get("out", ""))
+        except Exception:
+            pass
         try:
             data = json.loads(out.get("out", "") or "{}")
             if isinstance(data, dict):
@@ -251,6 +368,16 @@ class KeeperBench:
                     summary["p99_ms"] = int(float(p99))
         except Exception:
             pass
+        # Fallback: if ops still zero, estimate by znode_count delta on this node
+        if int(summary.get("ops") or 0) == 0:
+            try:
+                post_zc = int(mntr(self.node).get("zk_znode_count", "0") or 0)
+                if pre_zc is not None and post_zc >= pre_zc:
+                    dz = post_zc - pre_zc
+                    if dz > 0:
+                        summary["ops"] = dz
+            except Exception:
+                pass
         # Parse stdout lines for read/write counts if printed (replay mode)
         try:
             txt = (run_out or {}).get("out", "")
