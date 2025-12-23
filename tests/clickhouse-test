@@ -1199,6 +1199,8 @@ class SettingsRandomizer:
         # no_parallel_replicas is set for runs with enabled parallel replicas. In this case we should not reset `cluster_for_parallel_replicas`
         if not args.no_parallel_replicas and random_settings["automatic_parallel_replicas_mode"] != 0:
             random_settings["cluster_for_parallel_replicas"] = "parallel_replicas"
+            random_settings["parallel_replicas_local_plan"] = 1
+            random_settings["parallel_replicas_for_non_replicated_merge_tree"] = 1
         return random_settings
 
 
