@@ -100,6 +100,14 @@ public:
 
     std::string dump() const;
     std::string asRegex() const;
+    size_t cardinality() const;
+
+    bool hasGlobs() const { return has_globs; }
+    bool hasRanges() const { return has_ranges; }
+    bool hasEnums() const { return has_enums; }
+    bool hasQuestionOrAsterisk() const { return has_question_or_asterisk; }
+
+    bool hasExactlyOneEnum() const;
 
 private:
     std::string_view consumeConstantExpression(const std::string_view & input) const;
@@ -108,14 +116,15 @@ private:
     std::vector<std::string_view> tryParseEnumMatcher(const std::string_view & input) const;
     std::optional<Range> tryParseRangeMatcher(const std::string_view & input) const;
 
+
     std::vector<Expression> expressions;
 
     std::string input_data;
 
-    // bool has_globs = false;
-    // bool has_ranges = false;
-    // bool has_enums = false;
-    // bool has_question_or_asterisk = false;
+    bool has_globs = false;
+    bool has_ranges = false;
+    bool has_enums = false;
+    bool has_question_or_asterisk = false;
 };
 
 }

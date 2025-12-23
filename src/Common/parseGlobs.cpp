@@ -6,6 +6,7 @@
 #include <IO/Operators.h>
 #include <IO/readIntText.h>
 #include <Interpreters/Context_fwd.h>
+#include <base/arithmeticOverflow.h>
 #include <base/defines.h>
 
 #include <algorithm>
@@ -240,6 +241,47 @@ size_t Expression::cardinality() const
     UNREACHABLE();
 }
 
+size_t GlobString::cardinality() const
+{
+    size_t result = 1;
+
+    for (const auto & expression : expressions)
+    {
+        size_t expression_cardinality = expression.cardinality();
+        if (expression_cardinality == std::numeric_limits<size_t>::max())
+            return std::numeric_limits<size_t>::max();
+
+        bool overflow = common::mulOverflow(result, expression_cardinality, result);
+        if (overflow)
+            return std::numeric_limits<size_t>::max();
+    }
+
+    return result;
+}
+
+bool GlobString::hasExactlyOneEnum() const
+{
+    size_t enum_counter = 0;
+
+    for (const auto & expression : expressions)
+    {
+        switch (expression.type())
+        {
+            case ExpressionType::CONSTANT:
+                continue;
+            case ExpressionType::WILDCARD:
+                return false;
+            case ExpressionType::RANGE:
+                return false;
+            case ExpressionType::ENUM:
+                enum_counter++;
+                break;
+        }
+    }
+
+    return enum_counter == 1;
+};
+
 std::string_view GlobString::consumeConstantExpression(const std::string_view & input) const
 {
     auto first_nonconstant = input.find_first_of("{*?");
@@ -378,6 +420,9 @@ void GlobString::parse()
     {
         if (input[position] == '?' || input[position] == '*')
         {
+            has_globs = true;
+            has_question_or_asterisk = true;
+
             if (position + 1 < input.length() && input[position] == input[position + 1] && input[position] == '*')
             {
                 expressions.emplace_back(WildcardType::DOUBLE_ASTERISK);
@@ -418,6 +463,10 @@ void GlobString::parse()
             {
                 position += matcher_expression.length();
                 expressions.push_back(Expression(range.value()));
+
+                has_globs = true;
+                has_ranges = true;
+
                 continue;
             }
 
@@ -428,6 +477,9 @@ void GlobString::parse()
 
             position += matcher_expression.length();
             expressions.push_back(Expression(enum_matcher));
+
+            has_globs = true;
+            has_enums = true;
 
             continue;
         }
