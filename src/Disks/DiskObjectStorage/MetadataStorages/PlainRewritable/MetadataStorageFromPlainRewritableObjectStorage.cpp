@@ -536,11 +536,6 @@ const IMetadataStorage & MetadataStorageFromPlainRewritableObjectStorageTransact
     return metadata_storage;
 }
 
-std::optional<StoredObjects> MetadataStorageFromPlainRewritableObjectStorageTransaction::tryGetBlobsFromTransactionIfExists(const std::string & path) const
-{
-    return metadata_storage.getStorageObjectsIfExist(path);
-}
-
 ObjectStorageKey MetadataStorageFromPlainRewritableObjectStorageTransaction::generateObjectKeyForPath(const std::string & path)
 {
     const auto normalized_path = normalizePath(path);

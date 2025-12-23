@@ -138,8 +138,6 @@ public:
 
     TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t target_size) override;
 
-    std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
-
     ObjectStorageKey generateObjectKeyForPath(const std::string & path) override;
 };
 

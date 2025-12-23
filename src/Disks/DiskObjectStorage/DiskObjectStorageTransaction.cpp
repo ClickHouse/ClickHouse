@@ -176,20 +176,7 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
     {
         if (!metadata_storage.existsFile(path))
         {
-            auto maybe_blobs = tx->tryGetBlobsFromTransactionIfExists(path);
-            if (maybe_blobs.has_value())
-            {
-                auto unlink_outcome = tx->unlinkMetadata(path);
-                if (unlink_outcome)
-                    objects_to_remove = ObjectsToRemove{std::move(*maybe_blobs), std::move(unlink_outcome)};
-
-                return;
-            }
-
-            if (if_exists)
-                return;
-
-            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata path '{}' doesn't exist or isn't a regular file", path);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Metadata path '{}' doesn't exist or isn't a regular file", path);
         }
 
         try
@@ -267,23 +254,7 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
         {
             if (!metadata_storage.existsFile(path))
             {
-                auto maybe_blobs = tx->tryGetBlobsFromTransactionIfExists(path);
-                if (maybe_blobs.has_value())
-                {
-                    auto unlink_outcome = tx->unlinkMetadata(path);
-                    if (unlink_outcome && !keep_all_batch_data && !file_names_remove_metadata_only.contains(fs::path(path).filename()))
-                    {
-                        objects_to_remove.emplace_back(ObjectsToRemove{std::move(*maybe_blobs), std::move(unlink_outcome)});
-                        paths_removed_with_objects.push_back(path);
-                    }
-
-                    continue;
-                }
-
-                if (if_exists)
-                    continue;
-
-                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata path '{}' doesn't exist or isn't a regular file", path);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Metadata path '{}' doesn't exist or isn't a regular file", path);
             }
 
             try
