@@ -1551,14 +1551,14 @@ void PartMergerWriter::finalizeTempProjectionsAndIndexes()
         auto reader_settings = MergeTreeReaderSettings::createForMergeMutation(ctx->context->getReadSettings());
         const auto & indexes = build_text_index_transform->getIndexes();
 
-        for (size_t i = 0; i < indexes.size(); ++i)
+        for (const auto & index : indexes)
         {
-            auto segments = build_text_index_transform->getSegments(i, 0);
+            auto segments = build_text_index_transform->getSegments(index->index.name, 0);
 
             auto merge_task = std::make_unique<MergeTextIndexesTask>(
                 std::move(segments),
                 ctx->new_data_part,
-                indexes[i],
+                index,
                 /*merged_part_offsets=*/ nullptr,
                 reader_settings,
                 ctx->out->getWriterSettings());
