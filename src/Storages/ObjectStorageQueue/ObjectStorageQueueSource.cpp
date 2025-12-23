@@ -803,7 +803,12 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
 
             if (bucket_processor.has_value())
             {
+                //LOG_TEST(
+                //    log, "Will not process, should be processed by processor {}, current processor {}",
+                //    bucket_processor.value(), processor);
+
                 /// Bucket is already locked for processing by another thread.
+                bucket_keys.emplace_back(object_info, nullptr);
                 continue;
             }
 
@@ -825,6 +830,10 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                 }
                 return {object_info, file_metadata, current_bucket_holder->getBucketInfo()};
             }
+
+            //LOG_TEST(
+            //    log, "Will not process, failed to acquire bucket {}, current processor {}",
+            //    bucket, processor);
 
             /// Bucket is already locked for processing by another thread.
             bucket_keys.emplace_back(object_info, nullptr);
