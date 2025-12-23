@@ -28,10 +28,6 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
 
@@ -87,6 +83,20 @@ static inline const IColumn * unwrapNullableColumn(const IColumn * col, bool & i
     return col;
 }
 
+namespace detail
+{
+    template <typename T>
+    auto toStringViewImpl(const T & value) -> decltype(value.toView())
+    {
+        return value.toView();
+    }
+
+    inline std::string_view toStringViewImpl(const std::string_view & value)
+    {
+        return value;
+    }
+}
+
 /// Extract string view from a column at given position.
 /// Supports ColumnString and ColumnFixedString (and their const/nullable wrappers).
 /// Throws if unsupported.
@@ -104,14 +114,12 @@ static inline std::string_view getStringViewFromColumn(const IColumn * col, size
 
     if (const auto * col_str = typeid_cast<const ColumnString *>(col))
     {
-        StringRef ref = col_str->getDataAt(pos);
-        return std::string_view(ref.data, ref.size);
+        return detail::toStringViewImpl(col_str->getDataAt(pos));
     }
 
     if (const auto * col_fixed = typeid_cast<const ColumnFixedString *>(col))
     {
-        StringRef ref = col_fixed->getDataAt(pos);
-        return std::string_view(ref.data, ref.size);
+        return detail::toStringViewImpl(col_fixed->getDataAt(pos));
     }
 
     // Optionally support LowCardinality<String>, ColumnConst handled above.
@@ -198,8 +206,10 @@ static inline int naturalCompareAt(size_t lhs_pos, size_t rhs_pos, const IColumn
 
     //throw std::runtime_error(std::string(a) + ":" + std::string(b));
 
-    size_t ia = 0, ib = 0;
-    const size_t na = a.size(), nb = b.size();
+    size_t ia = 0;
+    size_t ib = 0;
+    const size_t na = a.size();
+    const size_t nb = b.size();
 
     while (ia < na && ib < nb)
     {
@@ -450,9 +460,6 @@ struct SortCursor : SortCursorHelper<SortCursor>
             }
 
             int res = direction * impl->sort_columns[i]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), nulls_direction);
-            if (desc.is_natural) {
-                res *= -1;
-            }
 
             if (res > 0)
                 return true;
@@ -586,9 +593,10 @@ struct SpecializedSingleNullableColumnSortCursor : SortCursorHelper<SpecializedS
             }
 
             int mm = 1;
-            if (desc.is_natural) {
+            if (desc.is_natural)
+            {
                 mm = -1;
-             }
+            }
 
             return mm * denull_lhs_column.compareAt(lhs_pos, rhs_pos, denull_rhs_column, desc.nulls_direction);
         };
@@ -1087,10 +1095,6 @@ bool less(const TLeftColumns & lhs, const TRightColumns & rhs, size_t i, size_t 
     {
         size_t ind = elem.column_number;
         int res = elem.base.direction * lhs[ind]->compareAt(i, j, *rhs[ind], elem.base.nulls_direction);
-
-        if (elem.base.is_natural) {
-            res *= -1;
-        }
 
         if (elem.base.is_natural)
             {
