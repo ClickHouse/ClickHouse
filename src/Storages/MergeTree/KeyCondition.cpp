@@ -1231,6 +1231,227 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
     return true;
 }
 
+bool KeyCondition::extractDeterministicFunctionsDagFromKey(
+    const String & expr_name,
+    const BuildInfo & info,
+    size_t & out_key_column_num,
+    DataTypePtr & out_key_column_type,
+    DeterministicKeyTransformDag & out) const
+{
+    const auto & dag = info.key_expr->getActionsDAG();
+    const auto & sample_block = info.key_expr->getSampleBlock();
+
+    std::vector<const ActionsDAG::Node *> expr_nodes;
+    for (const auto & node : dag.getNodes())
+        if (node.result_name == expr_name)
+            expr_nodes.push_back(&node);
+
+    if (expr_nodes.empty())
+        return false;
+
+    const ActionsDAG::Node * rename_node = expr_nodes.front();
+
+    std::unordered_set<const ActionsDAG::Node *> expr_set;
+    expr_set.reserve(expr_nodes.size());
+    for (const auto * node : expr_nodes)
+        expr_set.insert(node);
+
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> projection_inputs;
+    projection_inputs.reserve(expr_nodes.size());
+    for (const auto * node : expr_nodes)
+        projection_inputs.emplace(node, rename_node);
+
+    auto can_fold_from_expr_only = [&](const ActionsDAG::Node * key_node) -> bool
+    {
+        bool uses_expr = false;
+        std::unordered_set<const ActionsDAG::Node *> visited;
+        std::vector<const ActionsDAG::Node *> stack{key_node};
+
+        while (!stack.empty())
+        {
+            const auto * node = stack.back();
+            stack.pop_back();
+
+            if (!visited.insert(node).second)
+                continue;
+
+            if (expr_set.contains(node))
+            {
+                uses_expr = true;
+                continue;
+            }
+
+            if (node->type == ActionsDAG::ActionType::INPUT)
+                return false;
+
+            if (node->type == ActionsDAG::ActionType::ARRAY_JOIN || node->type == ActionsDAG::ActionType::PLACEHOLDER)
+                return false;
+
+            for (const auto * child : node->children)
+                stack.push_back(child);
+        }
+
+        return uses_expr;
+    };
+
+    for (const auto & key_node : dag.getNodes())
+    {
+        auto it = key_columns.find(key_node.result_name);
+        if (it == key_columns.end())
+            continue;
+
+        if (!can_fold_from_expr_only(&key_node))
+            continue;
+
+        ActionsDAG sub = ActionsDAG::foldActionsByProjection(projection_inputs, {&key_node});
+
+        const auto required = sub.getRequiredColumns();
+        if (required.size() != 1 || required.front().name != expr_name)
+            continue;
+
+        if (sub.hasNonDeterministic() || sub.hasStatefulFunctions() || sub.hasArrayJoin())
+            continue;
+
+        out_key_column_num = it->second;
+        out_key_column_type = sample_block.getByName(key_node.result_name).type;
+
+        out.actions = std::make_shared<ExpressionActions>(std::move(sub));
+        out.output_name = key_node.result_name;
+        out.input_type = required.front().type;
+        return true;
+    }
+
+    return false;
+}
+
+
+bool applyDeterministicDagToColumn(
+    const ColumnPtr & in_column,
+    const DataTypePtr & in_type,
+    const String & input_name,
+    const DeterministicKeyTransformDag & dag,
+    ColumnPtr & out_column,
+    DataTypePtr & out_type)
+{
+    ColumnPtr col = in_column->convertToFullIfNeeded();
+    DataTypePtr type = removeLowCardinality(in_type);
+
+    if (!type->equals(*dag.input_type))
+    {
+        if (canBeSafelyCast(type, dag.input_type))
+        {
+            col = castColumnAccurate({col, type, ""}, dag.input_type);
+            type = dag.input_type;
+        }
+        else if (!dag.input_type->isNullable() && !dag.input_type->canBeInsideNullable())
+        {
+            return false;
+        }
+        else
+        {
+            col = castColumnAccurateOrNull({col, type, ""}, dag.input_type);
+            const auto & n = assert_cast<const ColumnNullable &>(*col);
+            for (char8_t b : n.getNullMapData())
+                if (b)
+                    return false;
+            col = n.getNestedColumnPtr();
+            type = removeNullable(dag.input_type);
+        }
+    }
+
+    Block block;
+    block.insert({col, type, input_name});
+
+    try
+    {
+        dag.actions->execute(block, false, true);
+    }
+    catch (...)
+    {
+        return false;
+    }
+
+    const auto & res = block.getByName(dag.output_name);
+    out_column = res.column;
+    out_type = res.type;
+
+    if (out_column->isNullable())
+    {
+        const auto & n = assert_cast<const ColumnNullable &>(*out_column);
+        for (char8_t b : n.getNullMapData())
+            if (b)
+                return false;
+        out_column = n.getNestedColumnPtr();
+        out_type = removeNullable(out_type);
+    }
+
+    out_column = out_column->convertToFullColumnIfLowCardinality();
+    out_type = removeLowCardinality(out_type);
+    return true;
+}
+
+bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
+    const RPNBuilderTreeNode & node,
+    const BuildInfo & info,
+    size_t & out_key_column_num,
+    DataTypePtr & out_key_column_type,
+    Field & out_value,
+    DataTypePtr & out_type)
+{
+    String expr_name = node.getColumnName();
+
+    if (!info.key_subexpr_names.contains(expr_name))
+    {
+        /// Let's check another one case.
+        /// If our storage was created with moduloLegacy in partition key,
+        /// We can assume that `modulo(...) = const` is the same as `moduloLegacy(...) = const`.
+        /// Replace modulo to moduloLegacy in AST and check if we also have such a column.
+        ///
+        /// We do not check this in canConstantBeWrappedByMonotonicFunctions.
+        /// The case `f(modulo(...))` for totally monotonic `f ` is considered to be rare.
+        ///
+        /// Note: for negative values, we can filter more partitions then needed.
+        expr_name = node.getColumnNameWithModuloLegacy();
+
+        if (!info.key_subexpr_names.contains(expr_name))
+            return false;
+    }
+
+    if (out_value.isNull())
+        return false;
+
+    DeterministicKeyTransformDag dag;
+    auto can_transform_constant = extractDeterministicFunctionsDagFromKey(
+        expr_name,
+        info,
+        out_key_column_num,
+        out_key_column_type,
+        dag);
+
+    if (!can_transform_constant)
+        return false;
+
+    auto const_column = out_type->createColumnConst(1, out_value);
+
+    ColumnPtr transformed_const_column;
+    DataTypePtr transformed_const_type;
+    bool constant_transformed = applyDeterministicDagToColumn(
+        const_column,
+        out_type,
+        expr_name,
+        dag,
+        transformed_const_column,
+        transformed_const_type);
+
+    if (!constant_transformed)
+        return false;
+
+    out_value = (*transformed_const_column)[0];
+    out_type = transformed_const_type;
+    return true;
+}
+
+
 void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & arg,
         std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> &indexes_mapping,
         std::vector<MonotonicFunctionsChain> &set_transforming_chains,
@@ -2151,6 +2372,8 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
       */
     Field const_value;
     DataTypePtr const_type;
+    bool atom_is_relaxed = false;
+
     if (node.isFunction())
     {
         auto func = node.toFunctionNode();
@@ -2309,6 +2532,12 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             {
                 is_constant_transformed = true;
             }
+            else if (
+                canConstantBeWrappedByDeterministicFunctions(key_arg, info, key_column_num, key_expr_type, const_value, const_type))
+            {
+                atom_is_relaxed = true;
+                is_constant_transformed = true;
+            }
             else
                 return false;
 
@@ -2420,6 +2649,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
         out.key_columns.push_back(key_column_num);
         out.monotonic_functions_chain = std::move(chain);
         out.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
+        out.relaxed |= atom_is_relaxed;
 
         bool valid_atom = atom_it->second(out, const_value);
         if (valid_atom && out.relaxed)
@@ -3533,6 +3763,10 @@ BoolMask KeyCondition::checkInHyperrectangle(
             bool contains = element.range.containsRange(*key_range);
 
             rpn_stack.emplace_back(intersects, !contains);
+
+            if (element.relaxed)
+                rpn_stack.back().can_be_false = true;
+
             if (element.function == RPNElement::FUNCTION_IS_NULL)
                 rpn_stack.back() = !rpn_stack.back();
         }
@@ -3590,6 +3824,9 @@ BoolMask KeyCondition::checkInHyperrectangle(
             {
                 rpn_stack.back().can_be_true = mayExistOnBloomFilter(*element.bloom_filter_data, column_index_to_column_bf);
             }
+
+            if (element.relaxed)
+                rpn_stack.back().can_be_false = true;
 
             if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
                 rpn_stack.back() = !rpn_stack.back();
