@@ -2297,6 +2297,9 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             {
                 if (tryPrepareSetIndexForHas(func, info, out, allow_constant_transformation))
                 {
+                    if (out.function == RPNElement::ALWAYS_FALSE)
+                        return true;
+
                     const auto atom_it = atom_map.find(func_name);
                     bool valid_atom = atom_it->second(out, const_value);
                     if (valid_atom && out.relaxed)
