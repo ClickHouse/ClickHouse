@@ -836,7 +836,7 @@ void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach
 
         UInt64 ngram_length = index.arguments[0].safeGet<UInt64>();
         if (ngram_length < 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ngram length must be at least 0");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ngram length must be at least 1");
 
         first_bf_param_idx = 1;
     }
