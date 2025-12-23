@@ -1237,7 +1237,10 @@ void StatementGenerator::generateEngineDetails(
     }
     else if (te->has_engine() && b.isFileEngine())
     {
-        te->add_params()->set_in_out(b.file_format.value());
+        if (b.file_format.has_value())
+        {
+            te->add_params()->set_in_out(b.file_format.value());
+        }
         te->add_params()->set_svalue(b.getTablePath(rg, fc, false));
         if (b.file_comp.has_value())
         {
@@ -1984,6 +1987,7 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         std::uniform_int_distribution<uint32_t> engine_range(1, static_cast<uint32_t>(TableEngineValues_MAX));
 
         b.teng = static_cast<TableEngineValues>(engine_range(rg.generator));
+        b.sub = static_cast<TableEngineValues>(engine_range(rg.generator));
         return;
     }
     /// Make sure `is_determistic is already set`
@@ -2509,7 +2513,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         DictionarySourceDetails * dsd = cd->mutable_source()->mutable_source();
         const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(dictionary_table_lambda));
 
-        if (t.isPostgreSQLEngine() && rg.nextSmallNumber() < 8)
+        if (t.isPostgreSQLEngine() && fc.postgresql_server.has_value() && rg.nextSmallNumber() < 8)
         {
             ExprSchemaTable * est = dsd->mutable_est();
             const ServerCredentials & sc = fc.postgresql_server.value();
@@ -2522,7 +2526,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
             dsd->set_password(sc.password);
             dsd->set_source(DictionarySourceDetails::POSTGRESQL);
         }
-        else if (t.isMySQLEngine() && rg.nextSmallNumber() < 8)
+        else if (t.isMySQLEngine() && fc.mysql_server.has_value() && rg.nextSmallNumber() < 8)
         {
             ExprSchemaTable * est = dsd->mutable_est();
             const ServerCredentials & sc = fc.mysql_server.value();
@@ -2535,7 +2539,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
             dsd->set_password(sc.password);
             dsd->set_source(DictionarySourceDetails::MYSQL);
         }
-        else if (t.isMongoDBEngine() && rg.nextSmallNumber() < 8)
+        else if (t.isMongoDBEngine() && fc.mongodb_server.has_value() && rg.nextSmallNumber() < 8)
         {
             ExprSchemaTable * est = dsd->mutable_est();
             const ServerCredentials & sc = fc.mongodb_server.value();
@@ -2548,7 +2552,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
             dsd->set_password(sc.password);
             dsd->set_source(DictionarySourceDetails::MONGODB);
         }
-        else if (t.isRedisEngine() && rg.nextSmallNumber() < 8)
+        else if (t.isRedisEngine() && fc.redis_server.has_value() && rg.nextSmallNumber() < 8)
         {
             const ServerCredentials & sc = fc.redis_server.value();
 
