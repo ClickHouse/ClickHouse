@@ -40,9 +40,14 @@ DB::TLSHandler::TLSHandler(
         return;
     }
 
-    // for backwards compatibility
-    auto ctx = SSLManager::instance().defaultServerContext();
-    params.caLocation = config.getString(prefix + SSLManager::CFG_CA_LOCATION, ctx->getCAPaths().caLocation);
+    params.caLocation = config.getString(prefix + SSLManager::CFG_CA_LOCATION, "");
+    if (params.caLocation.empty())
+    {
+        LOG_ERROR(getLogger("stetsyuk"), "not found caLocation");
+        auto ctx = SSLManager::instance().defaultServerContext();
+        params.caLocation = ctx->getCAPaths().caLocation;
+    }
+    LOG_INFO(getLogger("stetsyuk"), "found caLocation");
 
     // optional options for which we have defaults defined
     params.verificationMode = SSLManager::VAL_VER_MODE;
@@ -99,10 +104,10 @@ DB::TLSHandler::TLSHandler(
 void DB::TLSHandler::run()
 {
 #if USE_SSL
-    auto ctx = SSLManager::instance().defaultServerContext();
-
     bool keys_are_explicitly_set = !params.privateKeyFile.empty() && !params.certificateFile.empty();
     bool acme_certificate_provided = config.has("acme");
+
+    Context::Ptr ctx;
 
     if (keys_are_explicitly_set || acme_certificate_provided)
     {
@@ -118,7 +123,12 @@ void DB::TLSHandler::run()
             ctx = SSLManager::instance().setCustomServerContext(prefix, ctx);
         }
     }
-
+    else
+    {
+        ctx = SSLManager::instance().defaultServerContext();
+        LOG_ERROR(getLogger("stetsyuk"), "something is not set {} {} for {}", !params.privateKeyFile.empty(), !params.certificateFile.empty(), prefix);
+    }
+    LOG_INFO(getLogger("stetsyuk"), "everything is set for {}", prefix);
     socket() = SecureStreamSocket::attach(socket(), ctx);
     stack_data.socket = socket();
     stack_data.certificate = params.certificateFile;
