@@ -75,16 +75,19 @@ private:
     std::optional<UInt64> block_size_bytes;
 
 
-    void createBuffersIfNeeded(AggregateDataPtr __restrict place) const
+    void reCreateBuffersIfNeeded(AggregateDataPtr __restrict place) const
     {
         Data & data_ref = data(place);
 
         if (!data_ref.null_buf || data_ref.null_buf->isFinalized())
             data_ref.null_buf = std::make_unique<NullWriteBuffer>();
 
-        /// When aggregating on column windows the buffer is finalized but not deleted.
-        /// Ideally on finalized buffers we could "reinitialize" without reconstructing the buffer.
+        /// When aggregating on windows transformed columns, the function WindowTransform::appendChunk
+        /// calls updateAggregationState + writeOutCurrentRow in a loop.
+        /// writeOutCurrentRow finalizes the buffer to flush and compute sizes, but doesn't deletes it.
+        /// Ideally on finalized buffers we could "reinitialize" without reconstructing the whole object buffer.
         /// But WriteBuffer objects doesn't have a reset function.
+        /// Note: If at some point we find that this re-creation becomes a performance issue, we should implement a reset function.
         if (!data_ref.compressed_buf || data_ref.compressed_buf->isFinalized())
             data_ref.compressed_buf = std::make_unique<CompressedWriteBuffer>(
                 *data_ref.null_buf, getCodecOrDefault(), block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE));
@@ -144,7 +147,7 @@ public:
     {
         const auto & column = columns[0];
 
-        createBuffersIfNeeded(place);
+        reCreateBuffersIfNeeded(place);
 
         DataTypePtr type_ptr = argument_types[0];
         SerializationInfoPtr info = type_ptr->getSerializationInfo(*column);
@@ -176,7 +179,7 @@ public:
     {
         const auto & column = columns[0];
 
-        createBuffersIfNeeded(place);
+        reCreateBuffersIfNeeded(place);
 
         DataTypePtr type_ptr = argument_types[0];
         SerializationInfoPtr info = type_ptr->getSerializationInfo(*column);
