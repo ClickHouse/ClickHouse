@@ -161,17 +161,17 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
                 /// ruok command
                 auto ruok_output = sendFourLetterCommand(host, port_string, "ruok");
                 if (ruok_output.has_value())
-				{
-					if (ruok_output.value() == "imok")
-						res_columns[4]->insert(true);
-					else
-						res_columns[4]->insert(false);
-				}
-				else
-					res_columns[4]->insertDefault();
+                {
+	                if (ruok_output.value() == "imok")
+	                	res_columns[4]->insert(true);
+	                else
+	                	res_columns[4]->insert(false);
+                }
+                else
+				    res_columns[4]->insertDefault();
 
 
-				/// isro command
+                /// isro command
 				/// The server will respond with "ro" if in read-only mode or "rw" if not in read-only mode.
 				auto isro_output = sendFourLetterCommand(host, port_string, "isro");
 				if (isro_output.has_value())
