@@ -34,7 +34,7 @@ CHECK TABLE merge_table_standard_delete;
 DROP TABLE merge_table_standard_delete;
 
 drop table if exists t_light;
-create table t_light(a int, b int, c int, index i_c(b) type minmax granularity 4) engine = MergeTree order by a partition by c % 5 settings min_bytes_for_wide_part=0;
+create table t_light(a int, b int, c int, index i_c(b) type minmax granularity 4) engine = MergeTree order by a partition by c % 5 settings min_bytes_for_wide_part=0, ratio_of_defaults_for_sparse_serialization=0.0;
 INSERT INTO t_light SELECT number, number, number FROM numbers(10);
 
 SELECT '-----lightweight mutation type-----';

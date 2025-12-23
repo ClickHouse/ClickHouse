@@ -15,6 +15,7 @@ node1 = cluster.add_instance(
     with_zookeeper=True,
     stay_alive=True,
     privileged_docker=True,
+    add_loop_control_device=True,
 )
 
 
