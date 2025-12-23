@@ -586,7 +586,7 @@ getColumnsForNewDataPart(
     }
 
     SerializationInfo::Settings settings;
-    /// If mutations doesn't affect all columns we must us serialization info settings from source part,
+    /// If mutations doesn't affect all columns we must use serialization info settings from source part,
     /// because data files of some columns might be copied without actual serialization, so changes in serialization
     /// settings will not be applied for them (for example, new serialization versions for data types).
     if (!affects_all_columns)
