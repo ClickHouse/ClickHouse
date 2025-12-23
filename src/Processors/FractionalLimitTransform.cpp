@@ -31,10 +31,10 @@ FractionalLimitTransform::FractionalLimitTransform(
     , limit_with_ties_sort_description(std::move(limit_with_ties_sort_description_))
 {
     if (limit_fraction <= 0.0 || limit_fraction >= 1.0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "LIMIT fraction must be in (0, 1) range non-inclusive");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Fractional LIMIT values must be in the range (0, 1)");
 
     if (offset_fraction < 0.0 || offset_fraction >= 1.0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "OFFSET fraction must be in (0, 1) range non-inclusive");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Fractional OFFSET values must be in the range (0, 1)");
 
     if (num_streams != 1 && with_ties)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot use FractionalLimitTransform with multiple ports and ties");

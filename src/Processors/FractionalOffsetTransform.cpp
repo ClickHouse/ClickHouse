@@ -16,7 +16,7 @@ FractionalOffsetTransform::FractionalOffsetTransform(const Block & header_, Floa
     , fractional_offset(fractional_offset_)
 {
     if (fractional_offset <= 0.0 || fractional_offset >= 1.0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "OFFSET fraction must be in (0, 1) range non-inclusive");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Fractional OFFSET values must be in the range (0, 1)");
 
     ports_data.resize(num_streams);
 
