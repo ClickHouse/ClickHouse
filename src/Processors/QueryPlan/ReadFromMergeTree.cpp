@@ -671,7 +671,7 @@ Pipe ReadFromMergeTree::readInOrder(
             pool_settings,
             block_size,
             context,
-            nullptr);
+            dataflow_cache_updater);
     }
 
     /// If parallel replicas enabled, set total rows in progress here only on initiator with local plan
