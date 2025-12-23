@@ -93,7 +93,7 @@ ISource::Status RemoteSource::prepare()
     if (is_async_state)
         return Status::Async;
 
-    if (executor_finished)
+    if (query_executor->isFinishCalled())
     {
         getPort().finish();
         return Status::Finished;
@@ -128,7 +128,7 @@ void RemoteSource::work()
     /// See issue: https://github.com/ClickHouse/ClickHouse/issues/60844
     if (need_drain)
     {
-        finishExecutor();
+        query_executor->finish();
         return;
     }
 
@@ -215,8 +215,7 @@ std::optional<Chunk> RemoteSource::tryGenerate()
     {
         if (manually_add_rows_before_limit_counter)
             rows_before_limit->add(rows);
-
-        finishExecutor();
+        query_executor->finish();
         return {};
     }
 
@@ -236,14 +235,6 @@ std::optional<Chunk> RemoteSource::tryGenerate()
     return chunk;
 }
 
-void RemoteSource::finishExecutor()
-{
-    if (executor_finished)
-        return;
-    executor_finished = true;
-    query_executor->finish();
-}
-
 void RemoteSource::onCancel() noexcept
 {
     try
@@ -259,7 +250,7 @@ void RemoteSource::onCancel() noexcept
 void RemoteSource::onUpdatePorts()
 {
     if (getPort().isFinished())
-        finishExecutor();
+        query_executor->finish();
 }
 
 

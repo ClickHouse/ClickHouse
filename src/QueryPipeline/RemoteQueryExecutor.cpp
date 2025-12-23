@@ -778,6 +778,11 @@ void RemoteQueryExecutor::finish()
 {
     LockAndBlocker guard(was_cancelled_mutex);
 
+    /// We only allow one finish call to avoid double-cancellation
+    if (isFinishCalled())
+        return;
+    finish_called = true;
+
     /** If one of:
       * - nothing started to do;
       * - received all packets before EndOfStream;

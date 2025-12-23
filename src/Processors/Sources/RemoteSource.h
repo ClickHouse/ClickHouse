@@ -48,7 +48,6 @@ protected:
 private:
     std::atomic_bool was_query_sent = false;
     bool need_drain = false;
-    bool executor_finished = false;
     bool add_aggregation_info = false;
     RemoteQueryExecutorPtr query_executor;
     RowsBeforeStepCounterPtr rows_before_limit;
@@ -64,8 +63,6 @@ private:
 #if defined(OS_LINUX)
     EventFD startup_event_fd;
 #endif
-
-    void finishExecutor();
 };
 
 /// Totals source from RemoteQueryExecutor.
