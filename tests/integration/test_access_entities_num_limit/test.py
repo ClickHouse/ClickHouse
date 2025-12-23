@@ -39,6 +39,13 @@ def started_cluster():
         cluster.shutdown()
 
 
+def clear(node, users, roles):
+    for i in range(users):
+        node.query("drop user if exists u{}".format(i))
+    for i in range(roles):
+        node.query("drop role if exists r{}".format(i))
+
+
 def test_access_limit_default(started_cluster):
     roles = 5
     users = 5
@@ -71,6 +78,8 @@ def test_access_limit_default(started_cluster):
 
     assert "Too many access entities" in node.query_and_get_error("create user ux")
 
+    clear(node, users, roles)
+
 
 def test_access_limit_replicated(started_cluster):
     roles = 5
@@ -85,7 +94,7 @@ def test_access_limit_replicated(started_cluster):
     assert "Too many access entities" in node1.query_and_get_error("create user ux")
 
     users -= 1
-    node.query("drop user u{}".format(users))
+    node1.query("drop user u{}".format(users))
 
     # Updating existing users not changing user count
     for i in range(users):
@@ -121,3 +130,5 @@ def test_access_limit_replicated(started_cluster):
         node2.query("create user u{}".format(i))
 
     assert "Too many access entities" in node2.query_and_get_error("create user ux")
+
+    clear(node, users, roles)
