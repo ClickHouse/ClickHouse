@@ -385,13 +385,30 @@ bool MergeTextIndexesTask::isNewToken(const SortCursor & cursor) const
     return output_str.empty() || input_str.compareAt(cursor->getRow(), output_str.size() - 1, output_str, 1) != 0;
 }
 
+void MergeTextIndexesTask::mergePostings()
+{
+    chassert(params.enable_postings_compression);
+    std::vector<PostingsContainerStreamViewImpl<MergeTreeIndexReaderStream, UInt32> > posting_streams;
+    for (const auto &[source_num, token_info]: stream_and_tokens)
+    {
+        auto *stream = input_streams[source_num].at(MergeTreeIndexSubstream::Type::TextIndexPostings);
+        posting_streams.emplace_back(*stream, source_num, token_info);
+    }
+    auto &output = std::get<PostingsContainer32>(output_postings);
+    if (posting_streams.size() == 1)
+        transformSinglePostingsContainer(output, posting_streams.front(), *merged_part_offsets);
+    else
+        mergePostingsContainers(output, posting_streams, *merged_part_offsets);
+    stream_and_tokens.clear();
+}
+
 bool MergeTextIndexesTask::executeStep()
 {
     if (!is_initialized)
     {
         is_initialized = true;
         if (params.enable_postings_compression)
-            output_postings.emplace<PostingsContainer32>();
+            output_postings.emplace<PostingsContainer32>(params.posting_list_block_size);
         else
             output_postings.emplace<PostingList>();
         initializeQueue();
@@ -413,6 +430,8 @@ bool MergeTextIndexesTask::executeStep()
 
         if (isNewToken(current))
         {
+            if (params.enable_postings_compression && !stream_and_tokens.empty())
+                mergePostings();
             //if (!output_postings.isEmpty())
             bool empty = params.enable_postings_compression ? std::get<PostingsContainer32>(output_postings).empty() : std::get<PostingList>(output_postings).isEmpty();
             if (!empty)
@@ -424,7 +443,12 @@ bool MergeTextIndexesTask::executeStep()
             output_tokens->insertFrom(*inputs[current->order].tokens, current->getRow());
         }
 
-        if (!params.enable_postings_compression)
+        if (params.enable_postings_compression)
+        {
+            const auto & token_info = inputs[current->order].token_infos[queue.current()->getRow()];
+            stream_and_tokens.emplace_back(current->order, token_info);
+        }
+        else
         {
             auto read_postings = readPostingLists(current->order);
             auto & postings = std::get<PostingList>(output_postings);
@@ -432,20 +456,6 @@ bool MergeTextIndexesTask::executeStep()
             {
                 posting = adjustPartOffsets(current->order, posting);
                 postings |= *posting;
-            }
-        }
-        else
-        {
-            auto source_num = current->order;
-            const auto & token_info = inputs[source_num].token_infos[queue.current()->getRow()];
-            auto * stream = input_streams[source_num].at(MergeTreeIndexSubstream::Type::TextIndexPostings);
-            auto * data_buffer = stream->getDataBuffer();
-            PostingsContainer32 postings_input(params.enable_postings_compression);
-            auto & target = std::get<PostingsContainer32>(output_postings);
-            for (const auto offset_in_file : token_info.offsets)
-            {
-                stream->seekToMark({offset_in_file, 0});
-                postings_input.deserialize(*data_buffer, target, source_num, *merged_part_offsets);
             }
         }
         if (!current->isLast())
@@ -464,6 +474,9 @@ bool MergeTextIndexesTask::executeStep()
 
 void MergeTextIndexesTask::finalize()
 {
+    if (params.enable_postings_compression && !stream_and_tokens.empty())
+        mergePostings();
+
     bool empty = params.enable_postings_compression ? std::get<PostingsContainer32>(output_postings).empty() : std::get<PostingList>(output_postings).isEmpty();
     if (!empty)
         flushPostingList();
