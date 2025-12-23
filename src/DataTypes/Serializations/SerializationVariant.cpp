@@ -605,7 +605,7 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     settings.path.push_back(Substream::VariantElements);
     for (size_t i = 0; i != variant_serializations.size(); ++i)
     {
-        auto variant_column = col.getVariantPtrByLocalDiscriminator(i);
+        auto & variant_column = col.getVariantPtrByLocalDiscriminator(i);
         if (!variant_column)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Column for variant {} is invalid", variant_names[i]);
 
