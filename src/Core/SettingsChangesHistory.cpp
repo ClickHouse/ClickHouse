@@ -54,6 +54,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_insert_max_partitions", 100, 100, "New setting."},
             {"check_query_single_value_result", true, false, "Changed setting to make CHECK TABLE more useful"},
             {"use_paimon_partition_pruning", false, false, "New setting."},
+            {"use_join_disjunctions_push_down", false, true, "Enabled this optimization."},
             {"use_skip_indexes_for_disjunctions", false, true, "New setting"},
             {"allow_statistics_optimize", false, true, "Enable this optimization by default."},
             {"allow_statistic_optimize", false, true, "Enable this optimization by default."},
