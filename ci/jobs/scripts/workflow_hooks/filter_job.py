@@ -155,12 +155,12 @@ def should_skip_job(job_name):
     ):
         return True, "Skipped, no functional tests updates"
 
-    if (
-        " Bug Fix" in _info_cache.pr_body
-        and job_name == JobNames.BUGFIX_VALIDATE_IT
-#        and not has_new_integration_tests(_info_cache.get_changed_files())
-    ):
-        return True, "Skipped, no integration tests updates"
+#    if (
+#        " Bug Fix" in _info_cache.pr_body
+#        and job_name == JobNames.BUGFIX_VALIDATE_IT
+# FIXME       and not has_new_integration_tests(_info_cache.get_changed_files())
+#    ):
+#        return True, "Skipped, no integration tests updates"
 
     # skip ARM perf tests for non-performance update
     if (
