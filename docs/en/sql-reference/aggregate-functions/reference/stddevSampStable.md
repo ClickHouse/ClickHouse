@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 # stddevSampStable
 
-The result is equal to the square root of [varSamp](../../../sql-reference/aggregate-functions/reference/varsamp.md). Unlike [`stddevSamp`](../reference/stdDevSamp.md) this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
+The result is equal to the square root of [varSamp](../../../sql-reference/aggregate-functions/reference/varsamp.md). Unlike [`stddevSamp`](../reference/stddevSamp.md) this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
 
 **Syntax**
 
