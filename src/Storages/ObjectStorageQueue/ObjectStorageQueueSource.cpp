@@ -116,7 +116,8 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     const auto globbed_key = reading_path.path;
     object_storage_iterator = object_storage->iterate(reading_path.cutGlobs(configuration->supportsPartialPathPrefix()), list_objects_batch_size_, /*with_tags=*/ false);
 
-    matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_key));
+    BetterGlob::GlobString glob_string(globbed_key);
+    matcher = std::make_unique<re2::RE2>(glob_string.asRegex());
     if (!matcher->ok())
     {
         throw Exception(
