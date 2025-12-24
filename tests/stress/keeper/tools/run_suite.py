@@ -21,9 +21,9 @@ def main():
     ap.add_argument("--jobs", default=os.environ.get("KEEPER_JOBS", ""))
     ap.add_argument("--extra", default=os.environ.get("KEEPER_EXTRA_SCENARIOS", ""))
     ap.add_argument("--include-ids", default=os.environ.get("KEEPER_INCLUDE_IDS", ""))
-    ap.add_argument("--matrix-backends", default=os.environ.get("KEEPER_BACKENDS", ""))
+    ap.add_argument("--matrix-backends", default=os.environ.get("KEEPER_MATRIX_BACKENDS", ""))
     ap.add_argument(
-        "--matrix-topologies", default=os.environ.get("KEEPER_TOPOLOGIES", "")
+        "--matrix-topologies", default=os.environ.get("KEEPER_MATRIX_TOPOLOGIES", "")
     )
     ap.add_argument(
         "--include-faults-off",
