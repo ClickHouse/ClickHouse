@@ -635,7 +635,7 @@ getColumnsForNewDataPart(
         auto old_type = part_columns.getPhysical(name).type;
         auto new_type = updated_header.getByName(new_name).type;
 
-        if (!settings.canUseSparseSerialization(*new_type))
+        if (settings.isAlwaysDefault() || !settings.canUseSparseSerialization(*new_type))
             continue;
 
         auto new_info = new_type->createSerializationInfo(settings);
@@ -1059,7 +1059,7 @@ static NameToNameVector collectFilesForRenames(
                     add_rename(*filename, new_filename);
                 }
             }
-            else if (command.type == MutationCommand::Type::READ_COLUMN || command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
+            else if (command.type == MutationCommand::Type::UPDATE || command.type == MutationCommand::Type::READ_COLUMN || command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
             {
                 /// Remove files for streams that exist in source_part,
                 /// but were removed in new_part by MODIFY COLUMN or MATERIALIZE COLUMN from
@@ -2882,7 +2882,7 @@ bool MutateTask::prepare()
             ctx->metadata_snapshot,
             ctx->source_part,
             ctx->new_data_part,
-            ctx->for_file_renames,
+            ctx->commands_for_part,
             updated_columns_in_patches,
             ctx->mrk_extension);
 
