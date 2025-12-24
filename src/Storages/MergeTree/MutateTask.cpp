@@ -533,7 +533,6 @@ getColumnsForNewDataPart(
             false,
             serialization_infos.getSettings().version,
             serialization_infos.getSettings().string_serialization_version,
-            serialization_infos.getSettings().nullable_serialization_version,
         };
     }
     /// Otherwise use fresh settings from storage.
