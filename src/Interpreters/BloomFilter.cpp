@@ -138,6 +138,18 @@ bool BloomFilter::findHashWithSeed(const UInt64 & hash, const UInt64 & hash_seed
     return bool(filter[pos / word_bits] & (1ULL << (pos % word_bits)));
 }
 
+void BloomFilter::addRawHash(const UInt64 & hash)
+{
+    size_t pos = fastMod(hash);
+    filter[pos / word_bits] |= (1ULL << (pos % word_bits));
+}
+
+bool BloomFilter::findRawHash(const UInt64 & hash)
+{
+    size_t pos = fastMod(hash);
+    return bool(filter[pos / word_bits] & (1ULL << (pos % word_bits)));
+}
+
 DataTypePtr BloomFilter::getPrimitiveType(const DataTypePtr & data_type)
 {
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(data_type.get()))
